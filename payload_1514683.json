@@ -1,0 +1,13 @@
+﻿[
+  {
+    "results": [
+      {
+        "payload": "{\"id\":\"soccer_1514683\",\"fixture_id\":\"soccer_1514683\",\"sport\":\"soccer\",\"league_name\":\"League Cup\",\"home_team\":\"Afturelding\",\"away_team\":\"Thor Akureyri\",\"event_date\":\"2026-02-25T17:00:00+00:00\",\"status\":\"2H\",\"markets\":[{\"key\":\"h2h\",\"outcomes\":[{\"id\":\"1\",\"name\":\"1\",\"outcome\":\"1\",\"label\":\"Casa\",\"price\":14.51,\"value\":14.51,\"odd\":14.51},{\"id\":\"X\",\"name\":\"X\",\"outcome\":\"X\",\"label\":\"Empate\",\"price\":19.54,\"value\":19.54,\"odd\":19.54},{\"id\":\"2\",\"name\":\"2\",\"outcome\":\"2\",\"label\":\"Fora\",\"price\":1.05,\"value\":1.05,\"odd\":1.05}]}],\"odds\":[],\"has_odds\":false,\"source\":\"api-sports-fixture\",\"payload\":\"{\\\"id\\\":\\\"soccer_1514683\\\",\\\"fixture_id\\\":\\\"soccer_1514683\\\",\\\"kickoff\\\":\\\"2026-02-25T17:00:00+00:00\\\",\\\"status\\\":{\\\"long\\\":\\\"Not Started\\\",\\\"short\\\":\\\"NS\\\",\\\"elapsed\\\":null,\\\"extra\\\":null},\\\"venue\\\":{\\\"id\\\":0,\\\"name\\\":null,\\\"city\\\":null},\\\"league_obj\\\":{\\\"name\\\":\\\"League Cup\\\",\\\"country\\\":\\\"Iceland\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/leagues/168.png\\\",\\\"flag\\\":\\\"https://media.api-sports.io/flags/is.svg\\\"},\\\"league_id\\\":168,\\\"season\\\":2026,\\\"teams\\\":{\\\"home\\\":{\\\"name\\\":\\\"Afturelding\\\",\\\"canonical\\\":\\\"afturelding\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/3514.png\\\"},\\\"away\\\":{\\\"name\\\":\\\"Thor Akureyri\\\",\\\"canonical\\\":\\\"thor akureyri\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/2116.png\\\"}},\\\"sport_key\\\":\\\"soccer\\\",\\\"has_odds\\\":false}\",\"home_odd\":14.51,\"draw_odd\":19.54,\"away_odd\":1.05,\"is_live\":true,\"fixture\":{\"status\":{\"long\":\"Second Half\",\"short\":\"2H\",\"elapsed\":75,\"extra\":null}},\"goals\":{\"home\":0,\"away\":4},\"score\":{\"halftime\":{\"home\":0,\"away\":2},\"fulltime\":{\"home\":null,\"away\":null},\"extratime\":{\"home\":null,\"away\":null},\"penalty\":{\"home\":null,\"away\":null}},\"elapsed\":75,\"base_home_odd\":5.66,\"base_draw_odd\":4.17,\"base_away_odd\":1.53}"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "duration": 1
+    }
+  }
+]

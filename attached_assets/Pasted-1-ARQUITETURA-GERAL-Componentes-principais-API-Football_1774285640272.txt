@@ -1,0 +1,168 @@
+1. ARQUITETURA GERAL
+🔧 Componentes principais
+API-Football → eventos do jogo (golos, cartões, VAR, etc.)
+OddsAPI.io → odds pré-jogo e ao vivo
+Motor de decisão (core) → tua lógica de bloqueio
+Base de dados (cache em tempo real) → estado do jogo
+Worker/stream processor → processa eventos contínuos
+🔄 2. FLUXO DE DADOS
+API-Football (eventos) ──► Event Listener
+                                │
+                                ▼
+                      Estado do Jogo (cache)
+                                │
+                                ▼
+OddsAPI.io (odds) ──► Odds Listener
+                                │
+                                ▼
+                      Motor de Lógica
+                                │
+                                ▼
+                Decisão: bloquear / apostar / ignorar
+📡 3. CAPTURA DE EVENTOS (API-Football)
+Eventos críticos que deves mapear:
+{
+  "type": "Goal",
+  "team": "home",
+  "minute": 67
+}
+{
+  "type": "Card",
+  "detail": "Red Card"
+}
+{
+  "type": "Var",
+  "detail": "Goal cancelled"
+}
+📊 4. CAPTURA DE ODDS (OddsAPI.io)
+
+Exemplo de mercado:
+
+{
+  "market": "Over/Under",
+  "line": 2.5,
+  "odds": {
+    "over": 1.85,
+    "under": 1.95
+  }
+}
+🧠 5. MOTOR DE LÓGICA (CORE)
+
+Aqui entra a parte crítica: replicar o comportamento das casas.
+
+⚽ 5.1 LÓGICA DE GOLO
+if event == "Goal":
+    bloquear_todos_mercados()
+
+    atualizar_estado_jogo()
+
+    # fechar mercados resolvidos
+    fechar("Over 0.5")
+    fechar("Under 0.5")
+
+    # recalcular novos mercados
+    abrir("Over 1.5", nova_odds)
+🔴 5.2 CARTÃO VERMELHO
+if event == "Red Card":
+    bloquear_todos_mercados()
+
+    ajustar_probabilidades(
+        equipa_com_10 = -30%,
+        adversario = +20%
+    )
+
+    reabrir_mercados()
+📺 5.3 VAR (MAIOR EDGE)
+if event == "VAR":
+    bloquear_todos_mercados()
+
+    estado = "pendente"
+
+    if decisao == "Goal Confirmed":
+        aplicar_golo()
+    elif decisao == "Goal Cancelled":
+        reverter_estado()
+
+👉 Aqui podes criar lógica de antecipação:
+
+if probabilidade_golo_anulado > 70%:
+    apostar("Under")
+🎯 5.4 ATAQUE PERIGOSO (LIVE EDGE)
+
+Sem evento oficial → usar heurística:
+
+if posse_bola_area and velocidade_ataque > threshold:
+    bloquear("Next Goal")
+
+👉 Dados:
+
+posição da bola
+número de jogadores no ataque
+xG estimado
+📊 6. LÓGICA POR MERCADO
+Over/Under
+if golos >= linha:
+    mercado = "fechado (ganho)"
+Ambas Marcam
+if ambas_equipas_marcaram:
+    fechar("BTTS - Sim")
+Resultado
+probabilidade = modelo_poisson(golos, tempo)
+Cantos
+if cruzamento_area:
+    bloquear("Cantos")
+Cartões
+if falta_perigosa:
+    bloquear("Cartões")
+⚡ 7. SINCRONIZAÇÃO (PROBLEMA REAL)
+📌 Problema:
+API-Football ≠ OddsAPI timing
+delay de 2–10 segundos
+✅ Solução:
+usar timestamp interno
+buffer de eventos (queue)
+if evento.timestamp < odds.timestamp:
+    ignorar_evento_antigo()
+🧠 8. MODELO DE PROBABILIDADE
+
+Para recalcular odds:
+
+📊 Poisson (futebol)
+P(golos) = (λ^k * e^-λ) / k!
+
+👉 ajustado por:
+
+tempo restante
+cartões
+momentum
+⚙️ 9. TECNOLOGIA RECOMENDADA
+Python (FastAPI) → backend
+Redis → cache em tempo real
+Kafka / RabbitMQ → eventos
+WebSockets → odds live
+PostgreSQL → histórico
+🧪 10. EXEMPLO REAL (FLUXO COMPLETO)
+API-Football detecta:
+possível golo
+Sistema:
+bloqueia mercados
+OddsAPI ainda não atualizou
+👉 janela de oportunidade
+VAR:
+confirmado → odds recalculadas
+💡 11. ONDE ESTÁ O EDGE REAL
+atraso entre APIs
+leitura antes da confirmação oficial
+mercados secundários (cantos, props)
+eventos mal interpretados
+📌 CONCLUSÃO
+
+Estás a construir essencialmente:
+👉 um motor de trading esportivo em tempo real
+
+Com:
+
+ingestão de dados
+deteção de eventos
+simulação de casas de apostas
+exploração de latência

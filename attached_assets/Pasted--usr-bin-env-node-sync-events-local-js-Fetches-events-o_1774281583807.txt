@@ -1,0 +1,239 @@
+#!/usr/bin/env node
+/**
+ * sync-events-local.js
+ * Fetches events + odds + markets from API-Sports using Node.js (no TLS issues)
+ * and inserts them directly into the local wrangler D1 database.
+ * Fetches events from API-Sports and odds+markets from odds-api.io (5000 req/h)
+ * Inserts directly into local wrangler D1 database.
+ */
+import { execSync } from 'child_process';
+-1
++0
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
+// Load .dev.vars if env vars not set
+function loadDevVars() {
+  const varsPath = path.join(ROOT, '.dev.vars');
+  if (existsSync(varsPath)) {
+-9
++13
+loadDevVars();
+const API_SPORTS_KEY = process.env.API_SPORTS_KEY;
+const PERSIST_TO = './.wrangler-local';
+const DB_NAME = 'bet62-db';
+const ODDS_API_KEY   = process.env.ODDS_API_KEY;
+const PERSIST_TO     = './.wrangler-local';
+const DB_NAME        = 'bet62-db';
+const ODDS_API_BASE  = 'https://api.odds-api.io/v3';
+const BOOKMAKERS     = 'Bet365,1xbet,Betano,888Sport,SportingBet';
+if (!API_SPORTS_KEY) {
+  console.error('[sync] ERROR: API_SPORTS_KEY not set. Check your .dev.vars file.');
+  console.error('[sync] ERROR: API_SPORTS_KEY not set.');
+  process.exit(1);
+}
+// ─── SPORTS CONFIG ────────────────────────────────────────────────────────────
+const SPORTS = [
+  { name: 'soccer',     base: 'https://v3.football.api-sports.io',      endpoint: '/fixtures', oddsBase: 'https://v3.football.api-sports.io', oddsEndpoint: '/odds', fixtureKey: 'fixture', dateOdds: true },
+  { name: 'basketball', base: 'https://v1.basketball.api-sports.io',     endpoint: '/games',    oddsBase: 'https://v1.basketball.api-sports.io', oddsEndpoint: '/odds', fixtureKey: 'game',    dateOdds: false },
+  { name: 'baseball',   base: 'https://v1.baseball.api-sports.io',       endpoint: '/games',    oddsBase: 'https://v1.baseball.api-sports.io',   oddsEndpoint: '/odds', fixtureKey: 'game',    dateOdds: false },
+  { name: 'ice-hockey', base: 'https://v1.hockey.api-sports.io',         endpoint: '/games',    oddsBase: 'https://v1.hockey.api-sports.io',     oddsEndpoint: '/odds', fixtureKey: 'game',    dateOdds: false },
+  { name: 'handball',   base: 'https://v1.handball.api-sports.io',       endpoint: '/games',    oddsBase: 'https://v1.handball.api-sports.io',   oddsEndpoint: '/odds', fixtureKey: 'game',    dateOdds: false },
+  { name: 'volleyball', base: 'https://v1.volleyball.api-sports.io',     endpoint: '/games',    oddsBase: 'https://v1.volleyball.api-sports.io', oddsEndpoint: '/odds', fixtureKey: 'game',    dateOdds: false },
+  { name: 'soccer',     base: 'https://v3.football.api-sports.io',      endpoint: '/fixtures', fixtureKey: 'fixture', oddsSlug: 'football'  },
+  { name: 'basketball', base: 'https://v1.basketball.api-sports.io',     endpoint: '/games',    fixtureKey: 'game',    oddsSlug: 'basketball' },
+  { name: 'baseball',   base: 'https://v1.baseball.api-sports.io',       endpoint: '/games',    fixtureKey: 'game',    oddsSlug: 'baseball'   },
+  { name: 'ice-hockey', base: 'https://v1.hockey.api-sports.io',         endpoint: '/games',    fixtureKey: 'game',    oddsSlug: null         },
+  { name: 'handball',   base: 'https://v1.handball.api-sports.io',       endpoint: '/games',    fixtureKey: 'game',    oddsSlug: null         },
+  { name: 'volleyball', base: 'https://v1.volleyball.api-sports.io',     endpoint: '/games',    fixtureKey: 'game',    oddsSlug: null         },
+];
+const BLOCKED_KEYWORDS = [
+-4
++10
+  return BLOCKED_KEYWORDS.some(kw => l.includes(kw));
+}
+async function fetchApi(url) {
+// ─── HTTP HELPERS ─────────────────────────────────────────────────────────────
+async function apiSportsGet(url) {
+  const res = await fetch(url, {
+    headers: { 'x-apisports-key': API_SPORTS_KEY },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for ${url}`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status} → ${url}`);
+  return res.json();
+}
+async function oddsApiGet(url) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} → ${url}`);
+  return res.json();
+}
+// ─── DATE HELPERS ─────────────────────────────────────────────────────────────
+function getDateStr(offset = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+-55
++81
+  return "'" + String(val).replace(/'/g, "''") + "'";
+}
+// ─── TEAM NAME NORMALISATION (for fuzzy matching) ────────────────────────────
+function normTeam(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(fc|cf|sc|ac|as|ss|cd|sd|ud|rcd|bsc|fk|sk|nk|ok|if|bf|bk|hk|ik|vfb|vfl|tsg|rsg|sv|sv|rsc|rsca|krc|kjk|kaa|ksk|kvo|kvv|kvc|mvv|pec|nac|ajax|psv|adf|ado|azl|fci|fcn|fca|fcb|fct|fcg|fcm|fcr|fcs|fcv|fcz|sfc|bfc|gfc|dfc|nfc|mfc|wfc|ifc|jfc|rfc|cfc|lfc|efc|tfc|pfc|hfc|ufc|qfc|ofc|afc|bvb|rbh|rbl|m.s.k.|m.s.v.|m.s.g.|v.v.v)\b/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function teamsMatch(a, b) {
+  const na = normTeam(a), nb = normTeam(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const wa = na.split(' ').filter(w => w.length > 3);
+  const wb = nb.split(' ').filter(w => w.length > 3);
+  return wa.length > 0 && wb.length > 0 && wa.some(w => wb.includes(w));
+}
+// ─── EXTRACT EVENTS FROM API-SPORTS ──────────────────────────────────────────
+function extractTeams(item, sport) {
+  if (sport === 'soccer') {
+    return {
+      home: item.teams?.home?.name || '',
+      away: item.teams?.away?.name || '',
+      homeLogo: item.teams?.home?.logo || '',
+      awayLogo: item.teams?.away?.logo || '',
+      league: item.league?.name || '',
+      country: item.league?.country || '',
+      date: item.fixture?.date?.slice(0, 19).replace('T', ' ') || '',
+      home:      item.teams?.home?.name || '',
+      away:      item.teams?.away?.name || '',
+      homeLogo:  item.teams?.home?.logo || '',
+      awayLogo:  item.teams?.away?.logo || '',
+      league:    item.league?.name || '',
+      country:   item.league?.country || '',
+      date:      (item.fixture?.date || '').slice(0, 19).replace('T', ' '),
+      externalId: String(item.fixture?.id || ''),
+      status: item.fixture?.status?.short || 'NS',
+      isLive: ['1H','2H','HT','ET','BT','P','INT','LIVE'].includes(item.fixture?.status?.short) ? 1 : 0,
+      elapsed: item.fixture?.status?.elapsed || 0,
+      score: JSON.stringify({ home: item.goals?.home ?? null, away: item.goals?.away ?? null }),
+      homeOdd: 0, drawOdd: 0, awayOdd: 0, markets: {},
+      status:    item.fixture?.status?.short || 'NS',
+      isLive:    ['1H','2H','HT','ET','BT','P','INT','LIVE'].includes(item.fixture?.status?.short) ? 1 : 0,
+      elapsed:   item.fixture?.status?.elapsed || 0,
+      score:     JSON.stringify({ home: item.goals?.home ?? null, away: item.goals?.away ?? null }),
+    };
+  } else {
+    const g = item;
+    const home = g.teams?.home?.name || '';
+    const away = g.teams?.away?.name || '';
+    const dateVal = g.date || g.time?.date || '';
+    const timeVal = g.time?.time || '00:00';
+    let fullDate = '';
+    if (dateVal) {
+      if (dateVal.includes('T') || (dateVal.length > 10 && dateVal.includes(' '))) {
+        try { fullDate = new Date(dateVal).toISOString().slice(0, 19).replace('T', ' '); } catch { fullDate = ''; }
+      } else {
+        fullDate = `${dateVal} ${timeVal}:00`;
+      }
+    }
+    const rawStatus = g.status?.short || g.status?.long || 'NS';
+    const liveStatuses = new Set(['LIVE', 'Q1', 'Q2', 'Q3', 'Q4', 'HT', 'OT', 'P1', 'P2', 'P3', 'BT', 'INT']);
+    const statusMap = { 'NS': 'NS', 'FT': 'FT', 'LIVE': 'LIVE', 'Q1': 'LIVE', 'Q2': 'LIVE', 'Q3': 'LIVE', 'Q4': 'LIVE', 'HT': 'HT', 'OT': 'LIVE', 'P1': 'LIVE', 'P2': 'LIVE', 'P3': 'LIVE', 'BT': 'HT', 'INT': 'HT' };
+    const status = statusMap[rawStatus] || rawStatus;
+    const isLive = liveStatuses.has(rawStatus) ? 1 : 0;
+    return {
+      home, away,
+      homeLogo: g.teams?.home?.logo || '',
+      awayLogo: g.teams?.away?.logo || '',
+      league: g.league?.name || '',
+      country: g.country?.name || g.country?.code || '',
+      date: fullDate,
+      externalId: String(g.id || ''),
+      status, isLive,
+      elapsed: g.periods?.current || 0,
+      score: JSON.stringify({ home: g.scores?.home?.total ?? null, away: g.scores?.away?.total ?? null }),
+      homeOdd: 0, drawOdd: 0, awayOdd: 0, markets: {},
+    };
+  }
+  }
+  const g = item;
+  const dateVal = g.date || g.time?.date || '';
+  const timeVal = g.time?.time || '00:00';
+  let fullDate = '';
+  if (dateVal) {
+    if (dateVal.includes('T') || (dateVal.length > 10 && dateVal.includes(' '))) {
+      try { fullDate = new Date(dateVal).toISOString().slice(0, 19).replace('T', ' '); } catch { fullDate = ''; }
+    } else {
+      fullDate = `${dateVal} ${timeVal}:00`;
+    }
+  }
+  const rawStatus = g.status?.short || g.status?.long || 'NS';
+  const liveStatuses = new Set(['LIVE','Q1','Q2','Q3','Q4','HT','OT','P1','P2','P3','BT','INT']);
+  const statusMap = { NS:'NS', FT:'FT', LIVE:'LIVE', Q1:'LIVE', Q2:'LIVE', Q3:'LIVE', Q4:'LIVE', HT:'HT', OT:'LIVE', P1:'LIVE', P2:'LIVE', P3:'LIVE', BT:'HT', INT:'HT' };
+  return {
+    home:       g.teams?.home?.name || '',
+    away:       g.teams?.away?.name || '',
+    homeLogo:   g.teams?.home?.logo || '',
+    awayLogo:   g.teams?.away?.logo || '',
+    league:     g.league?.name || '',
+    country:    g.country?.name || g.country?.code || '',
+    date:       fullDate,
+    externalId: String(g.id || ''),
+    status:     statusMap[rawStatus] || rawStatus,
+    isLive:     liveStatuses.has(rawStatus) ? 1 : 0,
+    elapsed:    g.periods?.current || 0,
+    score:      JSON.stringify({ home: g.scores?.home?.total ?? null, away: g.scores?.away?.total ?? null }),
+  };
+}
+async function fetchSport(sport, dates) {
+  const events = [];
+  for (const date of dates) {
+    try {
+      const url = `${sport.base}${sport.endpoint}?date=${date}`;
+      const data = await fetchApi(url);
+      const items = data?.response || [];
+      for (const item of items) {
+      const data = await apiSportsGet(`${sport.base}${sport.endpoint}?date=${date}`);
+      for (const item of data?.response || []) {
+        const ev = extractTeams(item, sport.name);
+        if (!ev.home || !ev.away) continue;
+        if (isBlocked(ev.league)) continue;
+        const finished = ['FT','AET','PEN','AWD','WO','ABD','Finished','Final','Ended'].includes(ev.status);
+        if (finished) continue;
+        events.push({ ...ev, sport: sport.name });
+        events.push({ ...ev, sport: sport.name, homeOdd: 0, drawOdd: 0, awayOdd: 0, markets: {} });
+      }
+      console.log(`[sync] ${sport.name} ${date}: ${items.length} fixtures`);
+      console.log(`[sync] ${sport.name} ${date}: ${(data?.response||[]).length} fixtures`);
+    } catch (err) {
+      console.warn(`[sync] ${sport.name} ${date} error: ${err.message}`);
+      console.warn(`[sync] ${sport.name} ${date}: ${err.message}`);
+    }
+  }
+  return events;
+}
+// Map API-Sports bet names to market keys
+function betNameToKey(name) {
+// ─── ODDS-API.IO MARKET PARSING ───────────────────────────────────────────────
+const BET_NAME_TO_KEY = {
+  'ml':               'h2h', 'moneyline': 'h2h', 'match winner': 'h2h', '1x2': 'h2h',
+  'ml ht':            'h2h_ht', 'half time result': 'h2h_ht', 'ht result': 'h2h_ht',
+  'double chance':    'double_chance', 'dc': 'double_chance',
+  'draw no bet':      'dnb', 'dnb': 'dnb',
+  'spread':           'handicap', 'asian handicap': 'handicap', 'handicap': 'handicap', 'run line': 'handicap', 'puck line': 'handicap',
+  'spread ht':        'handicap_ht',
+  'totals':           'totals', 'goals over/under': 'totals', 'total': 'totals', 'over/under': 'totals',
+  'totals ht':        'totals_ht', 'goals over/under ht': 'totals_ht',
+  'both teams to score': 'btts', 'bts': 'btts', 'btts': 'btts',
+  'correct score':    'correct_score',
+  'half time / full time': 'half_time...
+[truncated]
+[truncated]
+[truncated]
+-1
++1
+[truncated]
+[truncated]

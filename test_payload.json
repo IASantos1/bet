@@ -1,0 +1,25 @@
+{
+  "events": [
+    {
+      "external_event_id": "manual_test_01",
+      "team_match": "TestHome vs TestAway",
+      "home_team": "TestHome",
+      "away_team": "TestAway",
+      "league": "Test League",
+      "event_date": "2026-01-27T22:00:00Z",
+      "start_time": "2026-01-27T22:00:00Z",
+      "is_live": true,
+      "sport": "soccer",
+      "source": "manual_test",
+      "odds": {
+        "h2h": {
+          "outcomes": [
+            { "name": "Casa", "value": 2.5 },
+            { "name": "Empate", "value": 3.2 },
+            { "name": "Fora", "value": 3.0 }
+          ]
+        }
+      }
+    }
+  ]
+}

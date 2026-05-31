@@ -1,0 +1,702 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.odds-api.io/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# WebSocket Real-Time Feed
+
+> Stream real-time betting odds via WebSocket instead of polling. Get instant updates when odds change and build responsive live betting apps.
+
+# Odds API WebSocket
+
+The WebSocket feed delivers the exact same response format as the `/odds` endpoint, but in **real time**. Instead of polling, you receive updates instantly whenever odds change.
+
+We recommend all clients move to WebSocket for efficiency and lower latency. It reduces request overhead, scales better, and gives you immediate updates for live markets.
+
+## Why Use WebSocket?
+
+<CardGroup cols={2}>
+  <Card title="Real-Time Updates" icon="bolt">
+    Receive odds changes instantly without polling
+  </Card>
+
+  <Card title="Lower Latency" icon="gauge-high">
+    Sub-150ms updates for live markets
+  </Card>
+
+  <Card title="Reduced Overhead" icon="chart-line-down">
+    Single persistent connection vs repeated HTTP calls
+  </Card>
+
+  <Card title="Better Scaling" icon="arrows-maximize">
+    Perfect for bots, live dashboards, and in-play betting apps
+  </Card>
+</CardGroup>
+
+## Access & Pricing
+
+<Note>
+  **Add-on Feature**: WebSocket access is available as an add-on. Subscribe through [odds-api.io](https://odds-api.io) to enable it for your account.
+</Note>
+
+**Pricing:** 2x the REST API price
+
+**Bookmakers:** The WebSocket automatically sends updates for all bookmakers you have selected in your account. You can manage your selected bookmakers via the `/bookmakers/selected/select` endpoint or through the [dashboard](https://odds-api.io).
+
+## Connection Details
+
+**Endpoint:**
+
+```
+wss://api.odds-api.io/v3/ws?apiKey=YOUR_API_KEY
+```
+
+**Authentication:**
+
+* API key passed as query parameter
+* One connection per API key
+* New connections automatically close older ones
+* Automatic cleanup keeps your feed stable
+
+## Filter Parameters
+
+<Warning>
+  The `markets` parameter is **required**. You must specify which markets you want to receive.
+</Warning>
+
+| Parameter  | Type            | Max | Description                                             |
+| ---------- | --------------- | --- | ------------------------------------------------------- |
+| `markets`  | comma-separated | 20  | **Required.** Market names (e.g., `ML,Spread,Totals`)   |
+| `sport`    | comma-separated | 10  | Filter by sport slugs (e.g., `football,basketball`)     |
+| `leagues`  | comma-separated | 20  | Filter by league slugs (e.g., `england-premier-league`) |
+| `eventIds` | comma-separated | 50  | Filter by specific event IDs                            |
+| `status`   | single value    | -   | `live` or `prematch`                                    |
+
+<Note>
+  Using `leagues` or `eventIds` is recommended to reduce bandwidth. You cannot use both together.
+</Note>
+
+### Example Connection URLs
+
+```bash  theme={null}
+# All live football events with main markets only
+wss://api.odds-api.io/v3/ws?apiKey=xxx&sport=football&status=live&markets=ML,Spread,Totals
+
+# Specific leagues
+wss://api.odds-api.io/v3/ws?apiKey=xxx&leagues=england-premier-league,spain-la-liga&markets=ML
+
+# Specific events
+wss://api.odds-api.io/v3/ws?apiKey=xxx&eventIds=12345,67890,11111
+
+# Multiple sports, prematch only
+wss://api.odds-api.io/v3/ws?apiKey=xxx&sport=football,basketball,tennis&status=prematch
+```
+
+### Welcome Message
+
+Upon successful connection, you'll receive a welcome message confirming your active filters:
+
+```json  theme={null}
+{
+  "type": "welcome",
+  "message": "Connected to OddsAPI WebSocket",
+  "user_id": "user123",
+  "bookmakers": ["Bet365", "Pinnacle"],
+  "sport_filter": ["Football"],
+  "leagues_filter": ["england-premier-league"],
+  "event_id_filter": [],
+  "status_filter": "live",
+  "market_filter": ["ML", "SPREAD", "TOTALS"],
+  "connected_at": "2026-01-15T21:00:00Z",
+  "warning": "..."
+}
+```
+
+### Error Responses
+
+If your connection parameters are invalid, you'll receive a `400 Bad Request` with one of these errors:
+
+| Error Message                                                | Cause                     |
+| ------------------------------------------------------------ | ------------------------- |
+| `Too many sports. Maximum 10 allowed.`                       | Exceeded sport limit      |
+| `Too many leagues. Maximum 20 allowed.`                      | Exceeded league limit     |
+| `Too many event IDs. Maximum 50 allowed.`                    | Exceeded eventIds limit   |
+| `Too many markets. Maximum 20 allowed.`                      | Exceeded market limit     |
+| `Cannot use both 'leagues' and 'eventIds' filters together.` | Mutual exclusion violated |
+| `Invalid status filter. Use 'prematch' or 'live'`            | Invalid status value      |
+
+## Update Types
+
+Messages come in as JSON objects. Each has a `type` field:
+
+| Type         | Description                                     |
+| ------------ | ----------------------------------------------- |
+| `created`    | New match added                                 |
+| `updated`    | Match or market changed                         |
+| `deleted`    | Match removed                                   |
+| `no_markets` | Match exists but currently no markets available |
+
+## Message Format
+
+```json  theme={null}
+{
+  "type": "updated",
+  "timestamp": "2025-08-18T14:52:52.983Z",
+  "id": "63017989",
+  "bookie": "SingBet",
+  "url": "https://www.singbet.com/sports/football/match/63017989",
+  "markets": [
+    {
+      "name": "ML",
+      "updatedAt": "2024-01-15T10:30:00Z",
+      "odds": [
+        {
+          "home": "1.85",
+          "draw": "3.25",
+          "away": "2.10",
+          "max": 500
+        }
+      ]
+    },
+    {
+      "name": "Totals",
+      "updatedAt": "2024-01-15T10:30:00Z",
+      "odds": [
+        {
+          "hdp": 2.5,
+          "over": "1.85",
+          "under": "2.10",
+          "max": 500
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Quick Start
+
+### JavaScript Example
+
+<CodeGroup>
+  ```javascript Node.js theme={null}
+  const WebSocket = require('ws');
+
+  const apiKey = process.env.ODDS_API_KEY;
+
+  // Build connection URL with filters
+  const params = new URLSearchParams({
+    apiKey,
+    markets: 'ML,Spread,Totals',
+    sport: 'football',
+    status: 'live'
+  });
+
+  const ws = new WebSocket(`wss://api.odds-api.io/v3/ws?${params}`);
+
+  ws.onopen = () => {
+    console.log("Connected to Odds-API WebSocket");
+  };
+
+  ws.onclose = () => {
+    console.log("Disconnected from WebSocket");
+  };
+
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === "welcome") {
+      console.log("Connected:", data.message);
+      console.log("Active filters:", {
+        sports: data.sport_filter,
+        leagues: data.leagues_filter,
+        status: data.status_filter,
+        markets: data.market_filter
+      });
+    } else if (data.type === "updated") {
+      console.log(`Match ID: ${data.id}`);
+      console.log(`Bookmaker: ${data.bookie}`);
+      console.log(`Markets: ${data.markets.length}`);
+
+      // Process each market
+      data.markets.forEach(market => {
+        console.log(`  ${market.name}:`, market.odds[0]);
+      });
+    }
+  };
+  ```
+
+  ```javascript Browser theme={null}
+  const apiKey = 'YOUR_API_KEY';
+
+  // Build connection URL with filters
+  const params = new URLSearchParams({
+    apiKey,
+    markets: 'ML,Spread,Totals',
+    leagues: 'england-premier-league,spain-la-liga'
+  });
+
+  const ws = new WebSocket(`wss://api.odds-api.io/v3/ws?${params}`);
+
+  ws.onopen = () => console.log("Connected");
+  ws.onclose = () => console.log("Disconnected");
+  ws.onerror = (err) => console.error("Error:", err);
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === "updated") {
+      console.log(`Match: ${data.id}`);
+      console.log(`Bookie: ${data.bookie}`);
+      console.log(`Markets: ${data.markets.length}`);
+    }
+  };
+  ```
+</CodeGroup>
+
+### Python Example
+
+```python  theme={null}
+import websocket
+import json
+import os
+from urllib.parse import urlencode
+
+api_key = os.environ['ODDS_API_KEY']
+
+# Build connection URL with filters
+params = urlencode({
+    'apiKey': api_key,
+    'markets': 'ML,Spread,Totals',
+    'sport': 'football',
+    'status': 'live'
+})
+
+def on_open(ws):
+    print("Connected to Odds-API WebSocket")
+
+def on_message(ws, message):
+    data = json.loads(message)
+
+    if data['type'] == 'welcome':
+        print(f"Connected: {data['message']}")
+        print(f"Active filters: sports={data['sport_filter']}, "
+              f"status={data['status_filter']}, markets={data['market_filter']}")
+
+    elif data['type'] == 'updated':
+        print(f"Match ID: {data['id']}")
+        print(f"Bookmaker: {data['bookie']}")
+        print(f"Markets: {len(data['markets'])}")
+
+        # Process each market
+        for market in data['markets']:
+            print(f"  {market['name']}: {market['odds'][0]}")
+
+def on_error(ws, error):
+    print(f"Error: {error}")
+
+def on_close(ws, close_status_code, close_msg):
+    print("Disconnected from WebSocket")
+
+# Create WebSocket connection
+ws = websocket.WebSocketApp(
+    f"wss://api.odds-api.io/v3/ws?{params}",
+    on_open=on_open,
+    on_message=on_message,
+    on_error=on_error,
+    on_close=on_close
+)
+
+# Run forever
+ws.run_forever()
+```
+
+### PHP Example
+
+```php  theme={null}
+<?php
+use WebSocket\Client;
+
+$apiKey = getenv('ODDS_API_KEY');
+$params = http_build_query([
+    'apiKey' => $apiKey,
+    'markets' => 'ML,Spread,Totals',
+    'sport' => 'football',
+    'status' => 'live'
+]);
+
+$client = new Client("wss://api.odds-api.io/v3/ws?{$params}");
+
+while (true) {
+    try {
+        $data = json_decode($client->receive(), true);
+
+        if ($data['type'] === 'welcome') {
+            echo "Connected! Filters: " . implode(', ', $data['sport_filter']) . "\n";
+        } elseif ($data['type'] === 'updated') {
+            echo "Match ID: {$data['id']} at {$data['bookie']}\n";
+            foreach ($data['markets'] as $market) {
+                echo "  {$market['name']}: " . json_encode($market['odds'][0]) . "\n";
+            }
+        }
+    } catch (Exception $e) {
+        echo "Error: " . $e->getMessage() . "\n";
+        break;
+    }
+}
+```
+
+## Handling Different Update Types
+
+```javascript  theme={null}
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  switch (data.type) {
+    case 'welcome':
+      console.log(`Connected: ${data.message}`);
+      console.log(`User ID: ${data.user_id}`);
+      console.log(`Bookmakers: ${data.bookmakers.join(', ')}`);
+      console.log(`Filters: sports=${data.sport_filter}, status=${data.status_filter}`);
+      if (data.warning) {
+        console.warn(`Warning: ${data.warning}`);
+      }
+      break;
+
+    case 'created':
+      console.log(`New match created: ${data.id} at ${data.bookie}`);
+      // Add match to your database/UI
+      break;
+
+    case 'updated':
+      console.log(`Match updated: ${data.id} at ${data.bookie}`);
+      // Update existing match odds
+      updateMatchOdds(data.id, data.bookie, data.markets);
+      break;
+
+    case 'deleted':
+      console.log(`Match deleted: ${data.id} at ${data.bookie}`);
+      // Remove match from your database/UI
+      break;
+
+    case 'no_markets':
+      console.log(`No markets available for match: ${data.id}`);
+      // Handle temporarily unavailable markets
+      break;
+
+    default:
+      console.log('Unknown message type:', data.type);
+  }
+};
+
+function updateMatchOdds(matchId, bookmaker, markets) {
+  markets.forEach(market => {
+    console.log(`${market.name} updated at ${market.updatedAt}:`, market.odds[0]);
+
+    // Update your UI or database here
+    // Example: store latest odds for comparison
+    const odds = market.odds[0];
+    if (market.name === 'ML') {
+      console.log(`  Home: ${odds.home}, Draw: ${odds.draw}, Away: ${odds.away}`);
+    } else if (market.name === 'Totals') {
+      console.log(`  Over ${odds.hdp}: ${odds.over}, Under: ${odds.under}`);
+    }
+  });
+}
+```
+
+## Advanced Implementation: Live Odds Tracker
+
+```javascript  theme={null}
+class LiveOddsTracker {
+  constructor(apiKey, options = {}) {
+    this.apiKey = apiKey;
+    this.options = {
+      markets: 'ML,Spread,Totals',
+      sport: null,
+      leagues: null,
+      eventIds: null,
+      status: null,
+      ...options
+    };
+    this.ws = null;
+    this.matches = new Map();
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+  }
+
+  buildUrl() {
+    const params = new URLSearchParams({ apiKey: this.apiKey });
+    if (this.options.markets) params.set('markets', this.options.markets);
+    if (this.options.sport) params.set('sport', this.options.sport);
+    if (this.options.leagues) params.set('leagues', this.options.leagues);
+    if (this.options.eventIds) params.set('eventIds', this.options.eventIds);
+    if (this.options.status) params.set('status', this.options.status);
+    return `wss://api.odds-api.io/v3/ws?${params}`;
+  }
+
+  connect() {
+    this.ws = new WebSocket(this.buildUrl());
+
+    this.ws.onopen = () => {
+      this.reconnectAttempts = 0;
+    };
+
+    this.ws.onmessage = (event) => {
+      this.handleMessage(JSON.parse(event.data));
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket connection closed');
+      this.reconnect();
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  }
+
+  handleMessage(data) {
+    if (data.type === 'welcome') {
+      this.onWelcome(data);
+      return;
+    }
+
+    const key = `${data.id}-${data.bookie}`;
+
+    switch (data.type) {
+      case 'created':
+        this.matches.set(key, {
+          id: data.id,
+          bookmaker: data.bookie,
+          markets: data.markets,
+          timestamp: data.timestamp
+        });
+        this.onMatchCreated(data);
+        break;
+
+      case 'updated':
+        const existing = this.matches.get(key);
+        if (existing) {
+          existing.markets = data.markets;
+          existing.timestamp = data.timestamp;
+          this.onMatchUpdated(data, existing);
+        }
+        break;
+
+      case 'deleted':
+        this.matches.delete(key);
+        this.onMatchDeleted(data);
+        break;
+
+      case 'no_markets':
+        this.onNoMarkets(data);
+        break;
+    }
+  }
+
+  // Override these methods in your implementation
+  onWelcome(data) {
+    console.log(`Connected: ${data.message}`);
+    console.log(`Filters: sports=${data.sport_filter}, status=${data.status_filter}`);
+  }
+
+  onMatchCreated(data) {
+    console.log(`New match: ${data.id} at ${data.bookie}`);
+  }
+
+  onMatchUpdated(data, previousData) {
+    console.log(`Updated: ${data.id} at ${data.bookie}`);
+  }
+
+  onMatchDeleted(data) {
+    console.log(`Deleted: ${data.id} at ${data.bookie}`);
+  }
+
+  onNoMarkets(data) {
+    console.log(`No markets: ${data.id}`);
+  }
+
+  reconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+
+      console.log(`Reconnecting in ${delay}ms... (Attempt ${this.reconnectAttempts})`);
+
+      setTimeout(() => this.connect(), delay);
+    } else {
+      console.error('Max reconnection attempts reached');
+    }
+  }
+
+  getMatchOdds(matchId, bookmaker) {
+    return this.matches.get(`${matchId}-${bookmaker}`);
+  }
+
+  getAllMatches() {
+    return Array.from(this.matches.values());
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+// Usage
+const tracker = new LiveOddsTracker(process.env.ODDS_API_KEY, {
+  markets: 'ML,Spread,Totals',
+  sport: 'football',
+  status: 'live'
+});
+tracker.connect();
+```
+
+## React Integration
+
+```jsx  theme={null}
+import { useEffect, useState, useRef } from 'react';
+
+function useLiveOdds(apiKey, options = {}) {
+  const [odds, setOdds] = useState({});
+  const [connected, setConnected] = useState(false);
+  const ws = useRef(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ apiKey });
+    if (options.markets) params.set('markets', options.markets);
+    if (options.sport) params.set('sport', options.sport);
+    if (options.leagues) params.set('leagues', options.leagues);
+    if (options.status) params.set('status', options.status);
+
+    ws.current = new WebSocket(`wss://api.odds-api.io/v3/ws?${params}`);
+
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'welcome') {
+        setConnected(true);
+      } else if (data.type === 'updated' || data.type === 'created') {
+        setOdds(prev => ({
+          ...prev,
+          [`${data.id}-${data.bookie}`]: {
+            id: data.id,
+            bookmaker: data.bookie,
+            markets: data.markets
+          }
+        }));
+      } else if (data.type === 'deleted') {
+        setOdds(prev => {
+          const next = { ...prev };
+          delete next[`${data.id}-${data.bookie}`];
+          return next;
+        });
+      }
+    };
+
+    ws.current.onclose = () => setConnected(false);
+
+    return () => ws.current?.close();
+  }, [apiKey, options.markets, options.sport, options.leagues, options.status]);
+
+  return { odds, connected };
+}
+
+// Component
+function LiveOddsDisplay() {
+  const { odds, connected } = useLiveOdds(process.env.REACT_APP_ODDS_API_KEY, {
+    markets: 'ML,Spread,Totals',
+    sport: 'football',
+    status: 'live'
+  });
+
+  return (
+    <div>
+      <div className={connected ? 'connected' : 'disconnected'}>
+        {connected ? 'Connected' : 'Disconnected'}
+      </div>
+      <div className="matches">
+        {Object.values(odds).map(match => (
+          <div key={`${match.id}-${match.bookmaker}`}>
+            <h3>Match #{match.id} - {match.bookmaker}</h3>
+            {match.markets.map(market => (
+              <div key={market.name}>
+                <strong>{market.name}:</strong> {JSON.stringify(market.odds[0])}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Filters to Reduce Bandwidth">
+    Use `leagues` or `eventIds` filters when you only need specific data. This significantly reduces bandwidth and improves performance.
+  </Accordion>
+
+  <Accordion title="Implement Reconnection Logic">
+    Always implement exponential backoff for reconnections. The connection is stable, but networks can drop.
+  </Accordion>
+
+  <Accordion title="Handle All Message Types">
+    Handle `welcome`, `created`, `updated`, `deleted`, and `no_markets` to keep your data in sync.
+  </Accordion>
+
+  <Accordion title="One Connection Per API Key">
+    New connections automatically close older ones. Don't create multiple connections with the same API key.
+  </Accordion>
+
+  <Accordion title="Process Updates Asynchronously">
+    If receiving many updates, process them asynchronously to avoid blocking your main thread.
+  </Accordion>
+</AccordionGroup>
+
+## Benefits Over REST API
+
+| Feature           | REST API                  | WebSocket                    |
+| ----------------- | ------------------------- | ---------------------------- |
+| Latency           | 100-500ms (polling)       | \<150ms (push)               |
+| Request overhead  | Multiple HTTP requests    | Single persistent connection |
+| Real-time updates | Manual polling            | Automatic push               |
+| Bandwidth         | Higher (repeated headers) | Lower (single connection)    |
+| Server load       | Higher                    | Lower                        |
+| Best for          | Batch requests            | Live updates                 |
+
+## Get Access
+
+<Card title="Enable WebSocket Access" icon="bolt" href="https://odds-api.io">
+  Subscribe to WebSocket as an add-on through your odds-api.io account
+</Card>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Fetching Odds" icon="chart-line" href="/guides/fetching-odds">
+    Learn about REST API odds fetching
+  </Card>
+
+  <Card title="Best Practices" icon="lightbulb" href="/guides/best-practices">
+    Optimize your implementation
+  </Card>
+
+  <Card title="Value Bets" icon="magnifying-glass-dollar" href="/guides/value-bets">
+    Identify profitable opportunities
+  </Card>
+
+  <Card title="API Reference" icon="code" href="/api-reference/introduction">
+    Explore all API endpoints
+  </Card>
+</CardGroup>
+
+
+Built with [Mintlify](https://mintlify.com).

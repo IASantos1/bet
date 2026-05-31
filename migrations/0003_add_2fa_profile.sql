@@ -1,0 +1,3 @@
+-- Add 2FA columns to user_profile
+-- ALTER TABLE user_profile ADD COLUMN twofa_enabled INTEGER DEFAULT 0;
+-- ALTER TABLE user_profile ADD COLUMN twofa_secret TEXT;

@@ -1,0 +1,2 @@
+INSERT INTO imported_odds (id, sport, payload, is_live, updated_at, status) 
+VALUES ('123456', 'soccer', '{"fixture":{"id":123456,"date":null,"status":{"short":"LIVE","elapsed":45},"league_name":"Test League","home_team":{"name":"Test Home"},"away_team":{"name":"Test Away"}},"odds":{"h2h":[{"value":1.5,"odd":1.5},{"value":3.0,"odd":3.0},{"value":4.0,"odd":4.0}]},"league":{"name":"Test League"},"home_team":"Test Home","away_team":"Test Away"}', 1, CURRENT_TIMESTAMP, 'LIVE');

@@ -1,0 +1,86 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.sportsapipro.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# FIFA World Cup 2026
+
+> Dedicated convenience endpoints for the FIFA World Cup 2026: 48 teams, 12 groups, 104 matches across USA, Canada, and Mexico
+
+## Overview
+
+The FIFA World Cup 2026 runs across the United States, Canada, and Mexico from **June 11, 2026** (Mexico vs South Africa) through the Final. It is the first 48-team edition, with **104 matches** played across **12 groups (A–L)**.
+
+To make integration easy, V2 exposes a set of convenience endpoints that hardcode the correct `tournamentId` and `seasonId` so you don't have to discover them.
+
+## Base URL
+
+```
+https://v2.football.sportsapipro.com
+```
+
+All endpoints require the `x-api-key` header. See [Authentication](/authentication).
+
+<Info>
+  **Underlying canonical IDs** — `tournamentId = 16`, `seasonId = 58210`. These resolve to the exact same data as the convenience endpoints below. Store `uniqueTournament.id = 16` if you need a long-term reference; see [Canonical IDs](/api-reference/football-v2/canonical-ids).
+</Info>
+
+## Convenience Endpoints
+
+| Endpoint                                       | Description                                                 |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| `GET /api/world-cup-2026`                      | Tournament info (name, category, logo)                      |
+| `GET /api/world-cup-2026/info`                 | Season info (host countries, 48-team format)                |
+| `GET /api/world-cup-2026/teams`                | All 48 qualified teams (IDs, names, short names, logos)     |
+| `GET /api/world-cup-2026/groups`               | All 12 groups with current W/D/L/Pts standings              |
+| `GET /api/world-cup-2026/matches?page=0`       | Upcoming matches, 30 per page                               |
+| `GET /api/world-cup-2026/matches/round/:round` | Matches filtered by round ID (see table below)              |
+| `GET /api/world-cup-2026/rounds`               | Full round structure (group matchdays + knockout stages)    |
+| `GET /api/world-cup-2026/knockout`             | Bracket / draw tree (populates after group stage concludes) |
+
+<Note>Responses follow the standard V2 schema. Match kickoff times use Unix epoch (`startTimestamp`).</Note>
+
+## Round IDs
+
+Use these with `/api/world-cup-2026/matches/round/:round`.
+
+| ID | Round                    |
+| -- | ------------------------ |
+| 1  | Group Stage — Matchday 1 |
+| 2  | Group Stage — Matchday 2 |
+| 3  | Group Stage — Matchday 3 |
+| 6  | Round of 32              |
+| 25 | Round of 16              |
+| 27 | Quarterfinals            |
+| 28 | Semifinals               |
+| 50 | Match for 3rd Place      |
+| 29 | Final                    |
+
+## Groups
+
+| Group | Teams                                            |
+| ----- | ------------------------------------------------ |
+| A     | Mexico, South Africa, South Korea, Czechia       |
+| B     | Canada, Bosnia & Herzegovina, Qatar, Switzerland |
+| C     | Brazil, Morocco, Haiti, Scotland                 |
+| D     | USA, Paraguay, Australia, Türkiye                |
+| E     | Germany, Curaçao, Côte d'Ivoire, Ecuador         |
+| F     | Netherlands, Japan, Sweden, Tunisia              |
+| G     | Belgium, Egypt, Iran, New Zealand                |
+| H     | Spain, Cabo Verde, Saudi Arabia, Uruguay         |
+| I     | France, Senegal, Iraq, Norway                    |
+| J     | Argentina, Algeria, Austria, Jordan              |
+| K     | Portugal, DR Congo, Uzbekistan, Colombia         |
+| L     | England, Croatia, Ghana, Panama                  |
+
+## Example Request
+
+```bash theme={null}
+curl -X GET "https://v2.football.sportsapipro.com/api/world-cup-2026/groups" \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+## Related
+
+* [Tournament endpoints](/api-reference/football-v2/tournament) — generic season-scoped endpoints work for the World Cup too (use `tournamentId=16`, `seasonId=58210`).
+* [Canonical IDs](/api-reference/football-v2/canonical-ids) — why you should store `uniqueTournament.id = 16` rather than per-season IDs.
+* [WebSocket](/api-reference/football-v2/websocket) — real-time score updates during matches.

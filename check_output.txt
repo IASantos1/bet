@@ -1,0 +1,174 @@
+Count: 183
+Sample: {
+  "id": "soccer_1492124",
+  "fixture_id": "soccer_1492124",
+  "kickoff": "2026-02-04T22:00:00+00:00",
+  "status": "2H",
+  "venue": {
+    "id": null,
+    "name": null,
+    "city": "Rio de Janeiro"
+  },
+  "league_obj": {
+    "name": "Serie A",
+    "country": "Brazil",
+    "logo": "https://media.api-sports.io/football/leagues/71.png",
+    "flag": "https://media.api-sports.io/flags/br.svg"
+  },
+  "league_id": 71,
+  "season": 2026,
+  "teams": {
+    "home": {
+      "name": "Flamengo",
+      "canonical": "flamengo",
+      "logo": "https://media.api-sports.io/football/teams/127.png"
+    },
+    "away": {
+      "name": "Internacional",
+      "canonical": "internacional",
+      "logo": "https://media.api-sports.io/football/teams/119.png"
+    }
+  },
+  "sport_key": "soccer",
+  "home_team": "Flamengo",
+  "away_team": "Internacional",
+  "league_name": "Serie A",
+  "sport": "soccer",
+  "has_odds": true,
+  "source": "hybrid",
+  "updated_at": "2026-02-02T22:11:49.695Z",
+  "markets": [
+    {
+      "key": "h2h",
+      "outcomes": [
+        {
+          "id": "1",
+          "name": "Casa",
+          "price": 2.23,
+          "value": 2.23
+        },
+        {
+          "id": "X",
+          "name": "Empate",
+          "price": 1.64,
+          "value": 1.64
+        },
+        {
+          "id": "2",
+          "name": "Fora",
+          "price": 75.26,
+          "value": 75.26
+        }
+      ]
+    }
+  ],
+  "odds": {
+    "h2h": {
+      "outcomes": [
+        {
+          "id": "1",
+          "name": "Casa",
+          "price": 2.23,
+          "value": 2.23
+        },
+        {
+          "id": "X",
+          "name": "Empate",
+          "price": 1.64,
+          "value": 1.64
+        },
+        {
+          "id": "2",
+          "name": "Fora",
+          "price": 75.26,
+          "value": 75.26
+        }
+      ]
+    }
+  },
+  "payload": "{\"id\":\"751466375f73c4badbc62f068b9ca5f0\",\"fixture_id\":\"soccer_1492124\",\"kickoff\":\"2026-02-04T22:00:00Z\",\"status\":{\"long\":\"Not Started\",\"short\":\"NS\",\"elapsed\":null,\"extra\":null},\"venue\":{\"id\":null,\"name\":null,\"city\":\"Rio de Janeiro\"},\"league_obj\":{\"name\":\"Serie A\",\"country\":\"Brazil\",\"logo\":\"https://media.api-sports.io/football/leagues/71.png\",\"flag\":\"https://media.api-sports.io/flags/br.svg\"},\"league_id\":71,\"season\":2026,\"teams\":{\"home\":{\"name\":\"Flamengo\",\"id\":0,\"logo\":\"\"},\"away\":{\"name\":\"Internacional\",\"id\":0,\"logo\":\"\"},\"home_raw\":\"Flamengo\",\"away_raw\":\"Internacional\"},\"sport_key\":\"soccer_brazil_campeonato\",\"home_team\":\"Flamengo\",\"away_team\":\"Internacional\",\"league_name\":\"Brazil Série A\",\"sport\":\"soccer_brazil_campeonato\",\"has_odds\":true,\"source\":\"odds_api_direct\",\"updated_at\":\"2026-02-02T22:11:49.695Z\",\"markets\":[{\"key\":\"h2h\",\"outcomes\":[{\"id\":\"1\",\"name\":\"1\",\"outcome\":\"1\",\"label\":\"Flamengo\",\"price\":1.34,\"value\":1.34,\"odd\":1.34},{\"id\":\"2\",\"name\":\"2\",\"outcome\":\"2\",\"label\":\"Internacional\",\"price\":16.08,\"value\":16.08,\"odd\":16.08},{\"id\":\"X\",\"name\":\"X\",\"outcome\":\"X\",\"label\":\"Draw\",\"price\":5.24,\"value\":5.24,\"odd\":5.24}]},{\"key\":\"totals\",\"outcomes\":[{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.85,\"value\":2.5,\"odd\":1.85},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.82,\"value\":2.5,\"odd\":1.82},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.89,\"value\":2.5,\"odd\":1.89},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.85,\"value\":2.5,\"odd\":1.85},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.89,\"value\":2.5,\"odd\":1.89},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.85,\"value\":2.5,\"odd\":1.85},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.76,\"value\":2.5,\"odd\":1.76},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.91,\"value\":2.5,\"odd\":1.91},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.82,\"value\":2.5,\"odd\":1.82},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":2.03,\"value\":2.5,\"odd\":2.03},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.82,\"value\":2.5,\"odd\":1.82},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.96,\"value\":2.5,\"odd\":1.96},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.78,\"value\":2.5,\"odd\":1.78},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.98,\"value\":2.5,\"odd\":1.98},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.78,\"value\":2.5,\"odd\":1.78},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.98,\"value\":2.5,\"odd\":1.98},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.77,\"value\":2.5,\"odd\":1.77},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":2.02,\"value\":2.5,\"odd\":2.02},{\"id\":\"Over 2.75\",\"name\":\"Over\",\"label\":\"Over 2.75\",\"price\":2.02,\"value\":2.75,\"odd\":2.02},{\"id\":\"Under 2.75\",\"name\":\"Under\",\"label\":\"Under 2.75\",\"price\":1.83,\"value\":2.75,\"odd\":1.83},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.87,\"value\":2.5,\"odd\":1.87},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":2.02,\"value\":2.5,\"odd\":2.02},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.75,\"value\":2.5,\"odd\":1.75},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.95,\"value\":2.5,\"odd\":1.95},{\"id\":\"Over 2.5\",\"name\":\"Over\",\"label\":\"Over 2.5\",\"price\":1.72,\"value\":2.5,\"odd\":1.72},{\"id\":\"Under 2.5\",\"name\":\"Under\",\"label\":\"Under 2.5\",\"price\":1.97,\"value\":2.5,\"odd\":1.97},{\"id\":\"Over 2.75\",\"name\":\"Over\",\"label\":\"Over 2.75\",\"price\":2.02,\"value\":2.75,\"odd\":2.02},{\"id\":\"Under 2.75\",\"name\":\"Under\",\"label\":\"Under 2.75\",\"price\":1.82,\"value\":2.75,\"odd\":1.82},{\"id\":\"Over 2.75\",\"name\":\"Over\",\"label\":\"Over 2.75\",\"price\":1.93,\"value\":2.75,\"odd\":1.93},{\"id\":\"Under 2.75\",\"name\":\"Under\",\"label\":\"Under 2.75\",\"price\":1.82,\"value\":2.75,\"odd\":1.82}]},{\"key\":\"spreads\",\"outcomes\":[{\"id\":\"Flamengo -1.5\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.5\",\"price\":2.23,\"value\":-1.5,\"odd\":2.23},{\"id\":\"Internacional 1.5\",\"name\":\"Internacional\",\"label\":\"Internacional 1.5\",\"price\":1.69,\"value\":1.5,\"odd\":1.69},{\"id\":\"Flamengo -1.5\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.5\",\"price\":2.23,\"value\":-1.5,\"odd\":2.23},{\"id\":\"Internacional 1.5\",\"name\":\"Internacional\",\"label\":\"Internacional 1.5\",\"price\":1.65,\"value\":1.5,\"odd\":1.65},{\"id\":\"Flamengo -1.25\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.25\",\"price\":1.99,\"value\":-1.25,\"odd\":1.99},{\"id\":\"Internacional 1.25\",\"name\":\"Internacional\",\"label\":\"Internacional 1.25\",\"price\":1.87,\"value\":1.25,\"odd\":1.87},{\"id\":\"Flamengo -1.25\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.25\",\"price\":2,\"value\":-1.25,\"odd\":2},{\"id\":\"Internacional 1.25\",\"name\":\"Internacional\",\"label\":\"Internacional 1.25\",\"price\":1.89,\"value\":1.25,\"odd\":1.89},{\"id\":\"Flamengo -1.25\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.25\",\"price\":1.98,\"value\":-1.25,\"odd\":1.98},{\"id\":\"Internacional 1.25\",\"name\":\"Internacional\",\"label\":\"Internacional 1.25\",\"price\":1.85,\"value\":1.25,\"odd\":1.85},{\"id\":\"Flamengo -1.25\",\"name\":\"Flamengo\",\"label\":\"Flamengo -1.25\",\"price\":1.89,\"value\":-1.25,\"odd\":1.89},{\"id\":\"Internacional 1.25\",\"name\":\"Internacional\",\"label\":\"Internacional 1.25\",\"price\":1.85,\"value\":1.25,\"odd\":1.85}]}],\"odds\":[{\"key\":\"leovegas_se\",\"title\":\"LeoVegas (SE)\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.41},{\"name\":\"Internacional\",\"price\":7.5},{\"name\":\"Draw\",\"price\":4.2}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.85,\"point\":2.5},{\"name\":\"Under\",\"price\":1.82,\"point\":2.5}]}]},{\"key\":\"unibet_nl\",\"title\":\"Unibet (NL)\",\"last_update\":\"2026-02-02T22:11:25Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.43},{\"name\":\"Internacional\",\"price\":7.5},{\"name\":\"Draw\",\"price\":4.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.89,\"point\":2.5},{\"name\":\"Under\",\"price\":1.85,\"point\":2.5}]}]},{\"key\":\"unibet_se\",\"title\":\"Unibet (SE)\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.43},{\"name\":\"Internacional\",\"price\":7.5},{\"name\":\"Draw\",\"price\":4.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.89,\"point\":2.5},{\"name\":\"Under\",\"price\":1.85,\"point\":2.5}]}]},{\"key\":\"marathonbet\",\"title\":\"Marathon Bet\",\"last_update\":\"2026-02-02T22:10:45Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.41},{\"name\":\"Internacional\",\"price\":7.2},{\"name\":\"Draw\",\"price\":4.45}]}]},{\"key\":\"parionssport_fr\",\"title\":\"Parions Sport (FR)\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.36},{\"name\":\"Internacional\",\"price\":6.4},{\"name\":\"Draw\",\"price\":4.05}]}]},{\"key\":\"betclic_fr\",\"title\":\"Betclic (FR)\",\"last_update\":\"2026-02-02T22:09:29Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:09:29Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.38},{\"name\":\"Internacional\",\"price\":6.6},{\"name\":\"Draw\",\"price\":4.15}]}]},{\"key\":\"unibet_fr\",\"title\":\"Unibet (FR)\",\"last_update\":\"2026-02-02T22:11:24Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:24Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.36},{\"name\":\"Internacional\",\"price\":6.2},{\"name\":\"Draw\",\"price\":3.95}]}]},{\"key\":\"codere_it\",\"title\":\"Codere (IT)\",\"last_update\":\"2026-02-02T22:10:45Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.43},{\"name\":\"Internacional\",\"price\":7.2},{\"name\":\"Draw\",\"price\":4.5}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.76,\"point\":2.5},{\"name\":\"Under\",\"price\":1.91,\"point\":2.5}]}]},{\"key\":\"onexbet\",\"title\":\"1xBet\",\"last_update\":\"2026-02-02T22:11:24Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:23Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.45},{\"name\":\"Internacional\",\"price\":7.41},{\"name\":\"Draw\",\"price\":4.58}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:11:23Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":2.23,\"point\":-1.5},{\"name\":\"Internacional\",\"price\":1.69,\"point\":1.5}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:23Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.82,\"point\":2.5},{\"name\":\"Under\",\"price\":2.03,\"point\":2.5}]}]},{\"key\":\"winamax_de\",\"title\":\"Winamax (DE)\",\"last_update\":\"2026-02-02T22:11:25Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.38},{\"name\":\"Internacional\",\"price\":6.75},{\"name\":\"Draw\",\"price\":4.3}]}]},{\"key\":\"winamax_fr\",\"title\":\"Winamax (FR)\",\"last_update\":\"2026-02-02T22:11:27Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:27Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.35},{\"name\":\"Internacional\",\"price\":6.25},{\"name\":\"Draw\",\"price\":4.1}]}]},{\"key\":\"coolbet\",\"title\":\"Coolbet\",\"last_update\":\"2026-02-02T22:08:04Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:08:04Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.42},{\"name\":\"Internacional\",\"price\":8},{\"name\":\"Draw\",\"price\":4.5}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:08:04Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.82,\"point\":2.5},{\"name\":\"Under\",\"price\":1.96,\"point\":2.5}]}]},{\"key\":\"pmu_fr\",\"title\":\"PMU (FR)\",\"last_update\":\"2026-02-02T22:10:45Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.3},{\"name\":\"Internacional\",\"price\":6.25},{\"name\":\"Draw\",\"price\":3.9}]}]},{\"key\":\"betsson\",\"title\":\"Betsson\",\"last_update\":\"2026-02-02T22:11:28Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:28Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.41},{\"name\":\"Internacional\",\"price\":7.4},{\"name\":\"Draw\",\"price\":4.45}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:28Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.78,\"point\":2.5},{\"name\":\"Under\",\"price\":1.98,\"point\":2.5}]}]},{\"key\":\"nordicbet\",\"title\":\"Nordic Bet\",\"last_update\":\"2026-02-02T22:11:09Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:09Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.41},{\"name\":\"Internacional\",\"price\":7.4},{\"name\":\"Draw\",\"price\":4.45}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:09Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.78,\"point\":2.5},{\"name\":\"Under\",\"price\":1.98,\"point\":2.5}]}]},{\"key\":\"gtbets\",\"title\":\"GTbets\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.44},{\"name\":\"Internacional\",\"price\":7.38},{\"name\":\"Draw\",\"price\":4.39}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":2.23,\"point\":-1.5},{\"name\":\"Internacional\",\"price\":1.65,\"point\":1.5}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.77,\"point\":2.5},{\"name\":\"Under\",\"price\":2.02,\"point\":2.5}]}]},{\"key\":\"sport888\",\"title\":\"888sport\",\"last_update\":\"2026-02-02T22:10:43Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:43Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.44},{\"name\":\"Internacional\",\"price\":6.5},{\"name\":\"Draw\",\"price\":4.2}]}]},{\"key\":\"pinnacle\",\"title\":\"Pinnacle\",\"last_update\":\"2026-02-02T22:11:09Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:09Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.42},{\"name\":\"Internacional\",\"price\":7.62},{\"name\":\"Draw\",\"price\":4.62}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:11:09Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.99,\"point\":-1.25},{\"name\":\"Internacional\",\"price\":1.87,\"point\":1.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:09Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":2.02,\"point\":2.75},{\"name\":\"Under\",\"price\":1.83,\"point\":2.75}]}]},{\"key\":\"matchbook\",\"title\":\"Matchbook\",\"last_update\":\"2026-02-02T22:11:25Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.43},{\"name\":\"Internacional\",\"price\":9},{\"name\":\"Draw\",\"price\":4.7}]},{\"key\":\"h2h_lay\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.47},{\"name\":\"Internacional\",\"price\":10},{\"name\":\"Draw\",\"price\":5}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":2,\"point\":-1.25},{\"name\":\"Internacional\",\"price\":1.89,\"point\":1.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:11:25Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.87,\"point\":2.5},{\"name\":\"Under\",\"price\":2.02,\"point\":2.5}]}]},{\"key\":\"williamhill\",\"title\":\"William Hill\",\"last_update\":\"2026-02-02T22:10:45Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.44},{\"name\":\"Internacional\",\"price\":6.5},{\"name\":\"Draw\",\"price\":4.2}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.75,\"point\":2.5},{\"name\":\"Under\",\"price\":1.95,\"point\":2.5}]}]},{\"key\":\"tipico_de\",\"title\":\"Tipico\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.37},{\"name\":\"Internacional\",\"price\":7.2},{\"name\":\"Draw\",\"price\":4.6}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.72,\"point\":2.5},{\"name\":\"Under\",\"price\":1.97,\"point\":2.5}]}]},{\"key\":\"everygame\",\"title\":\"Everygame\",\"last_update\":\"2026-02-02T22:10:45Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:45Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.4},{\"name\":\"Internacional\",\"price\":7.25},{\"name\":\"Draw\",\"price\":4.33}]}]},{\"key\":\"betfair_ex_eu\",\"title\":\"Betfair\",\"last_update\":\"2026-02-02T22:11:27Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:11:27Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.43},{\"name\":\"Internacional\",\"price\":9},{\"name\":\"Draw\",\"price\":4.6}]},{\"key\":\"h2h_lay\",\"last_update\":\"2026-02-02T22:11:27Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.47},{\"name\":\"Internacional\",\"price\":11.5},{\"name\":\"Draw\",\"price\":5}]}]},{\"key\":\"betonlineag\",\"title\":\"BetOnline.ag\",\"last_update\":\"2026-02-02T22:10:43Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:43Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.39},{\"name\":\"Internacional\",\"price\":8.25},{\"name\":\"Draw\",\"price\":4.75}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:10:43Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.98,\"point\":-1.25},{\"name\":\"Internacional\",\"price\":1.85,\"point\":1.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:43Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":2.02,\"point\":2.75},{\"name\":\"Under\",\"price\":1.82,\"point\":2.75}]}]},{\"key\":\"betanysports\",\"title\":\"BetAnything\",\"last_update\":\"2026-02-02T22:10:44Z\",\"markets\":[{\"key\":\"h2h\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.39},{\"name\":\"Internacional\",\"price\":8.25},{\"name\":\"Draw\",\"price\":4.75}]},{\"key\":\"spreads\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Flamengo\",\"price\":1.89,\"point\":-1.25},{\"name\":\"Internacional\",\"price\":1.85,\"point\":1.25}]},{\"key\":\"totals\",\"last_update\":\"2026-02-02T22:10:44Z\",\"outcomes\":[{\"name\":\"Over\",\"price\":1.93,\"point\":2.75},{\"name\":\"Under\",\"price\":1.82,\"point\":2.75}]}]}],\"fixture\":{\"id\":\"751466375f73c4badbc62f068b9ca5f0\",\"status\":{\"short\":\"NS\",\"long\":\"Not Started\",\"elapsed\":null},\"date\":\"2026-02-04T22:00:00Z\",\"timestamp\":1770242400},\"league\":{\"name\":\"Brazil Série A\",\"country\":\"\",\"logo\":\"\",\"flag\":\"\"},\"goals\":{\"home\":null,\"away\":null},\"event_date\":\"2026-02-04T22:00:00Z\",\"last_updated\":\"2026-02-02T22:11:35.742Z\"}",
+  "home_odd": 2.23,
+  "draw_odd": 1.64,
+  "away_odd": 75.26,
+  "is_live": true,
+  "base_home_odd": 2.14,
+  "base_draw_odd": 3.49,
+  "base_away_odd": 3.17,
+  "fixture": {
+    "status": {
+      "long": "Second Half",
+      "short": "2H",
+      "elapsed": 56,
+      "extra": null
+    }
+  },
+  "goals": {
+    "home": 0,
+    "away": 1
+  },
+  "score": {
+    "halftime": {
+      "home": 0,
+      "away": 1
+    },
+    "fulltime": {
+      "home": null,
+      "away": null
+    },
+    "extratime": {
+      "home": null,
+      "away": null
+    },
+    "penalty": {
+      "home": null,
+      "away": null
+    }
+  },
+  "elapsed": 56,
+  "league": "Serie A"
+}
+Bad leagues count: 0
+Non-soccer count: 88
+Non-soccer sample: {
+  "id": "22bet_692945958",
+  "sport": "tennis",
+  "league_name": "ATT. Minsk. Women",
+  "home_team": "Maria Stsetsevich",
+  "away_team": "Ekaterina Dzehalevich",
+  "event_date": "2026-02-04T21:15:00.000Z",
+  "is_live": 1,
+  "status": "S2",
+  "goals": {
+    "home": 1,
+    "away": 0
+  },
+  "score": "{\"home\":1,\"away\":0}",
+  "elapsed": 0,
+  "fixture": {
+    "id": "22bet_692945958",
+    "status": {
+      "short": "S2",
+      "long": "Em andamento",
+      "elapsed": 0
+    }
+  },
+  "odds": {
+    "h2h": [
+      {
+        "outcome": "1",
+        "value": 1.152,
+        "odd": 1.152
+      },
+      {
+        "outcome": "2",
+        "value": 4.78,
+        "odd": 4.78
+      }
+    ]
+  },
+  "home_odd": 1.152,
+  "draw_odd": 0,
+  "away_odd": 4.78,
+  "source": "22bet",
+  "league": "ATT. Minsk. Women"
+}

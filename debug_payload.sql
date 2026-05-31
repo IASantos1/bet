@@ -1,0 +1,1 @@
+SELECT payload FROM imported_odds WHERE is_live = 1 LIMIT 1;

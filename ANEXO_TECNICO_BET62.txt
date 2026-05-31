@@ -1,0 +1,32 @@
+Anexo Técnico — Evidências no Código
+
+Modo e Kill‑switch
+- src/worker/index.ts:4249 — Guarda de apostas com APP_MODE, LICENSED, BETTING_ENABLED
+- src/worker/index.ts:4907 — Depósito Nuvei bloqueia REAL sem licença
+- wrangler.toml:7 — Vars APP_MODE, BETTING_ENABLED, LICENSED, BLOCKED_COUNTRIES
+
+Providers e Feed
+- src/worker/providers/index.ts:15 — Escolha de provider por ambiente
+- src/worker/providers/index.ts:26 — Leitura de imported_odds no provider mock
+- src/worker/index.ts:2313 — Endpoints usam provider unificado (getEvents/getLiveEvents)
+
+Geo‑Blocking
+- src/worker/index.ts:4299 — Bloqueio por país no endpoint de apostas
+
+KYC e Responsabilidade
+- src/worker/index.ts:1469 — Adição de kyc_status em user_profile
+- src/worker/index.ts:1474 — Adição de max_daily_loss em user_profile
+
+Logs Imutáveis e Livro Razão
+- src/worker/wallet.ts:116 — Criação da tabela wallet_logs
+- src/worker/wallet.ts:932 — Registro de depósito (Nuvei webhook) em wallet_logs
+- src/worker/wallet.ts:724 — Registro de depósito (Stripe webhook) em wallet_logs
+- src/worker/wallet.ts:717 — Inserção em ledger_entries (Stripe)
+- src/worker/wallet.ts:920 — Inserção em ledger_entries (Nuvei)
+
+Idempotência de Webhooks
+- src/worker/wallet.ts:901 — Checagem de status COMPLETED no webhook Nuvei
+
+Observações
+- Todas as rotas financeiras operam sob reconciliação via webhook, com idempotência e logs financeiros.
+- Flags de ambiente permitem desligar apostas e separar SIMULATION de REAL.

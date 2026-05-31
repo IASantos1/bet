@@ -1,0 +1,157 @@
+Futebol (todas as ligas como FIFA e UEFA)
+
+🧩 Principais mercados
+	•	1X2 (resultado final)
+	•	Dupla chance
+	•	Empate anula
+	•	Over/Under gols
+	•	Ambas marcam
+
+⚽ Mercados avançados
+	•	Resultado correto
+	•	Intervalo/Final (HT/FT)
+	•	Handicap asiático/europeu
+	•	Total por equipe
+	•	Primeiro/último gol
+
+📊 Estatísticas
+	•	Escanteios
+	•	Cartões
+	•	Chutes a gol
+
+👤 Jogadores
+	•	Marcador a qualquer momento
+	•	Primeiro marcador
+	•	Assistências
+
+⸻
+
+🏀 Basquetebol (EUA / Europa)
+
+🧩 Principais
+	•	Moneyline (vencedor)
+	•	Spread (handicap)
+	•	Total de pontos
+
+📊 Extras
+	•	Pontos por quarto
+	•	Resultado HT/FT
+	•	Total por equipe
+
+👤 Jogadores
+	•	Pontos
+	•	Rebotes
+	•	Assistências
+
+⸻
+
+⚾ Beisebol (EUA)
+
+🧩 Principais
+	•	Moneyline
+	•	Run line (handicap)
+	•	Total de corridas
+
+📊 Extras
+	•	Corridas por inning
+	•	Primeiro time a marcar
+	•	Total por equipe
+
+⸻
+
+🏎️ Fórmula 1 (Formula 1)
+
+🧩 Mercados
+	•	Vencedor da corrida
+	•	Pódio (top 3)
+	•	Pole position
+	•	Volta mais rápida
+
+🔮 Futuros
+	•	Campeão da temporada
+	•	Equipe campeã
+
+⸻
+
+🏈 Futebol Americano (EUA)
+
+🧩 Principais
+	•	Moneyline
+	•	Spread
+	•	Over/Under pontos
+
+📊 Extras
+	•	Pontos por quarto
+	•	Primeiro touchdown
+	•	Time a marcar primeiro
+
+👤 Jogadores
+	•	Jardas
+	•	Touchdowns
+
+⸻
+
+🏉 Rúgbi (França, Inglaterra, EUA)
+	•	Resultado final
+	•	Handicap
+	•	Total de pontos
+	•	Primeiro try
+	•	Margem de vitória
+
+⸻
+
+🤾 Handebol (França, Espanha, Alemanha)
+	•	Resultado final
+	•	Handicap
+	•	Total de gols
+	•	Resultado ao intervalo
+
+⸻
+
+🏒 Hóquei no gelo (EUA, Suécia)
+	•	Moneyline
+	•	Puck line (handicap)
+	•	Total de gols
+	•	Resultado com overtime
+
+⸻
+
+🥊 MMA (Internacional)
+
+🧩 Principais
+	•	Vencedor da luta
+	•	Método de vitória (KO, submissão, decisão)
+	•	Número de rounds
+
+📊 Extras
+	•	Luta vai até decisão?
+	•	Round da vitória
+
+⸻
+
+🎾 Ténis (ATP, WTA, Challenger)
+
+🧩 Principais
+	•	Vencedor do jogo
+	•	Handicap de sets/games
+	•	Total de games
+
+📊 Extras
+	•	Resultado exato (2-0, 2-1)
+	•	Tie-break sim/não
+
+⸻
+
+🏐 Voleibol (Brasil, Itália)
+	•	Vencedor
+	•	Handicap de sets
+	•	Total de pontos
+	•	Resultado exato
+
+⸻
+
+🏉 AFL (Australian Football League)
+	•	Moneyline
+	•	Handicap
+	•	Total de pontos
+	•	Pontuação por período

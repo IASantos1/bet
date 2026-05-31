@@ -1,0 +1,101 @@
+Fetched 183 live events.
+Soccer Events: 95
+
+--- Soccer Events List ---
+[soccer_1492128] Santos vs Sao Paulo | League: Serie A | Score: [object Object] (45') | Pub: undefined
+[soccer_1492127] remo vs Mirassol | League: Serie A | Score: [object Object] (45') | Pub: undefined
+[soccer_1492124] Flamengo vs Internacional | League: Serie A | Score: [object Object] (90') | Pub: undefined
+[22bet_692941647] Fuerte San Francisco vs Aguila | League: El Salvador. Primera Division | Score: {"home":1,"away":2} (68') | Pub: undefined
+[22bet_692943902] Zacatecoluca vs CD Hercules | League: El Salvador. Primera Division | Score: {"home":1,"away":1} (54') | Pub: undefined
+[22bet_692941680] Matagalpa vs UNAN Managua | League: Nicaragua Championship | Score: {"home":0,"away":0} (68') | Pub: undefined
+[22bet_692941418] Uruguay U20 (Women) vs Venezuela U20 (Women) | League: South American Championship U20. Women | Score: {"home":0,"away":2} (66') | Pub: undefined
+[22bet_692951363] Red Bull Bragantino vs Clube Atletico Mineiro | League: Brazil. Campeonato Brasileiro. Serie A | Score: {"home":0,"away":0} (28') | Pub: undefined
+[22bet_692954724] Esporte Clube Jacuipense vs Jequie | League: Brazil. Campeonato Baiano | Score: {"home":0,"away":1} (11') | Pub: undefined
+[22bet_692951495] Maracana vs Quixada | League: Brazil. Campeonato Cearense | Score: {"home":0,"away":1} (26') | Pub: undefined
+[22bet_692941534] Cavalier vs Mount Pleasant Academy | League: Jamaica. National Premier League | Score: {"home":0,"away":1} (71') | Pub: undefined
+[22bet_692951491] Herediano U21 vs Guadalupe U21 | League: Costa Rica Championship U21 | Score: {"home":0,"away":0} (28') | Pub: undefined
+[22bet_692952846] ENERGY vs CADASTRE | League: Student League | Score: {"home":3,"away":4} (22') | Pub: undefined
+[22bet_692956685] Volendam (Amateur) vs Breda (Amateur) | League: Division 4x4 | Score: {"home":1,"away":0} (4') | Pub: undefined
+[22bet_692942755] C.D. Municipal Limeno II vs CD FAS II | League: El Salvador. Reserve League | Score: {"home":2,"away":2} (64') | Pub: undefined
+[22bet_692952300] Talleres de Cordoba vs Argentino de Merlo | League: Copa Argentina | Score: {"home":0,"away":0} (24') | Pub: undefined
+[22bet_692957904] Barcelona+ vs Milan+ | League: Short Football 4x4 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692955809] Flame+ vs Indigo+ | League: Short Football 3x3 | Score: {"home":1,"away":1} (7') | Pub: undefined
+[22bet_692951487] Sociedade Esportiva Itapirense vs Marília Atletico Clube | League: Brazil. Campeonato Paulista A3 | Score: {"home":0,"away":1} (27') | Pub: undefined
+[22bet_692951493] Penedense vs Murici SK | League: Brazil. Copa Alagoas | Score: {"home":0,"away":0} (27') | Pub: undefined
+[22bet_692930165] AD Fafe vs S.C.U. Torreense | League: Portugal. Taca de Portugal | Score: {"home":1,"away":1} (99') | Pub: undefined
+[22bet_692956974] Indy + vs Louisville + | League: MLS+ | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692947359] CD Uruapan vs Caja Oblatos CFD | League: Mexico. Copa Conecta | Score: {"home":1,"away":0} (45') | Pub: undefined
+[22bet_692957289] AA Francana vs Desportivo Brasil | League: Brazil. Campeonato Paulista A3 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692957337] XV De Novembro Jau vs EC Sao Bernardo | League: Brazil. Campeonato Paulista A3 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692957685] Freiburg (Amateur) vs Hansa (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692957688] Union (Amateur) vs Mainz (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692956876] Serra Branca Esporte Clube vs Confianca PB | League: Brazil. Campeonato Paraibano | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692955205] Bayern+ vs Tottenham+ | League: Short Football 3x3 | Score: {"home":0,"away":2} (4') | Pub: undefined
+[22bet_692955406] Barcelona+ vs Real+ | League: Short Football 4x4 | Score: {"home":2,"away":3} (4') | Pub: undefined
+[22bet_692952295] Arminia (Amateur) vs Greuther Furth (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":2,"away":1} (19') | Pub: undefined
+[22bet_692952292] Augsburg (Amateur) vs Hoffenheim (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":2,"away":2} (19') | Pub: undefined
+[22bet_692955201] Inferno vs Barracudas | League: Short Football 2x2 | Score: {"home":1,"away":2} (2') | Pub: undefined
+[22bet_692952378] Rambala (2x2) vs Presto (2x2) | League: Short Football 2x2 | Score: {"home":2,"away":3} (2') | Pub: undefined
+[22bet_692954057] Fiore (3x3) vs Zampa (3x3) | League: Short Football 3x3 L1 | Score: {"home":1,"away":0} (2') | Pub: undefined
+[22bet_692953312] Revolution + vs City + | League: MLS+ | Score: {"home":1,"away":0} (9') | Pub: undefined
+[22bet_692941445] Paraguay U20 (Women) vs Chile U20 (Women) | League: South American Championship U20. Women | Score: {"home":2,"away":0} (56') | Pub: undefined
+[22bet_692946540] CD Cacahuatique vs C.D. Luis Ángel Firpo | League: El Salvador. Primera Division | Score: {"home":1,"away":0} (45') | Pub: undefined
+[22bet_692956499] Internacional Palmira vs Deportes Quindío | League: Colombia. Categoría Primera B | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692952489] MECH vs IT | League: Student League 2 | Score: {"home":0,"away":1} (15') | Pub: undefined
+[22bet_692946575] Quinho vs Potyguar Seridoense | League: Brazil. Campeonato Potiguar | Score: {"home":2,"away":0} (45') | Pub: undefined
+[22bet_692927797] CA Lanus II vs Ferro Carril Oeste II | League: Argentina. Reserve League | Score: {"home":1,"away":0} (72') | Pub: undefined
+[22bet_692927468] Hibernians vs Zabbar Saint Patrick | League: Malta. Premier League | Score: {"home":2,"away":1} (72') | Pub: undefined
+[22bet_692927915] Banks O' Dee vs Rothes | League: Scotland. Highland League | Score: {"home":0,"away":0} (71') | Pub: undefined
+[22bet_692945808] MINERALOGY vs PSY | League: Student League 2 | Score: {"home":1,"away":0} (8') | Pub: undefined
+[22bet_692922985] Holstein vs VfB Stuttgart | League: Germany DFB Pokal | Score: {"home":0,"away":1} (85') | Pub: undefined
+[22bet_692926357] Deportivo Alaves vs Real Sociedad | League: Spain Copa del Rey | Score: {"home":2,"away":1} (69') | Pub: undefined
+[22bet_692925923] Valencia vs Athletic Bilbao | League: Spain Copa del Rey | Score: {"home":1,"away":1} (67') | Pub: undefined
+[22bet_692927616] Real Santander vs Atletico Cali | League: Colombia. Categoría Primera B | Score: {"home":1,"away":1} (68') | Pub: undefined
+[22bet_692928923] Belgrano II vs Boca Juniors II | League: Argentina. Reserve League | Score: {"home":1,"away":2} (70') | Pub: undefined
+[22bet_692922659] Hibernian vs Dundee United | League: Scotland. Premier League | Score: {"home":1,"away":2} (81') | Pub: undefined
+[22bet_692946037] LANDSCAPE vs FOSSIL | League: Student League | Score: {"home":2,"away":1} (8') | Pub: undefined
+[22bet_692943351] Galaxy+ vs Fire + | League: MLS+ | Score: {"home":2,"away":1} (17') | Pub: undefined
+[22bet_692926522] Troyes AC vs RC Lens | League: Coupe de France | Score: {"home":2,"away":4} (67') | Pub: undefined
+[22bet_692925519] Penrhyncoch vs Caersws | League: Wales. Championship. North | Score: {"home":1,"away":2} (79') | Pub: undefined
+[22bet_692920332] Maguary vs Retro Brasil | League: Brazil. Campeonato Pernambucano | Score: {"home":1,"away":1} (93') | Pub: undefined
+[22bet_692925380] Lichfield City vs Mickleover Sports | League: England. Northern League Div One | Score: {"home":1,"away":0} (68') | Pub: undefined
+[22bet_692926361] Internazionale Milano vs Torino | League: Coppa Italia | Score: {"home":2,"away":1} (69') | Pub: undefined
+[22bet_692927654] Tigres Futbol Club vs Orsomarso | League: Colombia. Categoría Primera B | Score: {"home":0,"away":1} (68') | Pub: undefined
+[22bet_692927865] Instituto Atletico Central Cordoba II vs Club Atletico Tigre II | League: Argentina. Reserve League | Score: {"home":1,"away":0} (70') | Pub: undefined
+[22bet_692927788] Velez Sarsfield II vs Club Atletico Banfield II | League: Argentina. Reserve League | Score: {"home":2,"away":1} (69') | Pub: undefined
+[22bet_692922186] Boroughmuir Thistle (Women) vs Gartcairn (Women) | League: Scotland. Premier League 2. Women | Score: {"home":2,"away":1} (77') | Pub: undefined
+[22bet_692927745] Racing Club de Avellaneda II vs Barracas Central II | League: Argentina. Reserve League | Score: {"home":1,"away":0} (67') | Pub: undefined
+[22bet_692947613] Waalwijk (Amateur) vs Volendam (Amateur) | League: Division 4x4 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692928978] Sarmiento II vs Club Atletico Gimnasia y Esgrima II | League: Argentina. Reserve League | Score: {"home":0,"away":0} (70') | Pub: undefined
+[22bet_692931534] Maritim (Women) vs Paterna (Women) | League: Spain. Regional Cup. Women | Score: {"home":1,"away":2} (65') | Pub: undefined
+[22bet_692947279] Koln (Amateur) vs Union (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692947276] Paderborn (Amateur) vs Freiburg (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692946578] Montreal + vs Tampa Bay + | League: MLS+ | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692934576] Deportiva San Carlos U21 vs Puntarenas U21 | League: Costa Rica Championship U21 | Score: {"home":1,"away":0} (45') | Pub: undefined
+[22bet_692917955] R. Charleroi vs Royale Union Saint-Gilloise | League: Belgium Cup | Score: {"home":0,"away":0} (86') | Pub: undefined
+[22bet_692925308] Boldmere St Michaels vs Corby Town | League: England. Northern League Div One | Score: {"home":0,"away":0} (74') | Pub: undefined
+[22bet_692925554] Gosport Borough vs Gloucester City | League: England. Southern Premier League. South | Score: {"home":0,"away":1} (76') | Pub: undefined
+[22bet_692944250] Barcelona+ vs Zenit+ | League: Short Football 3x3 | Score: {"home":2,"away":2} (4') | Pub: undefined
+[22bet_692944987] Speed (3x3) vs Universal (3x3) | League: Short Football 3x3 L1 | Score: {"home":0,"away":2} (3') | Pub: undefined
+[22bet_692944217] Liverpool+ vs Arsenal+ | League: Short Football 3x3 | Score: {"home":1,"away":4} (5') | Pub: undefined
+[22bet_692941863] Greuther Furth (Amateur) vs Darmstadt (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":2,"away":4} (17') | Pub: undefined
+[22bet_692941915] Hoffenheim (Amateur) vs Hannover (Amateur) | League: BudnesLiga LFL 5x5 | Score: {"home":3,"away":5} (17') | Pub: undefined
+[22bet_692944355] Inter (Harry) vs Sevilla (James) | League: FIFA 23. Volta daily league | Score: {"home":2,"away":1} (2') | Pub: undefined
+[22bet_692945620] Rhinoceros (2x2) vs Madman (2x2) | League: Short Football 2x2 | Score: {"home":1,"away":3} (3') | Pub: undefined
+[22bet_692920865] Caravaggio vs Calvairate | League: Italy. Eccellenza | Score: {"home":1,"away":0} (85') | Pub: undefined
+[22bet_692904538] R.F.C. Tournai vs 1912 Raeren | League: Belgium. Amateur League. Second Division | Score: {"home":1,"away":1} (91') | Pub: undefined
+[22bet_692918730] Nice vs Montpellier HSC | League: Coupe de France | Score: {"home":2,"away":2} (91') | Pub: undefined
+[22bet_692920579] Cinisello vs Lemine Almenno | League: Italy. Eccellenza | Score: {"home":1,"away":0} (91') | Pub: undefined
+[22bet_692942448] Breda (Amateur) vs Graafschap (Amateur) | League: Division 4x4 | Score: {"home":3,"away":3} (13') | Pub: undefined
+[22bet_692920771] Solbiatese vs Arcellasco | League: Italy. Eccellenza | Score: {"home":1,"away":2} (90') | Pub: undefined
+[22bet_692918717] Lyon vs Stade Lavallois | League: Coupe de France | Score: {"home":1,"away":0} (90') | Pub: undefined
+[22bet_692945747] Heat vs Spartans | League: Short Football 2x2 | Score: {"home":0,"away":0} (?') | Pub: undefined
+[22bet_692941146] Charlotte + vs Tampa Bay + | League: MLS+ | Score: {"home":1,"away":0} (15') | Pub: undefined
+[22bet_692935995] Arsenal (Guardian) vs Juventus (Frez) | League: FIFA 26. Amateur daily league | Score: {"home":11,"away":11} (79') | Pub: undefined
+[22bet_692926405] PSV Eindhoven vs Heerenveen | League: Netherlands. KNVB Beker | Score: {"home":2,"away":0} (53') | Pub: undefined
+[22bet_692938316] ENERGY vs LANDSCAPE | League: Student League | Score: {"home":5,"away":4} (27') | Pub: undefined
+[22bet_692942829] Atletico+ vs Inter+ | League: Short Football 4x4 | Score: {"home":4,"away":4} (8') | Pub: undefined
+[22bet_692927895] Inter FA II vs CD Platense Zacatecoluca II | League: El Salvador. Reserve League | Score: {"home":3,"away":1} (50') | Pub: undefined
+[22bet_692942887] Madman (2x2) vs Tarzan (2x2) | League: Short Football 2x2 | Score: {"home":9,"away":7} (8') | Pub: undefined
+
+--- TARGET GAME NOT FOUND (Man City/Newcastle) ---

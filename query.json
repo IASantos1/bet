@@ -1,0 +1,1 @@
+{"query": "SELECT count(*) as count, is_live FROM imported_odds WHERE id NOT LIKE '22bet%' GROUP BY is_live"}

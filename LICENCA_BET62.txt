@@ -1,0 +1,58 @@
+Licença Simples — BET62
+
+Operadora
+- Empresa: BET62
+- NIF: 301662339
+- Sede: AV. PADRE JULIO FRAGATA Nª 102
+- Contacto: atendimentoaoclientebet62@gmail.com | 499300044408
+- Representante legal: ISRAEL ALVES SANTOS
+
+Jurisdição e Âmbito
+- Jurisdição: Portugal
+- Tipo: Apostas desportivas online
+- Geografia permitida: Europa
+- Cobertura de desportos: Futebol, Basquetebol, Ténis, Hóquei no Gelo, Futebol Americano, Futsal, Rugby XV, Rugby League, Andebol, Voleibol, Voleibol de Praia, Pólo Aquático, Fórmula 1, Motociclismo, Automobilismo (NASCAR, IndyCar), Ciclismo, Golfe, Boxe, MMA/Artes Marciais, Críquete, Beisebol, Snooker, Bilhar, Dardos, Atletismo, Desportos de Inverno (Ski, Biatlo), Ténis de Mesa, Badminton, eSports, Futebol Australiano, Lacrosse, Netball, Floorball, Speedway.
+- Cobertura de mercados: 1x2, Handicap (asiático/europeu), Totais (Over/Under), BTTS, Escanteios/Cantos, Cartões, Jogadores para marcar, Resultado correto, Intervalo/Final, Golos por equipa, Primeira/Última equipa a marcar, Dupla possibilidade, Empate anula aposta, Props de jogadores (remates, cartões), Corners BTTS.
+
+Modo de Operação
+- APP_MODE: SIMULATION | REAL
+- Condição: REAL apenas com licença válida e em produção
+- Kill‑switch: BETTING_ENABLED (desativação imediata de apostas)
+
+KYC / AML (Estrutura)
+- KYC: none | pending | verified | rejected
+- Regras: sem verified → limites reduzidos; sem KYC → sem saque
+- AML: procedimentos internos de verificação e reporte
+
+Geo‑Blocking
+- Bloqueio de países: lista gerida por política interna
+- Regra: negar acesso/aposta a utilizadores em países bloqueados
+
+Pagamentos & Reconciliação
+- Operadores: Nuvei e outros autorizados
+- Fluxo: iniciação → webhook → reconciliação → saldo
+- Idempotência: webhooks não duplicam saldo
+
+Feeds de Odds
+- Fornecedor: oficial mediante contrato (SLA e cobertura)
+- Fallback: provider simulado/unificado em desenvolvimento
+
+Dados & Segurança
+- SSL/TLS, gestão de segredos, controlo de acesso
+- Logs imutáveis: wallet_logs + livro razão (ledger)
+- GDPR: finalidade, retenção, direitos, DPO
+
+Auditoria & Relatórios
+- Exportação de logs e reconciliações
+- Relatórios periódicos ao regulador
+- Registo de alterações e incidentes
+
+Termos & Condições
+- T&C públicas e Política de privacidade
+- Responsabilidade do jogador: autoexclusão, limites (max_daily_loss)
+
+Aprovação
+- Local/Data: Braga, 13/12/2025
+- Assinatura Operadora: ______________________
+- Assinatura Responsável Compliance: ______________________
+- Assinado digitalmente por: ISRAEL ALVES SANTOS

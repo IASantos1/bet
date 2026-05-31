@@ -1,0 +1,45 @@
+
+{
+  "name": "BET62 - Apostas Esportivas",
+  "short_name": "BET62",
+  "description": "Apostas esportivas online com odds competitivas e apostas ao vivo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23030712' width='100' height='100' rx='20'/><text y='.9em' x='10' font-size='70'>⚽</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23030712' width='100' height='100' rx='20'/><text y='.9em' x='10' font-size='70'>⚽</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "entertainment"],
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Ao Vivo",
+      "short_name": "Live",
+      "description": "Ver jogos ao vivo",
+      "url": "/live-sports",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔴</text></svg>", "sizes": "96x96" }]
+    },
+    {
+      "name": "Minhas Apostas",
+      "short_name": "Apostas",
+      "description": "Ver minhas apostas",
+      "url": "/my-bets",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎫</text></svg>", "sizes": "96x96" }]
+    }
+  ]
+}

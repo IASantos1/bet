@@ -1,0 +1,188 @@
+1. PRINCÍPIO BASE (como funciona o bloqueio)
+
+As casas usam sistemas automáticos + traders humanos.
+
+📌 Um mercado é bloqueado (suspenso) quando:
+
+Há um evento crítico iminente
+Existe assimetria de informação (alguém pode saber antes)
+O modelo de odds precisa ser recalculado
+
+👉 Resultado: odds ficam indisponíveis temporariamente
+
+⚽ 2. FUTEBOL — LÓGICA COMPLETA DE BLOQUEIO
+⚠️ Eventos que bloqueiam TODOS os mercados
+Golo (confirmado ou potencial)
+Penálti assinalado
+Cartão vermelho
+Revisão VAR
+Final da parte
+
+👉 Aqui acontece:
+
+suspensão total
+recalibração completa das odds
+🎯 VAR (grande oportunidade)
+Situação:
+Golo marcado → vai ao VAR
+
+📌 O que acontece:
+
+mercados bloqueados
+algumas casas reabrem antes da decisão final
+Lógica:
+Se o golo for anulado → odds voltam ao estado anterior
+Se confirmado → odds ajustam fortemente
+
+👉 Oportunidade:
+
+traders experientes antecipam decisão (posição do lance, reação dos jogadores, etc.)
+🔴 Cartão vermelho
+
+📌 Impacto:
+
+altera completamente probabilidades
+
+👉 Lógica:
+
+equipa com 10 → odds sobem (menos favorita)
+adversário → odds descem
+
+📌 Bloqueio:
+
+ocorre no momento do cartão
+reabertura com nova linha (handicap e totais ajustados)
+⚽ Golo (exemplo com Over 0.5)
+Situação:
+Over 0.5 golos com odd baixa (~1.05–1.20)
+sai 1 golo
+
+📌 O que acontece:
+
+mercado Over 0.5 fecha definitivamente (já ganhou)
+Under 0.5 fecha como perdido
+
+👉 Depois abre:
+
+Over 1.5
+Over 2.5
+etc.
+
+📌 Lógica:
+
+mercados “consumidos” são liquidados
+novos mercados substituem com base no novo estado
+⏱️ Próximo golo
+bloqueia quando há ataque perigoso
+reabre se ataque falhar
+
+👉 baseado em:
+
+posição da bola
+velocidade da jogada
+xG em tempo real (modelos avançados)
+📊 Cantos / cartões
+bloqueiam quando:
+bola na área
+cruzamento perigoso
+falta tática iminente
+
+👉 micro-suspensões frequentes
+
+🏀 3. BASQUETEBOL
+🔄 Bloqueios frequentes
+lançamento em curso
+contra-ataque rápido
+falta com lances livres
+
+📌 Lógica:
+
+qualquer jogada que possa alterar o score imediatamente
+⏱️ Últimos segundos (crítico)
+odds bloqueiam constantemente
+cada posse pode decidir o jogo
+
+👉 modelos recalculam a cada segundo
+
+🏈 4. FUTEBOL AMERICANO
+bloqueio antes de cada jogada
+desbloqueio após a jogada
+
+📌 Eventos críticos:
+
+touchdown
+field goal attempt
+turnovers
+
+👉 mercado funciona por “ciclos de jogada”
+
+🎾 5. TÉNIS
+🎾 Bloqueios típicos
+durante o ponto → mercado fechado
+entre pontos → mercado aberto
+
+📌 Eventos que prolongam bloqueio:
+
+break point
+set point
+match point
+
+👉 odds mais voláteis nesses momentos
+
+⚾ 6. BEISEBOL
+bloqueio antes de cada pitch
+desbloqueio após o lance
+
+📌 Eventos críticos:
+
+home run
+bases cheias
+strikeout importante
+🥊 7. MMA
+bloqueio quando:
+troca intensa de golpes
+tentativa de finalização
+queda (takedown)
+
+👉 odds mudam drasticamente em segundos
+
+🏎️ 8. FÓRMULA 1
+bloqueio em:
+acidentes
+safety car
+pit stops
+
+📌 lógica:
+
+eventos mudam estratégia e posição
+🏒 9. HÓQUEI
+bloqueio quando:
+remate perigoso
+power play
+empty net
+🏉🤾🏐 (Rúgbi, Handebol, Voleibol)
+Padrão comum:
+bloqueio em momentos de ataque claro
+desbloqueio quando jogada estabiliza
+🧠 10. LÓGICA TÉCNICA (RESUMO)
+📌 Quando bloqueia
+evento iminente
+alta probabilidade de mudança de estado
+atraso na transmissão (latência)
+📌 Quando reabre
+evento resolvido
+modelo recalculado
+risco controlado
+⚡ 11. ONDE ESTÃO AS OPORTUNIDADES
+🔍 Situações-chave:
+VAR (antes da decisão) ⭐
+delays de transmissão (stream vs TV)
+ataques perigosos mal avaliados
+props de jogadores com atraso
+📌 CONCLUSÃO
+
+O bloqueio não é aleatório — segue 3 regras:
+
+Proteção da casa contra informação privilegiada
+Recalibração matemática das odds
+Gestão de risco em tempo real

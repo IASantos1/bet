@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <clipPath id="ballClip"><circle cx="96" cy="96" r="64"/></clipPath>
+    <radialGradient id="ballShade" cx="45%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e5e7eb"/>
+    </radialGradient>
+  </defs>
+  <rect width="192" height="192" rx="36" fill="url(#g)"/>
+
+  <g>
+    <circle cx="96" cy="96" r="64" fill="url(#ballShade)"/>
+    <polygon points="96,60 122,76 114,104 78,104 70,76" fill="#0f172a"/>
+    <polyline points="96,60 122,76 114,104 78,104 70,76 96,60" fill="none" stroke="#111827" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <image href="/icons/ball.png" x="32" y="32" width="128" height="128" preserveAspectRatio="xMidYMid slice" clip-path="url(#ballClip)"/>
+
+  <text x="50%" y="158" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="48" font-weight="900" fill="#ffffff">BET62</text>
+</svg>

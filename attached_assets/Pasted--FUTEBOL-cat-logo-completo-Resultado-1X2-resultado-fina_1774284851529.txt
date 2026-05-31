@@ -1,0 +1,197 @@
+⚽ FUTEBOL (catálogo completo)
+🧾 Resultado
+1X2 (resultado final)
+Dupla hipótese
+Empate devolve
+Intervalo / Final
+📊 Golos
+Mais/Menos (Over/Under)
+Total asiático (2.25, 2.75…)
+Total por equipa
+Ambas marcam
+Sem sofrer golos
+Vitória sem sofrer
+🎯 Precisão
+Resultado correto
+Número exato de golos
+Margem de vitória
+⏱️ Tempo
+Resultado ao intervalo
+Golo em intervalo de tempo
+Tempo do primeiro golo
+Próximo golo
+👤 Jogadores
+Marcador (primeiro, último, qualquer momento)
+Remates / remates à baliza
+Assistências
+Cartões jogador
+📈 Estatísticas
+Cantos (totais, handicap, asiático)
+Cartões (totais, asiático)
+Faltas
+Posse de bola
+🔗 Combinações
+Resultado + Over/Under
+Resultado + ambas marcam
+Bet Builder
+🏀 BASQUETEBOL
+🧾 Resultado
+Moneyline (com prolongamento)
+Resultado por quartos
+Intervalo / Final
+📊 Pontos
+Total de pontos
+Total por equipa
+Total por quarto
+Ímpar/par
+🧮 Handicap
+Spread
+Handicap alternativo
+Handicap por período
+👤 Jogadores (muito importante)
+Pontos
+Assistências
+Ressaltos
+Combinações (P+A+R)
+Double-double / Triple-double
+⏱️ Dinâmicos
+Race to X pontos
+Margem de vitória (bandas)
+🏈 FUTEBOL AMERICANO
+🧾 Resultado
+Moneyline
+Resultado por quartos
+📊 Pontos
+Total de pontos
+Total por equipa
+🧮 Handicap
+Spread
+Linhas alternativas
+👤 Jogadores
+Passing yards
+Rushing yards
+Receiving yards
+Touchdowns (anytime / first)
+🎯 Especiais
+Primeira jogada pontuável
+Turnovers
+Resultado de drives
+🎾 TÉNIS
+🧾 Resultado
+Vencedor do jogo
+Vencedor do set
+📊 Totais
+Total de games
+Total por set
+🧮 Handicap
+Handicap de games
+Handicap de sets
+🎯 Precisão
+Resultado exato (2-0, 2-1)
+Resultado por set (6-4, etc.)
+👤 Estatísticas
+Aces
+Duplas faltas
+Break points
+⏱️ Especiais
+Tie-break (sim/não)
+⚾ BEISEBOL
+🧾 Resultado
+Moneyline
+Resultado por innings
+📊 Totais
+Total de runs
+Total por equipa
+🧮 Handicap
+Run line
+👤 Jogadores
+Strikeouts (pitcher)
+Hits
+Home runs
+Total bases
+⏱️ Especiais
+First 5 innings
+Primeira equipa a marcar
+🏒 HÓQUEI
+🧾 Resultado
+1X2 / Moneyline
+📊 Totais
+Total de golos
+Total por equipa
+🧮 Handicap
+Puck line
+👤 Jogadores
+Remates à baliza
+Marcador de golo
+⏱️ Especiais
+Golo em power play
+Golo em empty net
+🥊 MMA
+🧾 Resultado
+Vencedor
+🎯 Método
+KO/TKO
+Submissão
+Decisão
+📊 Totais
+Número de rounds
+Luta vai até ao fim
+⏱️ Precisão
+Round da finalização
+👤 Estatísticas
+Golpes significativos
+Quedas (takedowns)
+🏉 RÚGBI
+🧾 Resultado
+Vencedor
+📊 Totais
+Total de pontos
+🧮 Handicap
+Handicap
+👤 Jogadores
+Marcador de ensaio
+🎯 Precisão
+Margem de vitória
+🤾 HANDEBOL
+🧾 Resultado
+Resultado final
+Resultado ao intervalo
+📊 Totais
+Total de golos
+Total por equipa
+🧮 Handicap
+Handicap
+🏐 VOLEIBOL
+🧾 Resultado
+Vencedor
+📊 Totais
+Total de pontos
+🧮 Handicap
+Handicap de sets
+🎯 Precisão
+Resultado exato (sets)
+🏉 AFL
+🧾 Resultado
+Vencedor
+📊 Totais
+Total de pontos
+🧮 Handicap
+Handicap
+👤 Jogadores
+Disposals
+Golos
+🎯 Precisão
+Margem de vitória
+🏎️ FÓRMULA 1
+🧾 Resultado
+Vencedor da corrida
+🏆 Classificação
+Pódio
+Top 6 / Top 10
+⚔️ Comparações
+Head-to-head entre pilotos
+🎯 Especiais
+Volta mais rápida
+Pole position
+Safety car
+Abandono (DNF)

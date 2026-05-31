@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ef4444"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <clipPath id="ballClip"><circle cx="256" cy="256" r="172"/></clipPath>
+    <radialGradient id="ballShade" cx="45%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e5e7eb"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#g)"/>
+
+  <g>
+    <circle cx="256" cy="256" r="172" fill="url(#ballShade)"/>
+    <polygon points="256,186 306,220 288,276 224,276 206,220" fill="#0f172a"/>
+    <polygon points="206,152 222,162 216,180 196,180 190,162" fill="#0f172a"/>
+    <polygon points="306,152 322,162 316,180 296,180 290,162" fill="#0f172a"/>
+    <polygon points="256,320 272,330 266,348 246,348 240,330" fill="#0f172a"/>
+    <polygon points="206,296 222,306 216,324 196,324 190,306" fill="#0f172a"/>
+    <polygon points="306,296 322,306 316,324 296,324 290,306" fill="#0f172a"/>
+    <polyline points="256,186 306,220 288,276 224,276 206,220 256,186" fill="none" stroke="#111827" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="206,152 222,162 216,180 196,180 190,162 206,152" fill="none" stroke="#111827" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="306,152 322,162 316,180 296,180 290,162 306,152" fill="none" stroke="#111827" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="256,320 272,330 266,348 246,348 240,330 256,320" fill="none" stroke="#111827" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="206,296 222,306 216,324 196,324 190,306 206,296" fill="none" stroke="#111827" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="306,296 322,306 316,324 296,324 290,306 306,296" fill="none" stroke="#111827" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <image href="/icons/ball.png" x="84" y="84" width="344" height="344" preserveAspectRatio="xMidYMid slice" clip-path="url(#ballClip)"/>
+
+  <text x="50%" y="282" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="148" font-weight="900" fill="#ffffff">BET62</text>
+</svg>

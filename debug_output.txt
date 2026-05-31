@@ -1,0 +1,12 @@
+Fetched 183 live events.
+Found 0 events with bad league names.
+
+Non-soccer events: 88
+Samples of non-soccer:
+ID: 22bet_692945958, Sport: tennis, Status: S2, Score: "{\"home\":1,\"away\":0}", Elapsed: 0
+ID: 22bet_692946459, Sport: tennis, Status: S2, Score: "{\"home\":0,\"away\":1}", Elapsed: 0
+ID: 22bet_692953521, Sport: tennis, Status: S1, Score: "{\"home\":0,\"away\":0}", Elapsed: 0
+ID: 22bet_692949898, Sport: tennis, Status: S2, Score: "{\"home\":0,\"away\":1}", Elapsed: 0
+ID: 22bet_692927217, Sport: tennis, Status: S1, Score: "{\"home\":0,\"away\":0}", Elapsed: 0
+
+Newcastle/ManCity Game NOT Found in current payload.

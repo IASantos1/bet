@@ -1,0 +1,40 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../.vscode"
+		},
+		{
+			"path": "../.wrangler"
+		},
+		{
+			"path": "../dist"
+		},
+		{
+			"path": "../docs"
+		},
+		{
+			"path": "../fixtures"
+		},
+		{
+			"path": "../migrations"
+		},
+		{
+			"path": "../node_modules"
+		},
+		{
+			"path": "../public"
+		},
+		{
+			"path": "../scripts"
+		},
+		{
+			"path": "../src"
+		},
+		{
+			"path": "../tools"
+		}
+	]
+}

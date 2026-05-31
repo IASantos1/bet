@@ -1,0 +1,13 @@
+﻿[
+  {
+    "results": [
+      {
+        "payload": "{\"id\":\"22bet_698434561\",\"sport\":\"tennis\",\"league_name\":\"ITF. Monastir 2\",\"league\":\"ITF. Monastir 2\",\"home_team\":\"Savva Rybkin\",\"away_team\":\"Simone Massellani\",\"event_date\":\"2026-02-24T13:00:00.000Z\",\"is_live\":1,\"status\":\"S2\",\"goals\":{\"home\":0,\"away\":1},\"score\":\"{\\\"home\\\":0,\\\"away\\\":1}\",\"elapsed\":0,\"fixture\":{\"id\":\"22bet_698434561\",\"status\":{\"short\":\"S2\",\"long\":\"Em andamento\",\"elapsed\":0}},\"odds\":{\"h2h\":[{\"outcome\":\"1\",\"value\":11.5,\"odd\":11.5},{\"outcome\":\"2\",\"value\":1.016,\"odd\":1.016}]},\"home_odd\":11.5,\"draw_odd\":0,\"away_odd\":1.016,\"source\":\"22bet\"}"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "duration": 2
+    }
+  }
+]

@@ -1,0 +1,1211 @@
+
+(anônimo) @ api.ts:179
+await in (anônimo)
+(anônimo) @ BannerCarousel.tsx:142
+(anônimo) @ BannerCarousel.tsx:253
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+api.ts:101  GET https://004080a2-43c5-4df0-ad84-ca16dc5bcb1c-00-k58arar8ssao.picard.replit.dev/api/events/by-sport?sports=all&include=odds&realtime=0&only=pregame&requireOdds=1&days=7 net::ERR_INSUFFICIENT_RESOURCES
+(anônimo) @ api.ts:101
+(anônimo) @ useSportsEvents.ts:443
+(anônimo) @ useSportsEvents.ts:865
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+api.ts:179 [API] Fetch Error for /api/events/by-sport?sports=all&include=odds&realtime=0&only=pregame&requireOdds=1&days=7: TypeError: Failed to fetch
+    at apiFetch (api.ts:101:26)
+    at fetchData (useSportsEvents.ts:443:26)
+    at useSportsEvents.ts:865:5
+    at commitHookEffectListMount (chunk-OFS2NMN7.js?v=6e783d88:16913:34)
+    at commitPassiveMountOnFiber (chunk-OFS2NMN7.js?v=6e783d88:18154:19)
+    at commitPassiveMountEffects_complete (chunk-OFS2NMN7.js?v=6e783d88:18127:17)
+    at commitPassiveMountEffects_begin (chunk-OFS2NMN7.js?v=6e783d88:18117:15)
+    at commitPassiveMountEffects (chunk-OFS2NMN7.js?v=6e783d88:18107:11)
+    at flushPassiveEffectsImpl (chunk-OFS2NMN7.js?v=6e783d88:19488:11)
+    at flushPassiveEffects (chunk-OFS2NMN7.js?v=6e783d88:19445:22)
+(anônimo) @ api.ts:179
+await in (anônimo)
+(anônimo) @ useSportsEvents.ts:443
+(anônimo) @ useSportsEvents.ts:865
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+useLiveFeed.ts:367  POST http://127.0.0.1:7777/event net::ERR_INSUFFICIENT_RESOURCES
+(anônimo) @ useLiveFeed.ts:367
+(anônimo) @ useLiveFeed.ts:379
+(anônimo) @ useLiveFeed.ts:525
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+api.ts:101  GET https://004080a2-43c5-4df0-ad84-ca16dc5bcb1c-00-k58arar8ssao.picard.replit.dev/api/events/by-sport?sports=all&realtime=1&include=odds&markets=full&only=live&days=0 net::ERR_INSUFFICIENT_RESOURCES
+(anônimo) @ api.ts:101
+(anônimo) @ useLiveFeed.ts:286
+(anônimo) @ useLiveFeed.ts:380
+(anônimo) @ useLiveFeed.ts:525
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+api.ts:179 [API] Fetch Error for /api/events/by-sport?sports=all&realtime=1&include=odds&markets=full&only=live&days=0: TypeError: Failed to fetch
+    at apiFetch (api.ts:101:26)
+    at useLiveFeed.ts:286:30
+    at loop (useLiveFeed.ts:380:15)
+    at useLiveFeed.ts:525:5
+    at commitHookEffectListMount (chunk-OFS2NMN7.js?v=6e783d88:16913:34)
+    at commitPassiveMountOnFiber (chunk-OFS2NMN7.js?v=6e783d88:18154:19)
+    at commitPassiveMountEffects_complete (chunk-OFS2NMN7.js?v=6e783d88:18127:17)
+    at commitPassiveMountEffects_begin (chunk-OFS2NMN7.js?v=6e783d88:18117:15)
+    at commitPassiveMountEffects (chunk-OFS2NMN7.js?v=6e783d88:18107:11)
+    at flushPassiveEffectsImpl (chunk-OFS2NMN7.js?v=6e783d88:19488:11)
+(anônimo) @ api.ts:179
+await in (anônimo)
+(anônimo) @ useLiveFeed.ts:286
+(anônimo) @ useLiveFeed.ts:380
+(anônimo) @ useLiveFeed.ts:525
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+useLiveFeed.ts:350 [useLiveFeed] Polling error: TypeError: Failed to fetch
+    at apiFetch (api.ts:101:26)
+    at useLiveFeed.ts:286:30
+    at loop (useLiveFeed.ts:380:15)
+    at useLiveFeed.ts:525:5
+    at commitHookEffectListMount (chunk-OFS2NMN7.js?v=6e783d88:16913:34)
+    at commitPassiveMountOnFiber (chunk-OFS2NMN7.js?v=6e783d88:18154:19)
+    at commitPassiveMountEffects_complete (chunk-OFS2NMN7.js?v=6e783d88:18127:17)
+    at commitPassiveMountEffects_begin (chunk-OFS2NMN7.js?v=6e783d88:18117:15)
+    at commitPassiveMountEffects (chunk-OFS2NMN7.js?v=6e783d88:18107:11)
+    at flushPassiveEffectsImpl (chunk-OFS2NMN7.js?v=6e783d88:19488:11)
+(anônimo) @ useLiveFeed.ts:350
+await in (anônimo)
+(anônimo) @ useLiveFeed.ts:380
+(anônimo) @ useLiveFeed.ts:525
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitPassiveMountOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18154
+commitPassiveMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:18127
+commitPassiveMountEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:18117
+commitPassiveMountEffects @ chunk-OFS2NMN7.js?v=6e783d88:18107
+flushPassiveEffectsImpl @ chunk-OFS2NMN7.js?v=6e783d88:19488
+flushPassiveEffects @ chunk-OFS2NMN7.js?v=6e783d88:19445
+(anônimo) @ chunk-OFS2NMN7.js?v=6e783d88:19326
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+onExit @ framer-motion.js?v=6e783d88:8412
+onExitComplete @ framer-motion.js?v=6e783d88:8285
+(anônimo) @ framer-motion.js?v=6e783d88:9217
+Promise.then
+update @ framer-motion.js?v=6e783d88:9215
+updateFeatures @ framer-motion.js?v=6e783d88:5294
+(anônimo) @ framer-motion.js?v=6e783d88:8992
+commitHookEffectListMount @ chunk-OFS2NMN7.js?v=6e783d88:16913
+commitLayoutEffectOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:17000
+commitLayoutMountEffects_complete @ chunk-OFS2NMN7.js?v=6e783d88:17978
+commitLayoutEffects_begin @ chunk-OFS2NMN7.js?v=6e783d88:17967
+commitLayoutEffects @ chunk-OFS2NMN7.js?v=6e783d88:17918
+commitRootImpl @ chunk-OFS2NMN7.js?v=6e783d88:19351
+commitRoot @ chunk-OFS2NMN7.js?v=6e783d88:19275
+finishConcurrentRender @ chunk-OFS2NMN7.js?v=6e783d88:18803
+performConcurrentWorkOnRoot @ chunk-OFS2NMN7.js?v=6e783d88:18716
+workLoop @ chunk-OFS2NMN7.js?v=6e783d88:195
+flushWork @ chunk-OFS2NMN7.js?v=6e783d88:174
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:382
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+performWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:385
+postMessage
+schedulePerformWorkUntilDeadline @ chunk-OFS2NMN7.js?v=6e783d88:405
+requestHostCallback @ chunk-OFS2NMN7.js?v=6e783d88:416
+unstable_scheduleCallback @ chunk-OFS2NMN7.js?v=6e783d88:328
+scheduleCallback$1 @ chunk-OFS2NMN7.js?v=6e783d88:19824
+ensureRootIsScheduled @ chunk-OFS2NMN7.js?v=6e783d88:18650
+scheduleUpdateOnFiber @ chunk-OFS2NMN7.js?v=6e783d88:18560
+dispatchSetState @ chunk-OFS2NMN7.js?v=6e783d88:12401
+(anônimo) @ useLiveFeed.ts:470Entenda o erro
+main.tsx:12 [API] Fetching /api/events/by-sport?sports=all&realtime=1&include=odds&markets=full&only=live&days=0
+useLiveFeed.ts:367  POST http://127.0.0.1:7777/event net::ERR_INSUFFICIENT_RESOURCES
+(anônimo) @ useLiveFeed.ts:367
+(anônimo) @ useLiveFeed.ts:433Entenda o erro
+api.ts:101  GET https://004080a2-43c5-4df0-ad84-ca16dc5bcb1c-00-k58arar8ssao.picard.replit.dev/api/events/by-sport?sports=all&realtime=1&include=odds&markets=full&only=live&days=0 net::ERR_INSUFFICIENT_RESOURCES
+(anônimo) @ api.ts:101
+(anônimo) @ useLiveFeed.ts:286
+(anônimo) @ useLiveFeed.ts:434Entenda o erro
+api.ts:179 [API] Fetch Error for /api/events/by-sport?sports=all&realtime=1&include=odds&markets=full&only=live&days=0: TypeError: Failed to fetch
+    at apiFetch (api.ts:101:26)
+    at useLiveFeed.ts:286:30
+    at ws.onopen (useLiveFeed.ts:434:9)
+(anônimo) @ api.ts:179
+await in (anônimo)
+(anônimo) @ useLiveFeed.ts:286
+(anônimo) @ useLiveFeed.ts:434Entenda o erro
+useLiveFeed.ts:350 [useLiveFeed] Polling error: TypeError: Failed to fetch
+    at apiFetch (api.ts:101:26)
+    at useLiveFeed.ts:286:30
+    at ws.onopen (useLiveFeed.ts:434:9)

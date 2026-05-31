@@ -1,0 +1,2 @@
+$env:WRANGLER_HOME=".\.wrangler_local"
+npx wrangler d1 execute bet62-db --local --command "SELECT id, updated_at, (payload LIKE '%home_odd%') as has_flat_odds FROM imported_odds WHERE id = '22bet_698449049'"

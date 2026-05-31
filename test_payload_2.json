@@ -1,0 +1,95 @@
+[
+  {
+    "fixture": {
+      "id": 123456,
+      "timezone": "UTC",
+      "date": "2026-01-27T20:00:00+00:00",
+      "timestamp": 1706385600,
+      "periods": {
+        "first": 1706385600,
+        "second": null
+      },
+      "venue": {
+        "id": null,
+        "name": "Estádio da Luz",
+        "city": "Lisbon"
+      },
+      "status": {
+        "long": "Second Half",
+        "short": "2H",
+        "elapsed": 55
+      }
+    },
+    "league": {
+      "id": 100,
+      "name": "Premier League Test",
+      "country": "Portugal",
+      "logo": "https://media.api-sports.io/football/leagues/39.png",
+      "flag": "https://media.api-sports.io/flags/gb.svg",
+      "season": 2023,
+      "round": "Regular Season - 1"
+    },
+    "teams": {
+      "home": {
+        "id": 10,
+        "name": "Benfica Teste",
+        "logo": "https://media.api-sports.io/football/teams/33.png",
+        "winner": null
+      },
+      "away": {
+        "id": 20,
+        "name": "Porto Teste",
+        "logo": "https://media.api-sports.io/football/teams/34.png",
+        "winner": null
+      }
+    },
+    "goals": {
+      "home": 1,
+      "away": 1
+    },
+    "score": {
+      "halftime": {
+        "home": 1,
+        "away": 0
+      },
+      "fulltime": {
+        "home": null,
+        "away": null
+      },
+      "extratime": {
+        "home": null,
+        "away": null
+      },
+      "penalty": {
+        "home": null,
+        "away": null
+      }
+    },
+    "events": [],
+    "odds": {
+      "h2h": {
+        "outcomes": [
+          {
+            "id": "1",
+            "name": "Casa",
+            "price": 2.50
+          },
+          {
+            "id": "2",
+            "name": "Empate",
+            "price": 3.20
+          },
+          {
+            "id": "3",
+            "name": "Fora",
+            "price": 2.80
+          }
+        ]
+      }
+    },
+    "sport": "soccer",
+    "home_odd": 2.50,
+    "draw_odd": 3.20,
+    "away_odd": 2.80
+  }
+]

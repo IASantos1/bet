@@ -1,0 +1,1 @@
+UPDATE events SET home_odd = 11.5, draw_odd = 0, away_odd = 1.016, updated_at = '2026-02-24T19:52:13.339Z' WHERE external_event_id = '22bet_698434561'

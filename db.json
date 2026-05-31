@@ -1,0 +1,240 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "email": "admin@betpro.com",
+      "password": "admin123",
+      "role": "admin",
+      "created_at": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "2",
+      "email": "user@example.com",
+      "password": "user123",
+      "role": "user",
+      "created_at": "2024-01-15T00:00:00.000Z"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "1",
+      "user_id": "1",
+      "full_name": "Administrador",
+      "phone": "+351912345678",
+      "date_of_birth": "1990-01-01",
+      "address": "Lisboa, Portugal",
+      "balance": 10000.00,
+      "currency": "EUR",
+      "kyc_verified": true,
+      "created_at": "2024-01-01T00:00:00.000Z",
+      "updated_at": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "2",
+      "user_id": "2",
+      "full_name": "João Silva",
+      "phone": "+351923456789",
+      "date_of_birth": "1995-05-15",
+      "address": "Porto, Portugal",
+      "balance": 500.00,
+      "currency": "EUR",
+      "kyc_verified": true,
+      "created_at": "2024-01-15T00:00:00.000Z",
+      "updated_at": "2024-01-15T00:00:00.000Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "1",
+      "user_id": "2",
+      "type": "deposit",
+      "amount": 100.00,
+      "status": "completed",
+      "payment_method": "paypal",
+      "created_at": "2024-01-20T10:00:00.000Z"
+    },
+    {
+      "id": "2",
+      "user_id": "2",
+      "type": "bet",
+      "amount": 50.00,
+      "status": "completed",
+      "payment_method": "balance",
+      "created_at": "2024-01-21T14:30:00.000Z"
+    }
+  ],
+  "bets": [
+    {
+      "id": "1",
+      "user_id": "2",
+      "match_id": "1",
+      "bet_type": "match_winner",
+      "selection": "home",
+      "odds": 1.85,
+      "stake": 50.00,
+      "potential_win": 92.50,
+      "status": "pending",
+      "created_at": "2024-01-21T14:30:00.000Z"
+    }
+  ],
+  "matches": [
+    {
+      "id": "1",
+      "sport_id": "1",
+      "competition_id": "1",
+      "home_team": "Benfica",
+      "away_team": "Porto",
+      "home_team_id": "1",
+      "away_team_id": "2",
+      "start_time": "2024-02-01T20:00:00.000Z",
+      "status": "scheduled",
+      "home_score": 0,
+      "away_score": 0,
+      "created_at": "2024-01-20T00:00:00.000Z"
+    },
+    {
+      "id": "2",
+      "sport_id": "1",
+      "competition_id": "1",
+      "home_team": "Sporting",
+      "away_team": "Braga",
+      "home_team_id": "3",
+      "away_team_id": "4",
+      "start_time": "2024-02-02T18:00:00.000Z",
+      "status": "scheduled",
+      "home_score": 0,
+      "away_score": 0,
+      "created_at": "2024-01-20T00:00:00.000Z"
+    }
+  ],
+  "sports": [
+    {
+      "id": "1",
+      "name": "Futebol",
+      "slug": "football",
+      "icon": "⚽",
+      "active": true
+    },
+    {
+      "id": "2",
+      "name": "Basquetebol",
+      "slug": "basketball",
+      "icon": "🏀",
+      "active": true
+    },
+    {
+      "id": "3",
+      "name": "Ténis",
+      "slug": "tennis",
+      "icon": "🎾",
+      "active": true
+    }
+  ],
+  "competitions": [
+    {
+      "id": "1",
+      "sport_id": "1",
+      "name": "Liga Portugal",
+      "country": "Portugal",
+      "active": true
+    },
+    {
+      "id": "2",
+      "sport_id": "1",
+      "name": "Champions League",
+      "country": "Europa",
+      "active": true
+    }
+  ],
+  "teams": [
+    {
+      "id": "1",
+      "name": "Benfica",
+      "sport_id": "1",
+      "country": "Portugal",
+      "logo": "https://readdy.ai/api/search-image?query=benfica%20football%20club%20logo%20red%20eagle%20emblem%20simple%20background&width=100&height=100&seq=team1&orientation=squarish"
+    },
+    {
+      "id": "2",
+      "name": "Porto",
+      "sport_id": "1",
+      "country": "Portugal",
+      "logo": "https://readdy.ai/api/search-image?query=fc%20porto%20football%20club%20logo%20blue%20dragon%20emblem%20simple%20background&width=100&height=100&seq=team2&orientation=squarish"
+    },
+    {
+      "id": "3",
+      "name": "Sporting",
+      "sport_id": "1",
+      "country": "Portugal",
+      "logo": "https://readdy.ai/api/search-image?query=sporting%20lisbon%20football%20club%20logo%20green%20lion%20emblem%20simple%20background&width=100&height=100&seq=team3&orientation=squarish"
+    },
+    {
+      "id": "4",
+      "name": "Braga",
+      "sport_id": "1",
+      "country": "Portugal",
+      "logo": "https://readdy.ai/api/search-image?query=sc%20braga%20football%20club%20logo%20red%20emblem%20simple%20background&width=100&height=100&seq=team4&orientation=squarish"
+    }
+  ],
+  "odds": [
+    {
+      "id": "1",
+      "match_id": "1",
+      "market_type": "match_winner",
+      "selection": "home",
+      "odds": 1.85,
+      "active": true
+    },
+    {
+      "id": "2",
+      "match_id": "1",
+      "market_type": "match_winner",
+      "selection": "draw",
+      "odds": 3.40,
+      "active": true
+    },
+    {
+      "id": "3",
+      "match_id": "1",
+      "market_type": "match_winner",
+      "selection": "away",
+      "odds": 4.20,
+      "active": true
+    }
+  ],
+  "promotions": [
+    {
+      "id": "1",
+      "title": "Bónus de Boas-Vindas",
+      "description": "100% até 200€ no primeiro depósito",
+      "bonus_type": "deposit_match",
+      "bonus_value": 100,
+      "max_bonus": 200,
+      "min_deposit": 10,
+      "active": true,
+      "start_date": "2024-01-01T00:00:00.000Z",
+      "end_date": "2024-12-31T23:59:59.000Z",
+      "created_at": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "user_bonuses": [
+    {
+      "id": "1",
+      "user_id": "2",
+      "promotion_id": "1",
+      "bonus_amount": 100.00,
+      "wagering_requirement": 500.00,
+      "wagered_amount": 150.00,
+      "status": "active",
+      "expires_at": "2024-03-01T00:00:00.000Z",
+      "created_at": "2024-01-20T10:00:00.000Z"
+    }
+  ],
+  "self_exclusion_history": [],
+  "verification_documents": [],
+  "saved_cards": [],
+  "bet_selections": [],
+  "markets": [],
+  "payments": [],
+  "error_logs": []
+}

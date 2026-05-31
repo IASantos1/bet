@@ -1,0 +1,143 @@
+{
+  "season": "2025-26",
+  "leagues": [
+    "england-premier-league",
+    "england-championship",
+    "brazil-serie-a",
+    "brazil-serie-b",
+    "bundesliga",
+    "2-bundesliga",
+    "la-liga",
+    "segunda-division",
+    "serie-a",
+    "serie-b",
+    "ligue-1",
+    "ligue-2",
+    "primeira-liga",
+    "liga-portugal-2",
+    "eredivisie",
+    "eerstedivisie",
+    "primera-division",
+    "primera-nacional",
+    "jupiler-pro-league",
+    "challenger-pro-league",
+    "scottish-premiership",
+    "scottish-championship",
+    "liga-mx",
+    "ascenso-mx",
+    "j1-league",
+    "j2-league",
+    "mls",
+    "usl-championship"
+  ],
+  "teamsByLeague": {
+    "england-premier-league": [
+      "BT Group",
+      "from Wales"
+    ],
+    "england-championship": [],
+    "brazil-serie-a": [
+      "SE Gama",
+      "de facto"
+    ],
+    "brazil-serie-b": [],
+    "bundesliga": [
+      "DFC Prague",
+      "Hertha BSC",
+      "St. Pauli"
+    ],
+    "2-bundesliga": [
+      "Hertha BSC",
+      "RB Leipzig",
+      "SV Meppen",
+      "VfL Bochum",
+      "VfR Aalen"
+    ],
+    "la-liga": [],
+    "segunda-division": [
+      "A Malata"
+    ],
+    "serie-a": [
+      "AC Milan",
+      "AS Roma",
+      "Serie B"
+    ],
+    "serie-b": [
+      "Lega B",
+      "Serie C"
+    ],
+    "ligue-1": [
+      "CA Paris",
+      "FC Nancy"
+    ],
+    "ligue-2": [
+      "CS Metz"
+    ],
+    "primeira-liga": [
+      "Braga FA",
+      "Porto FA"
+    ],
+    "liga-portugal-2": [],
+    "eredivisie": [
+      "AFC DWS",
+      "VV DOS"
+    ],
+    "eerstedivisie": [
+      "FC Emmen",
+      "FC Oss",
+      "Jong AZ",
+      "Jong PSV",
+      "Roda JC",
+      "TOP Oss"
+    ],
+    "primera-division": [],
+    "primera-nacional": [
+      "Brown (A)",
+      "TyC Max"
+    ],
+    "jupiler-pro-league": [
+      "Antwerp FC",
+      "Dender EH",
+      "ESC Forest",
+      "KAA Gent",
+      "KRC Genk",
+      "Lierse SK",
+      "OH Leuven",
+      "RC de Gand",
+      "Union SG"
+    ],
+    "challenger-pro-league": [],
+    "scottish-premiership": [],
+    "scottish-championship": [],
+    "liga-mx": [
+      "Ascenso MX",
+      "Pumas UNAM"
+    ],
+    "ascenso-mx": [
+      "Copa MX",
+      "Liga MX"
+    ],
+    "j1-league": [],
+    "j2-league": [],
+    "mls": [
+      "Ballon d'Or",
+      "Chivas USA",
+      "D.C. United",
+      "LA Galaxy",
+      "Liga MX",
+      "Miami FC",
+      "See list",
+      "Toronto FC"
+    ],
+    "usl-championship": [
+      "D.C. United",
+      "Fresno FC",
+      "LA Galaxy",
+      "Miami FC",
+      "Phoenix FC",
+      "improve it",
+      "their bid",
+      "wage theft"
+    ]
+  }
+}

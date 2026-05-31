@@ -1,0 +1,13 @@
+﻿[
+  {
+    "results": [
+      {
+        "payload": "{\"id\":\"soccer_1521377\",\"fixture_id\":\"soccer_1521377\",\"sport\":\"soccer\",\"league_name\":\"CONCACAF U20\",\"home_team\":\"Cura├ºao U20\",\"away_team\":\"Guyana U20\",\"event_date\":\"2026-02-25T00:00:00+00:00\",\"status\":{\"long\":\"Not Started\",\"short\":\"NS\",\"elapsed\":null,\"extra\":null},\"markets\":[],\"odds\":[],\"has_odds\":false,\"source\":\"api-sports-fixture\",\"payload\":\"{\\\"id\\\":\\\"soccer_1521377\\\",\\\"fixture_id\\\":\\\"soccer_1521377\\\",\\\"kickoff\\\":\\\"2026-02-25T00:00:00+00:00\\\",\\\"status\\\":{\\\"long\\\":\\\"Not Started\\\",\\\"short\\\":\\\"NS\\\",\\\"elapsed\\\":null,\\\"extra\\\":null},\\\"venue\\\":{\\\"id\\\":null,\\\"name\\\":null,\\\"city\\\":null},\\\"league_obj\\\":{\\\"name\\\":\\\"CONCACAF U20\\\",\\\"country\\\":\\\"World\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/leagues/537.png\\\",\\\"flag\\\":null},\\\"league_id\\\":537,\\\"season\\\":2026,\\\"teams\\\":{\\\"home\\\":{\\\"name\\\":\\\"Cura├ºao U20\\\",\\\"canonical\\\":\\\"curacao u20\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/10995.png\\\"},\\\"away\\\":{\\\"name\\\":\\\"Guyana U20\\\",\\\"canonical\\\":\\\"guyana u20\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/11002.png\\\"}},\\\"sport_key\\\":\\\"soccer\\\",\\\"has_odds\\\":false}\"}"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "duration": 1
+    }
+  }
+]

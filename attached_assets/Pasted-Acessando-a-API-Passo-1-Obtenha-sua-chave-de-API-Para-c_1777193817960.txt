@@ -1,0 +1,74 @@
+Acessando a API
+
+Passo 1: Obtenha sua chave de API
+
+Para começar, inscreva-se para um teste gratuito e receba sua chave de acesso à API exclusiva. Essa chave é necessária para autenticação e pode ser encontrada no seu e-mail de boas-vindas.
+Passo 2: Faça sua primeira chamada de API
+
+Utilize o seguinte endpoint para fazer sua chamada inicial à API e obter placares em tempo real:
+
+GET https://statpal.io/api/API_VERSION/SPORT_NAME/livescores?access_key=YOUR_ACCESS_KEY
+Por favor, substitua os seguintes itens:
+
+API VERSIONcom um dos (v1, v2)
+SPORT_NAMEcom seu esporte
+YOUR_ACCESS_KEYcom sua chave de API real.
+
+Aqui estão alguns exemplos que você pode colar diretamente no seu navegador para visualizar arquivos de placar ao vivo:
+* YOUR_ACCESS_KEYfoi enviado para você por e-mail no momento do cadastro.
+
+Futebol V2:
+
+https://statpal.io/api/v2/soccer/matches/live?access_key=YOUR_ACCESS_KEY
+NHL:
+
+https://statpal.io/api/v1/nhl/livescores?access_key=YOUR_ACCESS_KEY
+NFL:
+
+https://statpal.io/api/v1/nfl/livescores?access_key=YOUR_ACCESS_KEY
+MLB:
+
+https://statpal.io/api/v1/mlb/livescores?access_key=YOUR_ACCESS_KEY
+NBA:
+
+https://statpal.io/api/v1/nba/livescores?access_key=YOUR_ACCESS_KEY
+Esports:
+
+https://statpal.io/api/v1/esports/livescores?access_key=YOUR_ACCESS_KEY
+Grilo:
+
+https://statpal.io/api/v1/cricket/livescores?access_key=YOUR_ACCESS_KEY
+Fórmula 1:
+
+https://statpal.io/api/v1/f1/livescores?access_key=YOUR_ACCESS_KEY
+Handebol:
+
+https://statpal.io/api/v1/handball/livescores?access_key=YOUR_ACCESS_KEY
+Golfe:
+
+https://statpal.io/api/v1/golf/livescores?access_key=YOUR_ACCESS_KEY
+Corridas de cavalos:
+
+https://statpal.io/api/v1/horse-racing/live/uk?access_key=YOUR_ACCESS_KEY
+Voleibol:
+
+https://statpal.io/api/v1/volleyball/livescores?access_key=YOUR_ACCESS_KEY
+Tênis:
+
+https://statpal.io/api/v1/tennis/livescores?access_key=YOUR_ACCESS_KEY
+Etapa 3: Integre com seu código
+
+Veja como você pode fazer a mesma solicitação usando a requestsbiblioteca do Python:
+
+
+import requests
+
+response = requests.get(
+    "https://statpal.io/api/v2/soccer/matches/live",
+    params={"access_key": "YOUR_ACCESS_KEY"}
+)
+
+data = response.json()
+print(data)
+                        
+Lembre-se de substituir YOUR_ACCESS_KEYpela chave de acesso que você obteve na Etapa 1.

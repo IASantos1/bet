@@ -1,0 +1,16 @@
+.git
+.gitignore
+.vercel
+node_modules
+dist
+.wrangler
+.wrangler-home
+.wrangler-local
+.wrangler-local-tmp
+.wrangler-tmp
+.qoder
+.venv
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log

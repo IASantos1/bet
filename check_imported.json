@@ -1,0 +1,14 @@
+﻿[
+  {
+    "results": [
+      {
+        "id": "soccer_1519506",
+        "payload": "{\"id\":\"soccer_1519506\",\"fixture_id\":\"soccer_1519506\",\"sport\":\"soccer\",\"league_name\":\"Esiliiga A\",\"home_team\":\"Viimsi\",\"away_team\":\"Flora II\",\"event_date\":\"2026-03-08T15:00:00+00:00\",\"status\":{\"long\":\"Not Started\",\"short\":\"NS\",\"elapsed\":null,\"extra\":null},\"markets\":[],\"odds\":[],\"has_odds\":false,\"source\":\"api-sports-fixture\",\"payload\":\"{\\\"id\\\":\\\"soccer_1519506\\\",\\\"fixture_id\\\":\\\"soccer_1519506\\\",\\\"kickoff\\\":\\\"2026-03-08T15:00:00+00:00\\\",\\\"status\\\":{\\\"long\\\":\\\"Not Started\\\",\\\"short\\\":\\\"NS\\\",\\\"elapsed\\\":null,\\\"extra\\\":null},\\\"venue\\\":{\\\"id\\\":null,\\\"name\\\":\\\"Viimsi Staadion\\\",\\\"city\\\":\\\"Viimsi\\\"},\\\"league_obj\\\":{\\\"name\\\":\\\"Esiliiga A\\\",\\\"country\\\":\\\"Estonia\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/leagues/328.png\\\",\\\"flag\\\":\\\"https://media.api-sports.io/flags/ee.svg\\\"},\\\"league_id\\\":328,\\\"season\\\":2026,\\\"teams\\\":{\\\"home\\\":{\\\"name\\\":\\\"Viimsi\\\",\\\"canonical\\\":\\\"viimsi\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/14340.png\\\"},\\\"away\\\":{\\\"name\\\":\\\"Flora II\\\",\\\"canonical\\\":\\\"flora ii\\\",\\\"logo\\\":\\\"https://media.api-sports.io/football/teams/3518.png\\\"}},\\\"sport_key\\\":\\\"soccer\\\",\\\"has_odds\\\":false}\"}"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "duration": 1
+    }
+  }
+]
