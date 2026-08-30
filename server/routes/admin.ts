@@ -161,13 +161,40 @@ export async function handleAdminRoutes(
 
   if (req.method === 'GET' && path === '/api/admin/withdrawals') {
     const r = await pool.query(
-      `SELECT id, user_id, amount, status, payment_method, created_at
-       FROM transactions
-       WHERE type = 'withdrawal'
-       ORDER BY created_at DESC
+      `SELECT t.id, t.user_id, t.amount, t.status, t.payment_method, t.description, t.created_at,
+              u.email, u.name
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.type = 'withdrawal'
+       ORDER BY t.created_at DESC
        LIMIT 500`,
     );
-    sendJson(res, 200, { withdrawals: r.rows || [] });
+    const STATUS_MAP: Record<string, string> = {
+      pending: 'REQUESTED',
+      completed: 'PAID',
+      rejected: 'REJECTED',
+      cancelled: 'CANCELLED',
+    };
+    const withdrawals = (r.rows || []).map((row: any) => {
+      let meta: { iban?: string; holder_name?: string; nif?: string } = {};
+      try {
+        meta = JSON.parse(row.description || '{}');
+      } catch {
+        meta = {};
+      }
+      return {
+        id: String(row.id),
+        created_at: row.created_at,
+        username: row.name ? String(row.name) : String(row.email || '').split('@')[0],
+        email: String(row.email || ''),
+        amount_eur: toNumber(row.amount),
+        iban: String(meta.iban || ''),
+        holder_name: String(meta.holder_name || ''),
+        bank_name: '',
+        status: STATUS_MAP[String(row.status)] || String(row.status).toUpperCase(),
+      };
+    });
+    sendJson(res, 200, { success: true, withdrawals });
     return true;
   }
 
