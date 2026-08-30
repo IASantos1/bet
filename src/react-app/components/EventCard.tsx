@@ -263,6 +263,196 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
     return { hasAnySet, sets, pHome, pAway };
   }, [event, sport]);
 
+  // Score + live-clock derivation for the stacked team rows below. Same parsing logic the
+  // single-line layout used to run inline; just relocated so both team rows (and the status
+  // column) can read the same computed values instead of one shared middle badge.
+  const matchStatus = useMemo(() => {
+    if (sport === 'tennis') return null; // tennis renders its own set grid above
+    const rawHome = (event as any).goals?.home ?? (event as any).golsCasa ?? (event as any).score_home;
+    const rawAway = (event as any).goals?.away ?? (event as any).golsFora ?? (event as any).score_away;
+
+    const formatScore = (val: any) => {
+      if (val === null || val === undefined) return undefined;
+      if (typeof val === 'object') {
+        const picks = [(val as any).total, (val as any).score, (val as any).current, (val as any).goals];
+        for (const p of picks) {
+          if (p === null || p === undefined) continue;
+          const n = Number(p);
+          if (Number.isFinite(n)) return n;
+        }
+        return undefined;
+      }
+      const n = Number(val);
+      if (Number.isFinite(n)) return n;
+      return undefined;
+    };
+
+    let homeScore = formatScore(rawHome);
+    let awayScore = formatScore(rawAway);
+    let forceTimer = '';
+
+    if (isLiveEvent && (homeScore === undefined || awayScore === undefined) && (event as any).score) {
+      const s = (event as any).score;
+      if (typeof s === 'string') {
+        const str = s.trim();
+        if (str) {
+          if (str.includes('{') || str.includes(':')) {
+            try {
+              const j = JSON.parse(str);
+              const hn = Number(j?.home);
+              const an = Number(j?.away);
+              if (homeScore === undefined && Number.isFinite(hn)) homeScore = hn;
+              if (awayScore === undefined && Number.isFinite(an)) awayScore = an;
+            } catch { void 0 }
+          } else {
+            if (/pen/i.test(str)) forceTimer = 'PEN';
+            const m = str.match(/(\d+)\s*[-:]\s*(\d+)/);
+            if (m) {
+              const hs = Number(m[1]);
+              const awayStr = String(m[2] || '').trim();
+              let as = Number(awayStr);
+
+              if (sport === 'soccer' && awayStr.length >= 3 && Number.isFinite(hs) && Number.isFinite(as) && as > 9) {
+                const tryLens = [2, 3];
+                for (const minLen of tryLens) {
+                  if (awayStr.length <= minLen) continue;
+                  const awayPart = awayStr.slice(0, -minLen);
+                  const minPart = awayStr.slice(-minLen);
+                  const awayN = Number(awayPart);
+                  const minN = Number(minPart);
+                  if (!Number.isFinite(awayN) || !Number.isFinite(minN)) continue;
+                  if (awayN < 0 || awayN > 9) continue;
+                  if (minLen === 2 && minN > 99) continue;
+                  if (minLen === 3 && minN < 100) continue;
+                  if (minN < 0 || minN > 130) continue;
+                  as = awayN;
+                  break;
+                }
+              }
+
+              if (homeScore === undefined && Number.isFinite(hs)) homeScore = hs;
+              if (awayScore === undefined && Number.isFinite(as)) awayScore = as;
+            }
+          }
+        }
+      } else if (typeof s === 'object') {
+        const hn = Number((s as any)?.home);
+        const an = Number((s as any)?.away);
+        if (homeScore === undefined && Number.isFinite(hn)) homeScore = hn;
+        if (awayScore === undefined && Number.isFinite(an)) awayScore = an;
+      }
+    }
+
+    let scoreStr = '';
+    if (isLiveEvent && homeScore !== undefined && awayScore !== undefined) {
+      scoreStr = `${homeScore}-${awayScore}`;
+    } else if (isLiveEvent && (event as any).score) {
+      let displayScore: any = (event as any).score;
+      if (typeof displayScore === 'string' && (displayScore.includes('{') || displayScore.includes(':'))) {
+        try {
+          const parsed = JSON.parse(displayScore);
+          const hn = Number(parsed?.home);
+          const an = Number(parsed?.away);
+          if (Number.isFinite(hn) && Number.isFinite(an)) {
+            displayScore = `${hn}-${an}`;
+          }
+        } catch {
+          displayScore = String(displayScore);
+        }
+      } else if (typeof displayScore === 'object' && displayScore?.home !== undefined) {
+        const hn = Number(displayScore?.home);
+        const an = Number(displayScore?.away);
+        displayScore = Number.isFinite(hn) && Number.isFinite(an) ? `${hn}-${an}` : '';
+      }
+      scoreStr = String(displayScore);
+    }
+
+    // Prefer the fully-resolved "H-A" string when it differs from the raw home/away numbers
+    // above (it can come from a different fallback path) so nothing regresses vs. the old badge.
+    if (scoreStr && scoreStr.includes('-')) {
+      const parts = scoreStr.split('-');
+      if (parts.length === 2) {
+        const h = Number(parts[0]);
+        const a = Number(parts[1]);
+        if (Number.isFinite(h)) homeScore = h;
+        if (Number.isFinite(a)) awayScore = a;
+      }
+    }
+
+    const elapsed = Number((event as any).elapsed ?? (event as any).fixture?.status?.elapsed ?? (event as any).status?.elapsed ?? 0) || 0;
+    const timer = String((event as any).timer || (event as any).fixture?.status?.timer || '').trim();
+    const statusShort = (() => {
+      const raw = (event as any).status;
+      if (raw && typeof raw === 'object') return String((raw as any).short ?? (raw as any).code ?? '');
+      return String(raw ?? (event as any).fixture?.status?.short ?? '');
+    })().trim();
+    const statusLong = String((event as any).fixture?.status?.long ?? (event as any).status_long ?? (event as any).status?.long ?? '').trim();
+    const statusU = statusShort.toUpperCase();
+
+    const derivedTimer = (() => {
+      const candidate = String(statusLong || statusShort || '').trim();
+      const cu = candidate.toUpperCase();
+
+      if (sport === 'soccer') {
+        if (forceTimer) return forceTimer;
+        if (statusU === 'AT' || statusU === 'ST') return statusU;
+        if (/HALF\s*TIME|INTERVAL/.test(cu)) return 'HT';
+        if (/EXTRA\s*TIME/.test(cu)) return 'ET';
+        if (/^PEN/.test(cu) && statusU !== '1H' && statusU !== '2H') return 'PEN';
+        return computeFootballClock(
+          String((event as any)?.event_date || (event as any)?.fixture?.date || ''),
+          elapsed,
+          timer,
+          statusU,
+          Number((event as any)?.__lastSeenAt || 0) || undefined,
+        );
+      }
+
+      if (sport === 'basketball') {
+        if (timer && /:/.test(timer)) return timer;
+        if (statusU === 'Q1' || statusU === 'Q2' || statusU === 'Q3' || statusU === 'Q4') return statusU;
+        if (statusU === 'OT') return 'OT';
+        if (statusU === 'HT') return 'HT';
+        if (/\b(1ST|FIRST)\b.*QUARTER|QUARTER.*\b(1ST|FIRST)\b|^Q1$/.test(cu)) return 'Q1';
+        if (/\b(2ND|SECOND)\b.*QUARTER|QUARTER.*\b(2ND|SECOND)\b|^Q2$/.test(cu)) return 'Q2';
+        if (/\b(3RD|THIRD)\b.*QUARTER|QUARTER.*\b(3RD|THIRD)\b|^Q3$/.test(cu)) return 'Q3';
+        if (/\b(4TH|FOURTH)\b.*QUARTER|QUARTER.*\b(4TH|FOURTH)\b|^Q4$/.test(cu)) return 'Q4';
+        if (/\bOVERTIME\b|\bOT\b/.test(cu)) return 'OT';
+        if (/\bHALF\s*TIME\b/.test(cu)) return 'HT';
+        return '';
+      }
+
+      if (sport === 'ice-hockey') {
+        if (timer && /:/.test(timer)) return timer;
+        if (statusU === 'P1' || statusU === 'P2' || statusU === 'P3' || statusU === 'OT' || statusU === 'SO') return statusU;
+        if (cu === 'P1' || cu === 'P2' || cu === 'P3' || cu === 'OT' || cu === 'SO') return cu;
+        return '';
+      }
+
+      if (sport === 'american-football') {
+        if (timer && /:/.test(timer)) return timer;
+        if (statusU === '2MW' || statusU === '2MIN') return '2MIN';
+        if (statusU === 'Q1' || statusU === 'Q2' || statusU === 'Q3' || statusU === 'Q4' || statusU === 'OT' || statusU === 'HT') return statusU;
+        if (cu === 'Q1' || cu === 'Q2' || cu === 'Q3' || cu === 'Q4' || cu === 'OT' || cu === 'HT') return cu;
+        return '';
+      }
+
+      if (sport === 'baseball') {
+        if (/\b(TOP|BOTTOM)\b/i.test(candidate) || /\b(1ST|2ND|3RD|4TH|5TH|6TH|7TH|8TH|9TH)\b/i.test(candidate)) return candidate;
+        return '';
+      }
+
+      if (!candidate) return '';
+      if (cu === 'LIVE' || cu === 'INPLAY' || cu === 'IN PLAY' || cu === 'PLAYING') return '';
+      if (/\b(TOP|BOTTOM)\b/i.test(candidate) || /\b(1ST|2ND|3RD|4TH|5TH|6TH|7TH|8TH|9TH)\b/i.test(candidate)) return candidate;
+      if (cu === 'Q1' || cu === 'Q2' || cu === 'Q3' || cu === 'Q4') return candidate;
+      if (cu === 'P1' || cu === 'P2' || cu === 'P3') return candidate;
+      return candidate.length <= 8 ? candidate : '';
+    })();
+
+    return { homeScore, awayScore, scoreStr, displayTimer: derivedTimer };
+  }, [event, sport, isLiveEvent]);
+
   // useTrend hook imported from @/react-app/hooks/useTrend
 
   // Get odds strictly from markets[] (Golden Rule)
@@ -672,222 +862,53 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
               })()}
             </span>
           ) : (
-            <span className="flex items-center gap-2 w-full justify-start">
-              <div className="flex items-center gap-2 min-w-0 max-w-[46%]">
-                <span className="text-sm font-semibold truncate leading-tight">{cleanTeam(homeTeamName)}</span>
-              </div>
-
-              {(() => {
-              const rawHome = (event as any).goals?.home ?? (event as any).golsCasa ?? (event as any).score_home;
-              const rawAway = (event as any).goals?.away ?? (event as any).golsFora ?? (event as any).score_away;
-
-              const formatScore = (val: any) => {
-                if (val === null || val === undefined) return undefined;
-                if (typeof val === 'object') {
-                  const picks = [(val as any).total, (val as any).score, (val as any).current, (val as any).goals];
-                  for (const p of picks) {
-                    if (p === null || p === undefined) continue;
-                    const n = Number(p);
-                    if (Number.isFinite(n)) return n;
-                  }
-                  return undefined;
-                }
-                const n = Number(val);
-                if (Number.isFinite(n)) return n;
-                return undefined;
-              };
-
-              let homeScore = formatScore(rawHome);
-              let awayScore = formatScore(rawAway);
-              let forceTimer: string = '';
-
-              if (isLiveEvent && (homeScore === undefined || awayScore === undefined) && (event as any).score) {
-                const s = (event as any).score;
-                if (typeof s === 'string') {
-                  const str = s.trim();
-                  if (str) {
-                    if (str.includes('{') || str.includes(':')) {
-                      try {
-                        const j = JSON.parse(str);
-                        const hn = Number(j?.home);
-                        const an = Number(j?.away);
-                        if (homeScore === undefined && Number.isFinite(hn)) homeScore = hn;
-                        if (awayScore === undefined && Number.isFinite(an)) awayScore = an;
-                      } catch { void 0 }
-                    } else {
-                      if (/pen/i.test(str)) forceTimer = 'PEN';
-                      const m = str.match(/(\d+)\s*[-:]\s*(\d+)/);
-                      if (m) {
-                        const hs = Number(m[1]);
-                        const awayStr = String(m[2] || '').trim();
-                        let as = Number(awayStr);
-
-                        if (sport === 'soccer' && awayStr.length >= 3 && Number.isFinite(hs) && Number.isFinite(as) && as > 9) {
-                          const tryLens = [2, 3];
-                          for (const minLen of tryLens) {
-                            if (awayStr.length <= minLen) continue;
-                            const awayPart = awayStr.slice(0, -minLen);
-                            const minPart = awayStr.slice(-minLen);
-                            const awayN = Number(awayPart);
-                            const minN = Number(minPart);
-                            if (!Number.isFinite(awayN) || !Number.isFinite(minN)) continue;
-                            if (awayN < 0 || awayN > 9) continue;
-                            if (minLen === 2 && minN > 99) continue;
-                            if (minLen === 3 && minN < 100) continue;
-                            if (minN < 0 || minN > 130) continue;
-                            as = awayN;
-                            break;
-                          }
-                        }
-
-                        if (homeScore === undefined && Number.isFinite(hs)) homeScore = hs;
-                        if (awayScore === undefined && Number.isFinite(as)) awayScore = as;
-                      }
-                    }
-                  }
-                } else if (typeof s === 'object') {
-                  const hn = Number((s as any)?.home);
-                  const an = Number((s as any)?.away);
-                  if (homeScore === undefined && Number.isFinite(hn)) homeScore = hn;
-                  if (awayScore === undefined && Number.isFinite(an)) awayScore = an;
-                }
-              }
-
-              let scoreStr = '';
-              if (isLiveEvent && homeScore !== undefined && awayScore !== undefined) {
-                scoreStr = `${homeScore}-${awayScore}`;
-              } else if (isLiveEvent && event.score) {
-                let displayScore: any = event.score;
-                if (typeof displayScore === 'string' && (displayScore.includes('{') || displayScore.includes(':'))) {
-                  try {
-                    const parsed = JSON.parse(displayScore);
-                    const hn = Number(parsed?.home);
-                    const an = Number(parsed?.away);
-                    if (Number.isFinite(hn) && Number.isFinite(an)) {
-                      displayScore = `${hn}-${an}`;
-                    }
-                  } catch {
-                    displayScore = String(displayScore);
-                  }
-                } else if (typeof displayScore === 'object' && displayScore?.home !== undefined) {
-                  const hn = Number(displayScore?.home);
-                  const an = Number(displayScore?.away);
-                  if (Number.isFinite(hn) && Number.isFinite(an)) {
-                    displayScore = `${hn}-${an}`;
-                  } else {
-                    displayScore = '';
-                  }
-                }
-                scoreStr = String(displayScore);
-              }
-
-              const elapsed = Number((event as any).elapsed ?? (event as any).fixture?.status?.elapsed ?? (event as any).status?.elapsed ?? 0) || 0;
-              const timer = String((event as any).timer || (event as any).fixture?.status?.timer || '').trim();
-              const statusShort = (() => {
-                const raw = (event as any).status;
-                if (raw && typeof raw === 'object') return String((raw as any).short ?? (raw as any).code ?? '');
-                return String(raw ?? (event as any).fixture?.status?.short ?? '');
-              })().trim();
-              const statusLong = String((event as any).fixture?.status?.long ?? (event as any).status_long ?? (event as any).status?.long ?? '').trim();
-              const statusU = statusShort.toUpperCase();
-
-              const derivedTimer = (() => {
-                const candidate = String(statusLong || statusShort || '').trim();
-                const cu = candidate.toUpperCase();
-
-                if (sport === 'tennis') return '';
-
-                if (sport === 'soccer') {
-                  if (forceTimer) return forceTimer;
-                  // Rare statuses that computeFootballClock doesn't handle
-                  if (statusU === 'AT' || statusU === 'ST') return statusU;
-                  if (/HALF\s*TIME|INTERVAL/.test(cu)) return 'HT';
-                  if (/EXTRA\s*TIME/.test(cu)) return 'ET';
-                  if (/^PEN/.test(cu) && statusU !== '1H' && statusU !== '2H') return 'PEN';
-                  // Uses API elapsed + kick-off estimate when Statpal gives no minute.
-                  // __lastSeenAt lets the clock advance between API polls.
-                  return computeFootballClock(
-                    String((event as any)?.event_date || (event as any)?.fixture?.date || ''),
-                    elapsed,
-                    timer,
-                    statusU,
-                    Number((event as any)?.__lastSeenAt || 0) || undefined,
-                  );
-                }
-
-                if (sport === 'basketball') {
-                  if (timer && /:/.test(timer)) return timer;
-                  // statusShort takes priority (most reliable)
-                  if (statusU === 'Q1' || statusU === 'Q2' || statusU === 'Q3' || statusU === 'Q4') return statusU;
-                  if (statusU === 'OT') return 'OT';
-                  if (statusU === 'HT') return 'HT';
-                  // Fallback: parse statusLong e.g. "First Quarter", "1st Quarter", "Q1"
-                  if (/\b(1ST|FIRST)\b.*QUARTER|QUARTER.*\b(1ST|FIRST)\b|^Q1$/.test(cu)) return 'Q1';
-                  if (/\b(2ND|SECOND)\b.*QUARTER|QUARTER.*\b(2ND|SECOND)\b|^Q2$/.test(cu)) return 'Q2';
-                  if (/\b(3RD|THIRD)\b.*QUARTER|QUARTER.*\b(3RD|THIRD)\b|^Q3$/.test(cu)) return 'Q3';
-                  if (/\b(4TH|FOURTH)\b.*QUARTER|QUARTER.*\b(4TH|FOURTH)\b|^Q4$/.test(cu)) return 'Q4';
-                  if (/\bOVERTIME\b|\bOT\b/.test(cu)) return 'OT';
-                  if (/\bHALF\s*TIME\b/.test(cu)) return 'HT';
-                  return '';
-                }
-
-                if (sport === 'ice-hockey') {
-                  if (timer && /:/.test(timer)) return timer;
-                  if (statusU === 'P1' || statusU === 'P2' || statusU === 'P3' || statusU === 'OT' || statusU === 'SO') return statusU;
-                  if (cu === 'P1' || cu === 'P2' || cu === 'P3' || cu === 'OT' || cu === 'SO') return cu;
-                  return '';
-                }
-
-                if (sport === 'american-football') {
-                  if (timer && /:/.test(timer)) return timer;
-                  if (statusU === '2MW' || statusU === '2MIN') return '2MIN';
-                  if (statusU === 'Q1' || statusU === 'Q2' || statusU === 'Q3' || statusU === 'Q4' || statusU === 'OT' || statusU === 'HT') return statusU;
-                  if (cu === 'Q1' || cu === 'Q2' || cu === 'Q3' || cu === 'Q4' || cu === 'OT' || cu === 'HT') return cu;
-                  return '';
-                }
-
-                if (sport === 'baseball') {
-                  if (/\b(TOP|BOTTOM)\b/i.test(candidate) || /\b(1ST|2ND|3RD|4TH|5TH|6TH|7TH|8TH|9TH)\b/i.test(candidate)) return candidate;
-                  return '';
-                }
-
-                if (!candidate) return '';
-                if (cu === 'LIVE' || cu === 'INPLAY' || cu === 'IN PLAY' || cu === 'PLAYING') return '';
-                if (/\b(TOP|BOTTOM)\b/i.test(candidate) || /\b(1ST|2ND|3RD|4TH|5TH|6TH|7TH|8TH|9TH)\b/i.test(candidate)) return candidate;
-                if (cu === 'Q1' || cu === 'Q2' || cu === 'Q3' || cu === 'Q4') return candidate;
-                if (cu === 'P1' || cu === 'P2' || cu === 'P3') return candidate;
-                return candidate.length <= 8 ? candidate : '';
-              })();
-
-              const displayTimer = derivedTimer;
-
-              if (isLiveEvent) {
-                return (
-                  <span className="flex flex-col items-center shrink-0 px-1 gap-0.5">
-                    <span className="text-xs font-bold text-red-600">{scoreStr || 'AO VIVO'}</span>
-                    {displayTimer && (
+            <span className="flex items-start gap-3 w-full">
+              {/* Time/date column — swaps to a live/full-time badge once the match is underway */}
+              <div className="flex flex-col items-start shrink-0 w-10 pt-0.5">
+                {isLiveEvent ? (
+                  <>
+                    <span className="text-[11px] font-bold text-red-600 leading-tight">AO VIVO</span>
+                    {matchStatus?.displayTimer && (
                       <span
-                        className="text-[10px] font-bold rounded px-1 leading-tight"
+                        className="text-[10px] font-bold rounded px-1 leading-tight mt-0.5"
                         style={sport === 'soccer'
                           ? { color: '#39FF14', background: 'rgba(57,255,20,0.12)' }
                           : { color: '#ef4444', background: 'rgba(239,68,68,0.10)' }}
-                      >{displayTimer}</span>
+                      >{matchStatus.displayTimer}</span>
                     )}
-                  </span>
-                );
-              }
+                  </>
+                ) : isFinishedEvent ? (
+                  <span className={`text-[11px] font-bold leading-tight ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>FIM</span>
+                ) : (
+                  <>
+                    <span className={`text-xs font-bold leading-tight ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{eventTime}</span>
+                    <span className={`text-[10px] leading-tight mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{eventDayMonth}</span>
+                  </>
+                )}
+              </div>
 
-              return (
-                <span className={`text-xs font-bold shrink-0 px-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  {eventTime || 'vs'}
-                </span>
-              );
-            })()}
-           
-            <div className="flex items-center gap-2 min-w-0 max-w-[46%]">
-              <span className="text-sm font-semibold truncate leading-tight">{cleanTeam(awayTeamName)}</span>
-            </div>
-          </span>
+              {/* Teams stacked home-over-away, crest + name + (when live) that team's score */}
+              <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  {(event as any).home_team_logo && (
+                    <img src={(event as any).home_team_logo} alt="" className="w-5 h-5 object-contain flex-shrink-0" />
+                  )}
+                  <span className="text-sm font-semibold truncate leading-tight flex-1 min-w-0">{cleanTeam(homeTeamName)}</span>
+                  {isLiveEvent && matchStatus?.homeScore !== undefined && (
+                    <span className="text-sm font-bold tabular-nums shrink-0">{matchStatus.homeScore}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  {(event as any).away_team_logo && (
+                    <img src={(event as any).away_team_logo} alt="" className="w-5 h-5 object-contain flex-shrink-0" />
+                  )}
+                  <span className="text-sm font-semibold truncate leading-tight flex-1 min-w-0">{cleanTeam(awayTeamName)}</span>
+                  {isLiveEvent && matchStatus?.awayScore !== undefined && (
+                    <span className="text-sm font-bold tabular-nums shrink-0">{matchStatus.awayScore}</span>
+                  )}
+                </div>
+              </div>
+            </span>
           )}
         </button>
         
@@ -1004,7 +1025,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                           price={hh}
                           trend={homeTrend}
                           onClick={(e) => { e.stopPropagation(); addPrimary('Casa', hh, hhSelection?.suspended); }}
-                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                           suspended={critSuspended || marketSuspended || (hhSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                         />
                       </div>
@@ -1018,7 +1039,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                           price={aa}
                           trend={awayTrend}
                           onClick={(e) => { e.stopPropagation(); addPrimary('Fora', aa, aaSelection?.suspended); }}
-                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                           suspended={critSuspended || marketSuspended || (aaSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                         />
                       </div>
@@ -1032,7 +1053,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={hh}
                         trend={homeTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Casa', hh, hhSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (hhSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     ) : <div />}
@@ -1043,7 +1064,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={dd}
                         trend={drawTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Empate', dd, ddSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (ddSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     )}
@@ -1054,7 +1075,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={aa}
                         trend={awayTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Fora', aa, aaSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (aaSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     ) : <div />}

@@ -71,7 +71,7 @@ const OddRow = memo(({ item, onSelect, suspended, compact }: {
             transition-all duration-200 flex items-center justify-center gap-1
             ${isSusp
               ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
-              : 'bg-red-600 text-white hover:bg-red-500 active:scale-95 shadow-sm'
+              : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95 shadow-sm'
             }
             ${trend === 'up' ? 'ring-2 ring-green-400' : trend === 'down' ? 'ring-2 ring-gray-400' : ''}
           `}
@@ -681,7 +681,7 @@ export function SubOddsModel({
                       price={val}
                       trend="stable"
                       onClick={() => onSelect(String(item.selection || item.label), val)}
-                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                       suspended={disabled ? { reason: toBadgeReason(susp) } : undefined}
                     />
                   );
@@ -711,7 +711,7 @@ export function SubOddsModel({
                       price={val}
                       trend="stable"
                       onClick={() => onSelect(String(item.selection || item.label), val)}
-                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                       suspended={disabled ? { reason: toBadgeReason(susp) } : undefined}
                     />
                   );
@@ -742,7 +742,7 @@ export function SubOddsModel({
                       price={val}
                       trend="stable"
                       onClick={() => onSelect(String(item.selection || item.label), val)}
-                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                       suspended={disabled ? { reason: toBadgeReason(susp) } : undefined}
                     />
                   );
@@ -782,7 +782,7 @@ export function SubOddsModel({
                       price={val}
                       trend="stable"
                       onClick={() => onSelect(String(item.selection || item.label), val)}
-                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                      className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                       suspended={disabled ? { reason: toBadgeReason(susp) } : undefined}
                     />
                   );
@@ -852,7 +852,7 @@ export function SubOddsModel({
                 disabled={blocked}
                 className={`w-28 h-12 rounded-lg font-bold tabular-nums transition-all duration-200 relative
                   ${blocked ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
-                    : 'bg-red-600 text-white hover:bg-red-500 active:scale-95'}`}
+                    : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95'}`}
               >
                 <div className="flex flex-col items-center justify-center leading-[1.05]">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider">
@@ -986,7 +986,7 @@ export function SubOddsModel({
                           ${susp ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
                             : f?.isValue
                               ? 'bg-emerald-600 text-white hover:bg-emerald-500 active:scale-95 ring-1 ring-emerald-300'
-                              : 'bg-red-600 text-white hover:bg-red-500 active:scale-95'}`}
+                              : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95'}`}
                       >
                         <div className="flex flex-col items-center justify-center leading-[1.05]">
                           <span className="text-[10px] font-extrabold uppercase tracking-wider">
@@ -1106,7 +1106,7 @@ export function SubOddsModel({
                           disabled={isBlocked}
                           title={isImpossible ? 'Resultado impossível dado o marcador actual' : undefined}
                           className={`w-full h-12 rounded-xl font-black tabular-nums transition-all duration-200 flex flex-col items-center justify-center leading-[1.05] ${
-                            isBlocked ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-500 active:scale-95'
+                            isBlocked ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed' : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95'
                           } ${isImpossible ? 'opacity-40' : ''}`}
                         >
                           <span className="text-[12px] font-extrabold">{item.label}</span>
@@ -1170,7 +1170,7 @@ export function SubOddsModel({
                     price={val}
                     trend="stable"
                     onClick={() => onSelect(String(item.selection || item.label), val)}
-                    className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-red-600 text-white hover:opacity-90 flex items-center justify-between gap-1"
+                    className="w-full h-full min-h-[48px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                     suspended={disabled ? { reason: toBadgeReason(susp) } : undefined}
                   />
                 );
