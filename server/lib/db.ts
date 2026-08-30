@@ -152,6 +152,50 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_bets_created_at ON bets(created_at DESC)`,
+
+    // ---- Wallet + Double-Entry Ledger (BET62 spec §7-9) ----
+    // wallets.* is a transactionally-consistent materialized balance, always written in the
+    // same DB transaction as the ledger_entries that justify it. ledger_entries is the
+    // append-only source of truth; nothing here is ever UPDATEd or DELETEd after insert.
+    `CREATE TABLE IF NOT EXISTS wallets (
+      user_id            TEXT          PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      available          NUMERIC(18,2) NOT NULL DEFAULT 0,
+      reserved           NUMERIC(18,2) NOT NULL DEFAULT 0,
+      bonus              NUMERIC(18,2) NOT NULL DEFAULT 0,
+      pending_withdrawal NUMERIC(18,2) NOT NULL DEFAULT 0,
+      currency           TEXT          NOT NULL DEFAULT 'EUR',
+      version            BIGINT        NOT NULL DEFAULT 0,
+      created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+      CONSTRAINT wallets_non_negative CHECK (available >= 0 AND reserved >= 0 AND bonus >= 0 AND pending_withdrawal >= 0)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ledger_transactions (
+      id              TEXT          PRIMARY KEY,
+      idempotency_key TEXT          NOT NULL UNIQUE,
+      type            TEXT          NOT NULL,
+      user_id         TEXT          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reference_id    TEXT,
+      metadata        JSONB         NOT NULL DEFAULT '{}'::jsonb,
+      result_snapshot JSONB,
+      status          TEXT          NOT NULL DEFAULT 'completed',
+      created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_tx_user ON ledger_transactions(user_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_tx_reference ON ledger_transactions(reference_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_tx_type ON ledger_transactions(type)`,
+    `CREATE TABLE IF NOT EXISTS ledger_entries (
+      id             BIGSERIAL     PRIMARY KEY,
+      transaction_id TEXT          NOT NULL REFERENCES ledger_transactions(id),
+      account        TEXT          NOT NULL,
+      user_id        TEXT          REFERENCES users(id) ON DELETE SET NULL,
+      direction      TEXT          NOT NULL CHECK (direction IN ('debit','credit')),
+      amount         NUMERIC(18,2) NOT NULL CHECK (amount > 0),
+      currency       TEXT          NOT NULL DEFAULT 'EUR',
+      created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_entries_tx ON ledger_entries(transaction_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_entries_account ON ledger_entries(account)`,
+    `CREATE INDEX IF NOT EXISTS idx_ledger_entries_user ON ledger_entries(user_id)`,
   ];
 
   const client = await pool.connect();

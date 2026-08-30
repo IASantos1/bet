@@ -3,6 +3,21 @@ import type pg from 'pg';
 import { readJsonBody, sendJson, badRequest, unauthorized, forbid } from '../lib/http';
 import { requireUser, isAdmin } from '../lib/auth';
 import type { EventsService } from './events';
+import { WalletError, withTransaction, opCompleteWithdrawal, opCancelWithdrawal, opSettleBetWon, opSettleBetLost, opVoidBet } from '../lib/ledger';
+
+function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
+  if (e instanceof WalletError) {
+    const status = e.code === 'INSUFFICIENT_FUNDS' || e.code === 'INVALID_AMOUNT' ? 400 : e.code === 'NOT_FOUND' ? 404 : 409;
+    sendJson(res, status, { error: e.message, code: e.code });
+    return true;
+  }
+  return false;
+}
+
+function toNumber(v: any): number {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 interface TestKeyBody { key: string; sport?: string; matchId?: string }
 
@@ -90,6 +105,116 @@ export async function handleAdminRoutes(
        LIMIT 500`,
     );
     sendJson(res, 200, { withdrawals: r.rows || [] });
+    return true;
+  }
+
+  // POST /api/admin/withdrawals/:id/approve — pay out a pending withdrawal (spec §12, §40)
+  const approveWithdrawal = path.match(/^\/api\/admin\/withdrawals\/([^/]+)\/approve$/);
+  if (approveWithdrawal && req.method === 'POST') {
+    const withdrawalId = decodeURIComponent(approveWithdrawal[1] || '');
+    const r = await pool.query(
+      `SELECT id, user_id, amount FROM transactions WHERE id = $1 AND type = 'withdrawal' AND status = 'pending' LIMIT 1`,
+      [withdrawalId],
+    );
+    const row = r.rows?.[0];
+    if (!row) return badRequest(res, 'Levantamento não encontrado ou já processado'), true;
+
+    try {
+      await withTransaction(pool, async (client) => {
+        await client.query(`UPDATE transactions SET status = 'completed', updated_at = NOW() WHERE id = $1 AND status = 'pending'`, [withdrawalId]);
+        return opCompleteWithdrawal(client, {
+          userId: String(row.user_id),
+          amount: toNumber(row.amount),
+          idempotencyKey: `withdraw_approve:${withdrawalId}`,
+          withdrawalId,
+        });
+      });
+      sendJson(res, 200, { success: true, operator_id: u.id });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
+    return true;
+  }
+
+  // POST /api/admin/withdrawals/:id/reject — return the reserved funds to the player (spec §12)
+  const rejectWithdrawal = path.match(/^\/api\/admin\/withdrawals\/([^/]+)\/reject$/);
+  if (rejectWithdrawal && req.method === 'POST') {
+    const withdrawalId = decodeURIComponent(rejectWithdrawal[1] || '');
+    const body = await readJsonBody<{ reason?: string }>(req).catch(() => ({}) as any);
+    const r = await pool.query(
+      `SELECT id, user_id, amount FROM transactions WHERE id = $1 AND type = 'withdrawal' AND status = 'pending' LIMIT 1`,
+      [withdrawalId],
+    );
+    const row = r.rows?.[0];
+    if (!row) return badRequest(res, 'Levantamento não encontrado ou já processado'), true;
+
+    try {
+      await withTransaction(pool, async (client) => {
+        await client.query(
+          `UPDATE transactions SET status = 'rejected', description = COALESCE(description, '') || $2, updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
+          [withdrawalId, body?.reason ? ` | Rejeitado: ${String(body.reason)}` : ' | Rejeitado'],
+        );
+        return opCancelWithdrawal(client, {
+          userId: String(row.user_id),
+          amount: toNumber(row.amount),
+          idempotencyKey: `withdraw_reject:${withdrawalId}`,
+          withdrawalId,
+        });
+      });
+      sendJson(res, 200, { success: true, operator_id: u.id });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
+    return true;
+  }
+
+  // POST /api/admin/bets/:id/settle — Settlement Engine entry point (spec §27-29). Idempotent:
+  // settling the same bet twice with the same result is a no-op replay (spec §64), never a
+  // double payout.
+  const settleBet = path.match(/^\/api\/admin\/bets\/([^/]+)\/settle$/);
+  if (settleBet && req.method === 'POST') {
+    const betId = decodeURIComponent(settleBet[1] || '');
+    const body = await readJsonBody<{ result?: 'won' | 'lost' | 'void' }>(req).catch(() => null);
+    const outcome = body?.result;
+    if (outcome !== 'won' && outcome !== 'lost' && outcome !== 'void') {
+      return badRequest(res, "result deve ser 'won', 'lost' ou 'void'"), true;
+    }
+
+    const r = await pool.query(
+      `SELECT id, user_id, stake, potential_win, status, is_free_bet FROM bets WHERE id = $1 LIMIT 1`,
+      [betId],
+    );
+    const bet = r.rows?.[0];
+    if (!bet) return badRequest(res, 'Bet not found'), true;
+    if (String(bet.status) !== 'pending') return badRequest(res, `Aposta já liquidada (status=${bet.status})`), true;
+
+    const userId = String(bet.user_id);
+    const stake = toNumber(bet.stake);
+    const idempotencyKey = `settle:${betId}:${outcome}`;
+    const newStatus = outcome === 'won' ? 'won' : outcome === 'lost' ? 'lost' : 'void';
+
+    try {
+      const result = await withTransaction(pool, async (client) => {
+        let settled;
+        if (outcome === 'won') {
+          settled = await opSettleBetWon(client, { userId, stake, payout: toNumber(bet.potential_win), idempotencyKey, betId });
+        } else if (outcome === 'lost') {
+          settled = await opSettleBetLost(client, { userId, stake, idempotencyKey, betId });
+        } else {
+          settled = await opVoidBet(client, { userId, stake, idempotencyKey, betId, toBonus: Boolean(bet.is_free_bet) });
+        }
+        if (!settled.replayed) {
+          await client.query(
+            `UPDATE bets SET status = $2, winnings = $3, settled_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
+            [betId, newStatus, outcome === 'won' ? toNumber(bet.potential_win) : 0],
+          );
+        }
+        return settled;
+      });
+      sendJson(res, 200, { success: true, status: newStatus, replayed: result.replayed, operator_id: u.id });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 

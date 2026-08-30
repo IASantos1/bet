@@ -1,4 +1,5 @@
 import type http from 'http';
+import { randomBytes } from 'crypto';
 
 export async function readJsonBody<T = any>(req: http.IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
@@ -44,5 +45,21 @@ export function unauthorized(res: http.ServerResponse): void {
 
 export function forbid(res: http.ServerResponse): void {
   sendJson(res, 403, { error: 'Forbidden' });
+}
+
+/**
+ * Resolves the idempotency key for a money-moving request: an explicit `Idempotency-Key`
+ * header wins, then a body field, then `fallback` (a caller-supplied deterministic seed such as
+ * a provider transaction id). If none of those are present a fresh random key is generated —
+ * that request is still safe (atomic, non-negative-guarded) but a client-side retry of it will
+ * not be deduplicated, since nothing ties the two HTTP calls together.
+ */
+export function resolveIdempotencyKey(req: http.IncomingMessage, body: any, fallback?: string | null): string {
+  const header = String(req.headers['idempotency-key'] || '').trim();
+  if (header) return header;
+  const fromBody = body && typeof body.idempotency_key === 'string' ? body.idempotency_key.trim() : '';
+  if (fromBody) return fromBody;
+  if (fallback) return fallback;
+  return `auto:${randomBytes(16).toString('hex')}`;
 }
 

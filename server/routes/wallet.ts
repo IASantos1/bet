@@ -1,26 +1,44 @@
 import type http from 'http';
 import type pg from 'pg';
 import { randomId } from '../lib/crypto';
-import { readJsonBody, sendJson, badRequest, unauthorized } from '../lib/http';
+import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey } from '../lib/http';
 import { requireUser } from '../lib/auth';
+import {
+  walletService,
+  WalletError,
+  withTransaction,
+  opRequestWithdrawal,
+  opCancelWithdrawal,
+  opReserveForBet,
+  opSettleBetWon,
+  opCashout,
+  opAdjustBalance,
+} from '../lib/ledger';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-async function getBalance(pool: pg.Pool, userId: string): Promise<number> {
-  const r = await pool.query(`SELECT balance FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
-  const v = r.rows?.[0]?.balance;
-  const n = v == null ? 0 : Number(v);
-  return Number.isFinite(n) ? n : 0;
+function walletJson(w: { available: number; reserved: number; bonus: number; pendingWithdrawal: number }) {
+  return {
+    // `balance` kept as an alias of `available` for existing frontend callers.
+    balance: w.available,
+    available: w.available,
+    reserved: w.reserved,
+    bonus: w.bonus,
+    pending_withdrawal: w.pendingWithdrawal,
+    currency: 'EUR',
+  };
 }
 
-async function setBalance(pool: pg.Pool, userId: string, newBalance: number): Promise<void> {
-  await pool.query(
-    `UPDATE profiles SET balance = $2, updated_at = NOW() WHERE user_id = $1`,
-    [userId, newBalance],
-  );
+function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
+  if (e instanceof WalletError) {
+    const status = e.code === 'INSUFFICIENT_FUNDS' || e.code === 'INVALID_AMOUNT' ? 400 : e.code === 'NOT_FOUND' ? 404 : 409;
+    sendJson(res, status, { error: e.message, code: e.code });
+    return true;
+  }
+  return false;
 }
 
 async function getTransactions(pool: pg.Pool, userId: string) {
@@ -45,6 +63,19 @@ async function getTransactions(pool: pg.Pool, userId: string) {
   }));
 }
 
+/** Records a human-readable transaction row for history/backoffice display. Never the source of truth for balance. */
+async function recordTransaction(
+  pool: pg.Pool,
+  params: { id: string; userId: string; type: string; amount: number; status: string; method: string; description: string; externalId?: string | null },
+) {
+  await pool.query(
+    `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, external_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+     ON CONFLICT (id) DO NOTHING`,
+    [params.id, params.userId, params.type, params.amount, params.status, params.method, params.description, params.externalId ?? null],
+  );
+}
+
 export async function handleWalletRoutes(
   pool: pg.Pool,
   req: http.IncomingMessage,
@@ -57,8 +88,8 @@ export async function handleWalletRoutes(
   if (req.method === 'GET' && path === '/api/wallet') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
-    const balance = await getBalance(pool, u.id);
-    sendJson(res, 200, { balance, currency: 'EUR' });
+    const wallet = await walletService.getWallet(pool, u.id);
+    sendJson(res, 200, walletJson(wallet));
     return true;
   }
 
@@ -66,8 +97,8 @@ export async function handleWalletRoutes(
   if (req.method === 'GET' && path === '/api/wallet/balances') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
-    const balance = await getBalance(pool, u.id);
-    sendJson(res, 200, [{ currency: 'EUR', balance }]);
+    const wallet = await walletService.getWallet(pool, u.id);
+    sendJson(res, 200, [{ currency: 'EUR', balance: wallet.available }]);
     return true;
   }
 
@@ -88,7 +119,7 @@ export async function handleWalletRoutes(
     return true;
   }
 
-  // POST /api/transactions — create a pending transaction record
+  // POST /api/transactions — create a pending transaction record (informational only, no money movement)
   if (req.method === 'POST' && path === '/api/transactions') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -101,22 +132,17 @@ export async function handleWalletRoutes(
 
     const txId = randomId(16);
     const externalId = body.external_id ? String(body.external_id) : null;
-    const accountDetails = body.account_details ? JSON.stringify(body.account_details) : null;
 
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, external_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
-      [
-        txId,
-        u.id,
-        String(body.type || 'deposit'),
-        amount,
-        String(body.status || 'pending'),
-        String(body.payment_method || 'manual'),
-        String(body.description || ''),
-        externalId,
-      ],
-    );
+    await recordTransaction(pool, {
+      id: txId,
+      userId: u.id,
+      type: String(body.type || 'deposit'),
+      amount,
+      status: String(body.status || 'pending'),
+      method: String(body.payment_method || 'manual'),
+      description: String(body.description || ''),
+      externalId,
+    });
 
     sendJson(res, 200, { ok: true, id: txId });
     return true;
@@ -128,65 +154,54 @@ export async function handleWalletRoutes(
     return true;
   }
 
+  // ---- Deposits: every deposit is a confirmed-payment credit into the ledger. ----
+  // `external_id` (PSP transaction/session id) is the natural idempotency key: replaying the
+  // same PSP webhook or client confirmation twice never credits the wallet twice (spec §9, §65).
+
+  const doDeposit = async (method: string, minAmount: number, description: (amount: number) => string) => {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+
+    const body = await readJsonBody<any>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+    const amount = toNumber(body.amount);
+    if (!amount || amount < minAmount) return badRequest(res, `Valor mínimo €${minAmount}`), true;
+
+    const externalId = body.external_id ? String(body.external_id) : null;
+    const idempotencyKey = resolveIdempotencyKey(req, body, externalId ? `deposit:${method}:${externalId}` : null);
+
+    try {
+      const result = await walletService.deposit(pool, { userId: u.id, amount, idempotencyKey, method, referenceId: externalId ?? undefined });
+      if (!result.replayed) {
+        await recordTransaction(pool, {
+          id: result.transactionId,
+          userId: u.id,
+          type: 'deposit',
+          amount,
+          status: 'completed',
+          method,
+          description: description(amount),
+          externalId,
+        });
+      }
+      sendJson(res, 200, { ok: true, balance: result.wallet.available, id: result.transactionId });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
+    return true;
+  };
+
   // POST /api/wallet/deposit — credit balance after payment confirmation
   if (req.method === 'POST' && path === '/api/wallet/deposit') {
-    const u = await requireUser(pool, req);
-    if (!u) return unauthorized(res), true;
-
-    const body = await readJsonBody<any>(req).catch(() => null);
-    if (!body) return badRequest(res, 'Invalid JSON'), true;
-
-    const amount = toNumber(body.amount);
-    if (!amount || amount < 1) return badRequest(res, 'Valor inválido'), true;
-
-    const current = await getBalance(pool, u.id);
-    const newBalance = current + amount;
-    await setBalance(pool, u.id, newBalance);
-
-    const txId = randomId(16);
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, external_id, created_at, updated_at)
-       VALUES ($1, $2, 'deposit', $3, 'completed', $4, $5, $6, NOW(), NOW())`,
-      [
-        txId,
-        u.id,
-        amount,
-        String(body.payment_method || 'manual'),
-        String(body.description || 'Depósito'),
-        body.external_id ? String(body.external_id) : null,
-      ],
-    );
-
-    sendJson(res, 200, { ok: true, balance: newBalance, id: txId });
-    return true;
+    return doDeposit('manual', 1, (amount) => `Depósito - €${amount.toFixed(2)}`);
   }
 
-  // POST /api/wallet/deposit/card — Stripe/PayPal card deposit (same as above)
+  // POST /api/wallet/deposit/card — Stripe/PayPal card deposit
   if (req.method === 'POST' && path === '/api/wallet/deposit/card') {
-    const u = await requireUser(pool, req);
-    if (!u) return unauthorized(res), true;
-
-    const body = await readJsonBody<any>(req).catch(() => null);
-    if (!body) return badRequest(res, 'Invalid JSON'), true;
-    const amount = toNumber(body.amount);
-    if (!amount || amount < 10) return badRequest(res, 'Valor mínimo €10'), true;
-
-    const current = await getBalance(pool, u.id);
-    const newBalance = current + amount;
-    await setBalance(pool, u.id, newBalance);
-
-    const txId = randomId(16);
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'deposit', $3, 'completed', 'card', $4, NOW(), NOW())`,
-      [txId, u.id, amount, `Depósito via Cartão - €${amount.toFixed(2)}`],
-    );
-
-    sendJson(res, 200, { ok: true, balance: newBalance, id: txId });
-    return true;
+    return doDeposit('card', 10, (amount) => `Depósito via Cartão - €${amount.toFixed(2)}`);
   }
 
-  // POST /api/wallet/deposit/mbway — MB WAY deposit
+  // POST /api/wallet/deposit/mbway — MB WAY deposit (stays pending until the provider confirms; no wallet credit yet)
   if (req.method === 'POST' && path === '/api/wallet/deposit/mbway') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -197,22 +212,23 @@ export async function handleWalletRoutes(
     if (!amount || amount < 10) return badRequest(res, 'Valor mínimo €10'), true;
 
     const txId = randomId(16);
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'deposit', $3, 'pending', 'mbway', $4, NOW(), NOW())`,
-      [txId, u.id, amount, `Depósito via MB WAY - €${amount.toFixed(2)}`],
-    );
-
-    sendJson(res, 200, {
-      ok: true,
+    await recordTransaction(pool, {
       id: txId,
-      message: 'Pedido MB WAY enviado. Confirme no telemóvel.',
+      userId: u.id,
+      type: 'deposit',
+      amount,
+      status: 'pending',
+      method: 'mbway',
+      description: `Depósito via MB WAY - €${amount.toFixed(2)}`,
     });
+
+    sendJson(res, 200, { ok: true, id: txId, message: 'Pedido MB WAY enviado. Confirme no telemóvel.' });
     return true;
   }
 
-  // POST /api/wallet/withdraw — create withdrawal request
-  if (req.method === 'POST' && path === '/api/wallet/withdraw') {
+  // ---- Withdrawals ----
+
+  const doWithdraw = async () => {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
 
@@ -222,92 +238,85 @@ export async function handleWalletRoutes(
     const amount = toNumber(body.amount ?? body.amount_eur);
     if (!amount || amount < 20) return badRequest(res, 'Valor mínimo de levantamento é €20'), true;
 
-    const current = await getBalance(pool, u.id);
-    if (current < amount) return badRequest(res, 'Saldo insuficiente'), true;
-
-    const txId = randomId(16);
+    const withdrawalId = randomId(16);
+    const idempotencyKey = resolveIdempotencyKey(req, body, null);
     const meta = JSON.stringify({
       iban: String(body.iban || body.accountDetails?.iban || ''),
       holder_name: String(body.holder_name || body.accountDetails?.accountHolder || ''),
       nif: String(body.nif || ''),
     });
 
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'withdrawal', $3, 'pending', 'iban', $4, NOW(), NOW())`,
-      [txId, u.id, amount, meta],
-    );
-
-    await setBalance(pool, u.id, current - amount);
-    sendJson(res, 200, {
-      success: true,
-      id: txId,
-      transactionId: txId,
-      message: `Levantamento de €${amount.toFixed(2)} solicitado com sucesso!`,
-      processingTime: '1-3 dias úteis',
-      newBalance: current - amount,
-    });
+    try {
+      const result = await opWithdrawTx(pool, { userId: u.id, amount, idempotencyKey, withdrawalId });
+      if (!result.replayed) {
+        await recordTransaction(pool, {
+          id: withdrawalId,
+          userId: u.id,
+          type: 'withdrawal',
+          amount,
+          status: 'pending',
+          method: 'iban',
+          description: meta,
+        });
+      }
+      sendJson(res, 200, {
+        success: true,
+        id: withdrawalId,
+        transactionId: withdrawalId,
+        message: `Levantamento de €${amount.toFixed(2)} solicitado com sucesso!`,
+        processingTime: '1-3 dias úteis',
+        newBalance: result.wallet.available,
+      });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
+  };
+
+  if (req.method === 'POST' && (path === '/api/wallet/withdraw' || path === '/api/wallet/withdrawals')) {
+    return doWithdraw();
   }
 
-  // POST /api/wallet/withdrawals — alias
-  if (req.method === 'POST' && path === '/api/wallet/withdrawals') {
-    const u = await requireUser(pool, req);
-    if (!u) return unauthorized(res), true;
-
-    const body = await readJsonBody<any>(req).catch(() => null);
-    if (!body) return badRequest(res, 'Invalid JSON'), true;
-    const amount = toNumber(body.amount_eur ?? body.amount);
-    if (!amount || amount < 20) return badRequest(res, 'Valor inválido'), true;
-
-    const current = await getBalance(pool, u.id);
-    if (current < amount) return badRequest(res, 'Saldo insuficiente'), true;
-
-    const txId = randomId(16);
-    const meta = JSON.stringify({
-      iban: String(body.iban || ''),
-      holder_name: String(body.holder_name || ''),
-      nif: String(body.nif || ''),
-    });
-
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'withdrawal', $3, 'pending', 'iban', $4, NOW(), NOW())`,
-      [txId, u.id, amount, meta],
-    );
-
-    await setBalance(pool, u.id, current - amount);
-    sendJson(res, 200, { success: true, id: txId });
-    return true;
-  }
-
-  // POST /api/wallet/withdraw/cancel — cancel a pending withdrawal
+  // POST /api/wallet/withdraw/cancel — cancel a pending withdrawal, return funds to available
   if (req.method === 'POST' && path === '/api/wallet/withdraw/cancel') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
 
     const body = await readJsonBody<any>(req).catch(() => null);
     if (!body?.id) return badRequest(res, 'ID em falta'), true;
+    const withdrawalId = String(body.id);
 
     const r = await pool.query(
       `SELECT id, amount FROM transactions WHERE id = $1 AND user_id = $2 AND type = 'withdrawal' AND status = 'pending' LIMIT 1`,
-      [String(body.id), u.id],
+      [withdrawalId, u.id],
     );
     if (!r.rows[0]) return badRequest(res, 'Transação não encontrada ou já processada'), true;
-
     const amount = Number(r.rows[0].amount);
-    await pool.query(
-      `UPDATE transactions SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
-      [String(body.id)],
-    );
 
-    const current = await getBalance(pool, u.id);
-    await setBalance(pool, u.id, current + amount);
-    sendJson(res, 200, { ok: true, newBalance: current + amount });
+    try {
+      const result = await withTransaction(pool, async (client) => {
+        await client.query(`UPDATE transactions SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending'`, [withdrawalId]);
+        return opCancelWithdrawal(client, {
+          userId: u.id,
+          amount,
+          idempotencyKey: `withdraw_cancel:${withdrawalId}`,
+          withdrawalId,
+        });
+      });
+      sendJson(res, 200, { ok: true, newBalance: result.wallet.available });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 
-  // POST /api/wallet/bet — place a bet, deduct from balance
+  // ---- Bet stake / settlement bridge ----
+  // The betting-slip UI moves money through these endpoints directly rather than always going
+  // through POST /api/bets. When a `betId` is supplied we correlate the reservation and its
+  // settlement so the funds are traceable end-to-end; without one we still guarantee atomicity,
+  // idempotency and a non-negative balance via a direct house adjustment.
+
+  // POST /api/wallet/bet — reserve a stake
   if (req.method === 'POST' && path === '/api/wallet/bet') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -317,16 +326,21 @@ export async function handleWalletRoutes(
 
     const amount = toNumber(body.amount ?? body.stake);
     if (!amount || amount <= 0) return badRequest(res, 'Valor inválido'), true;
+    const betId = body.betId ? String(body.betId) : `adhoc:${randomId(12)}`;
+    const idempotencyKey = resolveIdempotencyKey(req, body, `bet_reserve:${betId}`);
 
-    const current = await getBalance(pool, u.id);
-    if (current < amount) return badRequest(res, 'Saldo insuficiente'), true;
-
-    await setBalance(pool, u.id, current - amount);
-    sendJson(res, 200, { ok: true, balance: current - amount });
+    try {
+      const result = await withTransaction(pool, (client) =>
+        opReserveForBet(client, { userId: u.id, amount, idempotencyKey, betId, useBonus: Boolean(body.isFreeBet ?? body.use_freebet) }),
+      );
+      sendJson(res, 200, { ok: true, balance: result.wallet.available, betId });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 
-  // POST /api/wallet/win — credit winnings
+  // POST /api/wallet/win — credit winnings (releases the matching reservation when betId is known)
   if (req.method === 'POST' && path === '/api/wallet/win') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -336,15 +350,27 @@ export async function handleWalletRoutes(
 
     const amount = toNumber(body.amount);
     if (!amount || amount <= 0) return badRequest(res, 'Valor inválido'), true;
+    const betId = body.betId ? String(body.betId) : null;
+    const idempotencyKey = resolveIdempotencyKey(req, body, betId ? `bet_win:${betId}` : null);
 
-    const current = await getBalance(pool, u.id);
-    const newBalance = current + amount;
-    await setBalance(pool, u.id, newBalance);
-    sendJson(res, 200, { ok: true, balance: newBalance });
+    try {
+      const stake = toNumber(body.stake);
+      const result = await withTransaction(pool, async (client) => {
+        if (betId && stake > 0) {
+          const settled = await tryWithSavepoint(client, () => opSettleBetWon(client, { userId: u.id, stake, payout: amount, idempotencyKey, betId }));
+          // No matching reservation for this betId (legacy caller never reserved it here) — fall through to a direct credit.
+          if (settled) return settled;
+        }
+        return opAdjustBalance(client, { userId: u.id, amount, idempotencyKey, reason: 'bet_win', referenceId: betId ?? undefined });
+      });
+      sendJson(res, 200, { ok: true, balance: result.wallet.available });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 
-  // POST /api/wallet/cashout — cashout a bet
+  // POST /api/wallet/cashout — cashout a bet (releases the matching reservation when betId+stake are known)
   if (req.method === 'POST' && path === '/api/wallet/cashout') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -354,14 +380,26 @@ export async function handleWalletRoutes(
 
     const amount = toNumber(body.amount);
     if (!amount || amount <= 0) return badRequest(res, 'Valor inválido'), true;
+    const betId = body.betId ? String(body.betId) : null;
+    const idempotencyKey = resolveIdempotencyKey(req, body, betId ? `cashout:${betId}` : null);
 
-    const current = await getBalance(pool, u.id);
-    await setBalance(pool, u.id, current + amount);
-    sendJson(res, 200, { ok: true, balance: current + amount });
+    try {
+      const stake = toNumber(body.stake);
+      const result = await withTransaction(pool, async (client) => {
+        if (betId && stake > 0) {
+          const cashedOut = await tryWithSavepoint(client, () => opCashout(client, { userId: u.id, stake, cashoutValue: amount, idempotencyKey, betId }));
+          if (cashedOut) return cashedOut;
+        }
+        return opAdjustBalance(client, { userId: u.id, amount, idempotencyKey, reason: 'cashout', referenceId: betId ?? undefined });
+      });
+      sendJson(res, 200, { ok: true, balance: result.wallet.available });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 
-  // POST /api/payments/mbway — initiate MB WAY payment
+  // POST /api/payments/mbway — initiate MB WAY payment (pending only)
   if (req.method === 'POST' && path === '/api/payments/mbway') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -373,22 +411,21 @@ export async function handleWalletRoutes(
     if (!amount || amount < 10) return badRequest(res, 'Valor mínimo €10'), true;
 
     const txId = randomId(16);
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'deposit', $3, 'pending', 'mbway', $4, NOW(), NOW())`,
-      [txId, u.id, amount, `Depósito MB WAY - €${amount.toFixed(2)}`],
-    );
-
-    sendJson(res, 200, {
-      ok: true,
+    await recordTransaction(pool, {
       id: txId,
+      userId: u.id,
+      type: 'deposit',
+      amount,
       status: 'pending',
-      message: 'Pagamento MB WAY iniciado. Confirme no telemóvel.',
+      method: 'mbway',
+      description: `Depósito MB WAY - €${amount.toFixed(2)}`,
     });
+
+    sendJson(res, 200, { ok: true, id: txId, status: 'pending', message: 'Pagamento MB WAY iniciado. Confirme no telemóvel.' });
     return true;
   }
 
-  // POST /api/payments/multibanco/generate — generate Multibanco reference
+  // POST /api/payments/multibanco/generate — generate Multibanco reference (pending only)
   if (req.method === 'POST' && path === '/api/payments/multibanco/generate') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -403,21 +440,47 @@ export async function handleWalletRoutes(
     const reference = `${Math.floor(Math.random() * 900000000 + 100000000)}`;
 
     const txId = randomId(16);
-    await pool.query(
-      `INSERT INTO transactions (id, user_id, type, amount, status, payment_method, description, created_at, updated_at)
-       VALUES ($1, $2, 'deposit', $3, 'pending', 'multibanco', $4, NOW(), NOW())`,
-      [txId, u.id, amount, `Referência Multibanco: ${entity} / ${reference}`],
-    );
-
-    sendJson(res, 200, {
-      ok: true,
-      entity,
-      reference,
+    await recordTransaction(pool, {
+      id: txId,
+      userId: u.id,
+      type: 'deposit',
       amount,
-      expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+      status: 'pending',
+      method: 'multibanco',
+      description: `Referência Multibanco: ${entity} / ${reference}`,
     });
+
+    sendJson(res, 200, { ok: true, entity, reference, amount, expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString() });
     return true;
   }
 
   return false;
+}
+
+function opWithdrawTx(pool: pg.Pool, params: Parameters<typeof opRequestWithdrawal>[1]) {
+  return withTransaction(pool, (client) => opRequestWithdrawal(client, params));
+}
+
+let savepointCounter = 0;
+
+/**
+ * Runs `fn` under a SAVEPOINT so a business-rule failure (WalletError INVALID_STATE — e.g. no
+ * matching reservation) can be undone without losing the outer transaction, leaving no orphaned
+ * ledger_transactions/entries behind. Returns `null` on that specific failure so the caller can
+ * fall back to a different operation in the same transaction; any other error propagates.
+ */
+async function tryWithSavepoint<T>(client: pg.PoolClient, fn: () => Promise<T>): Promise<T | null> {
+  const sp = `sp_${++savepointCounter}_${Date.now()}`;
+  await client.query(`SAVEPOINT ${sp}`);
+  try {
+    const result = await fn();
+    await client.query(`RELEASE SAVEPOINT ${sp}`);
+    return result;
+  } catch (e) {
+    if (e instanceof WalletError && e.code === 'INVALID_STATE') {
+      await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+      return null;
+    }
+    throw e;
+  }
 }
