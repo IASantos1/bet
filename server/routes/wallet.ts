@@ -14,6 +14,7 @@ import {
   opCashout,
   opAdjustBalance,
 } from '../lib/ledger';
+import { validateBetRequest, BetRejectedError } from '../lib/bettingEngine';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
@@ -36,6 +37,10 @@ function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
     const status = e.code === 'INSUFFICIENT_FUNDS' || e.code === 'INVALID_AMOUNT' ? 400 : e.code === 'NOT_FOUND' ? 404 : 409;
     sendJson(res, status, { error: e.message, code: e.code });
+    return true;
+  }
+  if (e instanceof BetRejectedError) {
+    sendJson(res, 400, { error: e.message, code: e.code, details: e.details });
     return true;
   }
   return false;
@@ -328,8 +333,16 @@ export async function handleWalletRoutes(
     if (!amount || amount <= 0) return badRequest(res, 'Valor inválido'), true;
     const betId = body.betId ? String(body.betId) : `adhoc:${randomId(12)}`;
     const idempotencyKey = resolveIdempotencyKey(req, body, `bet_reserve:${betId}`);
+    // This entry point doesn't carry per-selection event/odd detail (see server/lib/bettingEngine.ts
+    // module docstring), so only the stake/payout limit checks apply here — no live price cross-check.
+    const totalOdds = toNumber(body.totalOdds) || 1.01;
 
     try {
+      await validateBetRequest({
+        legs: [{ eventId: betId, selection: 'combined', odd: totalOdds }],
+        stake: amount,
+        totalOdds,
+      });
       const result = await withTransaction(pool, (client) =>
         opReserveForBet(client, { userId: u.id, amount, idempotencyKey, betId, useBonus: Boolean(body.isFreeBet ?? body.use_freebet) }),
       );

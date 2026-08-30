@@ -76,6 +76,8 @@ export type EventsService = {
   ) => Promise<boolean>;
   getAdminOddsEvents: () => Promise<any[]>;
   setOddsOverride: (eventId: string, odds: { home_odd?: number; draw_odd?: number; away_odd?: number }) => Promise<void>;
+  /** Current published H2H (1x2) odds for an event, for server-side bet-price validation. Null if unresolvable. */
+  getEventOdds: (eventId: string, sport?: string) => Promise<{ home: number; draw: number; away: number; markets: any } | null>;
 };
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
@@ -1469,5 +1471,18 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     overridesCache.delete(eventId);
   };
 
-  return { handleEventsRoutes, getAdminOddsEvents, setOddsOverride };
+  const getEventOdds = async (
+    eventId: string,
+    sportHint?: string,
+  ): Promise<{ home: number; draw: number; away: number; markets: any } | null> => {
+    const id = normalizeIdLoose(String(eventId || ''));
+    if (!id) return null;
+    const sport = (sportHint && String(sportHint).trim()) || (await resolveSport(id).catch(() => null));
+    if (!sport) return null;
+    const odds = await fetchOddsStrict(sport, id, { forceAll: true }).catch(() => null);
+    if (!odds) return null;
+    return { home: Number(odds.home || 0), draw: Number(odds.draw || 0), away: Number(odds.away || 0), markets: odds.markets || {} };
+  };
+
+  return { handleEventsRoutes, getAdminOddsEvents, setOddsOverride, getEventOdds };
 }

@@ -200,7 +200,7 @@ const server = http.createServer(async (req, res) => {
       if (pool && (await handleAuthRoutes(pool, req, res, url))) return;
       if (pool && (await handleUsersRoutes(pool, req, res, url))) return;
       if (pool && (await handleWalletRoutes(pool, req, res, url))) return;
-      if (pool && (await handleBetRoutes(pool, req, res, url))) return;
+      if (pool && (await handleBetRoutes(pool, events, req, res, url))) return;
       if (pool && (await handleFavoriteRoutes(pool, req, res, url))) return;
       if (pool && (await handleAdminRoutes(pool, events, req, res, url))) return;
 
