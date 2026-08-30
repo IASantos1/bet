@@ -7,6 +7,7 @@ export type AuthedUser = {
   role: 'user' | 'admin';
   name?: string | null;
   kyc_verified?: boolean;
+  account_status?: string;
 };
 
 export function getBearerToken(req: http.IncomingMessage): string {
@@ -45,7 +46,7 @@ export async function requireUser(pool: pg.Pool, req: http.IncomingMessage): Pro
     const row =
       mode === 'ts'
         ? await pool.query(
-            `SELECT s.user_id, u.email, u.role, u.name, p.kyc_verified
+            `SELECT s.user_id, u.email, u.role, u.name, p.kyc_verified, p.account_status
              FROM sessions s
              JOIN users u ON u.id = s.user_id
              LEFT JOIN profiles p ON p.user_id = u.id
@@ -54,7 +55,7 @@ export async function requireUser(pool: pg.Pool, req: http.IncomingMessage): Pro
             [token],
           )
         : await pool.query(
-            `SELECT s.user_id, u.email, u.role, u.name, p.kyc_verified
+            `SELECT s.user_id, u.email, u.role, u.name, p.kyc_verified, p.account_status
              FROM sessions s
              JOIN users u ON u.id = s.user_id
              LEFT JOIN profiles p ON p.user_id = u.id
@@ -64,12 +65,16 @@ export async function requireUser(pool: pg.Pool, req: http.IncomingMessage): Pro
           );
     const r = row.rows?.[0];
     if (!r) return null;
+    // A suspended account loses access immediately on its very next request, not just on a
+    // fresh login (spec §6 account_status, §39 backoffice "Bloquear conta").
+    if (r.account_status != null && String(r.account_status) === 'SUSPENDED') return null;
     return {
       id: String(r.user_id),
       email: String(r.email),
       role: (String(r.role) === 'admin' ? 'admin' : 'user') as any,
       name: r.name == null ? null : String(r.name),
       kyc_verified: r.kyc_verified == null ? undefined : Boolean(r.kyc_verified),
+      account_status: r.account_status == null ? undefined : String(r.account_status),
     };
   } catch {
     return null;

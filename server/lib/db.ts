@@ -196,6 +196,25 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_ledger_entries_tx ON ledger_entries(transaction_id)`,
     `CREATE INDEX IF NOT EXISTS idx_ledger_entries_account ON ledger_entries(account)`,
     `CREATE INDEX IF NOT EXISTS idx_ledger_entries_user ON ledger_entries(user_id)`,
+
+    // ---- KYC state machine + account status (spec §6, §35) + Audit Log (spec §41) ----
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS kyc_status TEXT NOT NULL DEFAULT 'NOT_STARTED'`,
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL DEFAULT 'ACTIVE'`,
+    `ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS ip_address TEXT`,
+    `CREATE INDEX IF NOT EXISTS idx_profiles_kyc_status ON profiles(kyc_status)`,
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id            TEXT        PRIMARY KEY,
+      operator_id   TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action        TEXT        NOT NULL,
+      resource_type TEXT        NOT NULL,
+      resource_id   TEXT,
+      reason        TEXT,
+      metadata      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+      ip            TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_logs_operator ON audit_logs(operator_id, created_at DESC)`,
   ];
 
   const client = await pool.connect();
