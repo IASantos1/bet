@@ -78,6 +78,11 @@ export type EventsService = {
   setOddsOverride: (eventId: string, odds: { home_odd?: number; draw_odd?: number; away_odd?: number }) => Promise<void>;
   /** Current published H2H (1x2) odds for an event, for server-side bet-price validation. Null if unresolvable. */
   getEventOdds: (eventId: string, sport?: string) => Promise<{ home: number; draw: number; away: number; markets: any } | null>;
+  /** Official result for the Settlement Engine (spec §27-28). Null if the event can't be resolved at all. */
+  getEventResult: (
+    eventId: string,
+    sport?: string,
+  ) => Promise<{ finished: boolean; statusShort: string; homeScore: number | null; awayScore: number | null } | null>;
 };
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
@@ -1484,5 +1489,49 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     return { home: Number(odds.home || 0), draw: Number(odds.draw || 0), away: Number(odds.away || 0), markets: odds.markets || {} };
   };
 
-  return { handleEventsRoutes, getAdminOddsEvents, setOddsOverride, getEventOdds };
+  const getEventResult = async (
+    eventId: string,
+    sportHint?: string,
+  ): Promise<{ finished: boolean; statusShort: string; homeScore: number | null; awayScore: number | null } | null> => {
+    const id = normalizeIdLoose(String(eventId || ''));
+    if (!id) return null;
+
+    const parseResult = (ev: AnyEvent) => {
+      let score: any = {};
+      try {
+        score = typeof ev.score === 'string' ? JSON.parse(ev.score) : ev.score || {};
+      } catch {
+        score = {};
+      }
+      const statusShort = String(ev.status_short || '');
+      return {
+        finished: statusShort === 'FT',
+        statusShort,
+        homeScore: score.home != null && Number.isFinite(Number(score.home)) ? Number(score.home) : null,
+        awayScore: score.away != null && Number.isFinite(Number(score.away)) ? Number(score.away) : null,
+      };
+    };
+
+    const cached = lastEventById.get(id);
+    if (cached && ttlOk(cached.ts, 30 * 60_000)) return parseResult(cached.data);
+
+    const sport = (sportHint && String(sportHint).trim()) || (await resolveSport(id).catch(() => null));
+    if (!sport) return null;
+
+    const live = await fetchLive(sport).catch(() => []);
+    const foundLive = live.find((e: any) => String(e.id) === String(id));
+    if (foundLive) return parseResult(foundLive);
+
+    // Best-effort only: this looks at today's schedule, same as GET /api/events/:id. A finished
+    // match from a previous day that has fallen out of both caches won't resolve here — the
+    // caller (Settlement Engine) must fall back to a manual admin result in that case.
+    const date = ymd(new Date());
+    const sched = await fetchSchedule(sport, date).catch(() => []);
+    const found = sched.find((e: any) => String(e.id) === String(id));
+    if (found) return parseResult(found);
+
+    return null;
+  };
+
+  return { handleEventsRoutes, getAdminOddsEvents, setOddsOverride, getEventOdds, getEventResult };
 }
