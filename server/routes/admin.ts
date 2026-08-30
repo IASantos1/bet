@@ -6,6 +6,7 @@ import type { EventsService } from './events';
 import { WalletError, withTransaction, opCompleteWithdrawal, opCancelWithdrawal, opSettleBetWon, opSettleBetLost, opVoidBet } from '../lib/ledger';
 import { resolveLegOutcome, resolveBetOutcome, type BetOutcome } from '../lib/settlementEngine';
 import { computeExposure, type ExposureBetInput } from '../lib/riskEngine';
+import { writeAuditLog, requestIp } from '../lib/audit';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -332,6 +333,130 @@ export async function handleAdminRoutes(
       })),
     }));
     sendJson(res, 200, computeExposure(inputs));
+    return true;
+  }
+
+  // GET /api/admin/kyc/pending — Identity/KYC Service review queue (spec §35).
+  if (req.method === 'GET' && path === '/api/admin/kyc/pending') {
+    const r = await pool.query(
+      `SELECT u.id AS user_id, u.email, u.name, p.full_name, p.created_at AS registration_date, p.kyc_status,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', d.id, 'type', d.doc_type, 'created_at', d.created_at,
+                    'ip_address', d.ip_address, 'status', d.status
+                  ) ORDER BY d.created_at
+                ) FILTER (WHERE d.id IS NOT NULL),
+                '[]'
+              ) AS documents
+       FROM users u
+       JOIN profiles p ON p.user_id = u.id
+       LEFT JOIN user_documents d ON d.user_id = u.id
+       WHERE p.kyc_status IN ('PENDING', 'IN_REVIEW')
+       GROUP BY u.id, u.email, u.name, p.full_name, p.created_at, p.kyc_status
+       ORDER BY p.created_at ASC
+       LIMIT 200`,
+    );
+    const out = (r.rows || []).map((row: any) => ({
+      kyc_id: String(row.user_id), // one review round per user; no separate KYC-request table yet
+      user_id: String(row.user_id),
+      email: String(row.email || ''),
+      username: row.name ? String(row.name) : String(row.email || '').split('@')[0],
+      full_name: String(row.full_name || ''),
+      registration_date: row.registration_date,
+      country: '',
+      status: String(row.kyc_status || 'PENDING'),
+      created_at: row.registration_date,
+      documents: (Array.isArray(row.documents) ? row.documents : []).map((d: any) => ({
+        id: String(d.id),
+        type: String(d.type || ''),
+        url: `/api/admin/documents/${d.id}`,
+        created_at: d.created_at,
+        ip_address: String(d.ip_address || ''),
+        status: String(d.status || ''),
+      })),
+    }));
+    sendJson(res, 200, out);
+    return true;
+  }
+
+  // GET /api/admin/documents/:id — stream a submitted document's raw bytes for admin review.
+  const docMatch = path.match(/^\/api\/admin\/documents\/([^/]+)$/);
+  if (docMatch && req.method === 'GET') {
+    const docId = decodeURIComponent(docMatch[1] || '');
+    const r = await pool.query(`SELECT filename, mime_type, content_base64 FROM user_documents WHERE id = $1 LIMIT 1`, [docId]);
+    const doc = r.rows?.[0];
+    if (!doc) return badRequest(res, 'Document not found'), true;
+    const buf = Buffer.from(String(doc.content_base64 || ''), 'base64');
+    res.statusCode = 200;
+    res.setHeader('content-type', String(doc.mime_type || 'application/octet-stream'));
+    res.setHeader('content-disposition', `inline; filename="${String(doc.filename || docId).replace(/"/g, '')}"`);
+    res.setHeader('cache-control', 'private, no-store');
+    res.end(buf);
+    return true;
+  }
+
+  // POST /api/admin/kyc/decision — verify or reject a user's KYC submission (spec §35, §41).
+  if (req.method === 'POST' && path === '/api/admin/kyc/decision') {
+    const body = await readJsonBody<{ kyc_id?: string; decision?: 'verified' | 'rejected'; reason?: string }>(req).catch(() => null);
+    const userId = body?.kyc_id ? String(body.kyc_id) : '';
+    const decision = body?.decision;
+    const reason = String(body?.reason || '').trim();
+    if (!userId) return badRequest(res, 'kyc_id em falta'), true;
+    if (decision !== 'verified' && decision !== 'rejected') return badRequest(res, "decision deve ser 'verified' ou 'rejected'"), true;
+    if (!reason) return badRequest(res, 'Motivo é obrigatório'), true;
+
+    const check = await pool.query(`SELECT kyc_status FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+    if (!check.rows?.[0]) return badRequest(res, 'Utilizador não encontrado'), true;
+
+    const newStatus = decision === 'verified' ? 'VERIFIED' : 'REJECTED';
+    const docStatus = decision === 'verified' ? 'VERIFIED' : 'REJECTED';
+
+    await pool.query(
+      `UPDATE profiles SET kyc_status = $2, kyc_verified = $3, updated_at = NOW() WHERE user_id = $1`,
+      [userId, newStatus, decision === 'verified'],
+    );
+    await pool.query(
+      `UPDATE user_documents SET status = $2, updated_at = NOW() WHERE user_id = $1 AND status = 'SUBMITTED'`,
+      [userId, docStatus],
+    );
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: 'kyc_decision',
+      resourceType: 'user',
+      resourceId: userId,
+      reason,
+      metadata: { decision },
+      ip: requestIp(req),
+    });
+
+    sendJson(res, 200, { success: true, status: newStatus });
+    return true;
+  }
+
+  // POST /api/admin/users/:id/suspend — immediately locks the account out (spec §6, §39).
+  const suspendMatch = path.match(/^\/api\/admin\/users\/([^/]+)\/suspend$/);
+  if (suspendMatch && req.method === 'POST') {
+    const userId = decodeURIComponent(suspendMatch[1] || '');
+    const body = await readJsonBody<{ reason?: string }>(req).catch(() => null);
+    const reason = String(body?.reason || '').trim();
+    if (!reason) return badRequest(res, 'Motivo é obrigatório'), true;
+
+    const check = await pool.query(`SELECT user_id FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+    if (!check.rows?.[0]) return badRequest(res, 'Utilizador não encontrado'), true;
+
+    await pool.query(`UPDATE profiles SET account_status = 'SUSPENDED', updated_at = NOW() WHERE user_id = $1`, [userId]);
+    await pool.query(`DELETE FROM sessions WHERE user_id = $1`, [userId]); // ends any active session immediately
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: 'account_suspend',
+      resourceType: 'user',
+      resourceId: userId,
+      reason,
+      ip: requestIp(req),
+    });
+
+    sendJson(res, 200, { success: true });
     return true;
   }
 

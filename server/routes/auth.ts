@@ -223,12 +223,19 @@ export async function handleAuthRoutes(
       if (!email || !password) return badRequest(res, 'Invalid credentials'), true;
 
       const r = await pool.query(
-        `SELECT id, email, password_hash, password_salt FROM users WHERE email = $1 LIMIT 1`,
+        `SELECT u.id, u.email, u.password_hash, u.password_salt, p.account_status
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.email = $1 LIMIT 1`,
         [email],
       );
       const u = r.rows?.[0];
       if (!u) return unauthorized(res), true;
       if (!verifyPassword(password, String(u.password_hash), String(u.password_salt))) return unauthorized(res), true;
+      if (String(u.account_status || '') === 'SUSPENDED') {
+        sendJson(res, 403, { error: 'Conta suspensa. Contacte o suporte.', code: 'ACCOUNT_SUSPENDED' });
+        return true;
+      }
 
       const enabled = await isTwoFactorEnabled(pool, String(u.id));
       if (enabled) {

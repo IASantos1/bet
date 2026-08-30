@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { randomId } from '../lib/crypto';
 import { readJsonBody, sendJson, badRequest, unauthorized } from '../lib/http';
 import { requireUser } from '../lib/auth';
+import { requestIp } from '../lib/audit';
 
 type UploadDocumentsBody = {
   documents?: Array<{
@@ -162,6 +163,8 @@ export async function handleUsersRoutes(
     const docs = Array.isArray(body.documents) ? body.documents : [];
     if (docs.length === 0) return badRequest(res, 'No documents'), true;
 
+    const ip = requestIp(req);
+    let inserted = 0;
     for (const d of docs) {
       const type = String(d?.type || '').trim();
       const filename = String(d?.filename || '').trim();
@@ -171,9 +174,21 @@ export async function handleUsersRoutes(
       if (!type || !filename || !mimeType || !content) continue;
 
       await pool.query(
-        `INSERT INTO user_documents (id, user_id, doc_type, filename, mime_type, size_bytes, content_base64, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'SUBMITTED', NOW(), NOW())`,
-        [randomId(16), u.id, type, filename, mimeType, Number.isFinite(size) ? size : 0, content],
+        `INSERT INTO user_documents (id, user_id, doc_type, filename, mime_type, size_bytes, content_base64, status, ip_address, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'SUBMITTED', $8, NOW(), NOW())`,
+        [randomId(16), u.id, type, filename, mimeType, Number.isFinite(size) ? size : 0, content, ip || null],
+      );
+      inserted += 1;
+    }
+
+    // A fresh or resubmitted document round moves the KYC state machine back into review
+    // (spec §35): NOT_STARTED/REJECTED -> PENDING. An already-verified user re-uploading (e.g. an
+    // expired document) also drops back to PENDING rather than silently staying VERIFIED.
+    if (inserted > 0) {
+      await pool.query(
+        `UPDATE profiles SET kyc_status = 'PENDING', updated_at = NOW()
+         WHERE user_id = $1 AND kyc_status IN ('NOT_STARTED', 'REJECTED', 'VERIFIED', 'EXPIRED')`,
+        [u.id],
       );
     }
 
