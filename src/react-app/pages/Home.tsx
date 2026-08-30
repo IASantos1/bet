@@ -912,7 +912,6 @@ function Home({ mode = 'home' }: HomeProps) {
         <main className="flex-1 min-w-0 space-y-8">
           {/* Banners — apenas quando NÃO está no modo Copa */}
           {showBanner && !isWorldCupMode && <BannerCarousel />}
-          {showBanner && !isWorldCupMode && <WorldCupBanner variant="compact" />}
 
           {/* Cabeçalho Copa do Mundo inline */}
           {isWorldCupMode && (
