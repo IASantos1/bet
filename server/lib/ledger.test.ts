@@ -115,11 +115,11 @@ describe('Wallet + Ledger engine', () => {
   it('settling the same bet twice never pays out twice (spec §64)', async () => {
     const userId = await createUser();
     await walletService.deposit(pool, { userId, amount: 100, idempotencyKey: `dep:${userId}` });
-    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: 'winbet' }));
+    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: `winbet:${userId}` }));
 
-    const key = `settle:winbet:won`;
-    const first = await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 10, payout: 25, idempotencyKey: key, betId: 'winbet' }));
-    const second = await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 10, payout: 25, idempotencyKey: key, betId: 'winbet' }));
+    const key = `settle:won:${userId}`;
+    const first = await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 10, payout: 25, idempotencyKey: key, betId: `winbet:${userId}` }));
+    const second = await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 10, payout: 25, idempotencyKey: key, betId: `winbet:${userId}` }));
 
     expect(first.replayed).toBe(false);
     expect(second.replayed).toBe(true);
@@ -132,9 +132,9 @@ describe('Wallet + Ledger engine', () => {
   it('a lost bet moves the stake to house revenue and never touches available balance again', async () => {
     const userId = await createUser();
     await walletService.deposit(pool, { userId, amount: 100, idempotencyKey: `dep:${userId}` });
-    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: 'lossbet' }));
+    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: `lossbet:${userId}` }));
 
-    await withTransaction(pool, (client) => opSettleBetLost(client, { userId, stake: 10, idempotencyKey: `settle:lossbet`, betId: 'lossbet' }));
+    await withTransaction(pool, (client) => opSettleBetLost(client, { userId, stake: 10, idempotencyKey: `settle:lost:${userId}`, betId: `lossbet:${userId}` }));
 
     const wallet = await walletService.getWallet(pool, userId);
     expect(wallet.available).toBe(90);
@@ -144,11 +144,11 @@ describe('Wallet + Ledger engine', () => {
   it('void returns the exact stake to available exactly once even if called twice', async () => {
     const userId = await createUser();
     await walletService.deposit(pool, { userId, amount: 100, idempotencyKey: `dep:${userId}` });
-    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: 'voidbet' }));
+    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 10, idempotencyKey: `res:${userId}`, betId: `voidbet:${userId}` }));
 
-    const key = `settle:voidbet:void`;
-    await withTransaction(pool, (client) => opVoidBet(client, { userId, stake: 10, idempotencyKey: key, betId: 'voidbet' }));
-    await withTransaction(pool, (client) => opVoidBet(client, { userId, stake: 10, idempotencyKey: key, betId: 'voidbet' }));
+    const key = `settle:void:${userId}`;
+    await withTransaction(pool, (client) => opVoidBet(client, { userId, stake: 10, idempotencyKey: key, betId: `voidbet:${userId}` }));
+    await withTransaction(pool, (client) => opVoidBet(client, { userId, stake: 10, idempotencyKey: key, betId: `voidbet:${userId}` }));
 
     const wallet = await walletService.getWallet(pool, userId);
     expect(wallet.available).toBe(100); // stake returned once, not twice
@@ -158,8 +158,8 @@ describe('Wallet + Ledger engine', () => {
   it('every posted ledger transaction is internally balanced (sum(debit) === sum(credit))', async () => {
     const userId = await createUser();
     await walletService.deposit(pool, { userId, amount: 100, idempotencyKey: `dep:${userId}` });
-    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 40, idempotencyKey: `res:${userId}`, betId: 'balcheck' }));
-    await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 40, payout: 90, idempotencyKey: `settle:balcheck`, betId: 'balcheck' }));
+    await withTransaction(pool, (client) => opReserveForBet(client, { userId, amount: 40, idempotencyKey: `res:${userId}`, betId: `balcheck:${userId}` }));
+    await withTransaction(pool, (client) => opSettleBetWon(client, { userId, stake: 40, payout: 90, idempotencyKey: `settle:balcheck:${userId}`, betId: `balcheck:${userId}` }));
 
     const r = await pool.query(
       `SELECT transaction_id,

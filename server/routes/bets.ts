@@ -4,6 +4,8 @@ import { randomId } from '../lib/crypto';
 import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey } from '../lib/http';
 import { requireUser } from '../lib/auth';
 import { WalletError, withTransaction, opReserveForBet, opCashout } from '../lib/ledger';
+import { validateBetRequest, BetRejectedError, makeH2HOddsResolver } from '../lib/bettingEngine';
+import type { EventsService } from './events';
 
 type PlaceBetBody = {
   type?: 'single' | 'multi';
@@ -23,6 +25,10 @@ function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
     sendJson(res, status, { error: e.message, code: e.code });
     return true;
   }
+  if (e instanceof BetRejectedError) {
+    sendJson(res, 400, { error: e.message, code: e.code, details: e.details });
+    return true;
+  }
   return false;
 }
 
@@ -33,6 +39,7 @@ async function getFreeBetBalance(pool: pg.Pool, userId: string): Promise<number>
 
 export async function handleBetRoutes(
   pool: pg.Pool,
+  events: EventsService,
   req: http.IncomingMessage,
   res: http.ServerResponse,
   url: URL,
@@ -122,6 +129,14 @@ export async function handleBetRoutes(
     const idempotencyKey = resolveIdempotencyKey(req, body, null);
 
     try {
+      // Betting Engine (spec §20): odds/limit checks run before a single euro is reserved.
+      await validateBetRequest({
+        legs: payloadSelections.map((s) => ({ eventId: String(s.event_id ?? ''), selection: s.selection, odd: s.odd })),
+        stake,
+        totalOdds,
+        resolveOdds: makeH2HOddsResolver((eventId) => events.getEventOdds(eventId)),
+      });
+
       const result = await withTransaction(pool, async (client) => {
         const reservation = await opReserveForBet(client, { userId: u.id, amount: stake, idempotencyKey, betId, useBonus: useFree });
         if (!reservation.replayed) {
