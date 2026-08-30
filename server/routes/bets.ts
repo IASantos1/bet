@@ -1,8 +1,9 @@
 import type http from 'http';
 import type pg from 'pg';
 import { randomId } from '../lib/crypto';
-import { readJsonBody, sendJson, badRequest, unauthorized } from '../lib/http';
+import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey } from '../lib/http';
 import { requireUser } from '../lib/auth';
+import { WalletError, withTransaction, opReserveForBet, opCashout } from '../lib/ledger';
 
 type PlaceBetBody = {
   type?: 'single' | 'multi';
@@ -16,19 +17,18 @@ function toNumber(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function getProfile(pool: pg.Pool, userId: string): Promise<{ balance: number; free_bet_balance: number }> {
-  const r = await pool.query(`SELECT balance, free_bet_balance FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
-  const row = r.rows?.[0] || {};
-  const balance = toNumber(row.balance);
-  const free = toNumber(row.free_bet_balance);
-  return { balance, free_bet_balance: free };
+function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
+  if (e instanceof WalletError) {
+    const status = e.code === 'INSUFFICIENT_FUNDS' || e.code === 'INVALID_AMOUNT' ? 400 : e.code === 'NOT_FOUND' ? 404 : 409;
+    sendJson(res, status, { error: e.message, code: e.code });
+    return true;
+  }
+  return false;
 }
 
-async function updateProfile(pool: pg.Pool, userId: string, balance: number, freeBet: number): Promise<void> {
-  await pool.query(
-    `UPDATE profiles SET balance = $2, free_bet_balance = $3, updated_at = NOW() WHERE user_id = $1`,
-    [userId, balance, freeBet],
-  );
+async function getFreeBetBalance(pool: pg.Pool, userId: string): Promise<number> {
+  const r = await pool.query(`SELECT free_bet_balance FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+  return toNumber(r.rows?.[0]?.free_bet_balance);
 }
 
 export async function handleBetRoutes(
@@ -42,8 +42,7 @@ export async function handleBetRoutes(
   if (req.method === 'GET' && path === '/api/promotions/freebets') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
-    const p = await getProfile(pool, u.id);
-    sendJson(res, 200, { amount_eur: p.free_bet_balance });
+    sendJson(res, 200, { amount_eur: await getFreeBetBalance(pool, u.id) });
     return true;
   }
 
@@ -86,6 +85,10 @@ export async function handleBetRoutes(
     return true;
   }
 
+  // POST /api/bets — atomically: create the bet ticket AND reserve the stake in the ledger.
+  // Either both happen or neither does (spec §21 "Atomic Bet Transaction"). The idempotency key
+  // (client-supplied, or a body hash fallback) means a double-submit of the exact same betslip
+  // reserves the stake once, not twice (spec §48).
   if (req.method === 'POST' && path === '/api/bets') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -113,59 +116,67 @@ export async function handleBetRoutes(
         : Math.max(0, toNumber(body.stake));
     if (!stake || stake <= 0) return badRequest(res, 'Invalid stake'), true;
 
-    const profile = await getProfile(pool, u.id);
     const useFree = Boolean(body.use_freebet);
-    if (useFree) {
-      if (profile.free_bet_balance < stake) return badRequest(res, 'Saldo freebet insuficiente'), true;
-    } else {
-      if (profile.balance < stake) return badRequest(res, 'Saldo insuficiente'), true;
-    }
-
     const potentialWin = stake * totalOdds;
     const betId = randomId(16);
-    await pool.query(
-      `INSERT INTO bets (id, user_id, bet_type, stake, potential_win, total_odds, status, is_free_bet, selections, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb, NOW(), NOW())`,
-      [betId, u.id, type, stake, potentialWin, totalOdds, useFree, JSON.stringify(payloadSelections)],
-    );
+    const idempotencyKey = resolveIdempotencyKey(req, body, null);
 
-    if (useFree) {
-      await updateProfile(pool, u.id, profile.balance, profile.free_bet_balance - stake);
-    } else {
-      await updateProfile(pool, u.id, profile.balance - stake, profile.free_bet_balance);
+    try {
+      const result = await withTransaction(pool, async (client) => {
+        const reservation = await opReserveForBet(client, { userId: u.id, amount: stake, idempotencyKey, betId, useBonus: useFree });
+        if (!reservation.replayed) {
+          await client.query(
+            `INSERT INTO bets (id, user_id, bet_type, stake, potential_win, total_odds, status, is_free_bet, selections, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8::jsonb, NOW(), NOW())`,
+            [betId, u.id, type, stake, potentialWin, totalOdds, useFree, JSON.stringify(payloadSelections)],
+          );
+        }
+        return reservation;
+      });
+      sendJson(res, 200, { success: true, id: betId, balance: result.wallet.available });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
     }
-
-    sendJson(res, 200, { success: true, id: betId });
     return true;
   }
 
+  // POST /api/bets/:id/cashout — atomically: mark the bet cashed out AND settle the ledger.
   const cashoutMatch = path.match(/^\/api\/bets\/([^/]+)\/cashout$/);
   if (cashoutMatch && req.method === 'POST') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
     const betId = cashoutMatch[1] || '';
 
-    const r = await pool.query(
-      `SELECT id, stake, status FROM bets WHERE id = $1 AND user_id = $2 LIMIT 1`,
-      [betId, u.id],
-    );
+    const r = await pool.query(`SELECT id, stake, status FROM bets WHERE id = $1 AND user_id = $2 LIMIT 1`, [betId, u.id]);
     const b = r.rows?.[0];
     if (!b) return badRequest(res, 'Bet not found'), true;
     if (String(b.status) !== 'pending') return badRequest(res, 'Cashout indisponível'), true;
 
     const stake = toNumber(b.stake);
-    const cashoutValue = Math.max(0, stake * 0.8);
-    await pool.query(
-      `UPDATE bets SET status = 'cashed_out', cashout_value = $2, cashout_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [betId, cashoutValue],
-    );
+    const cashoutValue = round2(Math.max(0, stake * 0.8));
+    const idempotencyKey = resolveIdempotencyKey(req, {}, `cashout:${betId}`);
 
-    const profile = await getProfile(pool, u.id);
-    await updateProfile(pool, u.id, profile.balance + cashoutValue, profile.free_bet_balance);
-    sendJson(res, 200, { success: true, cashoutValue });
+    try {
+      const result = await withTransaction(pool, async (client) => {
+        const settled = await opCashout(client, { userId: u.id, stake, cashoutValue, idempotencyKey, betId });
+        if (!settled.replayed) {
+          await client.query(
+            `UPDATE bets SET status = 'cashed_out', cashout_value = $2, cashout_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'pending'`,
+            [betId, cashoutValue],
+          );
+        }
+        return settled;
+      });
+      sendJson(res, 200, { success: true, cashoutValue, balance: result.wallet.available });
+    } catch (e) {
+      if (!handleWalletError(res, e)) throw e;
+    }
     return true;
   }
 
   return false;
 }
 
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
