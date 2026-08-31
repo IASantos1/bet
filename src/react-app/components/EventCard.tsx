@@ -660,8 +660,8 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
   }, [hh, dd, aa]);
 
   return (
-    <div 
-      className={`border rounded-lg p-3 transition-all duration-300 ${ 
+    <div
+      className={`@container border rounded-lg p-3 transition-all duration-300 ${
         darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-gray-200 hover:border-red-400 hover:shadow-lg' 
       } ${isHovered ? 'scale-[1.02]' : ''}`} 
       onMouseEnter={() => setIsHovered(true)} 
@@ -682,9 +682,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
         onOpenEvent(event);
       }}
     > 
-      <div className="flex flex-col sm:flex-row justify-between items-start"> 
-         <div className="flex-1 w-full sm:w-auto mb-3 sm:mb-0"> 
-        <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-2">
          {(() => {
           const { flag, country, league: formattedLeague, flagUrl } = formatLeagueHeader(event);
           const sportIcon = getSportIcon(sport);
@@ -714,10 +712,11 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
           );
         })()}
        </div>
-           
-      
+
+      <div className="flex flex-col @[420px]:flex-row justify-between items-start @[420px]:items-center gap-2">
+        <div className="flex-1 w-full @[420px]:w-auto">
       <div className="flex items-center gap-3 w-full">
-        <button 
+        <button
           onPointerDown={(e) => { e.stopPropagation(); onOpenEvent(event); }}
           onClick={(e: ReactMouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onOpenEvent(event); }} 
           className={`text-left w-full ${darkMode ? 'text-white hover:text-red-300' : 'text-gray-900 hover:text-red-700'} underline-offset-2 hover:underline overflow-hidden`} 
@@ -895,7 +894,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                   )}
                   <span className="text-sm font-semibold truncate leading-tight flex-1 min-w-0">{cleanTeam(homeTeamName)}</span>
                   {isLiveEvent && matchStatus?.homeScore !== undefined && (
-                    <span className="text-sm font-bold tabular-nums shrink-0">{matchStatus.homeScore}</span>
+                    <span className="text-sm font-bold tabular-nums shrink-0 min-w-[1rem] text-right">{matchStatus.homeScore}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
@@ -904,7 +903,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                   )}
                   <span className="text-sm font-semibold truncate leading-tight flex-1 min-w-0">{cleanTeam(awayTeamName)}</span>
                   {isLiveEvent && matchStatus?.awayScore !== undefined && (
-                    <span className="text-sm font-bold tabular-nums shrink-0">{matchStatus.awayScore}</span>
+                    <span className="text-sm font-bold tabular-nums shrink-0 min-w-[1rem] text-right">{matchStatus.awayScore}</span>
                   )}
                 </div>
               </div>
@@ -913,9 +912,8 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
         </button>
         
       </div>
-          
-         </div> 
-        <div className="text-left sm:text-right mt-2 sm:mt-0 w-full sm:w-auto">
+        </div>
+        <div className="text-left @[420px]:text-right w-full @[420px]:w-auto">
           {(() => {
           const hasPrimary = (hh > 0) || (dd > 0) || (aa > 0);
           const isTwoWaySport = ['basketball', 'tennis', 'american-football', 'baseball', 'mma', 'volleyball', 'handball', 'ice-hockey', 'hockey', 'cricket'].includes(sport);
@@ -924,7 +922,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
           
           if (!hasPrimary) {
               return (
-                  <div className={`grid ${gridCols} gap-2 w-full sm:w-[320px] lg:w-[400px] opacity-50 cursor-not-allowed`}>
+                  <div className={`grid ${gridCols} gap-2 w-full @[420px]:w-[340px] opacity-50 cursor-not-allowed`}>
                       <div className="flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-700 rounded p-2 h-[50px]">
                            <span className="text-xs text-gray-500 font-bold">-</span>
                       </div>
@@ -942,7 +940,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
             
             if (isFinishedEvent) {
               return (
-                <div className="w-full sm:w-[320px] lg:w-[400px]">
+                <div className="w-full @[420px]:w-[340px]">
                   <div className={`w-full h-12 rounded-lg flex items-center justify-center gap-2 font-black text-sm uppercase tracking-widest border
                     ${darkMode
                       ? 'bg-gray-700/70 border-gray-600 text-gray-300'
@@ -979,7 +977,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
               const cfg = cfgMap[effectiveCrit] || cfgMap.big_chance
               const canClick = cfg.clickable && !!favBet && !isSuspended
               return (
-                <div className="w-full sm:w-[320px] lg:w-[400px]">
+                <div className="w-full @[420px]:w-[340px]">
                   <button
                     disabled={!canClick}
                     onClick={canClick ? (e) => { e.stopPropagation(); addPrimary(favBet!.label, favBet!.odd); } : undefined}
@@ -1001,7 +999,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
 
             if (apostaJaActive && !isSuspended) {
               return (
-                <div className="w-full sm:w-[320px] lg:w-[400px]">
+                <div className="w-full @[420px]:w-[340px]">
                   <div
                     className="w-full h-12 rounded-lg font-black text-sm uppercase tracking-wider text-white shadow-lg
                       bg-gradient-to-r from-red-600 to-rose-700 ring-2 ring-red-400 ring-opacity-50 animate-pulse
@@ -1014,7 +1012,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
             }
 
             return (
-              <div className={`grid ${gridCols} gap-2 relative transition-opacity duration-300 w-full sm:w-[320px] lg:w-[400px] ${isOddsBlocked ? 'opacity-70' : ''}`}>
+              <div className={`grid ${gridCols} gap-2 relative transition-opacity duration-300 w-full @[420px]:w-[340px] ${isOddsBlocked ? 'opacity-70' : ''}`}>
                 {sport === 'tennis' ? (
                   <>
                     {(hh > 0) ? (
@@ -1025,7 +1023,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                           price={hh}
                           trend={homeTrend}
                           onClick={(e) => { e.stopPropagation(); addPrimary('Casa', hh, hhSelection?.suspended); }}
-                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                          className="w-full h-full min-h-[44px] px-1 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                           suspended={critSuspended || marketSuspended || (hhSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                         />
                       </div>
@@ -1039,7 +1037,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                           price={aa}
                           trend={awayTrend}
                           onClick={(e) => { e.stopPropagation(); addPrimary('Fora', aa, aaSelection?.suspended); }}
-                          className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                          className="w-full h-full min-h-[44px] px-1 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                           suspended={critSuspended || marketSuspended || (aaSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                         />
                       </div>
@@ -1053,7 +1051,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={hh}
                         trend={homeTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Casa', hh, hhSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-1 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (hhSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     ) : <div />}
@@ -1064,7 +1062,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={dd}
                         trend={drawTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Empate', dd, ddSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-1 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (ddSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     )}
@@ -1075,7 +1073,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                         price={aa}
                         trend={awayTrend}
                         onClick={(e) => { e.stopPropagation(); addPrimary('Fora', aa, aaSelection?.suspended); }}
-                        className="w-full h-full min-h-[44px] px-2 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                        className="w-full h-full min-h-[44px] px-1 py-1 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
                         suspended={critSuspended || marketSuspended || (aaSelection?.suspended ? { reason: 'SUSPENSO' } : undefined)}
                       />
                     ) : <div />}

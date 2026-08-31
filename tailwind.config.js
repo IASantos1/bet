@@ -1,3 +1,5 @@
+import containerQueries from '@tailwindcss/container-queries';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -19,6 +21,7 @@ export default {
     },
   },
   plugins: [
+    containerQueries,
     function({ addUtilities }) {
       addUtilities({
         '.no-scrollbar': {
