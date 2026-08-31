@@ -112,7 +112,7 @@ async function probeUrl(url: string, key: string): Promise<{ url: string; status
   }
 }
 
-type ToggleOperatorBody = { is_operator?: boolean };
+type ToggleOperatorBody = { is_operator?: boolean; reason?: string };
 type EditOddsBody = { home_odd?: number; draw_odd?: number; away_odd?: number };
 
 function toBool(v: any): boolean {
@@ -157,8 +157,18 @@ export async function handleAdminRoutes(
     const userId = decodeURIComponent(toggle[1] || '');
     const body = await readJsonBody<ToggleOperatorBody>(req).catch(() => null);
     if (!body) return badRequest(res, 'Invalid JSON'), true;
+    const reason = String(body.reason || '').trim();
+    if (!reason) return badRequest(res, 'Motivo é obrigatório'), true;
     const val = toBool(body.is_operator);
     await pool.query(`UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1`, [userId, val ? 'admin' : 'user']);
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: val ? 'operator_grant' : 'operator_revoke',
+      resourceType: 'user',
+      resourceId: userId,
+      reason,
+      ip: requestIp(req),
+    });
     sendJson(res, 200, { success: true });
     return true;
   }
@@ -223,6 +233,14 @@ export async function handleAdminRoutes(
           withdrawalId,
         });
       });
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'withdrawal_approve',
+        resourceType: 'transaction',
+        resourceId: withdrawalId,
+        metadata: { userId: String(row.user_id), amount: toNumber(row.amount) },
+        ip: requestIp(req),
+      });
       sendJson(res, 200, { success: true, operator_id: u.id });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;
@@ -254,6 +272,15 @@ export async function handleAdminRoutes(
           idempotencyKey: `withdraw_reject:${withdrawalId}`,
           withdrawalId,
         });
+      });
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'withdrawal_reject',
+        resourceType: 'transaction',
+        resourceId: withdrawalId,
+        reason: body?.reason || null,
+        metadata: { userId: String(row.user_id), amount: toNumber(row.amount) },
+        ip: requestIp(req),
       });
       sendJson(res, 200, { success: true, operator_id: u.id });
     } catch (e) {
@@ -289,6 +316,16 @@ export async function handleAdminRoutes(
         sendJson(res, 200, { success: false, status: 'pending', message: 'Resultado ainda não determinável — forneça "result" para forçar' });
         return true;
       }
+      if (!settled.replayed) {
+        await writeAuditLog(pool, {
+          operatorId: u.id,
+          action: 'bet_settle',
+          resourceType: 'bet',
+          resourceId: betId,
+          metadata: { status: settled.status, manual: manualOutcome != null },
+          ip: requestIp(req),
+        });
+      }
       sendJson(res, 200, { success: true, status: settled.status, replayed: settled.replayed, operator_id: u.id });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;
@@ -317,6 +354,15 @@ export async function handleAdminRoutes(
       }
     }
 
+    if (results.length > 0) {
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'settlement_run',
+        resourceType: 'bet',
+        metadata: { processed: (r.rows || []).length, settled: results.length, stillPending, errorCount: errors.length },
+        ip: requestIp(req),
+      });
+    }
     sendJson(res, 200, { processed: (r.rows || []).length, settled: results.length, stillPending, errors, results, operator_id: u.id });
     return true;
   }
@@ -641,8 +687,28 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /api/admin/alerts — lightweight alert feed for the AdminPanel overview: today, this is
+  // the top-liability events from the Risk Engine (spec §25). AML/fraud have their own dedicated
+  // endpoints (/api/admin/aml/alerts, /api/admin/fraud/alerts) with richer per-user detail.
   if (req.method === 'GET' && path === '/api/admin/alerts') {
-    sendJson(res, 200, { alerts: [] });
+    const r = await pool.query(`SELECT stake, potential_win, status, selections FROM bets WHERE status = 'pending' LIMIT 2000`);
+    const inputs: ExposureBetInput[] = (r.rows || []).map((row: any) => ({
+      status: String(row.status || ''),
+      stake: toNumber(row.stake),
+      potentialWin: toNumber(row.potential_win),
+      legs: parseSelections(row.selections).map((leg) => ({
+        eventId: String(leg.event_id ?? ''),
+        selection: String(leg.selection ?? ''),
+        teamMatch: leg.team_match,
+        league: leg.league,
+      })),
+    }));
+    const exposure = computeExposure(inputs);
+    const alerts = exposure.byEvent.slice(0, 10).map((e) => ({
+      level: e.liability > 5000 ? 'high' : e.liability > 1000 ? 'medium' : 'low',
+      message: `${e.teamMatch || e.eventId}: exposição de €${e.liability.toFixed(2)} em ${e.betCount} aposta(s) pendente(s)`,
+    }));
+    sendJson(res, 200, { alerts });
     return true;
   }
 
@@ -662,7 +728,40 @@ export async function handleAdminRoutes(
       draw_odd: body.draw_odd,
       away_odd: body.away_odd,
     });
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: 'odds_override',
+      resourceType: 'event',
+      resourceId: eventId,
+      metadata: { home_odd: body.home_odd, draw_odd: body.draw_odd, away_odd: body.away_odd },
+      ip: requestIp(req),
+    });
     sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // GET /api/admin/audit-log — Audit Log review queue (spec §41): every logged operator action,
+  // newest first. Read-only by construction — see server/lib/audit.ts for why nothing here can
+  // be edited or deleted through the API.
+  if (req.method === 'GET' && path === '/api/admin/audit-log') {
+    const action = url.searchParams.get('action') || '';
+    const resourceType = url.searchParams.get('resource_type') || '';
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (action) { params.push(action); where.push(`a.action = $${params.length}`); }
+    if (resourceType) { params.push(resourceType); where.push(`a.resource_type = $${params.length}`); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT a.id, a.operator_id, u.email AS operator_email, a.action, a.resource_type, a.resource_id,
+              a.reason, a.metadata, a.ip, a.created_at
+       FROM audit_logs a
+       JOIN users u ON u.id = a.operator_id
+       ${whereSql}
+       ORDER BY a.created_at DESC
+       LIMIT 300`,
+      params,
+    );
+    sendJson(res, 200, { entries: r.rows || [] });
     return true;
   }
 

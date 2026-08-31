@@ -4,12 +4,17 @@ import { useApp } from '@/react-app/contexts/AppContext';
 import { Settings } from '@/react-app/components/Settings';
 import { apiFetch } from '@/react-app/utils/api';
 
-type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api';
+type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api' | 'audit';
 
 interface User { id: string; email: string; is_operator: number }
 interface Bet { id: string; user_id: string; amount: number; potential_win: number; status: string; created_at: string }
 interface OddsEvent { id: string; home_team: string; away_team: string; league: string; home_odd: number; draw_odd: number; away_odd: number; is_live: number; sport: string }
 interface Withdrawal { id: string; user_id: string; amount: number; status: string; method: string; created_at: string }
+interface AuditEntry {
+  id: string; operator_id: string; operator_email: string; action: string;
+  resource_type: string; resource_id: string | null; reason: string | null;
+  metadata: Record<string, unknown>; ip: string | null; created_at: string;
+}
 
 const NAV: { key: Tab; label: string; icon: string }[] = [
   { key: 'overview',  label: 'Visão Geral',          icon: '📊' },
@@ -20,6 +25,7 @@ const NAV: { key: Tab; label: string; icon: string }[] = [
   { key: 'users',     label: 'Utilizadores',          icon: '👥' },
   { key: 'payments',  label: 'Pagamentos',            icon: '💳' },
   { key: 'reports',   label: 'Relatórios',            icon: '📈' },
+  { key: 'audit',     label: 'Registo de Auditoria',  icon: '📜' },
   { key: 'settings',  label: 'Configurações',         icon: '⚙️' },
 ];
 
@@ -249,6 +255,8 @@ const AdminPanel: React.FC = () => {
   const [oddsSearch, setOddsSearch]   = useState('');
   const [editingOdds, setEditingOdds] = useState<string | null>(null);
   const [oddsEdit, setOddsEdit]       = useState({ home: '', draw: '', away: '' });
+  const [auditLog, setAuditLog]       = useState<AuditEntry[]>([]);
+  const [auditActionFilter, setAuditActionFilter] = useState('');
 
   const load = useCallback(async (t: Tab) => {
     try {
@@ -263,13 +271,21 @@ const AdminPanel: React.FC = () => {
       if (t === 'payments') { const d = await apiFetch<any>('/api/admin/withdrawals').catch(() => ({ withdrawals: [] })); setWithdrawals(Array.isArray(d) ? d : (d?.withdrawals || [])); }
       if (t === 'risk')     { const d = await apiFetch<any>('/api/admin/alerts').catch(() => ({ alerts: [] })); setAlerts(Array.isArray(d) ? d : (d?.alerts || [])); }
       if (t === 'odds')     { setLoadingOdds(true); const d = await apiFetch<any>('/api/admin/odds').catch(() => ({ events: [] })); setOddsEvents(Array.isArray(d) ? d : (d?.events || [])); setLoadingOdds(false); }
+      if (t === 'audit')    {
+        const params = new URLSearchParams();
+        if (auditActionFilter) params.set('action', auditActionFilter);
+        const d = await apiFetch<any>(`/api/admin/audit-log?${params}`).catch(() => ({ entries: [] }));
+        setAuditLog(Array.isArray(d?.entries) ? d.entries : []);
+      }
     } catch { /* silent */ }
-  }, []);
+  }, [auditActionFilter]);
 
   useEffect(() => { load(tab); }, [tab, load]);
 
   const toggleOperator = async (userId: string, val: boolean) => {
-    await apiFetch(`/api/admin/users/${userId}/toggle-operator`, { method: 'POST', body: JSON.stringify({ is_operator: val }) }).catch(() => {});
+    const reason = prompt(val ? 'Motivo para conceder acesso de operador (obrigatório):' : 'Motivo para revogar acesso de operador (obrigatório):');
+    if (!reason) return;
+    await apiFetch(`/api/admin/users/${userId}/toggle-operator`, { method: 'POST', body: JSON.stringify({ is_operator: val, reason }) }).catch(() => {});
     setUsers(u => u.map(x => x.id === userId ? { ...x, is_operator: val ? 1 : 0 } : x));
   };
 
@@ -561,6 +577,69 @@ const AdminPanel: React.FC = () => {
           )}
 
           {tab === 'api' && <ApiDiagTab darkMode={darkMode} />}
+
+          {tab === 'audit' && (
+            <div>
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h1 className="text-2xl font-bold">Registo de Auditoria</h1>
+                <div className="flex gap-2">
+                  <select
+                    value={auditActionFilter}
+                    onChange={e => setAuditActionFilter(e.target.value)}
+                    className={`px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                  >
+                    <option value="">Todas as ações</option>
+                    <option value="operator_grant">Conceder operador</option>
+                    <option value="operator_revoke">Revogar operador</option>
+                    <option value="withdrawal_approve">Aprovar levantamento</option>
+                    <option value="withdrawal_reject">Rejeitar levantamento</option>
+                    <option value="bet_settle">Liquidar aposta</option>
+                    <option value="settlement_run">Liquidação em lote</option>
+                    <option value="odds_override">Alteração manual de odds</option>
+                    <option value="kyc_decision">Decisão KYC</option>
+                    <option value="account_suspend">Suspensão de conta</option>
+                    <option value="bonus_campaign_create">Criar campanha bónus</option>
+                    <option value="bonus_campaign_activate">Ativar campanha bónus</option>
+                    <option value="bonus_campaign_deactivate">Desativar campanha bónus</option>
+                  </select>
+                  <button onClick={() => load('audit')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">🔄 Refresh</button>
+                </div>
+              </div>
+              <p className={`text-xs mb-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                Registo apenas de leitura — nenhuma entrada aqui pode ser editada ou apagada através da aplicação.
+              </p>
+              {auditLog.length === 0 ? (
+                <div className={`rounded-lg p-8 text-center text-gray-400 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>Sem entradas de auditoria.</div>
+              ) : (
+                <div className={`rounded-lg overflow-hidden border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <table className="w-full text-sm">
+                    <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium">Data</th>
+                        <th className="text-left px-4 py-2 font-medium">Operador</th>
+                        <th className="text-left px-4 py-2 font-medium">Ação</th>
+                        <th className="text-left px-4 py-2 font-medium">Recurso</th>
+                        <th className="text-left px-4 py-2 font-medium">Motivo</th>
+                        <th className="text-left px-4 py-2 font-medium hidden md:table-cell">IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map(entry => (
+                        <tr key={entry.id} className={`border-t align-top ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                          <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">{new Date(entry.created_at).toLocaleString('pt-PT')}</td>
+                          <td className="px-4 py-2 text-xs">{entry.operator_email}</td>
+                          <td className="px-4 py-2"><Badge v={entry.action} color="blue" /></td>
+                          <td className="px-4 py-2 text-xs font-mono text-gray-400">{entry.resource_type}{entry.resource_id ? `:${String(entry.resource_id).slice(0, 10)}` : ''}</td>
+                          <td className="px-4 py-2 text-xs">{entry.reason || <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-2 text-xs text-gray-400 font-mono hidden md:table-cell">{entry.ip || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {tab === 'settings' && (
             <div>
