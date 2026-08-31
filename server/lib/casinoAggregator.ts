@@ -28,19 +28,49 @@ export interface CasinoAgentInfo {
   client_ip: string;
 }
 
-/** Calls POST /v4/agent/info. Throws on any failure — callers decide how to surface that. */
-export async function getCasinoAgentInfo(): Promise<CasinoAgentInfo> {
+type AggregatorEnvelope<T> = { code?: number; message?: string; data?: T };
+
+/** POSTs to a v4/agent/* endpoint and unwraps the {code, message, data} envelope. Throws on any
+ *  non-zero code or network failure — callers decide how to surface that. */
+async function callAgent<T = undefined>(path: string, body?: unknown): Promise<T> {
   const key = casinoApiKey();
   if (!key) throw new Error('CASINO_API_KEY not configured');
 
-  const res = await fetch(`${casinoBaseUrl()}/v4/agent/info`, {
+  const res = await fetch(`${casinoBaseUrl()}${path}`, {
     method: 'POST',
-    headers: { accept: 'application/json', Authorization: `Bearer ${key}` },
+    headers: {
+      accept: 'application/json',
+      Authorization: `Bearer ${key}`,
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(10_000),
   });
-  const body = (await res.json().catch(() => null)) as { code?: number; message?: string; data?: CasinoAgentInfo } | null;
-  if (!res.ok || !body || body.code !== 0) {
-    throw new Error(`Casino aggregator error: ${body?.message || res.statusText || res.status}`);
+  const parsed = (await res.json().catch(() => null)) as AggregatorEnvelope<T> | null;
+  if (!res.ok || !parsed || parsed.code !== 0) {
+    throw new Error(`Casino aggregator error: ${parsed?.message || res.statusText || res.status}`);
   }
-  return body.data as CasinoAgentInfo;
+  return parsed.data as T;
+}
+
+/** Calls POST /v4/agent/info. */
+export async function getCasinoAgentInfo(): Promise<CasinoAgentInfo> {
+  return callAgent<CasinoAgentInfo>('/v4/agent/info');
+}
+
+/** Calls POST /v4/agent/rtp — sets the agent-wide RTP target. */
+export async function setCasinoAgentRtp(rtp: number): Promise<void> {
+  await callAgent('/v4/agent/rtp', { rtp });
+}
+
+export interface CasinoCallbackTestResult {
+  callback_url: string;
+  time: string;
+}
+
+/** Calls POST /v4/agent/callback-test — asks the aggregator to ping the callback URL configured
+ *  on their side for this agent, and reports how long it took. Useful to confirm our server is
+ *  reachable from them before relying on real result callbacks. */
+export async function testCasinoCallback(): Promise<CasinoCallbackTestResult> {
+  return callAgent<CasinoCallbackTestResult>('/v4/agent/callback-test');
 }

@@ -11,7 +11,7 @@ import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
 import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
-import { isCasinoConfigured, getCasinoAgentInfo } from '../lib/casinoAggregator';
+import { isCasinoConfigured, getCasinoAgentInfo, testCasinoCallback } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -971,6 +971,19 @@ export async function handleAdminRoutes(
       sendJson(res, 200, { configured: true, connected: true, info });
     } catch (e: any) {
       sendJson(res, 200, { configured: true, connected: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/callback-test — asks the aggregator to ping our configured callback
+  // URL and report round-trip time, confirming our server is reachable from them.
+  if (req.method === 'POST' && path === '/api/admin/casino/callback-test') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const result = await testCasinoCallback();
+      sendJson(res, 200, { success: true, ...result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
     return true;
   }
