@@ -134,10 +134,28 @@ export function MatchCenter({ event, initialMatch, darkMode }: { event: any; ini
           const altTotals = arr('alternate_totals')
           const any = dc.length || dnb.length || totals.length || btts.length || handicap.length || altTotals.length
           if (!any) return null
-          const addSel = (label: string, price: number) => {
+          // `ref` is the raw odds entry (o) for markets that can come straight from GoalServe's
+          // own feed (totals/handicap/alternate_totals) — when it carries market_id/
+          // goalserve_oddname, this lets the Settlement Engine auto-resolve the bet later via
+          // GoalServe's Pregame Odds Settlements API instead of needing manual admin resolution
+          // (see server/lib/settlementEngine.ts). Omitted (or from a synthesized market like dc/
+          // dnb/btts, which GoalServe never priced) it's simply undefined — same as before this
+          // existed, no behavior change.
+          const addSel = (label: string, price: number, ref?: any) => {
             if (!(price > 0)) { addNotification({ type: 'warning', message: 'Odd indisponível' }); return }
             const idStr = `ev-${event.id}-${label.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`
-            addToBetSlip({ id: idStr, event_id: Number(event.id), match: String(event.match || `${event.home_team} vs ${event.away_team}`), selection: label, odd: price, stake: 0 })
+            const marketId = Number(ref?.market_id)
+            addToBetSlip({
+              id: idStr,
+              event_id: Number(event.id),
+              match: String(event.match || `${event.home_team} vs ${event.away_team}`),
+              selection: label,
+              odd: price,
+              stake: 0,
+              sport: String(event.sport || 'soccer'),
+              market_id: Number.isFinite(marketId) && marketId > 0 ? marketId : undefined,
+              goalserve_oddname: ref?.goalserve_oddname ? String(ref.goalserve_oddname) : undefined,
+            })
             try { localStorage.setItem(`event_odds_${event.id}`, JSON.stringify({ sport: 'soccer' })) } catch { /* no-op */ }
           }
           const renderDc = dc.slice(0, 3).map((o: any, i: number) => {
@@ -168,7 +186,7 @@ export function MatchCenter({ event, initialMatch, darkMode }: { event: any; ini
             const p = pickPrice(pick25)
             const label = `Totais ${n}`
             return (
-              <button onClick={(e) => { e.stopPropagation(); addSel(label, p) }} className="text-xs px-2 py-0.5 rounded bg-amber-600 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
+              <button onClick={(e) => { e.stopPropagation(); addSel(label, p, pick25) }} className="text-xs px-2 py-0.5 rounded bg-amber-600 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
             )
           })() : null
           const renderBtts = btts.slice(0, 2).map((o: any, i: number) => {
@@ -184,7 +202,7 @@ export function MatchCenter({ event, initialMatch, darkMode }: { event: any; ini
             const p = pickPrice(o)
             const label = `Handicap ${n}`
             return (
-              <button key={`hcp-${i}`} onClick={(e) => { e.stopPropagation(); addSel(label, p) }} className="text-xs px-2 py-0.5 rounded bg-sky-700 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
+              <button key={`hcp-${i}`} onClick={(e) => { e.stopPropagation(); addSel(label, p, o) }} className="text-xs px-2 py-0.5 rounded bg-sky-700 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
             )
           })
           const renderAltTotals = altTotals.slice(0, 2).map((o: any, i: number) => {
@@ -192,7 +210,7 @@ export function MatchCenter({ event, initialMatch, darkMode }: { event: any; ini
             const p = pickPrice(o)
             const label = `Totais Alt ${n}`
             return (
-              <button key={`alt-${i}`} onClick={(e) => { e.stopPropagation(); addSel(label, p) }} className="text-xs px-2 py-0.5 rounded bg-slate-700 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
+              <button key={`alt-${i}`} onClick={(e) => { e.stopPropagation(); addSel(label, p, o) }} className="text-xs px-2 py-0.5 rounded bg-slate-700 text-white hover:opacity-90">{n} {p>0?p.toFixed(2):'-'}</button>
             )
           })
           return (

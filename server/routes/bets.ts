@@ -4,7 +4,7 @@ import { randomId } from '../lib/crypto';
 import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey } from '../lib/http';
 import { requireUser } from '../lib/auth';
 import { WalletError, withTransaction, opReserveForBet, opCashout } from '../lib/ledger';
-import { validateBetRequest, BetRejectedError, makeH2HOddsResolver } from '../lib/bettingEngine';
+import { validateBetRequest, BetRejectedError, makeH2HOddsResolver, DEFAULT_PRICE_TOLERANCE } from '../lib/bettingEngine';
 import { applyBonusWagering } from '../lib/bonusService';
 import type { EventsService } from './events';
 
@@ -12,7 +12,16 @@ type PlaceBetBody = {
   type?: 'single' | 'multi';
   stake?: number;
   use_freebet?: boolean;
-  bets?: Array<{ event_id: string | number; selection: string; odd: number; stake?: number; odds_version?: number }>;
+  bets?: Array<{
+    event_id: string | number;
+    selection: string;
+    odd: number;
+    stake?: number;
+    odds_version?: number;
+    sport?: string;
+    market_id?: number;
+    goalserve_oddname?: string;
+  }>;
 };
 
 function toNumber(v: any): number {
@@ -36,6 +45,54 @@ function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
 async function getFreeBetBalance(pool: pg.Pool, userId: string): Promise<number> {
   const r = await pool.query(`SELECT free_bet_balance FROM profiles WHERE user_id = $1 LIMIT 1`, [userId]);
   return toNumber(r.rows?.[0]?.free_bet_balance);
+}
+
+/**
+ * A bet leg's `market_id`/`goalserve_oddname` (see goalserve.ts's parseOddsMatch) let the
+ * Settlement Engine later auto-resolve markets beyond h2h via GoalServe's own Pregame Odds
+ * Settlements API — but they're client-supplied, and blindly trusting them would let a user claim
+ * ANY market_id/oddname for their bet, including one that's already known to have won, turning a
+ * pricing bug into a guaranteed-payout fraud vector (worse than the pre-existing lack of a
+ * server-side price check on non-h2h legs — see makeH2HOddsResolver's own scope note — because a
+ * wrong ODD is a pricing mistake, but a wrong SETTLEMENT RESULT is a stolen payout).
+ *
+ * So they're only persisted after independently re-deriving them server-side: fetch this event's
+ * CURRENT odds (the same live/cached feed the odds-drift check already uses) and require that some
+ * market entry matches ALL of — same market_id, same goalserve_oddname, its price within the same
+ * tolerance as the ordinary odds-drift check, AND the leg's free-text `selection` (e.g. "Totais
+ * Over 2.5") textually contains that entry's own display value ("Over 2.5") — before accepting the
+ * client's claim. Any mismatch just drops market_id/goalserve_oddname (never rejects the bet
+ * outright) — the leg keeps settling manually exactly as it would have before this existed.
+ */
+export async function verifyGoalServeMarketRef(
+  events: EventsService,
+  eventId: string,
+  odd: number,
+  selection: string,
+  claimed: { market_id?: number; goalserve_oddname?: string },
+): Promise<{ market_id: number; goalserve_oddname: string } | null> {
+  const marketId = claimed.market_id;
+  const oddname = String(claimed.goalserve_oddname || '').trim();
+  if (marketId == null || !Number.isFinite(marketId) || marketId <= 0 || !oddname) return null;
+
+  const odds = await events.getEventOdds(eventId).catch(() => null);
+  const markets = odds?.markets && typeof odds.markets === 'object' ? odds.markets : {};
+  const selectionLower = selection.toLowerCase();
+
+  for (const entries of Object.values(markets)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (Number(entry?.market_id) !== marketId) continue;
+      if (String(entry?.goalserve_oddname || '') !== oddname) continue;
+      const entryOdd = Number(entry?.odd);
+      if (!Number.isFinite(entryOdd) || entryOdd <= 1) continue;
+      if (Math.abs(odd - entryOdd) / entryOdd > DEFAULT_PRICE_TOLERANCE) continue;
+      const displayValue = String(entry?.value || entry?.label || '').toLowerCase();
+      if (!displayValue || !selectionLower.includes(displayValue)) continue;
+      return { market_id: marketId, goalserve_oddname: oddname };
+    }
+  }
+  return null;
 }
 
 export async function handleBetRoutes(
@@ -107,17 +164,31 @@ export async function handleBetRoutes(
     if (bets.length === 0) return badRequest(res, 'No selections'), true;
 
     const totalOdds = bets.reduce((p, b) => p * Math.max(1, toNumber(b.odd)), 1);
-    const payloadSelections = bets.map((b) => ({
-      event_id: b.event_id,
-      selection: String(b.selection || ''),
-      odd: toNumber(b.odd),
-      odds_version: b.odds_version != null ? Number(b.odds_version) : undefined,
-      stake: b.stake != null ? toNumber(b.stake) : undefined,
-      team_match: String((b as any).team_match || ''),
-      league: String((b as any).league || ''),
-      home_team: (b as any).home_team ? String((b as any).home_team) : undefined,
-      away_team: (b as any).away_team ? String((b as any).away_team) : undefined,
-    }));
+    const payloadSelections = await Promise.all(
+      bets.map(async (b) => {
+        const selection = String(b.selection || '');
+        const odd = toNumber(b.odd);
+        const eventId = String(b.event_id ?? '');
+        const goalserveRef =
+          eventId && b.market_id != null && b.goalserve_oddname
+            ? await verifyGoalServeMarketRef(events, eventId, odd, selection, { market_id: b.market_id, goalserve_oddname: b.goalserve_oddname }).catch(() => null)
+            : null;
+        return {
+          event_id: b.event_id,
+          selection,
+          odd,
+          odds_version: b.odds_version != null ? Number(b.odds_version) : undefined,
+          stake: b.stake != null ? toNumber(b.stake) : undefined,
+          team_match: String((b as any).team_match || ''),
+          league: String((b as any).league || ''),
+          home_team: (b as any).home_team ? String((b as any).home_team) : undefined,
+          away_team: (b as any).away_team ? String((b as any).away_team) : undefined,
+          sport: b.sport ? String(b.sport) : undefined,
+          market_id: goalserveRef?.market_id,
+          goalserve_oddname: goalserveRef?.goalserve_oddname,
+        };
+      }),
+    );
 
     const stake =
       type === 'single'

@@ -146,6 +146,13 @@ export interface BetSlipItem {
   sport?: string;
   suspended?: boolean;        // New: Selection suspended
   market_suspended?: boolean; // New: Market suspended
+  // GoalServe-sourced markets only (see server/services/goalserve.ts's parseOddsMatch) — lets the
+  // Settlement Engine auto-resolve this leg beyond h2h via GoalServe's own Pregame Odds
+  // Settlements API. Never set for markets synthesized by marketDerivation.ts (GoalServe never
+  // priced those). The backend independently re-verifies these against its own live odds before
+  // trusting them (server/routes/bets.ts's verifyGoalServeMarketRef) — never taken at face value.
+  market_id?: number;
+  goalserve_oddname?: string;
 }
 
 export interface MatchDetail {

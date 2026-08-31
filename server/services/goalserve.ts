@@ -540,10 +540,18 @@ function isStopped(node: any): boolean {
   return node?.stop === 'True' || node?.stop === true || node?.stop === 'true';
 }
 
-function extractOddsFromType(typeBlock: any): Array<{ name: string; value: number }> {
+/** `settlementOddname` is the string to pass as `oddname` to GoalServe's own Pregame Odds
+ *  Settlements API (see fetchGoalServeOddSettlement below) — kept separate from `name` (the
+ *  display string, e.g. "Over 3.5") because the ONE documented example of that API
+ *  (`oddname=Under:8`) uses a colon between the selection and the line value, not a space. For
+ *  plain markets with no line (h2h) the two are identical. ??? this colon convention is confirmed
+ *  by exactly one example in the docs, not a formal field spec — if it turns out wrong for some
+ *  market, the settlement lookup simply won't match anything (fails safe: the leg just stays
+ *  'pending' for manual review, per settlementEngine.ts's design, never a wrong payout). */
+function extractOddsFromType(typeBlock: any): Array<{ name: string; value: number; settlementOddname: string }> {
   if (isStopped(typeBlock)) return [];
   const bookmakers = Array.isArray(typeBlock?.bookmaker) ? typeBlock.bookmaker : typeBlock?.bookmaker ? [typeBlock.bookmaker] : [];
-  const out: Array<{ name: string; value: number }> = [];
+  const out: Array<{ name: string; value: number; settlementOddname: string }> = [];
   for (const bm of bookmakers) {
     if (isStopped(bm)) continue;
     const lineWrappers = [
@@ -558,7 +566,7 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
         for (const o of odds) {
           const name = str(o?.name);
           const value = num(o?.value);
-          if (name && value > 1) out.push({ name: point ? `${name} ${point}` : name, value });
+          if (name && value > 1) out.push({ name: point ? `${name} ${point}` : name, value, settlementOddname: point ? `${name}:${point}` : name });
         }
       }
       continue;
@@ -567,7 +575,7 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
     for (const o of odds) {
       const name = str(o?.name);
       const value = num(o?.value);
-      if (name && value > 1) out.push({ name, value });
+      if (name && value > 1) out.push({ name, value, settlementOddname: name });
     }
   }
   return out;
@@ -590,11 +598,21 @@ function findMatchInOddsPayload(payload: any, matchId: string): any | null {
 
 /** Builds the OddsResult.markets.h2h array plus derived home/draw/away, matching exactly what
  *  parseSportsApiProMatchOddsPayload() produces so deriveAdditionalMarkets() and the settlement/
- *  odds-versioning code downstream work unmodified. */
+ *  odds-versioning code downstream work unmodified.
+ *
+ *  Every market entry additionally carries `market_id` (GoalServe's own numeric `<type id="...">`)
+ *  and `goalserve_oddname` (settlementOddname from extractOddsFromType) — additive fields, nothing
+ *  existing reads them so this can't change current behavior. They exist so a bet placed on one of
+ *  these selections can later be looked up against GoalServe's own Pregame Odds Settlements API
+ *  (fetchGoalServeOddSettlement), which is the only way this app can auto-settle markets beyond
+ *  h2h (see server/lib/settlementEngine.ts's module docstring on that gap). Markets synthesized by
+ *  server/services/marketDerivation.ts (correct_score, cards_odd_even, etc.) never carry these —
+ *  GoalServe never priced them, so there is nothing to settle them against; they correctly keep
+ *  requiring manual admin resolution, same as before this feature existed. */
 function parseOddsMatch(m: any): OddsResult | null {
   if (!m) return null;
   const typeBlocks: any[] = Array.isArray(m?.odds?.type) ? m.odds.type : m?.odds?.type ? [m.odds.type] : [];
-  const h2h: Array<{ label: string; value: string; odd: number }> = [];
+  const h2h: Array<{ label: string; value: string; odd: number; market_id?: number; goalserve_oddname?: string }> = [];
   const markets: Record<string, any[]> = {};
 
   for (const t of typeBlocks) {
@@ -605,16 +623,30 @@ function parseOddsMatch(m: any): OddsResult | null {
     const isH2H = label === 'match winner' || label.includes('1x2') || label.includes('full time result') || label === 'winner' || label === 'home/draw/away';
     const odds = extractOddsFromType(t);
     if (!odds.length) continue;
+    const marketId = Number(t?.id);
+    const hasMarketId = Number.isFinite(marketId) && marketId > 0;
 
     if (isH2H) {
       for (const o of odds) {
         const key = normalizeOutcomeKey(o.name);
         if (!key) continue;
-        h2h.push({ label: key === 'home' ? 'Home' : key === 'away' ? 'Away' : 'Draw', value: o.name, odd: o.value });
+        h2h.push({
+          label: key === 'home' ? 'Home' : key === 'away' ? 'Away' : 'Draw',
+          value: o.name,
+          odd: o.value,
+          ...(hasMarketId ? { market_id: marketId } : {}),
+          goalserve_oddname: o.settlementOddname,
+        });
       }
     } else {
       const marketKey = label.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'other';
-      markets[marketKey] = odds.map((o) => ({ label: o.name, value: o.name, odd: o.value }));
+      markets[marketKey] = odds.map((o) => ({
+        label: o.name,
+        value: o.name,
+        odd: o.value,
+        ...(hasMarketId ? { market_id: marketId } : {}),
+        goalserve_oddname: o.settlementOddname,
+      }));
     }
   }
 
@@ -829,4 +861,107 @@ export async function fetchGoalServeBallPositions(apiKey: string): Promise<Map<s
     for (const id of matchIds) out.set(id, latest);
   }
   return out;
+}
+
+// ---- Pregame Odds Settlements (per-odd authoritative result) ----
+//
+// CONFIRMED (general GoalServe reference doc — not any per-sport PDF, this endpoint isn't
+// mentioned in any of the 5 sport-specific PDFs at all): a dedicated host/API, entirely separate
+// from getfeed/getodds above — no auth-in-path, `k=` query param instead, and its own numeric
+// sportId scheme (soccer=4, basketball=7, tennis=5 — hockey/baseball aren't documented at all;
+// GOALSERVE_SPORT_IDS below only maps what's confirmed, and callers for an unmapped sport get
+// `null` back immediately rather than a guessed id that could return someone else's match).
+//
+// This is the only thing in this app that can auto-settle a bet on anything other than h2h — see
+// server/lib/settlementEngine.ts's module docstring. It answers ONE specific odd's real-money
+// result (Win/Loose/Half win/Half loose/Stake refund), sparing this app from re-implementing
+// totals/handicap settlement math (and its edge cases: pushes, half-win asian handicap lines).
+//
+// ??? no JSON response sample was given anywhere, only the bare XML tag `<result>Win</result>` —
+// every plausible JSON root shape is checked below. If none match, the lookup just returns null
+// (leg stays 'pending' for manual review) — this never fabricates a result from a shape it isn't
+// sure of.
+const SETTLEMENTS_BASE_URL = 'http://oddsfeed.goalserve.com/api/v1/odds/pre-game';
+
+const GOALSERVE_SPORT_IDS: Record<string, number> = {
+  soccer: 4,
+  football: 4,
+  futebol: 4,
+  basketball: 7,
+  basket: 7,
+  basquete: 7,
+  tennis: 5,
+  'tênis': 5,
+};
+
+function goalServeSportId(sport: string): number | null {
+  const id = GOALSERVE_SPORT_IDS[String(sport || '').toLowerCase().trim()];
+  return id ?? null;
+}
+
+export type GoalServeSettlementOutcome = 'won' | 'lost' | 'half_won' | 'half_lost' | 'void';
+
+/** CONFIRMED (general reference doc) possible <result> values: Loose, Win, Stake refund, Half
+ *  win, Half loose. Mapped to this app's own vocabulary; anything unrecognized returns null
+ *  rather than being guessed into one of these. */
+function mapSettlementResult(raw: string): GoalServeSettlementOutcome | null {
+  const s = str(raw).toLowerCase().trim();
+  if (s === 'win') return 'won';
+  if (s === 'loose' || s === 'lose' || s === 'loss') return 'lost';
+  if (s === 'half win' || s === 'half-win' || s === 'halfwin') return 'half_won';
+  if (s === 'half loose' || s === 'half-loose' || s === 'halfloose' || s === 'half lose' || s === 'half loss') return 'half_lost';
+  if (s === 'stake refund' || s === 'refund' || s === 'push' || s === 'void') return 'void';
+  return null;
+}
+
+function extractSettlementResult(payload: any): string {
+  return str(
+    payload?.result ??
+      payload?.results?.result ??
+      payload?.settlement?.result ??
+      payload?.settlements?.result ??
+      payload?.response?.result ??
+      payload,
+  );
+}
+
+// "request limit - 1 request per second per sport" — same chained-rate-limit pattern already
+// proven for the logo API (fetchTeamLogos) and reused here per sportId.
+const settlementRateLimitChains = new Map<number, Promise<void>>();
+
+/** Looks up GoalServe's own authoritative result for ONE specific odd on ONE match — the
+ *  `market_id`/`goalserve_oddname` a bet leg carries only when it was placed on a selection that
+ *  came straight from parseOddsMatch() above (never for markets synthesized by
+ *  marketDerivation.ts, which GoalServe never priced and can't settle). Returns null for: an
+ *  unmapped sport, a missing API key, a network/parse failure, or a `<result>` value this app
+ *  doesn't recognize — every one of those cases is "we don't know", never "it lost"/"it won". */
+export async function fetchGoalServeOddSettlement(
+  apiKey: string,
+  sport: string,
+  gsId: string,
+  marketId: number,
+  oddname: string,
+): Promise<GoalServeSettlementOutcome | null> {
+  if (!apiKeyOk(apiKey)) return null;
+  const sportId = goalServeSportId(sport);
+  if (sportId == null) return null;
+  const id = str(gsId).replace(/^goalserve_/, '');
+  if (!id || !Number.isFinite(marketId) || marketId <= 0 || !oddname) return null;
+
+  const chain = settlementRateLimitChains.get(sportId) || Promise.resolve();
+  const run = async () => {
+    const url =
+      `${SETTLEMENTS_BASE_URL}/settlement?sportId=${sportId}&gsId=${encodeURIComponent(id)}` +
+      `&marketId=${encodeURIComponent(String(marketId))}&oddname=${encodeURIComponent(oddname)}` +
+      `&k=${encodeURIComponent(apiKey)}&json=1`;
+    const json = await fetchJson(url, 8000);
+    if (!json) return null;
+    return mapSettlementResult(extractSettlementResult(json));
+  };
+  const p = chain.then(run).catch(() => null);
+  settlementRateLimitChains.set(
+    sportId,
+    p.then(() => new Promise<void>((resolve) => setTimeout(resolve, 1050))),
+  );
+  return p;
 }
