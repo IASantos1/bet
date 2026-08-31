@@ -109,3 +109,11 @@ export interface CasinoGame {
 export async function getCasinoGames(providerId: number, lang = 1): Promise<CasinoGame[]> {
   return callAgent<CasinoGame[]>('/v4/game/games', { provider_id: providerId, lang });
 }
+
+/** Calls POST /v4/game/all — the full, real game catalog across every licensed provider on this
+ *  agent account in one call (confirmed live: thousands of titles spanning Pragmatic Play, CQ9,
+ *  Habanero, Hacksaw, Spribe, EGT, Amusnet, and the rest of the provider list). Takes no body,
+ *  matching the working example. */
+export async function getCasinoAllGames(): Promise<CasinoGame[]> {
+  return callAgent<CasinoGame[]>('/v4/game/all');
+}

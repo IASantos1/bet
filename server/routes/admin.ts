@@ -11,7 +11,14 @@ import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
 import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
-import { isCasinoConfigured, getCasinoAgentInfo, testCasinoCallback, getCasinoProviders, getCasinoGames } from '../lib/casinoAggregator';
+import {
+  isCasinoConfigured,
+  getCasinoAgentInfo,
+  testCasinoCallback,
+  getCasinoProviders,
+  getCasinoGames,
+  getCasinoAllGames,
+} from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -1025,6 +1032,20 @@ export async function handleAdminRoutes(
     if (!providerId) return badRequest(res, 'provider_id required'), true;
     try {
       const games = await getCasinoGames(providerId);
+      sendJson(res, 200, { success: true, games });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/games-all — the real, licensed game catalog across every provider on
+  // this agent account in one call. Subject to the same IP whitelist as every other agent/* and
+  // game/* call from this sandbox — works once called from a whitelisted server IP.
+  if (req.method === 'GET' && path === '/api/admin/casino/games-all') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const games = await getCasinoAllGames();
       sendJson(res, 200, { success: true, games });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
