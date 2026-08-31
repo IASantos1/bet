@@ -427,6 +427,42 @@ export function createLiveWs(apiKey: string) {
     void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS snapshot start', data: { sport, clientCount: Array.from(clients).filter((c) => c.sport === sport).length }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
     // #endregion
     try {
+      if (sport === 'all' && USE_GOALSERVE) {
+        // GoalServe has no push connection at all (connectUpstream() is a no-op for it — see
+        // there), so nothing keeps each sport's snapshotCache entry warm between polls the way
+        // SportsAPI Pro's upstream WS does for the merge-from-per-sport-cache path just below.
+        // Left as-is, that path only re-fetches a sport once EVERY sport's cache is simultaneously
+        // empty/stale (a rare coincidence), so live scores/rosters freeze in place for up to 5
+        // minutes at a time — reported as matches randomly appearing/disappearing between the
+        // live list (fed by this WS) and other pages that fetch fresh data directly over REST.
+        // Simplest correct fix for a no-push provider: always re-fetch every sport on every 'all'
+        // tick, the same straightforward way the single-sport path further below already does.
+        const entries = await Promise.all(
+          SPORTS_DEFAULT.map(async (sp) => ({ sp, list: await providerFetchLive(apiKey, sp).catch(() => []) })),
+        );
+        let liveAll: any[] = [];
+        for (const { sp, list } of entries) liveAll.push(...normalizeAndFilterLive(sp, list));
+
+        const prevAll = snapshotCache.get('all');
+        if (liveAll.length === 0 && prevAll && Array.isArray(prevAll.live) && prevAll.live.length > 0 && now - prevAll.ts < 120_000) {
+          liveAll = prevAll.live;
+        }
+
+        const liveAllWithPositions = await attachBallPositions(liveAll);
+        snapshotCache.set('all', { ts: Date.now(), live: liveAllWithPositions });
+        const msg = JSON.stringify({ type: 'snapshot', live: liveAllWithPositions });
+        for (const c of clients) {
+          if (c.sport !== 'all') continue;
+          if (c.ws.readyState !== WebSocket.OPEN) continue;
+          try {
+            c.ws.send(msg);
+          } catch {
+            void 0;
+          }
+        }
+        return;
+      }
+
       if (sport === 'all') {
         const mergedFromCache: any[] = [];
         for (const sp of SPORTS_DEFAULT) {
