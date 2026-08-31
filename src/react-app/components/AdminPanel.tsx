@@ -235,7 +235,7 @@ function ApiDiagTab({ darkMode }: { darkMode: boolean }) {
 }
 
 const AdminPanel: React.FC = () => {
-  const { darkMode, setShowAdminPanel } = useApp();
+  const { darkMode } = useApp();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('overview');
   const [users, setUsers]             = useState<User[]>([]);
@@ -291,7 +291,7 @@ const AdminPanel: React.FC = () => {
       <aside className={`w-56 flex-shrink-0 flex flex-col ${darkMode ? 'bg-gray-800' : 'bg-white'} border-r ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span className="font-bold text-red-600 text-lg">Admin</span>
-          <button onClick={() => setShowAdminPanel(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          <button onClick={() => navigate('/')} title="Voltar à plataforma" className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {NAV.map(n => (
@@ -302,8 +302,8 @@ const AdminPanel: React.FC = () => {
           ))}
         </nav>
         <div className="p-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
-          <button onClick={() => { setShowAdminPanel(false); navigate('/admin/kyc'); }} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>KYC</button>
-          <button onClick={() => { setShowAdminPanel(false); navigate('/metrics'); }} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>Métricas do Sistema</button>
+          <button onClick={() => navigate('/admin/kyc')} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>KYC</button>
+          <button onClick={() => navigate('/metrics')} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>Métricas do Sistema</button>
         </div>
       </aside>
 
@@ -421,7 +421,7 @@ const AdminPanel: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold">Gestão de Risco</h1>
-                <button onClick={() => { setShowAdminPanel(false); navigate('/admin/risk'); }} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Página Completa →</button>
+                <button onClick={() => navigate('/admin/risk')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Página Completa →</button>
               </div>
               <div className={`rounded-lg p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
                 <h3 className="font-semibold mb-3">Alertas</h3>
@@ -508,8 +508,8 @@ const AdminPanel: React.FC = () => {
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold">Pagamentos</h1>
                 <div className="flex gap-2">
-                  <button onClick={() => { setShowAdminPanel(false); navigate('/admin/withdrawals'); }} className={`px-4 py-2 rounded-lg text-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>Levantamentos</button>
-                  <button onClick={() => { setShowAdminPanel(false); navigate('/admin/payouts'); }} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Payouts →</button>
+                  <button onClick={() => navigate('/admin/withdrawals')} className={`px-4 py-2 rounded-lg text-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>Levantamentos</button>
+                  <button onClick={() => navigate('/admin/payouts')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Payouts →</button>
                 </div>
               </div>
               {withdrawals.length === 0 ? (
