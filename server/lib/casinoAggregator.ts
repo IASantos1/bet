@@ -74,3 +74,19 @@ export interface CasinoCallbackTestResult {
 export async function testCasinoCallback(): Promise<CasinoCallbackTestResult> {
   return callAgent<CasinoCallbackTestResult>('/v4/agent/callback-test');
 }
+
+export interface CasinoProvider {
+  provider_id: number;
+  provider_name: string;
+  locale_name: string;
+  /** 1 = active, 2 = inactive, per the real provider list (BGaming came back status 2). */
+  status: number;
+}
+
+/** Calls POST /v4/game/providers — the real, licensed provider catalog for this agent account
+ *  (confirmed live: Pragmatic Play, CQ9, Habanero, Hacksaw, Spribe, EGT, and others). This is the
+ *  actual authorized list — never substitute a hand-picked one. `lang` defaults to 1 (matching
+ *  the working example); its other accepted values aren't documented yet. */
+export async function getCasinoProviders(lang = 1): Promise<CasinoProvider[]> {
+  return callAgent<CasinoProvider[]>('/v4/game/providers', { lang });
+}

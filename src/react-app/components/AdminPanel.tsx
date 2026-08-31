@@ -276,6 +276,7 @@ const AdminPanel: React.FC = () => {
   const [reconLoading, setReconLoading] = useState(false);
   const [casinoConnection, setCasinoConnection] = useState<any>(null);
   const [casinoCallbacks, setCasinoCallbacks] = useState<CasinoCallbackEntry[]>([]);
+  const [casinoProviders, setCasinoProviders] = useState<any>(null);
   const [expandedCallback, setExpandedCallback] = useState<string | null>(null);
 
   const load = useCallback(async (t: Tab) => {
@@ -312,12 +313,14 @@ const AdminPanel: React.FC = () => {
         setReconLoading(false);
       }
       if (t === 'casino') {
-        const [conn, log] = await Promise.allSettled([
+        const [conn, log, providers] = await Promise.allSettled([
           apiFetch<any>('/api/admin/casino/connection'),
           apiFetch<any>('/api/admin/casino/callback-log'),
+          apiFetch<any>('/api/admin/casino/providers'),
         ]);
         setCasinoConnection(conn.status === 'fulfilled' ? conn.value : null);
         setCasinoCallbacks(log.status === 'fulfilled' && Array.isArray(log.value?.entries) ? log.value.entries : []);
+        setCasinoProviders(providers.status === 'fulfilled' ? providers.value : null);
       }
     } catch { /* silent */ }
   }, [auditActionFilter, reconFrom, reconTo]);
@@ -776,6 +779,21 @@ const AdminPanel: React.FC = () => {
                   <div className="text-sm">
                     <p className="text-red-600 font-semibold">✗ Falha na ligação</p>
                     <p className="text-xs text-gray-400 mt-1">{casinoConnection.error}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className={`rounded-lg p-4 mb-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                <h3 className="font-semibold mb-3">Fornecedores Licenciados</h3>
+                {!casinoProviders ? (
+                  <p className="text-sm text-gray-400">A carregar...</p>
+                ) : !casinoProviders.success ? (
+                  <p className="text-sm text-red-600">{casinoProviders.error}</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(casinoProviders.providers || []).map((p: any) => (
+                      <Badge key={p.provider_id} v={p.provider_name} color={p.status === 1 ? 'green' : 'gray'} />
+                    ))}
                   </div>
                 )}
               </div>

@@ -11,7 +11,7 @@ import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
 import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
-import { isCasinoConfigured, getCasinoAgentInfo, testCasinoCallback } from '../lib/casinoAggregator';
+import { isCasinoConfigured, getCasinoAgentInfo, testCasinoCallback, getCasinoProviders } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -999,6 +999,20 @@ export async function handleAdminRoutes(
        LIMIT 100`,
     );
     sendJson(res, 200, { entries: r.rows || [] });
+    return true;
+  }
+
+  // GET /api/admin/casino/providers — the real, licensed provider catalog for this agent
+  // account. Subject to the same IP whitelist as every other agent/* and game/* call from this
+  // sandbox (confirmed: also 403s here) — works once called from a whitelisted server IP.
+  if (req.method === 'GET' && path === '/api/admin/casino/providers') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const providers = await getCasinoProviders();
+      sendJson(res, 200, { success: true, providers });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
     return true;
   }
 
