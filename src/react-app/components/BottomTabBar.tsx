@@ -50,23 +50,14 @@ const TABS: Tab[] = [
     to: '/casino',
     label: 'Casino',
     match: (p) => p.startsWith('/casino'),
-    // Always a glossy red die, not currentColor — same fixed-red "always branded" treatment as
-    // the Casino hero's dice, so this is the one tab icon that doesn't fade to gray when inactive.
     icon: () => (
-      <svg viewBox="0 0 24 24" className="w-[23px] h-[23px]">
-        <defs>
-          <radialGradient id="tabDieGloss" cx="32%" cy="26%" r="75%">
-            <stop offset="0%" stopColor="#ff8a80" />
-            <stop offset="45%" stopColor="#ef4444" />
-            <stop offset="100%" stopColor="#a91c1c" />
-          </radialGradient>
-        </defs>
-        <rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="url(#tabDieGloss)" />
-        <circle cx="8" cy="8" r="1.7" fill="#fff5f5" />
-        <circle cx="16" cy="8" r="1.7" fill="#fff5f5" />
-        <circle cx="12" cy="12" r="1.7" fill="#fff5f5" />
-        <circle cx="8" cy="16" r="1.7" fill="#fff5f5" />
-        <circle cx="16" cy="16" r="1.7" fill="#fff5f5" />
+      <svg viewBox="0 0 24 24" className="w-[22px] h-[22px]">
+        <rect x="2.5" y="2.5" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="7.5" cy="7.5" r="1.15" fill="#ef4444" />
+        <rect x="11.5" y="11.5" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="14.4" cy="14.4" r="1.05" fill="#ef4444" />
+        <circle cx="16.5" cy="16.5" r="1.05" fill="#ef4444" />
+        <circle cx="18.6" cy="18.6" r="1.05" fill="#ef4444" />
       </svg>
     ),
   },
