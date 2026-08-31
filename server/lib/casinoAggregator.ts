@@ -144,3 +144,42 @@ export async function getCasinoGameUrl(params: CasinoGameUrlParams): Promise<unk
     ...params,
   });
 }
+
+/** Calls POST /v4/game/online-games — confirmed live, returns `data: []` with no body needed on
+ *  this agent account (no players currently in a session). Element shape isn't confirmed yet
+ *  (empty result observed), so it's left as `unknown[]` rather than guessed. */
+export async function getCasinoOnlineGames(): Promise<unknown[]> {
+  return callAgent<unknown[]>('/v4/game/online-games');
+}
+
+export interface CasinoCallConfig {
+  call_min: number;
+}
+
+/** Calls POST /v4/game/call_config — confirmed live: `{ call_min: 10 }`. Purpose of the "call"
+ *  feature (call_start/call_cancel below) isn't documented yet; this just reports its config. */
+export async function getCasinoCallConfig(): Promise<CasinoCallConfig> {
+  return callAgent<CasinoCallConfig>('/v4/game/call_config');
+}
+
+export interface CasinoCallStartParams {
+  gplay_id: number;
+  set_point: number;
+  type: number;
+  memo?: string;
+}
+
+/** Calls POST /v4/game/call_start — confirmed live to fail with code 1010 / PERMISSION_ERROR
+ *  using placeholder zero values, so this agent account isn't authorized for whatever the "call"
+ *  feature does. Both the feature's purpose and its success response shape are unconfirmed —
+ *  treat this as exploratory until real docs or a successful call are seen. */
+export async function startCasinoCall(params: CasinoCallStartParams): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/call_start', params);
+}
+
+/** Calls POST /v4/game/call_cancel — confirmed live to fail with code 1005 / RESOURCE_NOT_FOUND
+ *  for a call_id that doesn't exist, matching the exact request shape the API expects. Success
+ *  response shape is unconfirmed. */
+export async function cancelCasinoCall(callId: number): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/call_cancel', { call_id: callId });
+}

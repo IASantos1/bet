@@ -19,6 +19,10 @@ import {
   getCasinoGames,
   getCasinoAllGames,
   getCasinoGameUrl,
+  getCasinoOnlineGames,
+  getCasinoCallConfig,
+  startCasinoCall,
+  cancelCasinoCall,
 } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
@@ -1083,6 +1087,71 @@ export async function handleAdminRoutes(
         rtp: body.rtp,
         is_finish_jackpot: body.is_finish_jackpot,
       });
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/online-games — players currently in an active game session on this
+  // agent account. Confirmed live: returns an empty list when nobody is playing.
+  if (req.method === 'GET' && path === '/api/admin/casino/online-games') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const games = await getCasinoOnlineGames();
+      sendJson(res, 200, { success: true, games });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/call-config — config for the aggregator's "call" feature (purpose not
+  // yet documented). Confirmed live: { call_min: 10 }.
+  if (req.method === 'GET' && path === '/api/admin/casino/call-config') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const config = await getCasinoCallConfig();
+      sendJson(res, 200, { success: true, config });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/call-start — starts a "call" (purpose not yet documented). Confirmed
+  // live: fails with PERMISSION_ERROR on this agent account. Exploratory diagnostic only.
+  if (req.method === 'POST' && path === '/api/admin/casino/call-start') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ gplay_id?: number; set_point?: number; type?: number; memo?: string }>(req).catch(
+      () => null,
+    );
+    if (body?.gplay_id == null || body?.set_point == null || body?.type == null) {
+      return badRequest(res, 'gplay_id, set_point and type required'), true;
+    }
+    try {
+      const result = await startCasinoCall({
+        gplay_id: body.gplay_id,
+        set_point: body.set_point,
+        type: body.type,
+        memo: body.memo,
+      });
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/call-cancel — cancels a "call" by id. Confirmed live: fails with
+  // RESOURCE_NOT_FOUND for a nonexistent call_id.
+  if (req.method === 'POST' && path === '/api/admin/casino/call-cancel') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ call_id?: number }>(req).catch(() => null);
+    if (body?.call_id == null) return badRequest(res, 'call_id required'), true;
+    try {
+      const result = await cancelCasinoCall(body.call_id);
       sendJson(res, 200, { success: true, result });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
