@@ -183,3 +183,30 @@ export async function startCasinoCall(params: CasinoCallStartParams): Promise<un
 export async function cancelCasinoCall(callId: number): Promise<unknown> {
   return callAgent<unknown>('/v4/game/call_cancel', { call_id: callId });
 }
+
+export interface CasinoFreeroundCreateParams {
+  user_code: number;
+  provider_id: number;
+  game_symbol: string;
+  bet: number;
+  win: number;
+  rounds: number;
+  /** Unix timestamp in milliseconds. Confirmed live: must be at least 30 minutes from now, or
+   *  the call fails with code 1002 — the aggregator's error message echoes back the minimum
+   *  accepted value (a ms timestamp), which is how the unit was confirmed. */
+  expirationDate: number;
+}
+
+/** Calls POST /v4/game/freeround/create — grants a player free spins on a game. Confirmed live
+ *  to reject an expirationDate that isn't at least 30 minutes in the future (code 1002). Success
+ *  response shape is unconfirmed (needs a real user_code and a valid expirationDate). */
+export async function createCasinoFreeround(params: CasinoFreeroundCreateParams): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/freeround/create', params);
+}
+
+/** Calls POST /v4/game/freeround/cancel — confirmed live to fail with code 2020 /
+ *  FREEROUND_NO_EXIST for an fr_id that doesn't exist, matching the exact request shape the API
+ *  expects. Success response shape is unconfirmed. */
+export async function cancelCasinoFreeround(frId: string): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/freeround/cancel', { fr_id: frId });
+}
