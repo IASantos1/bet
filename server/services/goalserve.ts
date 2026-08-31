@@ -604,11 +604,36 @@ function parseOddsMatch(m: any): OddsResult | null {
   return { home, draw, away, markets };
 }
 
+// CONFIRMED (all 5 official Data Feed PDFs, PREGAME ODDS COMPARISON FEED section): "requests
+// limit – 1 request every 10 seconds per sport" — this is a per-SPORT limit on the whole
+// comparison feed (which returns every priced match for that sport in one payload), not a
+// per-match limit. A caller asking for N different matches' odds in the same sport must reuse one
+// fetch, not issue N requests — every exported fetchGoalServeMatchOdds*() below goes through this
+// shared cache so that's true regardless of call pattern (e.g. server/ws/liveWs.ts polling odds
+// for every live match in a sport on each snapshot cycle).
+const ODDS_PAYLOAD_TTL_MS = 9_000;
+const oddsPayloadCache = new Map<string, { ts: number; payload: any }>();
+const oddsPayloadInflight = new Map<string, Promise<any | null>>();
+
 async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | null> {
   if (!apiKeyOk(apiKey)) return null;
   const cat = oddsCat(sport);
+  const cached = oddsPayloadCache.get(cat);
+  if (cached && Date.now() - cached.ts < ODDS_PAYLOAD_TTL_MS) return cached.payload;
+  const inflight = oddsPayloadInflight.get(cat);
+  if (inflight) return inflight;
+
   const url = `${ODDS_BASE_URL}/${encodeURIComponent(apiKey)}/getodds/soccer?cat=${cat}_10&json=1`;
-  return fetchJson(url, 15000);
+  const p = fetchJson(url, 15000)
+    .then((json) => {
+      oddsPayloadCache.set(cat, { ts: Date.now(), payload: json });
+      return json;
+    })
+    .finally(() => {
+      oddsPayloadInflight.delete(cat);
+    });
+  oddsPayloadInflight.set(cat, p);
+  return p;
 }
 
 /** GoalServe doesn't split "all / live / pre-match" odds into separate endpoints the way
@@ -652,4 +677,131 @@ export async function fetchGoalServeMatchOddsPreMatch(
   opts?: { homeTeam?: string; awayTeam?: string },
 ): Promise<OddsResult | null> {
   return fetchGoalServeMatchOdds(apiKey, sport, matchId, opts);
+}
+
+// ---- Live ball/event position (soccer "commentaries" / play-by-play feed) ----
+//
+// CONFIRMED (official Soccer Data Feed PDF, "LIVE GAME LINEUPS/STATS FEED (COMMENTARIES)"
+// section) — SOCCER ONLY. No equivalent x/y coordinate data exists anywhere in the Hockey/
+// Basketball/Tennis/Baseball PDFs (basketball's own "point-by-point" feed is just a running score
+// log — home_score/away_score/team_scored, no coordinates).
+//
+// Each individual match event (shot, goal, corner, card, foul, substitution, etc.) optionally
+// carries `x`/`y` — normalized 0..1 float PITCH coordinates of WHERE that event happened. This is
+// NOT a continuously-updating ball tracker (no fixed-rate stream of ball positions); it's one
+// coordinate per discrete play, refreshed at the feed's own cadence (documented "refresh time
+// every 30 seconds"), same as the rest of this section's live stats.
+//
+// `/commentaries/1.xml?json=1` — the literal id "1" is documented as "all today matches" across
+// every league in one call, which is what a live-events poller needs (as opposed to
+// "/commentaries/{leagueId}.xml", which is scoped to one specific league).
+//
+// ??? The exact XML nesting of the per-match play-by-play `<comment>` list (its parent wrapper
+// tag) isn't shown in the PDF's sample — only the fields on a single `<comment>` element are
+// documented. Every plausible wrapper name is checked below, the same defensive style used
+// elsewhere in this file for genuinely undocumented shapes.
+const COMMENTARIES_URL = BASE_URL;
+
+export interface GoalServeMatchEvent {
+  matchId: string;
+  type: string;
+  minute: string;
+  team: 'home' | 'away' | '';
+  isGoal: boolean;
+  important: boolean;
+  player1: string;
+  player2: string;
+  x: number | null;
+  y: number | null;
+  timestamp: string;
+  comment: string;
+}
+
+function toBool(v: any): boolean {
+  return v === 'True' || v === true || v === 'true';
+}
+
+function toCoord(v: any): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseCommentaryEvent(matchId: string, c: any): GoalServeMatchEvent | null {
+  if (!c) return null;
+  const type = str(c?.type);
+  if (!type) return null;
+  const teamRaw = str(c?.team).toLowerCase();
+  return {
+    matchId,
+    type,
+    minute: str(c?.minute),
+    team: teamRaw === 'localteam' ? 'home' : teamRaw === 'visitorteam' ? 'away' : '',
+    isGoal: toBool(c?.isgoal),
+    important: toBool(c?.important),
+    player1: str(c?.pl_name1),
+    player2: str(c?.pl_name2),
+    x: toCoord(c?.x),
+    y: toCoord(c?.y ?? c?.Y),
+    timestamp: str(c?.timestamp ?? c?.Timestamp),
+    comment: str(c?.comment),
+  };
+}
+
+/** Extracts every match's play-by-play list from a commentaries payload, checking each plausible
+ *  wrapper shape (see the ??? note above) before falling back to no events for that match.
+ *
+ *  Returns BOTH id fields the PDF documents on a commentaries `<match>` — `id` and `static_id` —
+ *  rather than picking one. The PDF calls `static_id` the correct cross-feed mapping key and `id`
+ *  "[obsolete]", but this app's own soccer NormalizedEvent id (built in normalizeMatch() above,
+ *  from the *livescore* feed) is `m?.id`, and the soccer PDF's own livescore sample shows `id` and
+ *  `static_id` as genuinely different numbers on the same match — so matching commentaries back to
+ *  a live event by only one of the two risks silently matching nothing. This is a best-effort
+ *  overlay (a "last play" position marker, nothing settlement-related), so returning both keys to
+ *  maximize the match hit rate costs nothing if one turns out to be redundant. */
+function extractCommentaryMatches(payload: any): Array<{ matchIds: string[]; events: GoalServeMatchEvent[] }> {
+  const tournaments = Array.isArray(payload?.commentaries?.tournament)
+    ? payload.commentaries.tournament
+    : payload?.commentaries?.tournament
+      ? [payload.commentaries.tournament]
+      : [];
+  const out: Array<{ matchIds: string[]; events: GoalServeMatchEvent[] }> = [];
+  for (const t of tournaments) {
+    const matches = Array.isArray(t?.match) ? t.match : t?.match ? [t.match] : [];
+    for (const m of matches) {
+      const id = str(m?.id);
+      const staticId = str(m?.static_id);
+      const matchIds = Array.from(new Set([id, staticId].filter(Boolean)));
+      if (!matchIds.length) continue;
+      const primaryId = staticId || id;
+      const rawList =
+        m?.comment ?? m?.commentary?.comment ?? m?.comments?.comment ?? m?.playbyplay?.comment ?? m?.commentaries?.comment ?? null;
+      const list = Array.isArray(rawList) ? rawList : rawList ? [rawList] : [];
+      const events = list.map((c: any) => parseCommentaryEvent(primaryId, c)).filter((e): e is GoalServeMatchEvent => !!e);
+      if (events.length) out.push({ matchIds, events });
+    }
+  }
+  return out;
+}
+
+/** Fetches today's soccer commentaries feed and returns, per match, only the most recent event
+ *  that carries a pitch position (x/y) — the only piece this app currently has a use for (a live
+ *  "last play" marker). Keyed by both `id` and `static_id` (see extractCommentaryMatches) so a
+ *  caller can look up by whichever id its own event object carries. Best-effort: never throws, an
+ *  empty/unparseable payload just yields no positions rather than breaking the live snapshot that
+ *  calls this alongside it. */
+export async function fetchGoalServeBallPositions(apiKey: string): Promise<Map<string, GoalServeMatchEvent>> {
+  const out = new Map<string, GoalServeMatchEvent>();
+  if (!apiKeyOk(apiKey)) return out;
+  const url = `${COMMENTARIES_URL}/${encodeURIComponent(apiKey)}/commentaries/1.xml?json=1`;
+  const json = await fetchJson(url, 12000).catch(() => null);
+  if (!json) return out;
+  for (const { matchIds, events } of extractCommentaryMatches(json)) {
+    const positioned = events.filter((e) => e.x != null && e.y != null);
+    if (!positioned.length) continue;
+    // Events are documented in chronological play order — the last positioned one is the latest.
+    const latest = positioned[positioned.length - 1];
+    for (const id of matchIds) out.set(id, latest);
+  }
+  return out;
 }
