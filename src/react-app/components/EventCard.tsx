@@ -87,8 +87,14 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
   const { darkMode, addNotification, addToBetSlip } = useApp(); 
   const [isHovered, setIsHovered] = useState(false);
 
-  // Scroll-vs-tap detection: only navigate if the user didn't scroll
-  const touchScrollRef = useRef<{ y: number; moved: boolean }>({ y: 0, moved: false });
+  // Scroll-vs-tap detection: only navigate if the user didn't scroll. A real scroll gesture on a
+  // touchscreen commonly starts with only a few px of movement per frame — an 10px-only vertical
+  // threshold left a window where a deliberate scroll starting on a card still read as a tap
+  // (reported as "too sensitive": touching a card to scroll opened its market instead). Catch it
+  // sooner: a lower per-axis threshold, checked on both axes (a horizontal swipe is a scroll too,
+  // not just vertical), plus a duration fallback — a touch held longer than a quick tap almost
+  // always means the finger is dragging, even if that frame's delta happens to be small.
+  const touchScrollRef = useRef<{ x: number; y: number; startedAt: number; moved: boolean }>({ x: 0, y: 0, startedAt: 0, moved: false });
 
   // Robustly extract event ID (support both structures)
   const eventId = event.id || event.fixture?.id;
@@ -667,10 +673,15 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
       onMouseEnter={() => setIsHovered(true)} 
       onMouseLeave={() => setIsHovered(false)} 
       onTouchStart={(e) => {
-        touchScrollRef.current = { y: e.touches[0].clientY, moved: false };
+        const t = e.touches[0];
+        touchScrollRef.current = { x: t.clientX, y: t.clientY, startedAt: Date.now(), moved: false };
       }}
       onTouchMove={(e) => {
-        if (Math.abs(e.touches[0].clientY - touchScrollRef.current.y) > 10) {
+        const t = e.touches[0];
+        const dx = Math.abs(t.clientX - touchScrollRef.current.x);
+        const dy = Math.abs(t.clientY - touchScrollRef.current.y);
+        const heldMs = Date.now() - touchScrollRef.current.startedAt;
+        if (dx > 6 || dy > 6 || heldMs > 250) {
           touchScrollRef.current.moved = true;
         }
       }}
@@ -772,7 +783,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                               {`S${i + 1}`}
                             </span>
                           ))}
-                          <span />
+                          <span className={`text-[10px] font-bold text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>PT</span>
                         </>
                       ) : null}
 
@@ -795,7 +806,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                                 })
                               : null}
                             {isLiveEvent && point ? (
-                              <span className={`ml-1 px-1 rounded text-[10px] font-extrabold ${darkMode ? 'bg-gray-700 text-gray-100' : 'bg-gray-200 text-gray-900'}`}>
+                              <span className="text-right text-xs font-black text-[#39FF14]">
                                 {point}
                               </span>
                             ) : (
@@ -853,7 +864,10 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                     ) : (
                       <span className="text-xs font-bold text-red-600">AO VIVO</span>
                     )}
-                    {timer ? (
+                    {/* Tennis has no match clock — GoalServe's own "timer"/"elapsed" field for
+                        tennis is just the current set number again, which duplicated setLabel
+                        above (e.g. both showing "4"), reading as a stray floating digit. */}
+                    {timer && sport !== 'tennis' ? (
                       <span className="text-[10px] font-bold text-[#39FF14]">{timer}</span>
                     ) : null}
                   </span>
