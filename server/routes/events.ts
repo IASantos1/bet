@@ -957,10 +957,20 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       return out.length > 0 ? out : list.slice(0, overallLimit);
     };
 
+    // isBlockedLeague's allowlist is soccer-specific (Premier League, La Liga, Bundesliga, ...) —
+    // every pattern in it names a soccer competition. Applying it to every sport meant tennis,
+    // basketball, hockey and baseball matches were silently dropped unless their league name
+    // happened to also match one of the soccer patterns (e.g. "... World Cup ...", which is why
+    // some non-soccer matches appeared to work "by luck" while most others never showed up at
+    // all). Only soccer/football events go through this filter; every other sport passes through.
+    const isSoccerSport = (e: any) => {
+      const s = String((e as any)?.sport || '').toLowerCase().trim();
+      return s === 'soccer' || s === 'football';
+    };
     const filterBlocked = (arr: AnyEvent[]) =>
       allowBlocked
         ? arr
-        : arr.filter((e: any) => !isBlockedLeague(String((e as any)?.league || ''), String((e as any)?.country || '')));
+        : arr.filter((e: any) => !isSoccerSport(e) || !isBlockedLeague(String((e as any)?.league || ''), String((e as any)?.country || '')));
     const live = sortStable(filterBlocked(filterLeague(liveAll))).slice(0, 120);
     const preSorted = sortStable(filterBlocked(filterLeague(preAll)));
     const preLimit = days > 1 ? 300 : 120;
