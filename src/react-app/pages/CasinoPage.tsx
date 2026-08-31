@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '@/react-app/contexts/AppContext';
+import { apiFetch } from '@/react-app/utils/api';
 
 /**
  * Real catalog, fetched from GET /api/casino/games (cached server-side over the aggregator's
@@ -7,8 +8,13 @@ import { useApp } from '@/react-app/contexts/AppContext';
  * configured, or this server's IP isn't whitelisted with it yet, the endpoint returns an empty
  * list with `error` set, and this page shows that honestly instead of inventing games.
  *
- * "Jogar" still can't open a real session yet — that needs the aggregator's user/create endpoint
- * wired up first, to get a real user_code per BET62 account, which hasn't been added yet.
+ * "Jogar" (handlePlay) opens a real session via POST /api/casino/play, which creates/reuses the
+ * aggregator's user_code for this BET62 account (server/routes/casino.ts) and returns a real,
+ * single-use launch URL. This account runs Seamless mode (confirmed by the account owner): the
+ * aggregator debits/credits BET62's own wallet directly via /callback rather than through a
+ * separate deposit/withdraw step — but that webhook (server/routes/casinoCallback.ts) still only
+ * logs the payload today, since its real schema has never been observed. Real play is enabled
+ * anyway specifically so a real callback gets captured; see that file's docstring.
  */
 
 const HERO_SLIDES = [
@@ -53,7 +59,7 @@ type GamesResponse = { success: boolean; games?: RemoteGame[]; stale?: boolean; 
 
 const PAGE_SIZE = 14;
 
-function GameCard({ game, onPlay, big }: { game: RemoteGame; onPlay: () => void; big?: boolean }) {
+function GameCard({ game, onPlay, big, launching }: { game: RemoteGame; onPlay: (game: RemoteGame) => void; big?: boolean; launching?: boolean }) {
   const [imgFailed, setImgFailed] = useState(false);
   const image = game.game_image || game.game_image_narrow;
 
@@ -78,10 +84,11 @@ function GameCard({ game, onPlay, big }: { game: RemoteGame; onPlay: () => void;
       )}
       <button
         type="button"
-        onClick={onPlay}
-        className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100 transition-all"
+        onClick={() => onPlay(game)}
+        disabled={launching}
+        className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 opacity-0 group-hover:opacity-100 transition-all disabled:cursor-wait"
       >
-        <span className="px-3 py-1.5 rounded-lg bg-white text-gray-900 text-xs font-bold">Jogar</span>
+        <span className="px-3 py-1.5 rounded-lg bg-white text-gray-900 text-xs font-bold">{launching ? 'A abrir…' : 'Jogar'}</span>
       </button>
       {image && !imgFailed && (
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
@@ -93,11 +100,12 @@ function GameCard({ game, onPlay, big }: { game: RemoteGame; onPlay: () => void;
 }
 
 export default function CasinoPage() {
-  const { darkMode, addNotification } = useApp();
+  const { darkMode, addNotification, user, selfExclude } = useApp();
   const [slide, setSlide] = useState(0);
   const [filter, setFilter] = useState('Todos');
   const [query, setQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [launchingCode, setLaunchingCode] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [games, setGames] = useState<RemoteGame[]>([]);
@@ -129,7 +137,37 @@ export default function CasinoPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const notifySoon = () => addNotification({ type: 'info', message: 'A sua conta de Casino ainda está a ser configurada — este jogo estará disponível em breve.' });
+  const handlePlay = async (game: RemoteGame) => {
+    if (!user) {
+      addNotification({ type: 'warning', message: 'Por favor, faça login para jogar' });
+      return;
+    }
+    if (selfExclude) {
+      addNotification({ type: 'error', message: 'Autoexcluído: não pode jogar' });
+      return;
+    }
+    if (launchingCode) return; // one launch request at a time — avoids double-click double-creating the aggregator user
+    setLaunchingCode(game.game_code);
+    try {
+      const data = await apiFetch<{ success: boolean; game_url?: string; error?: string }>('/api/casino/play', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider_id: game.provider_id,
+          game_code: game.game_code,
+          return_url: `${window.location.origin}/casino`,
+        }),
+      });
+      if (data.success && data.game_url) {
+        window.open(data.game_url, '_blank', 'noopener,noreferrer');
+      } else {
+        addNotification({ type: 'warning', message: data.error || 'Jogo indisponível de momento' });
+      }
+    } catch (e: any) {
+      addNotification({ type: 'error', message: e?.message || 'Não foi possível abrir o jogo' });
+    } finally {
+      setLaunchingCode(null);
+    }
+  };
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -229,7 +267,7 @@ export default function CasinoPage() {
             </div>
             <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
               {featured.map((g) => (
-                <GameCard key={g.game_code} game={g} big onPlay={notifySoon} />
+                <GameCard key={g.game_code} game={g} big onPlay={handlePlay} launching={launchingCode === g.game_code} />
               ))}
             </div>
           </div>
@@ -279,7 +317,7 @@ export default function CasinoPage() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-3">
               {visible.map((g) => (
-                <GameCard key={g.game_code} game={g} onPlay={notifySoon} />
+                <GameCard key={g.game_code} game={g} onPlay={handlePlay} launching={launchingCode === g.game_code} />
               ))}
             </div>
           )}
