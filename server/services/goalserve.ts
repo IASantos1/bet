@@ -224,8 +224,34 @@ function extractTeams(m: any, sport?: string): { home: any; away: any } {
   return { home, away };
 }
 
+// Some leagues' real-world sponsorship title (e.g. Brazil's Série A is officially "Brasileirão
+// Betano") ends up embedded straight in GoalServe's category name. A rival sportsbook's brand
+// must never appear anywhere on BET62, so every league/category name is scrubbed of known
+// bookmaker/sponsor names before it reaches any consumer.
+const SPONSOR_BRAND_NAMES = [
+  'betano', 'bet365', 'betfair', 'betway', 'bwin', 'betsson', 'sportingbet', 'kto',
+  'betmgm', 'betfred', 'betvictor', 'unibet', 'parimatch', 'rivalo', 'estrelabet',
+  'novibet', 'vbet', 'betsul', 'superbet', 'f12bet', 'mcgames', 'betnacional', 'blaze',
+  'pinnacle', '1xbet', 'stake', 'leovegas', 'betclic', 'marathonbet', 'william hill',
+  'ladbrokes', 'betrivers', 'draftkings', 'fanduel', 'pokerstars', 'caesars', 'betsafe',
+];
+const SPONSOR_BRAND_RE = new RegExp(
+  `\\b(${SPONSOR_BRAND_NAMES.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+  'gi',
+);
+
+function stripSponsorBrands(name: string): string {
+  if (!name) return name;
+  return name
+    .replace(SPONSOR_BRAND_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[-–—]\s*$/, '')
+    .trim();
+}
+
 /** "Country: League" — CONFIRMED category.name format for soccer. */
 function splitCategoryName(name: string): { country: string; league: string } {
+  name = stripSponsorBrands(name);
   const idx = name.indexOf(':');
   if (idx === -1) return { country: '', league: name };
   return { country: name.slice(0, idx).trim(), league: name.slice(idx + 1).trim() };
@@ -368,7 +394,7 @@ function normalizeMatch(sport: string, category: any, m: any, wrapperFormattedDa
     eventDate = timeRaw ? `${dateRaw}T${timeRaw}:00Z` : dateRaw;
   }
 
-  const categoryName = str(category?.name ?? category?.['@name']);
+  const categoryName = stripSponsorBrands(str(category?.name ?? category?.['@name']));
   const { country, league } = splitCategoryName(categoryName);
 
   return {
