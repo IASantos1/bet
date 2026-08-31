@@ -1,6 +1,31 @@
 import { ALL_COUNTRIES } from './countries';
 import { ALLOWED_LEAGUES } from './leagues';
 
+// A rival sportsbook's brand must never appear anywhere on BET62. Some leagues' real-world
+// sponsorship title (e.g. Brazil's Série A is officially "Brasileirão Betano") ends up embedded
+// straight in the data feed's league name — scrubbed here as a second line of defense on top of
+// the server-side normalization, in case any stale/cached event still carries the raw name.
+const SPONSOR_BRAND_NAMES = [
+  'betano', 'bet365', 'betfair', 'betway', 'bwin', 'betsson', 'sportingbet', 'kto',
+  'betmgm', 'betfred', 'betvictor', 'unibet', 'parimatch', 'rivalo', 'estrelabet',
+  'novibet', 'vbet', 'betsul', 'superbet', 'f12bet', 'mcgames', 'betnacional', 'blaze',
+  'pinnacle', '1xbet', 'stake', 'leovegas', 'betclic', 'marathonbet', 'william hill',
+  'ladbrokes', 'betrivers', 'draftkings', 'fanduel', 'pokerstars', 'caesars', 'betsafe',
+];
+const SPONSOR_BRAND_RE = new RegExp(
+  `\\b(${SPONSOR_BRAND_NAMES.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+  'gi',
+);
+
+const stripSponsorBrands = (name: string): string => {
+  if (!name) return name;
+  return name
+    .replace(SPONSOR_BRAND_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s*[-–—]\s*$/, '')
+    .trim();
+};
+
 export const formatLeagueHeader = (rawInput: any) => {
   if (!rawInput) return { flag: '', country: '', league: '', flagUrl: '' };
   
@@ -22,8 +47,10 @@ export const formatLeagueHeader = (rawInput: any) => {
         raw = rawInput.name;
     } else {
         // raw = String(rawInput); // CAUSES [object Object] if rawInput is the event object!
-        raw = ''; 
+        raw = '';
     }
+
+    raw = stripSponsorBrands(raw);
 
     raw = raw.replace(/^soccer\s*(?:-|:|\.)?\s*/i, '');
     raw = raw.replace(/^(tennis|basketball|baseball|volleyball|handball|rugby|mma|american\s*football|american-football|ice\s*hockey|ice-hockey|golf|formula1|cricket)\s*(?:-|:|\.)?\s*/i, '');
