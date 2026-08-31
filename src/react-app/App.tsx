@@ -32,6 +32,7 @@ import WalletPage from "./pages/WalletPage";
 import EventDetails from "./pages/EventDetails";
 import EventStatsPage from "./pages/EventStatsPage";
 import Promotions from "./pages/Promotions";
+import CasinoPage from "./pages/CasinoPage";
 import WorldCupPage from "./pages/WorldCupPage";
 import ProfilePage from "./pages/ProfilePage";
 import MyBetsPage from "./pages/MyBetsPage";
@@ -99,7 +100,6 @@ export default function App() {
         }
       });
       try { localStorage.removeItem('home:pregame:v2'); } catch { /* empty */ }
-      try { if ((window as any).caches) (window as any).caches.delete('betarena-static-v1'); } catch { /* empty */ }
     } catch { /* empty */ }
   }, []);
   return (
@@ -206,6 +206,7 @@ function AppContent() {
             <Route path="/login" element={<HomePage mode="home" />} />
             <Route path="/deposit-success" element={<DepositSuccess />} />
             <Route path="/promotions" element={<Promotions />} />
+            <Route path="/casino" element={<CasinoPage />} />
             <Route path="/copa-do-mundo" element={<WorldCupPage />} />
             <Route path="/admin" element={
               <AdminRoute><AdminPanel /></AdminRoute>

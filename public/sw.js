@@ -1,8 +1,14 @@
-const CACHE_STATIC = 'betarena-static-v1'
+const CACHE_STATIC = 'betarena-static-v2'
+const PRECACHE_URLS = [
+  '/offline.html',
+  '/manifest.webmanifest',
+  '/icons/bet62-icon-192.png',
+  '/icons/bet62-icon-512.png',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_STATIC).then((c) => c.addAll(['/offline.html'])).then(() => self.skipWaiting())
+    caches.open(CACHE_STATIC).then((c) => c.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
   )
 })
 
