@@ -4,16 +4,22 @@
  * by date, and pregame/live odds. Produces the exact same NormalizedEvent/OddsResult shapes as
  * sportsApiPro.ts so it's a drop-in swap in server/routes/events.ts.
  *
- * ⚠️ UNVERIFIED AGAINST REAL PAYLOADS. This sandbox's network egress blocks goalserve.com entirely
- * (confirmed via both curl and Node's fetch — "Host not in allowlist", not even the target server's
- * own rejection like the casino aggregator's IP whitelist was). Every parsing function below is
- * written defensively — checking multiple plausible field-name variants, the same style already
- * used by sportsApiPro.ts's extractEvents() — based on GoalServe's documented URL scheme and
- * publicly known XML/JSON conventions, but none of it has been exercised against a real response.
- * Validate against real output (e.g. by pasting sample JSON from each endpoint, the same way the
- * casino aggregator integration was built) before trusting this in production; until then keep
- * SPORTS_DATA_PROVIDER unset/'sportsapipro' so the known-working path stays live. Every `???`
- * comment below marks a specific field-name guess most worth checking first.
+ * Soccer's field names (category/matches/match/localteam/visitorteam/goals, the "Country: League"
+ * category name format, the real not-started/live/finished status vocabulary, and the odds feed's
+ * type/bookmaker/odd structure including Total/Handicap line wrappers and `stop` suspension flags)
+ * are CONFIRMED against GoalServe's official "Soccer Data Feed" PDF, including real sample XML —
+ * every place that reflects it is marked CONFIRMED in a comment. Tennis/basketball/hockey/baseball
+ * have no equivalent documentation and stay unverified — those code paths are still marked `???`
+ * and written defensively (checking multiple plausible field-name variants, the same style
+ * sportsApiPro.ts's own extractEvents() already uses).
+ *
+ * ⚠️ NONE OF THIS has been exercised against a real live response, even for soccer — this
+ * sandbox's network egress blocks goalserve.com entirely (confirmed via both curl and Node's
+ * fetch — "Host not in allowlist", not even the target server's own rejection like the casino
+ * aggregator's IP whitelist was). The PDF gives the schema; it doesn't prove this code reads it
+ * correctly end to end. Validate against a real live/odds response before trusting this in
+ * production; until then keep SPORTS_DATA_PROVIDER unset/'sportsapipro' so the known-working path
+ * stays live.
  */
 
 import type { NormalizedEvent, OddsResult } from './sportsApiPro';
@@ -102,16 +108,26 @@ function extractCategories(payload: any): any[] {
   return [];
 }
 
-/** A category's matches live under `.match` or `.matches.match`; both forms are documented
- *  elsewhere in GoalServe's XML conventions (??? confirm which applies per sport). */
-function extractMatches(category: any): any[] {
+/** CONFIRMED (official Soccer Data Feed PDF): a category's matches sit under a single
+ *  `<matches date="May 15" formatted_date="15.05.2020">` wrapper carrying the date, itself
+ *  containing one or more `<match>` elements (which only carry `time`, not their own date). This
+ *  returns each date-wrapper with its `match` list attached, so callers can pull formatted_date
+ *  down onto every match. Other sports aren't confirmed against real docs — the `category?.match`
+ *  fallback (no wrapper) stays for resilience. */
+function extractMatchGroups(category: any): Array<{ formattedDate: string; matches: any[] }> {
   if (!category) return [];
-  const candidates = [category?.match, category?.matches?.match, category?.matches, category?.game, category?.games];
-  for (const c of candidates) {
-    if (Array.isArray(c)) return c;
-    if (c && typeof c === 'object') return [c];
+  const wrappers = Array.isArray(category?.matches) ? category.matches : category?.matches ? [category.matches] : [];
+  if (wrappers.length) {
+    return wrappers.map((w: any) => ({
+      formattedDate: str(w?.formatted_date),
+      matches: Array.isArray(w?.match) ? w.match : w?.match ? [w.match] : [],
+    }));
   }
-  return [];
+  // ??? fallback for sports without a confirmed schema: matches directly under the category, or
+  // under a plain (non-array) `game`/`games` container.
+  const flat = category?.match ?? category?.game ?? category?.games;
+  const matches = Array.isArray(flat) ? flat : flat ? [flat] : [];
+  return matches.length ? [{ formattedDate: '', matches }] : [];
 }
 
 function num(v: any): number {
@@ -123,12 +139,19 @@ function str(v: any): string {
   return v == null ? '' : String(v).trim();
 }
 
-/** ??? team fields: GoalServe soccer uses localteam/awayteam or localteam/visitorteam depending
- *  on feed vintage; other sports sometimes use hometeam/awayteam. Checks all four pairs. */
+/** CONFIRMED for soccer: `<localteam>` / `<visitorteam>`. Other sports unconfirmed — kept as
+ *  fallbacks (hometeam/awayteam is a common GoalServe alternative for some sports). */
 function extractTeams(m: any): { home: any; away: any } {
   const home = m?.localteam ?? m?.hometeam ?? m?.home_team ?? m?.home ?? {};
-  const away = m?.awayteam ?? m?.visitorteam ?? m?.away_team ?? m?.away ?? {};
+  const away = m?.visitorteam ?? m?.awayteam ?? m?.away_team ?? m?.away ?? {};
   return { home, away };
+}
+
+/** "Country: League" — CONFIRMED category.name format for soccer. */
+function splitCategoryName(name: string): { country: string; league: string } {
+  const idx = name.indexOf(':');
+  if (idx === -1) return { country: '', league: name };
+  return { country: name.slice(0, idx).trim(), league: name.slice(idx + 1).trim() };
 }
 
 function teamName(t: any): string {
@@ -143,39 +166,68 @@ function teamLogo(t: any): string {
   return str(t?.logo ?? t?.badge ?? t?.image ?? '');
 }
 
+/** CONFIRMED for soccer: `goals` on the team element (e.g. `<localteam name="Liverpool" goals="3"
+ *  id="9249" />`) — not `score`. Kept `score`/`totalscore` as fallbacks for other sports. Empty
+ *  string (not-started matches always report `goals=""`) correctly falls through to null. */
 function teamScore(t: any, m: any, side: 'home' | 'away'): number | null {
-  const direct = t?.score ?? t?.totalscore ?? t?.goals;
+  const direct = t?.goals ?? t?.score ?? t?.totalscore;
   if (direct != null && direct !== '') return num(direct);
   const fromMatch = side === 'home' ? (m?.localteam_score ?? m?.hscore) : (m?.awayteam_score ?? m?.ascore);
   if (fromMatch != null && fromMatch !== '') return num(fromMatch);
   return null;
 }
 
-/** GoalServe's status strings ("Not Started", "Finished", "1st Half", "Half Time", "45", live
- *  minute counters, etc.) — mapped to the same is_live/status_short convention sportsApiPro.ts's
- *  consumers expect. ??? exact live-status vocabulary per sport is unconfirmed. */
+/** CONFIRMED (official Soccer Data Feed PDF, soccernew/home vocabulary):
+ *  Not started  → the literal kickoff time as the status string, e.g. status="14:30".
+ *  Live         → a bare minute number (elapsed), "HT", "Break Time", "ET", "P" (penalties in
+ *                 progress).
+ *  Finished     → "FT", "AET", "Pen.", "WO" (walkover), "Awarded" (technical loss).
+ *  Not playable → "Postp.", "Aban.", "Cancl.", "Susp.", "Int.", "Delayed" — never finished, never
+ *                 live; left for manual admin resolution rather than guessed at.
+ *
+ *  CRITICAL: server/routes/events.ts's Settlement Engine checks `status_short === 'FT'` as an
+ *  exact string match to decide a bet is resolvable — every finished variant below must map to
+ *  precisely 'FT', not a close variant, or matches will simply never settle. */
 function parseStatus(raw: string): { status: string; statusShort: string; isLive: number; elapsed: number } {
   const s = str(raw);
-  const upper = s.toUpperCase();
-  if (!s || upper === 'NOT STARTED' || upper === 'NS' || upper === 'SCHEDULED') {
-    return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
-  }
-  if (upper === 'FT' || upper === 'FINISHED' || upper === 'FULL TIME' || upper === 'AET' || upper === 'FT PEN') {
+  if (!s) return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+
+  if (/^(FT|AET|Pen\.?|WO|Awarded|Full-?time|After Penalties|After Extra Time)$/i.test(s)) {
     return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 };
   }
-  if (upper === 'POSTP' || upper === 'POSTPONED' || upper === 'CANC' || upper === 'CANCELLED' || upper === 'ABAN') {
-    return { status: s, statusShort: upper.slice(0, 4), isLive: 0, elapsed: 0 };
+
+  if (/^(Postp\.?|Postponed|Aban\.?|Abandoned|Cancl\.?|Cancell?ed|Susp\.?|Suspended|Int\.?|Interrupted|Delayed)$/i.test(s)) {
+    return { status: s, statusShort: s.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase(), isLive: 0, elapsed: 0 };
   }
-  // Anything else (a bare minute number, "1st Half", "Half Time", "2nd Half", live set/quarter
-  // labels for tennis/basketball) is treated as in-progress.
+
+  // A bare "HH:mm" kickoff time (or the commentaries feed's own "Not Started" text) means the
+  // match hasn't started.
+  if (/^\d{1,2}:\d{2}$/.test(s) || /^Not Started$/i.test(s)) {
+    return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+  }
+
+  if (/^(HT|Half-?time)$/i.test(s)) return { status: 'Half Time', statusShort: 'HT', isLive: 1, elapsed: 45 };
+  if (/^Break Time$/i.test(s)) return { status: s, statusShort: 'BREAK', isLive: 1, elapsed: 90 };
+  if (/^(ET|Extra Time)$/i.test(s)) return { status: 'Extra Time', statusShort: 'ET', isLive: 1, elapsed: 105 };
+  if (/^(P|Penalties)$/i.test(s)) return { status: 'Penalties', statusShort: 'PEN', isLive: 1, elapsed: 120 };
+  if (/^First Half$/i.test(s)) return { status: s, statusShort: '1H', isLive: 1, elapsed: 1 };
+  if (/^Second Half$/i.test(s)) return { status: s, statusShort: '2H', isLive: 1, elapsed: 46 };
+
+  // Otherwise: a bare minute number (regular time in progress), possibly "45+2" style injury time.
   const minuteMatch = /^(\d{1,3})/.exec(s);
-  const elapsed = minuteMatch ? Number(minuteMatch[1]) : 0;
-  return { status: s, statusShort: s.slice(0, 6), isLive: 1, elapsed };
+  if (minuteMatch) {
+    const elapsed = Number(minuteMatch[1]);
+    return { status: s, statusShort: elapsed <= 45 ? '1H' : '2H', isLive: 1, elapsed };
+  }
+
+  // Unrecognized text — surfaced as-is (not live, not finished) rather than silently misclassified.
+  return { status: s, statusShort: s.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase(), isLive: 0, elapsed: 0 };
 }
 
 /** Converts one GoalServe match object (soccer or otherwise) into the NormalizedEvent shape every
- *  other part of the app (odds versioning, bet settlement, EventCard) already relies on. */
-function normalizeMatch(sport: string, category: any, m: any): NormalizedEvent | null {
+ *  other part of the app (odds versioning, bet settlement, EventCard) already relies on.
+ *  `wrapperFormattedDate` is the confirmed date source for soccer — see extractMatchGroups(). */
+function normalizeMatch(sport: string, category: any, m: any, wrapperFormattedDate: string): NormalizedEvent | null {
   if (!m) return null;
   const { home, away } = extractTeams(m);
   const homeName = teamName(home);
@@ -189,9 +241,10 @@ function normalizeMatch(sport: string, category: any, m: any): NormalizedEvent |
   const homeScore = teamScore(home, m, 'home');
   const awayScore = teamScore(away, m, 'away');
 
-  // GoalServe dates are typically "dd.MM.yyyy" with a separate "time" field ("HH:mm") — combined
-  // into an ISO-ish string. ??? confirm the exact date/time attribute names and format per sport.
-  const dateRaw = str(m?.date ?? m?.formatted_date);
+  // CONFIRMED for soccer: formatted_date="dd.MM.yyyy" lives on the parent <matches> wrapper (see
+  // extractMatchGroups), while time="HH:mm" (UTC) lives on the <match> element itself. Falls back
+  // to reading date directly off the match for sports without a confirmed schema.
+  const dateRaw = wrapperFormattedDate || str(m?.formatted_date ?? m?.date);
   const timeRaw = str(m?.time ?? m?.formatted_time);
   let eventDate = '';
   const dm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateRaw);
@@ -202,10 +255,13 @@ function normalizeMatch(sport: string, category: any, m: any): NormalizedEvent |
     eventDate = timeRaw ? `${dateRaw}T${timeRaw}:00Z` : dateRaw;
   }
 
+  const categoryName = str(category?.name ?? category?.['@name']);
+  const { country, league } = splitCategoryName(categoryName);
+
   return {
     external_event_id: `goalserve_${id}`,
     sport,
-    league: str(category?.name ?? category?.['@name']),
+    league: league || categoryName,
     home_team: homeName,
     away_team: awayName,
     team_match: `${homeName} vs ${awayName}`,
@@ -221,7 +277,7 @@ function normalizeMatch(sport: string, category: any, m: any): NormalizedEvent |
     timer: str(m?.timer ?? m?.minute ?? (elapsed || '')),
     score: JSON.stringify({ home: homeScore, away: awayScore }),
     markets: '{}',
-    country: str(category?.country ?? ''),
+    country,
     home_team_logo: teamLogo(home),
     away_team_logo: teamLogo(away),
     fixture: { id, date: eventDate, status: { description: status } },
@@ -234,9 +290,11 @@ function flattenMatches(sport: string, payload: any): NormalizedEvent[] {
   const categories = extractCategories(payload);
   const out: NormalizedEvent[] = [];
   for (const cat of categories) {
-    for (const m of extractMatches(cat)) {
-      const n = normalizeMatch(sport, cat, m);
-      if (n) out.push(n);
+    for (const group of extractMatchGroups(cat)) {
+      for (const m of group.matches) {
+        const n = normalizeMatch(sport, cat, m, group.formattedDate);
+        if (n) out.push(n);
+      }
     }
   }
   return out;
@@ -380,26 +438,47 @@ function normalizeOutcomeKey(name: string): 'home' | 'draw' | 'away' | null {
   return null;
 }
 
-/** Extracts the odds list from a single `<type>` block. ??? "bookmaker" wrapping and the exact
- *  `odd` element attribute names (name/value vs type/price) are the least certain part of this
- *  parser — GoalServe's odds feeds vary the bookmaker nesting by sport/product tier. */
+/** CONFIRMED (official Soccer Data Feed PDF, PREGAME ODDS COMPARISON FEED section):
+ *  <type value="Match Winner" stop="False" id="1">
+ *    <bookmaker name="bwin" stop="False" ts="..." id="2">
+ *      <odd name="Home" value="1.05"/>
+ *  For Total/Handicap markets an extra line-value wrapper sits between bookmaker and odd:
+ *    <bookmaker ...><total name="3.5" ismain="False" stop="False"><odd name="Over" value="1.9"/>
+ *    <bookmaker ...><handicap name="-1.75" ismain="False" stop="False"><odd name="Home" .../>
+ *  `stop="True"` at any level (type/bookmaker/total/handicap) means suspended/inactive — those
+ *  odds are skipped rather than surfaced as if bettable. Line values get folded into the
+ *  selection name ("Over 3.5") since OddsResult's market lines are flat {label, value, odd}. */
+function isStopped(node: any): boolean {
+  return node?.stop === 'True' || node?.stop === true || node?.stop === 'true';
+}
+
 function extractOddsFromType(typeBlock: any): Array<{ name: string; value: number }> {
+  if (isStopped(typeBlock)) return [];
   const bookmakers = Array.isArray(typeBlock?.bookmaker) ? typeBlock.bookmaker : typeBlock?.bookmaker ? [typeBlock.bookmaker] : [];
   const out: Array<{ name: string; value: number }> = [];
   for (const bm of bookmakers) {
+    if (isStopped(bm)) continue;
+    const lineWrappers = [
+      ...(Array.isArray(bm?.total) ? bm.total : bm?.total ? [bm.total] : []),
+      ...(Array.isArray(bm?.handicap) ? bm.handicap : bm?.handicap ? [bm.handicap] : []),
+    ];
+    if (lineWrappers.length) {
+      for (const w of lineWrappers) {
+        if (isStopped(w)) continue;
+        const point = str(w?.name);
+        const odds = Array.isArray(w?.odd) ? w.odd : w?.odd ? [w.odd] : [];
+        for (const o of odds) {
+          const name = str(o?.name);
+          const value = num(o?.value);
+          if (name && value > 1) out.push({ name: point ? `${name} ${point}` : name, value });
+        }
+      }
+      continue;
+    }
     const odds = Array.isArray(bm?.odd) ? bm.odd : bm?.odd ? [bm.odd] : [];
     for (const o of odds) {
-      const name = str(o?.name ?? o?.['@name'] ?? o?.value ?? o?.type);
-      const value = num(o?.value ?? o?.['@value'] ?? o?.price);
-      if (name && value > 1) out.push({ name, value });
-    }
-  }
-  // Some feeds skip the bookmaker wrapper entirely for a single default price source.
-  if (out.length === 0) {
-    const odds = Array.isArray(typeBlock?.odd) ? typeBlock.odd : typeBlock?.odd ? [typeBlock.odd] : [];
-    for (const o of odds) {
-      const name = str(o?.name ?? o?.['@name'] ?? o?.value);
-      const value = num(o?.value ?? o?.['@value'] ?? o?.price);
+      const name = str(o?.name);
+      const value = num(o?.value);
       if (name && value > 1) out.push({ name, value });
     }
   }
@@ -409,11 +488,13 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
 function findMatchInOddsPayload(payload: any, matchId: string): any | null {
   const categories = extractCategories(payload);
   for (const cat of categories) {
-    for (const m of extractMatches(cat)) {
-      const id = str(m?.id ?? m?.['@id']);
-      // GoalServe's match id here is its own (not prefixed) — matchId passed in may carry our
-      // "goalserve_" prefix from normalizeMatch(), so compare both forms.
-      if (id === matchId || `goalserve_${id}` === matchId || id === matchId.replace(/^goalserve_/, '')) return m;
+    for (const group of extractMatchGroups(cat)) {
+      for (const m of group.matches) {
+        const id = str(m?.id ?? m?.['@id']);
+        // GoalServe's match id here is its own (not prefixed) — matchId passed in may carry our
+        // "goalserve_" prefix from normalizeMatch(), so compare both forms.
+        if (id === matchId || `goalserve_${id}` === matchId || id === matchId.replace(/^goalserve_/, '')) return m;
+      }
     }
   }
   return null;
@@ -429,10 +510,11 @@ function parseOddsMatch(m: any): OddsResult | null {
   const markets: Record<string, any[]> = {};
 
   for (const t of typeBlocks) {
-    // ??? the exact `value`/`name` used for the 1X2 market's own <type> label is unconfirmed —
-    // GoalServe commonly calls it "Home/Draw/Away", "Match Winner", or "1x2" depending on sport.
+    if (isStopped(t)) continue;
+    // CONFIRMED: the base 1X2 market's <type value="..."> is literally "Match Winner". A couple
+    // of synonym fallbacks are kept for sports without a confirmed schema.
     const label = str(t?.value ?? t?.name ?? t?.['@value']).toLowerCase();
-    const isH2H = label.includes('home') || label.includes('1x2') || label.includes('match winner') || label.includes('winner') || label.includes('result');
+    const isH2H = label === 'match winner' || label.includes('1x2') || label.includes('full time result') || label === 'winner' || label === 'home/draw/away';
     const odds = extractOddsFromType(t);
     if (!odds.length) continue;
 
