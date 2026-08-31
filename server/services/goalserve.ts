@@ -77,6 +77,32 @@ function redactKey(url: string): string {
   return url.replace(/(getfeed\/)[^/]+/i, '$1***').replace(/([?&]k=)[^&]+/i, '$1***');
 }
 
+/** CONFIRMED against a real production response (soccernew/home?json=1, captured via the app's
+ *  own Railway container): GoalServe's XML->JSON conversion prefixes every XML ATTRIBUTE with `@`
+ *  (`@name`, `@id`, `@status`, `@goals`, ...) while leaving XML ELEMENT names (which become object
+ *  keys holding nested objects/arrays, like `category`, `matches`, `match`, `localteam`,
+ *  `visitorteam`, `events`) unprefixed. None of the per-sport PDFs ever showed a real JSON sample
+ *  (only XML), so every accessor in this file (`m?.status`, `category?.name`, `t?.value`, etc.)
+ *  was written assuming attributes came through as plain keys — which is why, even once network
+ *  access and the API key were both confirmed working, live/schedule/odds all still parsed to
+ *  empty: every single field read back `undefined`.
+ *
+ *  Fixed at the single fetch choke point instead of touching every accessor across this file:
+ *  strip the `@` prefix from every key, recursively, right after JSON.parse. Every existing
+ *  accessor then reads the plain key it always assumed, unchanged. (The root `"?xml"` declaration
+ *  key is untouched — nothing reads it, and its `?` isn't the `@` prefix being stripped anyway.) */
+function stripAttrPrefix(node: any): any {
+  if (Array.isArray(node)) return node.map(stripAttrPrefix);
+  if (node && typeof node === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(node)) {
+      out[k.startsWith('@') ? k.slice(1) : k] = stripAttrPrefix(v);
+    }
+    return out;
+  }
+  return node;
+}
+
 async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false): Promise<any | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
@@ -97,7 +123,7 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
       return null;
     }
     try {
-      return JSON.parse(text);
+      return stripAttrPrefix(JSON.parse(text));
     } catch {
       // GoalServe's own docs disagree on the boolean-flag spelling: the general reference doc and
       // 4 of 5 sport PDFs say `?json=1`, but the Soccer PDF's own "Basic feed format" section says
