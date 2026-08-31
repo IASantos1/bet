@@ -242,41 +242,28 @@ export function Header() {
           </div>
         </div>
 
-        {/* Mobile nav */}
-        <div className="px-4 pb-2 lg:hidden">
-          <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            <NavBtn to="/" active={isActive('/')} onClick={() => setSelectedCategory(null)} mobile>
-              Desporto
-            </NavBtn>
-            <NavBtn to="/live" active={isActive('/live')} mobile>
-              Ao Vivo
-            </NavBtn>
-            <NavBtn to="/casino" active={isActive('/casino')} mobile>
-              Casino
-            </NavBtn>
-            <NavBtn to="/promotions" active={isActive('/promotions')} mobile>
-              Promoções
-            </NavBtn>
-            {isOperator && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setShowDashboard(true)}
-                  className={`flex-1 text-center py-1.5 px-2 rounded font-bold text-[10px] uppercase tracking-wide whitespace-nowrap transition-colors ${
-                    showDashboard
-                      ? 'bg-red-600 text-white shadow-sm'
-                      : (darkMode ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100')
-                  }`}
-                >
-                  Dashboard
-                </button>
-                <NavBtn to="/admin/payouts" active={isActive('/admin/payouts')} mobile>
-                  Pagamentos
-                </NavBtn>
-              </>
-            )}
-          </nav>
-        </div>
+        {/* Mobile operator shortcuts — the primary Desporto/Ao Vivo/Casino/Promoções nav lives in
+            BottomTabBar now, matching a native app's tab bar instead of a website's top nav. */}
+        {isOperator && (
+          <div className="px-4 pb-2 lg:hidden">
+            <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setShowDashboard(true)}
+                className={`flex-1 text-center py-1.5 px-2 rounded font-bold text-[10px] uppercase tracking-wide whitespace-nowrap transition-colors ${
+                  showDashboard
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : (darkMode ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100')
+                }`}
+              >
+                Dashboard
+              </button>
+              <NavBtn to="/admin/payouts" active={isActive('/admin/payouts')} mobile>
+                Pagamentos
+              </NavBtn>
+            </nav>
+          </div>
+        )}
 
         {selfExclude && (
           <div className={`w-full ${darkMode ? 'bg-yellow-600 text-black' : 'bg-yellow-100 text-yellow-800'} border-t ${darkMode ? 'border-yellow-700' : 'border-yellow-300'}`}>

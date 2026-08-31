@@ -629,3 +629,11 @@
     animation: confetti-burst 0.8s ease-out forwards;
   }
 }
+
+/* Reserve room for BottomTabBar.tsx's fixed nav (mobile only, matches its lg:hidden) so page
+   content and the footer never end up scrolled underneath it. */
+@media (max-width: 1023.98px) {
+  body {
+    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}

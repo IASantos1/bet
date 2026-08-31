@@ -47,6 +47,7 @@ import AdminRisk from "./pages/AdminRisk";
 import { AuthModal } from './components/AuthModal';
 import { CookieBanner } from './components/CookieBanner';
 import { MobileBetSlip } from './components/MobileBetSlip';
+import { BottomTabBar } from './components/BottomTabBar';
 import { DashboardSidebar } from './components/DashboardSidebar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -234,6 +235,7 @@ function AppContent() {
       </AnimatePresence>
 
       <MobileBetSlip />
+      <BottomTabBar />
       <DashboardSidebar />
       <ToastContainer />
     </>
