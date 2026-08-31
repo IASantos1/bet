@@ -8,6 +8,7 @@ import { resolveLegOutcome, resolveBetOutcome, type BetOutcome } from '../lib/se
 import { computeExposure, type ExposureBetInput } from '../lib/riskEngine';
 import { writeAuditLog, requestIp } from '../lib/audit';
 import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
+import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -491,6 +492,68 @@ export async function handleAdminRoutes(
       .sort((a, b) => b.indicators.length - a.indicators.length);
 
     sendJson(res, 200, { scannedUsers: byUser.size, flagged });
+    return true;
+  }
+
+  // GET /api/admin/fraud/alerts — Fraud Engine risk_score (spec §37). See
+  // server/lib/fraudEngine.ts for exactly which signals feed the score and why the others
+  // (device fingerprinting, payment-method identity, betting-pattern correlation) are left out.
+  if (req.method === 'GET' && path === '/api/admin/fraud/alerts') {
+    const [sharedIpRows, loginVelocityRows, accountRows] = await Promise.all([
+      pool.query(
+        `SELECT ip, array_agg(DISTINCT user_id) AS user_ids
+         FROM refresh_tokens
+         WHERE ip IS NOT NULL AND ip <> '' AND created_at > NOW() - INTERVAL '30 days'
+         GROUP BY ip
+         HAVING COUNT(DISTINCT user_id) > 1`,
+      ),
+      pool.query(
+        `SELECT user_id, COUNT(*)::int AS c
+         FROM refresh_tokens
+         WHERE created_at > NOW() - INTERVAL '1 hour'
+         GROUP BY user_id`,
+      ),
+      pool.query(
+        `SELECT u.id AS user_id, u.email, u.created_at,
+                (SELECT MAX(t.amount) FROM transactions t WHERE t.user_id = u.id AND t.type = 'deposit' AND t.status = 'completed') AS max_deposit
+         FROM users u`,
+      ),
+    ]);
+
+    // Max other-accounts-on-the-same-IP, taken across every IP this user has ever signed in from.
+    const sharedIpByUser = new Map<string, number>();
+    for (const row of sharedIpRows.rows || []) {
+      const ids: string[] = (row.user_ids || []).map((x: any) => String(x));
+      for (const id of ids) {
+        const others = ids.length - 1;
+        sharedIpByUser.set(id, Math.max(sharedIpByUser.get(id) || 0, others));
+      }
+    }
+
+    const loginVelocityByUser = new Map<string, number>();
+    for (const row of loginVelocityRows.rows || []) {
+      loginVelocityByUser.set(String(row.user_id), Number(row.c || 0));
+    }
+
+    const now = Date.now();
+    const flagged: Array<{ userId: string; email: string; score: number; band: string; reasons: unknown[] }> = [];
+    for (const row of accountRows.rows || []) {
+      const userId = String(row.user_id);
+      const accountAgeHours = Math.max(0, (now - new Date(row.created_at).getTime()) / 3_600_000);
+      const signals: FraudSignals = {
+        sharedIpAccountCount: sharedIpByUser.get(userId) || 0,
+        loginCountLastHour: loginVelocityByUser.get(userId) || 0,
+        accountAgeHours,
+        largestDepositAmount: toNumber(row.max_deposit),
+      };
+      const result = computeFraudScore(signals);
+      if (result.score > 0) {
+        flagged.push({ userId, email: String(row.email || ''), score: result.score, band: result.band, reasons: result.reasons });
+      }
+    }
+    flagged.sort((a, b) => b.score - a.score);
+
+    sendJson(res, 200, { scannedUsers: (accountRows.rows || []).length, flagged });
     return true;
   }
 
