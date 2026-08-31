@@ -279,6 +279,27 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
       user_code   INTEGER     NOT NULL UNIQUE,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    // Real Seamless-mode wallet callback ledger (server/routes/casinoCallback.ts): one row per
+    // aggregator trans_guid, mirroring the `bet_casino` table in GoldSlotPalace's own reference
+    // implementation. Primary key on trans_guid is the idempotency guard for the "already
+    // processed" (check 41) rule; `sort` is flipped to 'CANCEL' in place on the ORIGINAL row when
+    // it's reversed (rather than only inserting a separate cancel row) so the `status` command
+    // (check 42) can report a cancelled transaction correctly by its original trans_guid.
+    `CREATE TABLE IF NOT EXISTS casino_transactions (
+      trans_guid   TEXT          PRIMARY KEY,
+      user_id      TEXT          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      gplay_id     TEXT,
+      round_id     TEXT,
+      provider_id  INTEGER,
+      game_code    TEXT,
+      game_type    TEXT,
+      sort         TEXT          NOT NULL,
+      amount       NUMERIC(18,2) NOT NULL,
+      cancel_of    TEXT,
+      created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_casino_transactions_user ON casino_transactions(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_casino_transactions_round ON casino_transactions(round_id)`,
   ];
 
   const client = await pool.connect();

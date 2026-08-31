@@ -56,8 +56,8 @@ export async function handleCasinoRoutes(
       let userCode = Number(existing.rows?.[0]?.user_code);
 
       if (!Number.isFinite(userCode) || userCode <= 0) {
-        // `name` must match ^[_a-zA-Z0-9]+$, 2-50 chars — u.id is a 32-char hex randomId(16), well
-        // within that after the "bet62_" prefix.
+        // `name` must match ^[_a-zA-Z0-9]+$, 2-50 chars — u.id is a hex randomId(12) (24 chars,
+        // routes/auth.ts), well within that after the "bet62_" prefix.
         const created = await createCasinoUser(`bet62_${u.id}`);
         userCode = created.user_code;
         // ON CONFLICT: a concurrent request from the same user could race here (e.g. a double-
