@@ -90,3 +90,22 @@ export interface CasinoProvider {
 export async function getCasinoProviders(lang = 1): Promise<CasinoProvider[]> {
   return callAgent<CasinoProvider[]>('/v4/game/providers', { lang });
 }
+
+export interface CasinoGame {
+  provider_id: number;
+  game_code: string;
+  game_name: string;
+  locale_name: string;
+  game_image: string;
+  game_image_narrow: string;
+  launch_enable: boolean;
+  category: string;
+  reg_date: string;
+}
+
+/** Calls POST /v4/game/games — the real, licensed game catalog for one provider (confirmed live
+ *  for provider_id 1 / Pragmatic Play: hundreds of real titles with launch_enable + image URLs).
+ *  `lang` defaults to 1, matching the working example. */
+export async function getCasinoGames(providerId: number, lang = 1): Promise<CasinoGame[]> {
+  return callAgent<CasinoGame[]>('/v4/game/games', { provider_id: providerId, lang });
+}
