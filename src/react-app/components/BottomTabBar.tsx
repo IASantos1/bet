@@ -78,10 +78,10 @@ export function BottomTabBar() {
 
   return (
     <nav
-      className={`lg:hidden fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 backdrop-blur-lg border-t pt-1.5 px-1 ${
+      className={`lg:hidden fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 backdrop-blur-lg border-t pt-2 px-1 ${
         darkMode ? 'bg-gray-900/95 border-gray-800' : 'bg-white/95 border-gray-200'
       }`}
-      style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom, 0px))' }}
+      style={{ paddingBottom: 'calc(0.9rem + env(safe-area-inset-bottom, 0px))' }}
     >
       {TABS.map((tab) => {
         const active = tab.match(pathname || '/');
