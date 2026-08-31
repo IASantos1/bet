@@ -5,7 +5,7 @@ type Tab = {
   to: string;
   label: string;
   match: (path: string) => boolean;
-  icon: (active: boolean) => React.ReactNode;
+  icon: (darkMode: boolean) => React.ReactNode;
 };
 
 const iconProps = {
@@ -34,11 +34,16 @@ const TABS: Tab[] = [
     to: '/live',
     label: 'Ao Vivo',
     match: (p) => p.startsWith('/live'),
-    icon: () => (
-      <svg {...iconProps} className="w-[22px] h-[22px]">
-        <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" />
-        <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
-      </svg>
+    icon: (darkMode: boolean) => (
+      <span className="relative inline-block">
+        <svg {...iconProps} className="w-[22px] h-[22px]">
+          <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" />
+          <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
+        </svg>
+        <span
+          className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-600 ring-2 animate-pulse ${darkMode ? 'ring-gray-900' : 'ring-white'}`}
+        />
+      </span>
     ),
   },
   {
@@ -46,10 +51,13 @@ const TABS: Tab[] = [
     label: 'Casino',
     match: (p) => p.startsWith('/casino'),
     icon: () => (
-      <svg {...iconProps} className="w-[22px] h-[22px]">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="9" strokeDasharray="2.4 3.4" />
-        <path d="M12 7v10M8.5 12h7" />
+      <svg viewBox="0 0 24 24" className="w-[22px] h-[22px]">
+        <rect x="2.5" y="2.5" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="7.5" cy="7.5" r="1.15" fill="#ef4444" />
+        <rect x="11.5" y="11.5" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="14.4" cy="14.4" r="1.05" fill="#ef4444" />
+        <circle cx="16.5" cy="16.5" r="1.05" fill="#ef4444" />
+        <circle cx="18.6" cy="18.6" r="1.05" fill="#ef4444" />
       </svg>
     ),
   },
@@ -104,7 +112,7 @@ export function BottomTabBar() {
                 active ? 'opacity-100' : 'opacity-0'
               }`}
             />
-            {tab.icon(active)}
+            {tab.icon(darkMode)}
             <span className="text-[9.5px] font-semibold tracking-tight">{tab.label}</span>
           </button>
         );
