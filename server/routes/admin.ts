@@ -11,6 +11,7 @@ import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
 import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
+import { isCasinoConfigured, getCasinoAgentInfo } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -954,6 +955,23 @@ export async function handleAdminRoutes(
     }
     const results = await Promise.all(probes.map(async (p) => ({ label: p.label, ...(await probeUrl(p.url, key)) })));
     sendJson(res, 200, { results });
+    return true;
+  }
+
+  // GET /api/admin/casino/connection — connectivity check for the casino game aggregator
+  // (CASINO_API_KEY / CASINO_API_BASE_URL). Only agent/info exists so far; game-list and
+  // launch-URL endpoints get wired in once the provider's full API docs are available.
+  if (req.method === 'GET' && path === '/api/admin/casino/connection') {
+    if (!isCasinoConfigured()) {
+      sendJson(res, 200, { configured: false });
+      return true;
+    }
+    try {
+      const info = await getCasinoAgentInfo();
+      sendJson(res, 200, { configured: true, connected: true, info });
+    } catch (e: any) {
+      sendJson(res, 200, { configured: true, connected: false, error: String(e?.message || e) });
+    }
     return true;
   }
 
