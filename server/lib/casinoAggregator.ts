@@ -1,8 +1,8 @@
 /**
- * Casino game aggregator client (GoldSlotPalace or compatible v4 agent API). Deliberately thin —
- * only agent/info exists here for now; game-list/launch-URL/callback endpoints get added once
- * the provider's full API documentation is available. Never hardcode the bearer token: it's read
- * from CASINO_API_KEY at call time, exactly like SPORTS_API_KEY in server/index.ts.
+ * Casino game aggregator client (GoldSlotPalace or compatible v4 agent API). Built up endpoint by
+ * endpoint against the real API as each one gets confirmed live; user/wallet endpoints aren't
+ * wrapped here yet. Never hardcode the bearer token: it's read from CASINO_API_KEY at call time,
+ * exactly like SPORTS_API_KEY in server/index.ts.
  */
 
 const DEFAULT_BASE_URL = 'https://agent.goldslotpalase.com';
@@ -116,4 +116,31 @@ export async function getCasinoGames(providerId: number, lang = 1): Promise<Casi
  *  matching the working example. */
 export async function getCasinoAllGames(): Promise<CasinoGame[]> {
   return callAgent<CasinoGame[]>('/v4/game/all');
+}
+
+export interface CasinoGameUrlParams {
+  user_code: number;
+  provider_id: number;
+  game_symbol: string;
+  lang?: number;
+  return_url?: string;
+  rtp?: number;
+  is_finish_jackpot?: boolean;
+}
+
+/** Calls POST /v4/game/game-url — the real launch URL for a game session, for a specific agent
+ *  user_code. Confirmed live: fails with code 2002 / USER_NOT_FOUND when user_code doesn't exist
+ *  on the aggregator's side yet — the aggregator's own user/create endpoint has to be called for
+ *  that user_code first (not yet wrapped here: no client function exists for it in this file).
+ *  The success response shape isn't confirmed yet (no successful call observed) — treated as
+ *  unknown here rather than guessed; callers should log the raw envelope until a real success
+ *  payload is seen and this can be typed precisely. */
+export async function getCasinoGameUrl(params: CasinoGameUrlParams): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/game-url', {
+    lang: 1,
+    return_url: '',
+    rtp: 0,
+    is_finish_jackpot: true,
+    ...params,
+  });
 }

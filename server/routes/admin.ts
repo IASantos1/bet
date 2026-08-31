@@ -18,6 +18,7 @@ import {
   getCasinoProviders,
   getCasinoGames,
   getCasinoAllGames,
+  getCasinoGameUrl,
 } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
@@ -1047,6 +1048,42 @@ export async function handleAdminRoutes(
     try {
       const games = await getCasinoAllGames();
       sendJson(res, 200, { success: true, games });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/game-url — real launch URL for a game session. Requires an existing
+  // aggregator user_code (create one via the aggregator's user/create endpoint first — not yet
+  // wrapped here). Subject to the same IP whitelist as every other agent/* and game/* call from
+  // this sandbox. Success response shape isn't confirmed yet, so the raw envelope is passed
+  // through as-is rather than reshaped.
+  if (req.method === 'POST' && path === '/api/admin/casino/game-url') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{
+      user_code?: number;
+      provider_id?: number;
+      game_symbol?: string;
+      lang?: number;
+      return_url?: string;
+      rtp?: number;
+      is_finish_jackpot?: boolean;
+    }>(req).catch(() => null);
+    if (!body?.user_code || !body?.provider_id || !body?.game_symbol) {
+      return badRequest(res, 'user_code, provider_id and game_symbol required'), true;
+    }
+    try {
+      const result = await getCasinoGameUrl({
+        user_code: body.user_code,
+        provider_id: body.provider_id,
+        game_symbol: body.game_symbol,
+        lang: body.lang,
+        return_url: body.return_url,
+        rtp: body.rtp,
+        is_finish_jackpot: body.is_finish_jackpot,
+      });
+      sendJson(res, 200, { success: true, result });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
