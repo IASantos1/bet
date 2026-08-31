@@ -131,6 +131,15 @@ export async function handleBetRoutes(
     const idempotencyKey = resolveIdempotencyKey(req, body, null);
 
     try {
+      // Trading Desk (spec: manual market control): a suspended market is refused outright,
+      // never silently allowed the way an unresolvable price is (spec §20 ODDS CHECK).
+      for (const s of payloadSelections) {
+        const eventId = String(s.event_id ?? '');
+        if (eventId && (await events.isMarketSuspended(eventId).catch(() => false))) {
+          throw new BetRejectedError('MARKET_UNAVAILABLE', 'Mercado suspenso para apostas', { eventId });
+        }
+      }
+
       // Betting Engine (spec §20): odds/limit checks run before a single euro is reserved.
       await validateBetRequest({
         legs: payloadSelections.map((s) => ({ eventId: String(s.event_id ?? ''), selection: s.selection, odd: s.odd, oddsVersion: s.odds_version })),

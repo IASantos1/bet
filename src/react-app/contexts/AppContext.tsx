@@ -56,8 +56,6 @@ interface AppContextType {
   isOperator: boolean;
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
-  showAdminPanel: boolean;
-  setShowAdminPanel: (show: boolean) => void;
   showMobileSidebar: boolean;
   setShowMobileSidebar: (show: boolean) => void;
   showDashboard: boolean;
@@ -94,7 +92,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selfExcludeUntil, setSelfExcludeUntilState] = useState<string | null>(null);
   const [isOperator, setIsOperator] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [showAdminPanel, setShowAdminPanel] = useState<boolean>(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState<boolean>(false);
   const [showDashboard, setShowDashboard] = useState<boolean>(false);
 
@@ -467,8 +464,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isOperator,
         showSettings,
         setShowSettings,
-        showAdminPanel,
-        setShowAdminPanel,
         showMobileSidebar,
         setShowMobileSidebar,
         showDashboard,

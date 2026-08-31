@@ -94,6 +94,23 @@ export type EventsService = {
     eventId: string,
     sport?: string,
   ) => Promise<{ finished: boolean; statusShort: string; homeScore: number | null; awayScore: number | null } | null>;
+  /** Trading Desk (spec: manual market control) event queue, optionally filtered. */
+  listTradingEvents: (filters: { status?: string; sport?: string; from?: string; to?: string }) => Promise<
+    Array<{
+      id: string; match: string; league: string; sport: string; event_date: string | null;
+      trading_status: 'pending' | 'approved' | 'suspended';
+      manual_odds: { home?: number; draw?: number; away?: number } | null;
+      home_odd: number; draw_odd: number; away_odd: number; is_live: number;
+    }>
+  >;
+  /** Sets an event's trading status and, optionally, its manual odds in the same write. */
+  setTradingDecision: (
+    eventId: string,
+    status: 'pending' | 'approved' | 'suspended',
+    manualOdds?: { home?: number; draw?: number; away?: number },
+  ) => Promise<void>;
+  /** True when a trader has suspended this event's market — betting engines must refuse it. */
+  isMarketSuspended: (eventId: string) => Promise<boolean>;
 };
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
@@ -111,7 +128,8 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const idToSport = new Map<string, CacheEntry<string>>();
   const lastEventById = new Map<string, CacheEntry<AnyEvent>>();
   const liveSeen = new Map<string, CacheEntry<{ sport: string; event: AnyEvent }>>();
-  const overridesCache = new Map<string, CacheEntry<{ home_odd: number | null; draw_odd: number | null; away_odd: number | null }>>();
+  type TradingStatus = 'pending' | 'approved' | 'suspended';
+  const overridesCache = new Map<string, CacheEntry<{ home_odd: number | null; draw_odd: number | null; away_odd: number | null; status: TradingStatus }>>();
   const oddsVersionStore = createOddsStore();
 
   const normalizeMatchId = (sport: string, rawId: string): string => {
@@ -342,17 +360,18 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     return normalized;
   };
 
-  const getOverride = async (eventId: string): Promise<{ home_odd: number | null; draw_odd: number | null; away_odd: number | null } | null> => {
+  const getOverride = async (eventId: string): Promise<{ home_odd: number | null; draw_odd: number | null; away_odd: number | null; status: TradingStatus } | null> => {
     const c = overridesCache.get(eventId);
     if (c && ttlOk(c.ts, 10_000)) return c.data;
     if (!pool) return null;
-    const r = await pool.query(`SELECT home_odd, draw_odd, away_odd FROM odds_overrides WHERE event_id = $1 LIMIT 1`, [eventId]);
+    const r = await pool.query(`SELECT home_odd, draw_odd, away_odd, status FROM odds_overrides WHERE event_id = $1 LIMIT 1`, [eventId]);
     const row = r.rows?.[0];
     if (!row) return null;
     const data = {
       home_odd: row.home_odd == null ? null : Number(row.home_odd),
       draw_odd: row.draw_odd == null ? null : Number(row.draw_odd),
       away_odd: row.away_odd == null ? null : Number(row.away_odd),
+      status: (row.status === 'approved' || row.status === 'suspended' ? row.status : 'pending') as TradingStatus,
     };
     overridesCache.set(eventId, { ts: nowMs(), data });
     return data;
@@ -510,6 +529,11 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       markets,
       markets_count: marketsAll && typeof marketsAll === 'object' ? Object.keys(marketsAll).length : 0,
     };
+    if (override?.status === 'suspended') {
+      // Trading Desk suspension (spec: manual market control) — pulled from betting entirely,
+      // not just cosmetically hidden, so a stale client-side price can't slip a bet through.
+      return { ...base, home_odd: 0, draw_odd: 0, away_odd: 0, markets: {}, markets_count: 0, trading_suspended: true };
+    }
     if (override) {
       const ho = override.home_odd != null ? Number(override.home_odd) : null;
       const doo = override.draw_odd != null ? Number(override.draw_odd) : null;
@@ -1485,6 +1509,98 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     overridesCache.delete(eventId);
   };
 
+  /** Trading Desk (spec: manual market control): sets an event's trading status, and optionally
+   *  its manual odds in the same write. Omitted odds fields keep whatever was set before —
+   *  e.g. suspending a market doesn't erase the manual price a trader already dialed in. */
+  const setTradingDecision = async (
+    eventId: string,
+    status: TradingStatus,
+    manualOdds?: { home?: number; draw?: number; away?: number },
+  ): Promise<void> => {
+    if (!pool) throw new Error('Database not configured');
+    const ho = manualOdds?.home != null ? Number(manualOdds.home) : null;
+    const doo = manualOdds?.draw != null ? Number(manualOdds.draw) : null;
+    const ao = manualOdds?.away != null ? Number(manualOdds.away) : null;
+    if ((ho != null && !Number.isFinite(ho)) || (doo != null && !Number.isFinite(doo)) || (ao != null && !Number.isFinite(ao))) {
+      throw new Error('Invalid odds');
+    }
+    await pool.query(
+      `INSERT INTO odds_overrides (event_id, home_odd, draw_odd, away_odd, status, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (event_id) DO UPDATE SET
+         status = EXCLUDED.status,
+         home_odd = COALESCE(EXCLUDED.home_odd, odds_overrides.home_odd),
+         draw_odd = COALESCE(EXCLUDED.draw_odd, odds_overrides.draw_odd),
+         away_odd = COALESCE(EXCLUDED.away_odd, odds_overrides.away_odd),
+         updated_at = NOW()`,
+      [eventId, ho, doo, ao, status],
+    );
+    overridesCache.delete(eventId);
+  };
+
+  /** True when a trader has pulled this event's market from betting (Trading Desk suspension). */
+  const isMarketSuspended = async (eventId: string): Promise<boolean> => {
+    const id = normalizeIdLoose(String(eventId || ''));
+    if (!id) return false;
+    const override = await getOverride(id).catch(() => null);
+    return override?.status === 'suspended';
+  };
+
+  type TradingEventRow = {
+    id: string; match: string; league: string; sport: string; event_date: string | null;
+    trading_status: TradingStatus; manual_odds: { home?: number; draw?: number; away?: number } | null;
+    home_odd: number; draw_odd: number; away_odd: number; is_live: number;
+  };
+
+  /** Trading Desk (spec: manual market control) event queue: every live/upcoming event with its
+   *  current trading status and manual odds, so an operator can approve, suspend, or reprice a
+   *  market. Odds here already reflect any override (see enrichEventOdds) — same numbers a
+   *  bettor would see. */
+  const listTradingEvents = async (filters: { status?: string; sport?: string; from?: string; to?: string }): Promise<TradingEventRow[]> => {
+    const data = await buildBySport('all', true, null, false, false, 'both', 7, false, false);
+    const all = [...data.live, ...data.pregame];
+    const rows: TradingEventRow[] = await Promise.all(
+      all.map(async (e: any) => {
+        const id = String(e.id);
+        const override = await getOverride(id).catch(() => null);
+        const manual_odds =
+          override && (override.home_odd != null || override.draw_odd != null || override.away_odd != null)
+            ? {
+                ...(override.home_odd != null ? { home: override.home_odd } : {}),
+                ...(override.draw_odd != null ? { draw: override.draw_odd } : {}),
+                ...(override.away_odd != null ? { away: override.away_odd } : {}),
+              }
+            : null;
+        return {
+          id,
+          match: `${String(e.home_team || '')} vs ${String(e.away_team || '')}`,
+          league: String(e.league || ''),
+          sport: String(e.sport || ''),
+          event_date: (e as any).event_date ?? (e as any).start_time ?? null,
+          trading_status: override?.status || 'pending',
+          manual_odds,
+          home_odd: Number((e as any).home_odd || 0),
+          draw_odd: Number((e as any).draw_odd || 0),
+          away_odd: Number((e as any).away_odd || 0),
+          is_live: Number((e as any).is_live || 0),
+        };
+      }),
+    );
+
+    let out = rows;
+    if (filters.status) out = out.filter((r) => r.trading_status === filters.status);
+    if (filters.sport) out = out.filter((r) => r.sport.toLowerCase() === String(filters.sport).toLowerCase());
+    if (filters.from) {
+      const fromMs = new Date(filters.from).getTime();
+      if (Number.isFinite(fromMs)) out = out.filter((r) => !r.event_date || new Date(r.event_date).getTime() >= fromMs);
+    }
+    if (filters.to) {
+      const toMs = new Date(filters.to).getTime() + 24 * 3_600_000;
+      if (Number.isFinite(toMs)) out = out.filter((r) => !r.event_date || new Date(r.event_date).getTime() <= toMs);
+    }
+    return out;
+  };
+
   const getEventOdds = async (
     eventId: string,
     sportHint?: string,
@@ -1553,5 +1669,14 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     return null;
   };
 
-  return { handleEventsRoutes, getAdminOddsEvents, setOddsOverride, getEventOdds, getEventResult };
+  return {
+    handleEventsRoutes,
+    getAdminOddsEvents,
+    setOddsOverride,
+    getEventOdds,
+    getEventResult,
+    listTradingEvents,
+    setTradingDecision,
+    isMarketSuspended,
+  };
 }

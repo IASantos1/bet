@@ -10,6 +10,7 @@ import { writeAuditLog, requestIp } from '../lib/audit';
 import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
+import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -112,7 +113,7 @@ async function probeUrl(url: string, key: string): Promise<{ url: string; status
   }
 }
 
-type ToggleOperatorBody = { is_operator?: boolean };
+type ToggleOperatorBody = { is_operator?: boolean; reason?: string };
 type EditOddsBody = { home_odd?: number; draw_odd?: number; away_odd?: number };
 
 function toBool(v: any): boolean {
@@ -132,7 +133,7 @@ export async function handleAdminRoutes(
 ): Promise<boolean> {
   const path = url.pathname;
 
-  if (!path.startsWith('/api/admin/') && !path.startsWith('/api/metrics/')) return false;
+  if (!path.startsWith('/api/admin/') && !path.startsWith('/api/metrics/') && !path.startsWith('/api/trading/')) return false;
 
   const u = await requireUser(pool, req);
   if (!u) return unauthorized(res), true;
@@ -157,8 +158,23 @@ export async function handleAdminRoutes(
     const userId = decodeURIComponent(toggle[1] || '');
     const body = await readJsonBody<ToggleOperatorBody>(req).catch(() => null);
     if (!body) return badRequest(res, 'Invalid JSON'), true;
+    const reason = String(body.reason || '').trim();
+    if (!reason) return badRequest(res, 'Motivo é obrigatório'), true;
     const val = toBool(body.is_operator);
+    // users.role is the real authority (see isAdmin()) but profiles.is_operator is what the
+    // frontend actually reads (GET /api/users/is-operator) to decide whether to show operator
+    // UI at all — keep both in lockstep so a freshly promoted admin isn't locked out of their
+    // own admin links until someone thinks to flip the other flag too.
     await pool.query(`UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1`, [userId, val ? 'admin' : 'user']);
+    await pool.query(`UPDATE profiles SET is_operator = $2, updated_at = NOW() WHERE user_id = $1`, [userId, val]);
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: val ? 'operator_grant' : 'operator_revoke',
+      resourceType: 'user',
+      resourceId: userId,
+      reason,
+      ip: requestIp(req),
+    });
     sendJson(res, 200, { success: true });
     return true;
   }
@@ -223,6 +239,14 @@ export async function handleAdminRoutes(
           withdrawalId,
         });
       });
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'withdrawal_approve',
+        resourceType: 'transaction',
+        resourceId: withdrawalId,
+        metadata: { userId: String(row.user_id), amount: toNumber(row.amount) },
+        ip: requestIp(req),
+      });
       sendJson(res, 200, { success: true, operator_id: u.id });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;
@@ -254,6 +278,15 @@ export async function handleAdminRoutes(
           idempotencyKey: `withdraw_reject:${withdrawalId}`,
           withdrawalId,
         });
+      });
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'withdrawal_reject',
+        resourceType: 'transaction',
+        resourceId: withdrawalId,
+        reason: body?.reason || null,
+        metadata: { userId: String(row.user_id), amount: toNumber(row.amount) },
+        ip: requestIp(req),
       });
       sendJson(res, 200, { success: true, operator_id: u.id });
     } catch (e) {
@@ -289,6 +322,16 @@ export async function handleAdminRoutes(
         sendJson(res, 200, { success: false, status: 'pending', message: 'Resultado ainda não determinável — forneça "result" para forçar' });
         return true;
       }
+      if (!settled.replayed) {
+        await writeAuditLog(pool, {
+          operatorId: u.id,
+          action: 'bet_settle',
+          resourceType: 'bet',
+          resourceId: betId,
+          metadata: { status: settled.status, manual: manualOutcome != null },
+          ip: requestIp(req),
+        });
+      }
       sendJson(res, 200, { success: true, status: settled.status, replayed: settled.replayed, operator_id: u.id });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;
@@ -317,6 +360,15 @@ export async function handleAdminRoutes(
       }
     }
 
+    if (results.length > 0) {
+      await writeAuditLog(pool, {
+        operatorId: u.id,
+        action: 'settlement_run',
+        resourceType: 'bet',
+        metadata: { processed: (r.rows || []).length, settled: results.length, stillPending, errorCount: errors.length },
+        ip: requestIp(req),
+      });
+    }
     sendJson(res, 200, { processed: (r.rows || []).length, settled: results.length, stillPending, errors, results, operator_id: u.id });
     return true;
   }
@@ -641,8 +693,28 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /api/admin/alerts — lightweight alert feed for the AdminPanel overview: today, this is
+  // the top-liability events from the Risk Engine (spec §25). AML/fraud have their own dedicated
+  // endpoints (/api/admin/aml/alerts, /api/admin/fraud/alerts) with richer per-user detail.
   if (req.method === 'GET' && path === '/api/admin/alerts') {
-    sendJson(res, 200, { alerts: [] });
+    const r = await pool.query(`SELECT stake, potential_win, status, selections FROM bets WHERE status = 'pending' LIMIT 2000`);
+    const inputs: ExposureBetInput[] = (r.rows || []).map((row: any) => ({
+      status: String(row.status || ''),
+      stake: toNumber(row.stake),
+      potentialWin: toNumber(row.potential_win),
+      legs: parseSelections(row.selections).map((leg) => ({
+        eventId: String(leg.event_id ?? ''),
+        selection: String(leg.selection ?? ''),
+        teamMatch: leg.team_match,
+        league: leg.league,
+      })),
+    }));
+    const exposure = computeExposure(inputs);
+    const alerts = exposure.byEvent.slice(0, 10).map((e) => ({
+      level: e.liability > 5000 ? 'high' : e.liability > 1000 ? 'medium' : 'low',
+      message: `${e.teamMatch || e.eventId}: exposição de €${e.liability.toFixed(2)} em ${e.betCount} aposta(s) pendente(s)`,
+    }));
+    sendJson(res, 200, { alerts });
     return true;
   }
 
@@ -661,6 +733,188 @@ export async function handleAdminRoutes(
       home_odd: body.home_odd,
       draw_odd: body.draw_odd,
       away_odd: body.away_odd,
+    });
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: 'odds_override',
+      resourceType: 'event',
+      resourceId: eventId,
+      metadata: { home_odd: body.home_odd, draw_odd: body.draw_odd, away_odd: body.away_odd },
+      ip: requestIp(req),
+    });
+    sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // ---- Reconciliation / Accounting Engine (spec §7-9, §55) ----
+
+  // GET /api/admin/reconciliation/wallets — compares every player's materialized wallet balance
+  // against what their own ledger entries say it should be. Empty `discrepancies` is the healthy
+  // state; any entry here means something wrote to `wallets` outside server/lib/ledger.ts.
+  if (req.method === 'GET' && path === '/api/admin/reconciliation/wallets') {
+    const [walletsRes, ledgerRes] = await Promise.all([
+      pool.query(`SELECT user_id, available, reserved, bonus, pending_withdrawal FROM wallets`),
+      pool.query(
+        `SELECT user_id, account, SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END) AS balance
+         FROM ledger_entries
+         WHERE user_id IS NOT NULL
+           AND account IN ('PLAYER_AVAILABLE', 'PLAYER_RESERVED', 'PLAYER_BONUS', 'PLAYER_PENDING_WITHDRAWAL')
+         GROUP BY user_id, account`,
+      ),
+    ]);
+
+    const ledgerByUser = new Map<string, Record<string, number>>();
+    for (const row of ledgerRes.rows || []) {
+      const userId = String(row.user_id);
+      if (!ledgerByUser.has(userId)) ledgerByUser.set(userId, {});
+      ledgerByUser.get(userId)![String(row.account)] = toNumber(row.balance);
+    }
+
+    const discrepancies = (walletsRes.rows || []).flatMap((row: any) => {
+      const userId = String(row.user_id);
+      const ledger = ledgerByUser.get(userId) || {};
+      return reconcileWallet(
+        {
+          userId,
+          available: toNumber(row.available),
+          reserved: toNumber(row.reserved),
+          bonus: toNumber(row.bonus),
+          pendingWithdrawal: toNumber(row.pending_withdrawal),
+        },
+        {
+          PLAYER_AVAILABLE: ledger.PLAYER_AVAILABLE || 0,
+          PLAYER_RESERVED: ledger.PLAYER_RESERVED || 0,
+          PLAYER_BONUS: ledger.PLAYER_BONUS || 0,
+          PLAYER_PENDING_WITHDRAWAL: ledger.PLAYER_PENDING_WITHDRAWAL || 0,
+        },
+      );
+    });
+
+    sendJson(res, 200, { scannedWallets: (walletsRes.rows || []).length, discrepancies });
+    return true;
+  }
+
+  // GET /api/admin/reconciliation/summary — the books-balanced check plus GGR/NGR for an
+  // optional [from, to) date range (defaults to all-time). GGR/NGR are derived straight from the
+  // house-side ledger accounts, never tallied separately, so they can't drift from what actually
+  // got posted.
+  if (req.method === 'GET' && path === '/api/admin/reconciliation/summary') {
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (from) { params.push(from); where.push(`created_at >= $${params.length}`); }
+    if (to) { params.push(to); where.push(`created_at < $${params.length}`); }
+    const whereSql = where.length ? `AND ${where.join(' AND ')}` : '';
+
+    const r = await pool.query(
+      `SELECT account, direction, SUM(amount) AS total
+       FROM ledger_entries
+       WHERE 1 = 1 ${whereSql}
+       GROUP BY account, direction`,
+      params,
+    );
+
+    const totalsByAccount = new Map<string, DirectionTotals>();
+    let globalDebit = 0;
+    let globalCredit = 0;
+    for (const row of r.rows || []) {
+      const account = String(row.account);
+      const amount = toNumber(row.total);
+      const t = totalsByAccount.get(account) || { debit: 0, credit: 0 };
+      if (String(row.direction) === 'debit') { t.debit += amount; globalDebit += amount; }
+      else { t.credit += amount; globalCredit += amount; }
+      totalsByAccount.set(account, t);
+    }
+    const zero: DirectionTotals = { debit: 0, credit: 0 };
+
+    const ledgerBalance = checkLedgerBalance({ debit: globalDebit, credit: globalCredit });
+    const ggr = computeGGR({
+      houseRevenue: creditNormalBalance(totalsByAccount.get('HOUSE_REVENUE') || zero),
+      houseLiability: debitNormalBalance(totalsByAccount.get('HOUSE_LIABILITY') || zero),
+      bonusLiability: debitNormalBalance(totalsByAccount.get('BONUS_LIABILITY') || zero),
+    });
+
+    sendJson(res, 200, {
+      range: { from: from || null, to: to || null },
+      ledgerBalance,
+      ggr: ggr.ggr,
+      ngr: ggr.ngr,
+      paymentProviderClearing: debitNormalBalance(totalsByAccount.get('PAYMENT_PROVIDER_CLEARING') || zero),
+    });
+    return true;
+  }
+
+  // GET /api/admin/audit-log — Audit Log review queue (spec §41): every logged operator action,
+  // newest first. Read-only by construction — see server/lib/audit.ts for why nothing here can
+  // be edited or deleted through the API.
+  if (req.method === 'GET' && path === '/api/admin/audit-log') {
+    const action = url.searchParams.get('action') || '';
+    const resourceType = url.searchParams.get('resource_type') || '';
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (action) { params.push(action); where.push(`a.action = $${params.length}`); }
+    if (resourceType) { params.push(resourceType); where.push(`a.resource_type = $${params.length}`); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT a.id, a.operator_id, u.email AS operator_email, a.action, a.resource_type, a.resource_id,
+              a.reason, a.metadata, a.ip, a.created_at
+       FROM audit_logs a
+       JOIN users u ON u.id = a.operator_id
+       ${whereSql}
+       ORDER BY a.created_at DESC
+       LIMIT 300`,
+      params,
+    );
+    sendJson(res, 200, { entries: r.rows || [] });
+    return true;
+  }
+
+  // ---- Trading Desk (spec: manual market control) ----
+
+  // GET /api/trading/events — the trading queue: every live/upcoming event with its current
+  // trading status and manual odds. Optional filters: status, sport, from, to (YYYY-MM-DD).
+  if (req.method === 'GET' && path === '/api/trading/events') {
+    const list = await events
+      .listTradingEvents({
+        status: url.searchParams.get('status') || undefined,
+        sport: url.searchParams.get('sport') || undefined,
+        from: url.searchParams.get('from') || undefined,
+        to: url.searchParams.get('to') || undefined,
+      })
+      .catch(() => []);
+    sendJson(res, 200, list);
+    return true;
+  }
+
+  // POST /api/trading/decision — approve, suspend, or reprice a single event's market. A
+  // suspension takes effect immediately: server/routes/bets.ts refuses any new bet on it, and
+  // enrichEventOdds() zeroes its odds for every listing that reads through it.
+  if (req.method === 'POST' && path === '/api/trading/decision') {
+    const body = await readJsonBody<{
+      eventId?: string;
+      status?: 'pending' | 'approved' | 'suspended';
+      manualOdds?: { home?: number; draw?: number; away?: number };
+    }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+    const eventId = String(body.eventId || '').trim();
+    if (!eventId) return badRequest(res, 'eventId em falta'), true;
+    const status = body.status;
+    if (status !== 'pending' && status !== 'approved' && status !== 'suspended') {
+      return badRequest(res, "status deve ser 'pending', 'approved' ou 'suspended'"), true;
+    }
+    try {
+      await events.setTradingDecision(eventId, status, body.manualOdds);
+    } catch (e: any) {
+      return badRequest(res, String(e?.message || 'Odds inválidas')), true;
+    }
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: `trading_${status}`,
+      resourceType: 'event',
+      resourceId: eventId,
+      metadata: { manualOdds: body.manualOdds || null },
+      ip: requestIp(req),
     });
     sendJson(res, 200, { success: true });
     return true;

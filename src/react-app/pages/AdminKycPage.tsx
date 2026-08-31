@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/react-app/contexts/AppContext';
 import { apiFetch } from '@/react-app/utils/api';
 
@@ -25,7 +26,8 @@ interface KycProfile {
 }
 
 export default function AdminKycPage() {
-  const { isOperator, addNotification, setShowAdminPanel } = useApp();
+  const { isOperator, addNotification } = useApp();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [kycList, setKycList] = useState<KycProfile[]>([]);
 
@@ -82,7 +84,7 @@ export default function AdminKycPage() {
        <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold dark:text-white">KYC Pendentes</h2>
          <button
-          onClick={() => setShowAdminPanel(true)}
+          onClick={() => navigate('/admin')}
           className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-md dark:text-white"
         >Voltar ao Painel</button>
       </div>

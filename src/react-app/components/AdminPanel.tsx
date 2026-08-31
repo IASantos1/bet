@@ -4,12 +4,23 @@ import { useApp } from '@/react-app/contexts/AppContext';
 import { Settings } from '@/react-app/components/Settings';
 import { apiFetch } from '@/react-app/utils/api';
 
-type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api';
+type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api' | 'audit' | 'reconciliation';
 
 interface User { id: string; email: string; is_operator: number }
 interface Bet { id: string; user_id: string; amount: number; potential_win: number; status: string; created_at: string }
 interface OddsEvent { id: string; home_team: string; away_team: string; league: string; home_odd: number; draw_odd: number; away_odd: number; is_live: number; sport: string }
 interface Withdrawal { id: string; user_id: string; amount: number; status: string; method: string; created_at: string }
+interface AuditEntry {
+  id: string; operator_id: string; operator_email: string; action: string;
+  resource_type: string; resource_id: string | null; reason: string | null;
+  metadata: Record<string, unknown>; ip: string | null; created_at: string;
+}
+interface WalletDiscrepancy { userId: string; field: string; walletValue: number; ledgerValue: number; difference: number }
+interface ReconciliationSummary {
+  range: { from: string | null; to: string | null };
+  ledgerBalance: { balanced: boolean; difference: number };
+  ggr: number; ngr: number; paymentProviderClearing: number;
+}
 
 const NAV: { key: Tab; label: string; icon: string }[] = [
   { key: 'overview',  label: 'Visão Geral',          icon: '📊' },
@@ -20,6 +31,8 @@ const NAV: { key: Tab; label: string; icon: string }[] = [
   { key: 'users',     label: 'Utilizadores',          icon: '👥' },
   { key: 'payments',  label: 'Pagamentos',            icon: '💳' },
   { key: 'reports',   label: 'Relatórios',            icon: '📈' },
+  { key: 'audit',     label: 'Registo de Auditoria',  icon: '📜' },
+  { key: 'reconciliation', label: 'Reconciliação',    icon: '🧮' },
   { key: 'settings',  label: 'Configurações',         icon: '⚙️' },
 ];
 
@@ -235,7 +248,7 @@ function ApiDiagTab({ darkMode }: { darkMode: boolean }) {
 }
 
 const AdminPanel: React.FC = () => {
-  const { darkMode, setShowAdminPanel } = useApp();
+  const { darkMode } = useApp();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('overview');
   const [users, setUsers]             = useState<User[]>([]);
@@ -249,6 +262,14 @@ const AdminPanel: React.FC = () => {
   const [oddsSearch, setOddsSearch]   = useState('');
   const [editingOdds, setEditingOdds] = useState<string | null>(null);
   const [oddsEdit, setOddsEdit]       = useState({ home: '', draw: '', away: '' });
+  const [auditLog, setAuditLog]       = useState<AuditEntry[]>([]);
+  const [auditActionFilter, setAuditActionFilter] = useState('');
+  const [reconSummary, setReconSummary] = useState<ReconciliationSummary | null>(null);
+  const [reconDiscrepancies, setReconDiscrepancies] = useState<WalletDiscrepancy[]>([]);
+  const [reconScanned, setReconScanned] = useState(0);
+  const [reconFrom, setReconFrom] = useState('');
+  const [reconTo, setReconTo] = useState('');
+  const [reconLoading, setReconLoading] = useState(false);
 
   const load = useCallback(async (t: Tab) => {
     try {
@@ -263,13 +284,35 @@ const AdminPanel: React.FC = () => {
       if (t === 'payments') { const d = await apiFetch<any>('/api/admin/withdrawals').catch(() => ({ withdrawals: [] })); setWithdrawals(Array.isArray(d) ? d : (d?.withdrawals || [])); }
       if (t === 'risk')     { const d = await apiFetch<any>('/api/admin/alerts').catch(() => ({ alerts: [] })); setAlerts(Array.isArray(d) ? d : (d?.alerts || [])); }
       if (t === 'odds')     { setLoadingOdds(true); const d = await apiFetch<any>('/api/admin/odds').catch(() => ({ events: [] })); setOddsEvents(Array.isArray(d) ? d : (d?.events || [])); setLoadingOdds(false); }
+      if (t === 'audit')    {
+        const params = new URLSearchParams();
+        if (auditActionFilter) params.set('action', auditActionFilter);
+        const d = await apiFetch<any>(`/api/admin/audit-log?${params}`).catch(() => ({ entries: [] }));
+        setAuditLog(Array.isArray(d?.entries) ? d.entries : []);
+      }
+      if (t === 'reconciliation') {
+        setReconLoading(true);
+        const params = new URLSearchParams();
+        if (reconFrom) params.set('from', reconFrom);
+        if (reconTo) params.set('to', reconTo);
+        const [summary, wallets] = await Promise.allSettled([
+          apiFetch<ReconciliationSummary>(`/api/admin/reconciliation/summary?${params}`),
+          apiFetch<any>('/api/admin/reconciliation/wallets'),
+        ]);
+        setReconSummary(summary.status === 'fulfilled' ? summary.value : null);
+        setReconDiscrepancies(wallets.status === 'fulfilled' && Array.isArray(wallets.value?.discrepancies) ? wallets.value.discrepancies : []);
+        setReconScanned(wallets.status === 'fulfilled' ? Number(wallets.value?.scannedWallets || 0) : 0);
+        setReconLoading(false);
+      }
     } catch { /* silent */ }
-  }, []);
+  }, [auditActionFilter, reconFrom, reconTo]);
 
   useEffect(() => { load(tab); }, [tab, load]);
 
   const toggleOperator = async (userId: string, val: boolean) => {
-    await apiFetch(`/api/admin/users/${userId}/toggle-operator`, { method: 'POST', body: JSON.stringify({ is_operator: val }) }).catch(() => {});
+    const reason = prompt(val ? 'Motivo para conceder acesso de operador (obrigatório):' : 'Motivo para revogar acesso de operador (obrigatório):');
+    if (!reason) return;
+    await apiFetch(`/api/admin/users/${userId}/toggle-operator`, { method: 'POST', body: JSON.stringify({ is_operator: val, reason }) }).catch(() => {});
     setUsers(u => u.map(x => x.id === userId ? { ...x, is_operator: val ? 1 : 0 } : x));
   };
 
@@ -291,7 +334,7 @@ const AdminPanel: React.FC = () => {
       <aside className={`w-56 flex-shrink-0 flex flex-col ${darkMode ? 'bg-gray-800' : 'bg-white'} border-r ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <span className="font-bold text-red-600 text-lg">Admin</span>
-          <button onClick={() => setShowAdminPanel(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          <button onClick={() => navigate('/')} title="Voltar à plataforma" className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {NAV.map(n => (
@@ -302,8 +345,8 @@ const AdminPanel: React.FC = () => {
           ))}
         </nav>
         <div className="p-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
-          <button onClick={() => { setShowAdminPanel(false); navigate('/admin/kyc'); }} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>KYC</button>
-          <button onClick={() => { setShowAdminPanel(false); navigate('/metrics'); }} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>Métricas do Sistema</button>
+          <button onClick={() => navigate('/admin/kyc')} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>KYC</button>
+          <button onClick={() => navigate('/metrics')} className={`w-full text-left px-3 py-1.5 rounded text-xs ${darkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>Métricas do Sistema</button>
         </div>
       </aside>
 
@@ -421,7 +464,7 @@ const AdminPanel: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold">Gestão de Risco</h1>
-                <button onClick={() => { setShowAdminPanel(false); navigate('/admin/risk'); }} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Página Completa →</button>
+                <button onClick={() => navigate('/admin/risk')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Página Completa →</button>
               </div>
               <div className={`rounded-lg p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
                 <h3 className="font-semibold mb-3">Alertas</h3>
@@ -508,8 +551,8 @@ const AdminPanel: React.FC = () => {
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl font-bold">Pagamentos</h1>
                 <div className="flex gap-2">
-                  <button onClick={() => { setShowAdminPanel(false); navigate('/admin/withdrawals'); }} className={`px-4 py-2 rounded-lg text-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>Levantamentos</button>
-                  <button onClick={() => { setShowAdminPanel(false); navigate('/admin/payouts'); }} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Payouts →</button>
+                  <button onClick={() => navigate('/admin/withdrawals')} className={`px-4 py-2 rounded-lg text-sm ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>Levantamentos</button>
+                  <button onClick={() => navigate('/admin/payouts')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Payouts →</button>
                 </div>
               </div>
               {withdrawals.length === 0 ? (
@@ -561,6 +604,139 @@ const AdminPanel: React.FC = () => {
           )}
 
           {tab === 'api' && <ApiDiagTab darkMode={darkMode} />}
+
+          {tab === 'audit' && (
+            <div>
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h1 className="text-2xl font-bold">Registo de Auditoria</h1>
+                <div className="flex gap-2">
+                  <select
+                    value={auditActionFilter}
+                    onChange={e => setAuditActionFilter(e.target.value)}
+                    className={`px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                  >
+                    <option value="">Todas as ações</option>
+                    <option value="operator_grant">Conceder operador</option>
+                    <option value="operator_revoke">Revogar operador</option>
+                    <option value="withdrawal_approve">Aprovar levantamento</option>
+                    <option value="withdrawal_reject">Rejeitar levantamento</option>
+                    <option value="bet_settle">Liquidar aposta</option>
+                    <option value="settlement_run">Liquidação em lote</option>
+                    <option value="odds_override">Alteração manual de odds</option>
+                    <option value="kyc_decision">Decisão KYC</option>
+                    <option value="account_suspend">Suspensão de conta</option>
+                    <option value="bonus_campaign_create">Criar campanha bónus</option>
+                    <option value="bonus_campaign_activate">Ativar campanha bónus</option>
+                    <option value="bonus_campaign_deactivate">Desativar campanha bónus</option>
+                  </select>
+                  <button onClick={() => load('audit')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">🔄 Refresh</button>
+                </div>
+              </div>
+              <p className={`text-xs mb-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                Registo apenas de leitura — nenhuma entrada aqui pode ser editada ou apagada através da aplicação.
+              </p>
+              {auditLog.length === 0 ? (
+                <div className={`rounded-lg p-8 text-center text-gray-400 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>Sem entradas de auditoria.</div>
+              ) : (
+                <div className={`rounded-lg overflow-hidden border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <table className="w-full text-sm">
+                    <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium">Data</th>
+                        <th className="text-left px-4 py-2 font-medium">Operador</th>
+                        <th className="text-left px-4 py-2 font-medium">Ação</th>
+                        <th className="text-left px-4 py-2 font-medium">Recurso</th>
+                        <th className="text-left px-4 py-2 font-medium">Motivo</th>
+                        <th className="text-left px-4 py-2 font-medium hidden md:table-cell">IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map(entry => (
+                        <tr key={entry.id} className={`border-t align-top ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                          <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">{new Date(entry.created_at).toLocaleString('pt-PT')}</td>
+                          <td className="px-4 py-2 text-xs">{entry.operator_email}</td>
+                          <td className="px-4 py-2"><Badge v={entry.action} color="blue" /></td>
+                          <td className="px-4 py-2 text-xs font-mono text-gray-400">{entry.resource_type}{entry.resource_id ? `:${String(entry.resource_id).slice(0, 10)}` : ''}</td>
+                          <td className="px-4 py-2 text-xs">{entry.reason || <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-2 text-xs text-gray-400 font-mono hidden md:table-cell">{entry.ip || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'reconciliation' && (
+            <div>
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h1 className="text-2xl font-bold">Reconciliação</h1>
+                <div className="flex gap-2 items-end flex-wrap">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">De</label>
+                    <input type="date" value={reconFrom} onChange={e => setReconFrom(e.target.value)}
+                      className={`px-2 py-1.5 rounded border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Até</label>
+                    <input type="date" value={reconTo} onChange={e => setReconTo(e.target.value)}
+                      className={`px-2 py-1.5 rounded border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`} />
+                  </div>
+                  <button onClick={() => load('reconciliation')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">🔄 Refresh</button>
+                </div>
+              </div>
+
+              {reconLoading ? <div className="text-center py-12 text-gray-400">A calcular...</div> : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <StatCard
+                      label="Livro Contabilístico"
+                      value={reconSummary?.ledgerBalance.balanced ? '✓ Balanceado' : `✗ Desvio €${reconSummary?.ledgerBalance.difference.toFixed(2)}`}
+                      color={reconSummary?.ledgerBalance.balanced ? 'green' : 'red'}
+                    />
+                    <StatCard label="GGR" value={`€${(reconSummary?.ggr ?? 0).toFixed(2)}`} sub="Receita bruta de jogo" color={(reconSummary?.ggr ?? 0) >= 0 ? 'blue' : 'red'} />
+                    <StatCard label="NGR" value={`€${(reconSummary?.ngr ?? 0).toFixed(2)}`} sub="Receita líquida (após bónus)" color={(reconSummary?.ngr ?? 0) >= 0 ? 'blue' : 'red'} />
+                    <StatCard label="Clearing PSP" value={`€${(reconSummary?.paymentProviderClearing ?? 0).toFixed(2)}`} sub="Saldo líquido com o processador" color="yellow" />
+                  </div>
+
+                  <div className={`rounded-lg p-4 mb-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold">Discrepâncias de Carteira <span className="text-sm font-normal text-gray-400">({reconScanned} carteiras analisadas)</span></h3>
+                    </div>
+                    {reconDiscrepancies.length === 0 ? (
+                      <p className="text-green-600 text-sm">✓ Nenhuma discrepância — todas as carteiras coincidem com o livro-razão.</p>
+                    ) : (
+                      <div className={`rounded-lg overflow-hidden border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <table className="w-full text-sm">
+                          <thead className={darkMode ? 'bg-gray-700' : 'bg-gray-50'}>
+                            <tr>
+                              <th className="text-left px-4 py-2 font-medium">Utilizador</th>
+                              <th className="text-left px-4 py-2 font-medium">Campo</th>
+                              <th className="text-right px-4 py-2 font-medium">Carteira</th>
+                              <th className="text-right px-4 py-2 font-medium">Livro-razão</th>
+                              <th className="text-right px-4 py-2 font-medium">Diferença</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reconDiscrepancies.map((d, i) => (
+                              <tr key={i} className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                                <td className="px-4 py-2 text-xs font-mono">{d.userId.slice(0, 12)}…</td>
+                                <td className="px-4 py-2"><Badge v={d.field} color="yellow" /></td>
+                                <td className="px-4 py-2 text-right font-mono">€{d.walletValue.toFixed(2)}</td>
+                                <td className="px-4 py-2 text-right font-mono">€{d.ledgerValue.toFixed(2)}</td>
+                                <td className="px-4 py-2 text-right font-mono text-red-600">€{d.difference.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {tab === 'settings' && (
             <div>

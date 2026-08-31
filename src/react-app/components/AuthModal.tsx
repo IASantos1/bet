@@ -26,7 +26,7 @@ export function AuthModal(props: AuthModalProps) {
     onSwitchMode,
   } = props;
 
-  const { darkMode, addNotification, setShowAdminPanel } = useApp();
+  const { darkMode, addNotification } = useApp();
   const { signIn, signUp } = useAuth();
 
   // Login State
@@ -165,12 +165,9 @@ export function AuthModal(props: AuthModalProps) {
                   {loading ? 'A entrar...' : 'Entrar'}
                 </button>
 
-                <div className="flex justify-between text-sm mt-4 pt-4 border-t border-gray-700/50">
+                <div className="flex justify-center text-sm mt-4 pt-4 border-t border-gray-700/50">
                   <button type="button" onClick={() => onSwitchMode('register')} className="text-green-500 font-semibold hover:underline">
                     Criar conta
-                  </button>
-                  <button type="button" onClick={() => { onClose(); setShowAdminPanel(true); }} className="text-gray-400 hover:text-gray-500">
-                    Admin
                   </button>
                 </div>
               </form>
