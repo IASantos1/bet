@@ -51,6 +51,31 @@ function ttlOk(ts: number, ttlMs: number): boolean {
   return ts > 0 && nowMs() - ts < ttlMs;
 }
 
+/** Protects a live/schedule cache entry from a single transient upstream hiccup (GoalServe's own
+ *  403 was observed to be intermittent — one request fails, the next identical one from the same
+ *  server succeeds) wiping out a previously-good result. Without this, an empty response landed
+ *  in the cache exactly like a real one, and every request for the next full TTL window (up to 20
+ *  minutes for schedule) saw "no games" even though nothing was actually wrong moments earlier —
+ *  reported as matches vanishing after a page refresh. Only guards genuinely EMPTY results; a
+ *  real (even if different) non-empty list always replaces the cache normally. Exported (rather
+ *  than kept as a closure inside createEventsService) so it can be unit-tested directly. */
+export function keepStaleOnEmptyFetch<T extends AnyEvent[]>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  prev: CacheEntry<T> | undefined,
+  fresh: T,
+  maxStaleMs: number,
+): T {
+  if (fresh.length > 0 || !prev || !Array.isArray(prev.data) || prev.data.length === 0 || !ttlOk(prev.ts, maxStaleMs)) {
+    cache.set(key, { ts: nowMs(), data: fresh });
+    return fresh;
+  }
+  // Re-stamp the old data as "just refreshed" so a burst of concurrent requests during an outage
+  // reuses it instead of each one re-hitting the upstream provider.
+  cache.set(key, { ts: nowMs(), data: prev.data });
+  return prev.data;
+}
+
 function parseMarkets(v: any): any {
   if (!v) return {};
   if (typeof v === 'object') return v;
@@ -308,7 +333,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
             }
             return out;
           });
-          liveCache.set(key, { ts: nowMs(), data: normalized });
+          keepStaleOnEmptyFetch(liveCache, key, liveCache.get(key), normalized, 5 * 60_000);
         })
         .catch(() => void 0);
       return cached.data;
@@ -324,8 +349,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       }
       return out;
     });
-    liveCache.set(key, { ts: nowMs(), data: normalized });
-    return normalized;
+    return keepStaleOnEmptyFetch(liveCache, key, cached, normalized, 5 * 60_000);
   };
 
   const fetchSchedule = async (sport: string, date: string): Promise<AnyEvent[]> => {
@@ -342,7 +366,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
             lastEventById.set(id, { ts: nowMs(), data: out });
             return out;
           });
-          scheduleCache.set(key, { ts: nowMs(), data: normalized });
+          keepStaleOnEmptyFetch(scheduleCache, key, scheduleCache.get(key), normalized, 24 * 60 * 60_000);
         })
         .catch(() => void 0);
       return cached.data;
@@ -355,8 +379,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       lastEventById.set(id, { ts: nowMs(), data: out });
       return out;
     });
-    scheduleCache.set(key, { ts: nowMs(), data: normalized });
-    return normalized;
+    return keepStaleOnEmptyFetch(scheduleCache, key, cached, normalized, 24 * 60 * 60_000);
   };
 
   const fetchWorldCupMeta = async (kind: 'tournament' | 'info' | 'groups'): Promise<any | null> => {
