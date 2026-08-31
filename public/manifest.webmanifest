@@ -1,24 +1,65 @@
 {
+  "id": "/",
   "name": "BET62 Apostas Desportivas",
   "short_name": "BET62",
+  "description": "Apostas desportivas online com odds competitivas e apostas ao vivo",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
+  "background_color": "#030712",
   "theme_color": "#111827",
-  "lang": "pt-BR",
+  "orientation": "portrait-primary",
+  "lang": "pt-PT",
+  "dir": "ltr",
+  "categories": ["sports", "entertainment"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/bet62-icon-192.svg",
+      "src": "/icons/bet62-icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/bet62-icon-512.svg",
+      "src": "/icons/bet62-icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/bet62-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/bet62-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ao Vivo",
+      "short_name": "Ao Vivo",
+      "description": "Ver jogos ao vivo",
+      "url": "/live",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔴</text></svg>", "sizes": "96x96" }]
+    },
+    {
+      "name": "As Minhas Apostas",
+      "short_name": "Apostas",
+      "description": "Ver as minhas apostas",
+      "url": "/my-bets",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎫</text></svg>", "sizes": "96x96" }]
+    },
+    {
+      "name": "Depositar",
+      "short_name": "Depósito",
+      "description": "Fazer um depósito",
+      "url": "/deposit",
+      "icons": [{ "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>", "sizes": "96x96" }]
     }
   ]
 }

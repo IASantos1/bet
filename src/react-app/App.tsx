@@ -100,7 +100,6 @@ export default function App() {
         }
       });
       try { localStorage.removeItem('home:pregame:v2'); } catch { /* empty */ }
-      try { if ((window as any).caches) (window as any).caches.delete('betarena-static-v1'); } catch { /* empty */ }
     } catch { /* empty */ }
   }, []);
   return (

@@ -10,15 +10,38 @@ export function SWUpdateBar() {
   useEffect(() => {
     const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : undefined;
     if (!sw) return;
-    const reg = (window as any).swRegistration as ServiceWorkerRegistration | undefined;
+
+    let reg: ServiceWorkerRegistration | undefined;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const onUpdateFound = () => {
+      const installing = reg?.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        // A new worker reaching 'installed' while one already controls the page means it's
+        // waiting to activate — i.e. an update is ready, same signal as the initial check below.
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) setReady(true);
+      });
+    };
+
     const check = async () => {
-      const r = reg || (await sw.getRegistration().catch(() => undefined));
-      if (r && r.waiting) setReady(true);
+      reg = (window as any).swRegistration || (await sw.getRegistration().catch(() => undefined));
+      if (!reg) return;
+      if (reg.waiting) setReady(true);
+      reg.addEventListener('updatefound', onUpdateFound);
+      // Long-lived open tabs (this is a betting app people leave open) wouldn't otherwise learn
+      // about a new deploy until they manually reload — ask the browser to re-check periodically.
+      intervalId = setInterval(() => { reg?.update().catch(() => void 0); }, 30 * 60_000);
     };
     check();
+
     const onController = () => { setUpdating(false); setReady(false); location.reload(); };
     sw.addEventListener('controllerchange', onController);
-    return () => { sw.removeEventListener('controllerchange', onController); };
+    return () => {
+      sw.removeEventListener('controllerchange', onController);
+      reg?.removeEventListener('updatefound', onUpdateFound);
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
   if (!ready) return null;
   return (
