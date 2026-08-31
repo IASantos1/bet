@@ -201,6 +201,10 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS kyc_status TEXT NOT NULL DEFAULT 'NOT_STARTED'`,
     `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL DEFAULT 'ACTIVE'`,
     `ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS ip_address TEXT`,
+    // Trading Desk (spec: manual market control) — reuses odds_overrides as the single per-event
+    // manual-control record, rather than a separate table, since status and manual odds are
+    // always read/written together.
+    `ALTER TABLE odds_overrides ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'`,
     `CREATE INDEX IF NOT EXISTS idx_profiles_kyc_status ON profiles(kyc_status)`,
     `CREATE TABLE IF NOT EXISTS audit_logs (
       id            TEXT        PRIMARY KEY,

@@ -132,7 +132,7 @@ export async function handleAdminRoutes(
 ): Promise<boolean> {
   const path = url.pathname;
 
-  if (!path.startsWith('/api/admin/') && !path.startsWith('/api/metrics/')) return false;
+  if (!path.startsWith('/api/admin/') && !path.startsWith('/api/metrics/') && !path.startsWith('/api/trading/')) return false;
 
   const u = await requireUser(pool, req);
   if (!u) return unauthorized(res), true;
@@ -160,7 +160,12 @@ export async function handleAdminRoutes(
     const reason = String(body.reason || '').trim();
     if (!reason) return badRequest(res, 'Motivo é obrigatório'), true;
     const val = toBool(body.is_operator);
+    // users.role is the real authority (see isAdmin()) but profiles.is_operator is what the
+    // frontend actually reads (GET /api/users/is-operator) to decide whether to show operator
+    // UI at all — keep both in lockstep so a freshly promoted admin isn't locked out of their
+    // own admin links until someone thinks to flip the other flag too.
     await pool.query(`UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1`, [userId, val ? 'admin' : 'user']);
+    await pool.query(`UPDATE profiles SET is_operator = $2, updated_at = NOW() WHERE user_id = $1`, [userId, val]);
     await writeAuditLog(pool, {
       operatorId: u.id,
       action: val ? 'operator_grant' : 'operator_revoke',
@@ -762,6 +767,56 @@ export async function handleAdminRoutes(
       params,
     );
     sendJson(res, 200, { entries: r.rows || [] });
+    return true;
+  }
+
+  // ---- Trading Desk (spec: manual market control) ----
+
+  // GET /api/trading/events — the trading queue: every live/upcoming event with its current
+  // trading status and manual odds. Optional filters: status, sport, from, to (YYYY-MM-DD).
+  if (req.method === 'GET' && path === '/api/trading/events') {
+    const list = await events
+      .listTradingEvents({
+        status: url.searchParams.get('status') || undefined,
+        sport: url.searchParams.get('sport') || undefined,
+        from: url.searchParams.get('from') || undefined,
+        to: url.searchParams.get('to') || undefined,
+      })
+      .catch(() => []);
+    sendJson(res, 200, list);
+    return true;
+  }
+
+  // POST /api/trading/decision — approve, suspend, or reprice a single event's market. A
+  // suspension takes effect immediately: server/routes/bets.ts refuses any new bet on it, and
+  // enrichEventOdds() zeroes its odds for every listing that reads through it.
+  if (req.method === 'POST' && path === '/api/trading/decision') {
+    const body = await readJsonBody<{
+      eventId?: string;
+      status?: 'pending' | 'approved' | 'suspended';
+      manualOdds?: { home?: number; draw?: number; away?: number };
+    }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+    const eventId = String(body.eventId || '').trim();
+    if (!eventId) return badRequest(res, 'eventId em falta'), true;
+    const status = body.status;
+    if (status !== 'pending' && status !== 'approved' && status !== 'suspended') {
+      return badRequest(res, "status deve ser 'pending', 'approved' ou 'suspended'"), true;
+    }
+    try {
+      await events.setTradingDecision(eventId, status, body.manualOdds);
+    } catch (e: any) {
+      return badRequest(res, String(e?.message || 'Odds inválidas')), true;
+    }
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: `trading_${status}`,
+      resourceType: 'event',
+      resourceId: eventId,
+      metadata: { manualOdds: body.manualOdds || null },
+      ip: requestIp(req),
+    });
+    sendJson(res, 200, { success: true });
     return true;
   }
 
