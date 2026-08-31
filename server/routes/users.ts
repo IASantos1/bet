@@ -67,6 +67,39 @@ export async function handleUsersRoutes(
     return true;
   }
 
+  // GET /api/users/bonus — the caller's active bonus (if any) and wagering progress (spec §34).
+  if (req.method === 'GET' && path === '/api/users/bonus') {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+
+    const r = await pool.query(
+      `SELECT ub.id, ub.amount, ub.wagering_required, ub.wagering_progress, ub.status, ub.granted_at, ub.expires_at,
+              c.name AS campaign_name, c.type AS campaign_type, c.minimum_odds
+       FROM user_bonuses ub
+       JOIN bonus_campaigns c ON c.id = ub.campaign_id
+       WHERE ub.user_id = $1 AND ub.status = 'ACTIVE'
+       LIMIT 1`,
+      [u.id],
+    );
+    const row = r.rows?.[0];
+    if (!row) return sendJson(res, 200, { active: null }), true;
+
+    sendJson(res, 200, {
+      active: {
+        id: String(row.id),
+        campaignName: String(row.campaign_name || ''),
+        campaignType: String(row.campaign_type || ''),
+        amount: Number(row.amount),
+        wageringRequired: Number(row.wagering_required),
+        wageringProgress: Number(row.wagering_progress),
+        minimumOdds: Number(row.minimum_odds),
+        grantedAt: row.granted_at,
+        expiresAt: row.expires_at,
+      },
+    });
+    return true;
+  }
+
   if ((req.method === 'POST' || req.method === 'GET') && path === '/api/users/heartbeat') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;

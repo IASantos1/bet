@@ -29,6 +29,8 @@ export type LedgerTxType =
   | 'bet_void'
   | 'cashout'
   | 'bonus_grant'
+  | 'bonus_convert'
+  | 'bonus_forfeit'
   | 'adjustment';
 
 export const ACCOUNTS = {
@@ -513,6 +515,57 @@ export async function opGrantBonus(
   });
 }
 
+/** Wagering requirement met: the remaining bonus balance for this grant becomes real, spendable/withdrawable money. */
+export async function opConvertBonus(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; userBonusId: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'bonus_convert',
+    userId: params.userId,
+    referenceId: params.userBonusId,
+    compute: (wallet) => {
+      if (wallet.bonus < amount) throw new WalletError('INVALID_STATE', 'Saldo de bónus insuficiente para converter');
+      return {
+        legs: [
+          { account: ACCOUNTS.PLAYER_BONUS, userId: wallet.userId, direction: 'debit', amount },
+          { account: ACCOUNTS.PLAYER_AVAILABLE, userId: wallet.userId, direction: 'credit', amount },
+        ],
+        walletPatch: { bonus: wallet.bonus - amount, available: wallet.available + amount },
+      };
+    },
+  });
+}
+
+/** Bonus expired (or otherwise forfeited) before the wagering requirement was met: the house reclaims what's left. */
+export async function opForfeitBonus(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; userBonusId: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'bonus_forfeit',
+    userId: params.userId,
+    referenceId: params.userBonusId,
+    compute: (wallet) => {
+      const forfeited = Math.min(wallet.bonus, amount); // never claw back more than is actually left
+      if (forfeited <= 0) throw new WalletError('INVALID_STATE', 'Sem saldo de bónus para reclamar');
+      return {
+        legs: [
+          { account: ACCOUNTS.PLAYER_BONUS, userId: wallet.userId, direction: 'debit', amount: forfeited },
+          { account: ACCOUNTS.BONUS_LIABILITY, direction: 'credit', amount: forfeited },
+        ],
+        walletPatch: { bonus: wallet.bonus - forfeited },
+      };
+    },
+  });
+}
+
 /**
  * Direct house-initiated adjustment, used only when a credit/debit cannot be correlated to a
  * prior reservation (e.g. a legacy client call that never reserved a stake under this betId).
@@ -577,6 +630,10 @@ export const walletService = {
     withTransaction(pool, (client) => opCashout(client, params)),
   grantBonus: (pool: pg.Pool, params: Parameters<typeof opGrantBonus>[1]) =>
     withTransaction(pool, (client) => opGrantBonus(client, params)),
+  convertBonus: (pool: pg.Pool, params: Parameters<typeof opConvertBonus>[1]) =>
+    withTransaction(pool, (client) => opConvertBonus(client, params)),
+  forfeitBonus: (pool: pg.Pool, params: Parameters<typeof opForfeitBonus>[1]) =>
+    withTransaction(pool, (client) => opForfeitBonus(client, params)),
   adjustBalance: (pool: pg.Pool, params: Parameters<typeof opAdjustBalance>[1]) =>
     withTransaction(pool, (client) => opAdjustBalance(client, params)),
   getWallet,

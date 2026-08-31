@@ -5,6 +5,7 @@ import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey
 import { requireUser } from '../lib/auth';
 import { WalletError, withTransaction, opReserveForBet, opCashout } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError, makeH2HOddsResolver } from '../lib/bettingEngine';
+import { applyBonusWagering } from '../lib/bonusService';
 import type { EventsService } from './events';
 
 type PlaceBetBody = {
@@ -148,6 +149,9 @@ export async function handleBetRoutes(
         }
         return reservation;
       });
+      if (!result.replayed) {
+        await applyBonusWagering(pool, u.id, stake, totalOdds).catch(() => null);
+      }
       sendJson(res, 200, { success: true, id: betId, balance: result.wallet.available });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;

@@ -9,6 +9,7 @@ import { computeExposure, type ExposureBetInput } from '../lib/riskEngine';
 import { writeAuditLog, requestIp } from '../lib/audit';
 import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
+import { sweepExpiredBonuses } from '../lib/bonusService';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -554,6 +555,78 @@ export async function handleAdminRoutes(
     flagged.sort((a, b) => b.score - a.score);
 
     sendJson(res, 200, { scannedUsers: (accountRows.rows || []).length, flagged });
+    return true;
+  }
+
+  // ---- Bonus Engine admin surface (spec §34) ----
+
+  if (req.method === 'GET' && path === '/api/admin/bonus/campaigns') {
+    const r = await pool.query(`SELECT * FROM bonus_campaigns ORDER BY created_at DESC LIMIT 200`);
+    sendJson(res, 200, { campaigns: r.rows || [] });
+    return true;
+  }
+
+  if (req.method === 'POST' && path === '/api/admin/bonus/campaigns') {
+    const body = await readJsonBody<{
+      name?: string; type?: string; minimum_deposit?: number; bonus_percent?: number; maximum_bonus?: number;
+      wagering_multiplier?: number; minimum_odds?: number; expiry_days?: number; max_conversion?: number | null;
+    }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+
+    const name = String(body.name || '').trim();
+    const type = String(body.type || '').trim();
+    const validTypes = ['WELCOME', 'DEPOSIT_BONUS', 'FREE_BET', 'CASHBACK', 'ODDS_BOOST', 'VIP', 'PROMOTIONAL'];
+    if (!name) return badRequest(res, 'Nome é obrigatório'), true;
+    if (!validTypes.includes(type)) return badRequest(res, `type deve ser um de: ${validTypes.join(', ')}`), true;
+    const maximumBonus = toNumber(body.maximum_bonus);
+    if (!(maximumBonus > 0)) return badRequest(res, 'maximum_bonus deve ser positivo'), true;
+
+    const id = `camp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    await pool.query(
+      `INSERT INTO bonus_campaigns
+         (id, name, type, active, minimum_deposit, bonus_percent, maximum_bonus, wagering_multiplier, minimum_odds, expiry_days, max_conversion, created_at)
+       VALUES ($1,$2,$3,TRUE,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+      [
+        id,
+        name,
+        type,
+        toNumber(body.minimum_deposit) || 0,
+        toNumber(body.bonus_percent) || 0,
+        maximumBonus,
+        toNumber(body.wagering_multiplier) || 1,
+        toNumber(body.minimum_odds) || 1.0,
+        Math.round(toNumber(body.expiry_days)) || 30,
+        body.max_conversion != null ? toNumber(body.max_conversion) : null,
+      ],
+    );
+    await writeAuditLog(pool, { operatorId: u.id, action: 'bonus_campaign_create', resourceType: 'bonus_campaign', resourceId: id, ip: requestIp(req) });
+    sendJson(res, 200, { success: true, id });
+    return true;
+  }
+
+  const campaignToggle = path.match(/^\/api\/admin\/bonus\/campaigns\/([^/]+)\/toggle$/);
+  if (campaignToggle && req.method === 'POST') {
+    const campaignId = decodeURIComponent(campaignToggle[1] || '');
+    const body = await readJsonBody<{ active?: boolean }>(req).catch(() => null);
+    if (!body || typeof body.active !== 'boolean') return badRequest(res, 'active (boolean) é obrigatório'), true;
+    const r = await pool.query(`UPDATE bonus_campaigns SET active = $2 WHERE id = $1 RETURNING id`, [campaignId, body.active]);
+    if (!r.rows[0]) return badRequest(res, 'Campanha não encontrada'), true;
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: body.active ? 'bonus_campaign_activate' : 'bonus_campaign_deactivate',
+      resourceType: 'bonus_campaign',
+      resourceId: campaignId,
+      ip: requestIp(req),
+    });
+    sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // POST /api/admin/bonus/expire-sweep — forfeits every ACTIVE bonus past its expiry. Safe to
+  // call repeatedly/on a schedule (there is no background job runner in this codebase yet).
+  if (req.method === 'POST' && path === '/api/admin/bonus/expire-sweep') {
+    const result = await sweepExpiredBonuses(pool);
+    sendJson(res, 200, { ...result, operator_id: u.id });
     return true;
   }
 

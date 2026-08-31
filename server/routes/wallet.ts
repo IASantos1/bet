@@ -15,6 +15,7 @@ import {
   opAdjustBalance,
 } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError } from '../lib/bettingEngine';
+import { maybeGrantWelcomeBonus, applyBonusWagering } from '../lib/bonusService';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
@@ -188,6 +189,9 @@ export async function handleWalletRoutes(
           description: description(amount),
           externalId,
         });
+        // Bonus Engine (spec §34): a first qualifying deposit may trigger the active WELCOME
+        // campaign. Best-effort — a failure here must never fail the deposit itself.
+        await maybeGrantWelcomeBonus(pool, u.id, amount).catch(() => null);
       }
       sendJson(res, 200, { ok: true, balance: result.wallet.available, id: result.transactionId });
     } catch (e) {
@@ -346,6 +350,9 @@ export async function handleWalletRoutes(
       const result = await withTransaction(pool, (client) =>
         opReserveForBet(client, { userId: u.id, amount, idempotencyKey, betId, useBonus: Boolean(body.isFreeBet ?? body.use_freebet) }),
       );
+      if (!result.replayed) {
+        await applyBonusWagering(pool, u.id, amount, totalOdds).catch(() => null);
+      }
       sendJson(res, 200, { ok: true, balance: result.wallet.available, betId });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;
