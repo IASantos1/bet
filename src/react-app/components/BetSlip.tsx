@@ -195,7 +195,10 @@ export function BetSlip() {
           event_id: b.event_id,
           selection: b.selection,
           odd: b.odd,
-          stake: mode === 'single' ? b.stake : undefined
+          stake: mode === 'single' ? b.stake : undefined,
+          sport: b.sport,
+          market_id: b.market_id,
+          goalserve_oddname: b.goalserve_oddname,
         }))
       };
 

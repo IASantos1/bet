@@ -19,6 +19,8 @@ import {
   fetchGoalServeMatchOddsAll,
   fetchGoalServeMatchOddsLive,
   fetchGoalServeMatchOddsPreMatch,
+  fetchGoalServeOddSettlement,
+  type GoalServeSettlementOutcome,
 } from '../services/goalserve';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
 import { sendJson, badRequest } from '../lib/http';
@@ -101,6 +103,11 @@ export type EventsService = {
     eventId: string,
     sport?: string,
   ) => Promise<{ finished: boolean; statusShort: string; homeScore: number | null; awayScore: number | null } | null>;
+  /** GoalServe's own authoritative per-odd result (see fetchGoalServeOddSettlement) — the only
+   *  path that can settle a bet leg beyond h2h (server/lib/settlementEngine.ts). Null whenever the
+   *  lookup can't be made or answered (unmapped sport, missing key, network failure, or an
+   *  unrecognized result) — never a guess. */
+  getGoalServeSettlement: (sport: string, gsId: string, marketId: number, oddname: string) => Promise<GoalServeSettlementOutcome | null>;
   /** Trading Desk (spec: manual market control) event queue, optionally filtered. */
   listTradingEvents: (filters: { status?: string; sport?: string; from?: string; to?: string }) => Promise<
     Array<{
@@ -1690,12 +1697,27 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     return null;
   };
 
+  // Independent of SPORTS_DATA_PROVIDER: GoalServe's Pregame Odds Settlements API is a separate
+  // service from the live-odds/livescore feeds this file otherwise dispatches by provider — it's
+  // usable regardless of which provider is sourcing live odds today, as long as a bet leg actually
+  // carries the GoalServe-specific market_id/oddname (which only ever happens for a selection that
+  // came from goalserve.ts's odds parsing in the first place — see parseOddsMatch's doc comment).
+  const getGoalServeSettlement = async (
+    sport: string,
+    gsId: string,
+    marketId: number,
+    oddname: string,
+  ): Promise<GoalServeSettlementOutcome | null> => {
+    return fetchGoalServeOddSettlement(apiKey, sport, gsId, marketId, oddname).catch(() => null);
+  };
+
   return {
     handleEventsRoutes,
     getAdminOddsEvents,
     setOddsOverride,
     getEventOdds,
     getEventResult,
+    getGoalServeSettlement,
     listTradingEvents,
     setTradingDecision,
     isMarketSuspended,

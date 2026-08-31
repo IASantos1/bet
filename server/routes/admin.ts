@@ -50,7 +50,15 @@ function toNumber(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function parseSelections(raw: any): Array<{ event_id: any; selection: string; team_match?: string; league?: string }> {
+function parseSelections(raw: any): Array<{
+  event_id: any;
+  selection: string;
+  team_match?: string;
+  league?: string;
+  sport?: string;
+  market_id?: number;
+  goalserve_oddname?: string;
+}> {
   const s = raw && typeof raw === 'object' ? raw : (() => { try { return JSON.parse(raw); } catch { return []; } })();
   return Array.isArray(s) ? s : [];
 }
@@ -82,7 +90,20 @@ async function settleBet(
     const results = await Promise.all(
       legs.map((leg) => events.getEventResult(String(leg.event_id ?? '')).catch(() => null)),
     );
-    const legOutcomes = legs.map((leg, i) => resolveLegOutcome({ selection: leg.selection, result: results[i] }));
+    // Only a leg placed on a selection GoalServe itself priced carries market_id/goalserve_oddname
+    // (see goalserve.ts's parseOddsMatch doc comment) — every other leg (h2h from any provider, or
+    // any market synthesized by marketDerivation.ts) gets null here and falls through to the
+    // score-based h2h path in resolveLegOutcome below, unchanged from before this existed.
+    const externalOutcomes = await Promise.all(
+      legs.map((leg) =>
+        leg.market_id != null && leg.goalserve_oddname && leg.sport
+          ? events.getGoalServeSettlement(leg.sport, String(leg.event_id ?? ''), leg.market_id, leg.goalserve_oddname).catch(() => null)
+          : Promise.resolve(null),
+      ),
+    );
+    const legOutcomes = legs.map((leg, i) =>
+      resolveLegOutcome({ selection: leg.selection, result: results[i], externalOutcome: externalOutcomes[i] }),
+    );
     outcome = resolveBetOutcome(legOutcomes);
     if (outcome === 'pending') return null; // not determinable yet — leave it pending, never guess
   }
