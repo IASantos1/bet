@@ -120,12 +120,22 @@ export default function App() {
   );
 }
 
+// Admin views (AdminPanel and everything it links to) are meant to feel like their own
+// standalone tool, not a page embedded inside the consumer betting site — AdminPanel's own
+// close button ("Voltar à plataforma") already treats "the platform" as somewhere else. They
+// still live in this same SPA/bundle (no separate deploy needed), just without the betting
+// site's Header/Footer/bet slip/bottom tab bar/sidebar wrapped around them.
+const isAdminPath = (pathname: string) =>
+  pathname.startsWith('/admin') || pathname === '/metrics' || pathname === '/trading-panel';
+
 const InnerApp = memo(function InnerApp() {
+  const location = useLocation();
+  const isAdmin = isAdminPath(location.pathname);
   return (
     <>
-      <Header />
+      {!isAdmin && <Header />}
       <AppContent />
-      <Footer />
+      {!isAdmin && <Footer />}
     </>
   );
 });
@@ -155,16 +165,17 @@ function AppContent() {
     }
   };
 
+  const isAdmin = isAdminPath(location.pathname);
   const isEventPage = location.pathname.startsWith('/event/');
   const vars = isEventPage ? eventVariants : pageVariants;
   const trans = isEventPage ? eventTrans : pageTrans;
 
   return (
     <>
-      <SWUpdateBar />
-      <InstallBar />
-      <CookieBanner />
-      <BackLink />
+      {!isAdmin && <SWUpdateBar />}
+      {!isAdmin && <InstallBar />}
+      {!isAdmin && <CookieBanner />}
+      {!isAdmin && <BackLink />}
       {authModalOpen && (
         <AuthModal
           mode={authModalMode}
@@ -236,9 +247,9 @@ function AppContent() {
         </motion.div>
       </AnimatePresence>
 
-      <MobileBetSlip />
-      <BottomTabBar />
-      <DashboardSidebar />
+      {!isAdmin && <MobileBetSlip />}
+      {!isAdmin && <BottomTabBar />}
+      {!isAdmin && <DashboardSidebar />}
       <ToastContainer />
     </>
   );
