@@ -33,11 +33,10 @@ export async function handleCasinoRoutes(
   // createCasinoUser is safe to retry, but casino_users caches the mapping so it's only called
   // once per user), then returns a real, single-use launch URL.
   //
-  // ⚠️ server/routes/casinoCallback.ts only LOGS the aggregator's bet/win webhook today — it does
-  // not yet credit/debit the wallet, because its real payload schema has never been observed. This
-  // endpoint intentionally still returns real launch URLs (rather than staying a placeholder)
-  // specifically so a real callback gets captured and the payload can be read from
-  // casino_callback_log — see that file's docstring for the follow-up once a real payload lands.
+  // server/routes/casinoCallback.ts fully implements the real Seamless money-moving contract
+  // (authenticate/balance/bet/win/cancel/status) and credits/debits the wallet for real — see its
+  // own docstring. Every raw payload is still also logged unconditionally to casino_callback_log
+  // for audit/debugging.
   if (req.method === 'POST' && url.pathname === '/api/casino/play') {
     if (!pool) return sendJson(res, 503, { error: 'Database unavailable' }), true;
     const u = await requireUser(pool, req);
