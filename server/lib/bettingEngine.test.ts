@@ -55,12 +55,12 @@ describe('Betting Engine — validateBetRequest', () => {
   });
 
   it('accepts a client odd within tolerance of the live server odd', async () => {
-    const resolveOdds = async () => 2.52; // within 5% of 2.5
+    const resolveOdds = async () => ({ price: 2.52, version: 1 }); // within 5% of 2.5
     await expect(validateBetRequest({ legs: [baseLeg], stake: 20, totalOdds: 2.5, resolveOdds })).resolves.toBeUndefined();
   });
 
   it('rejects a client odd that has drifted beyond tolerance from the live server odd (spec §17 PRICE_CHANGED)', async () => {
-    const resolveOdds = async () => 4.0; // client still holds the stale 2.5
+    const resolveOdds = async () => ({ price: 4.0, version: 2 }); // client still holds the stale 2.5
     await expect(validateBetRequest({ legs: [baseLeg], stake: 20, totalOdds: 2.5, resolveOdds })).rejects.toMatchObject({
       code: 'PRICE_CHANGED',
     });
@@ -71,10 +71,26 @@ describe('Betting Engine — validateBetRequest', () => {
     await expect(validateBetRequest({ legs: [baseLeg], stake: 20, totalOdds: 2.5, resolveOdds })).resolves.toBeUndefined();
   });
 
+  it('accepts a bet whose odds_version matches the current server version, even if the price also drifted', async () => {
+    const resolveOdds = async () => ({ price: 4.0, version: 7 }); // price moved a lot, but...
+    const leg = { ...baseLeg, oddsVersion: 7 }; // ...client's version still matches the current one
+    await expect(validateBetRequest({ legs: [leg], stake: 20, totalOdds: 2.5, resolveOdds })).resolves.toBeUndefined();
+  });
+
+  it('rejects a bet whose odds_version no longer matches, even if the price happens to be within tolerance (spec §17)', async () => {
+    const resolveOdds = async () => ({ price: 2.51, version: 8 }); // price barely moved, but the version did
+    const leg = { ...baseLeg, oddsVersion: 7 };
+    await expect(validateBetRequest({ legs: [leg], stake: 20, totalOdds: 2.5, resolveOdds })).rejects.toMatchObject({
+      code: 'PRICE_CHANGED',
+      details: expect.objectContaining({ clientVersion: 7, serverVersion: 8 }),
+    });
+  });
+
   it('makeH2HOddsResolver only cross-checks recognized H2H selections, skipping others', async () => {
-    const getEventOdds = async (eventId: string) => (eventId === 'evt1' ? { home: 2.5, draw: 3.2, away: 2.8 } : null);
+    const getEventOdds = async (eventId: string) =>
+      eventId === 'evt1' ? { home: 2.5, draw: 3.2, away: 2.8, versions: { home: 3, draw: 1, away: 2 } } : null;
     const resolver = makeH2HOddsResolver(getEventOdds);
-    await expect(resolver({ eventId: 'evt1', selection: 'home', odd: 2.5 })).resolves.toBe(2.5);
+    await expect(resolver({ eventId: 'evt1', selection: 'home', odd: 2.5 })).resolves.toEqual({ price: 2.5, version: 3 });
     await expect(resolver({ eventId: 'evt1', selection: 'over 2.5 goals', odd: 1.9 })).resolves.toBeNull();
     await expect(resolver({ eventId: 'unknown', selection: 'home', odd: 2.5 })).resolves.toBeNull();
   });
