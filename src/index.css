@@ -634,6 +634,6 @@
    content and the footer never end up scrolled underneath it. */
 @media (max-width: 1023.98px) {
   body {
-    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
   }
 }
