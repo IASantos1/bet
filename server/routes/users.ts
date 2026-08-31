@@ -229,5 +229,75 @@ export async function handleUsersRoutes(
     return true;
   }
 
+  // GET /api/users/iban — the saved withdrawal payout details, if any, so the withdrawal form
+  // only ever has to ask once. Never returns the full IBAN, only a masked preview.
+  if (req.method === 'GET' && path === '/api/users/iban') {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+
+    const r = await pool.query(
+      `SELECT iban, iban_holder_name, nif, document_type, document_number FROM profiles WHERE user_id = $1 LIMIT 1`,
+      [u.id],
+    );
+    const row = r.rows?.[0];
+    const iban = String(row?.iban || '').trim();
+    if (!iban) {
+      sendJson(res, 200, { has_iban: false });
+      return true;
+    }
+    sendJson(res, 200, {
+      has_iban: true,
+      iban_masked: iban.length > 8 ? `${iban.slice(0, 4)} •••• •••• ${iban.slice(-4)}` : iban,
+      holder_name: String(row?.iban_holder_name || ''),
+      nif: String(row?.nif || ''),
+      document_type: String(row?.document_type || ''),
+      document_number: String(row?.document_number || ''),
+    });
+    return true;
+  }
+
+  // POST /api/users/iban — saves the withdrawal payout details for this account (IBAN, holder
+  // name, NIF, and the identity document backing it — Cartão de Cidadão or passport, per Portuguese
+  // AML/KYC requirements for who gets paid out). Overwrites any previously saved details.
+  if (req.method === 'POST' && path === '/api/users/iban') {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+
+    const body = await readJsonBody<{
+      iban?: string;
+      holder_name?: string;
+      nif?: string;
+      document_type?: string;
+      document_number?: string;
+    }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+
+    const iban = String(body.iban || '').replace(/\s+/g, '').toUpperCase().trim();
+    const holderName = String(body.holder_name || '').trim();
+    const nif = String(body.nif || '').trim();
+    const documentType = String(body.document_type || '').trim().toLowerCase();
+    const documentNumber = String(body.document_number || '').trim();
+
+    if (!iban || iban.length < 15) return badRequest(res, 'IBAN inválido'), true;
+    if (!holderName) return badRequest(res, 'Nome do titular obrigatório'), true;
+    if (!nif || !/^\d{9}$/.test(nif)) return badRequest(res, 'NIF inválido (9 dígitos)'), true;
+    if (documentType !== 'cc' && documentType !== 'passport') return badRequest(res, 'Tipo de documento inválido'), true;
+    if (!documentNumber) return badRequest(res, 'Número de documento obrigatório'), true;
+
+    await pool.query(
+      `UPDATE profiles
+       SET iban = $2, iban_holder_name = $3, nif = $4, document_type = $5, document_number = $6, updated_at = NOW()
+       WHERE user_id = $1`,
+      [u.id, iban, holderName, nif, documentType, documentNumber],
+    );
+
+    sendJson(res, 200, {
+      ok: true,
+      iban_masked: `${iban.slice(0, 4)} •••• •••• ${iban.slice(-4)}`,
+      holder_name: holderName,
+    });
+    return true;
+  }
+
   return false;
 }

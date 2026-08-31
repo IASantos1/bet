@@ -206,6 +206,12 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     // manual-control record, rather than a separate table, since status and manual odds are
     // always read/written together.
     `ALTER TABLE odds_overrides ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'`,
+    // Withdrawal payout details — saved once so the withdrawal form doesn't ask again every time.
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS iban TEXT`,
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS iban_holder_name TEXT`,
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS nif TEXT`,
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS document_type TEXT`,
+    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS document_number TEXT`,
     `CREATE INDEX IF NOT EXISTS idx_profiles_kyc_status ON profiles(kyc_status)`,
     `CREATE TABLE IF NOT EXISTS audit_logs (
       id            TEXT        PRIMARY KEY,
