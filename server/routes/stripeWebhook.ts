@@ -38,7 +38,12 @@ export async function handleStripeWebhook(pool: pg.Pool, req: http.IncomingMessa
   }
 
   try {
-    if (event.type === 'checkout.session.completed') {
+    // Card completes synchronously (checkout.session.completed arrives with payment_status
+    // already 'paid'). MB WAY and Multibanco are delayed: that same event arrives first with
+    // payment_status 'unpaid' (guarded out below), and the real confirmation is this second event
+    // once the customer approves in the MB WAY app or pays the Multibanco voucher. Both carry a
+    // Checkout Session in event.data.object, so the credit logic is identical either way.
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status === 'paid') {
         const userId = String(session.client_reference_id || session.metadata?.user_id || '');
@@ -59,6 +64,14 @@ export async function handleStripeWebhook(pool: pg.Pool, req: http.IncomingMessa
           console.error('[stripe-webhook] paid session missing user_id or amount', { sessionId: session.id });
         }
       }
+    } else if (event.type === 'checkout.session.async_payment_failed') {
+      // The MB WAY app confirmation or the Multibanco voucher expired/was declined. Mark the
+      // pending row as failed so it doesn't sit as "pending" forever — never touches the wallet.
+      const session = event.data.object as Stripe.Checkout.Session;
+      await pool.query(
+        `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE stripe_session_id = $1 AND status = 'pending'`,
+        [session.id],
+      );
     }
   } catch (e) {
     // Non-2xx tells Stripe to retry (safe: idempotent on session.id) rather than silently losing

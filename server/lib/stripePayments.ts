@@ -1,8 +1,19 @@
 /**
- * Stripe payments client for wallet deposits. Card only for now — Stripe-hosted Checkout, never a
- * raw card form on our own domain (keeps us out of PCI SAQ D scope). Secrets are read lazily from
- * env at call time, exactly like CASINO_API_KEY in server/lib/casinoAggregator.ts: never hardcode
- * STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET.
+ * Stripe payments client for wallet deposits — card, MB WAY, and Multibanco, all via Stripe-hosted
+ * Checkout (never a raw card form or a hand-rolled MB WAY/Multibanco integration on our own
+ * domain: keeps us out of PCI SAQ D scope and gets Stripe's own official branding on the actual
+ * payment screen for free). Secrets are read lazily from env at call time, exactly like
+ * CASINO_API_KEY in server/lib/casinoAggregator.ts: never hardcode STRIPE_SECRET_KEY or
+ * STRIPE_WEBHOOK_SECRET.
+ *
+ * Card is synchronous (Checkout completes with payment_status 'paid' immediately). MB WAY and
+ * Multibanco are delayed/async per Stripe's own model: Checkout completes first with the session
+ * still 'unpaid' (the customer has to confirm in the MB WAY app, or pay a Multibanco voucher at
+ * an ATM/homebanking later), and the real confirmation arrives afterwards as a separate
+ * checkout.session.async_payment_succeeded webhook event — see stripeWebhook.ts, which listens
+ * for both. The Stripe Dashboard's webhook endpoint config must include that event type (and
+ * async_payment_failed) alongside checkout.session.completed, or MB WAY/Multibanco deposits will
+ * silently never get credited even though this code is correct.
  */
 
 import Stripe from 'stripe';
@@ -32,9 +43,14 @@ function stripeClient(): Stripe {
   return client;
 }
 
+export type DepositMethod = 'card' | 'mb_way' | 'multibanco';
+
+export const DEPOSIT_METHODS: DepositMethod[] = ['card', 'mb_way', 'multibanco'];
+
 export interface CreateDepositCheckoutParams {
   userId: string;
   amount: number;
+  method: DepositMethod;
   email?: string;
 }
 
@@ -43,15 +59,16 @@ export interface DepositCheckoutSession {
   url: string;
 }
 
-/** Creates a Stripe Checkout Session for a card deposit. The charged amount always comes from
- *  Stripe's own session object in the webhook handler afterwards — this function's `amount` only
- *  seeds what Stripe displays/charges at checkout, it is never trusted as the credited amount. */
+/** Creates a Stripe Checkout Session for a deposit via the given method. The charged amount
+ *  always comes from Stripe's own session object in the webhook handler afterwards — this
+ *  function's `amount` only seeds what Stripe displays/charges at checkout, it is never trusted
+ *  as the credited amount. */
 export async function createDepositCheckoutSession(params: CreateDepositCheckoutParams): Promise<DepositCheckoutSession> {
   const stripe = stripeClient();
   const amountCents = Math.round(params.amount * 100);
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    payment_method_types: ['card'],
+    payment_method_types: [params.method],
     customer_email: params.email,
     client_reference_id: params.userId,
     metadata: { user_id: params.userId },

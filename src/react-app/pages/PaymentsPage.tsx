@@ -2,12 +2,63 @@ import { useState } from 'react';
 import { useApp } from '@/react-app/contexts/AppContext';
 import { apiFetch } from '@/react-app/utils/api';
 
+// Mirrors DepositMethod in server/lib/stripePayments.ts — kept as a plain literal union here
+// rather than a cross-boundary import, since that file also pulls in the server-only `stripe` npm
+// package (not meant for the browser bundle).
+type DepositMethod = 'card' | 'mb_way' | 'multibanco';
+
 const QUICK_AMOUNTS = [10, 25, 50, 100, 200, 500];
 const MIN_DEPOSIT = 10;
+
+const METHODS: { key: DepositMethod; label: string }[] = [
+  { key: 'mb_way', label: 'MB WAY' },
+  { key: 'card', label: 'Cartão' },
+  { key: 'multibanco', label: 'Multibanco' },
+];
+
+function MethodLogo({ method }: { method: DepositMethod }) {
+  if (method === 'mb_way') {
+    return (
+      <svg viewBox="0 0 60 24" width="50" height="20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="60" height="24" rx="4" fill="#E30613" />
+        <text x="30" y="16" textAnchor="middle" fontSize="10" fill="#fff" fontFamily="'Arial Black','Helvetica Neue',sans-serif" fontWeight="900" letterSpacing="0.5">
+          MB WAY
+        </text>
+      </svg>
+    );
+  }
+  if (method === 'multibanco') {
+    return (
+      <svg viewBox="0 0 70 24" width="58" height="20" xmlns="http://www.w3.org/2000/svg">
+        <rect width="70" height="24" rx="4" fill="#fff" stroke="#e5e7eb" />
+        <rect x="2" y="2" width="20" height="20" rx="2" fill="#004C9B" />
+        <text x="12" y="17" textAnchor="middle" fontSize="11" fill="#fff" fontFamily="'Arial Black','Helvetica Neue',sans-serif" fontWeight="900">
+          MB
+        </text>
+        <text x="46" y="11" textAnchor="middle" fontSize="6" fill="#004C9B" fontFamily="Arial,sans-serif" fontWeight="700">
+          MULTI
+        </text>
+        <text x="46" y="19" textAnchor="middle" fontSize="6" fill="#004C9B" fontFamily="Arial,sans-serif" fontWeight="700">
+          BANCO
+        </text>
+      </svg>
+    );
+  }
+  // Card: generic Visa/Mastercard-style dual-circle mark, since a real deposit can land on either
+  // network — Stripe's own hosted checkout shows the actual card brand once the number is typed.
+  return (
+    <svg viewBox="0 0 40 24" width="36" height="20" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="24" rx="4" fill="#1f2937" />
+      <circle cx="16" cy="12" r="7" fill="#EB001B" opacity="0.9" />
+      <circle cx="24" cy="12" r="7" fill="#F79E1B" opacity="0.9" />
+    </svg>
+  );
+}
 
 export default function PaymentsPage() {
   const { darkMode, user, openAuthModal } = useApp();
   const [amount, setAmount] = useState('25');
+  const [method, setMethod] = useState<DepositMethod>('mb_way');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,7 +79,7 @@ export default function PaymentsPage() {
     try {
       const res = await apiFetch<{ url: string }>('/api/wallet/deposit/stripe/checkout', {
         method: 'POST',
-        body: JSON.stringify({ amount: numAmount }),
+        body: JSON.stringify({ amount: numAmount, method }),
       });
       if (!res.url) throw new Error('Não foi possível iniciar o pagamento.');
       window.location.href = res.url;
@@ -58,42 +109,58 @@ export default function PaymentsPage() {
   return (
     <div className={`min-h-screen p-4 md:p-8 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <div className={`max-w-md mx-auto rounded-2xl shadow-xl overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-        <div className="p-6 space-y-4">
-          <h2 className="text-xl font-bold text-center">💰 Depositar</h2>
+        <h2 className="text-xl font-bold text-center pt-6">💰 Depositar</h2>
 
-          <div>
-            <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Valor do Depósito (€)</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                setError('');
-              }}
-              min={MIN_DEPOSIT}
-              step="5"
-              className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold ${
-                darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'
-              } ${error ? 'border-red-500' : ''}`}
-              placeholder="25"
-            />
-            {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
-            <div className="grid grid-cols-3 gap-2 mt-3">
-              {QUICK_AMOUNTS.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => handleQuickAmount(v)}
-                  className={`py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                    numAmount === v ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  €{v}
-                </button>
-              ))}
-            </div>
+        <div className="p-6 pb-4">
+          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Valor do Depósito (€)</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setError('');
+            }}
+            min={MIN_DEPOSIT}
+            step="5"
+            className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold ${
+              darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'
+            } ${error ? 'border-red-500' : ''}`}
+            placeholder="25"
+          />
+          {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            {QUICK_AMOUNTS.map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => handleQuickAmount(v)}
+                className={`py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                  numAmount === v ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                €{v}
+              </button>
+            ))}
           </div>
+        </div>
 
+        <div className="grid grid-cols-3 border-t border-b border-gray-700/20">
+          {METHODS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setMethod(m.key)}
+              className={`py-2.5 flex flex-col items-center gap-1 text-xs font-semibold transition-colors ${
+                method === m.key ? 'text-red-500 border-b-2 border-red-500 bg-red-500/10' : darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <MethodLogo method={m.key} />
+              <span>{m.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6 space-y-3">
           <button
             type="button"
             onClick={handleDeposit}
@@ -105,7 +172,7 @@ export default function PaymentsPage() {
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> A processar...
               </>
             ) : (
-              `💳 Pagar €${numAmount.toFixed(2)} com Cartão`
+              `Pagar €${numAmount.toFixed(2)} com ${METHODS.find((m) => m.key === method)?.label}`
             )}
           </button>
           <p className={`text-center text-xs ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>🔒 Pagamento seguro processado pela Stripe. Será redirecionado para confirmar.</p>

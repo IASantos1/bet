@@ -16,7 +16,7 @@ import {
 } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError } from '../lib/bettingEngine';
 import { maybeGrantWelcomeBonus, applyBonusWagering } from '../lib/bonusService';
-import { isStripeConfigured, createDepositCheckoutSession } from '../lib/stripePayments';
+import { isStripeConfigured, createDepositCheckoutSession, DEPOSIT_METHODS, type DepositMethod } from '../lib/stripePayments';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
@@ -177,15 +177,20 @@ export async function handleWalletRoutes(
   if (req.method === 'POST' && path === '/api/wallet/deposit/stripe/checkout') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
-    if (!isStripeConfigured()) return badRequest(res, 'Depósitos por cartão indisponíveis de momento'), true;
+    if (!isStripeConfigured()) return badRequest(res, 'Depósitos indisponíveis de momento'), true;
 
     const body = await readJsonBody<any>(req).catch(() => null);
     if (!body) return badRequest(res, 'Invalid JSON'), true;
     const amount = toNumber(body.amount);
     if (!amount || amount < 10) return badRequest(res, 'Valor mínimo €10'), true;
+    const methodRaw = String(body.method || 'card');
+    if (!DEPOSIT_METHODS.includes(methodRaw as DepositMethod)) return badRequest(res, 'Método de pagamento inválido'), true;
+    const method = methodRaw as DepositMethod;
+
+    const methodLabel = method === 'card' ? 'Cartão' : method === 'mb_way' ? 'MB WAY' : 'Multibanco';
 
     try {
-      const session = await createDepositCheckoutSession({ userId: u.id, amount, email: u.email });
+      const session = await createDepositCheckoutSession({ userId: u.id, amount, method, email: u.email });
       const txId = randomId(16);
       await recordTransaction(pool, {
         id: txId,
@@ -193,8 +198,8 @@ export async function handleWalletRoutes(
         type: 'deposit',
         amount,
         status: 'pending',
-        method: 'stripe',
-        description: `Depósito via Cartão (Stripe) - €${amount.toFixed(2)}`,
+        method: `stripe_${method}`,
+        description: `Depósito via ${methodLabel} (Stripe) - €${amount.toFixed(2)}`,
       });
       // Tag the row with the Stripe session id so the webhook can find it later.
       // recordTransaction() doesn't take stripe_session_id (kept out of its generic signature).
