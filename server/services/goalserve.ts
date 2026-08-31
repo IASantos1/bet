@@ -242,13 +242,106 @@ function flattenMatches(sport: string, payload: any): NormalizedEvent[] {
   return out;
 }
 
+// ---- League/team logos ----
+// Separate API host and auth style from every other GoalServe feed above: base
+// data2.goalserve.com:8084, key passed as `?k=` rather than in the URL path, and its own
+// {SPORT_TYPES} segment naming (documented separately from the main feed docs — e.g. plain
+// "basketball"/"hockey", not "bsktbl"/"hockey" mixed with GoalServe's feed-path abbreviations).
+// ??? whether {USER_GUID} is the same account key used everywhere else, or a distinct value, is
+// unconfirmed — the shared docs only call it "User's global unique identifier" with no example.
+// ??? the response shape is entirely unconfirmed — no sample was provided; parsed defensively.
+
+const LOGO_BASE_URL = 'http://data2.goalserve.com:8084/api/v1/logotips';
+const LOGO_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // logos change rarely — cache generously
+const LOGO_MIN_INTERVAL_MS = 1100; // docs: "Requests limit - 1 request per second"
+
+const logoCache = new Map<string, { ts: number; url: string }>();
+let logoRateLimitChain: Promise<void> = Promise.resolve();
+
+function logosSportType(sport: string): string {
+  const s = String(sport || '').toLowerCase().trim();
+  if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
+  if (s === 'basketball' || s === 'basket' || s === 'basquete') return 'basketball';
+  if (s === 'baseball') return 'baseball';
+  if (s === 'volleyball') return 'volleyball';
+  if (s === 'tennis' || s === 'tênis') return 'tennis';
+  if (s === 'handball') return 'handball';
+  if (s === 'ice-hockey' || s === 'icehockey' || s === 'hockey') return 'hockey';
+  if (s === 'cricket') return 'cricket';
+  return 'soccer';
+}
+
+function extractLogoEntries(payload: any): Array<{ id: string; url: string }> {
+  if (!payload) return [];
+  const candidates = [payload?.teams, payload?.leagues, payload?.players, payload?.data, payload?.logos, payload?.results, payload];
+  for (const c of candidates) {
+    const arr = Array.isArray(c) ? c : Array.isArray(c?.team) ? c.team : Array.isArray(c?.league) ? c.league : null;
+    if (!arr) continue;
+    const out: Array<{ id: string; url: string }> = [];
+    for (const item of arr) {
+      const id = str(item?.id ?? item?.['@id'] ?? item?.team_id ?? item?.league_id);
+      const url = str(item?.logo ?? item?.url ?? item?.image ?? item?.badge ?? item?.path ?? item?.['#text']);
+      if (id && url) out.push({ id, url });
+    }
+    if (out.length) return out;
+  }
+  return [];
+}
+
+/** Batch-fetches team logos for every id not already cached, in one comma-separated request —
+ *  naturally respects the 1 req/sec limit as long as callers don't fan out per-event requests.
+ *  Never throws: a failed or unconfirmed-shape response just leaves those ids uncached, and
+ *  callers fall back to no logo rather than losing the event data over it. */
+async function fetchTeamLogos(apiKey: string, sport: string, teamIds: string[]): Promise<void> {
+  const type = logosSportType(sport);
+  const missing = Array.from(new Set(teamIds)).filter((id) => {
+    const cached = logoCache.get(`${type}:${id}`);
+    return !cached || Date.now() - cached.ts >= LOGO_CACHE_TTL_MS;
+  });
+  if (!missing.length || !apiKeyOk(apiKey)) return;
+
+  const run = async () => {
+    const url = `${LOGO_BASE_URL}/${type}/teams?k=${encodeURIComponent(apiKey)}&ids=${missing.map(encodeURIComponent).join(',')}`;
+    const json = await fetchJson(url, 8000);
+    for (const { id, url: logoUrl } of extractLogoEntries(json)) {
+      logoCache.set(`${type}:${id}`, { ts: Date.now(), url: logoUrl });
+    }
+  };
+
+  // Serialize against any other in-flight logo fetch so concurrent live+schedule calls for
+  // different sports still respect the shared 1 req/sec limit.
+  const chained = logoRateLimitChain.then(run).catch(() => void 0);
+  logoRateLimitChain = chained.then(() => new Promise((resolve) => setTimeout(resolve, LOGO_MIN_INTERVAL_MS)));
+  return chained;
+}
+
+/** Patches home_team_logo/away_team_logo (and the nested teams.*.logo mirrors) onto already-
+ *  normalized events, using whatever logos are cached or can be fetched in one batch call.
+ *  Best-effort — never removes or blocks on events whose logo isn't available. */
+async function attachTeamLogos(apiKey: string, sport: string, events: NormalizedEvent[]): Promise<NormalizedEvent[]> {
+  if (!events.length) return events;
+  const ids = events.flatMap((e) => [e.teams?.home?.id, e.teams?.away?.id]).filter((id): id is string => !!id);
+  await fetchTeamLogos(apiKey, sport, ids).catch(() => void 0);
+  const type = logosSportType(sport);
+  const lookup = (id: string | undefined) => (id ? logoCache.get(`${type}:${id}`)?.url || '' : '');
+  for (const e of events) {
+    const homeLogo = lookup(e.teams?.home?.id) || e.home_team_logo;
+    const awayLogo = lookup(e.teams?.away?.id) || e.away_team_logo;
+    e.home_team_logo = homeLogo;
+    e.away_team_logo = awayLogo;
+    if (e.teams?.home) e.teams.home.logo = homeLogo;
+    if (e.teams?.away) e.teams.away.logo = awayLogo;
+  }
+  return events;
+}
+
 /** Calls the sport's "home" livescore feed (today's live + finished matches). */
 export async function fetchGoalServeLive(apiKey: string, sport: string): Promise<NormalizedEvent[]> {
   if (!apiKeyOk(apiKey)) return [];
   const seg = sportSegment(sport);
   const url = `${BASE_URL}/${encodeURIComponent(apiKey)}/${seg}/home?json=1`;
   const json = await fetchJson(url);
-  return flattenMatches(sport, json);
+  return attachTeamLogos(apiKey, sport, flattenMatches(sport, json));
 }
 
 /** GoalServe has no arbitrary-date schedule endpoint like sportsApiPro's `/api/schedule/{date}` —
@@ -274,7 +367,7 @@ export async function fetchGoalServeSchedule(apiKey: string, sport: string, date
   const seg = sportSegment(sport);
   const url = `${BASE_URL}/${encodeURIComponent(apiKey)}/${seg}/${suffix}?json=1`;
   const json = await fetchJson(url);
-  return flattenMatches(sport, json);
+  return attachTeamLogos(apiKey, sport, flattenMatches(sport, json));
 }
 
 // ---- Odds ----
