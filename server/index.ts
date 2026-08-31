@@ -12,6 +12,7 @@ import { handleUsersRoutes } from './routes/users';
 import { handleAdminRoutes } from './routes/admin';
 import { handleCasinoCallback } from './routes/casinoCallback';
 import { handleCasinoRoutes } from './routes/casino';
+import { handleStripeWebhook } from './routes/stripeWebhook';
 import { createLiveWs } from './ws/liveWs';
 
 const loadEnvFile = (filePath: string) => {
@@ -167,6 +168,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/callback') {
       if (pool && (await handleCasinoCallback(pool, req, res, url))) return;
       sendJson(res, 503, { code: 1, message: 'DB_UNAVAILABLE' });
+      return;
+    }
+
+    if (url.pathname === '/webhooks/stripe') {
+      if (pool && (await handleStripeWebhook(pool, req, res, url))) return;
+      sendJson(res, 503, { error: 'Database unavailable' });
       return;
     }
 

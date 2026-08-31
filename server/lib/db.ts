@@ -150,6 +150,7 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_stripe_session_id ON transactions(stripe_session_id) WHERE stripe_session_id IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_bets_created_at ON bets(created_at DESC)`,
 
