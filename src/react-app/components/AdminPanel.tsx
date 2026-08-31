@@ -4,7 +4,7 @@ import { useApp } from '@/react-app/contexts/AppContext';
 import { Settings } from '@/react-app/components/Settings';
 import { apiFetch } from '@/react-app/utils/api';
 
-type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api' | 'audit' | 'reconciliation';
+type Tab = 'overview' | 'risk' | 'users' | 'bets' | 'payments' | 'reports' | 'odds' | 'settings' | 'api' | 'audit' | 'reconciliation' | 'casino';
 
 interface User { id: string; email: string; is_operator: number }
 interface Bet { id: string; user_id: string; amount: number; potential_win: number; status: string; created_at: string }
@@ -16,6 +16,9 @@ interface AuditEntry {
   metadata: Record<string, unknown>; ip: string | null; created_at: string;
 }
 interface WalletDiscrepancy { userId: string; field: string; walletValue: number; ledgerValue: number; difference: number }
+interface CasinoCallbackEntry {
+  id: string; headers: Record<string, unknown>; body_raw: string | null; body_json: unknown; ip: string | null; created_at: string;
+}
 interface ReconciliationSummary {
   range: { from: string | null; to: string | null };
   ledgerBalance: { balanced: boolean; difference: number };
@@ -33,6 +36,7 @@ const NAV: { key: Tab; label: string; icon: string }[] = [
   { key: 'reports',   label: 'Relatórios',            icon: '📈' },
   { key: 'audit',     label: 'Registo de Auditoria',  icon: '📜' },
   { key: 'reconciliation', label: 'Reconciliação',    icon: '🧮' },
+  { key: 'casino',    label: 'Casino (Agregador)',    icon: '🎰' },
   { key: 'settings',  label: 'Configurações',         icon: '⚙️' },
 ];
 
@@ -270,6 +274,10 @@ const AdminPanel: React.FC = () => {
   const [reconFrom, setReconFrom] = useState('');
   const [reconTo, setReconTo] = useState('');
   const [reconLoading, setReconLoading] = useState(false);
+  const [casinoConnection, setCasinoConnection] = useState<any>(null);
+  const [casinoCallbacks, setCasinoCallbacks] = useState<CasinoCallbackEntry[]>([]);
+  const [casinoProviders, setCasinoProviders] = useState<any>(null);
+  const [expandedCallback, setExpandedCallback] = useState<string | null>(null);
 
   const load = useCallback(async (t: Tab) => {
     try {
@@ -303,6 +311,16 @@ const AdminPanel: React.FC = () => {
         setReconDiscrepancies(wallets.status === 'fulfilled' && Array.isArray(wallets.value?.discrepancies) ? wallets.value.discrepancies : []);
         setReconScanned(wallets.status === 'fulfilled' ? Number(wallets.value?.scannedWallets || 0) : 0);
         setReconLoading(false);
+      }
+      if (t === 'casino') {
+        const [conn, log, providers] = await Promise.allSettled([
+          apiFetch<any>('/api/admin/casino/connection'),
+          apiFetch<any>('/api/admin/casino/callback-log'),
+          apiFetch<any>('/api/admin/casino/providers'),
+        ]);
+        setCasinoConnection(conn.status === 'fulfilled' ? conn.value : null);
+        setCasinoCallbacks(log.status === 'fulfilled' && Array.isArray(log.value?.entries) ? log.value.entries : []);
+        setCasinoProviders(providers.status === 'fulfilled' ? providers.value : null);
       }
     } catch { /* silent */ }
   }, [auditActionFilter, reconFrom, reconTo]);
@@ -735,6 +753,83 @@ const AdminPanel: React.FC = () => {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {tab === 'casino' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="text-2xl font-bold">Casino (Agregador)</h1>
+                <button onClick={() => load('casino')} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">🔄 Refresh</button>
+              </div>
+
+              <div className={`rounded-lg p-4 mb-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                <h3 className="font-semibold mb-3">Ligação</h3>
+                {!casinoConnection ? (
+                  <p className="text-sm text-gray-400">A carregar...</p>
+                ) : !casinoConnection.configured ? (
+                  <p className="text-sm text-yellow-600">CASINO_API_KEY não configurada no servidor.</p>
+                ) : casinoConnection.connected ? (
+                  <div className="text-sm space-y-1">
+                    <p className="text-green-600 font-semibold">✓ Ligado</p>
+                    <p>Agente: {casinoConnection.info?.name} · Saldo: {casinoConnection.info?.balance} · RTP: {casinoConnection.info?.rtp}</p>
+                    <p className="text-xs text-gray-400">IP visto pelo agregador: {casinoConnection.info?.client_ip}</p>
+                  </div>
+                ) : (
+                  <div className="text-sm">
+                    <p className="text-red-600 font-semibold">✗ Falha na ligação</p>
+                    <p className="text-xs text-gray-400 mt-1">{casinoConnection.error}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className={`rounded-lg p-4 mb-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                <h3 className="font-semibold mb-3">Fornecedores Licenciados</h3>
+                {!casinoProviders ? (
+                  <p className="text-sm text-gray-400">A carregar...</p>
+                ) : !casinoProviders.success ? (
+                  <p className="text-sm text-red-600">{casinoProviders.error}</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(casinoProviders.providers || []).map((p: any) => (
+                      <Badge key={p.provider_id} v={p.provider_name} color={p.status === 1 ? 'green' : 'gray'} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className={`rounded-lg p-4 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                <h3 className="font-semibold mb-1">Payloads Recebidos em /callback</h3>
+                <p className="text-xs text-gray-400 mb-3">
+                  Captura só — nada aqui mexe em saldo. Serve para descobrir o formato real que o agregador envia.
+                </p>
+                {casinoCallbacks.length === 0 ? (
+                  <p className="text-sm text-gray-400">Ainda não chegou nenhum payload a /callback.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {casinoCallbacks.map((c) => (
+                      <div key={c.id} className={`rounded-lg border ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedCallback(expandedCallback === c.id ? null : c.id)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm ${darkMode ? 'hover:bg-gray-750' : 'hover:bg-gray-50'}`}
+                        >
+                          <span className="font-mono text-xs text-gray-400">{new Date(c.created_at).toLocaleString('pt-PT')} · {c.ip || '—'}</span>
+                          <span>{expandedCallback === c.id ? '▲' : '▼'}</span>
+                        </button>
+                        {expandedCallback === c.id && (
+                          <div className={`px-3 pb-3 text-xs ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                            <div className="font-semibold text-gray-400 uppercase tracking-wide mt-2 mb-1">Headers</div>
+                            <pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.headers, null, 2)}</pre>
+                            <div className="font-semibold text-gray-400 uppercase tracking-wide mt-3 mb-1">Corpo</div>
+                            <pre className="overflow-x-auto whitespace-pre-wrap break-all">{c.body_json ? JSON.stringify(c.body_json, null, 2) : (c.body_raw || '(vazio)')}</pre>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

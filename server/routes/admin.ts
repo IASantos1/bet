@@ -11,6 +11,14 @@ import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
 import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
+import {
+  isCasinoConfigured,
+  getCasinoAgentInfo,
+  testCasinoCallback,
+  getCasinoProviders,
+  getCasinoGames,
+  getCasinoAllGames,
+} from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -954,6 +962,94 @@ export async function handleAdminRoutes(
     }
     const results = await Promise.all(probes.map(async (p) => ({ label: p.label, ...(await probeUrl(p.url, key)) })));
     sendJson(res, 200, { results });
+    return true;
+  }
+
+  // GET /api/admin/casino/connection — connectivity check for the casino game aggregator
+  // (CASINO_API_KEY / CASINO_API_BASE_URL). Only agent/info exists so far; game-list and
+  // launch-URL endpoints get wired in once the provider's full API docs are available.
+  if (req.method === 'GET' && path === '/api/admin/casino/connection') {
+    if (!isCasinoConfigured()) {
+      sendJson(res, 200, { configured: false });
+      return true;
+    }
+    try {
+      const info = await getCasinoAgentInfo();
+      sendJson(res, 200, { configured: true, connected: true, info });
+    } catch (e: any) {
+      sendJson(res, 200, { configured: true, connected: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/callback-test — asks the aggregator to ping our configured callback
+  // URL and report round-trip time, confirming our server is reachable from them.
+  if (req.method === 'POST' && path === '/api/admin/casino/callback-test') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const result = await testCasinoCallback();
+      sendJson(res, 200, { success: true, ...result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/callback-log — every raw payload POST /callback has captured, newest
+  // first. This is how the aggregator's real webhook contract gets learned (spec: see
+  // server/routes/casinoCallback.ts) until real docs replace the guesswork.
+  if (req.method === 'GET' && path === '/api/admin/casino/callback-log') {
+    const r = await pool.query(
+      `SELECT id, headers, body_raw, body_json, ip, created_at
+       FROM casino_callback_log
+       ORDER BY created_at DESC
+       LIMIT 100`,
+    );
+    sendJson(res, 200, { entries: r.rows || [] });
+    return true;
+  }
+
+  // GET /api/admin/casino/providers — the real, licensed provider catalog for this agent
+  // account. Subject to the same IP whitelist as every other agent/* and game/* call from this
+  // sandbox (confirmed: also 403s here) — works once called from a whitelisted server IP.
+  if (req.method === 'GET' && path === '/api/admin/casino/providers') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const providers = await getCasinoProviders();
+      sendJson(res, 200, { success: true, providers });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/games?provider_id=1 — the real, licensed game catalog for one provider.
+  // Subject to the same IP whitelist as every other agent/* and game/* call from this sandbox —
+  // works once called from a whitelisted server IP.
+  if (req.method === 'GET' && path === '/api/admin/casino/games') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const providerId = Number(url.searchParams.get('provider_id') || 0);
+    if (!providerId) return badRequest(res, 'provider_id required'), true;
+    try {
+      const games = await getCasinoGames(providerId);
+      sendJson(res, 200, { success: true, games });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/games-all — the real, licensed game catalog across every provider on
+  // this agent account in one call. Subject to the same IP whitelist as every other agent/* and
+  // game/* call from this sandbox — works once called from a whitelisted server IP.
+  if (req.method === 'GET' && path === '/api/admin/casino/games-all') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    try {
+      const games = await getCasinoAllGames();
+      sendJson(res, 200, { success: true, games });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
     return true;
   }
 
