@@ -11,10 +11,16 @@ import { maybeGrantWelcomeBonus } from '../lib/bonusService';
  * (never trust an unverified body for a real-money credit) — this is the ONLY place in the app
  * that calls walletService.deposit() off an incoming request; there is deliberately no
  * client-callable endpoint that credits the wallet from a client-supplied amount. Idempotent via
- * the Checkout session id as the ledger idempotency key, so Stripe's automatic webhook retries
- * (it retries on anything but a 2xx) never double-credit. Wired directly in server/index.ts,
- * outside the /api chain, the same way the casino aggregator's /callback is — a webhook needs the
- * exact raw request bytes for signature verification, not JSON-parsed body.
+ * the PaymentIntent id as the ledger idempotency key, so Stripe's automatic webhook retries (it
+ * retries on anything but a 2xx) never double-credit. Wired directly in server/index.ts, outside
+ * the /api chain, the same way the casino aggregator's /callback is — a webhook needs the exact
+ * raw request bytes for signature verification, not JSON-parsed body.
+ *
+ * All three deposit methods (card, MB WAY, Multibanco) land on the same event here: card confirms
+ * synchronously, MB WAY/Multibanco sit in the PaymentIntent's 'processing' status while the
+ * customer approves in their app or pays a voucher, but all three eventually fire
+ * payment_intent.succeeded (or payment_intent.payment_failed) — unlike the old Checkout Session
+ * integration, which split sync/async methods across different event types.
  */
 export async function handleStripeWebhook(pool: pg.Pool, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (url.pathname !== '/webhooks/stripe') return false;
@@ -38,44 +44,37 @@ export async function handleStripeWebhook(pool: pg.Pool, req: http.IncomingMessa
   }
 
   try {
-    // Card completes synchronously (checkout.session.completed arrives with payment_status
-    // already 'paid'). MB WAY and Multibanco are delayed: that same event arrives first with
-    // payment_status 'unpaid' (guarded out below), and the real confirmation is this second event
-    // once the customer approves in the MB WAY app or pays the Multibanco voucher. Both carry a
-    // Checkout Session in event.data.object, so the credit logic is identical either way.
-    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
-      const session = event.data.object as Stripe.Checkout.Session;
-      if (session.payment_status === 'paid') {
-        const userId = String(session.client_reference_id || session.metadata?.user_id || '');
-        const amount = Math.round(session.amount_total ?? 0) / 100;
-        if (userId && amount > 0) {
-          const idempotencyKey = `deposit:stripe:${session.id}`;
-          const result = await walletService.deposit(pool, { userId, amount, idempotencyKey, method: 'stripe', referenceId: session.id });
-          if (!result.replayed) {
-            await pool.query(
-              `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE stripe_session_id = $1`,
-              [session.id],
-            );
-            // Bonus Engine (spec §34): a first qualifying deposit may trigger the active WELCOME
-            // campaign. Best-effort — a failure here must never fail the deposit itself.
-            await maybeGrantWelcomeBonus(pool, userId, amount).catch(() => null);
-          }
-        } else {
-          console.error('[stripe-webhook] paid session missing user_id or amount', { sessionId: session.id });
+    if (event.type === 'payment_intent.succeeded') {
+      const intent = event.data.object as Stripe.PaymentIntent;
+      const userId = String(intent.metadata?.user_id || '');
+      const amount = Math.round(intent.amount_received || intent.amount || 0) / 100;
+      if (userId && amount > 0) {
+        const idempotencyKey = `deposit:stripe:${intent.id}`;
+        const result = await walletService.deposit(pool, { userId, amount, idempotencyKey, method: 'stripe', referenceId: intent.id });
+        if (!result.replayed) {
+          await pool.query(
+            `UPDATE transactions SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE stripe_session_id = $1`,
+            [intent.id],
+          );
+          // Bonus Engine (spec §34): a first qualifying deposit may trigger the active WELCOME
+          // campaign. Best-effort — a failure here must never fail the deposit itself.
+          await maybeGrantWelcomeBonus(pool, userId, amount).catch(() => null);
         }
+      } else {
+        console.error('[stripe-webhook] succeeded intent missing user_id or amount', { paymentIntentId: intent.id });
       }
-    } else if (event.type === 'checkout.session.async_payment_failed') {
-      // The MB WAY app confirmation or the Multibanco voucher expired/was declined. Mark the
-      // pending row as failed so it doesn't sit as "pending" forever — never touches the wallet.
-      const session = event.data.object as Stripe.Checkout.Session;
+    } else if (event.type === 'payment_intent.payment_failed') {
+      // MB WAY declined/expired, or a Multibanco voucher expired unpaid. Mark the pending row so
+      // it doesn't sit as "pending" forever — never touches the wallet.
+      const intent = event.data.object as Stripe.PaymentIntent;
       await pool.query(
         `UPDATE transactions SET status = 'failed', updated_at = NOW() WHERE stripe_session_id = $1 AND status = 'pending'`,
-        [session.id],
+        [intent.id],
       );
     }
   } catch (e) {
-    // Non-2xx tells Stripe to retry (safe: idempotent on session.id) rather than silently losing
-    // a confirmed payment.
+    // Non-2xx tells Stripe to retry (safe: idempotent on payment_intent.id) rather than silently
+    // losing a confirmed payment.
     console.error('[stripe-webhook] failed to process event:', e);
     sendJson(res, 500, { error: 'Internal error' });
     return true;
