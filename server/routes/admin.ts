@@ -7,6 +7,7 @@ import { WalletError, withTransaction, opCompleteWithdrawal, opCancelWithdrawal,
 import { resolveLegOutcome, resolveBetOutcome, type BetOutcome } from '../lib/settlementEngine';
 import { computeExposure, type ExposureBetInput } from '../lib/riskEngine';
 import { writeAuditLog, requestIp } from '../lib/audit';
+import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -457,6 +458,39 @@ export async function handleAdminRoutes(
     });
 
     sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // GET /api/admin/aml/alerts — AML monitoring (spec §36): behavioural indicators over the last
+  // 30 days of deposits/withdrawals, grouped by user. Flags for review; never blocks anything by
+  // itself — see server/lib/amlEngine.ts for exactly which indicators are computed and why.
+  if (req.method === 'GET' && path === '/api/admin/aml/alerts') {
+    const r = await pool.query(
+      `SELECT t.user_id, u.email, t.type, t.amount, t.created_at
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.type IN ('deposit', 'withdrawal') AND t.created_at > NOW() - INTERVAL '30 days'
+       ORDER BY t.user_id, t.created_at`,
+    );
+
+    const byUser = new Map<string, { email: string; txs: AmlTransaction[] }>();
+    for (const row of r.rows || []) {
+      const userId = String(row.user_id);
+      if (!byUser.has(userId)) byUser.set(userId, { email: String(row.email || ''), txs: [] });
+      byUser.get(userId)!.txs.push({
+        type: row.type === 'withdrawal' ? 'withdrawal' : 'deposit',
+        amount: toNumber(row.amount),
+        createdAt: new Date(row.created_at),
+      });
+    }
+
+    const now = new Date();
+    const flagged = Array.from(byUser.entries())
+      .map(([userId, { email, txs }]) => ({ userId, email, indicators: evaluateAmlIndicators(txs, now) }))
+      .filter((entry) => entry.indicators.length > 0)
+      .sort((a, b) => b.indicators.length - a.indicators.length);
+
+    sendJson(res, 200, { scannedUsers: byUser.size, flagged });
     return true;
   }
 
