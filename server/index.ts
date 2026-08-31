@@ -67,8 +67,12 @@ const safePool: any =
     }),
   } as any);
 
+// One key threaded through to whichever sports data provider is active (see
+// SPORTS_DATA_PROVIDER in server/routes/events.ts) — GoalServe's key takes priority only because
+// it's checked first; unrelated providers' keys are never mixed at runtime, only one is ever used.
 const sportsApiKey = String(
-  process.env.SPORTS_API_PRO_KEY ||
+  process.env.GOALSERVE_API_KEY ||
+    process.env.SPORTS_API_PRO_KEY ||
     process.env.SPORTSAPIPRO_KEY ||
     process.env.SPORTSAPI_PRO_KEY ||
     process.env.SPORTS_API_KEY ||
@@ -77,7 +81,7 @@ const sportsApiKey = String(
 ).trim();
 if (!sportsApiKey) {
   console.warn(
-    '[server] WARNING: No SportsAPI Pro key found. Sports data endpoints will return empty. Set SPORTS_API_KEY to enable.',
+    '[server] WARNING: No sports data API key found. Sports data endpoints will return empty. Set GOALSERVE_API_KEY (or SPORTS_API_KEY) to enable.',
   );
 }
 
