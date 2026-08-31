@@ -27,6 +27,8 @@ import {
   cancelCasinoFreeround,
   getCasinoTransactions,
   getCasinoTransactionsById,
+  getCasinoRoundDetails,
+  getCasinoUserStatistics,
 } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
@@ -1245,6 +1247,44 @@ export async function handleAdminRoutes(
     try {
       const transactions = await getCasinoTransactionsById(lastId, limit);
       sendJson(res, 200, { success: true, transactions });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/round-details?user_code=&round_id=&provider_id=&game_code= — per-round
+  // bet/win breakdown for one user's game round.
+  if (req.method === 'GET' && path === '/api/admin/casino/round-details') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const userCode = Number(url.searchParams.get('user_code') || 0);
+    const roundId = url.searchParams.get('round_id') || '';
+    const providerId = Number(url.searchParams.get('provider_id') || 0);
+    const gameCode = url.searchParams.get('game_code') || '';
+    if (!userCode || !roundId || !providerId || !gameCode) {
+      return badRequest(res, 'user_code, round_id, provider_id and game_code required'), true;
+    }
+    try {
+      const result = await getCasinoRoundDetails({ user_code: userCode, round_id: roundId, provider_id: providerId, game_code: gameCode });
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/user-statistics?start_time=&end_time=&offset=&limit= — paginated
+  // per-user statistics for a time range. Times are ISO 8601 (unlike /transactions above).
+  if (req.method === 'GET' && path === '/api/admin/casino/user-statistics') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const startTime = url.searchParams.get('start_time') || '';
+    const endTime = url.searchParams.get('end_time') || '';
+    if (!startTime || !endTime) return badRequest(res, 'start_time and end_time required'), true;
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const limit = Number(url.searchParams.get('limit') || 2000);
+    try {
+      const result = await getCasinoUserStatistics({ start_time: startTime, end_time: endTime, offset, limit });
+      sendJson(res, 200, { success: true, ...result });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }

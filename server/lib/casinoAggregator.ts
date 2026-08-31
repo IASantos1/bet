@@ -257,3 +257,41 @@ export async function getCasinoTransactions(query: CasinoTransactionQuery): Prom
 export async function getCasinoTransactionsById(lastId: number, limit = 10): Promise<CasinoTransaction[]> {
   return callAgent<CasinoTransaction[]>('/v4/game/transaction-id', { last_id: lastId, limit });
 }
+
+export interface CasinoRoundDetailsParams {
+  user_code: number;
+  round_id: string;
+  provider_id: number;
+  game_code: string;
+}
+
+/** Calls POST /v4/game/round-details — per-round breakdown (bets/wins within a single round_id)
+ *  for one user's game. Confirmed live to fail with code 2002 / USER_NOT_FOUND for a user_code
+ *  that doesn't exist, matching the exact request shape the API expects. Success response shape
+ *  is unconfirmed. */
+export async function getCasinoRoundDetails(params: CasinoRoundDetailsParams): Promise<unknown> {
+  return callAgent<unknown>('/v4/game/round-details', params);
+}
+
+export interface CasinoUserStatisticsQuery {
+  /** ISO 8601, unlike the "YYYY-MM-DD HH:mm:ss" format used by /v4/game/transaction. */
+  start_time: string;
+  end_time: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface CasinoUserStatisticsResult {
+  total: number;
+  offset: number;
+  count: number;
+  list: unknown[];
+}
+
+/** Calls POST /v4/statistics/user — paginated per-user statistics for a time range. Confirmed
+ *  live: `{ total: 0, offset, count: 0, list: [] }` for a range with no activity; list item shape
+ *  is unconfirmed (left as unknown[] rather than guessed). Note this endpoint lives outside the
+ *  /v4/game/* namespace unlike every other endpoint wrapped so far. */
+export async function getCasinoUserStatistics(query: CasinoUserStatisticsQuery): Promise<CasinoUserStatisticsResult> {
+  return callAgent<CasinoUserStatisticsResult>('/v4/statistics/user', { offset: 0, limit: 2000, ...query });
+}
