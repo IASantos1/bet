@@ -5,7 +5,7 @@ type Tab = {
   to: string;
   label: string;
   match: (path: string) => boolean;
-  icon: (active: boolean) => React.ReactNode;
+  icon: (darkMode: boolean) => React.ReactNode;
 };
 
 const iconProps = {
@@ -34,11 +34,29 @@ const TABS: Tab[] = [
     to: '/live',
     label: 'Ao Vivo',
     match: (p) => p.startsWith('/live'),
-    icon: () => (
-      <svg {...iconProps} className="w-[22px] h-[22px]">
-        <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" />
-        <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
-      </svg>
+    icon: (darkMode: boolean) => (
+      <span className="relative inline-block">
+        <svg viewBox="0 0 24 24" className="w-[23px] h-[23px]" style={{ filter: 'drop-shadow(0 0 3px rgba(239,68,68,0.55))' }}>
+          <defs>
+            <linearGradient id="tabHeartbeatGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="1" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0.7" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M2 12h3.5l1.8-4.5L10 17l2-9 1.6 4h2.9L18 8.5 19.5 12H22"
+            fill="none"
+            stroke="url(#tabHeartbeatGrad)"
+            strokeWidth="2.1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span
+          className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 animate-pulse ${darkMode ? 'ring-gray-900' : 'ring-white'}`}
+          style={{ background: 'radial-gradient(circle at 32% 28%, #ff8a80, #dc2626 65%, #a91c1c)', boxShadow: '0 0 4px rgba(220,38,38,0.8)' }}
+        />
+      </span>
     ),
   },
   {
@@ -46,10 +64,22 @@ const TABS: Tab[] = [
     label: 'Casino',
     match: (p) => p.startsWith('/casino'),
     icon: () => (
-      <svg {...iconProps} className="w-[22px] h-[22px]">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="9" strokeDasharray="2.4 3.4" />
-        <path d="M12 7v10M8.5 12h7" />
+      <svg viewBox="0 0 24 24" className="w-[23px] h-[23px]" style={{ filter: 'drop-shadow(0 1px 1.5px rgba(0,0,0,0.25))' }}>
+        <defs>
+          <linearGradient id="tabDieFace" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#fff" stopOpacity="0.55" />
+            <stop offset="55%" stopColor="#fff" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#000" stopOpacity="0.12" />
+          </linearGradient>
+        </defs>
+        <rect x="2.5" y="2.5" width="10" height="10" rx="2.2" fill="currentColor" fillOpacity="0.12" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="2.5" y="2.5" width="10" height="10" rx="2.2" fill="url(#tabDieFace)" />
+        <circle cx="7.5" cy="7.5" r="1.2" fill="#ef4444" />
+        <rect x="11.5" y="11.5" width="10" height="10" rx="2.2" fill="currentColor" fillOpacity="0.12" stroke="currentColor" strokeWidth="1.6" />
+        <rect x="11.5" y="11.5" width="10" height="10" rx="2.2" fill="url(#tabDieFace)" />
+        <circle cx="14.4" cy="14.4" r="1.1" fill="#ef4444" />
+        <circle cx="16.5" cy="16.5" r="1.1" fill="#ef4444" />
+        <circle cx="18.6" cy="18.6" r="1.1" fill="#ef4444" />
       </svg>
     ),
   },
@@ -104,7 +134,7 @@ export function BottomTabBar() {
                 active ? 'opacity-100' : 'opacity-0'
               }`}
             />
-            {tab.icon(active)}
+            {tab.icon(darkMode)}
             <span className="text-[9.5px] font-semibold tracking-tight">{tab.label}</span>
           </button>
         );

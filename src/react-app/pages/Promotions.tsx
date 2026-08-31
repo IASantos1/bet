@@ -159,7 +159,7 @@ function PromoCard({ icon, tag, title, subtitle, highlight, gradient, glowColor,
    Main Promotions page
 ───────────────────────────────────────────── */
 export default function Promotions() {
-  const { user } = useApp();
+  const { user, darkMode } = useApp();
   const { progress, loading } = usePromotionProgress(user?.id);
 
   const bonusReceived = Math.min(progress.deposit, 100);
@@ -169,7 +169,7 @@ export default function Promotions() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#080d18] flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#080d18]' : 'bg-gray-50'}`}>
         <div className="w-12 h-12 rounded-full border-2 border-yellow-500 border-t-transparent animate-spin" />
       </div>
     );
@@ -239,7 +239,7 @@ export default function Promotions() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#080d18] text-white" style={{ fontFamily: 'Inter, sans-serif' }}>
+    <div className={`min-h-screen ${darkMode ? 'bg-[#080d18] text-white' : 'bg-gray-50 text-gray-900'}`} style={{ fontFamily: 'Inter, sans-serif' }}>
 
       {/* ── Global keyframe styles ── */}
       <style>{`
@@ -292,13 +292,15 @@ export default function Promotions() {
       <section className="relative min-h-[520px] flex flex-col items-center justify-center overflow-hidden px-4 pt-16 pb-12">
 
         {/* Deep gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0a0f1e] via-[#0d1528] to-[#110820]" />
+        <div className={`absolute inset-0 bg-gradient-to-br ${darkMode ? 'from-[#0a0f1e] via-[#0d1528] to-[#110820]' : 'from-white via-orange-50/60 to-red-50'}`} />
 
         {/* Grid lines */}
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)',
+            backgroundImage: darkMode
+              ? 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)'
+              : 'linear-gradient(rgba(0,0,0,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.5) 1px, transparent 1px)',
             backgroundSize: '60px 60px',
           }}
         />
@@ -337,10 +339,10 @@ export default function Promotions() {
           <h1 className="text-5xl md:text-7xl font-black mb-4 leading-none tracking-tight">
             <span className="gold-text">BÓNUS</span>
             <br />
-            <span className="text-white">& OFERTAS</span>
+            <span className={darkMode ? 'text-white' : 'text-gray-900'}>& OFERTAS</span>
           </h1>
 
-          <p className="text-white/50 text-base md:text-lg mb-8 max-w-xl mx-auto">
+          <p className={`${darkMode ? 'text-white/50' : 'text-gray-600'} text-base md:text-lg mb-8 max-w-xl mx-auto`}>
             Multiplica os teus ganhos com as melhores promoções de apostas desportivas em Portugal.
           </p>
 
@@ -511,11 +513,15 @@ export default function Promotions() {
             <div
               key={s.label}
               className="rounded-2xl p-4 flex flex-col items-center text-center"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+              style={{
+                background: darkMode ? 'rgba(255,255,255,0.04)' : '#ffffff',
+                border: darkMode ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.08)',
+                boxShadow: darkMode ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
+              }}
             >
               <span className="text-2xl mb-1">{s.icon}</span>
-              <span className="text-xl font-black text-white">{s.value}</span>
-              <span className="text-white/40 text-xs">{s.label}</span>
+              <span className={`text-xl font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{s.value}</span>
+              <span className={`${darkMode ? 'text-white/40' : 'text-gray-500'} text-xs`}>{s.label}</span>
             </div>
           ))}
         </div>
@@ -524,9 +530,9 @@ export default function Promotions() {
       {/* ────────── PROMO CARDS GRID ────────── */}
       <section className="px-4 pb-12 max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6" style={{ animation: 'fadeSlideUp 0.6s 0.2s both' }}>
-          <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12))' }} />
-          <h2 className="text-white font-black text-lg uppercase tracking-widest">Outras Promoções</h2>
-          <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.12), transparent)' }} />
+          <div className="h-px flex-1" style={{ background: darkMode ? 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12))' : 'linear-gradient(90deg, transparent, rgba(0,0,0,0.12))' }} />
+          <h2 className={`${darkMode ? 'text-white' : 'text-gray-900'} font-black text-lg uppercase tracking-widest`}>Outras Promoções</h2>
+          <div className="h-px flex-1" style={{ background: darkMode ? 'linear-gradient(90deg, rgba(255,255,255,0.12), transparent)' : 'linear-gradient(90deg, rgba(0,0,0,0.12), transparent)' }} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -584,15 +590,16 @@ export default function Promotions() {
         <div
           className="rounded-2xl p-6"
           style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: darkMode ? 'rgba(255,255,255,0.03)' : '#ffffff',
+            border: darkMode ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.08)',
+            boxShadow: darkMode ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
             animation: 'fadeSlideUp 0.7s 0.4s both',
           }}
         >
-          <h3 className="text-white/60 font-bold text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
+          <h3 className={`${darkMode ? 'text-white/60' : 'text-gray-500'} font-bold text-sm uppercase tracking-widest mb-4 flex items-center gap-2`}>
             <span>📜</span> Termos & Condições
           </h3>
-          <ul className="space-y-2 text-xs text-white/35 leading-relaxed">
+          <ul className={`space-y-2 text-xs ${darkMode ? 'text-white/35' : 'text-gray-400'} leading-relaxed`}>
             {[
               'Todas as promoções estão sujeitas aos Termos e Condições Gerais da plataforma.',
               'Depósito mínimo para bónus: 10€. Bónus máximo de boas-vindas: 100€.',
@@ -604,7 +611,7 @@ export default function Promotions() {
               'A plataforma reserva-se o direito de alterar ou cancelar promoções a qualquer momento.',
             ].map((t, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className="shrink-0 mt-0.5 text-white/20">·</span>
+                <span className={`shrink-0 mt-0.5 ${darkMode ? 'text-white/20' : 'text-gray-300'}`}>·</span>
                 {t}
               </li>
             ))}
