@@ -16,6 +16,7 @@ import {
 } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError } from '../lib/bettingEngine';
 import { maybeGrantWelcomeBonus, applyBonusWagering } from '../lib/bonusService';
+import { isStripeConfigured, createDepositCheckoutSession, DEPOSIT_METHODS, type DepositMethod } from '../lib/stripePayments';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
@@ -163,51 +164,51 @@ export async function handleWalletRoutes(
   // ---- Deposits: every deposit is a confirmed-payment credit into the ledger. ----
   // `external_id` (PSP transaction/session id) is the natural idempotency key: replaying the
   // same PSP webhook or client confirmation twice never credits the wallet twice (spec §9, §65).
+  //
+  // There is deliberately no client-callable endpoint that credits the wallet directly off a
+  // client-supplied amount — that would let anyone with a valid session mint their own balance.
+  // Real money only ever enters the ledger from a payment provider's own server-to-server
+  // confirmation: the Stripe webhook below (walletService.deposit() is otherwise unreachable
+  // from an HTTP route in this file).
 
-  const doDeposit = async (method: string, minAmount: number, description: (amount: number) => string) => {
+  // POST /api/wallet/deposit/stripe/checkout — starts a real Stripe Checkout session for a card
+  // deposit. No wallet credit happens here; that only happens once Stripe's webhook confirms the
+  // payment (POST /api/webhooks/stripe below).
+  if (req.method === 'POST' && path === '/api/wallet/deposit/stripe/checkout') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
+    if (!isStripeConfigured()) return badRequest(res, 'Depósitos indisponíveis de momento'), true;
 
     const body = await readJsonBody<any>(req).catch(() => null);
     if (!body) return badRequest(res, 'Invalid JSON'), true;
     const amount = toNumber(body.amount);
-    if (!amount || amount < minAmount) return badRequest(res, `Valor mínimo €${minAmount}`), true;
+    if (!amount || amount < 10) return badRequest(res, 'Valor mínimo €10'), true;
+    const methodRaw = String(body.method || 'card');
+    if (!DEPOSIT_METHODS.includes(methodRaw as DepositMethod)) return badRequest(res, 'Método de pagamento inválido'), true;
+    const method = methodRaw as DepositMethod;
 
-    const externalId = body.external_id ? String(body.external_id) : null;
-    const idempotencyKey = resolveIdempotencyKey(req, body, externalId ? `deposit:${method}:${externalId}` : null);
+    const methodLabel = method === 'card' ? 'Cartão' : method === 'mb_way' ? 'MB WAY' : 'Multibanco';
 
     try {
-      const result = await walletService.deposit(pool, { userId: u.id, amount, idempotencyKey, method, referenceId: externalId ?? undefined });
-      if (!result.replayed) {
-        await recordTransaction(pool, {
-          id: result.transactionId,
-          userId: u.id,
-          type: 'deposit',
-          amount,
-          status: 'completed',
-          method,
-          description: description(amount),
-          externalId,
-        });
-        // Bonus Engine (spec §34): a first qualifying deposit may trigger the active WELCOME
-        // campaign. Best-effort — a failure here must never fail the deposit itself.
-        await maybeGrantWelcomeBonus(pool, u.id, amount).catch(() => null);
-      }
-      sendJson(res, 200, { ok: true, balance: result.wallet.available, id: result.transactionId });
-    } catch (e) {
-      if (!handleWalletError(res, e)) throw e;
+      const session = await createDepositCheckoutSession({ userId: u.id, amount, method, email: u.email });
+      const txId = randomId(16);
+      await recordTransaction(pool, {
+        id: txId,
+        userId: u.id,
+        type: 'deposit',
+        amount,
+        status: 'pending',
+        method: `stripe_${method}`,
+        description: `Depósito via ${methodLabel} (Stripe) - €${amount.toFixed(2)}`,
+      });
+      // Tag the row with the Stripe session id so the webhook can find it later.
+      // recordTransaction() doesn't take stripe_session_id (kept out of its generic signature).
+      await pool.query(`UPDATE transactions SET stripe_session_id = $2 WHERE id = $1`, [txId, session.sessionId]);
+      sendJson(res, 200, { ok: true, url: session.url, session_id: session.sessionId });
+    } catch (e: any) {
+      sendJson(res, 502, { error: 'Não foi possível iniciar o pagamento', details: String(e?.message || e) });
     }
     return true;
-  };
-
-  // POST /api/wallet/deposit — credit balance after payment confirmation
-  if (req.method === 'POST' && path === '/api/wallet/deposit') {
-    return doDeposit('manual', 1, (amount) => `Depósito - €${amount.toFixed(2)}`);
-  }
-
-  // POST /api/wallet/deposit/card — Stripe/PayPal card deposit
-  if (req.method === 'POST' && path === '/api/wallet/deposit/card') {
-    return doDeposit('card', 10, (amount) => `Depósito via Cartão - €${amount.toFixed(2)}`);
   }
 
   // POST /api/wallet/deposit/mbway — MB WAY deposit (stays pending until the provider confirms; no wallet credit yet)

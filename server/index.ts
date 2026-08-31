@@ -11,6 +11,8 @@ import { createEventsService } from './routes/events';
 import { handleUsersRoutes } from './routes/users';
 import { handleAdminRoutes } from './routes/admin';
 import { handleCasinoCallback } from './routes/casinoCallback';
+import { handleCasinoRoutes } from './routes/casino';
+import { handleStripeWebhook } from './routes/stripeWebhook';
 import { createLiveWs } from './ws/liveWs';
 
 const loadEnvFile = (filePath: string) => {
@@ -169,6 +171,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === '/webhooks/stripe') {
+      if (pool && (await handleStripeWebhook(pool, req, res, url))) return;
+      sendJson(res, 503, { error: 'Database unavailable' });
+      return;
+    }
+
     const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
     if (isApi) {
       if (req.method === 'GET' && url.pathname === '/api/pricing/config') {
@@ -177,6 +185,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (await events.handleEventsRoutes(req, res, url)) return;
+      if (await handleCasinoRoutes(req, res, url)) return;
       if (!dbReady) {
         if (url.pathname === '/api/auth/me' && req.method === 'GET') {
           sendJson(res, 200, { user: null });
