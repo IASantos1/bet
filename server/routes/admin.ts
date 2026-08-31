@@ -988,6 +988,20 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /api/admin/casino/callback-log — every raw payload POST /callback has captured, newest
+  // first. This is how the aggregator's real webhook contract gets learned (spec: see
+  // server/routes/casinoCallback.ts) until real docs replace the guesswork.
+  if (req.method === 'GET' && path === '/api/admin/casino/callback-log') {
+    const r = await pool.query(
+      `SELECT id, headers, body_raw, body_json, ip, created_at
+       FROM casino_callback_log
+       ORDER BY created_at DESC
+       LIMIT 100`,
+    );
+    sendJson(res, 200, { entries: r.rows || [] });
+    return true;
+  }
+
   return badRequest(res, 'Not supported'), true;
 }
 

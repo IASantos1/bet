@@ -250,6 +250,20 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     // One active bonus per user at a time — enforced by the database, not just app logic.
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_user_bonuses_one_active ON user_bonuses(user_id) WHERE status = 'ACTIVE'`,
     `CREATE INDEX IF NOT EXISTS idx_user_bonuses_user ON user_bonuses(user_id, granted_at DESC)`,
+
+    // ---- Casino aggregator callback capture ----
+    // Insert-only capture of every raw payload the GoldSlotPalace (or compatible) aggregator
+    // POSTs to /callback, so the real contract can be read back once they call it — there is no
+    // official schema documented yet, so nothing here is processed against the wallet until one is.
+    `CREATE TABLE IF NOT EXISTS casino_callback_log (
+      id          TEXT        PRIMARY KEY,
+      headers     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+      body_raw    TEXT,
+      body_json   JSONB,
+      ip          TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_casino_callback_log_created ON casino_callback_log(created_at DESC)`,
   ];
 
   const client = await pool.connect();

@@ -10,6 +10,7 @@ import { handleFavoriteRoutes } from './routes/favorites';
 import { createEventsService } from './routes/events';
 import { handleUsersRoutes } from './routes/users';
 import { handleAdminRoutes } from './routes/admin';
+import { handleCasinoCallback } from './routes/casinoCallback';
 import { createLiveWs } from './ws/liveWs';
 
 const loadEnvFile = (filePath: string) => {
@@ -159,6 +160,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/health') {
       sendJson(res, 200, { ok: true, db: dbReady });
+      return;
+    }
+
+    if (url.pathname === '/callback') {
+      if (pool && (await handleCasinoCallback(pool, req, res, url))) return;
+      sendJson(res, 503, { code: 1, message: 'DB_UNAVAILABLE' });
       return;
     }
 
