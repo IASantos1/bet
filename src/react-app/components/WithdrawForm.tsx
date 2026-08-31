@@ -7,12 +7,15 @@ export function WithdrawForm() {
   const { addNotification, user } = useApp();
   
   // Withdraw State
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(10);
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(20);
   const [hasIban, setHasIban] = useState<boolean | null>(null); // null = loading
   const [savedIban, setSavedIban] = useState<string>('');
   const [savedHolder, setSavedHolder] = useState<string>('');
   const [newIban, setNewIban] = useState('');
   const [holderName, setHolderName] = useState('');
+  const [nif, setNif] = useState('');
+  const [documentType, setDocumentType] = useState<'cc' | 'passport'>('cc');
+  const [documentNumber, setDocumentNumber] = useState('');
   const [withdrawLoading, setWithdrawLoading] = useState(false);
 
   // Get user country IBAN placeholder
@@ -38,7 +41,7 @@ export function WithdrawForm() {
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (withdrawAmount < 10) return addNotification({ type: 'error', message: 'Mínimo €10' });
+    if (withdrawAmount < 20) return addNotification({ type: 'error', message: 'Mínimo €20' });
     if (!hasIban && (!newIban || !holderName)) return addNotification({ type: 'error', message: 'Preencha o IBAN e Titular' });
 
     setWithdrawLoading(true);
@@ -70,20 +73,23 @@ export function WithdrawForm() {
 
   const handleSaveIban = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newIban || !holderName) return addNotification({ type: 'error', message: 'Preencha todos os campos' });
+    if (!newIban || !holderName || !nif || !documentNumber) {
+      return addNotification({ type: 'error', message: 'Preencha todos os campos' });
+    }
+    if (!/^\d{9}$/.test(nif)) return addNotification({ type: 'error', message: 'NIF inválido — deve ter 9 dígitos' });
     setWithdrawLoading(true);
     try {
         const data = await apiFetch<any>('/api/users/iban', {
             method: 'POST',
-            body: JSON.stringify({ iban: newIban, holder_name: holderName })
+            body: JSON.stringify({ iban: newIban, holder_name: holderName, nif, document_type: documentType, document_number: documentNumber })
         });
-        
-        addNotification({ type: 'success', message: 'IBAN guardado com sucesso' });
+
+        addNotification({ type: 'success', message: 'Dados guardados com sucesso' });
         setHasIban(true);
-        setSavedIban(data.iban);
+        setSavedIban(data.iban_masked || newIban);
         setSavedHolder(holderName);
     } catch (err: any) {
-        addNotification({ type: 'error', message: err.message || 'Erro ao guardar IBAN' });
+        addNotification({ type: 'error', message: err.message || 'Erro ao guardar dados' });
     } finally {
         setWithdrawLoading(false);
     }
@@ -130,12 +136,53 @@ export function WithdrawForm() {
                 />
             </div>
 
+            <div>
+                <label className="block text-sm font-medium mb-2">NIF</label>
+                <input
+                type="text"
+                inputMode="numeric"
+                value={nif}
+                onChange={(e) => setNif(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                placeholder="123456789"
+                className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                required
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium mb-2">Documento de Identificação</label>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button
+                        type="button"
+                        onClick={() => setDocumentType('cc')}
+                        className={`py-2.5 rounded-xl text-sm font-semibold border transition-colors ${documentType === 'cc' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-gray-700'}`}
+                    >
+                        Cartão de Cidadão
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setDocumentType('passport')}
+                        className={`py-2.5 rounded-xl text-sm font-semibold border transition-colors ${documentType === 'passport' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-gray-700'}`}
+                    >
+                        Passaporte
+                    </button>
+                </div>
+                <input
+                type="text"
+                value={documentNumber}
+                onChange={(e) => setDocumentNumber(e.target.value.toUpperCase())}
+                placeholder={documentType === 'cc' ? 'Número do CC' : 'Número do Passaporte'}
+                className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                required
+                />
+            </div>
+
             <button
                 type="submit"
                 disabled={withdrawLoading}
                 className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {withdrawLoading ? 'A guardar...' : 'Guardar IBAN'}
+                {withdrawLoading ? 'A guardar...' : 'Guardar Dados'}
             </button>
         </form>
       ) : user?.kyc_status !== 'verified' ? (
@@ -172,9 +219,9 @@ export function WithdrawForm() {
               value={withdrawAmount}
               onChange={(e) => setWithdrawAmount(Number(e.target.value))}
               className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent focus:ring-2 focus:ring-blue-500 outline-none"
-              min="10"
+              min="20"
             />
-            <p className="text-xs text-gray-500 mt-1">Mínimo: €10.00</p>
+            <p className="text-xs text-gray-500 mt-1">Mínimo: €20.00</p>
           </div>
 
           <button

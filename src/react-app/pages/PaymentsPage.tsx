@@ -3,6 +3,7 @@ import { loadStripe, type Stripe as StripeJs } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useApp } from '@/react-app/contexts/AppContext';
 import { apiFetch } from '@/react-app/utils/api';
+import { DepositWithdrawTabs } from '@/react-app/components/DepositWithdrawTabs';
 
 // Mirrors DepositMethod in server/lib/stripePayments.ts — kept as a plain literal union here
 // rather than a cross-boundary import, since that file also pulls in the server-only `stripe` npm
@@ -247,6 +248,7 @@ export default function PaymentsPage() {
   return (
     <div className={`min-h-screen p-4 md:p-8 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       <div className={`max-w-md mx-auto rounded-2xl shadow-xl overflow-hidden ${cardBg}`}>
+        <DepositWithdrawTabs active="deposit" />
         <h2 className="text-xl font-bold text-center pt-6">💰 Depositar</h2>
 
         {done ? (

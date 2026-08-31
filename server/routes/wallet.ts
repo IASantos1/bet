@@ -286,13 +286,25 @@ export async function handleWalletRoutes(
     const amount = toNumber(body.amount ?? body.amount_eur);
     if (!amount || amount < 20) return badRequest(res, 'Valor mínimo de levantamento é €20'), true;
 
+    // The withdrawal form only resends iban/holder_name/nif the first time (while saving them via
+    // POST /api/users/iban); every withdrawal after that relies on the saved profile values below
+    // rather than the request body, so a request that omits them never silently loses the payout
+    // details.
+    let iban = String(body.iban || body.accountDetails?.iban || '').trim();
+    let holderName = String(body.holder_name || body.accountDetails?.accountHolder || '').trim();
+    let nif = String(body.nif || '').trim();
+    if (!iban || !holderName || !nif) {
+      const saved = await pool.query(`SELECT iban, iban_holder_name, nif FROM profiles WHERE user_id = $1 LIMIT 1`, [u.id]);
+      const row = saved.rows?.[0];
+      if (!iban) iban = String(row?.iban || '');
+      if (!holderName) holderName = String(row?.iban_holder_name || '');
+      if (!nif) nif = String(row?.nif || '');
+    }
+    if (!iban || !holderName || !nif) return badRequest(res, 'Dados de levantamento em falta — guarde o IBAN primeiro'), true;
+
     const withdrawalId = randomId(16);
     const idempotencyKey = resolveIdempotencyKey(req, body, null);
-    const meta = JSON.stringify({
-      iban: String(body.iban || body.accountDetails?.iban || ''),
-      holder_name: String(body.holder_name || body.accountDetails?.accountHolder || ''),
-      nif: String(body.nif || ''),
-    });
+    const meta = JSON.stringify({ iban, holder_name: holderName, nif });
 
     try {
       const result = await opWithdrawTx(pool, { userId: u.id, amount, idempotencyKey, withdrawalId });

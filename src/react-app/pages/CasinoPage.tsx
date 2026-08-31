@@ -17,6 +17,11 @@ const HERO_SLIDES = [
   { title: 'Casino Ao Vivo', subtitle: 'Dealers reais, em direto', emoji: '🎥', gradient: 'from-rose-600 via-red-600 to-orange-600' },
 ];
 
+// Curated by request — matched against the real catalog by a case-insensitive substring on
+// game_name, in this order. A fragment with nothing matching it in the real (aggregator-fetched)
+// catalog is simply skipped, never faked; add more fragments here as needed.
+const FEATURED_GAME_FRAGMENTS = ['Gates of Olympus', 'Big Bass Bonanza 1000', 'Sweet Bonanza 2500', 'The Dog House', 'Buffalo'];
+
 const FALLBACK_GRADIENTS = [
   'from-pink-500 to-purple-600',
   'from-amber-500 to-purple-700',
@@ -132,6 +137,27 @@ export default function CasinoPage() {
     return Array.from(set).sort();
   }, [games]);
 
+  const featured = useMemo(() => {
+    const picked: RemoteGame[] = [];
+    const used = new Set<string>();
+    for (const fragment of FEATURED_GAME_FRAGMENTS) {
+      const match = games.find((g) => !used.has(g.game_code) && g.game_name.toLowerCase().includes(fragment.toLowerCase()));
+      if (match) {
+        picked.push(match);
+        used.add(match.game_code);
+      }
+    }
+    // Pad up to 7 with other real games so the row isn't sparse when few featured titles match.
+    for (const g of games) {
+      if (picked.length >= 7) break;
+      if (!used.has(g.game_code)) {
+        picked.push(g);
+        used.add(g.game_code);
+      }
+    }
+    return picked;
+  }, [games]);
+
   const filtered = games.filter(
     (g) => (filter === 'Todos' || g.category === filter) && g.game_name.toLowerCase().includes(query.trim().toLowerCase()),
   );
@@ -194,15 +220,15 @@ export default function CasinoPage() {
           </div>
         </div>
 
-        {/* Popular games row */}
-        {games.length > 0 && (
+        {/* Featured games row — curated titles, matched against the real catalog */}
+        {featured.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xl">🔥</span>
-              <h2 className="font-black uppercase tracking-wide text-sm">Jogos Populares</h2>
+              <h2 className="font-black uppercase tracking-wide text-sm">Jogos em Destaque</h2>
             </div>
             <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-              {games.slice(0, 7).map((g) => (
+              {featured.map((g) => (
                 <GameCard key={g.game_code} game={g} big onPlay={notifySoon} />
               ))}
             </div>
