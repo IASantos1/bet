@@ -5,13 +5,14 @@ import { readJsonBody, sendJson, badRequest, unauthorized, resolveIdempotencyKey
 import { requireUser } from '../lib/auth';
 import { WalletError, withTransaction, opReserveForBet, opCashout } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError, makeH2HOddsResolver } from '../lib/bettingEngine';
+import { applyBonusWagering } from '../lib/bonusService';
 import type { EventsService } from './events';
 
 type PlaceBetBody = {
   type?: 'single' | 'multi';
   stake?: number;
   use_freebet?: boolean;
-  bets?: Array<{ event_id: string | number; selection: string; odd: number; stake?: number }>;
+  bets?: Array<{ event_id: string | number; selection: string; odd: number; stake?: number; odds_version?: number }>;
 };
 
 function toNumber(v: any): number {
@@ -110,6 +111,7 @@ export async function handleBetRoutes(
       event_id: b.event_id,
       selection: String(b.selection || ''),
       odd: toNumber(b.odd),
+      odds_version: b.odds_version != null ? Number(b.odds_version) : undefined,
       stake: b.stake != null ? toNumber(b.stake) : undefined,
       team_match: String((b as any).team_match || ''),
       league: String((b as any).league || ''),
@@ -131,7 +133,7 @@ export async function handleBetRoutes(
     try {
       // Betting Engine (spec §20): odds/limit checks run before a single euro is reserved.
       await validateBetRequest({
-        legs: payloadSelections.map((s) => ({ eventId: String(s.event_id ?? ''), selection: s.selection, odd: s.odd })),
+        legs: payloadSelections.map((s) => ({ eventId: String(s.event_id ?? ''), selection: s.selection, odd: s.odd, oddsVersion: s.odds_version })),
         stake,
         totalOdds,
         resolveOdds: makeH2HOddsResolver((eventId) => events.getEventOdds(eventId)),
@@ -148,6 +150,9 @@ export async function handleBetRoutes(
         }
         return reservation;
       });
+      if (!result.replayed) {
+        await applyBonusWagering(pool, u.id, stake, totalOdds).catch(() => null);
+      }
       sendJson(res, 200, { success: true, id: betId, balance: result.wallet.available });
     } catch (e) {
       if (!handleWalletError(res, e)) throw e;

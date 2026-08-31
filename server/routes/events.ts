@@ -15,6 +15,7 @@ import {
 } from '../services/sportsApiPro';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
 import { sendJson, badRequest } from '../lib/http';
+import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
 
 type CacheEntry<T> = { ts: number; data: T };
 
@@ -77,7 +78,17 @@ export type EventsService = {
   getAdminOddsEvents: () => Promise<any[]>;
   setOddsOverride: (eventId: string, odds: { home_odd?: number; draw_odd?: number; away_odd?: number }) => Promise<void>;
   /** Current published H2H (1x2) odds for an event, for server-side bet-price validation. Null if unresolvable. */
-  getEventOdds: (eventId: string, sport?: string) => Promise<{ home: number; draw: number; away: number; markets: any } | null>;
+  getEventOdds: (
+    eventId: string,
+    sport?: string,
+  ) => Promise<{
+    home: number;
+    draw: number;
+    away: number;
+    markets: any;
+    /** Odds versioning (spec §16-17): current version per H2H selection, bumped whenever the price actually changes. */
+    versions: { home: number; draw: number; away: number };
+  } | null>;
   /** Official result for the Settlement Engine (spec §27-28). Null if the event can't be resolved at all. */
   getEventResult: (
     eventId: string,
@@ -101,6 +112,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const lastEventById = new Map<string, CacheEntry<AnyEvent>>();
   const liveSeen = new Map<string, CacheEntry<{ sport: string; event: AnyEvent }>>();
   const overridesCache = new Map<string, CacheEntry<{ home_odd: number | null; draw_odd: number | null; away_odd: number | null }>>();
+  const oddsVersionStore = createOddsStore();
 
   const normalizeMatchId = (sport: string, rawId: string): string => {
     const id = String(rawId || '').trim();
@@ -1240,13 +1252,10 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const oddsMatch = path.match(/^\/api\/events\/([^/]+)\/odds$/);
     if (oddsMatch && req.method === 'GET') {
       const idRaw = decodeURIComponent(oddsMatch[1] || '');
-      const id = normalizeIdLoose(idRaw);
       const sportParam = String(url.searchParams.get('sport') || '').trim();
-      const sport = sportParam || await resolveSport(id);
-      if (!sport) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
-      const odds = await fetchOddsStrict(sport, id, { forceAll: true }).catch(() => null);
-      const markets = odds?.markets || {};
-      sendJson(res, 200, { home: odds?.home || 0, draw: odds?.draw || 0, away: odds?.away || 0, markets });
+      const odds = await getEventOdds(idRaw, sportParam || undefined);
+      if (!odds) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
+      sendJson(res, 200, odds);
       return true;
     }
 
@@ -1479,14 +1488,25 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const getEventOdds = async (
     eventId: string,
     sportHint?: string,
-  ): Promise<{ home: number; draw: number; away: number; markets: any } | null> => {
+  ): Promise<{ home: number; draw: number; away: number; markets: any; versions: { home: number; draw: number; away: number } } | null> => {
     const id = normalizeIdLoose(String(eventId || ''));
     if (!id) return null;
     const sport = (sportHint && String(sportHint).trim()) || (await resolveSport(id).catch(() => null));
     if (!sport) return null;
     const odds = await fetchOddsStrict(sport, id, { forceAll: true }).catch(() => null);
     if (!odds) return null;
-    return { home: Number(odds.home || 0), draw: Number(odds.draw || 0), away: Number(odds.away || 0), markets: odds.markets || {} };
+
+    const home = Number(odds.home || 0);
+    const draw = Number(odds.draw || 0);
+    const away = Number(odds.away || 0);
+    const now = nowMs();
+    const versions = {
+      home: home > 0 ? recordOdd(oddsVersionStore, oddsKey(id, 'h2h', 'home'), home, now).snapshot.version : 0,
+      draw: draw > 0 ? recordOdd(oddsVersionStore, oddsKey(id, 'h2h', 'draw'), draw, now).snapshot.version : 0,
+      away: away > 0 ? recordOdd(oddsVersionStore, oddsKey(id, 'h2h', 'away'), away, now).snapshot.version : 0,
+    };
+
+    return { home, draw, away, markets: odds.markets || {}, versions };
   };
 
   const getEventResult = async (

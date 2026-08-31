@@ -215,6 +215,37 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id)`,
     `CREATE INDEX IF NOT EXISTS idx_audit_logs_operator ON audit_logs(operator_id, created_at DESC)`,
+
+    // ---- Bonus Engine (spec §34) ----
+    `CREATE TABLE IF NOT EXISTS bonus_campaigns (
+      id                  TEXT          PRIMARY KEY,
+      name                TEXT          NOT NULL,
+      type                TEXT          NOT NULL,
+      active              BOOLEAN       NOT NULL DEFAULT TRUE,
+      minimum_deposit     NUMERIC(18,2) NOT NULL DEFAULT 0,
+      bonus_percent       NUMERIC(6,3)  NOT NULL DEFAULT 0,
+      maximum_bonus       NUMERIC(18,2) NOT NULL,
+      wagering_multiplier NUMERIC(6,2)  NOT NULL DEFAULT 1,
+      minimum_odds        NUMERIC(6,2)  NOT NULL DEFAULT 1.0,
+      expiry_days         INTEGER       NOT NULL DEFAULT 30,
+      max_conversion      NUMERIC(18,2),
+      created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_bonuses (
+      id                 TEXT          PRIMARY KEY,
+      user_id            TEXT          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      campaign_id        TEXT          NOT NULL REFERENCES bonus_campaigns(id),
+      amount             NUMERIC(18,2) NOT NULL,
+      wagering_required  NUMERIC(18,2) NOT NULL,
+      wagering_progress  NUMERIC(18,2) NOT NULL DEFAULT 0,
+      status             TEXT          NOT NULL DEFAULT 'ACTIVE',
+      granted_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+      expires_at         TIMESTAMPTZ   NOT NULL,
+      settled_at         TIMESTAMPTZ
+    )`,
+    // One active bonus per user at a time — enforced by the database, not just app logic.
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_user_bonuses_one_active ON user_bonuses(user_id) WHERE status = 'ACTIVE'`,
+    `CREATE INDEX IF NOT EXISTS idx_user_bonuses_user ON user_bonuses(user_id, granted_at DESC)`,
   ];
 
   const client = await pool.connect();

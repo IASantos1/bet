@@ -50,10 +50,18 @@ export interface BetLegInput {
   /** Free-form selection label as submitted by the client (e.g. 'home', 'Casa', '1', 'draw', ...). */
   selection: string;
   odd: number;
+  /** Odds version (spec §17) the client last saw for this selection, if it sent one. Optional — see validateBetRequest. */
+  oddsVersion?: number;
 }
 
-/** Resolves the current server-side H2H price for a leg, or null when it cannot be determined (feed down, unknown market). */
-export type OddsResolver = (leg: BetLegInput) => Promise<number | null>;
+export interface ResolvedOdds {
+  price: number;
+  /** Odds version (spec §17): bumped by server/lib/oddsVersioning.ts whenever the price actually changes. */
+  version: number;
+}
+
+/** Resolves the current server-side H2H price+version for a leg, or null when it cannot be determined (feed down, unknown market). */
+export type OddsResolver = (leg: BetLegInput) => Promise<ResolvedOdds | null>;
 
 const H2H_ALIASES: Record<string, 'home' | 'draw' | 'away'> = {
   home: 'home', casa: 'home', '1': 'home', mandante: 'home',
@@ -98,15 +106,28 @@ export async function validateBetRequest(params: ValidateBetParams): Promise<voi
     }
 
     if (params.resolveOdds) {
-      const serverOdd = await params.resolveOdds(leg);
-      if (serverOdd != null && Number.isFinite(serverOdd) && serverOdd > 1.0) {
-        const deviation = Math.abs(leg.odd - serverOdd) / serverOdd;
-        if (deviation > tolerance) {
-          throw new BetRejectedError(
-            'PRICE_CHANGED',
-            `A odd mudou para "${leg.selection}" (era ${leg.odd}, é agora ${serverOdd})`,
-            { eventId: leg.eventId, selection: leg.selection, clientOdd: leg.odd, serverOdd },
-          );
+      const resolved = await params.resolveOdds(leg);
+      if (resolved != null && Number.isFinite(resolved.price) && resolved.price > 1.0) {
+        // A client-supplied odds_version (spec §17) is checked exactly — any mismatch means the
+        // price has moved since the client last saw it, full stop, regardless of by how much.
+        // Without one (today's frontend doesn't send it yet), fall back to a price tolerance.
+        if (leg.oddsVersion != null) {
+          if (leg.oddsVersion !== resolved.version) {
+            throw new BetRejectedError(
+              'PRICE_CHANGED',
+              `A odd mudou para "${leg.selection}" (versão ${leg.oddsVersion} já não é a atual)`,
+              { eventId: leg.eventId, selection: leg.selection, clientVersion: leg.oddsVersion, serverVersion: resolved.version, serverOdd: resolved.price },
+            );
+          }
+        } else {
+          const deviation = Math.abs(leg.odd - resolved.price) / resolved.price;
+          if (deviation > tolerance) {
+            throw new BetRejectedError(
+              'PRICE_CHANGED',
+              `A odd mudou para "${leg.selection}" (era ${leg.odd}, é agora ${resolved.price})`,
+              { eventId: leg.eventId, selection: leg.selection, clientOdd: leg.odd, serverOdd: resolved.price },
+            );
+          }
         }
       }
     }
@@ -131,7 +152,9 @@ export async function validateBetRequest(params: ValidateBetParams): Promise<voi
 
 /** Wires an EventsService.getEventOdds-shaped lookup into an OddsResolver, covering only the H2H market (see module docstring). */
 export function makeH2HOddsResolver(
-  getEventOdds: (eventId: string) => Promise<{ home: number; draw: number; away: number } | null>,
+  getEventOdds: (
+    eventId: string,
+  ) => Promise<{ home: number; draw: number; away: number; versions?: { home: number; draw: number; away: number } } | null>,
 ): OddsResolver {
   return async (leg) => {
     const side = normalizeH2HSelection(leg.selection);
@@ -139,6 +162,7 @@ export function makeH2HOddsResolver(
     const odds = await getEventOdds(leg.eventId).catch(() => null);
     if (!odds) return null;
     const price = odds[side];
-    return price > 0 ? price : null;
+    if (!(price > 0)) return null;
+    return { price, version: odds.versions?.[side] ?? 0 };
   };
 }

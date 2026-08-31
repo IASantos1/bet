@@ -7,6 +7,9 @@ import { WalletError, withTransaction, opCompleteWithdrawal, opCancelWithdrawal,
 import { resolveLegOutcome, resolveBetOutcome, type BetOutcome } from '../lib/settlementEngine';
 import { computeExposure, type ExposureBetInput } from '../lib/riskEngine';
 import { writeAuditLog, requestIp } from '../lib/audit';
+import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
+import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
+import { sweepExpiredBonuses } from '../lib/bonusService';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -457,6 +460,173 @@ export async function handleAdminRoutes(
     });
 
     sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // GET /api/admin/aml/alerts — AML monitoring (spec §36): behavioural indicators over the last
+  // 30 days of deposits/withdrawals, grouped by user. Flags for review; never blocks anything by
+  // itself — see server/lib/amlEngine.ts for exactly which indicators are computed and why.
+  if (req.method === 'GET' && path === '/api/admin/aml/alerts') {
+    const r = await pool.query(
+      `SELECT t.user_id, u.email, t.type, t.amount, t.created_at
+       FROM transactions t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.type IN ('deposit', 'withdrawal') AND t.created_at > NOW() - INTERVAL '30 days'
+       ORDER BY t.user_id, t.created_at`,
+    );
+
+    const byUser = new Map<string, { email: string; txs: AmlTransaction[] }>();
+    for (const row of r.rows || []) {
+      const userId = String(row.user_id);
+      if (!byUser.has(userId)) byUser.set(userId, { email: String(row.email || ''), txs: [] });
+      byUser.get(userId)!.txs.push({
+        type: row.type === 'withdrawal' ? 'withdrawal' : 'deposit',
+        amount: toNumber(row.amount),
+        createdAt: new Date(row.created_at),
+      });
+    }
+
+    const now = new Date();
+    const flagged = Array.from(byUser.entries())
+      .map(([userId, { email, txs }]) => ({ userId, email, indicators: evaluateAmlIndicators(txs, now) }))
+      .filter((entry) => entry.indicators.length > 0)
+      .sort((a, b) => b.indicators.length - a.indicators.length);
+
+    sendJson(res, 200, { scannedUsers: byUser.size, flagged });
+    return true;
+  }
+
+  // GET /api/admin/fraud/alerts — Fraud Engine risk_score (spec §37). See
+  // server/lib/fraudEngine.ts for exactly which signals feed the score and why the others
+  // (device fingerprinting, payment-method identity, betting-pattern correlation) are left out.
+  if (req.method === 'GET' && path === '/api/admin/fraud/alerts') {
+    const [sharedIpRows, loginVelocityRows, accountRows] = await Promise.all([
+      pool.query(
+        `SELECT ip, array_agg(DISTINCT user_id) AS user_ids
+         FROM refresh_tokens
+         WHERE ip IS NOT NULL AND ip <> '' AND created_at > NOW() - INTERVAL '30 days'
+         GROUP BY ip
+         HAVING COUNT(DISTINCT user_id) > 1`,
+      ),
+      pool.query(
+        `SELECT user_id, COUNT(*)::int AS c
+         FROM refresh_tokens
+         WHERE created_at > NOW() - INTERVAL '1 hour'
+         GROUP BY user_id`,
+      ),
+      pool.query(
+        `SELECT u.id AS user_id, u.email, u.created_at,
+                (SELECT MAX(t.amount) FROM transactions t WHERE t.user_id = u.id AND t.type = 'deposit' AND t.status = 'completed') AS max_deposit
+         FROM users u`,
+      ),
+    ]);
+
+    // Max other-accounts-on-the-same-IP, taken across every IP this user has ever signed in from.
+    const sharedIpByUser = new Map<string, number>();
+    for (const row of sharedIpRows.rows || []) {
+      const ids: string[] = (row.user_ids || []).map((x: any) => String(x));
+      for (const id of ids) {
+        const others = ids.length - 1;
+        sharedIpByUser.set(id, Math.max(sharedIpByUser.get(id) || 0, others));
+      }
+    }
+
+    const loginVelocityByUser = new Map<string, number>();
+    for (const row of loginVelocityRows.rows || []) {
+      loginVelocityByUser.set(String(row.user_id), Number(row.c || 0));
+    }
+
+    const now = Date.now();
+    const flagged: Array<{ userId: string; email: string; score: number; band: string; reasons: unknown[] }> = [];
+    for (const row of accountRows.rows || []) {
+      const userId = String(row.user_id);
+      const accountAgeHours = Math.max(0, (now - new Date(row.created_at).getTime()) / 3_600_000);
+      const signals: FraudSignals = {
+        sharedIpAccountCount: sharedIpByUser.get(userId) || 0,
+        loginCountLastHour: loginVelocityByUser.get(userId) || 0,
+        accountAgeHours,
+        largestDepositAmount: toNumber(row.max_deposit),
+      };
+      const result = computeFraudScore(signals);
+      if (result.score > 0) {
+        flagged.push({ userId, email: String(row.email || ''), score: result.score, band: result.band, reasons: result.reasons });
+      }
+    }
+    flagged.sort((a, b) => b.score - a.score);
+
+    sendJson(res, 200, { scannedUsers: (accountRows.rows || []).length, flagged });
+    return true;
+  }
+
+  // ---- Bonus Engine admin surface (spec §34) ----
+
+  if (req.method === 'GET' && path === '/api/admin/bonus/campaigns') {
+    const r = await pool.query(`SELECT * FROM bonus_campaigns ORDER BY created_at DESC LIMIT 200`);
+    sendJson(res, 200, { campaigns: r.rows || [] });
+    return true;
+  }
+
+  if (req.method === 'POST' && path === '/api/admin/bonus/campaigns') {
+    const body = await readJsonBody<{
+      name?: string; type?: string; minimum_deposit?: number; bonus_percent?: number; maximum_bonus?: number;
+      wagering_multiplier?: number; minimum_odds?: number; expiry_days?: number; max_conversion?: number | null;
+    }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+
+    const name = String(body.name || '').trim();
+    const type = String(body.type || '').trim();
+    const validTypes = ['WELCOME', 'DEPOSIT_BONUS', 'FREE_BET', 'CASHBACK', 'ODDS_BOOST', 'VIP', 'PROMOTIONAL'];
+    if (!name) return badRequest(res, 'Nome é obrigatório'), true;
+    if (!validTypes.includes(type)) return badRequest(res, `type deve ser um de: ${validTypes.join(', ')}`), true;
+    const maximumBonus = toNumber(body.maximum_bonus);
+    if (!(maximumBonus > 0)) return badRequest(res, 'maximum_bonus deve ser positivo'), true;
+
+    const id = `camp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    await pool.query(
+      `INSERT INTO bonus_campaigns
+         (id, name, type, active, minimum_deposit, bonus_percent, maximum_bonus, wagering_multiplier, minimum_odds, expiry_days, max_conversion, created_at)
+       VALUES ($1,$2,$3,TRUE,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+      [
+        id,
+        name,
+        type,
+        toNumber(body.minimum_deposit) || 0,
+        toNumber(body.bonus_percent) || 0,
+        maximumBonus,
+        toNumber(body.wagering_multiplier) || 1,
+        toNumber(body.minimum_odds) || 1.0,
+        Math.round(toNumber(body.expiry_days)) || 30,
+        body.max_conversion != null ? toNumber(body.max_conversion) : null,
+      ],
+    );
+    await writeAuditLog(pool, { operatorId: u.id, action: 'bonus_campaign_create', resourceType: 'bonus_campaign', resourceId: id, ip: requestIp(req) });
+    sendJson(res, 200, { success: true, id });
+    return true;
+  }
+
+  const campaignToggle = path.match(/^\/api\/admin\/bonus\/campaigns\/([^/]+)\/toggle$/);
+  if (campaignToggle && req.method === 'POST') {
+    const campaignId = decodeURIComponent(campaignToggle[1] || '');
+    const body = await readJsonBody<{ active?: boolean }>(req).catch(() => null);
+    if (!body || typeof body.active !== 'boolean') return badRequest(res, 'active (boolean) é obrigatório'), true;
+    const r = await pool.query(`UPDATE bonus_campaigns SET active = $2 WHERE id = $1 RETURNING id`, [campaignId, body.active]);
+    if (!r.rows[0]) return badRequest(res, 'Campanha não encontrada'), true;
+    await writeAuditLog(pool, {
+      operatorId: u.id,
+      action: body.active ? 'bonus_campaign_activate' : 'bonus_campaign_deactivate',
+      resourceType: 'bonus_campaign',
+      resourceId: campaignId,
+      ip: requestIp(req),
+    });
+    sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // POST /api/admin/bonus/expire-sweep — forfeits every ACTIVE bonus past its expiry. Safe to
+  // call repeatedly/on a schedule (there is no background job runner in this codebase yet).
+  if (req.method === 'POST' && path === '/api/admin/bonus/expire-sweep') {
+    const result = await sweepExpiredBonuses(pool);
+    sendJson(res, 200, { ...result, operator_id: u.id });
     return true;
   }
 
