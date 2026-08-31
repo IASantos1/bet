@@ -31,7 +31,11 @@ export type LedgerTxType =
   | 'bonus_grant'
   | 'bonus_convert'
   | 'bonus_forfeit'
-  | 'adjustment';
+  | 'adjustment'
+  | 'casino_bet'
+  | 'casino_win'
+  | 'casino_bet_cancel'
+  | 'casino_win_cancel';
 
 export const ACCOUNTS = {
   PLAYER_AVAILABLE: 'PLAYER_AVAILABLE',
@@ -604,6 +608,115 @@ export async function opAdjustBalance(
   });
 }
 
+// ---------------------------------------------------------------------------------
+// Casino (GoldSlotPalace, Seamless mode) operations. Called from server/routes/casinoCallback.ts
+// on real `bet`/`win`/`cancel` webhook events — see that file for the full contract. Unlike sports
+// bets, a casino round has no "reserve then settle" step (the aggregator itself has already
+// decided the round's outcome by the time it calls us): a `bet` debits immediately, a `win`
+// credits immediately, and either can be individually reversed by a later `cancel` referencing its
+// trans_guid. idempotencyKey is always the aggregator's own `trans_guid` — the aggregator's own
+// docs say a duplicate trans_guid must be rejected (not silently re-applied), so
+// casinoCallback.ts's own casino_transactions table is the primary duplicate guard; this ledger
+// idempotency key is a second, independent line of defense against ever double-crediting money.
+// ---------------------------------------------------------------------------------
+
+export async function opCasinoBet(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; roundId?: string; gameCode?: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'casino_bet',
+    userId: params.userId,
+    referenceId: params.roundId,
+    metadata: { gameCode: params.gameCode },
+    compute: (wallet) => {
+      if (wallet.available < amount) throw new WalletError('INSUFFICIENT_FUNDS', 'Saldo insuficiente para aposta de casino');
+      return {
+        legs: [
+          { account: ACCOUNTS.PLAYER_AVAILABLE, userId: wallet.userId, direction: 'debit', amount },
+          { account: ACCOUNTS.HOUSE_REVENUE, direction: 'credit', amount },
+        ],
+        walletPatch: { available: wallet.available - amount },
+      };
+    },
+  });
+}
+
+export async function opCasinoWin(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; roundId?: string; gameCode?: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'casino_win',
+    userId: params.userId,
+    referenceId: params.roundId,
+    metadata: { gameCode: params.gameCode },
+    compute: (wallet) => ({
+      legs: [
+        { account: ACCOUNTS.HOUSE_LIABILITY, direction: 'debit', amount },
+        { account: ACCOUNTS.PLAYER_AVAILABLE, userId: wallet.userId, direction: 'credit', amount },
+      ],
+      walletPatch: { available: wallet.available + amount },
+    }),
+  });
+}
+
+/** Reverses a previously-applied casino_bet: gives the wagered amount back. */
+export async function opCasinoCancelBet(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; cancelledTransGuid: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'casino_bet_cancel',
+    userId: params.userId,
+    referenceId: params.cancelledTransGuid,
+    compute: (wallet) => ({
+      legs: [
+        { account: ACCOUNTS.HOUSE_REVENUE, direction: 'debit', amount },
+        { account: ACCOUNTS.PLAYER_AVAILABLE, userId: wallet.userId, direction: 'credit', amount },
+      ],
+      walletPatch: { available: wallet.available + amount },
+    }),
+  });
+}
+
+/** Reverses a previously-applied casino_win: claws back the credited amount. Can fail with
+ *  INSUFFICIENT_FUNDS if the player has since spent/withdrawn it — the caller (casinoCallback.ts)
+ *  must surface that as a generic processing error rather than silently letting the wallet go
+ *  negative or fabricating a partial reversal. */
+export async function opCasinoCancelWin(
+  client: pg.PoolClient,
+  params: { userId: string; amount: number; idempotencyKey: string; cancelledTransGuid: string },
+): Promise<ApplyResult<undefined>> {
+  requirePositiveAmount(params.amount);
+  const amount = round2(params.amount);
+  return applyLedgerOp(client, {
+    idempotencyKey: params.idempotencyKey,
+    type: 'casino_win_cancel',
+    userId: params.userId,
+    referenceId: params.cancelledTransGuid,
+    compute: (wallet) => {
+      if (wallet.available < amount) throw new WalletError('INSUFFICIENT_FUNDS', 'Saldo insuficiente para reverter ganho de casino');
+      return {
+        legs: [
+          { account: ACCOUNTS.PLAYER_AVAILABLE, userId: wallet.userId, direction: 'debit', amount },
+          { account: ACCOUNTS.HOUSE_LIABILITY, direction: 'credit', amount },
+        ],
+        walletPatch: { available: wallet.available - amount },
+      };
+    },
+  });
+}
+
 export async function getWallet(pool: pg.Pool, userId: string): Promise<WalletSnapshot> {
   return withTransaction(pool, (client) => lockWallet(client, userId));
 }
@@ -636,5 +749,13 @@ export const walletService = {
     withTransaction(pool, (client) => opForfeitBonus(client, params)),
   adjustBalance: (pool: pg.Pool, params: Parameters<typeof opAdjustBalance>[1]) =>
     withTransaction(pool, (client) => opAdjustBalance(client, params)),
+  casinoBet: (pool: pg.Pool, params: Parameters<typeof opCasinoBet>[1]) =>
+    withTransaction(pool, (client) => opCasinoBet(client, params)),
+  casinoWin: (pool: pg.Pool, params: Parameters<typeof opCasinoWin>[1]) =>
+    withTransaction(pool, (client) => opCasinoWin(client, params)),
+  casinoCancelBet: (pool: pg.Pool, params: Parameters<typeof opCasinoCancelBet>[1]) =>
+    withTransaction(pool, (client) => opCasinoCancelBet(client, params)),
+  casinoCancelWin: (pool: pg.Pool, params: Parameters<typeof opCasinoCancelWin>[1]) =>
+    withTransaction(pool, (client) => opCasinoCancelWin(client, params)),
   getWallet,
 };
