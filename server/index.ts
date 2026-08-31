@@ -11,6 +11,7 @@ import { createEventsService } from './routes/events';
 import { handleUsersRoutes } from './routes/users';
 import { handleAdminRoutes } from './routes/admin';
 import { handleCasinoCallback } from './routes/casinoCallback';
+import { handleCasinoRoutes } from './routes/casino';
 import { createLiveWs } from './ws/liveWs';
 
 const loadEnvFile = (filePath: string) => {
@@ -177,6 +178,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (await events.handleEventsRoutes(req, res, url)) return;
+      if (await handleCasinoRoutes(req, res, url)) return;
       if (!dbReady) {
         if (url.pathname === '/api/auth/me' && req.method === 'GET') {
           sendJson(res, 200, { user: null });
