@@ -10,6 +10,7 @@ import { writeAuditLog, requestIp } from '../lib/audit';
 import { evaluateAmlIndicators, type AmlTransaction } from '../lib/amlEngine';
 import { computeFraudScore, type FraudSignals } from '../lib/fraudEngine';
 import { sweepExpiredBonuses } from '../lib/bonusService';
+import { reconcileWallet, checkLedgerBalance, computeGGR, debitNormalBalance, creditNormalBalance, type DirectionTotals } from '../lib/reconciliationEngine';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
   if (e instanceof WalletError) {
@@ -742,6 +743,105 @@ export async function handleAdminRoutes(
       ip: requestIp(req),
     });
     sendJson(res, 200, { success: true });
+    return true;
+  }
+
+  // ---- Reconciliation / Accounting Engine (spec §7-9, §55) ----
+
+  // GET /api/admin/reconciliation/wallets — compares every player's materialized wallet balance
+  // against what their own ledger entries say it should be. Empty `discrepancies` is the healthy
+  // state; any entry here means something wrote to `wallets` outside server/lib/ledger.ts.
+  if (req.method === 'GET' && path === '/api/admin/reconciliation/wallets') {
+    const [walletsRes, ledgerRes] = await Promise.all([
+      pool.query(`SELECT user_id, available, reserved, bonus, pending_withdrawal FROM wallets`),
+      pool.query(
+        `SELECT user_id, account, SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END) AS balance
+         FROM ledger_entries
+         WHERE user_id IS NOT NULL
+           AND account IN ('PLAYER_AVAILABLE', 'PLAYER_RESERVED', 'PLAYER_BONUS', 'PLAYER_PENDING_WITHDRAWAL')
+         GROUP BY user_id, account`,
+      ),
+    ]);
+
+    const ledgerByUser = new Map<string, Record<string, number>>();
+    for (const row of ledgerRes.rows || []) {
+      const userId = String(row.user_id);
+      if (!ledgerByUser.has(userId)) ledgerByUser.set(userId, {});
+      ledgerByUser.get(userId)![String(row.account)] = toNumber(row.balance);
+    }
+
+    const discrepancies = (walletsRes.rows || []).flatMap((row: any) => {
+      const userId = String(row.user_id);
+      const ledger = ledgerByUser.get(userId) || {};
+      return reconcileWallet(
+        {
+          userId,
+          available: toNumber(row.available),
+          reserved: toNumber(row.reserved),
+          bonus: toNumber(row.bonus),
+          pendingWithdrawal: toNumber(row.pending_withdrawal),
+        },
+        {
+          PLAYER_AVAILABLE: ledger.PLAYER_AVAILABLE || 0,
+          PLAYER_RESERVED: ledger.PLAYER_RESERVED || 0,
+          PLAYER_BONUS: ledger.PLAYER_BONUS || 0,
+          PLAYER_PENDING_WITHDRAWAL: ledger.PLAYER_PENDING_WITHDRAWAL || 0,
+        },
+      );
+    });
+
+    sendJson(res, 200, { scannedWallets: (walletsRes.rows || []).length, discrepancies });
+    return true;
+  }
+
+  // GET /api/admin/reconciliation/summary — the books-balanced check plus GGR/NGR for an
+  // optional [from, to) date range (defaults to all-time). GGR/NGR are derived straight from the
+  // house-side ledger accounts, never tallied separately, so they can't drift from what actually
+  // got posted.
+  if (req.method === 'GET' && path === '/api/admin/reconciliation/summary') {
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (from) { params.push(from); where.push(`created_at >= $${params.length}`); }
+    if (to) { params.push(to); where.push(`created_at < $${params.length}`); }
+    const whereSql = where.length ? `AND ${where.join(' AND ')}` : '';
+
+    const r = await pool.query(
+      `SELECT account, direction, SUM(amount) AS total
+       FROM ledger_entries
+       WHERE 1 = 1 ${whereSql}
+       GROUP BY account, direction`,
+      params,
+    );
+
+    const totalsByAccount = new Map<string, DirectionTotals>();
+    let globalDebit = 0;
+    let globalCredit = 0;
+    for (const row of r.rows || []) {
+      const account = String(row.account);
+      const amount = toNumber(row.total);
+      const t = totalsByAccount.get(account) || { debit: 0, credit: 0 };
+      if (String(row.direction) === 'debit') { t.debit += amount; globalDebit += amount; }
+      else { t.credit += amount; globalCredit += amount; }
+      totalsByAccount.set(account, t);
+    }
+    const zero: DirectionTotals = { debit: 0, credit: 0 };
+
+    const ledgerBalance = checkLedgerBalance({ debit: globalDebit, credit: globalCredit });
+    const ggr = computeGGR({
+      houseRevenue: creditNormalBalance(totalsByAccount.get('HOUSE_REVENUE') || zero),
+      houseLiability: debitNormalBalance(totalsByAccount.get('HOUSE_LIABILITY') || zero),
+      bonusLiability: debitNormalBalance(totalsByAccount.get('BONUS_LIABILITY') || zero),
+    });
+
+    sendJson(res, 200, {
+      range: { from: from || null, to: to || null },
+      ledgerBalance,
+      ggr: ggr.ggr,
+      ngr: ggr.ngr,
+      paymentProviderClearing: debitNormalBalance(totalsByAccount.get('PAYMENT_PROVIDER_CLEARING') || zero),
+    });
     return true;
   }
 
