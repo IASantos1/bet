@@ -8,6 +8,18 @@ import {
   fetchSportsApiProMatchOddsPreMatch,
   parseSportsApiProMatchOddsPayload,
 } from '../services/sportsApiPro';
+import { fetchGoalServeLive, fetchGoalServeMatchOddsAll, fetchGoalServeMatchOddsLive, fetchGoalServeMatchOddsPreMatch, fetchGoalServeBallPositions } from '../services/goalserve';
+
+// Same SPORTS_DATA_PROVIDER switch as server/routes/events.ts — keeps this file's live-score/odds
+// source in sync with whichever provider that file is using. GoalServe has no push channel at all
+// (see the "no upstream WS for GoalServe" note on connectUpstream below), so this only changes
+// *what* feeds the polling snapshot loop already built into this file — it doesn't add a second
+// transport.
+const USE_GOALSERVE = String(process.env.SPORTS_DATA_PROVIDER || '').toLowerCase().trim() === 'goalserve';
+const providerFetchLive = USE_GOALSERVE ? fetchGoalServeLive : fetchSportsApiProLive;
+const providerFetchOddsAll = USE_GOALSERVE ? fetchGoalServeMatchOddsAll : fetchSportsApiProMatchOddsAll;
+const providerFetchOddsLive = USE_GOALSERVE ? fetchGoalServeMatchOddsLive : fetchSportsApiProMatchOddsLive;
+const providerFetchOddsPreMatch = USE_GOALSERVE ? fetchGoalServeMatchOddsPreMatch : fetchSportsApiProMatchOddsPreMatch;
 
 type ClientInfo = { ws: WebSocket; sport: string };
 type UpstreamInfo = {
@@ -39,6 +51,44 @@ export function createLiveWs(apiKey: string) {
   const oddsSubscribed = new Map<string, number>();
   let allBootstrapAt = 0;
   let allBootstrapInflight: Promise<void> | null = null;
+
+  // GoalServe-only, soccer-only (see fetchGoalServeBallPositions doc comment): the commentaries
+  // feed's own documented refresh period is 30s, well above the 5s livescore poll rate above, so
+  // this gets its own slower cache instead of being re-fetched on every snapshot tick.
+  const BALL_POSITIONS_TTL_MS = 25_000;
+  let ballPositionsCache: { ts: number; data: Map<string, any> } | null = null;
+  let ballPositionsInflight: Promise<Map<string, any>> | null = null;
+
+  const getBallPositions = async (): Promise<Map<string, any>> => {
+    if (!USE_GOALSERVE) return new Map();
+    if (ballPositionsCache && Date.now() - ballPositionsCache.ts < BALL_POSITIONS_TTL_MS) return ballPositionsCache.data;
+    if (ballPositionsInflight) return ballPositionsInflight;
+    ballPositionsInflight = fetchGoalServeBallPositions(apiKey)
+      .then((data) => {
+        ballPositionsCache = { ts: Date.now(), data };
+        return data;
+      })
+      .catch(() => ballPositionsCache?.data || new Map())
+      .finally(() => {
+        ballPositionsInflight = null;
+      });
+    return ballPositionsInflight;
+  };
+
+  /** Attaches a `ball_position` field (pitch x/y of the latest positioned play, per the
+   *  GoalServeMatchEvent shape) onto live soccer events, best-effort. No-op for every other
+   *  provider/sport — this data only exists in GoalServe's soccer commentaries feed. */
+  const attachBallPositions = async (list: any[]): Promise<any[]> => {
+    if (!USE_GOALSERVE || !list.length) return list;
+    const positions = await getBallPositions().catch(() => new Map());
+    if (!positions.size) return list;
+    return list.map((e) => {
+      if (String(e?.sport || '').toLowerCase() !== 'soccer') return e;
+      const id = String(e?.id || '').trim();
+      const pos = id ? positions.get(id) : undefined;
+      return pos ? { ...e, ball_position: pos } : e;
+    });
+  };
 
   const normalize = (s: string) => String(s || '').trim().toLowerCase() || 'all';
 
@@ -263,9 +313,9 @@ export function createLiveWs(apiKey: string) {
     const p = (async () => {
       const opts = { homeTeam: ctx.homeTeam, awayTeam: ctx.awayTeam };
       const [allResult, liveResult, preResult] = await Promise.all([
-        fetchSportsApiProMatchOddsAll(apiKey, sport, id, opts).catch(() => null),
-        fetchSportsApiProMatchOddsLive(apiKey, sport, id, opts).catch(() => null),
-        fetchSportsApiProMatchOddsPreMatch(apiKey, sport, id, opts).catch(() => null),
+        providerFetchOddsAll(apiKey, sport, id, opts).catch(() => null),
+        providerFetchOddsLive(apiKey, sport, id, opts).catch(() => null),
+        providerFetchOddsPreMatch(apiKey, sport, id, opts).catch(() => null),
       ]);
       return mergeOddsResults([allResult, liveResult, preResult].filter(Boolean));
     })()
@@ -393,7 +443,7 @@ export function createLiveWs(apiKey: string) {
             allBootstrapAt = now;
             allBootstrapInflight = (async () => {
               const entries = await Promise.all(
-                SPORTS_DEFAULT.map(async (sp) => ({ sp, list: await fetchSportsApiProLive(apiKey, sp).catch(() => []) })),
+                SPORTS_DEFAULT.map(async (sp) => ({ sp, list: await providerFetchLive(apiKey, sp).catch(() => []) })),
               );
               const ts = Date.now();
               for (const { sp, list } of entries) {
@@ -427,8 +477,9 @@ export function createLiveWs(apiKey: string) {
           for (const id of ids) trySubscribeMatchOdds(sp, id);
         }
 
-        snapshotCache.set('all', { ts: Date.now(), live: liveAll });
-        const msg = JSON.stringify({ type: 'snapshot', live: liveAll });
+        const liveAllWithPositions = await attachBallPositions(liveAll);
+        snapshotCache.set('all', { ts: Date.now(), live: liveAllWithPositions });
+        const msg = JSON.stringify({ type: 'snapshot', live: liveAllWithPositions });
         for (const c of clients) {
           if (c.sport !== 'all') continue;
           if (c.ws.readyState !== WebSocket.OPEN) continue;
@@ -445,7 +496,7 @@ export function createLiveWs(apiKey: string) {
       const liveAll: any[] = [];
       try {
         const entries = await Promise.all(
-          sports.map(async (sp) => ({ sp, list: await fetchSportsApiProLive(apiKey, sp).catch(() => []) })),
+          sports.map(async (sp) => ({ sp, list: await providerFetchLive(apiKey, sp).catch(() => []) })),
         );
         for (const { sp, list } of entries) {
           liveAll.push(...normalizeAndFilterLive(sp, list));
@@ -552,7 +603,7 @@ export function createLiveWs(apiKey: string) {
         };
       });
 
-      const live = withOdds;
+      const live = await attachBallPositions(withOdds);
       snapshotCache.set(sport, { ts: Date.now(), live });
       // #region debug-point A:ws-snapshot-ready
       void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS snapshot ready', data: { sport, liveWithOdds: live.length, totalMs: Date.now() - t0, oddsBudgetLeft: budget.remaining }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
@@ -578,6 +629,13 @@ export function createLiveWs(apiKey: string) {
   const connectUpstream = (sport: string) => {
     const localSport = String(sport || '').trim().toLowerCase();
     if (!localSport || localSport === 'all') return;
+    // GoalServe has no push/WebSocket channel at all — every endpoint documented in its official
+    // Data Feed PDFs (livescore, stats, odds, commentaries) is plain HTTPS GET with a per-feed
+    // refresh period, not a subscribe/push protocol. So there is no upstream socket to open here;
+    // the periodic sendSnapshot() polling loop below (started by ensureTimer, at a GoalServe-safe
+    // interval) is this file's own real-time layer for that provider — it's already a from-scratch
+    // "our own websocket" (this file/wss IS that server) fed by polling instead of by pass-through.
+    if (USE_GOALSERVE) return;
     const wsSport = toWsSport(localSport);
     const existing = upstreams.get(localSport);
     if (existing && (existing.connecting || (existing.ws && existing.ws.readyState === WebSocket.OPEN))) return;
@@ -718,7 +776,12 @@ export function createLiveWs(apiKey: string) {
     } else {
       connectUpstream(sport);
     }
-    const intervalMs = sport === 'all' || sport === 'soccer' ? 2500 : 8000;
+    // SportsAPI Pro's upstream WS pushes changes in real time, so this interval is just a fallback
+    // safety net for it — 2.5s for soccer/all is fine. GoalServe has no push at all (see
+    // connectUpstream above): this interval IS the live-update rate, so it must respect the
+    // documented "refresh period every 5 seconds" for every sport's livescore feed — never poll
+    // faster than that.
+    const intervalMs = USE_GOALSERVE ? (sport === 'all' || sport === 'soccer' ? 5000 : 8000) : sport === 'all' || sport === 'soccer' ? 2500 : 8000;
     const id = setInterval(() => {
       sendSnapshot(sport).catch(() => null);
     }, intervalMs);
