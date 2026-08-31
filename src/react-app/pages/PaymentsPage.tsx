@@ -277,7 +277,42 @@ export default function PaymentsPage() {
               <span className="font-bold">€{intent.amount.toFixed(2)}</span>
             </div>
             {stripePromiseMemo && (
-              <Elements stripe={stripePromiseMemo} options={{ clientSecret: intent.clientSecret, locale: 'pt' }}>
+              <Elements
+                stripe={stripePromiseMemo}
+                options={{
+                  clientSecret: intent.clientSecret,
+                  locale: 'pt',
+                  // Stripe's PaymentElement defaults to its own generic light/blue styling —
+                  // without this it renders as a visibly foreign white widget dropped into
+                  // BET62's dark red theme. Match our actual palette instead.
+                  appearance: {
+                    theme: darkMode ? 'night' : 'stripe',
+                    variables: {
+                      colorPrimary: '#dc2626',
+                      colorBackground: darkMode ? '#1f2937' : '#ffffff',
+                      colorText: darkMode ? '#f9fafb' : '#111827',
+                      colorDanger: '#ef4444',
+                      fontFamily: 'inherit',
+                      borderRadius: '12px',
+                      spacingUnit: '4px',
+                    },
+                    rules: {
+                      '.Input': {
+                        border: darkMode ? '1px solid #4b5563' : '1px solid #d1d5db',
+                        backgroundColor: darkMode ? '#374151' : '#f9fafb',
+                      },
+                      '.Tab': {
+                        border: darkMode ? '1px solid #4b5563' : '1px solid #d1d5db',
+                        backgroundColor: darkMode ? '#374151' : '#f9fafb',
+                      },
+                      '.Tab--selected': {
+                        borderColor: '#dc2626',
+                        backgroundColor: darkMode ? '#374151' : '#ffffff',
+                      },
+                    },
+                  },
+                }}
+              >
                 <EmbeddedPaymentForm
                   method={intent.method}
                   amount={intent.amount}
