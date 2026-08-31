@@ -31,19 +31,17 @@ export interface Markets {
   [key: string]: MarketItem[]
 }
 
-// Single odd row: label outside (left), red button (right)
-const OddRow = memo(({ item, onSelect, suspended, compact }: {
+// Single pill button — selection name + odd combined inside one button (no separate
+// description column beside it), matching the site-wide market button style.
+const OddRow = memo(({ item, onSelect, suspended }: {
   item: MarketItem
   onSelect: (label: string, odd: number) => void
   suspended?: string
-  compact?: boolean
 }) => {
   const [trend, setTrend] = useState<'up' | 'down' | 'stable'>('stable');
   const prevRef = useRef(Number(item.odd));
 
   const val = Number(item.odd);
-  const isSusp = !!suspended;
-  const priceStr = val > 0 ? val.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
 
   if (val !== prevRef.current) {
     setTrend(val > prevRef.current ? 'up' : 'down');
@@ -58,51 +56,14 @@ const OddRow = memo(({ item, onSelect, suspended, compact }: {
   }, [trend]);
 
   return (
-    <div className={`flex items-center justify-between gap-2 w-full ${compact ? 'py-1' : 'py-1.5'}`}>
-      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex-1 min-w-0 truncate leading-tight">
-        {item.label}
-      </span>
-      <div className="relative flex-shrink-0">
-        <button
-          onClick={isSusp ? undefined : () => onSelect(String(item.selection || item.label), val)}
-          disabled={isSusp}
-          className={`
-            min-w-[72px] md:min-w-[80px] h-11 px-3 rounded-lg font-bold text-sm tabular-nums
-            transition-all duration-200 flex items-center justify-center gap-1
-            ${isSusp
-              ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
-              : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95 shadow-sm'
-            }
-            ${trend === 'up' ? 'ring-2 ring-green-400' : trend === 'down' ? 'ring-2 ring-gray-400' : ''}
-          `}
-        >
-          {!isSusp && trend === 'up' && <span className="text-green-300 text-[10px]">▲</span>}
-          {!isSusp && trend === 'down' && <span className="text-gray-300 text-[10px]">▼</span>}
-          {isSusp
-            ? <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-              </svg>
-            : <span className={trend === 'up' ? 'text-green-200' : trend === 'down' ? 'text-gray-300' : 'text-white'}>
-                {priceStr}
-              </span>
-          }
-        </button>
-        {isSusp && suspended && suspended !== 'EVENT_FROZEN' && (
-          <div className="absolute -top-2 right-0 z-20 pointer-events-none">
-            <span className={`text-[9px] px-1.5 py-0.5 rounded shadow-sm font-bold uppercase tracking-wider whitespace-nowrap
-              ${suspended === 'GOAL' ? 'bg-red-600/90 text-white' :
-                suspended === 'VAR' ? 'bg-yellow-600/90 text-white' :
-                suspended === 'CARD' ? 'bg-orange-600/90 text-white' :
-                suspended === 'CHANCE' ? 'bg-rose-600/90 text-white' :
-                suspended === 'PENALTY' ? 'bg-orange-600/90 text-white' :
-                'bg-gray-600/90 text-gray-200'}`}
-            >
-              {suspended === 'GOAL' ? 'GOL' : suspended === 'VAR' ? 'VAR' : suspended === 'CARD' ? 'CARTÃO' : suspended === 'CHANCE' ? 'CHANCE' : suspended === 'PENALTY' ? 'PÊNALTI' : suspended}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+    <OddButton
+      label={String(item.label || '')}
+      price={val}
+      trend={trend}
+      onClick={() => onSelect(String(item.selection || item.label), val)}
+      className="w-full h-full min-h-[44px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+      suspended={suspended ? { reason: suspended } : undefined}
+    />
   );
 });
 
@@ -115,7 +76,7 @@ const MarketCard = memo(({ title, darkMode, children, noPad }: {
 }) => (
   <div className={`rounded-xl border ${darkMode ? 'bg-gray-900/50 border-gray-700' : 'bg-white border-gray-200'} overflow-hidden`}>
     <div className={`flex items-center gap-1.5 px-3 py-2.5 border-b ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'}`}>
-      <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{title}</span>
+      <span className={`text-sm font-bold uppercase tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>{title}</span>
       <span className="text-gray-400 text-sm cursor-help" title="Informação sobre este mercado">ⓘ</span>
     </div>
     <div className={noPad ? '' : 'px-3 py-2'}>
@@ -124,8 +85,9 @@ const MarketCard = memo(({ title, darkMode, children, noPad }: {
   </div>
 ));
 
-// Button group with pagination — uses OddRow layout
-const MarketButtonGroup = memo(({ items, onSelect, suspendedReason, columns, darkMode }: {
+// Button group with pagination — a grid of self-contained pill buttons (name + odd
+// combined inside each one), no separate description column beside them.
+const MarketButtonGroup = memo(({ items, onSelect, suspendedReason, columns }: {
   items: MarketItem[]
   onSelect: (label: string, odd: number) => void
   suspendedReason?: string
@@ -136,34 +98,17 @@ const MarketButtonGroup = memo(({ items, onSelect, suspendedReason, columns, dar
   const LIMIT = 6;
   const isLong = items.length > LIMIT + 2;
   const display = isLong && !showAll ? items.slice(0, LIMIT) : items;
-
-  if (columns === 2 && display.length <= 4) {
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-0">
-          {display.map((it, idx) => (
-            <OddRow key={`${it.label}-${idx}`} item={it} onSelect={onSelect} suspended={suspendedReason} />
-          ))}
-        </div>
-        {isLong && (
-          <button onClick={() => setShowAll(!showAll)} className="self-center text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 py-1.5 px-4 bg-gray-100 dark:bg-gray-800 rounded-full transition-colors mt-1">
-            {showAll ? 'Mostrar Menos' : `Mostrar Mais (${items.length - LIMIT})`}
-          </button>
-        )}
-      </div>
-    );
-  }
+  const gridCols = columns === 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3';
 
   return (
-    <div className="flex flex-col gap-0">
-      {display.map((it, idx) => (
-        <div key={`${it.label}-${idx}`}>
-          {idx > 0 && <div className={`h-px ${darkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`} />}
-          <OddRow item={it} onSelect={onSelect} suspended={suspendedReason} />
-        </div>
-      ))}
+    <div className="flex flex-col gap-2">
+      <div className={`grid ${gridCols} gap-2`}>
+        {display.map((it, idx) => (
+          <OddRow key={`${it.label}-${idx}`} item={it} onSelect={onSelect} suspended={suspendedReason} />
+        ))}
+      </div>
       {isLong && (
-        <button onClick={() => setShowAll(!showAll)} className="self-center text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 py-1.5 px-4 bg-gray-100 dark:bg-gray-800 rounded-full transition-colors mt-2">
+        <button onClick={() => setShowAll(!showAll)} className="self-center text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 py-1.5 px-4 bg-gray-100 dark:bg-gray-800 rounded-full transition-colors mt-1">
           {showAll ? 'Mostrar Menos' : `Mostrar Mais (${items.length - LIMIT})`}
         </button>
       )}
@@ -840,52 +785,32 @@ export function SubOddsModel({
 
           if (allLines.length === 0) return null;
 
+          const blocked = !!susp;
           const renderBtn = (item: { line: string; odd: number; selection: string } | undefined) => {
-            if (!item) return <div className="w-28" />;
-            const priceStr = Number(item.odd) > 0
-              ? Number(item.odd).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : '--';
-            const blocked = !!susp;
+            if (!item) return <div />;
             return (
-              <button
-                onClick={blocked ? undefined : () => onSelect(item.selection, item.odd)}
-                disabled={blocked}
-                className={`w-28 h-12 rounded-lg font-bold tabular-nums transition-all duration-200 relative
-                  ${blocked ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
-                    : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95'}`}
-              >
-                <div className="flex flex-col items-center justify-center leading-[1.05]">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider">
-                    {item.line}
-                  </span>
-                  <span className="text-sm font-black">{priceStr}</span>
-                </div>
-              </button>
+              <OddButton
+                label={item.selection}
+                price={Number(item.odd)}
+                trend="stable"
+                onClick={() => onSelect(item.selection, item.odd)}
+                className="w-full h-full min-h-[44px] px-2 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white flex items-center justify-between gap-1"
+                suspended={blocked ? { reason: toBadgeReason(susp) } : undefined}
+              />
             );
           };
 
+          // One row per line — each side is its own pill button (team + line + odd combined),
+          // no separate "Linha" description column.
           return (
             <MarketCard title={title} darkMode={darkMode} noPad>
-              <div className={`grid grid-cols-[1fr_auto_auto] items-center`}>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Linha</div>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{home || 'Casa'}</div>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{away || 'Fora'}</div>
-                {allLines.map((absKey, i) => {
-                  const h = homeMap.get(absKey);
-                  const a = awayMap.get(absKey);
-                  const rowBg = i % 2 === 0
-                    ? (darkMode ? 'bg-gray-800/30' : 'bg-gray-50/80')
-                    : '';
-                  return (
-                    <div key={absKey} className="contents">
-                      <div className={`px-3 py-2 text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} ${rowBg}`}>
-                        {absKey}
-                      </div>
-                      <div className={`px-2 py-2 flex justify-center ${rowBg}`}>{renderBtn(h)}</div>
-                      <div className={`px-2 py-2 flex justify-center ${rowBg}`}>{renderBtn(a)}</div>
-                    </div>
-                  );
-                })}
+              <div className="flex flex-col gap-2 p-3">
+                {allLines.map((absKey) => (
+                  <div key={absKey} className="grid grid-cols-2 gap-2">
+                    {renderBtn(homeMap.get(absKey))}
+                    {renderBtn(awayMap.get(absKey))}
+                  </div>
+                ))}
               </div>
             </MarketCard>
           );
@@ -956,44 +881,36 @@ export function SubOddsModel({
           const allLines = Array.from(new Set([...over.map((x: MarketItem) => String(x.handicap || '')), ...under.map((x: MarketItem) => String(x.handicap || ''))]))
             .sort((a, b) => Number(a) - Number(b));
 
+          // One row per line — Over/Under are each their own pill button (selection + line +
+          // odd combined), no separate "Linha" description column. A value-bet pick (vs. the
+          // no-vig fair odds) still gets its ★ badge and tooltip, just inside the pill itself.
           return (
             <MarketCard title={title} darkMode={darkMode} noPad>
-              <div className={`grid grid-cols-[1fr_auto_auto] items-center`}>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Linha</div>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Acima</div>
-                <div className={`text-[11px] font-bold uppercase tracking-wider px-3 py-2 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Abaixo</div>
-                {allLines.map((line, i) => {
+              <div className="flex flex-col gap-2 p-3">
+                {allLines.map((line) => {
                   const o = overMap.get(line);
                   const u = underMap.get(line);
-                  // ── Fair odds (no-vig) for this line ──
                   const fair = (o && u && Number(o.odd) > 1 && Number(u.odd) > 1)
                     ? fairOddsTwoWay(Number(o.odd), Number(u.odd))
                     : null;
-                  const rowBg = i % 2 === 0
-                    ? (darkMode ? 'bg-gray-800/30' : 'bg-gray-50/80')
-                    : '';
                   const renderBtn = (item: MarketItem | undefined, side: 'a' | 'b') => {
-                    if (!item) return <div className="w-24" />;
+                    if (!item) return <div />;
                     const f = fair ? fair[side] : null;
-                    const sideLabel = side === 'a' ? 'Acima de' : 'Abaixo de';
+                    const label = String(item.selection || item.label);
                     const priceStr = Number(item.odd) > 0 ? Number(item.odd).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--';
                     return (
                       <button
-                        onClick={susp ? undefined : () => onSelect(String(item.selection || item.label), item.odd)}
+                        onClick={susp ? undefined : () => onSelect(label, item.odd)}
                         disabled={!!susp}
                         title={f ? `Odd justa: ${formatFairOdd(f.fair)}${f.isValue ? ` · valor +${(f.edge * 100).toFixed(1)}%` : ''}` : undefined}
-                        className={`w-24 h-12 rounded-lg font-bold tabular-nums transition-all duration-200 relative
+                        className={`relative w-full min-h-[44px] px-2 py-2 rounded-lg font-bold tabular-nums transition-all duration-200 flex items-center justify-between gap-1
                           ${susp ? 'bg-gray-600/40 text-gray-400 cursor-not-allowed'
                             : f?.isValue
                               ? 'bg-emerald-600 text-white hover:bg-emerald-500 active:scale-95 ring-1 ring-emerald-300'
                               : 'bg-gray-700 text-white hover:bg-gray-600 active:scale-95'}`}
                       >
-                        <div className="flex flex-col items-center justify-center leading-[1.05]">
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider">
-                            {sideLabel} {line}
-                          </span>
-                          <span className="text-sm font-black">{priceStr}</span>
-                        </div>
+                        <span className="text-[11px] sm:text-sm font-normal text-left truncate flex-1 min-w-0 mr-1">{label}</span>
+                        <span className="text-sm sm:text-base font-bold tabular-nums">{priceStr}</span>
                         {f?.isValue && (
                           <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-black text-[8px] font-black px-1 py-0.5 rounded-full leading-none shadow">
                             ★
@@ -1003,18 +920,9 @@ export function SubOddsModel({
                     );
                   };
                   return (
-                    <div key={line} className={`contents`}>
-                      <div className={`px-3 py-2 text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'} ${rowBg} flex flex-col`}>
-                        <span>{line}</span>
-                        {fair && (
-                          <span className={`text-[9px] font-normal mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                            justo: {formatFairOdd(fair.a.fair)}/{formatFairOdd(fair.b.fair)}
-                            {fair.margin > 0 && <span className="ml-1 opacity-70">· vig {(fair.margin * 100).toFixed(1)}%</span>}
-                          </span>
-                        )}
-                      </div>
-                      <div className={`px-2 py-2 flex justify-center ${rowBg}`}>{renderBtn(o, 'a')}</div>
-                      <div className={`px-2 py-2 flex justify-center ${rowBg}`}>{renderBtn(u, 'b')}</div>
+                    <div key={line} className="grid grid-cols-2 gap-2">
+                      {renderBtn(o, 'a')}
+                      {renderBtn(u, 'b')}
                     </div>
                   );
                 })}

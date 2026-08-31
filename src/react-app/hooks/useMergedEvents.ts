@@ -33,16 +33,6 @@ const isNonEmptyMarkets = (v: any) => (Array.isArray(v) ? v.length > 0 : isNonEm
 
 const isNonEmptyString = (v: any) => typeof v === 'string' && v.trim().length > 0;
 
-const hasAnyOdds = (e: any) => {
-  const h = Number(e?.home_odd || 0);
-  const d = Number(e?.draw_odd || 0);
-  const a = Number(e?.away_odd || 0);
-  if (h > 1 && a > 1) return true;
-  if (d > 1) return true;
-  const mk = e?.markets ?? e?.odds;
-  return isNonEmptyMarkets(mk);
-};
-
 const pickTimer = (wsTimer: any, httpTimer: any) => {
   if (isNonEmptyString(wsTimer)) return String(wsTimer).trim();
   if (isNonEmptyString(httpTimer)) return String(httpTimer).trim();
@@ -159,9 +149,14 @@ export function useMergedEvents(
         if (!h || !a || h === 'undefined' || a === 'undefined' || h === 'Home Team' || a === 'Away Team') return false;
         if (e.id === 'undefined' || !e.id) return false;
 
-        const st = statusKeyOf(e);
-        const isLive = Number((e as any).is_live) === 1 || st === 'LIVE' || ['1H','2H','HT','ET','P','Q1','Q2','Q3','Q4','OT','IN'].includes(st);
-        if (isLive && !hasAnyOdds(e)) return false;
+        // A live match must ONLY leave "Ao Vivo" when the match itself finishes — never because
+        // it happens to have no odds available on this particular poll/snapshot cycle. Odds can
+        // be legitimately absent for a moment (a transient provider hiccup, a market temporarily
+        // suspended, a match GoalServe simply hasn't priced yet) without the match itself having
+        // ended; hiding it here made it flicker in and out of the live list every time odds
+        // availability blipped, even though the match never actually stopped being live. The odds
+        // UI itself already renders an empty/placeholder state when there's nothing to show, so
+        // there's nothing this filter was protecting against.
         return true;
     }).sort((a, b) => {
       const aStatus = statusKeyOf(a);
