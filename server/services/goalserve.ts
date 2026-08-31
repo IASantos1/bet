@@ -363,6 +363,36 @@ function parseStatus(raw: string): { status: string; statusShort: string; isLive
   return { status: s, statusShort: s.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase(), isLive: 0, elapsed: 0 };
 }
 
+/** CONFIRMED (official Tennis Data Feed PDF, livescore feed): each `<player>` carries `s1`..`s5`
+ *  (set score, or "6.5" for a set decided by tiebreak — "6" is the set score, "5" the tiebreak
+ *  score, so only the part before the dot matters for display) and `game_score` (the current
+ *  game's point score: "", "0", "15", "30", "40", or "A" for advantage — "" when the match isn't
+ *  live). Building this here (rather than leaving it to the frontend) keeps normalizeMatch() the
+ *  single place that reads GoalServe's raw field names. */
+function tennisSets(home: any, away: any): Record<string, { home: number | null; away: number | null }> {
+  const parseSet = (v: any): number | null => {
+    const s = str(v);
+    if (!s) return null;
+    const dot = s.indexOf('.');
+    return num(dot === -1 ? s : s.slice(0, dot));
+  };
+  const out: Record<string, { home: number | null; away: number | null }> = {};
+  for (let i = 1; i <= 5; i++) {
+    const h = home?.[`s${i}`];
+    const a = away?.[`s${i}`];
+    if (!str(h) && !str(a)) continue;
+    out[`s${i}`] = { home: parseSet(h), away: parseSet(a) };
+  }
+  return out;
+}
+
+function tennisPoint(gameScore: any): '15' | '30' | '40' | 'AD' | null {
+  const s = str(gameScore).toUpperCase();
+  if (s === '15' || s === '30' || s === '40') return s as '15' | '30' | '40';
+  if (s === 'A') return 'AD';
+  return null;
+}
+
 /** Converts one GoalServe match object (soccer or otherwise) into the NormalizedEvent shape every
  *  other part of the app (odds versioning, bet settlement, EventCard) already relies on.
  *  `wrapperFormattedDate` is the confirmed date source for soccer — see extractMatchGroups(). */
@@ -397,6 +427,17 @@ function normalizeMatch(sport: string, category: any, m: any, wrapperFormattedDa
   const categoryName = stripSponsorBrands(str(category?.name ?? category?.['@name']));
   const { country, league } = splitCategoryName(categoryName);
 
+  const sLower = String(sport || '').toLowerCase().trim();
+  const scoreObj: Record<string, unknown> = { home: homeScore, away: awayScore };
+  if (sLower === 'tennis' || sLower === 'tênis') {
+    scoreObj.sets = tennisSets(home, away);
+    const homePoint = tennisPoint(home?.game_score);
+    const awayPoint = tennisPoint(away?.game_score);
+    if (homePoint || awayPoint) scoreObj.point = { home: homePoint, away: awayPoint };
+    if (toBool(home?.serve)) scoreObj.serve = 'home';
+    else if (toBool(away?.serve)) scoreObj.serve = 'away';
+  }
+
   return {
     external_event_id: `goalserve_${id}`,
     sport,
@@ -414,7 +455,7 @@ function normalizeMatch(sport: string, category: any, m: any, wrapperFormattedDa
     away_odd: 0,
     elapsed,
     timer: str(m?.timer ?? m?.minute ?? (elapsed || '')),
-    score: JSON.stringify({ home: homeScore, away: awayScore }),
+    score: JSON.stringify(scoreObj),
     markets: '{}',
     country,
     home_team_logo: teamLogo(home),
