@@ -29,6 +29,11 @@ import {
   getCasinoTransactionsById,
   getCasinoRoundDetails,
   getCasinoUserStatistics,
+  createCasinoUser,
+  getCasinoUserInfo,
+  depositCasinoWallet,
+  withdrawCasinoWallet,
+  withdrawAllCasinoWallet,
 } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
@@ -1157,8 +1162,8 @@ export async function handleAdminRoutes(
     const body = await readJsonBody<{ call_id?: number }>(req).catch(() => null);
     if (body?.call_id == null) return badRequest(res, 'call_id required'), true;
     try {
-      const result = await cancelCasinoCall(body.call_id);
-      sendJson(res, 200, { success: true, result });
+      await cancelCasinoCall(body.call_id);
+      sendJson(res, 200, { success: true });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
@@ -1190,7 +1195,7 @@ export async function handleAdminRoutes(
       return badRequest(res, 'user_code, provider_id, game_symbol, bet, win, rounds and expirationDate required'), true;
     }
     try {
-      const result = await createCasinoFreeround({
+      await createCasinoFreeround({
         user_code: body.user_code,
         provider_id: body.provider_id,
         game_symbol: body.game_symbol,
@@ -1199,7 +1204,7 @@ export async function handleAdminRoutes(
         rounds: body.rounds,
         expirationDate: body.expirationDate,
       });
-      sendJson(res, 200, { success: true, result });
+      sendJson(res, 200, { success: true });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
@@ -1212,8 +1217,8 @@ export async function handleAdminRoutes(
     const body = await readJsonBody<{ fr_id?: string }>(req).catch(() => null);
     if (!body?.fr_id) return badRequest(res, 'fr_id required'), true;
     try {
-      const result = await cancelCasinoFreeround(body.fr_id);
-      sendJson(res, 200, { success: true, result });
+      await cancelCasinoFreeround(body.fr_id);
+      sendJson(res, 200, { success: true });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
@@ -1285,6 +1290,78 @@ export async function handleAdminRoutes(
     try {
       const result = await getCasinoUserStatistics({ start_time: startTime, end_time: endTime, offset, limit });
       sendJson(res, 200, { success: true, ...result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/user-create — creates (or, per the spec, returns the existing) agent
+  // user for a given name. Idempotent: safe to call every time without caching the user_code.
+  if (req.method === 'POST' && path === '/api/admin/casino/user-create') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ name?: string }>(req).catch(() => null);
+    if (!body?.name) return badRequest(res, 'name required'), true;
+    try {
+      const result = await createCasinoUser(body.name);
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/user-info?user_code= — real name + aggregator-side balance for a user.
+  if (req.method === 'GET' && path === '/api/admin/casino/user-info') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const userCode = Number(url.searchParams.get('user_code') || 0);
+    if (!userCode) return badRequest(res, 'user_code required'), true;
+    try {
+      const result = await getCasinoUserInfo(userCode);
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/wallet-deposit — Transfer-mode only per the spec; not applicable if
+  // this agent account runs Seamless mode.
+  if (req.method === 'POST' && path === '/api/admin/casino/wallet-deposit') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ user_code?: number; amount?: number }>(req).catch(() => null);
+    if (!body?.user_code || body?.amount == null) return badRequest(res, 'user_code and amount required'), true;
+    try {
+      const result = await depositCasinoWallet(body.user_code, body.amount);
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/wallet-withdraw — Transfer-mode only per the spec.
+  if (req.method === 'POST' && path === '/api/admin/casino/wallet-withdraw') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ user_code?: number; amount?: number }>(req).catch(() => null);
+    if (!body?.user_code || body?.amount == null) return badRequest(res, 'user_code and amount required'), true;
+    try {
+      const result = await withdrawCasinoWallet(body.user_code, body.amount);
+      sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // POST /api/admin/casino/wallet-withdraw-all — Transfer-mode only per the spec.
+  if (req.method === 'POST' && path === '/api/admin/casino/wallet-withdraw-all') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const body = await readJsonBody<{ user_code?: number }>(req).catch(() => null);
+    if (!body?.user_code) return badRequest(res, 'user_code required'), true;
+    try {
+      const result = await withdrawAllCasinoWallet(body.user_code);
+      sendJson(res, 200, { success: true, result });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }
