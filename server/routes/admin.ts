@@ -25,6 +25,8 @@ import {
   cancelCasinoCall,
   createCasinoFreeround,
   cancelCasinoFreeround,
+  getCasinoTransactions,
+  getCasinoTransactionsById,
 } from '../lib/casinoAggregator';
 
 function handleWalletError(res: http.ServerResponse, e: unknown): boolean {
@@ -1210,6 +1212,39 @@ export async function handleAdminRoutes(
     try {
       const result = await cancelCasinoFreeround(body.fr_id);
       sendJson(res, 200, { success: true, result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/transactions?start_time=...&end_time=...&offset=0&limit=10 — paginated
+  // transaction history for a time range ("YYYY-MM-DD HH:mm:ss").
+  if (req.method === 'GET' && path === '/api/admin/casino/transactions') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const startTime = url.searchParams.get('start_time') || '';
+    const endTime = url.searchParams.get('end_time') || '';
+    if (!startTime || !endTime) return badRequest(res, 'start_time and end_time required'), true;
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const limit = Number(url.searchParams.get('limit') || 10);
+    try {
+      const result = await getCasinoTransactions({ start_time: startTime, end_time: endTime, offset, limit });
+      sendJson(res, 200, { success: true, ...result });
+    } catch (e: any) {
+      sendJson(res, 200, { success: false, error: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/admin/casino/transactions-by-id?last_id=0&limit=10 — transaction history as a
+  // cursor over trans_id, walking forward from last_id.
+  if (req.method === 'GET' && path === '/api/admin/casino/transactions-by-id') {
+    if (!isCasinoConfigured()) return badRequest(res, 'CASINO_API_KEY not configured'), true;
+    const lastId = Number(url.searchParams.get('last_id') || 0);
+    const limit = Number(url.searchParams.get('limit') || 10);
+    try {
+      const transactions = await getCasinoTransactionsById(lastId, limit);
+      sendJson(res, 200, { success: true, transactions });
     } catch (e: any) {
       sendJson(res, 200, { success: false, error: String(e?.message || e) });
     }

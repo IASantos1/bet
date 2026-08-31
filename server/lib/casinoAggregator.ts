@@ -210,3 +210,50 @@ export async function createCasinoFreeround(params: CasinoFreeroundCreateParams)
 export async function cancelCasinoFreeround(frId: string): Promise<unknown> {
   return callAgent<unknown>('/v4/game/freeround/cancel', { fr_id: frId });
 }
+
+export interface CasinoTransaction {
+  trans_id: number;
+  user_code: number;
+  round_id: string;
+  /** Confirmed live: 1 = bet (trans_amount debited from prebalance), 2 = settle/win (balance
+   *  unchanged when trans_amount is 0, i.e. a loss). Other values not yet observed. */
+  trans_type: number;
+  provider_id: number;
+  provider_name: string;
+  game_code: string;
+  game_name: string;
+  category: string;
+  prebalance: number;
+  trans_amount: number;
+  balance: number;
+  regdate: string;
+  time_stamp: number;
+}
+
+export interface CasinoTransactionQuery {
+  /** "YYYY-MM-DD HH:mm:ss", matching the working example. */
+  start_time: string;
+  end_time: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface CasinoTransactionListResult {
+  total: number;
+  offset: number;
+  count: number;
+  list: CasinoTransaction[];
+}
+
+/** Calls POST /v4/game/transaction — paginated transaction history for a time range. Confirmed
+ *  live: returns `{ total: 0, offset: 0, count: 0, list: [] }` for a range with no activity. */
+export async function getCasinoTransactions(query: CasinoTransactionQuery): Promise<CasinoTransactionListResult> {
+  return callAgent<CasinoTransactionListResult>('/v4/game/transaction', { offset: 0, limit: 10, ...query });
+}
+
+/** Calls POST /v4/game/transaction-id — transaction history as a cursor over trans_id, walking
+ *  forward from last_id. Confirmed live with real gameplay data: bet (trans_type 1) followed by
+ *  settle (trans_type 2) pairs sharing a round_id, real balances and provider/game names. */
+export async function getCasinoTransactionsById(lastId: number, limit = 10): Promise<CasinoTransaction[]> {
+  return callAgent<CasinoTransaction[]>('/v4/game/transaction-id', { last_id: lastId, limit });
+}
