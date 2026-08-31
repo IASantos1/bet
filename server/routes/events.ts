@@ -13,6 +13,13 @@ import {
   fetchSportsApiProWorldCup2026Info,
   fetchSportsApiProWorldCup2026Matches,
 } from '../services/sportsApiPro';
+import {
+  fetchGoalServeLive,
+  fetchGoalServeSchedule,
+  fetchGoalServeMatchOddsAll,
+  fetchGoalServeMatchOddsLive,
+  fetchGoalServeMatchOddsPreMatch,
+} from '../services/goalserve';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
 import { sendJson, badRequest } from '../lib/http';
 import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
@@ -112,6 +119,20 @@ export type EventsService = {
   /** True when a trader has suspended this event's market — betting engines must refuse it. */
   isMarketSuspended: (eventId: string) => Promise<boolean>;
 };
+
+// SPORTS_DATA_PROVIDER=goalserve switches live/schedule/odds to the GoalServe client
+// (server/services/goalserve.ts) instead of SportsAPI Pro. Defaults to the known-working
+// SportsAPI Pro path — flip this only once GoalServe's real payloads have been validated (that
+// service is written defensively against documented conventions but has never been exercised
+// against a live response; this sandbox's network egress blocks goalserve.com entirely).
+// Match statistics/incidents and the World Cup 2026 special endpoints aren't ported to GoalServe
+// yet and always use SportsAPI Pro regardless of this switch.
+const USE_GOALSERVE = String(process.env.SPORTS_DATA_PROVIDER || '').toLowerCase().trim() === 'goalserve';
+const providerFetchLive = USE_GOALSERVE ? fetchGoalServeLive : fetchSportsApiProLive;
+const providerFetchSchedule = USE_GOALSERVE ? fetchGoalServeSchedule : fetchSportsApiProSchedule;
+const providerFetchOddsAll = USE_GOALSERVE ? fetchGoalServeMatchOddsAll : fetchSportsApiProMatchOddsAll;
+const providerFetchOddsLive = USE_GOALSERVE ? fetchGoalServeMatchOddsLive : fetchSportsApiProMatchOddsLive;
+const providerFetchOddsPreMatch = USE_GOALSERVE ? fetchGoalServeMatchOddsPreMatch : fetchSportsApiProMatchOddsPreMatch;
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
   const liveCache = new Map<string, CacheEntry<AnyEvent[]>>();
@@ -268,7 +289,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const cached = liveCache.get(key);
     if (cached && ttlOk(cached.ts, 7_000)) return cached.data;
     if (cached && ttlOk(cached.ts, 2 * 60_000)) {
-      fetchSportsApiProLive(apiKey, sport)
+      providerFetchLive(apiKey, sport)
         .then((list) => {
           const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
             const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
@@ -285,7 +306,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         .catch(() => void 0);
       return cached.data;
     }
-    const list = await fetchSportsApiProLive(apiKey, sport).catch(() => []);
+    const list = await providerFetchLive(apiKey, sport).catch(() => []);
     const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
       const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
       const out = { ...e, id, sport };
@@ -305,7 +326,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const cached = scheduleCache.get(key);
     if (cached && ttlOk(cached.ts, 20 * 60_000)) return cached.data;
     if (cached && ttlOk(cached.ts, 3 * 60 * 60 * 1000)) {
-      fetchSportsApiProSchedule(apiKey, sport, date)
+      providerFetchSchedule(apiKey, sport, date)
         .then((list) => {
           const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
             const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
@@ -319,7 +340,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         .catch(() => void 0);
       return cached.data;
     }
-    const list = await fetchSportsApiProSchedule(apiKey, sport, date).catch(() => []);
+    const list = await providerFetchSchedule(apiKey, sport, date).catch(() => []);
     const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
       const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
       const out = { ...e, id, sport };
@@ -429,9 +450,9 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       const opts = { homeTeam: ctx.homeTeam, awayTeam: ctx.awayTeam };
       // Fetch all 3 endpoints in parallel to get maximum market coverage
       const [allResult, liveResult, preResult] = await Promise.all([
-        fetchSportsApiProMatchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null),
-        fetchSportsApiProMatchOddsLive(apiKey, sport, normalizedId, opts).catch(() => null),
-        fetchSportsApiProMatchOddsPreMatch(apiKey, sport, normalizedId, opts).catch(() => null),
+        providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null),
+        providerFetchOddsLive(apiKey, sport, normalizedId, opts).catch(() => null),
+        providerFetchOddsPreMatch(apiKey, sport, normalizedId, opts).catch(() => null),
       ]);
       const merged = mergeOddsResults([liveResult, allResult, preResult].filter(Boolean));
       if (merged && merged.markets && typeof merged.markets === 'object') {
