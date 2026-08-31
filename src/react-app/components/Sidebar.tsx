@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '@/react-app/contexts/AppContext';
-import { apiFetch } from '@/react-app/utils/api';
 import { formatLeagueHeader, getSportFromLeague, getSportIcon } from '@/shared/helpers';
 import { ALL_COUNTRIES } from '@/shared/countries';
 import type { Event } from '@/shared/types';
@@ -27,26 +26,20 @@ const topCompetitions: SidebarSection = {
   ],
 };
 
-const sports: SidebarSection = { 
-  title: 'Desportos', 
-  items: [ 
-    'Futebol', 
-    'Basquetebol', 
+const sports: SidebarSection = {
+  title: 'Desportos',
+  items: [
+    'Futebol',
     'Ténis',
-    'Críquete',
-    'Futebol Americano', 
-    'Handebol', 
-    'MMA', 
-    'Fórmula 1', 
-    'Hóquei', 
-    'Rúgbi', 
-    'Voleibol', 
+    'Basquetebol',
     'Beisebol',
-    'Golfe',
-    'Corridas de Cavalos',
-    'AFL', 
-  ], 
-}; 
+    'Voleibol',
+    'MMA',
+    'Fórmula 1',
+    'Handebol',
+    'Rúgbi',
+  ],
+};
 
 export function Sidebar({ dynamicTopItems }: { dynamicTopItems?: (string | Event)[] }) {
   const { darkMode, selectedCategory, setSelectedCategory, isOperator } = useApp();
@@ -55,27 +48,6 @@ export function Sidebar({ dynamicTopItems }: { dynamicTopItems?: (string | Event
   );
   const [expandedSports, setExpandedSports] = useState<Set<string>>(new Set());
   const [expandedCountry, setExpandedCountry] = useState<Set<string>>(new Set());
-  const [apiSports, setApiSports] = useState<string[]>([]);
-  
-  useEffect(() => {
-    let timeoutId: any;
-
-    const loadSports = async () => {
-      try {
-        const j = await apiFetch<string[]>('/api/sports', { cache: 'no-store' });
-        const arr = Array.isArray(j) ? j.map((s: any) => {
-          if (typeof s === 'object' && s !== null) return '';
-          return String(s || '').trim();
-        }).filter(s => s && s !== '[object Object]') : [];
-        setApiSports(arr);
-      } catch { /* ignore */ }
-    };
-    loadSports();
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, []);
   const staticSportsData: Record<string, { label: string; token: string; flag?: string; flagUrl?: string; leagues: { label: string; token: string }[] }[]> = {
     'Basquetebol': [
       { label: 'EUA', token: 'usa', flag: '🇺🇸', flagUrl: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f1fa-1f1f8.svg', leagues: [{ label: 'NBA', token: 'basketball|usa|nba' }, { label: 'NCAA', token: 'basketball|usa|ncaa' }] },
@@ -212,44 +184,8 @@ export function Sidebar({ dynamicTopItems }: { dynamicTopItems?: (string | Event
   const renderSection = (section: SidebarSection) => {
     const isExpanded = section.title === 'Top Competições' ? true : expandedSections.has(section.title);
     const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase();
-    
-    // Lista de itens que devem ser ocultados do nível superior porque já estão organizados dentro dos desportos/países
-    const HIDDEN_LEAGUES = new Set([
-      'bundesliga', '2. bundesliga',
-      'epl', 'premier league', 'championship',
-      'la liga', 'segunda división',
-      'ligue 1', 'ligue 2',
-      'serie a', 'serie b',
-      'primeira liga', 'liga portugal', 'liga portugal 2',
-      'nba', 'ncaab', 'ncaa', 'euroleague',
-      'nfl', 'ncaaf',
-      'nhl', 'ahl',
-      'mlb',
-      'ufc', 'bellator',
-      'atp', 'wta', 'challenger',
-      'formula 1', 'f1',
-      'motogp', 'moto2', 'moto3',
-      'futsal',
-      'volleyball',
-      'handball',
-      'rugby',
-      'snooker',
-      'darts',
-      'tennis',
-      'ice hockey',
-      'american football',
-      'basketball',
-      'soccer',
-      'football'
-    ]);
 
-    const normalizedBaseSports = new Set((sports.items || []).map(s => normalize(s)));
-    const uniqueApiSports = (apiSports || []).filter(s => {
-      const n = normalize(s);
-      return !normalizedBaseSports.has(n) && !HIDDEN_LEAGUES.has(n);
-    });
-    
-    const displaySports = Array.from(new Set([...(sports.items || []), ...uniqueApiSports]))
+    const displaySports = Array.from(new Set(sports.items || []))
       .filter(Boolean)
       .sort((a,b)=>a.localeCompare(b,'pt-PT'));
 
