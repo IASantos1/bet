@@ -32,8 +32,10 @@
 
 import type { NormalizedEvent, OddsResult } from './sportsApiPro';
 
-const BASE_URL = 'http://www.goalserve.com/getfeed';
-const ODDS_BASE_URL = 'http://www.goalserve.com/getfeed';
+// https, not http: every real example URL across all 5 official Data Feed PDFs and the general
+// reference doc uses https — http was an unverified leftover from before any PDF was read.
+const BASE_URL = 'https://www.goalserve.com/getfeed';
+const ODDS_BASE_URL = 'https://www.goalserve.com/getfeed';
 
 /** GoalServe uses a different URL segment per sport, unlike sportsApiPro's uniform subdomain
  *  pattern. Matches the "SPORT_TYPES" list and per-sport feed paths in the shared docs. */
@@ -69,23 +71,46 @@ function oddsCat(sport: string): string {
   return 'soccer';
 }
 
-async function fetchJson(url: string, timeoutMs = 12000): Promise<any | null> {
+/** Redacts the API key segment of a GoalServe URL before it hits logs (server logs are often
+ *  shipped to third-party log aggregators in production — the key shouldn't end up there). */
+function redactKey(url: string): string {
+  return url.replace(/(getfeed\/)[^/]+/i, '$1***').replace(/([?&]k=)[^&]+/i, '$1***');
+}
+
+async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false): Promise<any | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
     const res = await fetch(url, { headers: { accept: 'application/json' }, signal: controller.signal });
     const text = await res.text().catch(() => '');
-    if (!res.ok || !text) return null;
+    clearTimeout(t);
+    if (!res.ok) {
+      // Previously swallowed silently — a 401/403 (bad/unwhitelisted key), 404 (wrong URL
+      // segment), or 5xx from GoalServe looked identical to "no matches today" with no log line
+      // at all, which made a real outage or misconfiguration indistinguishable from an empty
+      // schedule in production. Always log the status so that distinction is visible.
+      console.error('[goalserve] HTTP', res.status, redactKey(url), text.slice(0, 300));
+      return null;
+    }
+    if (!text) {
+      console.error('[goalserve] empty response body:', redactKey(url));
+      return null;
+    }
     try {
       return JSON.parse(text);
     } catch {
-      // GoalServe returns XML unless ?json=1 is honored — surfacing this distinctly helps
-      // diagnose a misconfigured URL rather than silently returning an empty event list.
-      console.error('[goalserve] non-JSON response (check ?json=1 and the feed path):', url, text.slice(0, 200));
+      // GoalServe's own docs disagree on the boolean-flag spelling: the general reference doc and
+      // 4 of 5 sport PDFs say `?json=1`, but the Soccer PDF's own "Basic feed format" section says
+      // `?json=true` — since this is unverified against a live response, try the other spelling
+      // once before giving up, instead of assuming "1" is universally correct.
+      if (!_retriedJsonParam && /[?&]json=1(&|$)/.test(url)) {
+        return fetchJson(url.replace(/([?&])json=1(&|$)/, '$1json=true$2'), timeoutMs, true);
+      }
+      console.error('[goalserve] non-JSON response (check ?json=1/?json=true and the feed path):', redactKey(url), text.slice(0, 200));
       return null;
     }
   } catch (e) {
-    console.error('[goalserve] fetch failed:', url, String((e as any)?.message || e));
+    console.error('[goalserve] fetch failed:', redactKey(url), String((e as any)?.message || e));
     return null;
   } finally {
     clearTimeout(t);
