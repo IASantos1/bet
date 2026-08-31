@@ -271,6 +271,14 @@ export async function ensureSchema(pool: pg.Pool | null): Promise<void> {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
     `CREATE INDEX IF NOT EXISTS idx_casino_callback_log_created ON casino_callback_log(created_at DESC)`,
+    // Maps a BET62 user to their GoldSlotPalace agent user_code (server/lib/casinoAggregator.ts's
+    // createCasinoUser). Created lazily on first "Jogar" click (see server/routes/casino.ts) —
+    // one row per user, never re-created once it exists.
+    `CREATE TABLE IF NOT EXISTS casino_users (
+      user_id     TEXT        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      user_code   INTEGER     NOT NULL UNIQUE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   const client = await pool.connect();

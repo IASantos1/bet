@@ -189,7 +189,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (await events.handleEventsRoutes(req, res, url)) return;
-      if (await handleCasinoRoutes(req, res, url)) return;
+      if (await handleCasinoRoutes(pool, req, res, url)) return;
       if (!dbReady) {
         if (url.pathname === '/api/auth/me' && req.method === 'GET') {
           sendJson(res, 200, { user: null });
