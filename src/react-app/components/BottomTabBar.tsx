@@ -37,8 +37,7 @@ const TABS: Tab[] = [
     icon: (darkMode: boolean) => (
       <span className="relative inline-block">
         <svg {...iconProps} className="w-[22px] h-[22px]">
-          <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" />
-          <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
+          <path d="M2 12h3.5l1.8-4.5L10 17l2-9 1.6 4h2.9L18 8.5 19.5 12H22" />
         </svg>
         <span
           className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-600 ring-2 animate-pulse ${darkMode ? 'ring-gray-900' : 'ring-white'}`}
