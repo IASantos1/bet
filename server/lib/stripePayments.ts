@@ -1,19 +1,18 @@
 /**
- * Stripe payments client for wallet deposits — card, MB WAY, and Multibanco, all via Stripe-hosted
- * Checkout (never a raw card form or a hand-rolled MB WAY/Multibanco integration on our own
- * domain: keeps us out of PCI SAQ D scope and gets Stripe's own official branding on the actual
- * payment screen for free). Secrets are read lazily from env at call time, exactly like
- * CASINO_API_KEY in server/lib/casinoAggregator.ts: never hardcode STRIPE_SECRET_KEY or
- * STRIPE_WEBHOOK_SECRET.
+ * Stripe payments client for wallet deposits — card, MB WAY, and Multibanco, all embedded on our
+ * own /deposit page via the PaymentIntents API + Stripe Elements (@stripe/react-stripe-js on the
+ * frontend), never a redirect to a Stripe-hosted page. Card fields are still rendered inside
+ * Stripe's own iframe (PaymentElement), so raw card numbers never touch our server — same PCI
+ * posture as before, just without the extra tab. Secrets are read lazily from env at call time,
+ * exactly like CASINO_API_KEY in server/lib/casinoAggregator.ts: never hardcode STRIPE_SECRET_KEY,
+ * STRIPE_PUBLISHABLE_KEY or STRIPE_WEBHOOK_SECRET.
  *
- * Card is synchronous (Checkout completes with payment_status 'paid' immediately). MB WAY and
- * Multibanco are delayed/async per Stripe's own model: Checkout completes first with the session
- * still 'unpaid' (the customer has to confirm in the MB WAY app, or pay a Multibanco voucher at
- * an ATM/homebanking later), and the real confirmation arrives afterwards as a separate
- * checkout.session.async_payment_succeeded webhook event — see stripeWebhook.ts, which listens
- * for both. The Stripe Dashboard's webhook endpoint config must include that event type (and
- * async_payment_failed) alongside checkout.session.completed, or MB WAY/Multibanco deposits will
- * silently never get credited even though this code is correct.
+ * All three methods go through the same PaymentIntent lifecycle here (unlike the old Checkout
+ * Session integration, which split sync/async methods across different event types): card
+ * confirms synchronously, MB WAY waits for in-app approval, and Multibanco waits for the customer
+ * to pay the displayed voucher — but all three eventually land on a single `payment_intent.succeeded`
+ * webhook event (or `payment_intent.payment_failed`), since the PaymentIntent sits in `processing`
+ * in between. See stripeWebhook.ts.
  */
 
 import Stripe from 'stripe';
@@ -26,12 +25,15 @@ function stripeWebhookSecret(): string {
   return String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
 }
 
-function publicAppUrl(): string {
-  return String(process.env.PUBLIC_APP_URL || 'https://bet62.plus').trim().replace(/\/+$/, '');
-}
-
 export function isStripeConfigured(): boolean {
   return stripeSecretKey().length > 0;
+}
+
+/** The publishable key is not secret — it's meant to ship to the browser (loadStripe() needs it)
+ *  — but it's still read from env rather than hardcoded, so switching between test/live keys
+ *  never needs a code change. Exposed to the frontend via GET /api/wallet/stripe/config. */
+export function stripePublishableKey(): string {
+  return String(process.env.STRIPE_PUBLISHABLE_KEY || '').trim();
 }
 
 let client: Stripe | null = null;
@@ -47,47 +49,47 @@ export type DepositMethod = 'card' | 'mb_way' | 'multibanco';
 
 export const DEPOSIT_METHODS: DepositMethod[] = ['card', 'mb_way', 'multibanco'];
 
-export interface CreateDepositCheckoutParams {
+export interface CreateDepositIntentParams {
   userId: string;
   amount: number;
   method: DepositMethod;
   email?: string;
 }
 
-export interface DepositCheckoutSession {
-  sessionId: string;
-  url: string;
+export interface DepositIntent {
+  paymentIntentId: string;
+  clientSecret: string;
 }
 
-/** Creates a Stripe Checkout Session for a deposit via the given method. The charged amount
- *  always comes from Stripe's own session object in the webhook handler afterwards — this
- *  function's `amount` only seeds what Stripe displays/charges at checkout, it is never trusted
- *  as the credited amount. */
-export async function createDepositCheckoutSession(params: CreateDepositCheckoutParams): Promise<DepositCheckoutSession> {
+/** Creates a PaymentIntent for a deposit via the given method. The credited amount always comes
+ *  from Stripe's own PaymentIntent object in the webhook handler afterwards — this function's
+ *  `amount` only seeds what Stripe charges, it is never trusted as the credited amount. The
+ *  returned client_secret is safe to hand to the browser (it's what Stripe.js needs to confirm
+ *  the payment) but must never be logged or embedded in a URL. */
+export async function createDepositPaymentIntent(params: CreateDepositIntentParams): Promise<DepositIntent> {
   const stripe = stripeClient();
   const amountCents = Math.round(params.amount * 100);
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
+  const intent = await stripe.paymentIntents.create({
+    amount: amountCents,
+    currency: 'eur',
     payment_method_types: [params.method],
-    customer_email: params.email,
-    client_reference_id: params.userId,
+    receipt_email: params.email,
     metadata: { user_id: params.userId },
-    payment_intent_data: { metadata: { user_id: params.userId } },
-    line_items: [
-      {
-        price_data: {
-          currency: 'eur',
-          product_data: { name: 'Depósito BET62' },
-          unit_amount: amountCents,
-        },
-        quantity: 1,
-      },
-    ],
-    success_url: `${publicAppUrl()}/deposit-success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${publicAppUrl()}/deposit`,
   });
-  if (!session.url) throw new Error('Stripe did not return a checkout URL');
-  return { sessionId: session.id, url: session.url };
+  if (!intent.client_secret) throw new Error('Stripe did not return a client secret');
+  return { paymentIntentId: intent.id, clientSecret: intent.client_secret };
+}
+
+export type DepositIntentStatus = Stripe.PaymentIntent.Status;
+
+/** Polls a PaymentIntent's current status — used by the frontend to show a live "confirmado" /
+ *  "falhou" state on MB WAY and Multibanco (both wait on the customer outside our page) without
+ *  requiring the wallet webhook to have landed yet. Never itself credits the wallet — that only
+ *  ever happens from the signature-verified webhook in stripeWebhook.ts. */
+export async function getDepositIntentStatus(paymentIntentId: string): Promise<DepositIntentStatus> {
+  const stripe = stripeClient();
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  return intent.status;
 }
 
 /** Verifies and parses a Stripe webhook payload. `rawBody` must be the exact, unparsed request

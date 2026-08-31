@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { loadStripe, type Stripe as StripeJs } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useApp } from '@/react-app/contexts/AppContext';
 import { apiFetch } from '@/react-app/utils/api';
 
@@ -45,7 +47,7 @@ function MethodLogo({ method }: { method: DepositMethod }) {
     );
   }
   // Card: generic Visa/Mastercard-style dual-circle mark, since a real deposit can land on either
-  // network — Stripe's own hosted checkout shows the actual card brand once the number is typed.
+  // network — the embedded Payment Element shows the actual card brand once the number is typed.
   return (
     <svg viewBox="0 0 40 24" width="36" height="20" xmlns="http://www.w3.org/2000/svg">
       <rect width="40" height="24" rx="4" fill="#1f2937" />
@@ -55,39 +57,173 @@ function MethodLogo({ method }: { method: DepositMethod }) {
   );
 }
 
+let stripePromise: Promise<StripeJs | null> | null = null;
+function getStripePromise(publishableKey: string) {
+  if (!stripePromise) stripePromise = loadStripe(publishableKey);
+  return stripePromise;
+}
+
+/** Renders inside <Elements>: the embedded Payment Element (adapts its own fields to whichever
+ *  single method the PaymentIntent was scoped to — card fields, or an MB WAY phone number) plus
+ *  the "Pagar" button. Confirming never leaves this page except for the rare case Stripe truly
+ *  requires a redirect (e.g. a 3D Secure bank challenge on some cards) — `redirect: 'if_required'`
+ *  skips it for everything else, including MB WAY (waits in place for the app approval) and
+ *  Multibanco (shows the voucher in an in-page Stripe modal, not a navigation). */
+function EmbeddedPaymentForm({
+  method,
+  amount,
+  email,
+  paymentIntentId,
+  onDone,
+}: {
+  method: DepositMethod;
+  amount: number;
+  email: string;
+  paymentIntentId: string;
+  onDone: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+  }, []);
+
+  const pollUntilSettled = () => {
+    setPending(true);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await apiFetch<{ status: string }>(`/api/wallet/deposit/stripe/status?payment_intent_id=${encodeURIComponent(paymentIntentId)}`);
+        if (res.status === 'succeeded') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          onDone();
+        } else if (res.status === 'canceled' || res.status === 'requires_payment_method') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setPending(false);
+          setError('O pagamento não foi confirmado. Tente novamente.');
+        }
+      } catch {
+        // transient — keep polling, the button below still lets the user check manually later
+      }
+    }, 3000);
+  };
+
+  const handleSubmit = async () => {
+    if (!stripe || !elements) return;
+    setSubmitting(true);
+    setError('');
+    const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/deposit-success`,
+        payment_method_data: { billing_details: { email } },
+      },
+      redirect: 'if_required',
+    });
+    setSubmitting(false);
+    if (confirmError) {
+      setError(confirmError.message || 'Não foi possível confirmar o pagamento.');
+      return;
+    }
+    if (paymentIntent?.status === 'succeeded') {
+      onDone();
+    } else {
+      // 'processing' — MB WAY waiting for app approval, or Multibanco waiting for the voucher to
+      // be paid. The wallet only credits once the webhook confirms it; poll status meanwhile so
+      // the UI updates itself instead of leaving the user staring at a stuck button.
+      pollUntilSettled();
+    }
+  };
+
+  if (pending) {
+    return (
+      <div className="text-center py-6 space-y-3">
+        <div className="w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="font-bold">A aguardar confirmação…</p>
+        <p className="text-sm opacity-70">
+          {method === 'mb_way' ? 'Aprove o pagamento na sua aplicação MB WAY.' : 'Pague a referência Multibanco apresentada para concluir o depósito.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <PaymentElement options={{ fields: { billingDetails: { email: 'never' } }, defaultValues: { billingDetails: { email } } }} />
+      {error && <p className="text-red-500 text-xs">{error}</p>}
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={submitting || !stripe || !elements}
+        className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+      >
+        {submitting ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> A processar...
+          </>
+        ) : (
+          `Pagar €${amount.toFixed(2)}`
+        )}
+      </button>
+    </div>
+  );
+}
+
 export default function PaymentsPage() {
-  const { darkMode, user, openAuthModal } = useApp();
+  const { darkMode, user, openAuthModal, addNotification } = useApp();
   const [amount, setAmount] = useState('25');
   const [method, setMethod] = useState<DepositMethod>('mb_way');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [publishableKey, setPublishableKey] = useState('');
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState('');
+  const [intent, setIntent] = useState<{ clientSecret: string; paymentIntentId: string; amount: number; method: DepositMethod; email: string } | null>(null);
+  const [done, setDone] = useState(false);
 
   const numAmount = parseFloat(amount) || 0;
 
+  useEffect(() => {
+    apiFetch<{ configured: boolean; publishableKey: string }>('/api/wallet/stripe/config')
+      .then((res) => setPublishableKey(res.publishableKey || ''))
+      .catch(() => setPublishableKey(''))
+      .finally(() => setConfigLoaded(true));
+  }, []);
+
+  const stripePromiseMemo = useMemo(() => (publishableKey ? getStripePromise(publishableKey) : null), [publishableKey]);
+
   const handleQuickAmount = (v: number) => {
     setAmount(String(v));
-    setError('');
+    setStartError('');
   };
 
-  const handleDeposit = async () => {
+  const handleStart = async () => {
     if (numAmount < MIN_DEPOSIT) {
-      setError(`Valor mínimo: €${MIN_DEPOSIT.toFixed(2)}`);
+      setStartError(`Valor mínimo: €${MIN_DEPOSIT.toFixed(2)}`);
       return;
     }
-    setLoading(true);
-    setError('');
+    setStarting(true);
+    setStartError('');
     try {
-      const res = await apiFetch<{ url: string }>('/api/wallet/deposit/stripe/checkout', {
+      const res = await apiFetch<{ client_secret: string; payment_intent_id: string; email: string }>('/api/wallet/deposit/stripe/intent', {
         method: 'POST',
         body: JSON.stringify({ amount: numAmount, method }),
       });
-      if (!res.url) throw new Error('Não foi possível iniciar o pagamento.');
-      window.location.href = res.url;
+      setIntent({ clientSecret: res.client_secret, paymentIntentId: res.payment_intent_id, amount: numAmount, method, email: res.email });
     } catch (err: any) {
       const msg = String(err?.message || '');
-      setError(/401|Unauthorized/i.test(msg) ? 'Sessão expirada. Faça login novamente.' : msg || 'Erro ao iniciar o depósito');
-      setLoading(false);
+      setStartError(/401|Unauthorized/i.test(msg) ? 'Sessão expirada. Faça login novamente.' : msg || 'Erro ao iniciar o depósito');
+    } finally {
+      setStarting(false);
     }
+  };
+
+  const handleDone = () => {
+    setDone(true);
+    addNotification({ type: 'success', message: 'Depósito confirmado! O saldo será atualizado em instantes.' });
   };
 
   if (!user) {
@@ -106,77 +242,122 @@ export default function PaymentsPage() {
     );
   }
 
+  const cardBg = darkMode ? 'bg-gray-800' : 'bg-white';
+
   return (
     <div className={`min-h-screen p-4 md:p-8 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      <div className={`max-w-md mx-auto rounded-2xl shadow-xl overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+      <div className={`max-w-md mx-auto rounded-2xl shadow-xl overflow-hidden ${cardBg}`}>
         <h2 className="text-xl font-bold text-center pt-6">💰 Depositar</h2>
 
-        <div className="p-6 pb-4">
-          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Valor do Depósito (€)</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              setError('');
-            }}
-            min={MIN_DEPOSIT}
-            step="5"
-            className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold ${
-              darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'
-            } ${error ? 'border-red-500' : ''}`}
-            placeholder="25"
-          />
-          {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
-          <div className="grid grid-cols-3 gap-2 mt-3">
-            {QUICK_AMOUNTS.map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => handleQuickAmount(v)}
-                className={`py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                  numAmount === v ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
-              >
-                €{v}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 border-t border-b border-gray-700/20">
-          {METHODS.map((m) => (
+        {done ? (
+          <div className="p-6 text-center space-y-3">
+            <div className="text-5xl">✅</div>
+            <p className="font-bold text-green-500">Depósito confirmado!</p>
+            <p className="text-sm opacity-70">O seu saldo será atualizado em instantes.</p>
             <button
-              key={m.key}
               type="button"
-              onClick={() => setMethod(m.key)}
-              className={`py-2.5 flex flex-col items-center gap-1 text-xs font-semibold transition-colors ${
-                method === m.key ? 'text-red-500 border-b-2 border-red-500 bg-red-500/10' : darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              onClick={() => {
+                setDone(false);
+                setIntent(null);
+              }}
+              className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl"
             >
-              <MethodLogo method={m.key} />
-              <span>{m.label}</span>
+              Novo Depósito
             </button>
-          ))}
-        </div>
-
-        <div className="p-6 space-y-3">
-          <button
-            type="button"
-            onClick={handleDeposit}
-            disabled={loading || numAmount < MIN_DEPOSIT}
-            className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> A processar...
-              </>
-            ) : (
-              `Pagar €${numAmount.toFixed(2)} com ${METHODS.find((m) => m.key === method)?.label}`
+          </div>
+        ) : intent ? (
+          <div className="p-6 space-y-4">
+            <button type="button" onClick={() => setIntent(null)} className="text-xs opacity-60 hover:opacity-100">
+              ‹ Voltar
+            </button>
+            <div className="flex items-center gap-2">
+              <MethodLogo method={intent.method} />
+              <span className="font-bold">€{intent.amount.toFixed(2)}</span>
+            </div>
+            {stripePromiseMemo && (
+              <Elements stripe={stripePromiseMemo} options={{ clientSecret: intent.clientSecret, locale: 'pt' }}>
+                <EmbeddedPaymentForm
+                  method={intent.method}
+                  amount={intent.amount}
+                  email={intent.email}
+                  paymentIntentId={intent.paymentIntentId}
+                  onDone={handleDone}
+                />
+              </Elements>
             )}
-          </button>
-          <p className={`text-center text-xs ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>🔒 Pagamento seguro processado pela Stripe. Será redirecionado para confirmar.</p>
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="p-6 pb-4">
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Valor do Depósito (€)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setStartError('');
+                }}
+                min={MIN_DEPOSIT}
+                step="5"
+                className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold ${
+                  darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900'
+                } ${startError ? 'border-red-500' : ''}`}
+                placeholder="25"
+              />
+              {startError && <p className="text-red-500 text-xs mt-1">{startError}</p>}
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {QUICK_AMOUNTS.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => handleQuickAmount(v)}
+                    className={`py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                      numAmount === v ? 'bg-red-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    €{v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 border-t border-b border-gray-700/20">
+              {METHODS.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setMethod(m.key)}
+                  className={`py-2.5 flex flex-col items-center gap-1 text-xs font-semibold transition-colors ${
+                    method === m.key ? 'text-red-500 border-b-2 border-red-500 bg-red-500/10' : darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <MethodLogo method={m.key} />
+                  <span>{m.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 space-y-3">
+              <button
+                type="button"
+                onClick={handleStart}
+                disabled={starting || !configLoaded || !publishableKey || numAmount < MIN_DEPOSIT}
+                className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                {starting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> A processar...
+                  </>
+                ) : configLoaded && !publishableKey ? (
+                  'Depósitos indisponíveis de momento'
+                ) : (
+                  `Continuar com ${METHODS.find((m) => m.key === method)?.label}`
+                )}
+              </button>
+              <p className={`text-center text-xs ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>🔒 Pagamento seguro processado pela Stripe, sem sair do BET62.</p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

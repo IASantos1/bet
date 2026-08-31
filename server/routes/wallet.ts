@@ -16,7 +16,14 @@ import {
 } from '../lib/ledger';
 import { validateBetRequest, BetRejectedError } from '../lib/bettingEngine';
 import { maybeGrantWelcomeBonus, applyBonusWagering } from '../lib/bonusService';
-import { isStripeConfigured, createDepositCheckoutSession, DEPOSIT_METHODS, type DepositMethod } from '../lib/stripePayments';
+import {
+  isStripeConfigured,
+  stripePublishableKey,
+  createDepositPaymentIntent,
+  getDepositIntentStatus,
+  DEPOSIT_METHODS,
+  type DepositMethod,
+} from '../lib/stripePayments';
 
 function toNumber(v: any): number {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
@@ -171,10 +178,18 @@ export async function handleWalletRoutes(
   // confirmation: the Stripe webhook below (walletService.deposit() is otherwise unreachable
   // from an HTTP route in this file).
 
-  // POST /api/wallet/deposit/stripe/checkout — starts a real Stripe Checkout session for a card
-  // deposit. No wallet credit happens here; that only happens once Stripe's webhook confirms the
-  // payment (POST /api/webhooks/stripe below).
-  if (req.method === 'POST' && path === '/api/wallet/deposit/stripe/checkout') {
+  // GET /api/wallet/stripe/config — the publishable key, safe to expose (it's what Stripe.js
+  // needs client-side; the secret key never leaves the server). No auth needed.
+  if (req.method === 'GET' && path === '/api/wallet/stripe/config') {
+    sendJson(res, 200, { configured: isStripeConfigured(), publishableKey: stripePublishableKey() });
+    return true;
+  }
+
+  // POST /api/wallet/deposit/stripe/intent — creates a PaymentIntent for an embedded deposit (the
+  // frontend confirms it in place with Stripe Elements — card fields, an MB WAY phone number, or
+  // a Multibanco voucher — never leaving /deposit). No wallet credit happens here; that only
+  // happens once Stripe's webhook confirms the payment (POST /webhooks/stripe).
+  if (req.method === 'POST' && path === '/api/wallet/deposit/stripe/intent') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
     if (!isStripeConfigured()) return badRequest(res, 'Depósitos indisponíveis de momento'), true;
@@ -190,7 +205,7 @@ export async function handleWalletRoutes(
     const methodLabel = method === 'card' ? 'Cartão' : method === 'mb_way' ? 'MB WAY' : 'Multibanco';
 
     try {
-      const session = await createDepositCheckoutSession({ userId: u.id, amount, method, email: u.email });
+      const intent = await createDepositPaymentIntent({ userId: u.id, amount, method, email: u.email });
       const txId = randomId(16);
       await recordTransaction(pool, {
         id: txId,
@@ -201,12 +216,35 @@ export async function handleWalletRoutes(
         method: `stripe_${method}`,
         description: `Depósito via ${methodLabel} (Stripe) - €${amount.toFixed(2)}`,
       });
-      // Tag the row with the Stripe session id so the webhook can find it later.
-      // recordTransaction() doesn't take stripe_session_id (kept out of its generic signature).
-      await pool.query(`UPDATE transactions SET stripe_session_id = $2 WHERE id = $1`, [txId, session.sessionId]);
-      sendJson(res, 200, { ok: true, url: session.url, session_id: session.sessionId });
+      // Tag the row with the PaymentIntent id so the webhook can find it later. recordTransaction()
+      // doesn't take stripe_session_id (kept out of its generic signature) — same column, now
+      // holding a PaymentIntent id rather than a Checkout Session id.
+      await pool.query(`UPDATE transactions SET stripe_session_id = $2 WHERE id = $1`, [txId, intent.paymentIntentId]);
+      sendJson(res, 200, { ok: true, client_secret: intent.clientSecret, payment_intent_id: intent.paymentIntentId, email: u.email });
     } catch (e: any) {
       sendJson(res, 502, { error: 'Não foi possível iniciar o pagamento', details: String(e?.message || e) });
+    }
+    return true;
+  }
+
+  // GET /api/wallet/deposit/stripe/status?payment_intent_id= — lets the frontend show a live
+  // "confirmado" state for MB WAY/Multibanco (both wait on the customer outside our page) without
+  // waiting on the wallet webhook. Scoped to the caller's own pending transaction row — never
+  // returns another user's payment status, and never itself credits the wallet.
+  if (req.method === 'GET' && path === '/api/wallet/deposit/stripe/status') {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+    const paymentIntentId = String(url.searchParams.get('payment_intent_id') || '');
+    if (!paymentIntentId) return badRequest(res, 'payment_intent_id required'), true;
+
+    const owns = await pool.query(`SELECT 1 FROM transactions WHERE stripe_session_id = $1 AND user_id = $2 LIMIT 1`, [paymentIntentId, u.id]);
+    if (!owns.rows[0]) return badRequest(res, 'Depósito não encontrado'), true;
+
+    try {
+      const status = await getDepositIntentStatus(paymentIntentId);
+      sendJson(res, 200, { ok: true, status });
+    } catch (e: any) {
+      sendJson(res, 502, { error: 'Não foi possível consultar o pagamento', details: String(e?.message || e) });
     }
     return true;
   }
