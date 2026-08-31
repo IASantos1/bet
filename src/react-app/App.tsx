@@ -33,6 +33,7 @@ import EventDetails from "./pages/EventDetails";
 import EventStatsPage from "./pages/EventStatsPage";
 import Promotions from "./pages/Promotions";
 import CasinoPage from "./pages/CasinoPage";
+import CasinoPlay from "./pages/CasinoPlay";
 import WorldCupPage from "./pages/WorldCupPage";
 import ProfilePage from "./pages/ProfilePage";
 import MyBetsPage from "./pages/MyBetsPage";
@@ -208,6 +209,7 @@ function AppContent() {
             <Route path="/deposit-success" element={<DepositSuccess />} />
             <Route path="/promotions" element={<Promotions />} />
             <Route path="/casino" element={<CasinoPage />} />
+            <Route path="/casino/play" element={<CasinoPlay />} />
             <Route path="/copa-do-mundo" element={<WorldCupPage />} />
             <Route path="/admin" element={
               <AdminRoute><AdminPanel /></AdminRoute>

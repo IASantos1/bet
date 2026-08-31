@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/react-app/contexts/AppContext';
 import { apiFetch } from '@/react-app/utils/api';
 
@@ -10,11 +11,11 @@ import { apiFetch } from '@/react-app/utils/api';
  *
  * "Jogar" (handlePlay) opens a real session via POST /api/casino/play, which creates/reuses the
  * aggregator's user_code for this BET62 account (server/routes/casino.ts) and returns a real,
- * single-use launch URL. This account runs Seamless mode (confirmed by the account owner): the
- * aggregator debits/credits BET62's own wallet directly via /callback rather than through a
- * separate deposit/withdraw step — but that webhook (server/routes/casinoCallback.ts) still only
- * logs the payload today, since its real schema has never been observed. Real play is enabled
- * anyway specifically so a real callback gets captured; see that file's docstring.
+ * single-use launch URL, then hands it to /casino/play (CasinoPlay.tsx) to render in-app via
+ * <iframe> — never window.open(), which would kick an installed PWA user out into the plain
+ * browser. This account runs Seamless mode (confirmed by the account owner): the aggregator
+ * debits/credits BET62's own wallet directly via /callback (server/routes/casinoCallback.ts),
+ * which fully implements the real bet/win/cancel money-moving contract.
  */
 
 const HERO_SLIDES = [
@@ -101,6 +102,7 @@ function GameCard({ game, onPlay, big, launching }: { game: RemoteGame; onPlay: 
 
 export default function CasinoPage() {
   const { darkMode, addNotification, user, selfExclude } = useApp();
+  const navigate = useNavigate();
   const [slide, setSlide] = useState(0);
   const [filter, setFilter] = useState('Todos');
   const [query, setQuery] = useState('');
@@ -158,7 +160,7 @@ export default function CasinoPage() {
         }),
       });
       if (data.success && data.game_url) {
-        window.open(data.game_url, '_blank', 'noopener,noreferrer');
+        navigate('/casino/play', { state: { gameUrl: data.game_url, gameName: game.game_name } });
       } else {
         addNotification({ type: 'warning', message: data.error || 'Jogo indisponível de momento' });
       }
