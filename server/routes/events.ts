@@ -623,6 +623,27 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     return base;
   };
 
+  // enrichEventOdds()'s own async calls (getOverride, fetchOddsBestEffort) are individually
+  // .catch()-wrapped, but a synchronous throw from anything else in it (a malformed event shape
+  // from a specific match, say) is not — and since mapLimit's Promise.all rejects the instant any
+  // one worker rejects, ONE bad event was enough to fail the entire live/pregame list for every
+  // OTHER match in the same request, silently landing on /api/events/by-sport's catch-all as an
+  // empty {live:[],pregame:[]} with no trace of why. Every enrichEventOdds() call in mapLimit goes
+  // through this wrapper instead so a single failure degrades to that one event's odds/markets
+  // being blank (never live-blocking), not the whole response.
+  const enrichEventOddsSafe = async (
+    e: AnyEvent,
+    refreshBudget: { remaining: number } | null,
+    fullMarkets: boolean,
+  ): Promise<AnyEvent> => {
+    try {
+      return await enrichEventOdds(e, refreshBudget, fullMarkets);
+    } catch (err: any) {
+      console.error('[events] enrichEventOdds failed for one event, returning it unenriched:', String(err?.message || err));
+      return e;
+    }
+  };
+
   const mapLimit = async <T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> => {
     const out: R[] = new Array(items.length);
     let idx = 0;
@@ -1074,20 +1095,20 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       const liveFiltered = includeLive ? live : [];
       const preFiltered = includePregame ? pregame : [];
 
-      const liveEnriched = includeLive ? await mapLimit(liveFiltered, 10, (x) => enrichEventOdds(x, budget0, fullMarkets)) : [];
-      const preEnriched = includePregame ? await mapLimit(preFiltered, 8, (x) => enrichEventOdds(x, budget0, fullMarkets)) : [];
+      const liveEnriched = includeLive ? await mapLimit(liveFiltered, 10, (x) => enrichEventOddsSafe(x, budget0, fullMarkets)) : [];
+      const preEnriched = includePregame ? await mapLimit(preFiltered, 8, (x) => enrichEventOddsSafe(x, budget0, fullMarkets)) : [];
       return { live: liveEnriched, pregame: preEnriched };
     }
 
     const liveBudget = { remaining: Math.min(30, live.length) };
-    const liveEnriched = await mapLimit(live, 10, (x) => enrichEventOdds(x, liveBudget, fullMarkets));
+    const liveEnriched = await mapLimit(live, 10, (x) => enrichEventOddsSafe(x, liveBudget, fullMarkets));
     let preEnriched: AnyEvent[] = pregame;
     if (includePregame && pregame.length > 0) {
       const eagerCount = Math.min(requireOdds ? 80 : 24, pregame.length);
       const head = pregame.slice(0, eagerCount);
       const tail = pregame.slice(eagerCount);
       const preBudget = { remaining: head.length };
-      const headEnriched = await mapLimit(head, 10, (x) => enrichEventOdds(x, preBudget, fullMarkets));
+      const headEnriched = await mapLimit(head, 10, (x) => enrichEventOddsSafe(x, preBudget, fullMarkets));
       preEnriched = [...headEnriched, ...tail];
     }
 
@@ -1303,8 +1324,12 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       // cache, isPregameCandidate, the league allowlist, the day-spread limit) — the raw
       // scheduleTest above only proves the underlying GoalServe fetch itself works, not that a
       // real match survives every filtering stage down to the response the frontend actually gets.
+      // includeOdds:true here on purpose — that's the exact param the real failing request used
+      // (?include=odds). The earlier version of this test passed includeOdds:false, which returns
+      // before ever reaching the odds-enrichment step, so it could never have caught a failure
+      // that only happens there (see enrichEventOddsSafe's doc comment above).
       const pipelineCounters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
-      const pipelineResult = await buildBySport(sport, false, null, false, false, 'pregame', 7, false, false, pipelineCounters)
+      const pipelineResult = await buildBySport(sport, true, null, false, false, 'pregame', 7, false, false, pipelineCounters)
         .then((r) => ({ ok: true as const, finalCount: r.pregame.length, stages: pipelineCounters }))
         .catch((e: any) => ({ ok: false as const, error: String(e?.message || e), stages: pipelineCounters }));
 
