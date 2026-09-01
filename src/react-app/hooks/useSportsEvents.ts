@@ -418,6 +418,31 @@ export function useSportsEvents(
         } else { 
           sportParam = rawSport === 'soccer-all' || rawSport === 'todos' ? 'all' : rawSport; 
         } 
+
+        const canonicalSport = (sport: string): string => {
+          const s = String(sport || '').toLowerCase().trim();
+          if (!s) return '';
+          if (s === 'football' || s === 'futebol') return 'soccer';
+          if (s === 'icehockey' || s === 'hockey') return 'ice-hockey';
+          if (s === 'americanfootball' || s === 'nfl' || s === 'futebol-americano' || s === 'futebol americano') return 'american-football';
+          if (s === 'basquete') return 'basketball';
+          if (s === 'tenis' || s === 'ténis') return 'tennis';
+          if (s === 'beisebol') return 'baseball';
+          return s;
+        };
+        const requestedSports =
+          sportParam === 'all'
+            ? null
+            : new Set(
+                String(sportParam || '')
+                  .split(',')
+                  .map((x) => canonicalSport(x))
+                  .filter(Boolean),
+              );
+        const matchesRequestedSport = (e: Event) => {
+          if (!requestedSports || requestedSports.size === 0) return true;
+          return requestedSports.has(canonicalSport(String((e as any)?.sport || '')));
+        };
  
         params.set('sports', sportParam); 
         if (leagueFilter) {
@@ -428,7 +453,7 @@ export function useSportsEvents(
         params.set('include', 'odds');
         params.set('realtime', only === 'pregame' ? '0' : '1');
         params.set('only', only);
-        const requireOdds = opts?.requireOdds !== false;
+        const requireOdds = opts?.requireOdds === true;
         if (requireOdds) params.set('requireOdds', '1');
         const days =
           daysOverride != null
@@ -483,8 +508,14 @@ export function useSportsEvents(
           const rawLive = (data.live || []) as Event[];
           const rawPregame = (data.pregame || []) as Event[];
           
-          let liveEvents = dedupEvents(rawLive).filter(e => !shouldHideEvent(e)).map(normalizeMarkets);
-          let pregameEvents = dedupEvents(rawPregame).filter(e => !shouldHideEvent(e)).map(normalizeMarkets);  
+          let liveEvents = dedupEvents(rawLive)
+            .filter(matchesRequestedSport)
+            .filter(e => !shouldHideEvent(e))
+            .map(normalizeMarkets);
+          let pregameEvents = dedupEvents(rawPregame)
+            .filter(matchesRequestedSport)
+            .filter(e => !shouldHideEvent(e))
+            .map(normalizeMarkets);  
 
           // Fallback dev
           if (
@@ -493,8 +524,8 @@ export function useSportsEvents(
             pregameEvents.length === 0 &&
             (rawLive.length > 0 || rawPregame.length > 0)
           ) {
-            liveEvents = dedupEvents(rawLive).map(normalizeMarkets);
-            pregameEvents = dedupEvents(rawPregame).map(normalizeMarkets);
+            liveEvents = dedupEvents(rawLive).filter(matchesRequestedSport).map(normalizeMarkets);
+            pregameEvents = dedupEvents(rawPregame).filter(matchesRequestedSport).map(normalizeMarkets);
           }
 
           const isGameActive = (e: Event) => {
@@ -648,7 +679,7 @@ export function useSportsEvents(
                   const pregameMax = safeCategory === 'all' ? 45 : 60;
                   const filteredPregame = limitPregameAll(pregameBase, pregameMax);
           const maxLive = safeCategory === 'all' ? 100 : 60;
-          const finalLive = preferOdds(filteredLive, maxLive * 2).filter(hasPrimaryOdds).slice(0, maxLive);
+          const finalLive = preferOdds(filteredLive, maxLive).slice(0, maxLive);
           
           const finalPregame = filteredPregame;
 
@@ -663,7 +694,7 @@ export function useSportsEvents(
           return; 
         } else if (Array.isArray(data) && data.length > 0) {
             // FLAT ARRAY FALLBACK (API returning simple list)
-            const list = data as Event[];
+            const list = (data as Event[]).filter(matchesRequestedSport);
             const liveEvents = list.filter(e => Number(e.is_live) === 1);
             const pregameEvents = list.filter(e => Number(e.is_live) !== 1);
             
@@ -731,7 +762,7 @@ export function useSportsEvents(
             const isAllowedSport = (e: Event) => !blockedSports.has(sportKey(e));
 
             const maxLive = safeCategory === 'all' ? 100 : 60;
-            const finalLive = preferOdds(activeLive.filter(isAllowedSport), maxLive * 2).filter(hasPrimaryOdds).slice(0, maxLive);
+            const finalLive = preferOdds(activeLive.filter(isAllowedSport), maxLive).slice(0, maxLive);
             const pregameBase = preferOdds(activePregame.filter(isTodayAdjusted), 80);
 
             const sportRank = (s: string) => {
