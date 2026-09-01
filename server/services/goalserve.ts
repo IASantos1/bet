@@ -787,13 +787,34 @@ function parseOddsMatch(m: any): OddsResult | null {
 }
 
 // CONFIRMED (all 5 official Data Feed PDFs, PREGAME ODDS COMPARISON FEED section): "requests
-// limit – 1 request every 10 seconds per sport" — this is a per-SPORT limit on the whole
-// comparison feed (which returns every priced match for that sport in one payload), not a
-// per-match limit. A caller asking for N different matches' odds in the same sport must reuse one
-// fetch, not issue N requests — every exported fetchGoalServeMatchOdds*() below goes through this
-// shared cache so that's true regardless of call pattern (e.g. server/ws/liveWs.ts polling odds
-// for every live match in a sport on each snapshot cycle).
-const ODDS_PAYLOAD_TTL_MS = 9_000;
+// limit – 1 request every 10 seconds per sport" — but the Tennis PDF spells out the condition
+// that limit depends on: "1 request every 10 seconds per sport WITH ts attribute. Without ts the
+// limit is 1 request per 30 seconds." fetchOddsPayload() below never sends `ts` (see the ts/delta
+// TODO on fetchOddsPayload itself), so the real ceiling for every sport here is 1 request/30s, not
+// 1/10s — this was previously set to 9s, well under even the relaxed limit, and was the actual
+// cause of the intermittent 500s on tennis/hockey/baseball/basket confirmed against production
+// (getodds/soccer?cat=X_10 is otherwise byte-for-byte the documented URL for every sport).
+//
+// This is a per-SPORT limit on the whole comparison feed (which returns every priced match for
+// that sport in one payload), not a per-match limit. A caller asking for N different matches' odds
+// in the same sport must reuse one fetch, not issue N requests — every exported
+// fetchGoalServeMatchOdds*() below goes through this shared cache, and so does every caller of
+// those (server/routes/events.ts's REST odds queue/fetchOddsStrict, server/ws/liveWs.ts's live
+// snapshot loop) — grep for "getodds" in this repo turns up exactly one call site, this one, so
+// this cache is the sole gate between any caller and GoalServe's odds endpoint for a given sport;
+// no caller-side TTL (events.ts's LIVE_ODDS_FRESH_TTL_MS, liveWs.ts's own ODDS_FRESH_TTL_MS — both
+// 8s, tuned only for perceived UI freshness) can cause an actual network request more often than
+// this constant allows, since a "stale" caller-side cache still resolves through this same
+// payload cache/inflight-dedup pair below.
+//
+// CAVEAT not addressed here: this cache is per-process (a plain in-memory Map). If this service
+// ever runs more than one instance/replica sharing the same GoalServe API key (Railway's own
+// multi-replica "Static Outbound IPs" setup makes this a real possibility, not hypothetical — see
+// the IP-whitelist investigation elsewhere in this codebase's history), each replica enforces this
+// 30s+ ceiling independently, and GoalServe could still see N replicas' worth of requests within
+// the same window. A durable, cross-replica gate (e.g. a timestamp row in Postgres) would be
+// needed to guarantee the limit account-wide; out of scope for this fix.
+const ODDS_PAYLOAD_TTL_MS = 32_000; // 30s documented minimum without `ts` + 2s clock/latency margin
 const oddsPayloadCache = new Map<string, { ts: number; payload: any }>();
 const oddsPayloadInflight = new Map<string, Promise<any | null>>();
 
