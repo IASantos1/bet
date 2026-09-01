@@ -1261,6 +1261,48 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       return true;
     }
 
+    // Reports exactly what this deployed instance sees — which provider is active, whether an API
+    // key is configured (never the key itself), and the real result of calling GoalServe's schedule
+    // + pregame odds endpoints right now. Built to answer "the code is right but production shows
+    // nothing" without needing shell/log access to the box — every fetchGoalServe* call already logs
+    // its own failures to console.error, but those aren't visible from outside the deployment.
+    if (req.method === 'GET' && path === '/api/dev/provider-debug') {
+      const tokenEnv = String(process.env.ODDS_DEBUG_TOKEN || '').trim();
+      if (!tokenEnv) return false;
+      const token = String(url.searchParams.get('token') || req.headers['x-debug-token'] || '').trim();
+      if (!token || token !== tokenEnv) return sendJson(res, 403, { error: 'Forbidden' }), true;
+
+      const sport = String(url.searchParams.get('sport') || 'soccer').trim();
+      const today = ymd(new Date());
+
+      const scheduleResult = await providerFetchSchedule(apiKey, sport, today)
+        .then((list) => ({
+          ok: true as const,
+          count: Array.isArray(list) ? list.length : 0,
+          sample: Array.isArray(list) ? list.slice(0, 5).map((e: any) => ({ league: e?.league, country: e?.country, home: e?.home_team, away: e?.away_team })) : [],
+        }))
+        .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }));
+
+      const inplayResult =
+        USE_GOALSERVE && sport === 'soccer'
+          ? await fetchInplayEvents(sport)
+              .then((list) => ({ ok: true as const, count: list.length }))
+              .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }))
+          : null;
+
+      sendJson(res, 200, {
+        provider: USE_GOALSERVE ? 'goalserve' : 'sportsapipro',
+        sportsDataProviderEnv: String(process.env.SPORTS_DATA_PROVIDER || '(not set)'),
+        hasApiKey: apiKey.trim().length > 0,
+        apiKeyLength: apiKey.trim().length,
+        today,
+        sport,
+        scheduleTest: scheduleResult,
+        inplayTest: inplayResult,
+      });
+      return true;
+    }
+
     if (req.method === 'GET' && path === '/api/dev/schedule-debug') {
       const tokenEnv = String(process.env.ODDS_DEBUG_TOKEN || '').trim();
       if (!tokenEnv) return false;
