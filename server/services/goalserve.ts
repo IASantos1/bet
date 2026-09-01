@@ -115,7 +115,7 @@ function sleep(ms: number): Promise<void> {
 // IP) and succeed outright. Retrying a couple of times with a short delay costs little and masks
 // exactly this class of intermittent, infra-level failure while the whitelist gap is closed.
 const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
-const RETRY_DELAYS_MS = [300, 700];
+const RETRY_DELAYS_MS = [1000, 3000, 7000];
 
 async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false, _attempt = 0): Promise<any | null> {
   const controller = new AbortController();
@@ -829,8 +829,15 @@ async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | nu
   const url = `${ODDS_BASE_URL}/${encodeURIComponent(apiKey)}/getodds/soccer?cat=${cat}_10&json=1`;
   const p = fetchJson(url, 15000)
     .then((json) => {
-      oddsPayloadCache.set(cat, { ts: Date.now(), payload: json });
-      return json;
+      // A transient GoalServe failure (fetchJson already retried and still came back null) must
+      // never blank out odds that were serving fine a moment ago — that turns a momentary 500 on
+      // their end into "odds disappeared" for every bettor on this sport. Keep the last good
+      // payload in the cache and serve it stale until a fetch actually succeeds.
+      if (json != null) {
+        oddsPayloadCache.set(cat, { ts: Date.now(), payload: json });
+        return json;
+      }
+      return cached ? cached.payload : null;
     })
     .finally(() => {
       oddsPayloadInflight.delete(cat);
