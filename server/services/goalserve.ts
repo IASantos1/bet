@@ -527,10 +527,21 @@ function extractLogoEntries(payload: any): Array<{ id: string; url: string }> {
   return [];
 }
 
-/** Batch-fetches team logos for every id not already cached, in one comma-separated request —
- *  naturally respects the 1 req/sec limit as long as callers don't fan out per-event requests.
- *  Never throws: a failed or unconfirmed-shape response just leaves those ids uncached, and
- *  callers fall back to no logo rather than losing the event data over it. */
+// CONFIRMED against a real production log: a single request batching several hundred ids (tennis,
+// with its much larger per-day player count, hit this first) came back 404 rather than a partial
+// result — some limit on request/URL size is being exceeded, though GoalServe's own docs don't
+// state the exact number for this endpoint specifically (only a "max 20 ids" note on a *different*
+// basketball profile endpoint). 60 is a deliberately conservative guess to stay well clear of
+// whatever the real ceiling is, not a confirmed value — safe either way since an over-sized chunk
+// just fails that one chunk's ids the same way the unchunked call already did, never the whole
+// batch or the events those ids belong to (this function never throws).
+const LOGO_MAX_IDS_PER_REQUEST = 60;
+
+/** Batch-fetches team logos for every id not already cached, chunked to stay under whatever size
+ *  limit this endpoint enforces (see LOGO_MAX_IDS_PER_REQUEST) — naturally respects the 1 req/sec
+ *  limit as long as callers don't fan out per-event requests. Never throws: a failed or
+ *  unconfirmed-shape response just leaves those ids uncached, and callers fall back to no logo
+ *  rather than losing the event data over it. */
 async function fetchTeamLogos(apiKey: string, sport: string, teamIds: string[]): Promise<void> {
   const type = logosSportType(sport);
   const missing = Array.from(new Set(teamIds)).filter((id) => {
@@ -540,10 +551,13 @@ async function fetchTeamLogos(apiKey: string, sport: string, teamIds: string[]):
   if (!missing.length || !apiKeyOk(apiKey)) return;
 
   const run = async () => {
-    const url = `${LOGO_BASE_URL}/${type}/teams?k=${encodeURIComponent(apiKey)}&ids=${missing.map(encodeURIComponent).join(',')}`;
-    const json = await fetchJson(url, 8000);
-    for (const { id, url: logoUrl } of extractLogoEntries(json)) {
-      logoCache.set(`${type}:${id}`, { ts: Date.now(), url: logoUrl });
+    for (let i = 0; i < missing.length; i += LOGO_MAX_IDS_PER_REQUEST) {
+      const chunk = missing.slice(i, i + LOGO_MAX_IDS_PER_REQUEST);
+      const url = `${LOGO_BASE_URL}/${type}/teams?k=${encodeURIComponent(apiKey)}&ids=${chunk.map(encodeURIComponent).join(',')}`;
+      const json = await fetchJson(url, 8000);
+      for (const { id, url: logoUrl } of extractLogoEntries(json)) {
+        logoCache.set(`${type}:${id}`, { ts: Date.now(), url: logoUrl });
+      }
     }
   };
 
