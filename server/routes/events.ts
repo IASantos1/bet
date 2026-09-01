@@ -1529,9 +1529,16 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const oddsMatch = path.match(/^\/api\/events\/([^/]+)\/odds$/);
     if (oddsMatch && req.method === 'GET') {
       const idRaw = decodeURIComponent(oddsMatch[1] || '');
+      const id = normalizeIdLoose(idRaw);
       const sportParam = String(url.searchParams.get('sport') || '').trim();
-      const odds = await getEventOdds(idRaw, sportParam || undefined);
-      if (!odds) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
+      // Resolve the sport first so a truly unknown event id (real 404) can be told apart from a
+      // known event whose odds fetch just failed (provider outage/rate-limit/IP-whitelist gap —
+      // a 503, not a 404). Both used to collapse into the same "Evento não encontrado", which made
+      // a live GoalServe outage indistinguishable from a bad id on the client.
+      const sport = sportParam || (await resolveSport(id).catch(() => null));
+      if (!sport) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
+      const odds = await getEventOdds(idRaw, sport);
+      if (!odds) return sendJson(res, 503, { error: 'Odds indisponíveis de momento. Tenta novamente em breve.' }), true;
       sendJson(res, 200, odds);
       return true;
     }

@@ -104,7 +104,20 @@ function stripAttrPrefix(node: any): any {
   return node;
 }
 
-async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false): Promise<any | null> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Railway's "Static Outbound IPs" feature spreads this service's own outbound traffic across
+// several replicas, each pinned to a different egress IP — but only some of those IPs may be
+// whitelisted with GoalServe at any given time. A 403/429/5xx from GoalServe is therefore not
+// necessarily a hard, per-URL failure: a retry can land on a different replica (different egress
+// IP) and succeed outright. Retrying a couple of times with a short delay costs little and masks
+// exactly this class of intermittent, infra-level failure while the whitelist gap is closed.
+const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [300, 700];
+
+async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false, _attempt = 0): Promise<any | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
@@ -117,6 +130,10 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
       // at all, which made a real outage or misconfiguration indistinguishable from an empty
       // schedule in production. Always log the status so that distinction is visible.
       console.error('[goalserve] HTTP', res.status, redactKey(url), text.slice(0, 300));
+      if (RETRYABLE_STATUS.has(res.status) && _attempt < RETRY_DELAYS_MS.length) {
+        await sleep(RETRY_DELAYS_MS[_attempt]);
+        return fetchJson(url, timeoutMs, _retriedJsonParam, _attempt + 1);
+      }
       return null;
     }
     if (!text) {
@@ -1169,7 +1186,7 @@ export function parseInplayTimeStatus(timeStatus: number): InplayTimeStatus {
  *  JSON payload exactly as GoalServe sent it — shape not yet mapped into NormalizedEvent[], see
  *  the doc comment above this section — or null on any unsupported-sport/network/decompression/
  *  parse failure, logged the same way fetchJson() above does. */
-export async function fetchInplayFeed(sport: string, timeoutMs = 8000): Promise<any | null> {
+export async function fetchInplayFeed(sport: string, timeoutMs = 8000, _attempt = 0): Promise<any | null> {
   const segment = inplaySportSegment(sport);
   if (!segment) return null;
   const url = `${INPLAY_HOST}/inplay-${segment}.gz`;
@@ -1180,6 +1197,13 @@ export async function fetchInplayFeed(sport: string, timeoutMs = 8000): Promise<
     const buf = Buffer.from(await res.arrayBuffer());
     if (!res.ok) {
       console.error('[goalserve-inplay] HTTP', res.status, url, buf.toString('utf8').slice(0, 300));
+      // Same rationale as fetchJson() above: a 403/429/5xx here can be one specific Railway
+      // replica's un-whitelisted egress IP, not a real outage — retry a couple of times so a
+      // different replica gets a chance to serve the request.
+      if (RETRYABLE_STATUS.has(res.status) && _attempt < RETRY_DELAYS_MS.length) {
+        await sleep(RETRY_DELAYS_MS[_attempt]);
+        return fetchInplayFeed(sport, timeoutMs, _attempt + 1);
+      }
       return null;
     }
     let decompressed: Buffer;
