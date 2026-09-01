@@ -648,6 +648,11 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     daysAhead: number,
     requireOdds: boolean,
     allowBlocked: boolean,
+    // Debug-only: when passed, populated with a per-stage event count so /api/dev/provider-debug
+    // can show exactly which stage (raw fetch -> pregame-candidate filter -> league-allowlist
+    // filter -> day-spread limit) events are lost at, instead of only the final count. No real
+    // caller passes this, so this is a strictly additive no-op on the actual traffic path.
+    debugCounters?: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number },
   ): Promise<{ live: AnyEvent[]; pregame: AnyEvent[] }> => {
     startOddsQueue();
     const sports = getSports(sportsParam);
@@ -706,9 +711,11 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         }
       }
       const lists = await mapLimit(tasks, 6, (t) => fetchSchedule(t.sport, t.date).catch(() => []));
+      if (debugCounters) debugCounters.rawFetched = lists.reduce((n, sched) => n + (sched || []).length, 0);
       for (const sched of lists) {
         preAll.push(...(sched || []).filter(isPregameCandidate));
       }
+      if (debugCounters) debugCounters.afterCandidate = preAll.length;
 
       if (sports.some((s) => {
         const k = String(s || '').toLowerCase().trim();
@@ -1000,8 +1007,10 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         : arr.filter((e: any) => !isSoccerSport(e) || !isBlockedLeague(String((e as any)?.league || ''), String((e as any)?.country || '')));
     const live = sortStable(filterBlocked(filterLeague(liveAll))).slice(0, 120);
     const preSorted = sortStable(filterBlocked(filterLeague(preAll)));
+    if (debugCounters) debugCounters.afterBlocked = preSorted.length;
     const preLimit = days > 1 ? 300 : 120;
     const pregame = days > 1 ? spreadAcrossDays(preSorted, days, preLimit) : preSorted.slice(0, preLimit);
+    if (debugCounters) debugCounters.afterSpread = pregame.length;
 
     if (!includeOdds) {
       return { live, pregame };
@@ -1290,6 +1299,15 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }))
           : null;
 
+      // Runs the exact same pipeline /api/events/by-sport?only=pregame uses (fetchSchedule's
+      // cache, isPregameCandidate, the league allowlist, the day-spread limit) — the raw
+      // scheduleTest above only proves the underlying GoalServe fetch itself works, not that a
+      // real match survives every filtering stage down to the response the frontend actually gets.
+      const pipelineCounters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
+      const pipelineResult = await buildBySport(sport, false, null, false, false, 'pregame', 7, false, false, pipelineCounters)
+        .then((r) => ({ ok: true as const, finalCount: r.pregame.length, stages: pipelineCounters }))
+        .catch((e: any) => ({ ok: false as const, error: String(e?.message || e), stages: pipelineCounters }));
+
       sendJson(res, 200, {
         provider: USE_GOALSERVE ? 'goalserve' : 'sportsapipro',
         sportsDataProviderEnv: String(process.env.SPORTS_DATA_PROVIDER || '(not set)'),
@@ -1299,6 +1317,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         sport,
         scheduleTest: scheduleResult,
         inplayTest: inplayResult,
+        pregamePipelineTest: pipelineResult,
       });
       return true;
     }
