@@ -21,6 +21,42 @@ interface HomeProps {
   mode?: 'home' | 'live';
 }
 
+/** Distributes an overall cap fairly across leagues, one event at a time round-robin, instead of
+ *  draining the whole budget on whichever leagues come first (alphabetically, per the backend's
+ *  own sort) and hard-cutting off every league after that — with enough real leagues passing the
+ *  server's allowlist on a given day to exceed the cap on soccer alone, that greedy approach meant
+ *  entire leagues could vanish from the list some days and not others, depending only on which
+ *  leagues happened to have more matches that day. Mirrors spreadAcrossDays() in
+ *  server/routes/events.ts, applied per-league here instead of per-day. */
+function spreadAcrossLeagues<T>(grouped: Array<[string, T[]]>, overallLimit: number): Array<[string, T[]]> {
+  if (overallLimit <= 0) return [];
+  const totalEvents = grouped.reduce((n, [, events]) => n + events.length, 0);
+  if (totalEvents <= overallLimit) return grouped;
+
+  const picked = new Map<string, T[]>();
+  const idx = new Map<string, number>();
+  let taken = 0;
+  for (;;) {
+    if (taken >= overallLimit) break;
+    let progressed = false;
+    for (const [league, events] of grouped) {
+      if (taken >= overallLimit) break;
+      const i = idx.get(league) || 0;
+      if (i >= events.length) continue;
+      const bucket = picked.get(league) || [];
+      bucket.push(events[i]);
+      picked.set(league, bucket);
+      idx.set(league, i + 1);
+      taken += 1;
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+  return grouped
+    .map(([league]): [string, T[]] => [league, picked.get(league) || []])
+    .filter(([, events]) => events.length > 0);
+}
+
 const normalizeTeamKey = (s: string) =>
   String(s || '')
     .normalize('NFD')
@@ -449,33 +485,12 @@ function Home({ mode = 'home' }: HomeProps) {
     if (mode === 'home' && isMainSports && featuredUpcomingGroups.length > 0) {
       return featuredUpcomingGroups;
     }
-    let remaining = MAX_EVENTS;
-    const result: [string, Event[]][] = [];
-
-    for (const [league, events] of groupedUpcoming) {
-      if (remaining <= 0) break;
-      const take = Math.min(events.length, remaining);
-      if (take > 0) {
-        result.push([league, events.slice(0, take)]);
-        remaining -= take;
-      }
-    }
-    return result;
+    return spreadAcrossLeagues(groupedUpcoming as Array<[string, Event[]]>, MAX_EVENTS);
   }, [groupedUpcoming, MAX_EVENTS, mode, isMainSports, featuredUpcomingGroups]);
 
   const limitedNext7 = useMemo(() => {
     if (mode !== 'live') return [];
-    let remaining = 300;
-    const result: [string, Event[]][] = [];
-    for (const [league, events] of groupedNext7) {
-      if (remaining <= 0) break;
-      const take = Math.min(events.length, remaining);
-      if (take > 0) {
-        result.push([league, events.slice(0, take)]);
-        remaining -= take;
-      }
-    }
-    return result;
+    return spreadAcrossLeagues(groupedNext7 as Array<[string, Event[]]>, 300);
   }, [groupedNext7, mode]);
 
   const noSearchResults = useMemo(() => {
