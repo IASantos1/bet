@@ -784,7 +784,10 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
 
       // Italy
       if (/italy|ital/.test(c)) {
-        if (/serie a|serie b|coppa italia/.test(l)) return false;
+        // CONFIRMED against a real live category list: "Coppa Italia Serie C" (the 3rd-tier's own
+        // separate cup) was slipping through on a plain substring match against "coppa italia" —
+        // exclude anything naming a lower Serie explicitly.
+        if (/serie a|serie b|coppa italia/.test(l) && !/serie c|serie d/.test(l)) return false;
       }
 
       // France
