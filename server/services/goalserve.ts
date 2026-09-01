@@ -787,6 +787,32 @@ async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | nu
   return p;
 }
 
+/** Debug-only: returns the raw match ids/team names the odds-comparison feed actually carries for
+ *  a sport right now, without going through parseOddsMatch()/findMatchInOddsPayload() — used to
+ *  check whether this feed's own match ids line up with the schedule feed's (server/routes/events.ts's
+ *  /api/dev/provider-debug), since a real, high-profile match (e.g. a Rio derby) coming back with
+ *  no odds is far more likely to be an id mismatch between the two GoalServe feeds than that match
+ *  genuinely being unpriced by every bookmaker GoalServe aggregates. */
+export async function fetchOddsPayloadSample(apiKey: string, sport: string): Promise<{ totalMatches: number; sample: Array<{ id: string; home: string; away: string }> } | null> {
+  const payload = await fetchOddsPayload(apiKey, sport);
+  if (!payload) return null;
+  const categories = extractCategories(payload);
+  const sample: Array<{ id: string; home: string; away: string }> = [];
+  let totalMatches = 0;
+  for (const cat of categories) {
+    for (const group of extractMatchGroups(cat)) {
+      for (const m of group.matches) {
+        totalMatches += 1;
+        if (sample.length < 10) {
+          const { home, away } = extractTeams(m, sport);
+          sample.push({ id: str(m?.id ?? m?.['@id']), home: teamName(home), away: teamName(away) });
+        }
+      }
+    }
+  }
+  return { totalMatches, sample };
+}
+
 /** GoalServe doesn't split "all / live / pre-match" odds into separate endpoints the way
  *  sportsApiPro does — the same comparison feed carries whatever matches are currently priced,
  *  live or upcoming. All three exported functions below share this one fetch+parse path; kept as
