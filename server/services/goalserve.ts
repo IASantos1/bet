@@ -108,6 +108,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isGzipBuffer(buf: Buffer): boolean {
+  return buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+}
+
+function decodeBodyBuffer(buf: Buffer, contentEncoding?: string | null): string {
+  const enc = String(contentEncoding || '').toLowerCase().trim();
+  if (enc.includes('gzip') || isGzipBuffer(buf)) {
+    try {
+      return gunzipSync(buf).toString('utf8');
+    } catch {
+      // Some fetch implementations auto-decompress but still expose headers/URLs that suggest
+      // gzip. Fall back to raw utf8 instead of treating that as a hard failure.
+    }
+  }
+  return buf.toString('utf8');
+}
+
+function bodyPreview(text: string, max = 300): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
 // Railway's "Static Outbound IPs" feature spreads this service's own outbound traffic across
 // several replicas, each pinned to a different egress IP — but only some of those IPs may be
 // whitelisted with GoalServe at any given time. A 403/429/5xx from GoalServe is therefore not
@@ -122,14 +143,15 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
     const res = await fetch(url, { headers: { accept: 'application/json' }, signal: controller.signal });
-    const text = await res.text().catch(() => '');
+    const buf = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0)));
+    const text = decodeBodyBuffer(buf, res.headers.get('content-encoding'));
     clearTimeout(t);
     if (!res.ok) {
       // Previously swallowed silently — a 401/403 (bad/unwhitelisted key), 404 (wrong URL
       // segment), or 5xx from GoalServe looked identical to "no matches today" with no log line
       // at all, which made a real outage or misconfiguration indistinguishable from an empty
       // schedule in production. Always log the status so that distinction is visible.
-      console.error('[goalserve] HTTP', res.status, redactKey(url), text.slice(0, 300));
+      console.error('[goalserve] HTTP', res.status, redactKey(url), bodyPreview(text));
       if (RETRYABLE_STATUS.has(res.status) && _attempt < RETRY_DELAYS_MS.length) {
         await sleep(RETRY_DELAYS_MS[_attempt]);
         return fetchJson(url, timeoutMs, _retriedJsonParam, _attempt + 1);
@@ -150,7 +172,7 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
       if (!_retriedJsonParam && /[?&]json=1(&|$)/.test(url)) {
         return fetchJson(url.replace(/([?&])json=1(&|$)/, '$1json=true$2'), timeoutMs, true);
       }
-      console.error('[goalserve] non-JSON response (check ?json=1/?json=true and the feed path):', redactKey(url), text.slice(0, 200));
+      console.error('[goalserve] non-JSON response (check ?json=1/?json=true and the feed path):', redactKey(url), bodyPreview(text, 200));
       return null;
     }
   } catch (e) {
@@ -527,15 +549,28 @@ function logosSportType(sport: string): string {
   return 'soccer';
 }
 
+function logoEntityType(sport: string): 'teams' | 'players' {
+  const s = String(sport || '').toLowerCase().trim();
+  return s === 'tennis' || s === 'tênis' ? 'players' : 'teams';
+}
+
 function extractLogoEntries(payload: any): Array<{ id: string; url: string }> {
   if (!payload) return [];
   const candidates = [payload?.teams, payload?.leagues, payload?.players, payload?.data, payload?.logos, payload?.results, payload];
   for (const c of candidates) {
-    const arr = Array.isArray(c) ? c : Array.isArray(c?.team) ? c.team : Array.isArray(c?.league) ? c.league : null;
+    const arr = Array.isArray(c)
+      ? c
+      : Array.isArray(c?.team)
+        ? c.team
+        : Array.isArray(c?.league)
+          ? c.league
+          : Array.isArray(c?.player)
+            ? c.player
+            : null;
     if (!arr) continue;
     const out: Array<{ id: string; url: string }> = [];
     for (const item of arr) {
-      const id = str(item?.id ?? item?.['@id'] ?? item?.team_id ?? item?.league_id);
+      const id = str(item?.id ?? item?.['@id'] ?? item?.team_id ?? item?.league_id ?? item?.player_id);
       const url = str(item?.logo ?? item?.url ?? item?.image ?? item?.badge ?? item?.path ?? item?.['#text']);
       if (id && url) out.push({ id, url });
     }
@@ -553,6 +588,8 @@ function extractLogoEntries(payload: any): Array<{ id: string; url: string }> {
 // just fails that one chunk's ids the same way the unchunked call already did, never the whole
 // batch or the events those ids belong to (this function never throws).
 const LOGO_MAX_IDS_PER_REQUEST = 60;
+const LOGO_FETCH_COOLDOWN_MS = 5 * 60 * 1000;
+const logoFailureCache = new Map<string, number>();
 
 /** Batch-fetches team logos for every id not already cached, chunked to stay under whatever size
  *  limit this endpoint enforces (see LOGO_MAX_IDS_PER_REQUEST) — naturally respects the 1 req/sec
@@ -561,6 +598,10 @@ const LOGO_MAX_IDS_PER_REQUEST = 60;
  *  rather than losing the event data over it. */
 async function fetchTeamLogos(apiKey: string, sport: string, teamIds: string[]): Promise<void> {
   const type = logosSportType(sport);
+  const entity = logoEntityType(sport);
+  const failureKey = `${type}:${entity}`;
+  const blockedUntil = logoFailureCache.get(failureKey) || 0;
+  if (blockedUntil > Date.now()) return;
   const missing = Array.from(new Set(teamIds)).filter((id) => {
     const cached = logoCache.get(`${type}:${id}`);
     return !cached || Date.now() - cached.ts >= LOGO_CACHE_TTL_MS;
@@ -570,12 +611,17 @@ async function fetchTeamLogos(apiKey: string, sport: string, teamIds: string[]):
   const run = async () => {
     for (let i = 0; i < missing.length; i += LOGO_MAX_IDS_PER_REQUEST) {
       const chunk = missing.slice(i, i + LOGO_MAX_IDS_PER_REQUEST);
-      const url = `${LOGO_BASE_URL}/${type}/teams?k=${encodeURIComponent(apiKey)}&ids=${chunk.map(encodeURIComponent).join(',')}`;
+      const url = `${LOGO_BASE_URL}/${type}/${entity}?k=${encodeURIComponent(apiKey)}&ids=${chunk.map(encodeURIComponent).join(',')}`;
       const json = await fetchJson(url, 8000);
+      if (!json) {
+        logoFailureCache.set(failureKey, Date.now() + LOGO_FETCH_COOLDOWN_MS);
+        return;
+      }
       for (const { id, url: logoUrl } of extractLogoEntries(json)) {
         logoCache.set(`${type}:${id}`, { ts: Date.now(), url: logoUrl });
       }
     }
+    logoFailureCache.delete(failureKey);
   };
 
   // Serialize against any other in-flight logo fetch so concurrent live+schedule calls for
@@ -1272,8 +1318,9 @@ export async function fetchInplayFeed(sport: string, timeoutMs = 8000, _attempt 
   try {
     const res = await fetch(url, { signal: controller.signal });
     const buf = Buffer.from(await res.arrayBuffer());
+    const text = decodeBodyBuffer(buf, res.headers.get('content-encoding'));
     if (!res.ok) {
-      console.error('[goalserve-inplay] HTTP', res.status, url, buf.toString('utf8').slice(0, 300));
+      console.error('[goalserve-inplay] HTTP', res.status, url, bodyPreview(text));
       // Same rationale as fetchJson() above: a 403/429/5xx here can be one specific Railway
       // replica's un-whitelisted egress IP, not a real outage — retry a couple of times so a
       // different replica gets a chance to serve the request.
@@ -1283,17 +1330,10 @@ export async function fetchInplayFeed(sport: string, timeoutMs = 8000, _attempt 
       }
       return null;
     }
-    let decompressed: Buffer;
     try {
-      decompressed = gunzipSync(buf);
-    } catch (e) {
-      console.error('[goalserve-inplay] gunzip failed:', url, String((e as any)?.message || e));
-      return null;
-    }
-    try {
-      return JSON.parse(decompressed.toString('utf8'));
+      return JSON.parse(text);
     } catch {
-      console.error('[goalserve-inplay] non-JSON response after gunzip:', url, decompressed.toString('utf8').slice(0, 200));
+      console.error('[goalserve-inplay] non-JSON response after decode:', url, bodyPreview(text, 200));
       return null;
     }
   } catch (e) {
