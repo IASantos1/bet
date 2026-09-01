@@ -21,6 +21,7 @@ import {
   fetchGoalServeMatchOddsPreMatch,
   fetchGoalServeOddSettlement,
   fetchInplayEvents,
+  fetchOddsPayloadSample,
   type GoalServeSettlementOutcome,
 } from '../services/goalserve';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
@@ -1400,6 +1401,12 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
             )
           : [{ ok: false as const, error: 'no allowed pregame match available to test against' }];
 
+      // Compares the schedule feed's own match ids against what the odds-comparison feed actually
+      // carries for the same sport — the real check for "this specific match's odds test came back
+      // empty" being an id-scheme mismatch between GoalServe's two separate feeds (schedule vs
+      // odds-comparison) rather than that match genuinely being unpriced.
+      const oddsPayloadSample = USE_GOALSERVE ? await fetchOddsPayloadSample(apiKey, sport).catch((e: any) => ({ error: String(e?.message || e) })) : null;
+
       sendJson(res, 200, {
         provider: USE_GOALSERVE ? 'goalserve' : 'sportsapipro',
         sportsDataProviderEnv: String(process.env.SPORTS_DATA_PROVIDER || '(not set)'),
@@ -1410,6 +1417,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         scheduleTest: scheduleResult,
         inplayTest: inplayResult,
         oddsTest: oddsTestResult,
+        oddsPayloadSample,
         pregamePipelineTest: pipelineResult,
       });
       return true;
