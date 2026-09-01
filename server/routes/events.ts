@@ -20,6 +20,7 @@ import {
   fetchGoalServeMatchOddsLive,
   fetchGoalServeMatchOddsPreMatch,
   fetchGoalServeOddSettlement,
+  fetchInplayEvents,
   type GoalServeSettlementOutcome,
 } from '../services/goalserve';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
@@ -165,6 +166,23 @@ const providerFetchSchedule = USE_GOALSERVE ? fetchGoalServeSchedule : fetchSpor
 const providerFetchOddsAll = USE_GOALSERVE ? fetchGoalServeMatchOddsAll : fetchSportsApiProMatchOddsAll;
 const providerFetchOddsLive = USE_GOALSERVE ? fetchGoalServeMatchOddsLive : fetchSportsApiProMatchOddsLive;
 const providerFetchOddsPreMatch = USE_GOALSERVE ? fetchGoalServeMatchOddsPreMatch : fetchSportsApiProMatchOddsPreMatch;
+
+// GoalServe's separate Inplay product (server/services/goalserve.ts's fetchInplayEvents) refreshes
+// every second and bundles odds directly on each event — a lot fresher than the getfeed/*
+// odds-comparison feed's 8-90s cache. Only proven against a real sample for soccer so far (see
+// that function's doc comment), so it's used for soccer's live list only, gated behind the same
+// USE_GOALSERVE switch, and falls back to the normal providerFetchLive path below whenever it
+// returns nothing (network hiccup, IP not actually whitelisted yet, unsupported sport) — live
+// soccer is never left empty because of this.
+async function fetchLiveFromProvider(apiKey: string, sport: string): Promise<AnyEvent[]> {
+  if (USE_GOALSERVE && String(sport || '').toLowerCase().trim() === 'soccer') {
+    const inplay = await fetchInplayEvents(sport).catch(() => []);
+    if (Array.isArray(inplay) && inplay.length) {
+      return inplay.map((e) => ({ ...e, _inplayLive: true }));
+    }
+  }
+  return providerFetchLive(apiKey, sport);
+}
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
   const liveCache = new Map<string, CacheEntry<AnyEvent[]>>();
@@ -321,7 +339,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const cached = liveCache.get(key);
     if (cached && ttlOk(cached.ts, 7_000)) return cached.data;
     if (cached && ttlOk(cached.ts, 2 * 60_000)) {
-      providerFetchLive(apiKey, sport)
+      fetchLiveFromProvider(apiKey, sport)
         .then((list) => {
           const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
             const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
@@ -338,7 +356,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         .catch(() => void 0);
       return cached.data;
     }
-    const list = await providerFetchLive(apiKey, sport).catch(() => []);
+    const list = await fetchLiveFromProvider(apiKey, sport).catch(() => []);
     const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
       const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
       const out = { ...e, id, sport };
@@ -556,16 +574,22 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     if (!id || !sport) return e;
 
     const override = await getOverride(id).catch(() => null);
-    const odds = await fetchOddsBestEffort(
-      sport,
-      id,
-      {
-        isLive: Number(e?.is_live || 0) === 1,
-        homeTeam: String(e?.home_team || ''),
-        awayTeam: String(e?.away_team || ''),
-      },
-      refreshBudget,
-    ).catch(() => null);
+    // fetchLiveFromProvider already bundled odds straight off GoalServe's Inplay feed (1s refresh
+    // at the source) for events tagged _inplayLive — trust those instead of re-fetching from the
+    // separate getfeed/* odds-comparison feed, whose 8-90s cache would otherwise clobber a
+    // genuinely fresher value with a staler one on every call.
+    const odds = (e as any)._inplayLive
+      ? { home: Number((e as any).home_odd || 0), draw: Number((e as any).draw_odd || 0), away: Number((e as any).away_odd || 0), markets: parseMarkets((e as any).markets) }
+      : await fetchOddsBestEffort(
+          sport,
+          id,
+          {
+            isLive: Number(e?.is_live || 0) === 1,
+            homeTeam: String(e?.home_team || ''),
+            awayTeam: String(e?.away_team || ''),
+          },
+          refreshBudget,
+        ).catch(() => null);
     const marketsAll = odds?.markets ? odds.markets : parseMarkets((e as any).markets);
     const markets =
       fullMarkets
@@ -980,7 +1004,10 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       return { live, pregame };
     }
 
-    for (const e of live) queueOddsRefresh(String((e as any)?.sport || ''), String((e as any)?.id || ''));
+    // _inplayLive events already carry fresh odds bundled from GoalServe's Inplay feed — queuing
+    // them here too would just waste a slot in the odds-comparison feed's shared per-sport rate
+    // limit (1 request/10s) that other matches (soccer pregame included) still depend on.
+    for (const e of live) if (!(e as any)._inplayLive) queueOddsRefresh(String((e as any)?.sport || ''), String((e as any)?.id || ''));
     for (const e of pregame) queueOddsRefresh(String((e as any)?.sport || ''), String((e as any)?.id || ''));
 
     const oddsFromCache = (sport: string, matchId: string): any | null => {
