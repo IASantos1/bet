@@ -38,7 +38,7 @@ export const CookieBanner: React.FC = () => {
   };
 
   const manage = () => {
-    navigate('/profile?tab=Definições de cookies');
+    navigate('/profile?tab=Configurações de Privacidade');
   };
 
   return (

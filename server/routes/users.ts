@@ -256,9 +256,12 @@ export async function handleUsersRoutes(
     return true;
   }
 
-  // POST /api/users/iban — saves the withdrawal payout details for this account (IBAN, holder
-  // name, NIF, and the identity document backing it — Cartão de Cidadão or passport, per Portuguese
-  // AML/KYC requirements for who gets paid out). Overwrites any previously saved details.
+  // POST /api/users/iban — saves the withdrawal payout details for this account: IBAN, holder
+  // name, NIF. The identity document backing the account (Cartão de Cidadão / passport) is
+  // captured separately via POST /api/users/identity-document as part of KYC, not bundled into
+  // this bank-data form — the two are logically distinct (who gets paid vs. who the account
+  // belongs to) even though both ultimately land on the same profiles row. Overwrites any
+  // previously saved bank details; leaves the identity-document columns untouched.
   if (req.method === 'POST' && path === '/api/users/iban') {
     const u = await requireUser(pool, req);
     if (!u) return unauthorized(res), true;
@@ -267,28 +270,22 @@ export async function handleUsersRoutes(
       iban?: string;
       holder_name?: string;
       nif?: string;
-      document_type?: string;
-      document_number?: string;
     }>(req).catch(() => null);
     if (!body) return badRequest(res, 'Invalid JSON'), true;
 
     const iban = String(body.iban || '').replace(/\s+/g, '').toUpperCase().trim();
     const holderName = String(body.holder_name || '').trim();
     const nif = String(body.nif || '').trim();
-    const documentType = String(body.document_type || '').trim().toLowerCase();
-    const documentNumber = String(body.document_number || '').trim();
 
     if (!iban || iban.length < 15) return badRequest(res, 'IBAN inválido'), true;
     if (!holderName) return badRequest(res, 'Nome do titular obrigatório'), true;
     if (!nif || !/^\d{9}$/.test(nif)) return badRequest(res, 'NIF inválido (9 dígitos)'), true;
-    if (documentType !== 'cc' && documentType !== 'passport') return badRequest(res, 'Tipo de documento inválido'), true;
-    if (!documentNumber) return badRequest(res, 'Número de documento obrigatório'), true;
 
     await pool.query(
       `UPDATE profiles
-       SET iban = $2, iban_holder_name = $3, nif = $4, document_type = $5, document_number = $6, updated_at = NOW()
+       SET iban = $2, iban_holder_name = $3, nif = $4, updated_at = NOW()
        WHERE user_id = $1`,
-      [u.id, iban, holderName, nif, documentType, documentNumber],
+      [u.id, iban, holderName, nif],
     );
 
     sendJson(res, 200, {
@@ -296,6 +293,33 @@ export async function handleUsersRoutes(
       iban_masked: `${iban.slice(0, 4)} •••• •••• ${iban.slice(-4)}`,
       holder_name: holderName,
     });
+    return true;
+  }
+
+  // POST /api/users/identity-document — saves just the identity-document metadata (Cartão de
+  // Cidadão / passport type + number) backing the KYC "Verificação de Identidade" section,
+  // independent of the bank-data form above. Same profiles columns as before; a separate
+  // endpoint because the two forms are shown in different places now and neither should require
+  // filling in the other's fields.
+  if (req.method === 'POST' && path === '/api/users/identity-document') {
+    const u = await requireUser(pool, req);
+    if (!u) return unauthorized(res), true;
+
+    const body = await readJsonBody<{ document_type?: string; document_number?: string }>(req).catch(() => null);
+    if (!body) return badRequest(res, 'Invalid JSON'), true;
+
+    const documentType = String(body.document_type || '').trim().toLowerCase();
+    const documentNumber = String(body.document_number || '').trim();
+
+    if (documentType !== 'cc' && documentType !== 'passport') return badRequest(res, 'Tipo de documento inválido'), true;
+    if (!documentNumber) return badRequest(res, 'Número de documento obrigatório'), true;
+
+    await pool.query(
+      `UPDATE profiles SET document_type = $2, document_number = $3, updated_at = NOW() WHERE user_id = $1`,
+      [u.id, documentType, documentNumber],
+    );
+
+    sendJson(res, 200, { ok: true, document_type: documentType, document_number: documentNumber });
     return true;
   }
 
