@@ -1314,6 +1314,45 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       const sport = String(url.searchParams.get('sport') || 'soccer').trim();
       const today = ymd(new Date());
 
+      // sport=all: a lighter per-sport summary across every sport a user can actually navigate
+      // into (see SPORTS_SEARCHABLE's own doc comment) — one pregame count + one real odds test
+      // each, instead of the full single-sport detail below, so checking "did the fix cover every
+      // sport" doesn't mean repeating this request 9 times by hand.
+      if (sport === 'all') {
+        const results = await Promise.all(
+          SPORTS_SEARCHABLE.map(async (s) => {
+            const counters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
+            const built = await buildBySport(s, false, null, false, false, 'pregame', 7, false, false, counters).catch(() => null);
+            const pregameCount = built ? built.pregame.length : 0;
+            const sample = built && built.pregame.length > 0 ? built.pregame[0] : null;
+            const odds = sample
+              ? await providerFetchOddsAll(apiKey, s, String((sample as any)?.id || (sample as any)?.external_event_id || ''), {
+                  homeTeam: String((sample as any)?.home_team || ''),
+                  awayTeam: String((sample as any)?.away_team || ''),
+                })
+                  .then((r: any) => ({ hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsCount: r?.markets ? Object.keys(r.markets).length : 0 }))
+                  .catch((e: any) => ({ error: String(e?.message || e) }))
+              : null;
+            return {
+              sport: s,
+              ok: !!built,
+              pregameCount,
+              stages: counters,
+              oddsTestedMatch: sample ? `${(sample as any)?.league}: ${(sample as any)?.home_team} vs ${(sample as any)?.away_team}` : null,
+              oddsTest: odds,
+            };
+          }),
+        );
+        sendJson(res, 200, {
+          provider: USE_GOALSERVE ? 'goalserve' : 'sportsapipro',
+          sportsDataProviderEnv: String(process.env.SPORTS_DATA_PROVIDER || '(not set)'),
+          hasApiKey: apiKey.trim().length > 0,
+          today,
+          perSport: results,
+        });
+        return true;
+      }
+
       const scheduleRaw = await providerFetchSchedule(apiKey, sport, today).catch(() => null);
       const scheduleResult = scheduleRaw
         ? {
