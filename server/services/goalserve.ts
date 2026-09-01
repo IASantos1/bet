@@ -1163,23 +1163,33 @@ export async function fetchInplayFeed(sport: string, timeoutMs = 8000): Promise<
   }
 }
 
-/** CONFIRMED against the real sample: `core` carries `finished`/`removed`/`stopped` as `"0"`/`"1"`
- *  (or `""`/absent for false) rather than the numeric `time_status` GoalServe's general Inplay doc
- *  describes — that enum may belong to a different endpoint (results/dictionaries), not this event
- *  object. `info.period` uses numeric-ordinal wording ("1st Half", "2nd Half") — CONFIRMED
- *  different from parseStatus()'s getfeed/* vocabulary ("First Half"/"Second Half", spelled out).
- *  Delegating to parseStatus() here was tried and is wrong: it doesn't recognize "1st Half"/"2nd
- *  Half" as half markers at all, falls through to its bare-leading-digit branch, and reads the "2"
- *  off "2nd Half" as if it were a 2-minute-elapsed match — so status is classified straight off
- *  `info.period`/`info.minute` here instead, never through parseStatus(). statusShort stays
- *  exactly 'FT' when finished, matching the Settlement Engine's exact-string check. */
+/** CONFIRMED against GoalServe's own published Inplay API reference (documentation.goalserve.com):
+ *  `core.finished`/`removed`/`stopped`/`blocked` are documented as numeric 1/0 flags (the real
+ *  sample sends them as quoted "1"/"0" strings — isInplayTrue() below accepts both). `core.stopped`
+ *  is explicitly "match time is stopped ... e.g. a referee stops the time while there is an injury
+ *  on the pitch" — a routine, momentary, many-times-a-match occurrence, NOT a suspension. Treating
+ *  it as isLive:0 (tried first, wrong) would flicker a match in and out of the live list on every
+ *  injury break; it stays live here, just with the clock paused. `core.blocked` isn't documented
+ *  beyond its name — since every sample showing blocked:1 also has every odds participant's own
+ *  `suspend` flag set (the actual betting-availability signal parseInplayOdds() already respects),
+ *  it's left out of status classification entirely rather than guessed at.
+ *
+ *  `info.period` uses numeric-ordinal wording ("1st Half", "2nd Half") — CONFIRMED different from
+ *  parseStatus()'s getfeed/* vocabulary ("First Half"/"Second Half", spelled out). Delegating to
+ *  parseStatus() here was tried and is wrong: it doesn't recognize "1st Half"/"2nd Half" as half
+ *  markers at all, falls through to its bare-leading-digit branch, and reads the "2" off "2nd Half"
+ *  as if it were a 2-minute-elapsed match — so status is classified straight off `info.period`/
+ *  `info.minute` here instead, never through parseStatus(). statusShort stays exactly 'FT' when
+ *  finished, matching the Settlement Engine's exact-string check. */
 function parseInplayEventStatus(core: any, info: any): { status: string; statusShort: string; isLive: number; elapsed: number } {
   const minute = num(info?.minute);
   if (isInplayTrue(core?.removed)) return { status: 'Removed', statusShort: 'REMOVE', isLive: 0, elapsed: 0 };
   if (isInplayTrue(core?.finished)) return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: minute || 90 };
-  if (isInplayTrue(core?.stopped)) return { status: 'Interrupted', statusShort: 'INTERR', isLive: 0, elapsed: minute };
 
   const period = str(info?.period);
+  if (isInplayTrue(core?.stopped)) {
+    return { status: period || 'Pausa', statusShort: 'PAUSE', isLive: 1, elapsed: minute };
+  }
   let statusShort = '';
   if (/^(1st|First)[\s-]*Half$/i.test(period)) statusShort = '1H';
   else if (/^(2nd|Second)[\s-]*Half$/i.test(period)) statusShort = '2H';
@@ -1294,16 +1304,27 @@ function parseInplayEvent(sport: string, id: string, raw: any): NormalizedEvent 
 
   const { status, statusShort, isLive, elapsed } = parseInplayEventStatus(core, info);
 
-  const startDate = str(info?.start_date); // "dd.MM.yyyy"
-  const startTime = str(info?.start_time); // "HH:mm"
+  // CONFIRMED against GoalServe's own published Inplay API reference: `start_date`/`start_time`/
+  // `start_ts` are all documented "(GMT+1)" — treating them as UTC (the first version of this code
+  // did, appending "Z" directly) is silently off by 1+ hours. `start_ts_utc` is the documented,
+  // unambiguous UTC field and is preferred whenever present; the GMT+1 fields are only a best-effort
+  // fallback (no DST/CEST handling — the docs don't clarify it) for the rare case it's missing.
   let eventDate = '';
-  const dm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(startDate);
-  if (dm) {
-    const [, dd, mm, yyyy] = dm;
-    eventDate = `${yyyy}-${mm}-${dd}T${startTime || '00:00'}:00Z`;
+  const startTsUtc = num(info?.start_ts_utc);
+  if (startTsUtc > 0) {
+    eventDate = new Date(startTsUtc * 1000).toISOString();
   } else {
-    const startTs = num(info?.start_ts);
-    if (startTs > 0) eventDate = new Date(startTs * 1000).toISOString();
+    const startDate = str(info?.start_date); // "dd.MM.yyyy", GMT+1
+    const startTime = str(info?.start_time); // "HH:mm", GMT+1
+    const dm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(startDate);
+    if (dm) {
+      const [, dd, mm, yyyy] = dm;
+      const [hh, mi] = (startTime || '00:00').split(':').map((v) => Number(v) || 0);
+      eventDate = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd), hh - 1, mi)).toISOString();
+    } else {
+      const startTs = num(info?.start_ts); // GMT+1
+      if (startTs > 0) eventDate = new Date((startTs - 3600) * 1000).toISOString();
+    }
   }
 
   // `|| null` would wrongly turn a genuine 0-0 scoreline into "no score" — 0 is falsy in JS —
