@@ -14,8 +14,6 @@ export function WithdrawForm() {
   const [newIban, setNewIban] = useState('');
   const [holderName, setHolderName] = useState('');
   const [nif, setNif] = useState('');
-  const [documentType, setDocumentType] = useState<'cc' | 'passport'>('cc');
-  const [documentNumber, setDocumentNumber] = useState('');
   const [withdrawLoading, setWithdrawLoading] = useState(false);
 
   // Get user country IBAN placeholder
@@ -73,7 +71,7 @@ export function WithdrawForm() {
 
   const handleSaveIban = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newIban || !holderName || !nif || !documentNumber) {
+    if (!newIban || !holderName || !nif) {
       return addNotification({ type: 'error', message: 'Preencha todos os campos' });
     }
     if (!/^\d{9}$/.test(nif)) return addNotification({ type: 'error', message: 'NIF inválido — deve ter 9 dígitos' });
@@ -81,7 +79,7 @@ export function WithdrawForm() {
     try {
         const data = await apiFetch<any>('/api/users/iban', {
             method: 'POST',
-            body: JSON.stringify({ iban: newIban, holder_name: holderName, nif, document_type: documentType, document_number: documentNumber })
+            body: JSON.stringify({ iban: newIban, holder_name: holderName, nif })
         });
 
         addNotification({ type: 'success', message: 'Dados guardados com sucesso' });
@@ -149,34 +147,6 @@ export function WithdrawForm() {
                 />
             </div>
 
-            <div>
-                <label className="block text-sm font-medium mb-2">Documento de Identificação</label>
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                    <button
-                        type="button"
-                        onClick={() => setDocumentType('cc')}
-                        className={`py-2.5 rounded-xl text-sm font-semibold border transition-colors ${documentType === 'cc' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-gray-700'}`}
-                    >
-                        Cartão de Cidadão
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setDocumentType('passport')}
-                        className={`py-2.5 rounded-xl text-sm font-semibold border transition-colors ${documentType === 'passport' ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-gray-700'}`}
-                    >
-                        Passaporte
-                    </button>
-                </div>
-                <input
-                type="text"
-                value={documentNumber}
-                onChange={(e) => setDocumentNumber(e.target.value.toUpperCase())}
-                placeholder={documentType === 'cc' ? 'Número do CC' : 'Número do Passaporte'}
-                className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent focus:ring-2 focus:ring-blue-500 outline-none font-mono"
-                required
-                />
-            </div>
-
             <button
                 type="submit"
                 disabled={withdrawLoading}
@@ -193,7 +163,7 @@ export function WithdrawForm() {
                 Para garantir a segurança da sua conta e cumprir com a regulação, precisamos de validar a sua identidade antes do primeiro levantamento.
             </p>
             <a 
-              href="/profile?tab=Documentos"
+              href="/profile?tab=Verificação de Identidade"
               className="inline-block bg-orange-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-orange-700 transition-colors"
             >
                 Enviar Documentos

@@ -25,7 +25,7 @@ export default function KycPage() {
                 
                 {/* Linking to Profile for now as logic is there */}
                 <a 
-                   href="/profile?tab=Documentos" 
+                   href="/profile?tab=Verificação de Identidade"
                    className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700"
                 >
                    Ir para Área de Upload
