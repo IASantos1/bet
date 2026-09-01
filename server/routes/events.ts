@@ -1314,20 +1314,6 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
           }
         : { ok: false as const, error: 'fetch failed' };
 
-      // Odds-comparison feed test: uses a REAL match id off the schedule fetch above (an empty/
-      // placeholder id can't distinguish "the feed itself failed" from "no match with that id" —
-      // both return null the same way) to check whether pregame's 0-odds-for-everyone result is
-      // this feed failing outright or just not having priced these particular matches yet.
-      const oddsTestMatch = Array.isArray(scheduleRaw) && scheduleRaw.length > 0 ? scheduleRaw[0] : null;
-      const oddsTestResult = oddsTestMatch
-        ? await providerFetchOddsAll(apiKey, sport, String((oddsTestMatch as any).id || (oddsTestMatch as any).external_event_id || ''), {
-            homeTeam: String((oddsTestMatch as any).home_team || ''),
-            awayTeam: String((oddsTestMatch as any).away_team || ''),
-          })
-            .then((r: any) => ({ ok: true as const, matchTested: `${(oddsTestMatch as any).home_team} vs ${(oddsTestMatch as any).away_team}`, hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsKeys: r?.markets ? Object.keys(r.markets) : [] }))
-            .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }))
-        : { ok: false as const, error: 'no schedule match available to test against' };
-
       const inplayResult =
         USE_GOALSERVE && sport === 'soccer'
           ? await fetchInplayEvents(sport)
@@ -1335,18 +1321,36 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }))
           : null;
 
-      // Runs the exact same pipeline /api/events/by-sport?only=pregame uses (fetchSchedule's
-      // cache, isPregameCandidate, the league allowlist, the day-spread limit) — the raw
-      // scheduleTest above only proves the underlying GoalServe fetch itself works, not that a
-      // real match survives every filtering stage down to the response the frontend actually gets.
-      // includeOdds:true here on purpose — that's the exact param the real failing request used
-      // (?include=odds). The earlier version of this test passed includeOdds:false, which returns
-      // before ever reaching the odds-enrichment step, so it could never have caught a failure
-      // that only happens there (see enrichEventOddsSafe's doc comment above).
+      // Runs the exact same pipeline /api/events/by-sport?only=pregame uses, minus odds
+      // enrichment (includeOdds:false) — gets the real, already league-allowlist-filtered matches
+      // that actually reach users, without the enrichment step's own side effects (queueing,
+      // cache writes) muddying the odds test below.
       const pipelineCounters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
-      const pipelineResult = await buildBySport(sport, true, null, false, false, 'pregame', 7, false, false, pipelineCounters)
-        .then((r) => ({ ok: true as const, finalCount: r.pregame.length, stages: pipelineCounters }))
-        .catch((e: any) => ({ ok: false as const, error: String(e?.message || e), stages: pipelineCounters }));
+      const pipelineRaw = await buildBySport(sport, false, null, false, false, 'pregame', 7, false, false, pipelineCounters).catch(() => null);
+      const pipelineResult = pipelineRaw
+        ? { ok: true as const, finalCount: pipelineRaw.pregame.length, stages: pipelineCounters }
+        : { ok: false as const, error: 'buildBySport threw', stages: pipelineCounters };
+
+      // Odds-comparison feed test: previously used the raw schedule's first match, which happened
+      // to be Angola's Girabola — a league our own allowlist blocks, so it was never representative
+      // of what users actually see. Tests up to 3 REAL matches from the already-filtered pregame
+      // list instead (an empty/placeholder id can't distinguish "the feed itself failed" from "no
+      // match with that id" — both return null the same way, which is exactly why this needs a
+      // real id from a league that actually reaches users).
+      const oddsTestMatches = pipelineRaw && Array.isArray(pipelineRaw.pregame) ? pipelineRaw.pregame.slice(0, 3) : [];
+      const oddsTestResult =
+        oddsTestMatches.length > 0
+          ? await Promise.all(
+              oddsTestMatches.map((m: any) =>
+                providerFetchOddsAll(apiKey, sport, String(m?.id || m?.external_event_id || ''), {
+                  homeTeam: String(m?.home_team || ''),
+                  awayTeam: String(m?.away_team || ''),
+                })
+                  .then((r: any) => ({ ok: true as const, league: m?.league, matchTested: `${m?.home_team} vs ${m?.away_team}`, hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsKeys: r?.markets ? Object.keys(r.markets) : [] }))
+                  .catch((e: any) => ({ ok: false as const, league: m?.league, matchTested: `${m?.home_team} vs ${m?.away_team}`, error: String(e?.message || e) })),
+              ),
+            )
+          : [{ ok: false as const, error: 'no allowed pregame match available to test against' }];
 
       sendJson(res, 200, {
         provider: USE_GOALSERVE ? 'goalserve' : 'sportsapipro',
