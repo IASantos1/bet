@@ -30,6 +30,7 @@
  * stays live.
  */
 
+import { gunzipSync } from 'node:zlib';
 import type { NormalizedEvent, OddsResult } from './sportsApiPro';
 
 // https, not http: every real example URL across all 5 official Data Feed PDFs and the general
@@ -1057,4 +1058,103 @@ export async function fetchGoalServeOddSettlement(
     p.then(() => new Promise<void>((resolve) => setTimeout(resolve, 1050))),
   );
   return p;
+}
+
+// ── GoalServe "Inplay API" — a separate product/host from the getfeed/* endpoints above (own
+// account entitlement, confirmed enabled). Per GoalServe's own Inplay reference doc: 8
+// sport-specific feeds, refreshed every second, served as gzip-compressed JSON straight from
+// inplay.goalserve.com — not the XML-converted-to-JSON-with-`@`-prefixes shape read everywhere
+// else in this file. The URLs carry no API key/token at all; access is controlled purely by the
+// whitelisted server IP, same posture as the casino aggregator's IP whitelist.
+//
+// ⚠️ The exact JSON field names inside a match object are NOT YET CONFIRMED against a real
+// response (this sandbox's egress blocks inplay.goalserve.com — same restriction the top-of-file
+// comment already notes for www.goalserve.com; confirmed with a 403 "Host not in allowlist" from
+// the sandbox's own outbound proxy, not a rejection from GoalServe itself). Only the URL scheme
+// and the time_status enum come straight from GoalServe's own doc, so only those are wired up
+// below. Mapping a match object into NormalizedEvent/OddsResult is intentionally left unbuilt —
+// this file's `stripAttrPrefix()`/`@`-prefix saga above is exactly what guessing field names
+// without a real sample costs, so that mapping should be added only once a live sample response
+// is available, not before.
+const INPLAY_HOST = 'http://inplay.goalserve.com';
+
+function inplaySportSegment(sport: string): string | null {
+  const s = String(sport || '').toLowerCase().trim();
+  if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
+  if (s === 'basketball' || s === 'basket' || s === 'basquete') return 'basket';
+  if (s === 'tennis' || s === 'tênis') return 'tennis';
+  if (s === 'volleyball') return 'volleyball';
+  if (s === 'american-football' || s === 'amfootball' || s === 'nfl') return 'amfootball';
+  if (s === 'esports') return 'esports';
+  if (s === 'ice-hockey' || s === 'icehockey' || s === 'hockey') return 'hockey';
+  if (s === 'baseball') return 'baseball';
+  return null; // handball/rugby/cricket/etc. have no Inplay feed per GoalServe's own doc
+}
+
+export type InplayTimeStatus = { status: string; statusShort: string; isLive: number; elapsed: number };
+
+/** GoalServe's Inplay `time_status` enum (own reference doc — 0 Not Started, 1 InPlay, 2 To Be
+ *  Fixed, 3 Ended, 4 Postponed, 5 Cancelled, 6 Walkover, 7 Interrupted, 8 Abandoned, 9 Retired, 99
+ *  Removed) mapped into this file's shared {status, statusShort, isLive, elapsed} shape (see
+ *  parseStatus() above, which handles the getfeed/* word-based statuses instead of this numeric
+ *  one). statusShort MUST be exactly 'FT' for a finished match — the Settlement Engine
+ *  (server/routes/events.ts) matches on that exact string to decide a bet is resolvable, so Ended/
+ *  Walkover/Retired (3/6/9 — all definitive results) map to it, the same way parseStatus() above
+ *  already treats WO/Retired as FT-equivalent. `elapsed` for the live case (1) is left at 0 here —
+ *  the real per-sport clock comes from the match's own fields once those are confirmed, not from
+ *  time_status alone. */
+export function parseInplayTimeStatus(timeStatus: number): InplayTimeStatus {
+  const abbrev = (s: string) => s.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase();
+  switch (timeStatus) {
+    case 0: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+    case 1: return { status: 'Live', statusShort: 'LIVE', isLive: 1, elapsed: 0 };
+    case 2: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 }; // "To Be Fixed" — date/time not confirmed yet
+    case 3: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Ended
+    case 4: return { status: 'Postponed', statusShort: abbrev('Postponed'), isLive: 0, elapsed: 0 };
+    case 5: return { status: 'Cancelled', statusShort: abbrev('Cancelled'), isLive: 0, elapsed: 0 };
+    case 6: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Walkover — definitive result
+    case 7: return { status: 'Interrupted', statusShort: abbrev('Interrupted'), isLive: 0, elapsed: 0 };
+    case 8: return { status: 'Abandoned', statusShort: abbrev('Abandoned'), isLive: 0, elapsed: 0 };
+    case 9: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Retired — definitive result
+    case 99: return { status: 'Removed', statusShort: abbrev('Removed'), isLive: 0, elapsed: 0 };
+    default: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+  }
+}
+
+/** Fetches and gunzips one sport's Inplay feed (odds refreshed every second). Returns the parsed
+ *  JSON payload exactly as GoalServe sent it — shape not yet mapped into NormalizedEvent[], see
+ *  the doc comment above this section — or null on any unsupported-sport/network/decompression/
+ *  parse failure, logged the same way fetchJson() above does. */
+export async function fetchInplayFeed(sport: string, timeoutMs = 8000): Promise<any | null> {
+  const segment = inplaySportSegment(sport);
+  if (!segment) return null;
+  const url = `${INPLAY_HOST}/inplay-${segment}.gz`;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!res.ok) {
+      console.error('[goalserve-inplay] HTTP', res.status, url, buf.toString('utf8').slice(0, 300));
+      return null;
+    }
+    let decompressed: Buffer;
+    try {
+      decompressed = gunzipSync(buf);
+    } catch (e) {
+      console.error('[goalserve-inplay] gunzip failed:', url, String((e as any)?.message || e));
+      return null;
+    }
+    try {
+      return JSON.parse(decompressed.toString('utf8'));
+    } catch {
+      console.error('[goalserve-inplay] non-JSON response after gunzip:', url, decompressed.toString('utf8').slice(0, 200));
+      return null;
+    }
+  } catch (e) {
+    console.error('[goalserve-inplay] fetch failed:', url, String((e as any)?.message || e));
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
 }
