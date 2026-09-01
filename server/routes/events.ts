@@ -506,13 +506,22 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     if (inflight) return inflight;
     const p = (async () => {
       const opts = { homeTeam: ctx.homeTeam, awayTeam: ctx.awayTeam };
-      // Fetch all 3 endpoints in parallel to get maximum market coverage
-      const [allResult, liveResult, preResult] = await Promise.all([
-        providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null),
-        providerFetchOddsLive(apiKey, sport, normalizedId, opts).catch(() => null),
-        providerFetchOddsPreMatch(apiKey, sport, normalizedId, opts).catch(() => null),
-      ]);
-      const merged = mergeOddsResults([liveResult, allResult, preResult].filter(Boolean));
+      // GoalServe has no separate all/live/pre-match odds endpoints — providerFetchOddsAll/Live/
+      // PreMatch all resolve to the exact same shared payload+index (fetchGoalServeMatchOdds in
+      // goalserve.ts), so fetching all 3 in parallel and merging was 3x the parse work for
+      // 3 copies of identical data. sportsApiPro genuinely has 3 distinct endpoints with different
+      // coverage, so it still needs the parallel fetch+merge.
+      let merged: any | null;
+      if (USE_GOALSERVE) {
+        merged = await providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null);
+      } else {
+        const [allResult, liveResult, preResult] = await Promise.all([
+          providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null),
+          providerFetchOddsLive(apiKey, sport, normalizedId, opts).catch(() => null),
+          providerFetchOddsPreMatch(apiKey, sport, normalizedId, opts).catch(() => null),
+        ]);
+        merged = mergeOddsResults([liveResult, allResult, preResult].filter(Boolean));
+      }
       if (merged && merged.markets && typeof merged.markets === 'object') {
         const derived = deriveAdditionalMarkets(
           merged.markets,

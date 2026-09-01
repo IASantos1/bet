@@ -611,7 +611,12 @@ export async function fetchGoalServeLive(apiKey: string, sport: string): Promise
   const seg = sportSegment(sport);
   const url = `${BASE_URL}/${encodeURIComponent(apiKey)}/${seg}/home?json=1`;
   const json = await fetchJson(url);
-  return attachTeamLogos(apiKey, sport, flattenMatches(sport, json));
+  const events = flattenMatches(sport, json);
+  // Logos are secondary enrichment (their own rate-limited endpoint, data2.goalserve.com) — never
+  // block the live feed on them. attachTeamLogos() mutates these same event objects in place, so
+  // logos still show up once the batch resolves; a live snapshot just isn't held hostage to it.
+  void attachTeamLogos(apiKey, sport, events).catch(() => void 0);
+  return events;
 }
 
 /** GoalServe has no arbitrary-date schedule endpoint like sportsApiPro's `/api/schedule/{date}` —
@@ -637,7 +642,13 @@ export async function fetchGoalServeSchedule(apiKey: string, sport: string, date
   const seg = sportSegment(sport);
   const url = `${BASE_URL}/${encodeURIComponent(apiKey)}/${seg}/${suffix}?json=1`;
   const json = await fetchJson(url);
-  return attachTeamLogos(apiKey, sport, flattenMatches(sport, json));
+  const events = flattenMatches(sport, json);
+  // Same reasoning as fetchGoalServeLive(): logos are secondary enrichment, never block the
+  // schedule on them. A full day's schedule can need many logo-id batches, each serialized behind
+  // data2.goalserve.com's own rate limit (logoRateLimitChain/LOGO_MIN_INTERVAL_MS above) — awaiting
+  // that here was turning a single schedule fetch into a multi-second wait dominated by logos.
+  void attachTeamLogos(apiKey, sport, events).catch(() => void 0);
+  return events;
 }
 
 // ---- Odds ----
@@ -706,19 +717,22 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
   return out;
 }
 
-function findMatchInOddsPayload(payload: any, matchId: string): any | null {
-  const categories = extractCategories(payload);
-  for (const cat of categories) {
-    for (const group of extractMatchGroups(cat)) {
-      for (const m of group.matches) {
-        const id = str(m?.id ?? m?.['@id']);
-        // GoalServe's match id here is its own (not prefixed) — matchId passed in may carry our
-        // "goalserve_" prefix from normalizeMatch(), so compare both forms.
-        if (id === matchId || `goalserve_${id}` === matchId || id === matchId.replace(/^goalserve_/, '')) return m;
-      }
-    }
+/** extractOddsFromType() above returns one entry per (bookmaker, selection) pair — for a market
+ *  with N bookmakers priced, the same selection (e.g. "Home", or "Over 3.5") appears N times with
+ *  different values. GoalServe's own PDFs describe this as intentional ("comparison feed between
+ *  various bookmakers"), but BET62 shows one single best price per selection, not a bookmaker
+ *  comparison table — surfacing all N duplicates to the frontend/bet slip is a real product bug,
+ *  not just noise. `settlementOddname` already uniquely encodes the selection AND its line
+ *  ("Over:3.5" vs "Home"), so it alone is enough to key on; keep the highest-value (best-for-the-
+ *  bettor) entry per key. */
+function bestOddsByOutcome<T extends { name: string; value: number; settlementOddname: string }>(odds: T[]): T[] {
+  const best = new Map<string, T>();
+  for (const o of odds) {
+    const key = o.settlementOddname;
+    const existing = best.get(key);
+    if (!existing || o.value > existing.value) best.set(key, o);
   }
-  return null;
+  return Array.from(best.values());
 }
 
 /** Builds the OddsResult.markets.h2h array plus derived home/draw/away, matching exactly what
@@ -746,7 +760,7 @@ function parseOddsMatch(m: any): OddsResult | null {
     // literally "Match Winner". A couple of synonym fallbacks are kept for resilience regardless.
     const label = str(t?.value ?? t?.name ?? t?.['@value']).toLowerCase();
     const isH2H = label === 'match winner' || label.includes('1x2') || label.includes('full time result') || label === 'winner' || label === 'home/draw/away';
-    const odds = extractOddsFromType(t);
+    const odds = bestOddsByOutcome(extractOddsFromType(t));
     if (!odds.length) continue;
     const marketId = Number(t?.id);
     const hasMarketId = Number.isFinite(marketId) && marketId > 0;
@@ -778,9 +792,12 @@ function parseOddsMatch(m: any): OddsResult | null {
   if (h2h.length) markets.h2h = h2h;
   if (!Object.keys(markets).length) return null;
 
-  const home = Math.max(0, ...h2h.filter((s) => s.label === 'Home').map((s) => s.odd), 0);
-  const draw = Math.max(0, ...h2h.filter((s) => s.label === 'Draw').map((s) => s.odd), 0);
-  const away = Math.max(0, ...h2h.filter((s) => s.label === 'Away').map((s) => s.odd), 0);
+  // h2h was already deduped to one entry per outcome above (bestOddsByOutcome), so there is at
+  // most one "Home"/"Draw"/"Away" left — .find() makes that single-selection invariant explicit,
+  // instead of Math.max() silently doing the same reduction over what used to be duplicates.
+  const home = h2h.find((s) => s.label === 'Home')?.odd ?? 0;
+  const draw = h2h.find((s) => s.label === 'Draw')?.odd ?? 0;
+  const away = h2h.find((s) => s.label === 'Away')?.odd ?? 0;
   if (!home && !away && !Object.keys(markets).length) return null;
 
   return { home, draw, away, markets };
@@ -815,14 +832,36 @@ function parseOddsMatch(m: any): OddsResult | null {
 // the same window. A durable, cross-replica gate (e.g. a timestamp row in Postgres) would be
 // needed to guarantee the limit account-wide; out of scope for this fix.
 const ODDS_PAYLOAD_TTL_MS = 32_000; // 30s documented minimum without `ts` + 2s clock/latency margin
-const oddsPayloadCache = new Map<string, { ts: number; payload: any }>();
-const oddsPayloadInflight = new Map<string, Promise<any | null>>();
 
-async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | null> {
+/** Builds a matchId -> parsed-odds lookup for one sport's whole odds payload, once per fetch,
+ *  instead of walking the full category/match tree and re-running parseOddsMatch() (per-bookmaker
+ *  dedup across every market) again for every single match lookup — the soccer feed alone runs
+ *  ~150MB with thousands of matches, so re-walking it per event was the real cost behind an odds
+ *  lookup, not the network fetch (already cached/throttled above). */
+function indexOddsPayload(payload: any): Map<string, OddsResult> {
+  const index = new Map<string, OddsResult>();
+  for (const cat of extractCategories(payload)) {
+    for (const group of extractMatchGroups(cat)) {
+      for (const match of group.matches) {
+        const id = str(match?.id ?? match?.['@id']);
+        if (!id) continue;
+        const odds = parseOddsMatch(match);
+        if (odds) index.set(id, odds);
+      }
+    }
+  }
+  return index;
+}
+
+type OddsPayloadEntry = { ts: number; payload: any; index: Map<string, OddsResult> };
+const oddsPayloadCache = new Map<string, OddsPayloadEntry>();
+const oddsPayloadInflight = new Map<string, Promise<OddsPayloadEntry | null>>();
+
+async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<OddsPayloadEntry | null> {
   if (!apiKeyOk(apiKey)) return null;
   const cat = oddsCat(sport);
   const cached = oddsPayloadCache.get(cat);
-  if (cached && Date.now() - cached.ts < ODDS_PAYLOAD_TTL_MS) return cached.payload;
+  if (cached && Date.now() - cached.ts < ODDS_PAYLOAD_TTL_MS) return cached;
   const inflight = oddsPayloadInflight.get(cat);
   if (inflight) return inflight;
 
@@ -832,12 +871,13 @@ async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | nu
       // A transient GoalServe failure (fetchJson already retried and still came back null) must
       // never blank out odds that were serving fine a moment ago — that turns a momentary 500 on
       // their end into "odds disappeared" for every bettor on this sport. Keep the last good
-      // payload in the cache and serve it stale until a fetch actually succeeds.
+      // payload/index in the cache and serve it stale until a fetch actually succeeds.
       if (json != null) {
-        oddsPayloadCache.set(cat, { ts: Date.now(), payload: json });
-        return json;
+        const entry: OddsPayloadEntry = { ts: Date.now(), payload: json, index: indexOddsPayload(json) };
+        oddsPayloadCache.set(cat, entry);
+        return entry;
       }
-      return cached ? cached.payload : null;
+      return cached ?? null;
     })
     .finally(() => {
       oddsPayloadInflight.delete(cat);
@@ -846,9 +886,14 @@ async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | nu
   return p;
 }
 
+async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | null> {
+  const entry = await fetchOddsPayloadEntry(apiKey, sport);
+  return entry ? entry.payload : null;
+}
+
 /** Debug-only: returns the raw match ids/team names the odds-comparison feed actually carries for
- *  a sport right now, without going through parseOddsMatch()/findMatchInOddsPayload() — used to
- *  check whether this feed's own match ids line up with the schedule feed's (server/routes/events.ts's
+ *  a sport right now, without going through the per-match parse/dedup path — used to check
+ *  whether this feed's own match ids line up with the schedule feed's (server/routes/events.ts's
  *  /api/dev/provider-debug), since a real, high-profile match (e.g. a Rio derby) coming back with
  *  no odds is far more likely to be an id mismatch between the two GoalServe feeds than that match
  *  genuinely being unpriced by every bookmaker GoalServe aggregates. */
@@ -875,17 +920,21 @@ export async function fetchOddsPayloadSample(apiKey: string, sport: string): Pro
 /** GoalServe doesn't split "all / live / pre-match" odds into separate endpoints the way
  *  sportsApiPro does — the same comparison feed carries whatever matches are currently priced,
  *  live or upcoming. All three exported functions below share this one fetch+parse path; kept as
- *  three functions only to match events.ts's existing call sites without changing its logic. */
+ *  three functions only to match events.ts's existing call sites without changing its logic.
+ *  Lookup is a Map.get() against the shared per-sport index built once per fetch in
+ *  fetchOddsPayloadEntry() — no per-call tree-walk. */
 async function fetchGoalServeMatchOdds(
   apiKey: string,
   sport: string,
   matchId: string,
   _opts?: { homeTeam?: string; awayTeam?: string },
 ): Promise<OddsResult | null> {
-  const payload = await fetchOddsPayload(apiKey, sport);
-  if (!payload) return null;
-  const match = findMatchInOddsPayload(payload, matchId);
-  return parseOddsMatch(match);
+  const entry = await fetchOddsPayloadEntry(apiKey, sport);
+  if (!entry) return null;
+  // GoalServe's match id in the index is its own (not prefixed) — matchId passed in may carry
+  // our "goalserve_" prefix from normalizeMatch(), so strip it before looking up.
+  const normalizedId = str(matchId).replace(/^goalserve_/, '');
+  return entry.index.get(normalizedId) ?? null;
 }
 
 export async function fetchGoalServeMatchOddsAll(

@@ -303,6 +303,12 @@ export function createLiveWs(apiKey: string) {
 
     const p = (async () => {
       const opts = { homeTeam: ctx.homeTeam, awayTeam: ctx.awayTeam };
+      // See the identical note in server/routes/events.ts's fetchOddsStrict — GoalServe's
+      // all/live/pre-match odds functions all resolve to the same shared payload+index, so
+      // fetching all 3 and merging was 3x the parse work for 3 copies of identical data.
+      if (USE_GOALSERVE) {
+        return providerFetchOddsAll(apiKey, sport, id, opts).catch(() => null);
+      }
       const [allResult, liveResult, preResult] = await Promise.all([
         providerFetchOddsAll(apiKey, sport, id, opts).catch(() => null),
         providerFetchOddsLive(apiKey, sport, id, opts).catch(() => null),
