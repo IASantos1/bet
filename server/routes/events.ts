@@ -1305,13 +1305,28 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       const sport = String(url.searchParams.get('sport') || 'soccer').trim();
       const today = ymd(new Date());
 
-      const scheduleResult = await providerFetchSchedule(apiKey, sport, today)
-        .then((list) => ({
-          ok: true as const,
-          count: Array.isArray(list) ? list.length : 0,
-          sample: Array.isArray(list) ? list.slice(0, 5).map((e: any) => ({ league: e?.league, country: e?.country, home: e?.home_team, away: e?.away_team })) : [],
-        }))
-        .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }));
+      const scheduleRaw = await providerFetchSchedule(apiKey, sport, today).catch(() => null);
+      const scheduleResult = scheduleRaw
+        ? {
+            ok: true as const,
+            count: Array.isArray(scheduleRaw) ? scheduleRaw.length : 0,
+            sample: Array.isArray(scheduleRaw) ? scheduleRaw.slice(0, 5).map((e: any) => ({ league: e?.league, country: e?.country, home: e?.home_team, away: e?.away_team })) : [],
+          }
+        : { ok: false as const, error: 'fetch failed' };
+
+      // Odds-comparison feed test: uses a REAL match id off the schedule fetch above (an empty/
+      // placeholder id can't distinguish "the feed itself failed" from "no match with that id" —
+      // both return null the same way) to check whether pregame's 0-odds-for-everyone result is
+      // this feed failing outright or just not having priced these particular matches yet.
+      const oddsTestMatch = Array.isArray(scheduleRaw) && scheduleRaw.length > 0 ? scheduleRaw[0] : null;
+      const oddsTestResult = oddsTestMatch
+        ? await providerFetchOddsAll(apiKey, sport, String((oddsTestMatch as any).id || (oddsTestMatch as any).external_event_id || ''), {
+            homeTeam: String((oddsTestMatch as any).home_team || ''),
+            awayTeam: String((oddsTestMatch as any).away_team || ''),
+          })
+            .then((r: any) => ({ ok: true as const, matchTested: `${(oddsTestMatch as any).home_team} vs ${(oddsTestMatch as any).away_team}`, hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsKeys: r?.markets ? Object.keys(r.markets) : [] }))
+            .catch((e: any) => ({ ok: false as const, error: String(e?.message || e) }))
+        : { ok: false as const, error: 'no schedule match available to test against' };
 
       const inplayResult =
         USE_GOALSERVE && sport === 'soccer'
@@ -1342,6 +1357,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         sport,
         scheduleTest: scheduleResult,
         inplayTest: inplayResult,
+        oddsTest: oddsTestResult,
         pregamePipelineTest: pipelineResult,
       });
       return true;
