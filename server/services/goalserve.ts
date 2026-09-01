@@ -30,6 +30,7 @@
  * stays live.
  */
 
+import { gunzipSync } from 'node:zlib';
 import type { NormalizedEvent, OddsResult } from './sportsApiPro';
 
 // https, not http: every real example URL across all 5 official Data Feed PDFs and the general
@@ -1057,4 +1058,306 @@ export async function fetchGoalServeOddSettlement(
     p.then(() => new Promise<void>((resolve) => setTimeout(resolve, 1050))),
   );
   return p;
+}
+
+// ── GoalServe "Inplay API" — a separate product/host from the getfeed/* endpoints above (own
+// account entitlement, confirmed enabled). Per GoalServe's own Inplay reference doc: 8
+// sport-specific feeds, refreshed every second, served as gzip-compressed JSON straight from
+// inplay.goalserve.com — not the XML-converted-to-JSON-with-`@`-prefixes shape read everywhere
+// else in this file. The URLs carry no API key/token at all; access is controlled purely by the
+// whitelisted server IP, same posture as the casino aggregator's IP whitelist.
+//
+// This sandbox's own egress still blocks inplay.goalserve.com (same restriction the top-of-file
+// comment notes for www.goalserve.com — a 403 "Host not in allowlist" from the sandbox's own
+// outbound proxy, not a rejection from GoalServe), so none of this has been exercised against a
+// live fetch. But the account owner supplied a real sample event object straight from GoalServe's
+// own docs (soccer, 2 matches, full odds) — every field name below (`core.finished/removed/
+// stopped`, `info.id/mid/period/minute/seconds/score`, `team_info.home/away`, `odds.<id>.
+// participants.<id>.value_eu/handicap/suspend`) is read verbatim off that sample, not guessed —
+// same discipline as stripAttrPrefix()'s fix above, just skipping the "guess wrong first" step.
+// Still genuinely unconfirmed: every sport other than soccer (tennis in particular carries a
+// `Serve` field, capitalized differently from the getfeed feed's lowercase `serve` — plausible
+// but unverified without a tennis sample), and whether `info.mid` really is the pregame↔inplay
+// match id correlator it looks like (GoalServe's own pregame feeds never expose an `mid` field
+// under that exact name to cross-check against).
+const INPLAY_HOST = 'http://inplay.goalserve.com';
+
+function inplaySportSegment(sport: string): string | null {
+  const s = String(sport || '').toLowerCase().trim();
+  if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
+  if (s === 'basketball' || s === 'basket' || s === 'basquete') return 'basket';
+  if (s === 'tennis' || s === 'tênis') return 'tennis';
+  if (s === 'volleyball') return 'volleyball';
+  if (s === 'american-football' || s === 'amfootball' || s === 'nfl') return 'amfootball';
+  if (s === 'esports') return 'esports';
+  if (s === 'ice-hockey' || s === 'icehockey' || s === 'hockey') return 'hockey';
+  if (s === 'baseball') return 'baseball';
+  return null; // handball/rugby/cricket/etc. have no Inplay feed per GoalServe's own doc
+}
+
+export type InplayTimeStatus = { status: string; statusShort: string; isLive: number; elapsed: number };
+
+/** GoalServe's Inplay `time_status` enum (own reference doc — 0 Not Started, 1 InPlay, 2 To Be
+ *  Fixed, 3 Ended, 4 Postponed, 5 Cancelled, 6 Walkover, 7 Interrupted, 8 Abandoned, 9 Retired, 99
+ *  Removed) mapped into this file's shared {status, statusShort, isLive, elapsed} shape (see
+ *  parseStatus() above, which handles the getfeed/* word-based statuses instead of this numeric
+ *  one). statusShort MUST be exactly 'FT' for a finished match — the Settlement Engine
+ *  (server/routes/events.ts) matches on that exact string to decide a bet is resolvable, so Ended/
+ *  Walkover/Retired (3/6/9 — all definitive results) map to it, the same way parseStatus() above
+ *  already treats WO/Retired as FT-equivalent. `elapsed` for the live case (1) is left at 0 here —
+ *  the real per-sport clock comes from the match's own fields once those are confirmed, not from
+ *  time_status alone. */
+export function parseInplayTimeStatus(timeStatus: number): InplayTimeStatus {
+  const abbrev = (s: string) => s.replace(/[^A-Za-z]/g, '').slice(0, 6).toUpperCase();
+  switch (timeStatus) {
+    case 0: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+    case 1: return { status: 'Live', statusShort: 'LIVE', isLive: 1, elapsed: 0 };
+    case 2: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 }; // "To Be Fixed" — date/time not confirmed yet
+    case 3: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Ended
+    case 4: return { status: 'Postponed', statusShort: abbrev('Postponed'), isLive: 0, elapsed: 0 };
+    case 5: return { status: 'Cancelled', statusShort: abbrev('Cancelled'), isLive: 0, elapsed: 0 };
+    case 6: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Walkover — definitive result
+    case 7: return { status: 'Interrupted', statusShort: abbrev('Interrupted'), isLive: 0, elapsed: 0 };
+    case 8: return { status: 'Abandoned', statusShort: abbrev('Abandoned'), isLive: 0, elapsed: 0 };
+    case 9: return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: 90 }; // Retired — definitive result
+    case 99: return { status: 'Removed', statusShort: abbrev('Removed'), isLive: 0, elapsed: 0 };
+    default: return { status: 'Not Started', statusShort: 'NS', isLive: 0, elapsed: 0 };
+  }
+}
+
+/** Fetches and gunzips one sport's Inplay feed (odds refreshed every second). Returns the parsed
+ *  JSON payload exactly as GoalServe sent it — shape not yet mapped into NormalizedEvent[], see
+ *  the doc comment above this section — or null on any unsupported-sport/network/decompression/
+ *  parse failure, logged the same way fetchJson() above does. */
+export async function fetchInplayFeed(sport: string, timeoutMs = 8000): Promise<any | null> {
+  const segment = inplaySportSegment(sport);
+  if (!segment) return null;
+  const url = `${INPLAY_HOST}/inplay-${segment}.gz`;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!res.ok) {
+      console.error('[goalserve-inplay] HTTP', res.status, url, buf.toString('utf8').slice(0, 300));
+      return null;
+    }
+    let decompressed: Buffer;
+    try {
+      decompressed = gunzipSync(buf);
+    } catch (e) {
+      console.error('[goalserve-inplay] gunzip failed:', url, String((e as any)?.message || e));
+      return null;
+    }
+    try {
+      return JSON.parse(decompressed.toString('utf8'));
+    } catch {
+      console.error('[goalserve-inplay] non-JSON response after gunzip:', url, decompressed.toString('utf8').slice(0, 200));
+      return null;
+    }
+  } catch (e) {
+    console.error('[goalserve-inplay] fetch failed:', url, String((e as any)?.message || e));
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** CONFIRMED against the real sample: `core` carries `finished`/`removed`/`stopped` as `"0"`/`"1"`
+ *  (or `""`/absent for false) rather than the numeric `time_status` GoalServe's general Inplay doc
+ *  describes — that enum may belong to a different endpoint (results/dictionaries), not this event
+ *  object. `info.period` uses numeric-ordinal wording ("1st Half", "2nd Half") — CONFIRMED
+ *  different from parseStatus()'s getfeed/* vocabulary ("First Half"/"Second Half", spelled out).
+ *  Delegating to parseStatus() here was tried and is wrong: it doesn't recognize "1st Half"/"2nd
+ *  Half" as half markers at all, falls through to its bare-leading-digit branch, and reads the "2"
+ *  off "2nd Half" as if it were a 2-minute-elapsed match — so status is classified straight off
+ *  `info.period`/`info.minute` here instead, never through parseStatus(). statusShort stays
+ *  exactly 'FT' when finished, matching the Settlement Engine's exact-string check. */
+function parseInplayEventStatus(core: any, info: any): { status: string; statusShort: string; isLive: number; elapsed: number } {
+  const minute = num(info?.minute);
+  if (isInplayTrue(core?.removed)) return { status: 'Removed', statusShort: 'REMOVE', isLive: 0, elapsed: 0 };
+  if (isInplayTrue(core?.finished)) return { status: 'Finished', statusShort: 'FT', isLive: 0, elapsed: minute || 90 };
+  if (isInplayTrue(core?.stopped)) return { status: 'Interrupted', statusShort: 'INTERR', isLive: 0, elapsed: minute };
+
+  const period = str(info?.period);
+  let statusShort = '';
+  if (/^(1st|First)[\s-]*Half$/i.test(period)) statusShort = '1H';
+  else if (/^(2nd|Second)[\s-]*Half$/i.test(period)) statusShort = '2H';
+  else if (/^(HT|Half[\s-]?Time)$/i.test(period)) statusShort = 'HT';
+  else if (/^(ET|Extra[\s-]?Time)$/i.test(period)) statusShort = 'ET';
+  else if (/^(P|Penalties)$/i.test(period)) statusShort = 'PEN';
+  else if (minute > 0) statusShort = minute <= 45 ? '1H' : '2H'; // regular-time fallback when period's wording isn't one of the above
+  else statusShort = 'LIVE';
+
+  // This feed, by definition, only carries matches GoalServe is actively tracking as in-play — a
+  // bare/unrecognized `period` here still means live, never "not started".
+  return { status: period || 'Live', statusShort, isLive: 1, elapsed: minute };
+}
+
+// This feed's own boolean convention is "1"/"0" (or ""/absent for false) — CONFIRMED against the
+// real sample's `core.finished`/`removed`/`stopped` and `odds.*.suspend`/`participants.*.suspend`.
+// Deliberately NOT toBool() above, which checks for "True"/true (the getfeed/* feeds' XML-derived
+// convention) and would silently treat every one of these fields as always-false.
+function isInplayTrue(v: any): boolean {
+  return v === '1' || v === 1 || v === true || v === 'true';
+}
+
+/** Builds the same OddsResult shape parseOddsMatch() produces for the getfeed/* odds-comparison
+ *  feed (`{home, draw, away, markets: {h2h: [...], other_key: [...]}}`) from this feed's own
+ *  `odds: {<market_id>: {name, participants: {<id>: {name, value_eu, suspend, handicap}}}}` shape
+ *  — CONFIRMED against the real sample (Home/Away Team Goals, 3-Way Handicap, Asian Handicap).
+ *  Each participant is already self-contained (its own handicap value, no separate wrapper level
+ *  like getfeed's <total>/<handicap> element), so no line-grouping is needed before folding the
+ *  handicap into the display name. `is_main` (which of several handicap lines GoalServe considers
+ *  the default) is read but not used to filter — every line is kept, same as parseOddsMatch(). */
+function parseInplayOdds(rawOdds: any): OddsResult | null {
+  const marketBlocks: any[] = rawOdds && typeof rawOdds === 'object' ? Object.values(rawOdds) : [];
+  if (!marketBlocks.length) return null;
+
+  const h2h: Array<{ label: string; value: string; odd: number; market_id?: number; goalserve_oddname?: string }> = [];
+  const markets: Record<string, any[]> = {};
+
+  for (const market of marketBlocks) {
+    if (isInplayTrue(market?.suspend)) continue;
+    const marketName = str(market?.name ?? market?.short_name);
+    const label = marketName.toLowerCase();
+    const isH2H = label === 'match winner' || label.includes('1x2') || label.includes('full time result') || label === 'winner' || label === 'home/draw/away';
+    const marketId = Number(market?.id);
+    const hasMarketId = Number.isFinite(marketId) && marketId > 0;
+
+    const participants: any[] = market?.participants && typeof market.participants === 'object' ? Object.values(market.participants) : [];
+    const odds: Array<{ rawName: string; name: string; value: number; settlementOddname: string }> = [];
+    for (const p of participants) {
+      if (isInplayTrue(p?.suspend)) continue;
+      const pName = str(p?.name ?? p?.short_name);
+      const value = num(p?.value_eu);
+      if (!pName || value <= 1) continue;
+      const handicap = str(p?.handicap);
+      odds.push({
+        rawName: pName,
+        name: handicap ? `${pName} ${handicap}` : pName,
+        value,
+        settlementOddname: handicap ? `${pName}:${handicap}` : pName,
+      });
+    }
+    if (!odds.length) continue;
+
+    if (isH2H) {
+      for (const o of odds) {
+        const key = normalizeOutcomeKey(o.rawName);
+        if (!key) continue;
+        h2h.push({
+          label: key === 'home' ? 'Home' : key === 'away' ? 'Away' : 'Draw',
+          value: o.name,
+          odd: o.value,
+          ...(hasMarketId ? { market_id: marketId } : {}),
+          goalserve_oddname: o.settlementOddname,
+        });
+      }
+    } else {
+      const marketKey = label.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'other';
+      markets[marketKey] = odds.map((o) => ({
+        label: o.name,
+        value: o.name,
+        odd: o.value,
+        ...(hasMarketId ? { market_id: marketId } : {}),
+        goalserve_oddname: o.settlementOddname,
+      }));
+    }
+  }
+
+  if (h2h.length) markets.h2h = h2h;
+  if (!Object.keys(markets).length) return null;
+
+  const home = Math.max(0, ...h2h.filter((s) => s.label === 'Home').map((s) => s.odd), 0);
+  const draw = Math.max(0, ...h2h.filter((s) => s.label === 'Draw').map((s) => s.odd), 0);
+  const away = Math.max(0, ...h2h.filter((s) => s.label === 'Away').map((s) => s.odd), 0);
+  return { home, draw, away, markets };
+}
+
+/** Converts one Inplay feed event object (`payload.events["<id>"]`) into the same NormalizedEvent
+ *  shape normalizeMatch() produces for the getfeed/* feeds — CONFIRMED field-by-field against the
+ *  real sample. Unlike the getfeed/* odds-comparison feed (fetched separately, on its own 10s
+ *  rate limit), odds arrive bundled directly on the event here, so home_odd/draw_odd/away_odd/
+ *  markets are populated in the same call — no second request needed for in-play odds.
+ *  `info.mid` (a second id distinct from `info.id`) is kept on `fixture.goalserve_mid` in case it
+ *  turns out to be the pregame↔inplay match id correlator it looks like — additive only, nothing
+ *  existing reads it. */
+function parseInplayEvent(sport: string, id: string, raw: any): NormalizedEvent | null {
+  const core = raw?.core ?? {};
+  const info = raw?.info ?? {};
+  const homeInfo = raw?.team_info?.home ?? {};
+  const awayInfo = raw?.team_info?.away ?? {};
+  const homeName = str(homeInfo?.name ?? info?.name?.split?.(' vs ')?.[0]);
+  const awayName = str(awayInfo?.name ?? info?.name?.split?.(' vs ')?.[1]);
+  if (!homeName || !awayName) return null;
+
+  const { status, statusShort, isLive, elapsed } = parseInplayEventStatus(core, info);
+
+  const startDate = str(info?.start_date); // "dd.MM.yyyy"
+  const startTime = str(info?.start_time); // "HH:mm"
+  let eventDate = '';
+  const dm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(startDate);
+  if (dm) {
+    const [, dd, mm, yyyy] = dm;
+    eventDate = `${yyyy}-${mm}-${dd}T${startTime || '00:00'}:00Z`;
+  } else {
+    const startTs = num(info?.start_ts);
+    if (startTs > 0) eventDate = new Date(startTs * 1000).toISOString();
+  }
+
+  // `|| null` would wrongly turn a genuine 0-0 scoreline into "no score" — 0 is falsy in JS —
+  // so presence is checked explicitly instead, the same way teamScore() above does for the
+  // getfeed/* feeds.
+  const scoreParts = str(info?.score).split(':');
+  const homeScoreRaw = homeInfo?.score ?? scoreParts[0];
+  const awayScoreRaw = awayInfo?.score ?? scoreParts[1];
+  const homeScore = homeScoreRaw != null && homeScoreRaw !== '' ? num(homeScoreRaw) : null;
+  const awayScore = awayScoreRaw != null && awayScoreRaw !== '' ? num(awayScoreRaw) : null;
+
+  const league = stripSponsorBrands(str(info?.league));
+  const odds = parseInplayOdds(raw?.odds);
+
+  return {
+    external_event_id: `goalserve_${id}`,
+    sport,
+    league,
+    home_team: homeName,
+    away_team: awayName,
+    team_match: `${homeName} vs ${awayName}`,
+    event_date: eventDate,
+    status,
+    status_short: statusShort,
+    status_long: status,
+    is_live: isLive,
+    home_odd: odds?.home ?? 0,
+    draw_odd: odds?.draw ?? 0,
+    away_odd: odds?.away ?? 0,
+    elapsed,
+    timer: str(info?.seconds || info?.minute || (elapsed || '')),
+    score: JSON.stringify({ home: homeScore, away: awayScore }),
+    markets: odds ? JSON.stringify(odds.markets) : '{}',
+    country: '',
+    home_team_logo: '',
+    away_team_logo: '',
+    fixture: { id, date: eventDate, status: { description: status }, goalserve_mid: str(info?.mid) || undefined },
+    teams: { home: { id: '', name: homeName, logo: '' }, away: { id: '', name: awayName, logo: '' } },
+    goals: { home: homeScore, away: awayScore },
+  };
+}
+
+/** Fetches one sport's Inplay feed and returns every event on it as NormalizedEvent, odds already
+ *  attached (see parseInplayEvent's doc comment). `payload.events` is a plain map keyed by event
+ *  id — CONFIRMED against the real sample — not an array, so this reads Object.values(). Returns
+ *  [] for an unsupported sport or any fetch/decompression/parse failure (already logged inside
+ *  fetchInplayFeed). */
+export async function fetchInplayEvents(sport: string): Promise<NormalizedEvent[]> {
+  const payload = await fetchInplayFeed(sport);
+  const events = payload?.events && typeof payload.events === 'object' ? payload.events : {};
+  const out: NormalizedEvent[] = [];
+  for (const [id, raw] of Object.entries(events)) {
+    const n = parseInplayEvent(sport, id, raw);
+    if (n) out.push(n);
+  }
+  return out;
 }
