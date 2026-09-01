@@ -247,9 +247,6 @@ const parseLiveEvent = (item: any) => {
       ev.timer = '';
       ev.elapsed = 0;
     }
-    // #region debug-point D:client-merge-odds-clock
-    fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:"live-delay-clock",runId:"pre",hypothesisId:"D",location:"src/react-app/hooks/useLiveFeed.ts:parseLiveEvent",msg:"[DEBUG] client parse/merge",data:{id:ev.id,sport:String(ev.sport||""),status:String(ev.fixture?.status?.short||""),elapsed:Number(ev.fixture?.status?.elapsed||0),timer:String(ev.fixture?.status?.timer||""),homeOdd:Number(ev.home_odd||0),drawOdd:Number(ev.draw_odd||0),awayOdd:Number(ev.away_odd||0),src:{rawTimer:String(item.timer||item.fixture?.status?.timer||""),rawElapsed:Number(item.elapsed||item.fixture?.status?.elapsed||0),eventDate:String(item.event_date||item.fixture?.date||""),homeOdd:Number(item.home_odd||0),drawOdd:Number(item.draw_odd||0),awayOdd:Number(item.away_odd||0)}},ts:Date.now()})}).catch(()=>{});
-    // #endregion
     return ev;
 };
 
@@ -363,9 +360,6 @@ export function useLiveFeed(sport?: string) {
     let lastInteractionAt = Date.now();
     let hiddenAt = typeof document !== 'undefined' && document.hidden ? Date.now() : 0;
     let wakeInFlight = false;
-    const log = (hypothesisId: string, msg: string, data: any) => {
-      fetch("http://127.0.0.1:7777/event",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sessionId:"live-delay-clock",runId:"pre",hypothesisId,location:"src/react-app/hooks/useLiveFeed.ts",msg:`[DEBUG] ${msg}`,data,ts:Date.now()})}).catch(()=>{});
-    };
 
     const loop = async () => {
       if (cancelled) return;
@@ -376,7 +370,6 @@ export function useLiveFeed(sport?: string) {
       }
       inflight = true;
       try {
-        log('A', 'poll tick (ws not ok)', { sport: String(sport || 'all') });
         await fetchLiveEvents();
       } finally {
         inflight = false;
@@ -430,7 +423,6 @@ export function useLiveFeed(sport?: string) {
         wsOk = true;
         setIsConnected(true);
         __dbg('H1', 'ws-open', { url: wsUrl, sport: String(sport || 'all') });
-        log('A', 'ws open', { url: wsUrl, sport: String(sport || 'all') });
         fetchLiveEvents().catch(() => void 0);
         if (pingId) clearInterval(pingId);
         pingId = setInterval(() => {
@@ -441,7 +433,6 @@ export function useLiveFeed(sport?: string) {
         wsOk = false;
         setIsConnected(false);
         __dbg('H1', 'ws-close', { url: wsUrl, sport: String(sport || 'all') });
-        log('A', 'ws close', { url: wsUrl, sport: String(sport || 'all') });
         if (pingId) { clearInterval(pingId); pingId = null; }
         loop();
       };
@@ -449,7 +440,6 @@ export function useLiveFeed(sport?: string) {
         wsOk = false;
         setIsConnected(false);
         __dbg('H1', 'ws-error', { url: wsUrl, sport: String(sport || 'all') });
-        log('A', 'ws error', { url: wsUrl, sport: String(sport || 'all') });
         if (pingId) { clearInterval(pingId); pingId = null; }
         loop();
       };
@@ -466,7 +456,6 @@ export function useLiveFeed(sport?: string) {
               return;
             }
             __dbg('H1', 'ws-snapshot', { sport: String(sport || 'all'), count: msg.live.length });
-            log('A', 'ws snapshot', { sport: String(sport || 'all'), count: msg.live.length });
             setEventsMap((prev) => {
               const next = new Map<string, any>(prev);
               const seen = new Set<string>();

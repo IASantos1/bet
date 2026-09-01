@@ -210,57 +210,6 @@ function deriveElapsedAndTimer(sport: string, e: any): { elapsed: number; timer:
     else timer = String(elapsed);
   }
 
-  void import('node:fs').then((fs) => {
-    let u = '';
-    let s = '';
-    try {
-      const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8');
-      u = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || '';
-      s = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || '';
-    } catch { void 0; }
-    if (!u || !s) return;
-    const status = String(e?.status?.description ?? e?.status?.type ?? e?.status ?? e?.statusCode ?? e?.statusText ?? '');
-    fetch(u, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: s,
-        runId: 'pre',
-        hypothesisId: 'B',
-        location: 'server/services/sportsApiPro.ts:deriveElapsedAndTimer',
-        msg: '[DEBUG] deriveElapsedAndTimer',
-        data: {
-          sport: String(sport || ''),
-          sportKey,
-          status,
-          elapsed,
-          timer,
-          candidates: {
-            elapsed: {
-              e: e?.elapsed ?? null,
-              timeElapsed: e?.time?.elapsed ?? null,
-              timeMinute: e?.time?.minute ?? null,
-              minute: e?.minute ?? null,
-              statusElapsed: e?.status?.elapsed ?? null,
-              statusMinute: e?.status?.minute ?? null,
-              clockMinute: e?.clock?.minute ?? null,
-              clockMinutes: e?.clock?.minutes ?? null,
-            },
-            timer: {
-              e: e?.timer ?? null,
-              timeTimer: e?.time?.timer ?? null,
-              clockDisplay: e?.clock?.display ?? null,
-              clockTime: e?.clock?.time ?? null,
-              statusTimer: e?.status?.timer ?? null,
-            },
-          },
-          start: { startTimestamp: e?.startTimestamp ?? null, startTime: e?.startTime ?? null, event_date: e?.event_date ?? null },
-        },
-        ts: Date.now(),
-      }),
-    }).catch(() => null);
-  }).catch(() => null);
-
   return { elapsed: Number.isFinite(elapsed) ? elapsed : 0, timer };
 }
 
@@ -520,9 +469,6 @@ function normalizeEvent(sport: string, e: any): NormalizedEvent | null {
   const statusObj = e?.status ?? status;
   const live = isLive(statusObj);
   const t = live ? deriveElapsedAndTimer(sport, e) : { elapsed: 0, timer: '' };
-  // #region debug-point C:normalize-event-clock
-  void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || s; } catch { void 0; } const keys = e && typeof e === 'object' ? Object.keys(e) : []; const keyMatches = keys.filter((k) => /elapsed|minute|timer|clock|time/i.test(k)).slice(0, 50); fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'C', location: 'server/services/sportsApiPro.ts:normalizeEvent', msg: '[DEBUG] normalizeEvent clock/status', data: { sport: String(sport || ''), id, status: String(status || ''), isLive: live, computedDate: date, elapsed: t.elapsed, timer: t.timer, raw: { startTimestamp: e?.startTimestamp ?? null, startTime: e?.startTime ?? null, event_date: e?.event_date ?? null, time: e?.time ?? null, clock: e?.clock ?? null, minute: e?.minute ?? null, elapsed: e?.elapsed ?? null }, keyMatches }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-  // #endregion
 
   const sLower = String(sport || '').toLowerCase();
   const tennisSets = sLower.includes('tennis') || sLower.includes('tênis') ? extractTennisSets(e) : null;

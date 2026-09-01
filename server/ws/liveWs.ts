@@ -268,9 +268,6 @@ export function createLiveWs(apiKey: string) {
     if (Date.now() - last < 10 * 60_000) return;
     if (oddsSubscribed.size >= 240) return;
     oddsSubscribed.set(key, Date.now());
-    // #region debug-point A:match-odds-subscribe
-    void import('node:fs').then((fs) => { let eurl = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); eurl = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || eurl; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } fetch(eurl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:trySubscribeMatchOdds', msg: '[DEBUG] subscribe match odds', data: { sport: localSport, channel: `match:${id}:odds` }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-    // #endregion
     try {
       u.ws.send(JSON.stringify({ action: 'subscribe', channel: `match:${id}:odds` }));
     } catch {
@@ -289,15 +286,9 @@ export function createLiveWs(apiKey: string) {
     const cached = oddsCache.get(key);
 
     if (cached && cached.data != null && ttlOk(cached.ts, ODDS_FRESH_TTL_MS)) {
-      // #region debug-point D:odds-cache-fresh
-      void import('node:fs').then((fs) => { let url = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); url = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || url; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'D', location: 'server/ws/liveWs.ts:fetchOddsBestEffort', msg: '[DEBUG] odds cache fresh hit', data: { sport: String(sport || ''), matchId: String(id || ''), ageMs: Date.now() - cached.ts }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       return cached.data;
     }
     if (cached && cached.data != null && ttlOk(cached.ts, ODDS_STALE_TTL_MS)) {
-      // #region debug-point D:odds-cache-stale
-      void import('node:fs').then((fs) => { let url = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); url = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || url; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'D', location: 'server/ws/liveWs.ts:fetchOddsBestEffort', msg: '[DEBUG] odds cache stale hit', data: { sport: String(sport || ''), matchId: String(id || ''), ageMs: Date.now() - cached.ts, budgetRemaining: budget ? budget.remaining : null, refreshScheduled: !!(budget && budget.remaining > 0 && !oddsInflight.has(key)) }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       if (budget && budget.remaining > 0 && !oddsInflight.has(key)) {
         budget.remaining -= 1;
         fetchOddsBestEffort(sport, id, ctx, null).catch(() => null);
@@ -400,12 +391,6 @@ export function createLiveWs(apiKey: string) {
     lastSent.set(sport, now);
 
     if (snapshotInflight.has(sport)) {
-      // #region debug-point A:ws-inflight-hit
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS snapshot inflight -> sending cached', data: { sport, ageMs: (snapshotCache.get(sport) ? (now - (snapshotCache.get(sport) as any).ts) : null) }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
-      // #region debug-point H1:ws-inflight-hit
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:sendSnapshot', msg: 'ws-inflight-hit', data: { sport, ageMs: (snapshotCache.get(sport) ? (now - (snapshotCache.get(sport) as any).ts) : null), clientCount: Array.from(clients).filter((c) => c.sport === sport).length }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       const cached = snapshotCache.get(sport);
       if (cached && now - cached.ts < 30_000) {
         const msg = JSON.stringify({ type: 'snapshot', live: cached.live });
@@ -423,9 +408,6 @@ export function createLiveWs(apiKey: string) {
     }
     snapshotInflight.add(sport);
     const t0 = Date.now();
-    // #region debug-point A:ws-snapshot-start
-    void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS snapshot start', data: { sport, clientCount: Array.from(clients).filter((c) => c.sport === sport).length }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-    // #endregion
     try {
       if (sport === 'all' && USE_GOALSERVE) {
         // GoalServe has no push connection at all (connectUpstream() is a no-op for it — see
@@ -540,12 +522,6 @@ export function createLiveWs(apiKey: string) {
       } catch {
         void 0;
       }
-      // #region debug-point A:ws-live-fetched
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS live fetched', data: { sport, sports, total: liveAll.length, fetchMs: Date.now() - t0 }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
-      // #region debug-point H1:ws-live-fetched
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:sendSnapshot', msg: 'ws-live-fetched', data: { sport, sports, total: liveAll.length, fetchMs: Date.now() - t0 }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
 
       let baseLive = liveAll;
       const prevSnap = snapshotCache.get(sport);
@@ -641,12 +617,6 @@ export function createLiveWs(apiKey: string) {
 
       const live = await attachBallPositions(withOdds);
       snapshotCache.set(sport, { ts: Date.now(), live });
-      // #region debug-point A:ws-snapshot-ready
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-delay-clock'; try { const e = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:sendSnapshot', msg: '[DEBUG] WS snapshot ready', data: { sport, liveWithOdds: live.length, totalMs: Date.now() - t0, oddsBudgetLeft: budget.remaining }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
-      // #region debug-point H1:ws-snapshot-ready
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:sendSnapshot', msg: 'ws-snapshot-ready', data: { sport, liveCount: live.length, totalMs: Date.now() - t0, oddsBudgetLeft: budget.remaining, clientCount: Array.from(clients).filter((c) => c.sport === sport).length }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       const msg = JSON.stringify({ type: 'snapshot', live });
       for (const c of clients) {
         if (c.sport !== sport) continue;
@@ -697,9 +667,6 @@ export function createLiveWs(apiKey: string) {
     ws.on('open', () => {
       u.connecting = false;
       u.backoffMs = 1000;
-      // #region debug-point A:upstream-open
-      void import('node:fs').then((fs) => { let eurl = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); eurl = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || eurl; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } fetch(eurl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:connectUpstream', msg: '[DEBUG] upstream open', data: { localSport, wsSport, url }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       try {
         ws.send(JSON.stringify({ action: 'subscribe', channel: 'live-scores' }));
       } catch {
@@ -749,17 +716,11 @@ export function createLiveWs(apiKey: string) {
             } else {
               oddsCache.delete(key);
             }
-            // #region debug-point A:tennis-odds-update
-            void import('node:fs').then((fs) => { let eurl = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); eurl = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || eurl; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } const keys = msg?.data && typeof msg.data === 'object' ? Object.keys(msg.data).slice(0, 40) : null; fetch(eurl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:connectUpstream', msg: '[DEBUG] match odds update (invalidate cache)', data: { localSport, channel: msg.channel, matchId, dataKeys: keys }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-            // #endregion
           }
         }
       } catch {
         void 0;
       }
-      // #region debug-point A:upstream-msg
-      void import('node:fs').then((fs) => { let url = 'http://127.0.0.1:7777/event', sid = 'live-delay-clock'; try { const env = fs.readFileSync('.dbg/live-delay-clock.env', 'utf8'); url = /DEBUG_SERVER_URL=(.+)/.exec(env)?.[1] || url; sid = /DEBUG_SESSION_ID=(.+)/.exec(env)?.[1] || sid; } catch { void 0; } let txt = ''; let parsed: any = null; try { txt = String((raw as any)?.toString ? (raw as any).toString() : raw); if (txt.length > 8000) txt = txt.slice(0, 8000); parsed = JSON.parse(txt); } catch { parsed = null; } const dataSample = parsed ? { type: parsed?.type ?? null, channel: parsed?.channel ?? null, dataKeys: parsed?.data && typeof parsed.data === 'object' ? Object.keys(parsed.data).slice(0, 30) : null, data: (() => { const d = parsed?.data; if (!d || typeof d !== 'object') return null; return { matchId: d.matchId ?? d.id ?? d.fixtureId ?? null, minute: d.minute ?? d.elapsed ?? d.time ?? d.clock ?? null, status: d.status ?? d.phase ?? d.period ?? null, score: d.score ?? { home: d.homeScore ?? null, away: d.awayScore ?? null } }; })() } : null; fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: sid, runId: 'pre', hypothesisId: 'A', location: 'server/ws/liveWs.ts:connectUpstream', msg: '[DEBUG] upstream message received', data: { localSport, wsSport, bytes: txt ? txt.length : null, sample: dataSample }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       sendSnapshot(localSport).catch(() => null);
       sendSnapshot('all').catch(() => null);
     });
@@ -843,9 +804,6 @@ export function createLiveWs(apiKey: string) {
     const sport = normalize(u.searchParams.get('sport') || 'all');
     const c: ClientInfo = { ws, sport };
     clients.add(c);
-    // #region debug-point H1:client-connect
-    void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:connection', msg: 'client-connect', data: { sport, clients: clients.size }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-    // #endregion
     ensureTimer(sport);
 
     ws.on('message', (data) => {
@@ -861,16 +819,10 @@ export function createLiveWs(apiKey: string) {
 
     ws.on('close', () => {
       clients.delete(c);
-      // #region debug-point H1:client-close
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:connection', msg: 'client-close', data: { sport, clients: clients.size }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       cleanupTimer(sport);
     });
     ws.on('error', () => {
       clients.delete(c);
-      // #region debug-point H1:client-error
-      void import('node:fs').then((fs) => { let u = 'http://127.0.0.1:7777/event', s = 'live-flicker-bug'; try { const e = fs.readFileSync('.dbg/live-flicker-bug.env', 'utf8'); u = /DEBUG_SERVER_URL=(.+)/.exec(e)?.[1] || u; s = /DEBUG_SESSION_ID=(.+)/.exec(e)?.[1] || s; } catch { void 0; } fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: s, runId: 'pre', hypothesisId: 'H1', location: 'server/ws/liveWs.ts:connection', msg: 'client-error', data: { sport, clients: clients.size }, ts: Date.now() }) }).catch(() => null); }).catch(() => null);
-      // #endregion
       cleanupTimer(sport);
     });
   });
