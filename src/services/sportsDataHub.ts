@@ -102,8 +102,6 @@ function toMatch(ev: any): Match | null {
   const homeOdd = Number(ev?.home_odd || 0);
   const awayOdd = Number(ev?.away_odd || 0);
   const drawOdd = Number(ev?.draw_odd || 0);
-  const hasOdds = homeOdd > 1.01 && awayOdd > 1.01;
-  if (!hasOdds) return null;
 
   const startTime = String(ev?.event_date || ev?.fixture?.date || '');
   const time = isLive
@@ -149,7 +147,7 @@ export async function getLiveMatches(sportKey?: string): Promise<Match[]> {
 
   try {
     const sportParam = normalizeSportKey(sportKey || 'all');
-    const url = `/api/events/by-sport?sports=${encodeURIComponent(sportParam)}&include=odds&realtime=1&only=live&days=0&requireOdds=1`;
+    const url = `/api/events/by-sport?sports=${encodeURIComponent(sportParam)}&include=odds&realtime=1&only=live&days=0`;
     const res = await fetch(url, { cache: 'no-store' });
     const data: any = await res.json().catch(() => null);
     const live = Array.isArray(data?.live) ? data.live : [];
@@ -176,7 +174,7 @@ export async function getUpcomingMatches(sportKey?: string): Promise<Match[]> {
   try {
     const sportParam = normalizeSportKey(sportKey || 'all');
     const days = 7;
-    const url = `/api/events/by-sport?sports=${encodeURIComponent(sportParam)}&include=odds&realtime=0&only=pregame&days=${days}&requireOdds=1`;
+    const url = `/api/events/by-sport?sports=${encodeURIComponent(sportParam)}&include=odds&realtime=0&only=pregame&days=${days}`;
     const res = await fetch(url, { cache: 'no-store' });
     const data: any = await res.json().catch(() => null);
     const pre = Array.isArray(data?.pregame) ? data.pregame : [];
