@@ -309,6 +309,23 @@ function teamLogo(t: any): string {
   return str(t?.logo ?? t?.badge ?? t?.image ?? '');
 }
 
+function normalizeComparableName(name: string): string {
+  return str(name)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function teamPairKey(home: string, away: string): string {
+  const h = normalizeComparableName(home);
+  const a = normalizeComparableName(away);
+  return h && a ? `${h}::${a}` : '';
+}
+
 /** CONFIRMED for soccer: `goals` on the team element (e.g. `<localteam name="Liverpool" goals="3"
  *  id="9249" />`) — not `score`. CONFIRMED for hockey/basketball/baseball (official Data Feed
  *  PDFs): `totalscore` (already the 3rd fallback below, so this needed no code change — verified
@@ -884,22 +901,35 @@ const ODDS_PAYLOAD_TTL_MS = 32_000; // 30s documented minimum without `ts` + 2s 
  *  dedup across every market) again for every single match lookup — the soccer feed alone runs
  *  ~150MB with thousands of matches, so re-walking it per event was the real cost behind an odds
  *  lookup, not the network fetch (already cached/throttled above). */
-function indexOddsPayload(payload: any): Map<string, OddsResult> {
-  const index = new Map<string, OddsResult>();
+type OddsPayloadIndexes = {
+  byId: Map<string, OddsResult>;
+  byTeams: Map<string, OddsResult[]>;
+};
+
+function indexOddsPayload(payload: any, sport: string): OddsPayloadIndexes {
+  const byId = new Map<string, OddsResult>();
+  const byTeams = new Map<string, OddsResult[]>();
   for (const cat of extractCategories(payload)) {
     for (const group of extractMatchGroups(cat)) {
       for (const match of group.matches) {
         const id = str(match?.id ?? match?.['@id']);
-        if (!id) continue;
         const odds = parseOddsMatch(match);
-        if (odds) index.set(id, odds);
+        if (!odds) continue;
+        if (id) byId.set(id, odds);
+        const { home, away } = extractTeams(match, sport);
+        const pairKey = teamPairKey(teamName(home), teamName(away));
+        if (pairKey) {
+          const existing = byTeams.get(pairKey) || [];
+          existing.push(odds);
+          byTeams.set(pairKey, existing);
+        }
       }
     }
   }
-  return index;
+  return { byId, byTeams };
 }
 
-type OddsPayloadEntry = { ts: number; payload: any; index: Map<string, OddsResult> };
+type OddsPayloadEntry = { ts: number; payload: any; index: OddsPayloadIndexes };
 const oddsPayloadCache = new Map<string, OddsPayloadEntry>();
 const oddsPayloadInflight = new Map<string, Promise<OddsPayloadEntry | null>>();
 
@@ -919,7 +949,7 @@ async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<Odd
       // their end into "odds disappeared" for every bettor on this sport. Keep the last good
       // payload/index in the cache and serve it stale until a fetch actually succeeds.
       if (json != null) {
-        const entry: OddsPayloadEntry = { ts: Date.now(), payload: json, index: indexOddsPayload(json) };
+        const entry: OddsPayloadEntry = { ts: Date.now(), payload: json, index: indexOddsPayload(json, sport) };
         oddsPayloadCache.set(cat, entry);
         return entry;
       }
@@ -973,14 +1003,19 @@ async function fetchGoalServeMatchOdds(
   apiKey: string,
   sport: string,
   matchId: string,
-  _opts?: { homeTeam?: string; awayTeam?: string },
+  opts?: { homeTeam?: string; awayTeam?: string },
 ): Promise<OddsResult | null> {
   const entry = await fetchOddsPayloadEntry(apiKey, sport);
   if (!entry) return null;
   // GoalServe's match id in the index is its own (not prefixed) — matchId passed in may carry
   // our "goalserve_" prefix from normalizeMatch(), so strip it before looking up.
   const normalizedId = str(matchId).replace(/^goalserve_/, '');
-  return entry.index.get(normalizedId) ?? null;
+  const exact = entry.index.byId.get(normalizedId);
+  if (exact) return exact;
+  const pairKey = teamPairKey(str(opts?.homeTeam), str(opts?.awayTeam));
+  if (!pairKey) return null;
+  const matches = entry.index.byTeams.get(pairKey) || [];
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export async function fetchGoalServeMatchOddsAll(
