@@ -32,6 +32,15 @@ type CacheEntry<T> = { ts: number; data: T };
 type AnyEvent = any;
 
 const SPORTS_DEFAULT = ['soccer', 'tennis', 'basketball', 'ice-hockey', 'baseball'];
+// The sidebar's real sport list (src/react-app/components/Sidebar.tsx) has 9 entries — SPORTS_DEFAULT
+// only covers 5. resolveSport() below needs every sport a user can actually navigate into, or a
+// cricket/handball/rugby/volleyball match's id would never resolve here even though the match itself
+// is real and its own event page loaded fine (that page just never got told which sport it is, e.g.
+// GET /api/events/:id/odds with no ?sport= — EventDetails.tsx only appends one once its own event
+// object has resolved a `sport` field). SPORTS_DEFAULT itself stays untouched — it's also the default
+// for ?sports=all on the bulk live/pregame list, a separate, larger decision about what shows by
+// default there.
+const SPORTS_SEARCHABLE = [...SPORTS_DEFAULT, 'handball', 'volleyball', 'rugby', 'cricket'];
 const ODDS_FRESH_TTL_MS = 90_000;
 const LIVE_ODDS_FRESH_TTL_MS = 8_000;
 const ODDS_STALE_TTL_MS = 15 * 60_000;
@@ -253,7 +262,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const resolveSport = async (matchId: string): Promise<string | null> => {
     const c = idToSport.get(matchId);
     if (c && ttlOk(c.ts, 6 * 60 * 60 * 1000)) return c.data;
-    for (const s of SPORTS_DEFAULT) {
+    for (const s of SPORTS_SEARCHABLE) {
       const live = await fetchLive(s).catch(() => []);
       if (live.some((e: any) => String(e.id) === String(matchId))) {
         rememberSport(matchId, s);
