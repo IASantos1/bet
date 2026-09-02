@@ -160,19 +160,43 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     }
   }
 
-  function ensureRefreshed(): Promise<void> {
+  // Single guarded entry point for starting a refresh cycle — shared by ensureRefreshed() below AND
+  // startPolling()'s timer, so at most one refreshOnce() ever runs at a time regardless of which
+  // triggered it. Without this, the background poll timer's own tick and an HTTP request's
+  // cold-start wait (both able to fire refreshOnce() independently) could race right after a fresh
+  // deploy and run two full cycles concurrently — wasted work at any cycle length, but now that a
+  // cycle can legitimately take much longer (requestGate() pacing, see below), doubling it up like
+  // that meaningfully extends how long the very first request has to wait.
+  function runRefreshOnce(): Promise<void> {
     if (refreshInFlight) return refreshInFlight;
-    if (cache.size > 0 && Date.now() - lastRefreshAt < POLL_INTERVAL_MS) return Promise.resolve();
     refreshInFlight = refreshOnce().finally(() => {
       refreshInFlight = null;
     });
     return refreshInFlight;
   }
 
+  // Every HTTP route below awaits this before reading the cache. A full refreshOnce() cycle now
+  // paces every PulseScore request through requestGate() (server/services/pulsescore.ts, added to
+  // respect PulseScore's confirmed 3 req/sec limit) — across nine sports' paginated /events pulls
+  // plus the /live-events pass, that can legitimately take far longer than POLL_INTERVAL_MS. Once
+  // there's ANY cached data, a request must never block on that — it would mean every page hangs
+  // for however long the current cycle takes (confirmed in production: ~20s before the request
+  // simply times out and the page shows nothing until reloaded). Only a true cold start (empty
+  // cache, e.g. right after a fresh deploy) is worth waiting for once, so the very first request
+  // doesn't return an empty catalog needlessly; every other call just serves whatever's cached
+  // (even if a little stale) and kicks a background refresh if one is due and not already running.
+  function ensureRefreshed(): Promise<void> {
+    if (cache.size > 0) {
+      if (Date.now() - lastRefreshAt >= POLL_INTERVAL_MS) runRefreshOnce();
+      return Promise.resolve();
+    }
+    return runRefreshOnce();
+  }
+
   function startPolling(): void {
     if (pollTimer || !hasApiKey(apiKey)) return;
     const tick = () => {
-      refreshOnce().finally(() => {
+      runRefreshOnce().finally(() => {
         pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
       });
     };
@@ -334,7 +358,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     }
 
     if (path === '/api/dev/force-import') {
-      await refreshOnce();
+      // Goes through the same guarded runRefreshOnce() as everything else — joins an already
+      // in-flight cycle rather than starting a redundant concurrent one (see runRefreshOnce()'s
+      // comment above), which is what "force a refresh" should mean here anyway.
+      await runRefreshOnce();
       sendJson(res, 200, { ok: true, eventsCached: cache.size, lastRefreshError });
       return true;
     }
