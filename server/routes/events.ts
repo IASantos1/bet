@@ -95,6 +95,7 @@ const PREMATCH_INTERSPORT_STAGGER_MS = 250;
 const HIGH_VOLUME_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
 const PREMATCH_PROXIMITY_TICK_MS = 30_000;
 const MID_LIVE_POLL_INTERVAL_MS = 5_000;
+const TENNIS_ULTRA_POLL_INTERVAL_MS = 1_000;
 
 const PRE_TO_LIVE_TRANSITION_INTERVAL_MS = 2_000;
 const LIVE_TO_FINISHED_GUARD_INTERVAL_MS = 30_000;
@@ -130,7 +131,7 @@ type PrematchEventRuntime = {
   lastRefreshedAt: number;
   refreshEveryMs: number;
 };
-const MID_LIVE_SPORTS: readonly AppEvent['sport'][] = ['tennis', 'volleyball', 'rugby', 'mma', 'handball'] as const;
+const MID_LIVE_SPORTS: readonly AppEvent['sport'][] = ['volleyball', 'rugby', 'mma', 'handball'] as const;
 
 type TradingStatus = 'pending' | 'approved' | 'suspended';
 type ManualOdds = { home?: number; draw?: number; away?: number };
@@ -270,6 +271,12 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   let lastResultsGuardAt = 0;
   let lastResultsGuardError: string | null = null;
   let lastResultsGuardStats: { scanned: number; finalized: number; sportsChecked: number } | null = null;
+
+  let tennisUltraPollInFlight: Promise<void> | null = null;
+  let tennisUltraPollTimer: NodeJS.Timeout | null = null;
+  let lastTennisUltraPollAt = 0;
+  let lastTennisUltraPollError: string | null = null;
+  let lastTennisUltraPollStats: { liveMatches: number; updated: number } | null = null;
 
   function prematchBucketFor(event_date: number | null | undefined | string): PrematchProximityBucket | null {
     if (event_date == null) return null;
@@ -625,6 +632,73 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     midLivePollTimer = setTimeout(tick, 8_000);
   }
   startMidLivePoll();
+
+  // TENNIS (game points 15/30/40/AD and set scores) — ULTRA LOW LATENCY 1s poll
+  // on top of the WS slot (guaranteed fallback when WS drops a frame or
+  // disconnects with 4429 rate limit). User hard rule: max delay = 1s.
+  // We only poll when ANY tennis live match actually exists in cache, so this
+  // is idle (zero extra requests) whenever no tennis is being played.
+  async function tennisUltraPollOnce(): Promise<void> {
+    const now = Date.now();
+    let liveMatches = 0;
+    let updated = 0;
+    const hasAnyTennisLive = Array.from(cache.values()).some((e) => e.sport === 'tennis' && e.is_live === 1);
+    if (!hasAnyTennisLive) {
+      lastTennisUltraPollError = null;
+      lastTennisUltraPollAt = now;
+      lastTennisUltraPollStats = { liveMatches: 0, updated: 0 };
+      return;
+    }
+    try {
+      const liveRaw = await fetchPulseScoreLiveEvents(apiKey, 'tennis', { pageLimit: 100, maxPages: 3 });
+      const tennisLiveIds = new Set<string>();
+      for (const lr of liveRaw) {
+        const id = `pulsescore_${lr.eventId}`;
+        tennisLiveIds.add(id);
+        if (isBlockedEvent(lr.league, lr.home, lr.away)) {
+          cache.delete(id);
+          continue;
+        }
+        liveMatches += 1;
+        const cached = cache.get(id);
+        const merged = applyLiveRawState(lr, cached ?? null, 'tennis');
+        cache.set(id, merged);
+        if (!cached) recordH2HOdds(merged, now);
+        updated += 1;
+      }
+      for (const ev of cache.values()) {
+        if (ev.sport === 'tennis' && ev.is_live === 1 && !tennisLiveIds.has(ev.id)) {
+          cache.set(ev.id, { ...ev, is_live: 0 });
+        }
+      }
+      lastTennisUltraPollError = null;
+    } catch (e: any) {
+      lastTennisUltraPollError = String(e?.message || e);
+    } finally {
+      lastTennisUltraPollAt = now;
+      lastTennisUltraPollStats = { liveMatches, updated };
+    }
+  }
+
+  function runTennisUltraPoll(): Promise<void> {
+    if (tennisUltraPollInFlight) return tennisUltraPollInFlight;
+    tennisUltraPollInFlight = tennisUltraPollOnce().finally(() => {
+      tennisUltraPollInFlight = null;
+    });
+    return tennisUltraPollInFlight;
+  }
+
+  function startTennisUltraPoll(): void {
+    if (tennisUltraPollTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runTennisUltraPoll().finally(() => {
+        tennisUltraPollTimer = setTimeout(tick, TENNIS_ULTRA_POLL_INTERVAL_MS);
+      });
+    };
+    tennisUltraPollTimer = setTimeout(tick, 1_500);
+  }
+  startTennisUltraPoll();
+
 
   // Pre-match → AO VIVO transition guard. Every 2s, polls /live-events for ALL
   // WS_LIVE_SPORTS and marks any cache event is_live=0 → is_live=1 IMMEDIATELY when
@@ -1348,6 +1422,17 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       activeSports: (MID_LIVE_SPORTS as AppEvent['sport'][]).filter((s) =>
         Array.from(cache.values()).some((e) => e.sport === s && e.is_live === 1),
       ),
+    },
+    tennisUltraPoll: {
+      enabled: hasApiKey(apiKey),
+      intervalMs: TENNIS_ULTRA_POLL_INTERVAL_MS,
+      sport: 'tennis',
+      lastRunAt: lastTennisUltraPollAt,
+      lastStats: lastTennisUltraPollStats,
+      lastError: lastTennisUltraPollError,
+      inFlight: !!tennisUltraPollInFlight,
+      slotWsActive: isWsLiveSportActive('tennis'),
+      anyTennisLive: Array.from(cache.values()).some((e) => e.sport === 'tennis' && e.is_live === 1),
     },
     prematchProximity: {
       buckets: PREMATCH_PROXIMITY_BUCKETS.map((b) => ({ label: b.label, maxMsUntilKO: b.maxMsUntilKO, refreshEveryMs: b.refreshEveryMs })),
