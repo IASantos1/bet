@@ -67,7 +67,11 @@ const safePool: any =
     }),
   } as any);
 
-const events = createEventsService(safePool, '');
+const pulseScoreApiKey = String(process.env.PULSESCORE_API_KEY || '').trim();
+if (!pulseScoreApiKey) {
+  console.warn('[server] WARNING: PULSESCORE_API_KEY is not set. Sports odds will be unavailable.');
+}
+const events = createEventsService(safePool, pulseScoreApiKey);
 const liveWs = createLiveWs();
 
 const distDir = path.resolve(process.cwd(), 'dist');
