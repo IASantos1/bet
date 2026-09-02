@@ -211,16 +211,41 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
 
   const detectTennisCurrentSet = useMemo((): number | 'TB' | 0 => {
     if (sport !== 'tennis') return 0;
+    const ordinalSetRe = /(\d{1,2})(?:ST|ND|RD|TH)\s*SET/i;
+    const simpleSetRe = /\b(?:SET|S)\s*(\d{1,2})\b/i;
+
     const mc = (event as any)?.matchClock;
-    if (mc && typeof mc === 'object' && typeof mc.period === 'string') {
-      const p = mc.period.toUpperCase().trim();
-      if (p === 'FIRST_SET' || p === '1ST_SET' || p === 'SET_1') return 1;
-      if (p === 'SECOND_SET' || p === '2ND_SET' || p === 'SET_2') return 2;
-      if (p === 'THIRD_SET' || p === '3RD_SET' || p === 'SET_3') return 3;
-      if (p === 'FOURTH_SET' || p === '4TH_SET' || p === 'SET_4') return 4;
-      if (p === 'FIFTH_SET' || p === '5TH_SET' || p === 'SET_5') return 5;
-      if (p === 'TIEBREAK' || p === 'TIE_BREAK' || p === 'TB') return 'TB';
+    if (mc && typeof mc === 'object') {
+      if (typeof mc.period === 'string') {
+        const p = mc.period.toUpperCase().trim();
+        if (p === 'FIRST_SET' || p === '1ST_SET' || p === 'SET_1') return 1;
+        if (p === 'SECOND_SET' || p === '2ND_SET' || p === 'SET_2') return 2;
+        if (p === 'THIRD_SET' || p === '3RD_SET' || p === 'SET_3') return 3;
+        if (p === 'FOURTH_SET' || p === '4TH_SET' || p === 'SET_4') return 4;
+        if (p === 'FIFTH_SET' || p === '5TH_SET' || p === 'SET_5') return 5;
+        if (p === 'TIEBREAK' || p === 'TIE_BREAK' || p === 'TB') return 'TB';
+        const ord = ordinalSetRe.exec(mc.period);
+        if (ord) return Math.max(0, Math.min(5, Number(ord[1]) || 0));
+        const sm = simpleSetRe.exec(mc.period);
+        if (sm) return Math.max(0, Math.min(5, Number(sm[1]) || 0));
+      }
+      if (typeof mc.periodId !== undefined && mc.periodId !== null) {
+        const pn = Number(mc.periodId);
+        if (Number.isFinite(pn) && pn >= 1 && pn <= 5) return pn;
+      }
     }
+
+    const moreInfo = (event as any)?.moreInfo;
+    if (moreInfo && typeof moreInfo.currentPeriod === 'string') {
+      const cp = String(moreInfo.currentPeriod);
+      const ord = ordinalSetRe.exec(cp);
+      if (ord) return Math.max(0, Math.min(5, Number(ord[1]) || 0));
+      const sm = simpleSetRe.exec(cp);
+      if (sm) return Math.max(0, Math.min(5, Number(sm[1]) || 0));
+      const up = cp.toUpperCase().trim();
+      if (up === 'TIEBREAK' || /TIE[-_ ]?BREAK/i.test(up)) return 'TB';
+    }
+
     const sc = (event as any)?.score;
     let scoreObj: any = null;
     if (sc && typeof sc === 'object') scoreObj = sc;
@@ -232,6 +257,8 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
       const m = info.match(/\b(?:SET|S)\s*(\d{1,2})\b/);
       if (m) return Number(m[1]) || 0;
       if (/TIE[-_ ]?BREAK/i.test(info)) return 'TB';
+      const ord = ordinalSetRe.exec(scoreObj.info);
+      if (ord) return Math.max(0, Math.min(5, Number(ord[1]) || 0));
     }
     if (Array.isArray(currentMarkets) && currentMarkets.length > 0) {
       let best: number | 'TB' | 0 = 0;
@@ -278,6 +305,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
     const raw = (event as any)?.score;
     const matchClockInfo = String((event as any)?.matchClock?.info || '').trim();
     const statistics = (event as any)?.statistics;
+    const moreInfo = (event as any)?.moreInfo;
 
     let obj: any = null;
     let rawString = '';
@@ -350,6 +378,33 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
       }
     }
 
+    if (statistics && typeof statistics === 'object') {
+      const statSets = (statistics as any).sets;
+      if (statSets && Array.isArray(statSets.home) && Array.isArray(statSets.away)) {
+        const len = Math.min(10, Math.max(statSets.home.length, statSets.away.length));
+        for (let i = 0; i < len; i++) {
+          const h = toNumOrNull(statSets.home[i]);
+          const a = toNumOrNull(statSets.away[i]);
+          if (!sets[i]) sets[i] = { home: null, away: null };
+          if (sets[i].home == null && h != null) sets[i].home = h;
+          if (sets[i].away == null && a != null) sets[i].away = a;
+        }
+      }
+      if ((!pHome || !pAway)) {
+        const gs = (statistics as any).gameScore ?? (statistics as any).currentGame ?? (statistics as any).points;
+        if (gs && typeof gs === 'object') {
+          if (!pHome) pHome = normalizePoint(gs.home ?? gs.h ?? gs.pointHome);
+          if (!pAway) pAway = normalizePoint(gs.away ?? gs.a ?? gs.pointAway);
+        } else if (typeof gs === 'string') {
+          const im = gs.match(/(\d{1,2}|AD|A)\s*[-:]\s*(\d{1,2}|AD|A)/i);
+          if (im) {
+            if (!pHome) pHome = normalizePoint(im[1]);
+            if (!pAway) pAway = normalizePoint(im[2]);
+          }
+        }
+      }
+    }
+
     if ((!pHome || !pAway) && matchClockInfo) {
       const im = matchClockInfo.match(/(\d{1,2}|AD|A|ADV)\s*[-:]\s*(\d{1,2}|AD|A|ADV)/i);
       if (im) {
@@ -357,13 +412,10 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
         if (!pAway) pAway = normalizePoint(im[2]);
       }
     }
-    if ((!pHome || !pAway) && statistics && typeof statistics === 'object') {
-      const gs = (statistics as any).gameScore ?? (statistics as any).currentGame ?? (statistics as any).points;
-      if (gs && typeof gs === 'object') {
-        if (!pHome) pHome = normalizePoint(gs.home ?? gs.h ?? gs.pointHome);
-        if (!pAway) pAway = normalizePoint(gs.away ?? gs.a ?? gs.pointAway);
-      } else if (typeof gs === 'string') {
-        const im = gs.match(/(\d{1,2}|AD|A)\s*[-:]\s*(\d{1,2}|AD|A)/i);
+    if ((!pHome || !pAway) && moreInfo && typeof moreInfo === 'object') {
+      const gp = typeof moreInfo.gamePoints === 'string' ? moreInfo.gamePoints : typeof moreInfo.game_score === 'string' ? moreInfo.game_score : null;
+      if (gp) {
+        const im = gp.match(/(\d{1,2}|AD|A|ADV|LOVE)\s*[-:]\s*(\d{1,2}|AD|A|ADV|LOVE)/i);
         if (im) {
           if (!pHome) pHome = normalizePoint(im[1]);
           if (!pAway) pAway = normalizePoint(im[2]);

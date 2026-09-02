@@ -310,6 +310,7 @@ function wsRawEventToPulseScoreLive(e: WsRawEvent, sport: string): RawPulseScore
     };
   }
   if (e.statistics) (result as any).statistics = e.statistics;
+  if ((e as any).moreInfo) (result as any).moreInfo = (e as any).moreInfo;
   return result;
 }
 
@@ -549,16 +550,25 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
         try {
           const base = normalizePulseScoreEvent(st.sport, converted);
           const ev = { ...base, is_live: 1 } as AppEvent;
-          if ((converted as any).score || (converted as any).matchClock) {
+          const liveAny = converted as any;
+          if (liveAny.score || liveAny.matchClock || liveAny.statistics || liveAny.moreInfo) {
             const live = converted as RawPulseScoreLiveEvent;
             if (live.score && (live.score.home !== undefined || live.score.away !== undefined)) {
               const hn = Number(live.score.home);
               const an = Number(live.score.away);
               if (Number.isFinite(hn) && Number.isFinite(an)) ev.score = { home: hn, away: an };
+              else (ev as any).score = liveAny.score;
+            } else if (liveAny.score) {
+              (ev as any).score = liveAny.score;
             }
-            if (live.matchClock && typeof live.matchClock.minute === 'number' && Number.isFinite(live.matchClock.minute)) {
-              ev.minute = live.matchClock.minute;
+            if (live.matchClock) {
+              (ev as any).matchClock = liveAny.matchClock;
+              if (typeof live.matchClock.minute === 'number' && Number.isFinite(live.matchClock.minute)) {
+                ev.minute = live.matchClock.minute;
+              }
             }
+            if (liveAny.statistics) (ev as any).statistics = liveAny.statistics;
+            if (liveAny.moreInfo) (ev as any).moreInfo = liveAny.moreInfo;
           }
           updates.push({ sport: st.sport, event: ev, receivedAt: now });
         } catch (e: any) {

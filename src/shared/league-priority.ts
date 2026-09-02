@@ -146,6 +146,7 @@ const P5_MARKERS: readonly RegExp[] = [
   /table basketball/i,
   /\b\d+x\d+\b/i,
   /\b(budnesliga|lfl\s*5x5|isfa\s+world\s+cup|isfa|esoccer|efootball|efutebol|simulated.*soccer|futebol\s*eletr[ôo]nico)\b/i,
+  /MLS\+/i,
 ];
 
 export function getLeagueTier(leagueRaw: string | null | undefined): LeagueTier {

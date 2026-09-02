@@ -489,7 +489,7 @@ function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: numbe
 
 export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent): AppEvent {
   const { home, draw, away } = extractH2H(raw.markets);
-  return {
+  const base: AppEvent = {
     id: `pulsescore_${raw.eventId}`,
     external_event_id: `pulsescore_${raw.eventId}`,
     match: `${raw.home} vs ${raw.away}`,
@@ -504,6 +504,12 @@ export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent)
     sport,
     markets: mapMarkets(raw.markets),
   };
+  const rawAny = raw as any;
+  if (rawAny.matchClock) (base as any).matchClock = rawAny.matchClock;
+  if (rawAny.score) (base as any).score = rawAny.score;
+  if (rawAny.statistics) (base as any).statistics = rawAny.statistics;
+  if (rawAny.moreInfo) (base as any).moreInfo = rawAny.moreInfo;
+  return base;
 }
 
 /** Fetches every page of the flat /events list for a sport (bounded by a safety cap — the real

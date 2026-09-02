@@ -174,6 +174,7 @@ const BLOCKED_LEAGUE_REGEX = [
   /\bCyber\b/i,
   /\b\d+x\d+\b/i,
   /\b(isfA|isfA\s+world\s+cup|budnesliga|lfl\s*5x5|esoccer|efootball|efutebol|simulated.*soccer|futebol\s*eletr[ôo]nico|mnHL)\b/i,
+  /MLS\+/i,
 ] as const;
 
 function isBlockedEvent(league?: string | null, home?: string | null, away?: string | null): boolean {
@@ -189,6 +190,31 @@ function isBlockedEvent(league?: string | null, home?: string | null, away?: str
 }
 
 export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsClientIn?: PulseScoreWsClient | null): EventsService {
+  function applyLiveRawState(lr: RawPulseScoreLiveEvent, existing: AppEvent | null, sportFromContext: string): AppEvent {
+    const liveBase = extractLiveState(lr);
+    const lrAny = lr as any;
+    const rawHome = String(lr.home || '');
+    const rawAway = String(lr.away || '');
+    const base: AppEvent = existing ?? normalizePulseScoreEvent(sportFromContext, lr);
+    const merged: any = { ...base, ...liveBase, is_live: 1 };
+    if (rawHome && !merged.home_team) merged.home_team = rawHome;
+    if (rawAway && !merged.away_team) merged.away_team = rawAway;
+    if (typeof lr.league === 'string' && lr.league && !merged.league) merged.league = lr.league;
+    if (lrAny.matchClock) merged.matchClock = lrAny.matchClock;
+    if (lrAny.statistics) merged.statistics = lrAny.statistics;
+    if (lrAny.moreInfo) merged.moreInfo = lrAny.moreInfo;
+    if (lrAny.score && typeof lrAny.score === 'object') {
+      const prevScore = merged.score && typeof merged.score === 'object' ? (merged.score as any) : null;
+      const newScore: any = { ...lrAny.score };
+      if (prevScore && newScore.home === undefined && prevScore.home !== undefined) newScore.home = prevScore.home;
+      if (prevScore && newScore.away === undefined && prevScore.away !== undefined) newScore.away = prevScore.away;
+      merged.score = newScore;
+    } else if (typeof merged.score === 'undefined' && (liveBase.score != null)) {
+      merged.score = liveBase.score;
+    }
+    return merged as AppEvent;
+  }
+
   const cache = new Map<string, AppEvent>();
   const oddsStore = createOddsStore();
   const overrides = new Map<string, OddsOverride>();
@@ -306,15 +332,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
             cache.delete(id);
             continue;
           }
-          const liveState = extractLiveState(lr);
           const cached = cache.get(id);
-          if (cached) {
-            cache.set(id, { ...cached, ...liveState, is_live: 1 });
-          } else {
-            const ev = normalizePulseScoreEvent(sport, lr);
-            cache.set(id, { ...ev, ...liveState, is_live: 1 });
-            recordH2HOdds(ev, now);
-          }
+          const merged = applyLiveRawState(lr, cached ?? null, sport);
+          cache.set(id, merged);
+          if (!cached) recordH2HOdds(merged, now);
         }
         liveIdsBySport.set(sport, liveIds);
       }
@@ -478,15 +499,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
             cache.delete(id);
             continue;
           }
-          const liveState = extractLiveState(lr);
           const cached = cache.get(id);
-          if (cached) {
-            cache.set(id, { ...cached, ...liveState, is_live: 1 });
-          } else {
-            const ev = normalizePulseScoreEvent(sport, lr);
-            cache.set(id, { ...ev, ...liveState, is_live: 1 });
-            recordH2HOdds(ev, now);
-          }
+          const merged = applyLiveRawState(lr, cached ?? null, sport);
+          cache.set(id, merged);
+          if (!cached) recordH2HOdds(merged, now);
         }
         liveIdsBySport.set(sport, ids);
       }
@@ -599,15 +615,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
             cache.delete(id);
             continue;
           }
-          const liveState = extractLiveState(lr);
           const cached = cache.get(id);
-          if (cached) {
-            cache.set(id, { ...cached, ...liveState, is_live: 1 });
-          } else {
-            const ev = normalizePulseScoreEvent(sport, lr);
-            cache.set(id, { ...ev, ...liveState, is_live: 1 });
-            recordH2HOdds(ev, now);
-          }
+          const merged = applyLiveRawState(lr, cached ?? null, sport);
+          cache.set(id, merged);
+          if (!cached) recordH2HOdds(merged, now);
         }
         liveIdsBySport.set(sport, liveIds);
       }
