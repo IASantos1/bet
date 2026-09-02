@@ -943,11 +943,16 @@ function indexOddsPayload(payload: any, sport: string): OddsPayloadIndexes {
 type OddsPayloadEntry = { ts: number; payload: any; index: OddsPayloadIndexes };
 const oddsPayloadCache = new Map<string, OddsPayloadEntry>();
 const oddsPayloadInflight = new Map<string, Promise<OddsPayloadEntry | null>>();
+const oddsPayloadFailures = new Map<string, { count: number; blockedUntil: number; lastAt: number }>();
+const ODDS_BREAKER_BASE_MS = 2 * 60 * 1000;
+const ODDS_BREAKER_MAX_MS = 15 * 60 * 1000;
 
 async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<OddsPayloadEntry | null> {
   if (!apiKeyOk(apiKey)) return null;
   const cat = oddsCat(sport);
   const cached = oddsPayloadCache.get(cat);
+  const breaker = oddsPayloadFailures.get(cat);
+  if (breaker && breaker.blockedUntil > Date.now()) return cached ?? null;
   if (cached && Date.now() - cached.ts < ODDS_PAYLOAD_TTL_MS) return cached;
   const inflight = oddsPayloadInflight.get(cat);
   if (inflight) return inflight;
@@ -962,7 +967,16 @@ async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<Odd
       if (json != null) {
         const entry: OddsPayloadEntry = { ts: Date.now(), payload: json, index: indexOddsPayload(json, sport) };
         oddsPayloadCache.set(cat, entry);
+        oddsPayloadFailures.delete(cat);
         return entry;
+      }
+      const prev = oddsPayloadFailures.get(cat);
+      const count = (prev?.count || 0) + 1;
+      const blockMs = count >= 2 ? Math.min(ODDS_BREAKER_BASE_MS * Math.pow(2, count - 2), ODDS_BREAKER_MAX_MS) : 0;
+      const blockedUntil = blockMs > 0 ? Date.now() + blockMs : 0;
+      oddsPayloadFailures.set(cat, { count, blockedUntil, lastAt: Date.now() });
+      if (blockedUntil > 0) {
+        console.warn('[goalserve] odds circuit open', cat, `for ${Math.round(blockMs / 1000)}s`);
       }
       return cached ?? null;
     })

@@ -38,29 +38,6 @@ const scoreEvent = (e: Event) =>
   (Number(e.away_odd || 0) > 0 ? 1 : 0) +
   (Number(e.is_live || 0) === 1 ? 1 : 0);
 
-  const isTodayAdjusted = (evt: Event): boolean => {
-    const raw = (evt.event_date || (evt as any).fixture?.date) as string | undefined;
-    if (!raw) return true;
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return true;
-
-    const now = Date.now();
-    let t = d.getTime();
-    const diff = now - t;
-
-    if (Math.abs(diff) > 300 * 24 * 60 * 60 * 1000) {
-      const dAdj = new Date(d);
-      dAdj.setFullYear(new Date(now).getFullYear());
-      t = dAdj.getTime();
-    }
-
-    const startToday = new Date(now);
-    startToday.setHours(0, 0, 0, 0);
-    const startAfterWindow = new Date(startToday.getTime() + 14 * 24 * 60 * 60 * 1000).getTime();
-
-    return t >= startToday.getTime() && t < startAfterWindow;
-  };
-
 const dedupEvents = (list: Event[]): Event[] => {
   if (!list || list.length === 0) return [];
   const by = new Map<string, Event>();
@@ -596,7 +573,7 @@ export function useSportsEvents(
           
           const isUpcomingFetch = only === 'pregame' && safeCategory === 'all' && daysOverride != null && Number(daysOverride) >= 7;
           if (isUpcomingFetch) {
-            const finalPregame = preferOdds(pregameEvents.filter(isTodayAdjusted), 300);
+            const finalPregame = preferOdds(pregameEvents, 300);
             updateState([], finalPregame);
             _sCache.set(cacheKey, { live: [], pregame: finalPregame, ts: Date.now() });
             if (typeof window !== 'undefined') {
@@ -608,7 +585,7 @@ export function useSportsEvents(
           }
 
                   const filteredLive = liveEvents; 
-                  const pregameBase = preferOdds(pregameEvents.filter(isTodayAdjusted), safeCategory === 'all' ? 120 : 60);
+                  const pregameBase = preferOdds(pregameEvents, safeCategory === 'all' ? 120 : 60);
 
                   const sportRank = (s: string) => {
                     const k = s;
@@ -763,7 +740,7 @@ export function useSportsEvents(
 
             const maxLive = safeCategory === 'all' ? 100 : 60;
             const finalLive = preferOdds(activeLive.filter(isAllowedSport), maxLive).slice(0, maxLive);
-            const pregameBase = preferOdds(activePregame.filter(isTodayAdjusted), 80);
+            const pregameBase = preferOdds(activePregame, 80);
 
             const sportRank = (s: string) => {
               const k = s;
