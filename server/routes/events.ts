@@ -115,6 +115,33 @@ function pruneMarketsForList(sport: string, markets: Record<string, any[]>): Rec
   return markets;
 }
 
+function summarizeOddsSource(odds: any): {
+  selectedBookmakers: { home: string | null; draw: string | null; away: string | null };
+  h2hBookmakers: string[];
+} {
+  const h2h = Array.isArray(odds?.markets?.h2h) ? odds.markets.h2h : [];
+  const pick = (label: string): string | null => {
+    const item = h2h.find((x: any) => String(x?.label || '').toLowerCase() === label.toLowerCase());
+    const bookmaker = String(item?.bookmaker || '').trim();
+    return bookmaker || null;
+  };
+  const h2hBookmakers = Array.from(
+    new Set(
+      h2h
+        .map((x: any) => String(x?.bookmaker || '').trim())
+        .filter(Boolean),
+    ),
+  );
+  return {
+    selectedBookmakers: {
+      home: pick('Home'),
+      draw: pick('Draw'),
+      away: pick('Away'),
+    },
+    h2hBookmakers,
+  };
+}
+
 export type EventsService = {
   handleEventsRoutes: (
     req: http.IncomingMessage,
@@ -1350,7 +1377,14 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
                   homeTeam: String((sample as any)?.home_team || ''),
                   awayTeam: String((sample as any)?.away_team || ''),
                 })
-                  .then((r: any) => ({ hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsCount: r?.markets ? Object.keys(r.markets).length : 0 }))
+                  .then((r: any) => ({
+                    hasResult: !!r,
+                    home: r?.home,
+                    draw: r?.draw,
+                    away: r?.away,
+                    marketsCount: r?.markets ? Object.keys(r.markets).length : 0,
+                    ...summarizeOddsSource(r),
+                  }))
                   .catch((e: any) => ({ error: String(e?.message || e) }))
               : null;
             const goalserveLookup =
@@ -1422,7 +1456,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
                   homeTeam: String(m?.home_team || ''),
                   awayTeam: String(m?.away_team || ''),
                 })
-                  .then((r: any) => ({ ok: true as const, league: m?.league, matchTested: `${m?.home_team} vs ${m?.away_team}`, hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsKeys: r?.markets ? Object.keys(r.markets) : [] }))
+                  .then((r: any) => ({
+                    ok: true as const,
+                    league: m?.league,
+                    matchTested: `${m?.home_team} vs ${m?.away_team}`,
+                    hasResult: !!r,
+                    home: r?.home,
+                    draw: r?.draw,
+                    away: r?.away,
+                    marketsKeys: r?.markets ? Object.keys(r.markets) : [],
+                    ...summarizeOddsSource(r),
+                  }))
                   .catch((e: any) => ({ ok: false as const, league: m?.league, matchTested: `${m?.home_team} vs ${m?.away_team}`, error: String(e?.message || e) })),
               ),
             )

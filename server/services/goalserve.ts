@@ -823,7 +823,7 @@ function bestOddsByOutcome<T extends { name: string; value: number; settlementOd
 function parseOddsMatch(m: any): OddsResult | null {
   if (!m) return null;
   const typeBlocks: any[] = Array.isArray(m?.odds?.type) ? m.odds.type : m?.odds?.type ? [m.odds.type] : [];
-  const h2h: Array<{ label: string; value: string; odd: number; market_id?: number; goalserve_oddname?: string }> = [];
+  const h2h: Array<{ label: string; value: string; odd: number; market_id?: number; goalserve_oddname?: string; bookmaker?: string }> = [];
   const markets: Record<string, any[]> = {};
 
   for (const t of typeBlocks) {
@@ -847,6 +847,7 @@ function parseOddsMatch(m: any): OddsResult | null {
           odd: o.value,
           ...(hasMarketId ? { market_id: marketId } : {}),
           goalserve_oddname: o.settlementOddname,
+          bookmaker: o.bookmaker,
         });
       }
     } else {
@@ -857,6 +858,7 @@ function parseOddsMatch(m: any): OddsResult | null {
         odd: o.value,
         ...(hasMarketId ? { market_id: marketId } : {}),
         goalserve_oddname: o.settlementOddname,
+        bookmaker: o.bookmaker,
       }));
     }
   }
