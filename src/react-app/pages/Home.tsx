@@ -992,6 +992,13 @@ function Home({ mode = 'home' }: HomeProps) {
               </div>
             ) : (groupedLive.length > 0 || limitedUpcoming.length > 0 || limitedNext7.length > 0) ? (
               <div className="space-y-12 events-reveal">
+                {/* Explicit empty state so the "Próximos 7 dias" fallback below is never mistaken
+                    for live matches when nothing is actually live right now. */}
+                {mode === 'live' && groupedLive.length === 0 && (
+                  <div className="text-center py-6 rounded-xl border border-dashed border-gray-700/50">
+                    <p className={darkMode ? 'text-gray-400' : 'text-gray-500'}>Sem jogos ao vivo neste momento.</p>
+                  </div>
+                )}
                 {/* LIVE SECTION — shown only in mode='live' */}
                 {groupedLive.length > 0 && (
                   <div className="space-y-6">
@@ -1046,7 +1053,7 @@ function Home({ mode = 'home' }: HomeProps) {
 
                 {limitedNext7.length > 0 && (
                   <div className="space-y-6">
-                     {groupedLive.length > 0 && (
+                     {mode === 'live' && (
                         <div className="flex items-center gap-3 px-2 pt-4 border-t border-gray-700/50">
                            <h2 className="text-xl font-bold uppercase tracking-wide">Próximos 7 dias</h2>
                         </div>
