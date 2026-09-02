@@ -202,7 +202,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     }
 
     if (req.method === 'GET' && path === '/api/sports') {
-      const names: Record<string, string> = { soccer: 'Futebol', tennis: 'Ténis', volleyball: 'Voleibol', rugby: 'Rugby', mma: 'MMA', 'ice-hockey': 'Hóquei no Gelo' };
+      const names: Record<string, string> = { soccer: 'Futebol', tennis: 'Ténis', volleyball: 'Voleibol', rugby: 'Rugby', mma: 'MMA', 'ice-hockey': 'Hóquei no Gelo', handball: 'Andebol' };
       sendJson(res, 200, PULSESCORE_SPORTS.map((s) => ({ key: s, name: names[s] || s })));
       return true;
     }

@@ -5,12 +5,14 @@ import {
   classifyRugbyMarket,
   classifyMmaMarket,
   classifyIceHockeyMarket,
+  classifyHandballMarket,
   buildDynamicMarketTabs,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
   MMA_BUCKET_ORDER,
   ICE_HOCKEY_BUCKET_ORDER,
+  HANDBALL_BUCKET_ORDER,
 } from './dynamicMarketTabs';
 
 // Key lists below mirror what server/services/pulsescore.ts actually produces (confirmed against
@@ -185,6 +187,33 @@ describe('classifyIceHockeyMarket', () => {
     expect(tabs[0].keys.length).toBe(keys.length);
     expect(tabs.some((t) => t.title === '1º Período')).toBe(true);
     expect(tabs.some((t) => t.title === '2º Período')).toBe(true);
+    expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
+  });
+});
+
+describe('classifyHandballMarket', () => {
+  it('splits FIRST_HALF/SECOND_HALF markets into 1º/2º Tempo, buckets EUROPEAN_HANDICAP with ASIAN_HANDICAP under Handicap', () => {
+    // EUROPEAN_HANDICAP (slugs to "ehcp" via MARKET_KEY_SLUGS in server/services/pulsescore.ts,
+    // confirmed in a real handball sample) is functionally the same "handicap" question as the
+    // regular ASIAN_HANDICAP ("hcp") market — bettors expect them together, not split across tabs.
+    expect(classifyHandballMarket('h2h')).toBe('Vencedor');
+    expect(classifyHandballMarket('dc')).toBe('Dupla Chance');
+    expect(classifyHandballMarket('dnb')).toBe('Empate Anula Aposta');
+    expect(classifyHandballMarket('ou_55.5')).toBe('Totais');
+    expect(classifyHandballMarket('hcp_-5.5')).toBe('Handicap');
+    expect(classifyHandballMarket('ehcp_-4')).toBe('Handicap');
+    expect(classifyHandballMarket('h2h_1h')).toBe('1º Tempo');
+    expect(classifyHandballMarket('ou_25.5_2h')).toBe('2º Tempo');
+  });
+
+  it('a full realistic handball market key list (real single-event shape: FULL_TIME only, plus several rawName-derived OTHER-bucket markets) is fully covered end to end', () => {
+    const keys = [
+      'h2h', 'dc', 'ou_58.5', 'hcp_-8.5', 'ehcp_-4', 'odd_even',
+      'super_total_64.065', 'super_handicap_-4.003', '3way_total_63', 'individual_3way_total_1_32', 'individual_3way_total_2_29',
+    ];
+    const tabs = buildDynamicMarketTabs(keys, classifyHandballMarket, HANDBALL_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys.length).toBe(keys.length);
+    expect(tabs.find((t) => t.title === 'Handicap')?.keys.sort()).toEqual(['ehcp_-4', 'hcp_-8.5']);
     expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
   });
 });

@@ -112,6 +112,19 @@ export function classifyIceHockeyMarket(key: string): string {
   return 'Especiais';
 }
 
+export const HANDBALL_BUCKET_ORDER = ['Vencedor', 'Dupla Chance', 'Empate Anula Aposta', 'Totais', 'Handicap', 'Par/Ímpar'];
+export function classifyHandballMarket(key: string): string {
+  const halfBucket = halfPeriodBucket(key);
+  if (halfBucket) return halfBucket;
+  if (key === 'h2h') return 'Vencedor';
+  if (key.startsWith('dc')) return 'Dupla Chance';
+  if (key.startsWith('dnb')) return 'Empate Anula Aposta';
+  if (key.startsWith('ou_')) return 'Totais';
+  if (key.startsWith('ehcp') || key.startsWith('hcp')) return 'Handicap';
+  if (key.startsWith('odd_even')) return 'Par/Ímpar';
+  return 'Especiais';
+}
+
 /** Buckets `keys` via `classify`, orders named buckets per `bucketOrder` (any bucket discovered
  *  dynamically but not in that list — e.g. "3º Set" in a match that went the distance — is appended
  *  before the "Especiais" catch-all), and builds a "Todos" tab deduped by title (mirrors soccer's
