@@ -9,6 +9,7 @@ import {
   normalizePulseScoreEvent,
   PULSESCORE_SPORTS,
   type AppEvent,
+  type RawPulseScoreLiveEvent,
 } from '../services/pulsescore';
 import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
 
@@ -106,20 +107,48 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
           if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
         }
       }
-      // Real-time score/clock enrichment (see module docstring in pulsescore.ts): a separate feed
-      // from the per-sport pull above, so it only merges score/minute onto events already cached
-      // there — never creates a new cache entry and never touches markets/odds, since this feed's
-      // odds are redundant with what the per-sport pull already has.
+      // Live in-play pass — AUTHORITATIVE for is_live, not just score/clock enrichment (see module
+      // docstring in pulsescore.ts). Every /events sample seen so far, across all nine sports, has
+      // reported live:false for every event, even while /live-events simultaneously confirmed real
+      // matches genuinely in progress — /events looks to be a pregame/schedule feed only, so relying
+      // on its `live` flag left the "Ao Vivo" list permanently empty. This pass:
+      //  1. Sets is_live=1 (plus score/minute) on any event this feed confirms is live right now —
+      //     creating a cache entry from this feed's own markets/odds if the event was never in the
+      //     regular pull at all (also confirmed: some live matches simply aren't listed there).
+      //  2. Afterwards, resets is_live back to 0 for any event of a sport this pass successfully
+      //     queried but did NOT see live this cycle — otherwise a finished match would stay stuck
+      //     showing as live forever once it drops out of /live-events. A sport whose live-events
+      //     call itself failed this cycle is skipped entirely (not touched either way), so a
+      //     transient fetch error can't wrongly clear real live matches.
+      const liveIdsBySport = new Map<string, Set<string>>();
       for (const sport of PULSESCORE_SPORTS) {
-        const liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport).catch(() => []);
+        let liveRaw: RawPulseScoreLiveEvent[];
+        try {
+          liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport);
+        } catch {
+          continue;
+        }
+        const liveIds = new Set<string>();
         for (const lr of liveRaw) {
           const id = `pulsescore_${lr.eventId}`;
-          const cached = cache.get(id);
-          if (!cached) continue;
+          liveIds.add(id);
           const liveState = extractLiveState(lr);
-          if (liveState.score || liveState.minute !== undefined) {
-            cache.set(id, { ...cached, ...liveState });
+          const cached = cache.get(id);
+          if (cached) {
+            cache.set(id, { ...cached, ...liveState, is_live: 1 });
+          } else {
+            const ev = normalizePulseScoreEvent(sport, lr);
+            cache.set(id, { ...ev, ...liveState, is_live: 1 });
+            if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
+            if (ev.draw_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'draw'), ev.draw_odd, now);
+            if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
           }
+        }
+        liveIdsBySport.set(sport, liveIds);
+      }
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1 && liveIdsBySport.has(ev.sport) && !liveIdsBySport.get(ev.sport)!.has(ev.id)) {
+          cache.set(ev.id, { ...ev, is_live: 0 });
         }
       }
       lastRefreshError = null;
