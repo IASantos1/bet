@@ -747,12 +747,17 @@ function isStopped(node: any): boolean {
  *  by exactly one example in the docs, not a formal field spec — if it turns out wrong for some
  *  market, the settlement lookup simply won't match anything (fails safe: the leg just stays
  *  'pending' for manual review, per settlementEngine.ts's design, never a wrong payout). */
-function extractOddsFromType(typeBlock: any): Array<{ name: string; value: number; settlementOddname: string }> {
+function normalizeBookmakerName(name: any): string {
+  return str(name).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function extractOddsFromType(typeBlock: any): Array<{ name: string; value: number; settlementOddname: string; bookmaker: string }> {
   if (isStopped(typeBlock)) return [];
   const bookmakers = Array.isArray(typeBlock?.bookmaker) ? typeBlock.bookmaker : typeBlock?.bookmaker ? [typeBlock.bookmaker] : [];
-  const out: Array<{ name: string; value: number; settlementOddname: string }> = [];
+  const out: Array<{ name: string; value: number; settlementOddname: string; bookmaker: string }> = [];
   for (const bm of bookmakers) {
     if (isStopped(bm)) continue;
+    const bookmaker = normalizeBookmakerName(bm?.name ?? bm?.bookmaker ?? bm?.title);
     const lineWrappers = [
       ...(Array.isArray(bm?.total) ? bm.total : bm?.total ? [bm.total] : []),
       ...(Array.isArray(bm?.handicap) ? bm.handicap : bm?.handicap ? [bm.handicap] : []),
@@ -765,7 +770,7 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
         for (const o of odds) {
           const name = str(o?.name);
           const value = num(o?.value);
-          if (name && value > 1) out.push({ name: point ? `${name} ${point}` : name, value, settlementOddname: point ? `${name}:${point}` : name });
+          if (name && value > 1) out.push({ name: point ? `${name} ${point}` : name, value, settlementOddname: point ? `${name}:${point}` : name, bookmaker });
         }
       }
       continue;
@@ -774,7 +779,7 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
     for (const o of odds) {
       const name = str(o?.name);
       const value = num(o?.value);
-      if (name && value > 1) out.push({ name, value, settlementOddname: name });
+      if (name && value > 1) out.push({ name, value, settlementOddname: name, bookmaker });
     }
   }
   return out;
@@ -788,12 +793,16 @@ function extractOddsFromType(typeBlock: any): Array<{ name: string; value: numbe
  *  not just noise. `settlementOddname` already uniquely encodes the selection AND its line
  *  ("Over:3.5" vs "Home"), so it alone is enough to key on; keep the highest-value (best-for-the-
  *  bettor) entry per key. */
-function bestOddsByOutcome<T extends { name: string; value: number; settlementOddname: string }>(odds: T[]): T[] {
+function bestOddsByOutcome<T extends { name: string; value: number; settlementOddname: string; bookmaker?: string }>(odds: T[]): T[] {
   const best = new Map<string, T>();
   for (const o of odds) {
     const key = o.settlementOddname;
     const existing = best.get(key);
-    if (!existing || o.value > existing.value) best.set(key, o);
+    const preferCurrent =
+      !existing ||
+      (normalizeBookmakerName(o.bookmaker) === 'bet365' && normalizeBookmakerName(existing.bookmaker) !== 'bet365') ||
+      (normalizeBookmakerName(o.bookmaker) === normalizeBookmakerName(existing.bookmaker) && o.value > existing.value);
+    if (preferCurrent) best.set(key, o);
   }
   return Array.from(best.values());
 }
