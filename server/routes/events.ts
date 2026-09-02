@@ -770,6 +770,13 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const includePregame = only === 'both' || only === 'pregame';
     const days = Math.max(0, Math.min(14, Number.isFinite(daysAhead) ? daysAhead : 0));
     const now = nowMs();
+    const toStartMs = (e: any): number => {
+      const raw = (e as any)?.event_date ?? (e as any)?.fixture?.date ?? (e as any)?.start_time ?? (e as any)?.startTimestamp;
+      if (!raw) return 0;
+      if (typeof raw === 'number') return raw > 10_000_000_000 ? raw : raw * 1000;
+      const t = new Date(String(raw)).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
 
     if (includeLive && sports.length > 0) {
       const lists = await mapLimit(sports, 5, (s) => fetchLive(s).catch(() => []));
@@ -817,6 +824,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         }
       };
       const isPregameCandidate = (e: any) => {
+        const notStartedLike = isNotStartedLike(e);
         if (Number((e as any)?.is_live || 0) !== 0) {
           noteCandidateReject('live', e);
           return false;
@@ -826,12 +834,12 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
           return false;
         }
         const { ms: t, hasExplicitTime } = startMeta(e);
-        if (t && hasExplicitTime && t < now - 2 * 60 * 1000) {
+        if (t && hasExplicitTime && t < now - 15 * 60 * 1000 && !notStartedLike) {
           noteCandidateReject('staleStarted', e);
           return false;
         }
         if (t && t >= now) return true;
-        if (isNotStartedLike(e)) return true;
+        if (notStartedLike) return true;
         noteCandidateReject('unknownStatus', e);
         return false;
       };
@@ -1140,12 +1148,24 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       allowBlocked
         ? arr
         : arr.filter((e: any) => !isSoccerSport(e) || !isBlockedLeague(String((e as any)?.league || ''), String((e as any)?.country || '')));
-    const live = sortStable(filterBlocked(filterLeague(liveAll))).slice(0, 120);
-    const preSorted = sortStable(filterBlocked(filterLeague(preAll)));
-    if (debugCounters) debugCounters.afterBlocked = preSorted.length;
-    const preLimit = days > 1 ? 300 : 120;
-    const pregame = days > 1 ? spreadAcrossDays(preSorted, days, preLimit) : preSorted.slice(0, preLimit);
-    if (debugCounters) debugCounters.afterSpread = pregame.length;
+    let live: AnyEvent[] = [];
+    let pregame: AnyEvent[] = [];
+    try {
+      live = sortStable(filterBlocked(filterLeague(liveAll))).slice(0, 120);
+      const preSorted = sortStable(filterBlocked(filterLeague(preAll)));
+      if (debugCounters) debugCounters.afterBlocked = preSorted.length;
+      const preLimit = days > 1 ? 300 : 120;
+      pregame = days > 1 ? spreadAcrossDays(preSorted, days, preLimit) : preSorted.slice(0, preLimit);
+      if (debugCounters) debugCounters.afterSpread = pregame.length;
+    } catch (err: any) {
+      console.error('[events] buildBySport post-candidate pipeline failed, falling back to unsorted lists:', String(err?.message || err));
+      live = filterLeague(liveAll).slice(0, 120);
+      pregame = filterLeague(preAll).slice(0, days > 1 ? 300 : 120);
+      if (debugCounters) {
+        debugCounters.afterBlocked = pregame.length;
+        debugCounters.afterSpread = pregame.length;
+      }
+    }
 
     if (!includeOdds) {
       return { live, pregame };
