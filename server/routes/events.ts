@@ -905,9 +905,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     let finalizedBySingleFetch = 0;
     let singleFetchCandidates = 0;
     let sportsChecked = 0;
+    const hasLowTierLive: Record<string, boolean> = {};
+    let resultsPagesPerSport = 4;
     try {
       const liveSports = new Set<string>();
-      const hasLowTierLive: Record<string, boolean> = {};
       const SOCCER_MAX_DURATION_MS = 110 * 60 * 1_000;
       const SOCCER_SINGLE_FETCH_THRESHOLD_MS = 92 * 60 * 1_000;
       const FT_CLOCK_RE = /^(FT|Full.?Time|Final(izado)?|90\+?\d*|Ended?|Finished?)$/i;
@@ -949,6 +950,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       // T4/T5 finals only show up starting at page 3+ of /results). Pages 1-4 =
       // 80 results; 1-5 if low tier detected = 100 results per sport.
       const defaultPages = hasLowTierLive.soccer ? 5 : 4;
+      resultsPagesPerSport = defaultPages;
       const finalizedIds = new Map<string, { homeFinal: number | null; awayFinal: number | null; league?: string }>();
       let sportIdx = 0;
       for (const sport of sportsArr) {
@@ -1116,7 +1118,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         finalizedBySingleFetch,
         singleFetchCandidates,
         sportsChecked,
-        resultsPagesPerSport: hasLowTierLive.soccer ? 5 : 4,
+        resultsPagesPerSport,
       };
     }
   }
