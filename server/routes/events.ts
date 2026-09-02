@@ -6,6 +6,7 @@ import {
   fetchPulseScoreEvent,
   fetchPulseScoreEvents,
   fetchPulseScoreLiveEvents,
+  fetchPulseScoreResults,
   normalizePulseScoreEvent,
   PULSESCORE_SPORTS,
   type AppEvent,
@@ -94,6 +95,9 @@ const PREMATCH_INTERSPORT_STAGGER_MS = 250;
 const HIGH_VOLUME_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
 const PREMATCH_PROXIMITY_TICK_MS = 30_000;
 const MID_LIVE_POLL_INTERVAL_MS = 5_000;
+
+const PRE_TO_LIVE_TRANSITION_INTERVAL_MS = 2_000;
+const LIVE_TO_FINISHED_GUARD_INTERVAL_MS = 30_000;
 
 // User-requested progressive proximity refresh schedule. The 7 buckets are
 // evaluated from TOP (farest) → BOTTOM (nearest), so any event matches the
@@ -254,6 +258,18 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   let midLivePollTimer: NodeJS.Timeout | null = null;
   let lastMidLivePollAt = 0;
   let lastMidLivePollError: string | null = null;
+
+  let liveTransitionInFlight: Promise<void> | null = null;
+  let liveTransitionTimer: NodeJS.Timeout | null = null;
+  let lastLiveTransitionAt = 0;
+  let lastLiveTransitionError: string | null = null;
+  let lastLiveTransitionStats: { prematchToLive: number; liveIds: number; scanned: number } | null = null;
+
+  let resultsGuardInFlight: Promise<void> | null = null;
+  let resultsGuardTimer: NodeJS.Timeout | null = null;
+  let lastResultsGuardAt = 0;
+  let lastResultsGuardError: string | null = null;
+  let lastResultsGuardStats: { scanned: number; finalized: number; sportsChecked: number } | null = null;
 
   function prematchBucketFor(event_date: number | null | undefined | string): PrematchProximityBucket | null {
     if (event_date == null) return null;
@@ -607,6 +623,166 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     midLivePollTimer = setTimeout(tick, 8_000);
   }
   startMidLivePoll();
+
+  // Pre-match → AO VIVO transition guard. Every 2s, polls /live-events for ALL
+  // WS_LIVE_SPORTS and marks any cache event is_live=0 → is_live=1 IMMEDIATELY when
+  // it appears in /live-events. Previously we only marked is_live=1 on the 30s main
+  // refresh cycle (refreshOnce) or on WS frames — both can delay 3–30s on a game that
+  // just kicked off. This guard is dedicated solely to the transition so no UI shows
+  // "PRÉ-JOGO" past kickoff when /live-events already lists it live.
+  async function liveTransitionOnce(): Promise<void> {
+    const now = Date.now();
+    let prematchToLive = 0;
+    let liveIdsCount = 0;
+    let scanned = 0;
+    try {
+      const liveAllIds = new Set<string>();
+      const liveRawMap = new Map<string, RawPulseScoreLiveEvent>();
+      const allSports = Array.from(new Set([...WS_LIVE_SPORTS, ...FAST_POLL_LIVE_SPORTS, ...(MID_LIVE_SPORTS as readonly AppEvent['sport'][])]));
+      let sportIdx = 0;
+      for (const sport of allSports) {
+        if (sportIdx > 0) await new Promise((r) => setTimeout(r, 600));
+        sportIdx += 1;
+        const liveRaw: RawPulseScoreLiveEvent[] = await fetchPulseScoreLiveEvents(apiKey, sport, { pageLimit: 100, maxPages: 3 }).catch(() => []);
+        for (const lr of liveRaw) {
+          if (isBlockedEvent(lr.league, lr.home, lr.away)) continue;
+          const id = `pulsescore_${lr.eventId}`;
+          liveAllIds.add(id);
+          liveRawMap.set(id, lr);
+        }
+      }
+      liveIdsCount = liveAllIds.size;
+      // I — Promote prematch → live when event appears in /live-events.
+      for (const id of liveAllIds) {
+        const cached = cache.get(id);
+        if (!cached) continue;
+        scanned += 1;
+        if (cached.is_live !== 1) {
+          const sportCached = cached.sport as any;
+          const lr = liveRawMap.get(id) || null;
+          const merged = lr ? applyLiveRawState(lr, cached, sportCached) : { ...cached, is_live: 1 };
+          cache.set(id, merged as AppEvent);
+          prematchToLive += 1;
+          recordH2HOdds(merged as AppEvent, now);
+        }
+      }
+      lastLiveTransitionError = null;
+    } catch (e: any) {
+      lastLiveTransitionError = String(e?.message || e);
+    } finally {
+      lastLiveTransitionAt = now;
+      lastLiveTransitionStats = { prematchToLive, liveIds: liveIdsCount, scanned };
+    }
+  }
+
+  function runLiveTransition(): Promise<void> {
+    if (liveTransitionInFlight) return liveTransitionInFlight;
+    liveTransitionInFlight = liveTransitionOnce().finally(() => {
+      liveTransitionInFlight = null;
+    });
+    return liveTransitionInFlight;
+  }
+
+  function startLiveTransition(): void {
+    if (liveTransitionTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runLiveTransition().finally(() => {
+        liveTransitionTimer = setTimeout(tick, PRE_TO_LIVE_TRANSITION_INTERVAL_MS);
+      });
+    };
+    liveTransitionTimer = setTimeout(tick, 3_000);
+  }
+  startLiveTransition();
+
+  // AO VIVO → FINALIZADO transition guard using the /results endpoint.
+  // Every 30s, we pull the most recent 40 finalized results (pages 1-2) per sport
+  // that has any live matches. Any event that (a) is marked is_live=1 in cache AND
+  // (b) appears in /results (meaning finalized) AND (c) its score is finite/numeric
+  // — gets marked is_live=0 IMMEDIATELY, with final score pinned from the results
+  // feed. This bypasses the (slow) mechanism of "waiting until /live-events no
+  // longer returns it", which in practice can lag minutes.
+  async function resultsGuardOnce(): Promise<void> {
+    const now = Date.now();
+    let scanned = 0;
+    let finalized = 0;
+    let sportsChecked = 0;
+    try {
+      const liveSports = new Set<string>();
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1) liveSports.add(ev.sport);
+      }
+      const sportsArr = Array.from(liveSports);
+      sportsChecked = sportsArr.length;
+      const finalizedIds = new Map<string, { homeFinal: number | null; awayFinal: number | null; league?: string }>();
+      let sportIdx = 0;
+      for (const sport of sportsArr) {
+        if (sportIdx > 0) await new Promise((r) => setTimeout(r, 700));
+        sportIdx += 1;
+        const results = await fetchPulseScoreResults(apiKey, sport, { pageLimit: 20, maxPages: 2 }).catch(() => []);
+        for (const r of results) {
+          if (!r || !r.eventId) continue;
+          if (isBlockedEvent(r.league, r.home, r.away)) continue;
+          let homeFinal: number | null = null;
+          let awayFinal: number | null = null;
+          if (r.score && r.score.home !== undefined && r.score.away !== undefined) {
+            const h = Number(r.score.home);
+            const a = Number(r.score.away);
+            if (Number.isFinite(h) && Number.isFinite(a)) {
+              homeFinal = h;
+              awayFinal = a;
+            }
+          }
+          // The /results feed only lists matches that are finalized (confirmed: the
+          // endpoint name) — so any id in here means the match is finished.
+          finalizedIds.set(`pulsescore_${r.eventId}`, { homeFinal, awayFinal, league: r.league });
+        }
+      }
+      // Now demote matches we currently think are live but /results says finished.
+      for (const [id, info] of finalizedIds) {
+        const cached = cache.get(id);
+        if (!cached || cached.is_live !== 1) continue;
+        scanned += 1;
+        const merged: AppEvent = { ...cached, is_live: 0 };
+        if (info.homeFinal !== null && info.awayFinal !== null) {
+          (merged as any).finalScore = { home: info.homeFinal, away: info.awayFinal };
+          if (merged.score === undefined || typeof merged.score !== 'object' || !(merged.score as any)?.homeFinal) {
+            merged.score = {
+              ...(typeof merged.score === 'object' ? ((merged.score as any) || {}) : {}),
+              home: info.homeFinal,
+              away: info.awayFinal,
+            } as any;
+          }
+        }
+        cache.set(id, merged);
+        finalized += 1;
+      }
+      lastResultsGuardError = null;
+    } catch (e: any) {
+      lastResultsGuardError = String(e?.message || e);
+    } finally {
+      lastResultsGuardAt = now;
+      lastResultsGuardStats = { scanned, finalized, sportsChecked };
+    }
+  }
+
+  function runResultsGuard(): Promise<void> {
+    if (resultsGuardInFlight) return resultsGuardInFlight;
+    resultsGuardInFlight = resultsGuardOnce().finally(() => {
+      resultsGuardInFlight = null;
+    });
+    return resultsGuardInFlight;
+  }
+
+  function startResultsGuard(): void {
+    if (resultsGuardTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runResultsGuard().finally(() => {
+        resultsGuardTimer = setTimeout(tick, LIVE_TO_FINISHED_GUARD_INTERVAL_MS);
+      });
+    };
+    resultsGuardTimer = setTimeout(tick, 10_000);
+  }
+  startResultsGuard();
 
   async function refreshOnce(): Promise<void> {
     const now = Date.now();
@@ -1179,6 +1355,24 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       lastStats: lastPrematchProximityStats,
       lastError: lastPrematchProximityError,
       inFlight: !!prematchProximityInFlight,
+    },
+    transitions: {
+      preMatchToLive: {
+        enabled: hasApiKey(apiKey),
+        intervalMs: PRE_TO_LIVE_TRANSITION_INTERVAL_MS,
+        lastRunAt: lastLiveTransitionAt,
+        lastStats: lastLiveTransitionStats,
+        lastError: lastLiveTransitionError,
+        inFlight: !!liveTransitionInFlight,
+      },
+      liveToFinished: {
+        enabled: hasApiKey(apiKey),
+        intervalMs: LIVE_TO_FINISHED_GUARD_INTERVAL_MS,
+        lastRunAt: lastResultsGuardAt,
+        lastStats: lastResultsGuardStats,
+        lastError: lastResultsGuardError,
+        inFlight: !!resultsGuardInFlight,
+      },
     },
     leagueTiers: {
       all: countByTier('all'),

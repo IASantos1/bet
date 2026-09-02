@@ -673,6 +673,82 @@ export async function fetchPulseScoreLiveEvents(
   return out;
 }
 
+// ---- PulseScore Results endpoint (CONFIRMED curl samples user L140 curl):
+//   GET /api/onexbet/results/sports -> { total, sports:[{name,resultCount}]}  (sport name no URL é snake_case — soccer, tennis etc)
+//   GET /api/onexbet/results?sport=tennis&page=1&limit=20 -> { events:[{eventId, home, away, league, score:{home,away,info}, markets?}]
+const RESULTS_SPORT_PARAMS: Record<string, string[]> = {
+  soccer: ['soccer'],
+  tennis: ['tennis'],
+  volleyball: ['volleyball'],
+  'american-football': ['american_football'],
+  rugby: ['rugby_union', 'rugby_league'],
+  mma: ['mma'],
+  'ice-hockey': ['ice_hockey'],
+  handball: ['handball'],
+  basketball: ['basketball'],
+  baseball: ['baseball'],
+  cricket: ['cricket'],
+  futsal: ['futsal'],
+  badminton: ['badminton'],
+  table_tennis: ['table_tennis'],
+  'table-tennis': ['table_tennis'],
+  snooker: ['snooker'],
+  padel: ['padel'],
+  boxing: ['boxing'],
+  esports: ['esports'],
+  motorsports: ['motorsports'],
+  'field-hockey': ['field_hockey'],
+  field_hockey: ['field_hockey'],
+  'australian-rules': ['australian_rules'],
+  waterpolo: ['water_polo'],
+  'water-polo': ['water_polo'],
+};
+
+export type RawPulseScoreResultEvent = {
+  eventId: string;
+  home: string;
+  away: string;
+  league?: string;
+  startTime?: string;
+  score?: { home?: string | number; away?: string | number; info?: string } | null;
+  live?: boolean;
+  markets?: RawMarket[];
+};
+
+type ResultsResponse = {
+  total?: number;
+  events?: RawPulseScoreResultEvent[];
+  hasNextPage?: boolean;
+};
+
+/** Recent finalized results list per sport — /results endpoint confirms immediately a match has ended
+ *  (its final score is listed in /results which only lists finalized matches). Used by events service
+ *  to mark is_live=0 the moment a match actually ends instead of waiting for the /live-events
+ *  list to stop returning it (can delay minutes). Pagination bounded: pages 1-2 cover 40 most recent
+ *  results per sport — enough to catch any game that just finished. */
+export async function fetchPulseScoreResults(
+  apiKey: string,
+  sport: string,
+  opts: { pageLimit?: number; maxPages?: number } = {},
+): Promise<RawPulseScoreResultEvent[]> {
+  if (!apiKeyOk(apiKey)) return [];
+  const params = RESULTS_SPORT_PARAMS[sport];
+  if (!params || params.length === 0) return [];
+  const pageLimit = opts.pageLimit ?? 20;
+  const maxPages = opts.maxPages ?? 2;
+  const out: RawPulseScoreResultEvent[] = [];
+  for (const param of params) {
+    for (let page = 1; page <= maxPages; page += 1) {
+      const url = `${PULSESCORE_BASE_URL}/api/onexbet/results?page=${page}&limit=${pageLimit}&sport=${encodeURIComponent(param)}`;
+      const json: ResultsResponse | null = await fetchJson(url, apiKey);
+      if (!json || !Array.isArray(json.events)) break;
+      out.push(...(json.events as RawPulseScoreResultEvent[]));
+      if (!json.hasNextPage) break;
+    }
+  }
+  return out;
+}
+
 /** Extracts just the real-time score/clock off a /live-events sample (CONFIRMED fields: `score.home`/
  *  `score.away` come back as numeric STRINGS, e.g. "2"/"1"; `matchClock.minute` as a number) — never
  *  fabricates a 0-0/minute-0 default when the source data is missing or unparseable, so a caller can
