@@ -107,11 +107,16 @@ interface PitchApiEnvelope<T> {
 
 interface PitchScheduleMatch {
   id: string; // m_XXXXXX
+  /** Alias for time_utc (for downstream code; we populate both during parsing. */
   kickoff: string; // RFC3339 UTC
+  time_utc: string; // RFC3339 UTC
   status: 'upcoming' | 'live' | 'finished';
+  league?: { id?: string; name?: string } | null;
   league_id?: string;
   league_name?: string;
+  home_team?: { id?: string; name?: string } | null;
   home_team_id?: string;
+  away_team?: { id?: string; name?: string } | null;
   away_team_id?: string;
   home_team_name: string;
   away_team_name: string;
@@ -119,9 +124,14 @@ interface PitchScheduleMatch {
   score_away?: number;
 }
 
+interface PitchScheduleEnvelope {
+  date: string;
+  matches: PitchScheduleMatch[];
+}
+
 interface PitchRawShot {
   id: string;
-  player?: { id: string; name: string; position_id?: number; image_url?: string };
+  player?: { id: string; name: string; position_id?: number | null; image_url?: string | null };
   team_id?: string;
   x: number;
   y: number;
@@ -141,40 +151,90 @@ interface PitchRawShot {
   blocked_y?: number;
   is_own_goal?: boolean;
   is_saved_off_line?: boolean;
-  keeper?: { id: string; name: string };
+  keeper?: { id: string; name: string; position_id?: number | null; image_url?: string | null };
+}
+
+interface PitchShotsEnvelope {
+  match_id: string;
+  periods?: Array<{ period?: string; shots?: PitchRawShot[] }>;
+  shots?: PitchRawShot[];
 }
 
 interface PitchRawEventGoal {
-  type: 'goal';
+  event_type: 'goal';
   minute: number;
+  minute_added?: number;
+  period?: string;
   team_id?: string;
-  player_name?: string;
-  own_goal?: boolean;
-  penalty?: boolean;
+  player?: { id?: string; name?: string } | null;
+  is_own_goal?: boolean;
+  is_penalty?: boolean;
   score_home?: number;
   score_away?: number;
 }
 interface PitchRawEventCard {
-  type: 'yellowcard' | 'redcard';
+  event_type: 'yellowcard' | 'redcard';
   minute: number;
+  minute_added?: number;
+  period?: string;
   team_id?: string;
-  player_name?: string;
+  player?: { id?: string; name?: string } | null;
   second_yellow?: boolean;
 }
 interface PitchRawEventSub {
-  type: 'substitution';
+  event_type: 'substitution';
   minute: number;
+  minute_added?: number;
+  period?: string;
   team_id?: string;
-  player_out_name?: string;
-  player_in_name?: string;
+  player?: { id?: string; name?: string } | null;
+  sub_in_player?: { id?: string; name?: string } | null;
 }
 type PitchRawEvent = PitchRawEventGoal | PitchRawEventCard | PitchRawEventSub;
 
-interface PitchRawMomentumPoint { minute: number; value: number }
+interface PitchEventsEnvelope {
+  match_id: string;
+  events: PitchRawEvent[];
+}
 
-interface PitchRawTeamStats {
-  home?: Array<{ group: string; key: string; value: any; format_type?: string }>;
-  away?: Array<{ group: string; key: string; value: any; format_type?: string }>;
+interface PitchRawMomentumPoint { minute: number; value: number }
+interface PitchMomentumEnvelope {
+  match_id: string;
+  points: PitchRawMomentumPoint[];
+}
+
+interface PitchAdvancedTeamRow {
+  team: { id: string; name: string };
+  actions?: number;
+  territory?: {
+    possession_pct?: number;
+    field_tilt?: number;
+    final_third_entries?: number;
+    box_entries?: number;
+    avg_action_x?: number;
+    [k: string]: any;
+  };
+  shooting?: {
+    shots?: number;
+    shots_on_target?: number;
+    xG?: number;
+    [k: string]: any;
+  };
+  defending?: {
+    cards?: number;
+    clearances?: number;
+    [k: string]: any;
+  };
+  creation?: {
+    chances_created?: number;
+    corners_won?: number;
+    [k: string]: any;
+  };
+  [k: string]: any;
+}
+interface PitchAdvancedEnvelope {
+  match_id: string;
+  teams: PitchAdvancedTeamRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -323,30 +383,76 @@ export class PitchApiClient {
     const cached = this.dateSchedules.get(cacheKey);
     const now = Date.now();
     if (cached && now - cached.at < SCHEDULE_TTL_MS) return cached.matches;
-    const data = await this.get<PitchScheduleMatch[]>(`/v1/date/${encodeURIComponent(cacheKey)}`);
-    const matches = Array.isArray(data) ? data : [];
+    const envelope = await this.get<PitchScheduleEnvelope>(`/v1/date/${encodeURIComponent(cacheKey)}`);
+    const rawArr: PitchScheduleMatch[] =
+      envelope && Array.isArray((envelope as any).matches) ? (envelope as any).matches : [];
+    // Flatten nested team/league objects and provide fallbacks + aliases so
+    // downstream consumers can read either the raw shape or the flat names.
+    const matches: PitchScheduleMatch[] = rawArr.map((m): PitchScheduleMatch => {
+      const teamH = m.home_team && typeof m.home_team === 'object' ? m.home_team : null;
+      const teamA = m.away_team && typeof m.away_team === 'object' ? m.away_team : null;
+      const lg = m.league && typeof m.league === 'object' ? m.league : null;
+      const homeId = String(teamH?.id ?? m.home_team_id ?? '').trim() || undefined;
+      const awayId = String(teamA?.id ?? m.away_team_id ?? '').trim() || undefined;
+      const leagueId = String(lg?.id ?? m.league_id ?? '').trim() || undefined;
+      const homeName = String(teamH?.name ?? m.home_team_name ?? '').trim() || String(m.home_team_name || '');
+      const awayName = String(teamA?.name ?? m.away_team_name ?? '').trim() || String(m.away_team_name || '');
+      const leagueName = String(lg?.name ?? m.league_name ?? '').trim() || String(m.league_name || '');
+      const time = m.time_utc || m.kickoff || '';
+      return {
+        id: m.id,
+        kickoff: time,
+        time_utc: time,
+        status: m.status,
+        league: lg ?? m.league ?? null,
+        league_id: leagueId,
+        league_name: leagueName,
+        home_team: teamH ?? m.home_team ?? null,
+        home_team_id: homeId,
+        away_team: teamA ?? m.away_team ?? null,
+        away_team_id: awayId,
+        home_team_name: homeName,
+        away_team_name: awayName,
+        score_home: typeof m.score_home === 'number' ? m.score_home : undefined,
+        score_away: typeof m.score_away === 'number' ? m.score_away : undefined,
+      };
+    });
     this.dateSchedules.set(cacheKey, { at: now, matches });
     return matches;
   }
 
   async getMatchShots(matchId: string): Promise<PitchRawShot[]> {
-    const data = await this.get<PitchRawShot[]>(`/v1/matches/${encodeURIComponent(matchId)}/shots`);
-    return Array.isArray(data) ? data : [];
+    const envelope = await this.get<PitchShotsEnvelope>(`/v1/matches/${encodeURIComponent(matchId)}/shots`);
+    if (!envelope) return [];
+    const all: PitchRawShot[] = [];
+    if (envelope.shots && Array.isArray(envelope.shots)) all.push(...envelope.shots);
+    if (Array.isArray(envelope.periods)) {
+      for (const p of envelope.periods) {
+        if (p.shots && Array.isArray(p.shots)) all.push(...p.shots);
+      }
+    }
+    return all;
   }
 
   async getMatchEvents(matchId: string): Promise<PitchRawEvent[]> {
-    const data = await this.get<PitchRawEvent[]>(`/v1/matches/${encodeURIComponent(matchId)}/events`);
-    return Array.isArray(data) ? data : [];
+    const envelope = await this.get<PitchEventsEnvelope>(`/v1/matches/${encodeURIComponent(matchId)}/events`);
+    return envelope && Array.isArray(envelope.events) ? envelope.events : [];
   }
 
   async getMatchMomentum(matchId: string): Promise<PitchRawMomentumPoint[]> {
-    const data = await this.get<PitchRawMomentumPoint[]>(`/v1/matches/${encodeURIComponent(matchId)}/momentum`);
-    return Array.isArray(data) ? data : [];
+    const envelope = await this.get<PitchMomentumEnvelope>(`/v1/matches/${encodeURIComponent(matchId)}/momentum`);
+    return envelope && Array.isArray(envelope.points) ? envelope.points : [];
   }
 
-  async getMatchTeamStats(matchId: string): Promise<PitchRawTeamStats> {
-    const data = await this.get<PitchRawTeamStats>(`/v1/matches/${encodeURIComponent(matchId)}/team-stats`);
-    return data && typeof data === 'object' ? data : {};
+  /**
+   * Advanced analytics endpoint: `/v1/matches/:id/advanced` (replaces the
+   * non-existent team-stats). Returns arrays of metrics grouped by
+   * home/away team objects, with sub-fields like territory.possession_pct,
+   * shooting.{shots,xG,shots_on_target}, defending.cards, etc.
+   */
+  async getMatchAdvanced(matchId: string): Promise<PitchAdvancedEnvelope | null> {
+    const data = await this.get<PitchAdvancedEnvelope>(`/v1/matches/${encodeURIComponent(matchId)}/advanced`);
+    return data && typeof data === 'object' && Array.isArray((data as any).teams) ? (data as PitchAdvancedEnvelope) : null;
   }
 }
 
@@ -459,11 +565,11 @@ export async function buildPitchAdvancedStats(
   } = {},
 ): Promise<AlignResult> {
   if (!client.configured) return buildEmptyStats('PitchAPI key missing');
-  const [shotsRaw, eventsRaw, momentumRaw, teamStats] = await Promise.all([
+  const [shotsRaw, eventsRaw, momentumRaw, advanced] = await Promise.all([
     client.getMatchShots(pitchMatchId),
     client.getMatchEvents(pitchMatchId),
     client.getMatchMomentum(pitchMatchId),
-    client.getMatchTeamStats(pitchMatchId),
+    client.getMatchAdvanced(pitchMatchId),
   ]);
 
   const shots: PitchShot[] = shotsRaw.map((s): PitchShot => {
@@ -499,36 +605,45 @@ export async function buildPitchAdvancedStats(
     let teamSide: 'home' | 'away' | undefined;
     if (opts.pitchHomeTeamId && e.team_id === opts.pitchHomeTeamId) teamSide = 'home';
     else if (opts.pitchAwayTeamId && e.team_id === opts.pitchAwayTeamId) teamSide = 'away';
-    if (e.type === 'goal') {
+    const playerName = e.player?.name?.trim() || '';
+    if (e.event_type === 'goal') {
       return {
         type: 'goal',
         minute: e.minute,
         teamSide,
-        description: [e.player_name || 'Gol', e.own_goal ? 'contra' : null, e.penalty ? 'pênalti' : null]
-          .filter(Boolean).join(' · '),
+        description: [
+          playerName || 'Gol',
+          e.is_own_goal ? 'contra' : null,
+          e.is_penalty ? 'pênalti' : null,
+        ].filter(Boolean).join(' · '),
         score_after:
           typeof e.score_home === 'number' && typeof e.score_away === 'number'
             ? { home: e.score_home, away: e.score_away }
             : undefined,
       };
     }
-    if (e.type === 'yellowcard' || e.type === 'redcard') {
+    if (e.event_type === 'yellowcard' || e.event_type === 'redcard') {
       return {
-        type: e.type,
+        type: e.event_type,
         minute: e.minute,
         teamSide,
-        description: [e.player_name || 'Cartão', e.second_yellow ? '(2º amarelo)' : null].filter(Boolean).join(' · '),
+        description: [
+          playerName || 'Cartão',
+          (e as PitchRawEventCard).second_yellow ? '(2º amarelo)' : null,
+        ].filter(Boolean).join(' · '),
       };
     }
-    // Discriminated union residual: only 'substitution' remains; safe cast.
-    const sub = e as unknown as PitchRawEventSub;
+    // substitution (discriminated residual after goal/card branches above)
+    const sub = e as PitchRawEventSub;
+    const outName = (sub.player?.name || '').trim() || 'Sai';
+    const inName = (sub.sub_in_player?.name || '').trim() || 'Entra';
     return {
-      type: 'substitution' as const,
-      minute: e.minute,
+      type: 'substitution',
+      minute: sub.minute,
       teamSide,
-      description: [sub.player_out_name || 'Sai', '→', sub.player_in_name || 'Entra'].join(' '),
-      player_out: sub.player_out_name,
-      player_in: sub.player_in_name,
+      description: `${outName} → ${inName}`,
+      player_out: outName,
+      player_in: inName,
     };
   });
 
@@ -537,7 +652,7 @@ export async function buildPitchAdvancedStats(
     value: m.value,
   }));
 
-  const analytics = aggregateTeamStats(teamStats, shots);
+  const analytics = aggregateAdvancedStats(advanced, shots, eventsRaw, opts);
 
   return {
     aligned: true,
@@ -551,59 +666,122 @@ export async function buildPitchAdvancedStats(
   };
 }
 
-function aggregateTeamStats(ts: PitchRawTeamStats, shots: PitchShot[]): PitchAnalytics {
-  const pick = (side: 'home' | 'away', group: string, key: string): number | undefined => {
-    const rows = ts[side] || [];
-    for (const r of rows) {
-      if (r.group === group && r.key === key) {
-        if (typeof r.value === 'number') return r.value;
-        if (typeof r.value === 'string') {
-          const n = parseFloat(r.value);
-          return Number.isFinite(n) ? n : undefined;
-        }
-      }
+function aggregateAdvancedStats(
+  adv: PitchAdvancedEnvelope | null,
+  shots: PitchShot[],
+  eventsRaw: PitchRawEvent[],
+  opts: { pitchHomeTeamId?: string; pitchAwayTeamId?: string },
+): PitchAnalytics {
+  // First, derive analytics from the advanced /match/:id/advanced endpoint when
+  // available. This endpoint exposes territory.possession_pct and per-team
+  // groups (shooting, defending, creation) as nested numeric fields.
+  const byId = new Map<string, PitchAdvancedTeamRow>();
+  if (adv && Array.isArray(adv.teams)) {
+    for (const row of adv.teams) {
+      if (row?.team?.id) byId.set(row.team.id, row);
     }
-    return undefined;
-  };
+  }
 
+  const pickTeam = (pitchTeamId: string | undefined) =>
+    pitchTeamId ? byId.get(pitchTeamId) ?? null : null;
+  const homeRow = pickTeam(opts.pitchHomeTeamId);
+  const awayRow = pickTeam(opts.pitchAwayTeamId);
+
+  const possessionPct = (row: PitchAdvancedTeamRow | null): number | undefined => {
+    const raw = row?.territory?.possession_pct;
+    return typeof raw === 'number' ? raw : undefined;
+  };
+  const num = (v: any): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const shotNum = (row: PitchAdvancedTeamRow | null, key: 'shots' | 'shots_on_target' | 'xG'): number | undefined =>
+    num(row?.shooting?.[key]);
+  const defNum = (row: PitchAdvancedTeamRow | null, key: 'cards' | 'clearances'): number | undefined =>
+    num(row?.defending?.[key]);
+  const creaNum = (row: PitchAdvancedTeamRow | null, key: 'chances_created' | 'corners_won'): number | undefined =>
+    num(row?.creation?.[key]);
+
+  // Fallback aggregates: if /advanced didn't return a stat for a team, derive
+  // it deterministically from the raw shots/events arrays so we never show a
+  // zero that is actually "data missing".
   const shotGroups = shots.reduce<{
-    home: { all: number; onT: number };
-    away: { all: number; onT: number };
+    home: { all: number; onT: number; xg: number; corners: number };
+    away: { all: number; onT: number; xg: number; corners: number };
   }>(
     (acc, s) => {
       const side = s.teamSide === 'home' ? 'home' : s.teamSide === 'away' ? 'away' : null;
       if (!side) return acc;
       acc[side].all++;
       if (s.is_on_target) acc[side].onT++;
+      if (typeof s.expected_goals === 'number') acc[side].xg += s.expected_goals;
+      if (s.situation === 'FromCorner' || s.situation === 'Corner') acc[side].corners++;
       return acc;
     },
-    { home: { all: 0, onT: 0 }, away: { all: 0, onT: 0 } },
+    {
+      home: { all: 0, onT: 0, xg: 0, corners: 0 },
+      away: { all: 0, onT: 0, xg: 0, corners: 0 },
+    },
   );
 
-  return {
-    possession: {
-      home: pick('home', 'Totals', 'possession') ?? 50,
-      away: pick('away', 'Totals', 'possession') ?? 50,
+  // Card count fallback: sum yellowcard / redcard events by team_id. Each card
+  // event (including second yellows, which are a yellowcard with
+  // second_yellow=true in the PitchAPI raw stream) counts as 1 so we match
+  // "total cards shown" semantics.
+  const cardGroups = eventsRaw.reduce<{ home: number; away: number }>(
+    (acc, e) => {
+      if (e.event_type !== 'yellowcard' && e.event_type !== 'redcard') return acc;
+      const side =
+        opts.pitchHomeTeamId && e.team_id === opts.pitchHomeTeamId
+          ? 'home'
+          : opts.pitchAwayTeamId && e.team_id === opts.pitchAwayTeamId
+            ? 'away'
+            : null;
+      if (!side) return acc;
+      acc[side] += 1;
+      return acc;
     },
+    { home: 0, away: 0 },
+  );
+
+  const sumPossession = (possessionPct(homeRow) ?? 0) + (possessionPct(awayRow) ?? 0);
+  let homePoss = possessionPct(homeRow);
+  let awayPoss = possessionPct(awayRow);
+  if (sumPossession > 0 && Math.abs(sumPossession - 100) > 1) {
+    // normalise to 100 so UI always displays matching percentages
+    const k = 100 / sumPossession;
+    homePoss = Math.round((homePoss ?? 0) * k);
+    awayPoss = 100 - homePoss;
+  } else if (!homePoss || !awayPoss) {
+    homePoss = homePoss ?? 50;
+    awayPoss = awayPoss ?? 50;
+  }
+
+  const fallbackCards = (row: PitchAdvancedTeamRow | null, side: 'home' | 'away'): number => {
+    const v = defNum(row, 'cards');
+    return typeof v === 'number' ? v : cardGroups[side];
+  };
+
+  return {
+    possession: { home: homePoss ?? 50, away: awayPoss ?? 50 },
     shots: {
-      home: pick('home', 'Shooting', 'shots') ?? shotGroups.home.all,
-      away: pick('away', 'Shooting', 'shots') ?? shotGroups.away.all,
+      home: shotNum(homeRow, 'shots') ?? shotGroups.home.all,
+      away: shotNum(awayRow, 'shots') ?? shotGroups.away.all,
     },
     onTarget: {
-      home: pick('home', 'Shooting', 'shots_on_target') ?? shotGroups.home.onT,
-      away: pick('away', 'Shooting', 'shots_on_target') ?? shotGroups.away.onT,
+      home: shotNum(homeRow, 'shots_on_target') ?? shotGroups.home.onT,
+      away: shotNum(awayRow, 'shots_on_target') ?? shotGroups.away.onT,
     },
     corners: {
-      home: pick('home', 'Totals', 'corners_won') ?? 0,
-      away: pick('away', 'Totals', 'corners_won') ?? 0,
+      // Corners from creation.corners_won if available; otherwise approximate from
+      // FromCorner shots (one corner typically creates 1+ shots).
+      home: creaNum(homeRow, 'corners_won') ?? shotGroups.home.corners,
+      away: creaNum(awayRow, 'corners_won') ?? shotGroups.away.corners,
     },
     cards: {
-      home: pick('home', 'Defending', 'cards') ?? 0,
-      away: pick('away', 'Defending', 'cards') ?? 0,
+      home: fallbackCards(homeRow, 'home'),
+      away: fallbackCards(awayRow, 'away'),
     },
     xg: {
-      home: pick('home', 'Shooting', 'xG') ?? 0,
-      away: pick('away', 'Shooting', 'xG') ?? 0,
+      home: shotNum(homeRow, 'xG') ?? Number(shotGroups.home.xg.toFixed(2)),
+      away: shotNum(awayRow, 'xG') ?? Number(shotGroups.away.xg.toFixed(2)),
     },
   };
 }
