@@ -74,6 +74,18 @@ if (!pulseScoreApiKey) {
 const events = createEventsService(safePool, pulseScoreApiKey);
 const liveWs = createLiveWs();
 
+setInterval(() => {
+  try {
+    const ws = events.getWsStatus();
+    if (Array.isArray(ws) && ws.length > 0) {
+      const summary = ws.map((s) => `${s.sport}:${s.connected ? 'ON' : 'OFF'}${s.framesReceived ? `(${s.framesReceived}f)` : ''}`).join(' ');
+      console.log(`[server] pulseScore-ws ${summary}`);
+    }
+  } catch {
+    void 0;
+  }
+}, 60_000);
+
 const distDir = path.resolve(process.cwd(), 'dist');
 const hasDist = fs.existsSync(distDir) && fs.statSync(distDir).isDirectory();
 

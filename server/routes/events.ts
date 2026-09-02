@@ -11,6 +11,15 @@ import {
   type AppEvent,
   type RawPulseScoreLiveEvent,
 } from '../services/pulsescore';
+import {
+  createPulseScoreWsClient,
+  type PulseScoreWsClient,
+  isWsLiveSport,
+  isFastPollLiveSport,
+  FAST_POLL_LIVE_SPORTS,
+  WS_LIVE_SPORTS,
+  type LiveUpdate,
+} from '../services/pulsescoreWs';
 import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
 
 export type GoalServeSettlementOutcome = 'won' | 'lost' | 'half_won' | 'half_lost' | 'void';
@@ -21,6 +30,7 @@ export type EventsService = {
     res: http.ServerResponse,
     url: URL,
   ) => Promise<boolean>;
+  getWsStatus: () => any[];
   getAdminOddsEvents: () => Promise<any[]>;
   setOddsOverride: (eventId: string, odds: { home_odd?: number; draw_odd?: number; away_odd?: number }) => Promise<void>;
   getEventOdds: (
@@ -67,6 +77,7 @@ export type EventsService = {
 // since odds on a sportsbook feed this size don't realistically move faster than every few seconds
 // anyway. Revisit once PulseScore states an actual limit.
 const POLL_INTERVAL_MS = 30_000;
+const FAST_POLL_INTERVAL_MS = 2_000;
 
 type TradingStatus = 'pending' | 'approved' | 'suspended';
 type ManualOdds = { home?: number; draw?: number; away?: number };
@@ -82,8 +93,8 @@ function toInternalId(raw: string): string {
   return s.startsWith('pulsescore_') ? s : `pulsescore_${s}`;
 }
 
-export function createEventsService(_pool: pg.Pool | null, apiKey: string): EventsService {
-  const cache = new Map<string, AppEvent>(); // keyed by AppEvent.id ("pulsescore_<eventId>")
+export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsClientIn?: PulseScoreWsClient | null): EventsService {
+  const cache = new Map<string, AppEvent>();
   const oddsStore = createOddsStore();
   const overrides = new Map<string, OddsOverride>();
   const tradingStatus = new Map<string, TradingStatus>();
@@ -94,34 +105,160 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
   let refreshInFlight: Promise<void> | null = null;
   let pollTimer: NodeJS.Timeout | null = null;
 
+  let fastPollInFlight: Promise<void> | null = null;
+  let fastPollTimer: NodeJS.Timeout | null = null;
+  let lastFastPollAt = 0;
+  let lastFastPollError: string | null = null;
+
+  const wsLiveIdsBySport = new Map<string, Set<string>>();
+  const wsClient: PulseScoreWsClient | null =
+    wsClientIn ?? (hasApiKey(apiKey) ? createPulseScoreWsClient(apiKey) : null);
+
+  function recordH2HOdds(ev: AppEvent, now: number) {
+    if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
+    if (ev.draw_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'draw'), ev.draw_odd, now);
+    if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
+  }
+
+  if (wsClient) {
+    for (const sport of WS_LIVE_SPORTS) {
+      wsLiveIdsBySport.set(sport, new Set());
+      wsClient.onEventUpdate(sport, (updates: LiveUpdate[]) => {
+        const now = Date.now();
+        for (const u of updates) {
+          const existing = cache.get(u.event.id);
+          const merged: AppEvent = existing
+            ? {
+                ...existing,
+                ...u.event,
+                home_odd: u.event.home_odd > 0 ? u.event.home_odd : existing.home_odd,
+                draw_odd: u.event.draw_odd > 0 ? u.event.draw_odd : existing.draw_odd,
+                away_odd: u.event.away_odd > 0 ? u.event.away_odd : existing.away_odd,
+                markets: u.event.markets && u.event.markets.length > 0 ? u.event.markets : existing.markets,
+                event_date: u.event.event_date || existing.event_date,
+                league: u.event.league || existing.league,
+                home_team: u.event.home_team || existing.home_team,
+                away_team: u.event.away_team || existing.away_team,
+                match: u.event.match || existing.match,
+              }
+            : u.event;
+          merged.is_live = 1;
+          cache.set(merged.id, merged);
+          recordH2HOdds(merged, now);
+        }
+      });
+      wsClient.onSportLiveIds(sport, (ids: Set<string>) => {
+        const cur = wsLiveIdsBySport.get(sport);
+        if (cur) {
+          cur.clear();
+          for (const id of ids) cur.add(id);
+        }
+      });
+    }
+  }
+
+  function isWsLiveSportActive(sport: string): boolean {
+    if (!wsClient) return false;
+    if (!isWsLiveSport(sport)) return false;
+    const st = wsClient.getStatus().find((s) => s.sport === sport);
+    if (!st) return false;
+    return st.connected && st.lastFrameAt != null && Date.now() - st.lastFrameAt < 60_000;
+  }
+
+  async function fastLivePollOnce(): Promise<void> {
+    const now = Date.now();
+    try {
+      const liveIdsBySport = new Map<string, Set<string>>();
+      for (const sport of FAST_POLL_LIVE_SPORTS) {
+        let liveRaw: RawPulseScoreLiveEvent[];
+        try {
+          liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport, { pageLimit: 50, maxPages: 5 });
+        } catch {
+          continue;
+        }
+        const liveIds = new Set<string>();
+        for (const lr of liveRaw) {
+          const id = `pulsescore_${lr.eventId}`;
+          liveIds.add(id);
+          const liveState = extractLiveState(lr);
+          const cached = cache.get(id);
+          if (cached) {
+            cache.set(id, { ...cached, ...liveState, is_live: 1 });
+          } else {
+            const ev = normalizePulseScoreEvent(sport, lr);
+            cache.set(id, { ...ev, ...liveState, is_live: 1 });
+            recordH2HOdds(ev, now);
+          }
+        }
+        liveIdsBySport.set(sport, liveIds);
+      }
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1 && liveIdsBySport.has(ev.sport) && !liveIdsBySport.get(ev.sport)!.has(ev.id)) {
+          cache.set(ev.id, { ...ev, is_live: 0 });
+        }
+      }
+      lastFastPollError = null;
+    } catch (e: any) {
+      lastFastPollError = String(e?.message || e);
+    } finally {
+      lastFastPollAt = now;
+    }
+  }
+
+  function runFastLivePoll(): Promise<void> {
+    if (fastPollInFlight) return fastPollInFlight;
+    fastPollInFlight = fastLivePollOnce().finally(() => {
+      fastPollInFlight = null;
+    });
+    return fastPollInFlight;
+  }
+
+  function startFastLivePoll(): void {
+    if (fastPollTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runFastLivePoll().finally(() => {
+        fastPollTimer = setTimeout(tick, FAST_POLL_INTERVAL_MS);
+      });
+    };
+    fastPollTimer = setTimeout(tick, 500);
+  }
+  startFastLivePoll();
+
   async function refreshOnce(): Promise<void> {
     const now = Date.now();
     try {
       for (const sport of PULSESCORE_SPORTS) {
         const raw = await fetchPulseScoreEvents(apiKey, sport);
         for (const r of raw) {
+          const id = `pulsescore_${r.eventId}`;
+          const wsLive = cache.get(id)?.is_live === 1 && isWsLiveSportActive(sport);
           const ev = normalizePulseScoreEvent(sport, r);
-          cache.set(ev.id, ev);
-          if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
-          if (ev.draw_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'draw'), ev.draw_odd, now);
-          if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
+          if (wsLive) {
+            const existing = cache.get(id);
+            const merged: AppEvent = existing
+              ? {
+                  ...existing,
+                  event_date: ev.event_date || existing.event_date,
+                  league: ev.league || existing.league,
+                  home_team: ev.home_team || existing.home_team,
+                  away_team: ev.away_team || existing.away_team,
+                  match: ev.match || existing.match,
+                }
+              : ev;
+            cache.set(id, merged);
+          } else {
+            cache.set(ev.id, ev);
+          }
+          recordH2HOdds(ev, now);
         }
       }
-      // Live in-play pass — AUTHORITATIVE for is_live, not just score/clock enrichment (see module
-      // docstring in pulsescore.ts). Every /events sample seen so far, across all nine sports, has
-      // reported live:false for every event, even while /live-events simultaneously confirmed real
-      // matches genuinely in progress — /events looks to be a pregame/schedule feed only, so relying
-      // on its `live` flag left the "Ao Vivo" list permanently empty. This pass:
-      //  1. Sets is_live=1 (plus score/minute) on any event this feed confirms is live right now —
-      //     creating a cache entry from this feed's own markets/odds if the event was never in the
-      //     regular pull at all (also confirmed: some live matches simply aren't listed there).
-      //  2. Afterwards, resets is_live back to 0 for any event of a sport this pass successfully
-      //     queried but did NOT see live this cycle — otherwise a finished match would stay stuck
-      //     showing as live forever once it drops out of /live-events. A sport whose live-events
-      //     call itself failed this cycle is skipped entirely (not touched either way), so a
-      //     transient fetch error can't wrongly clear real live matches.
       const liveIdsBySport = new Map<string, Set<string>>();
       for (const sport of PULSESCORE_SPORTS) {
+        if (isWsLiveSportActive(sport)) {
+          liveIdsBySport.set(sport, new Set(wsLiveIdsBySport.get(sport) || []));
+          continue;
+        }
+        if (isFastPollLiveSport(sport)) continue;
         let liveRaw: RawPulseScoreLiveEvent[];
         try {
           liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport);
@@ -139,9 +276,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
           } else {
             const ev = normalizePulseScoreEvent(sport, lr);
             cache.set(id, { ...ev, ...liveState, is_live: 1 });
-            if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
-            if (ev.draw_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'draw'), ev.draw_odd, now);
-            if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
+            recordH2HOdds(ev, now);
           }
         }
         liveIdsBySport.set(sport, liveIds);
@@ -160,13 +295,6 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     }
   }
 
-  // Single guarded entry point for starting a refresh cycle — shared by ensureRefreshed() below AND
-  // startPolling()'s timer, so at most one refreshOnce() ever runs at a time regardless of which
-  // triggered it. Without this, the background poll timer's own tick and an HTTP request's
-  // cold-start wait (both able to fire refreshOnce() independently) could race right after a fresh
-  // deploy and run two full cycles concurrently — wasted work at any cycle length, but now that a
-  // cycle can legitimately take much longer (requestGate() pacing, see below), doubling it up like
-  // that meaningfully extends how long the very first request has to wait.
   function runRefreshOnce(): Promise<void> {
     if (refreshInFlight) return refreshInFlight;
     refreshInFlight = refreshOnce().finally(() => {
@@ -175,16 +303,6 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     return refreshInFlight;
   }
 
-  // Every HTTP route below awaits this before reading the cache. A full refreshOnce() cycle now
-  // paces every PulseScore request through requestGate() (server/services/pulsescore.ts, added to
-  // respect PulseScore's confirmed 3 req/sec limit) — across nine sports' paginated /events pulls
-  // plus the /live-events pass, that can legitimately take far longer than POLL_INTERVAL_MS. Once
-  // there's ANY cached data, a request must never block on that — it would mean every page hangs
-  // for however long the current cycle takes (confirmed in production: ~20s before the request
-  // simply times out and the page shows nothing until reloaded). Only a true cold start (empty
-  // cache, e.g. right after a fresh deploy) is worth waiting for once, so the very first request
-  // doesn't return an empty catalog needlessly; every other call just serves whatever's cached
-  // (even if a little stale) and kicks a background refresh if one is due and not already running.
   function ensureRefreshed(): Promise<void> {
     if (cache.size > 0) {
       if (Date.now() - lastRefreshAt >= POLL_INTERVAL_MS) runRefreshOnce();
@@ -278,6 +396,18 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
       return true;
     }
 
+    if (req.method === 'GET' && path === '/api/ws/status') {
+      sendJson(res, 200, {
+        ws: wsClient ? wsClient.getStatus() : [],
+        wsSports: Array.from(WS_LIVE_SPORTS),
+        fastPollSports: Array.from(FAST_POLL_LIVE_SPORTS),
+        fastPollIntervalMs: FAST_POLL_INTERVAL_MS,
+        lastFastPollAt: lastFastPollAt || null,
+        lastFastPollError,
+      });
+      return true;
+    }
+
     if (req.method === 'GET' && path === '/api/events/by-sport') {
       await ensureRefreshed();
 
@@ -338,6 +468,13 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
         lastRefreshAt: lastRefreshAt || null,
         lastRefreshError,
         pollIntervalMs: POLL_INTERVAL_MS,
+        fastPoll: {
+          intervalMs: FAST_POLL_INTERVAL_MS,
+          sports: Array.from(FAST_POLL_LIVE_SPORTS),
+          lastPollAt: lastFastPollAt || null,
+          lastPollError: lastFastPollError,
+        },
+        ws: wsClient ? wsClient.getStatus() : null,
         sample: Array.from(cache.values())
           .slice(0, 5)
           .map((e) => ({ id: e.id, match: e.match, league: e.league, is_live: e.is_live })),
@@ -353,6 +490,14 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
         eventsCached: cache.size,
         lastRefreshAt: lastRefreshAt || null,
         lastRefreshError,
+        ws: wsClient ? wsClient.getStatus() : null,
+        wsSports: Array.from(WS_LIVE_SPORTS),
+        fastPoll: {
+          intervalMs: FAST_POLL_INTERVAL_MS,
+          sports: Array.from(FAST_POLL_LIVE_SPORTS),
+          lastPollAt: lastFastPollAt || null,
+          lastPollError: lastFastPollError,
+        },
       });
       return true;
     }
@@ -534,8 +679,11 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
 
   const isMarketSuspended = async (eventId: string): Promise<boolean> => tradingStatus.get(toInternalId(eventId)) === 'suspended';
 
+  const getWsStatus = (): any[] => (wsClient ? wsClient.getStatus() : []);
+
   return {
     handleEventsRoutes,
+    getWsStatus,
     getAdminOddsEvents,
     setOddsOverride,
     getEventOdds,

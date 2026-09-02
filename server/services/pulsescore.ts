@@ -93,7 +93,7 @@ const PULSESCORE_BASE_URL = 'https://api.pulsescore.net';
 // ("rugby-union", "ice-hockey") even though PulseScore's own event payloads report sport with an
 // underscore ("rugby_union", "ice_hockey") — see module docstring. Handball has no such quirk: its
 // URL segment and payload `sport` field are both the plain "handball".
-function sportSegment(sport: string): string | null {
+export function sportSegment(sport: string): string | null {
   const s = String(sport || '').toLowerCase().trim();
   if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
   if (s === 'tennis' || s === 'tenis' || s === 'ténis') return 'tennis';
@@ -187,7 +187,7 @@ async function fetchJson(url: string, apiKey: string, timeoutMs = 12000, retries
 
 // ---- Raw PulseScore shapes (CONFIRMED against the 3 sample responses) ----
 
-type RawSelection = {
+export type RawSelection = {
   canonicalOutcome: string;
   rawName: string;
   odds: number;
@@ -197,7 +197,7 @@ type RawSelection = {
   line?: number;
 };
 
-type RawMarket = {
+export type RawMarket = {
   canonicalMarket: string;
   rawName: string;
   period: string; // "FULL_TIME" | "FIRST_HALF" | "SECOND_HALF"
