@@ -63,6 +63,23 @@
  * rather than scattering them across "Especiais", since the OTHER-bucket rawName-derived slug
  * reliably starts with "players_stats" for all of them.
  *
+ * Live in-play feed (CONFIRMED via real /live-events?sport=<x> samples): PulseScore also exposes a
+ *   GET https://api.pulsescore.net/api/onexbet/live-events?page=&limit=&sport=<sport>
+ *   GET https://api.pulsescore.net/api/onexbet/live-events/sports
+ * pair, separate from the per-sport /events endpoint above. Its events carry the same `markets`
+ * shape (redundant with what the regular per-sport pull already ingests) but ALSO carry
+ * `matchClock`/`score`/`statistics` fields that never appear in a regular /events or /leagues
+ * response — previously (before this was confirmed) getEventResult() in routes/events.ts assumed
+ * PulseScore had no score data at all; that's now known to be true only of the /events endpoint,
+ * not of this dedicated feed. fetchPulseScoreLiveEvents()/extractLiveState() below pull just the
+ * score/clock and merge them onto already-cached events (see refreshOnce() in routes/events.ts) —
+ * this feed's markets/odds are intentionally NOT re-ingested, since the regular per-sport pull
+ * already covers live matches' odds. The /live-events/sports discovery response also revealed FIVE
+ * sports never confirmed anywhere else in this codebase — cricket, esports, futsal, padel, snooker —
+ * which are NOT added to PULSESCORE_SPORTS/sportSegment() here, since only their existence and a
+ * live event COUNT is confirmed, never a real /leagues or /events response for any of them; wiring
+ * them in as full sports is a separate, larger decision than this live-score enrichment.
+ *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
  * there is no attribute-prefix bug and no per-sport wrapper-shape guessing needed.
@@ -174,6 +191,24 @@ type EventsResponse = {
   events: RawPulseScoreEvent[];
 };
 
+// ---- Live in-play feed (CONFIRMED via a real /live-events?sport=<x> sample for soccer, tennis,
+// basketball, plus an empty-but-valid response for mma) — a DEDICATED feed, separate from the
+// per-sport /events endpoint above. Its events carry the exact same `markets` shape (so its
+// odds/markets are redundant with what the regular per-sport pull already ingests), but ALSO carry
+// `matchClock`/`score`/`statistics`, none of which ever appear in a regular /events or /leagues
+// response — this is the only confirmed source of real-time score/clock data PulseScore offers. See
+// fetchPulseScoreLiveEvents() below. */
+type RawLiveMatchClock = { minute?: number; second?: number; period?: string; periodId?: string };
+type RawLiveScore = { home?: string; away?: string; info?: string };
+export type RawPulseScoreLiveEvent = RawPulseScoreEvent & {
+  matchClock?: RawLiveMatchClock;
+  score?: RawLiveScore;
+  // Sport-dependent freeform block (CONFIRMED shapes so far: football -> {home,away: {yellowCards,
+  // redCards, corners}}, tennis -> {sets: {home: number[], away: number[]}}) — passed through
+  // untyped since only two sports' shapes have actually been seen and no consumer needs it yet.
+  statistics?: Record<string, unknown>;
+};
+
 // ---- App-facing shapes (matching src/shared/types.ts's Event/Market/Selection so the frontend
 // needs zero changes — server/ never imports from src/, so these are re-declared locally, same
 // pattern as the removed goalserve.ts's NormalizedEvent). ----
@@ -194,6 +229,11 @@ export type AppEvent = {
   is_live: number;
   sport: string;
   markets: AppMarket[];
+  // Populated only when a live-events sample matched this event by eventId (see
+  // fetchPulseScoreLiveEvents()/mergeLiveState() below) — absent (not 0/0 or 0) for any event we
+  // have no live-state sample for, so a consumer can't mistake "unknown" for "0-0 right now".
+  score?: { home: number; away: number };
+  minute?: number;
 };
 
 /** Mirrors this app's own `Market.key` convention (comment in src/shared/types.ts: "h2h | ou_2.5 |
@@ -423,3 +463,74 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
 }
 
 export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball', 'baseball'] as const;
+
+// The `sport` query value /live-events expects — CONFIRMED directly (soccer/tennis/mma/basketball,
+// via real curl responses, mma's being an empty-but-valid result). The others are a
+// pattern-consistency call, NOT confirmed via this endpoint specifically: ice-hockey's value is
+// taken verbatim from what /live-events/sports itself reports for that sport ("ice_hockey",
+// underscore — the strongest evidence available, since it's the same endpoint family), and
+// volleyball/handball/baseball follow the "plain name, no quirk" pattern already established for
+// their own /events endpoint. Rugby has no live-events evidence at all (it didn't even appear in
+// the /live-events/sports listing, meaning zero live matches at sampling time) — 'rugby_union' is
+// used on the theory that this feed follows PulseScore's own payload `sport` field convention (like
+// ice-hockey did) rather than the /events URL-segment convention; if wrong, fetchPulseScoreLiveEvents
+// just returns an empty list for rugby, same as "no live match right now" — never a hard failure.
+const LIVE_EVENTS_SPORT_PARAM: Record<string, string> = {
+  soccer: 'soccer',
+  tennis: 'tennis',
+  volleyball: 'volleyball',
+  rugby: 'rugby_union',
+  mma: 'mma',
+  'ice-hockey': 'ice_hockey',
+  handball: 'handball',
+  basketball: 'basketball',
+  baseball: 'baseball',
+};
+
+/** Fetches every page of the dedicated /live-events feed for a sport (bounded low on purpose: the
+ *  real /live-events/sports sample showed 170 live events across ALL nine sports COMBINED at one
+ *  moment, several orders of magnitude smaller than a single sport's full /events catalog). Returns
+ *  [] for a sport with no known live-events `sport` query value, or with zero live matches right
+ *  now — both are normal, not errors. */
+export async function fetchPulseScoreLiveEvents(
+  apiKey: string,
+  sport: string,
+  opts: { pageLimit?: number; maxPages?: number } = {},
+): Promise<RawPulseScoreLiveEvent[]> {
+  if (!apiKeyOk(apiKey)) return [];
+  const param = LIVE_EVENTS_SPORT_PARAM[sport];
+  if (!param) return [];
+  const pageLimit = opts.pageLimit ?? 100;
+  const maxPages = opts.maxPages ?? 10;
+  const out: RawPulseScoreLiveEvent[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = `${PULSESCORE_BASE_URL}/api/onexbet/live-events?page=${page}&limit=${pageLimit}&sport=${encodeURIComponent(param)}`;
+    const json: EventsResponse | null = await fetchJson(url, apiKey);
+    if (!json || !Array.isArray(json.events)) break;
+    out.push(...(json.events as RawPulseScoreLiveEvent[]));
+    if (!json.hasNextPage) break;
+  }
+  return out;
+}
+
+/** Extracts just the real-time score/clock off a /live-events sample (CONFIRMED fields: `score.home`/
+ *  `score.away` come back as numeric STRINGS, e.g. "2"/"1"; `matchClock.minute` as a number) — never
+ *  fabricates a 0-0/minute-0 default when the source data is missing or unparseable, so a caller can
+ *  tell "no live-state sample for this event" apart from "genuinely 0-0 at minute 0".
+ *  Note (CONFIRMED, passed through verbatim, not reinterpreted here): `matchClock.minute`'s meaning
+ *  is sport-dependent — soccer counts UP (elapsed minutes, e.g. 89), basketball counts DOWN within
+ *  the current quarter (e.g. "minute": 5 alongside `score.info`: "6 min remaining"). Tennis has no
+ *  `minute` at all (sets are tracked by `score`/period, not a clock), so `minute` is simply absent
+ *  for it — never a fabricated 0. */
+export function extractLiveState(raw: RawPulseScoreLiveEvent): { score?: { home: number; away: number }; minute?: number } {
+  const out: { score?: { home: number; away: number }; minute?: number } = {};
+  if (raw.score && (raw.score.home !== undefined || raw.score.away !== undefined)) {
+    const home = Number(raw.score.home);
+    const away = Number(raw.score.away);
+    if (Number.isFinite(home) && Number.isFinite(away)) out.score = { home, away };
+  }
+  if (raw.matchClock && typeof raw.matchClock.minute === 'number' && Number.isFinite(raw.matchClock.minute)) {
+    out.minute = raw.matchClock.minute;
+  }
+  return out;
+}

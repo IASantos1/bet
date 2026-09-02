@@ -2,8 +2,10 @@ import type http from 'http';
 import type pg from 'pg';
 import { sendJson } from '../lib/http';
 import {
+  extractLiveState,
   fetchPulseScoreEvent,
   fetchPulseScoreEvents,
+  fetchPulseScoreLiveEvents,
   normalizePulseScoreEvent,
   PULSESCORE_SPORTS,
   type AppEvent,
@@ -102,6 +104,22 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
           if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
           if (ev.draw_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'draw'), ev.draw_odd, now);
           if (ev.away_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'away'), ev.away_odd, now);
+        }
+      }
+      // Real-time score/clock enrichment (see module docstring in pulsescore.ts): a separate feed
+      // from the per-sport pull above, so it only merges score/minute onto events already cached
+      // there — never creates a new cache entry and never touches markets/odds, since this feed's
+      // odds are redundant with what the per-sport pull already has.
+      for (const sport of PULSESCORE_SPORTS) {
+        const liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport).catch(() => []);
+        for (const lr of liveRaw) {
+          const id = `pulsescore_${lr.eventId}`;
+          const cached = cache.get(id);
+          if (!cached) continue;
+          const liveState = extractLiveState(lr);
+          if (liveState.score || liveState.minute !== undefined) {
+            cache.set(id, { ...cached, ...liveState });
+          }
         }
       }
       lastRefreshError = null;
@@ -378,11 +396,13 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     return { home: ev.home_odd, draw: ev.draw_odd, away: ev.away_odd, markets: marketsAsRecord(ev), versions };
   };
 
-  // PulseScore is an odds feed only — none of its confirmed responses carry a score or match
-  // status, so there is nothing to derive a result from here (unlike the removed GoalServe
-  // integration, which had status_short/score fields). Returning null (rather than guessing
-  // "not finished") means the Settlement Engine correctly falls back to manual admin settlement
-  // for every event, which is this provider's honest limitation, not a bug.
+  // The dedicated /live-events feed DOES carry a live score/clock (see refreshOnce()'s merge of
+  // AppEvent.score/minute above) — but never a "finished"/full-time signal, only a live snapshot
+  // while a match is in progress. There is still nothing here to derive a settlement RESULT from
+  // (unlike the removed GoalServe integration, which had a real status_short/FT field). Returning
+  // null (rather than guessing "not finished" from the live score going stale) means the Settlement
+  // Engine correctly falls back to manual admin settlement for every event, which is this
+  // provider's honest limitation, not a bug.
   const getEventResult = async (
     _eventId: string,
     _sport?: string,
