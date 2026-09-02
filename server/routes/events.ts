@@ -95,6 +95,51 @@ function toInternalId(raw: string): string {
   return s.startsWith('pulsescore_') ? s : `pulsescore_${s}`;
 }
 
+// ---- Event-level blocklist — drop onexbet consistently carries a handful of categories we
+// explicitly do NOT want tradable on this platform (recreational / amateur / youth /
+// women-only micro-leagues, plus PulseScore fictional "Short Football NxN" novelty
+// series that are not real regulated fixtures). Runs against league+teams at every single
+// insertion path (REST pre-match, REST live, WS live updates, resolveEvent fallback)
+// so a blocked event can never end up in `cache` at all — no stale "refresh"
+// pattern would pull it back in.
+const BLOCKED_LEAGUE_CONTAINS = [
+  'Short Football 2x2',
+  'Short Football 3x3 L1',
+  'Short Football 3x3 L2',
+  'Short Football 4x4',
+  'Short Football 4x4 L2',
+  'Short Football 5x5',
+  'Division 4x4',
+  'Table Basketball League',
+  'FIFA 23',
+  'NBA 2K26',
+  'NHL 26',
+  'National Collegiate Athletic Association',
+  'NAIA',
+  'Student League',
+  '6x6. Socca World Cup',
+  'IPBL',
+  '3HL League',
+  'RHL',
+] as const;
+const BLOCKED_LEAGUE_REGEX = [
+  /\bU(?:1[6-9]|2[0-5])\b/i,
+  /\b(Women|Feminino|Ladies)\b|\(W\)/i,
+  /\bCyber\b/i,
+] as const;
+
+function isBlockedEvent(league?: string | null, home?: string | null, away?: string | null): boolean {
+  const lg = String(league || '').trim();
+  const combined = [lg, String(home || ''), String(away || '')].join(' | ');
+  for (const needle of BLOCKED_LEAGUE_CONTAINS) {
+    if (lg.toLowerCase().includes(needle.toLowerCase())) return true;
+  }
+  for (const re of BLOCKED_LEAGUE_REGEX) {
+    if (re.test(combined)) return true;
+  }
+  return false;
+}
+
 export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsClientIn?: PulseScoreWsClient | null): EventsService {
   const cache = new Map<string, AppEvent>();
   const oddsStore = createOddsStore();
@@ -128,6 +173,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       wsClient.onEventUpdate(sport, (updates: LiveUpdate[]) => {
         const now = Date.now();
         for (const u of updates) {
+          if (isBlockedEvent(u.event.league, u.event.home_team, u.event.away_team)) {
+            if (cache.has(u.event.id)) cache.delete(u.event.id);
+            continue;
+          }
           const existing = cache.get(u.event.id);
           const merged: AppEvent = existing
             ? {
@@ -182,6 +231,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         for (const lr of liveRaw) {
           const id = `pulsescore_${lr.eventId}`;
           liveIds.add(id);
+          if (isBlockedEvent(lr.league, lr.home, lr.away)) {
+            cache.delete(id);
+            continue;
+          }
           const liveState = extractLiveState(lr);
           const cached = cache.get(id);
           if (cached) {
@@ -256,6 +309,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         const maxPages = highVolume ? 20 : 10;
         const raw = await fetchPulseScoreEvents(apiKey, sport, { maxPages });
         for (const r of raw) {
+          if (isBlockedEvent(r.league, r.home, r.away)) continue;
           const id = `pulsescore_${r.eventId}`;
           const wsLive = cache.get(id)?.is_live === 1 && isWsLiveSportActive(sport);
           const ev = normalizePulseScoreEvent(sport, r);
@@ -298,6 +352,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         for (const lr of liveRaw) {
           const id = `pulsescore_${lr.eventId}`;
           liveIds.add(id);
+          if (isBlockedEvent(lr.league, lr.home, lr.away)) {
+            cache.delete(id);
+            continue;
+          }
           const liveState = extractLiveState(lr);
           const cached = cache.get(id);
           if (cached) {
@@ -371,6 +429,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     for (const sport of sports) {
       const raw = await fetchPulseScoreEvent(apiKey, sport, bareId).catch(() => null);
       if (raw) {
+        if (isBlockedEvent(raw.league, raw.home, raw.away)) return null;
         const ev = normalizePulseScoreEvent(sport, raw);
         cache.set(ev.id, ev);
         return ev;
