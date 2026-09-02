@@ -551,6 +551,8 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
           const base = normalizePulseScoreEvent(st.sport, converted);
           const ev = { ...base, is_live: 1 } as AppEvent;
           const liveAny = converted as any;
+          if (Array.isArray(liveAny.events) && liveAny.events.length > 0) (ev as any).events = liveAny.events;
+          if (Array.isArray(liveAny.incidents) && liveAny.incidents.length > 0) (ev as any).incidents = liveAny.incidents;
           if (liveAny.score || liveAny.matchClock || liveAny.statistics || liveAny.moreInfo) {
             const live = converted as RawPulseScoreLiveEvent;
             if (live.score && (live.score.home !== undefined || live.score.away !== undefined)) {

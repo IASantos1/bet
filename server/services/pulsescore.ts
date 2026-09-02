@@ -442,12 +442,14 @@ function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: numbe
 
   function pickFromOutcomes(m: RawMarket): { home: number; draw: number; away: number } | null {
     const sel = m.selections;
-    const pick = (outcome: string) => Number(sel.find((s) => s.canonicalOutcome === outcome && s.isActive)?.odds || 0);
-    const home = pick('HOME');
-    const away = pick('AWAY');
-    const draw = pick('DRAW');
+    const pickCO = (outcome: string) => Number(sel.find((s) => s.canonicalOutcome === outcome && s.isActive)?.odds || 0);
+    let home = pickCO('HOME');
+    let away = pickCO('AWAY');
+    let draw = pickCO('DRAW');
+    if (home === 0) home = Number(sel.find((s) => s.isActive && (/^(w1|home|casa|1|h)$/i.test(String(s.rawName || '')) || /^(w1|home|casa|1|h)$/i.test(String(s.canonicalOutcome || ''))))?.odds || 0);
+    if (away === 0) away = Number(sel.find((s) => s.isActive && (/^(w2|away|fora|visitante|2|a)$/i.test(String(s.rawName || '')) || /^(w2|away|fora|visitante|2|a)$/i.test(String(s.canonicalOutcome || ''))))?.odds || 0);
+    if (draw === 0) draw = Number(sel.find((s) => s.isActive && (/^(x|draw|empate|d|tie|e)$/i.test(String(s.rawName || '')) || /^(x|draw|empate|d|tie|e)$/i.test(String(s.canonicalOutcome || ''))))?.odds || 0);
     if (home > 0 || away > 0 || draw > 0) return { home, draw, away };
-    // last-ditch: rawName is exactly the team name or W1/D/W2 etc.
     const homeByName = Number(sel.find((s) => s.isActive && /^(w1|home|casa|1)$/i.test(String(s.rawName || '')))?.odds || 0);
     const awayByName = Number(sel.find((s) => s.isActive && /^(w2|away|fora|visitante|2)$/i.test(String(s.rawName || '')))?.odds || 0);
     const drawByName = Number(sel.find((s) => s.isActive && /^(x|draw|empate|d)$/i.test(String(s.rawName || '')))?.odds || 0);
@@ -467,6 +469,36 @@ function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: numbe
   const anyMR = markets.find((x) => x.canonicalMarket === 'MATCH_RESULT' && x.isActive);
   if (anyMR) {
     const p = pickFromOutcomes(anyMR);
+    if (p) return p;
+  }
+
+  // step 2.5: rawName alias match (feeds that don't set canonicalMarket properly — e.g. Chile Primera División, low-liquidity leagues)
+  const aliasMR = markets.find((x) => {
+    if (!x.isActive) return false;
+    const name = String(x.rawName || '').toLowerCase();
+    return /(^|[^a-z])(1x2|h2h|match.?winner|full.?time.?result|resultado.?final|vencedor)([^a-z]|$)/i.test(name) || /^\s*1\s*[,:x]\s*2\s*/.test(name);
+  });
+  if (aliasMR) {
+    const p = pickFromOutcomes(aliasMR);
+    if (p) return p;
+  }
+
+  // step 2.6: ANY market with at least 2 selections whose labels CLEARLY indicate {home,away} — final defensive fallback for unrecognised feed aliases
+  const anyLooksLike1X2 = markets.find((m) => {
+    if (!m.isActive) return false;
+    const s = (m.selections || []).filter((x) => x.isActive);
+    if (s.length < 2 || s.length > 3) return false;
+    let hasH = false, hasA = false, hasD = false;
+    for (const sel of s) {
+      const n = String(sel.rawName || sel.canonicalOutcome || '').toLowerCase();
+      if (/w1|^home$|^casa$|^1$/.test(n)) hasH = true;
+      else if (/w2|^away$|^fora$|^visitante$|^2$/.test(n)) hasA = true;
+      else if (/^x$|^draw$|^empate$|^d$|^tie$/.test(n)) hasD = true;
+    }
+    return (hasH && hasA) && (s.length === 2 || hasD);
+  });
+  if (anyLooksLike1X2) {
+    const p = pickFromOutcomes(anyLooksLike1X2);
     if (p) return p;
   }
 
@@ -509,6 +541,8 @@ export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent)
   if (rawAny.score) (base as any).score = rawAny.score;
   if (rawAny.statistics) (base as any).statistics = rawAny.statistics;
   if (rawAny.moreInfo) (base as any).moreInfo = rawAny.moreInfo;
+  if (Array.isArray(rawAny.events) && rawAny.events.length > 0) (base as any).events = rawAny.events;
+  if (Array.isArray(rawAny.incidents) && rawAny.incidents.length > 0) (base as any).incidents = rawAny.incidents;
   return base;
 }
 

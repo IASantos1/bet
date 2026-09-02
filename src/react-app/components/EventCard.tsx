@@ -843,10 +843,15 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
     if (!isLiveEvent) return false;
     const h2hCount = (hh > 0 ? 1 : 0) + (dd > 0 ? 1 : 0) + (aa > 0 ? 1 : 0);
     const isTwoWaySport = ['basketball', 'tennis', 'american-football', 'baseball', 'mma', 'volleyball', 'handball', 'ice-hockey', 'hockey', 'cricket'].includes(sport);
+    if (h2hCount === 0) return true;
     if (hh > 0 && hh <= 1.03) return true;
     if (dd > 0 && dd <= 1.03) return true;
     if (aa > 0 && aa <= 1.03) return true;
-    if (!isTwoWaySport && h2hCount > 0 && h2hCount < 3) return true;
+    if (isTwoWaySport) {
+      if (h2hCount < 2) return true;
+    } else {
+      if (h2hCount < 3) return true;
+    }
     return false;
   }, [isLiveEvent, hh, dd, aa, sport]);
 

@@ -126,7 +126,7 @@ type PrematchEventRuntime = {
   lastRefreshedAt: number;
   refreshEveryMs: number;
 };
-const MID_LIVE_SPORTS: readonly AppEvent['sport'][] = ['volleyball', 'rugby', 'mma', 'handball'] as const;
+const MID_LIVE_SPORTS: readonly AppEvent['sport'][] = ['tennis', 'volleyball', 'rugby', 'mma', 'handball'] as const;
 
 type TradingStatus = 'pending' | 'approved' | 'suspended';
 type ManualOdds = { home?: number; draw?: number; away?: number };
@@ -213,6 +213,8 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     if (lrAny.matchClock) merged.matchClock = lrAny.matchClock;
     if (lrAny.statistics) merged.statistics = lrAny.statistics;
     if (lrAny.moreInfo) merged.moreInfo = lrAny.moreInfo;
+    if (Array.isArray(lrAny.events) && lrAny.events.length > 0) merged.events = lrAny.events;
+    if (Array.isArray(lrAny.incidents) && lrAny.incidents.length > 0) merged.incidents = lrAny.incidents;
     if (lrAny.score && typeof lrAny.score === 'object') {
       const prevScore = merged.score && typeof merged.score === 'object' ? (merged.score as any) : null;
       const newScore: any = { ...lrAny.score };

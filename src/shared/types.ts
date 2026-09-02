@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface Env {
   ADMIN_TOKEN?: string;
   BOOTSTRAP_TOKEN?: string;
