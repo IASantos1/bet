@@ -172,46 +172,11 @@ export type EventsService = {
 // Match statistics/incidents and the World Cup 2026 special endpoints aren't ported to GoalServe
 // yet and always use SportsAPI Pro regardless of this switch.
 const USE_GOALSERVE = String(process.env.SPORTS_DATA_PROVIDER || '').toLowerCase().trim() === 'goalserve';
-const SPORTS_API_PRO_FALLBACK_KEY = String(
-  process.env.SPORTS_API_PRO_KEY ||
-  process.env.SPORTSAPIPRO_KEY ||
-  process.env.SPORTSAPI_PRO_KEY ||
-  process.env.SPORTS_API_KEY ||
-  '',
-).trim();
 const providerFetchLive = USE_GOALSERVE ? fetchGoalServeLive : fetchSportsApiProLive;
 const providerFetchSchedule = USE_GOALSERVE ? fetchGoalServeSchedule : fetchSportsApiProSchedule;
 const providerFetchOddsAll = USE_GOALSERVE ? fetchGoalServeMatchOddsAll : fetchSportsApiProMatchOddsAll;
 const providerFetchOddsLive = USE_GOALSERVE ? fetchGoalServeMatchOddsLive : fetchSportsApiProMatchOddsLive;
 const providerFetchOddsPreMatch = USE_GOALSERVE ? fetchGoalServeMatchOddsPreMatch : fetchSportsApiProMatchOddsPreMatch;
-
-function normalizePartyName(raw: string): string {
-  return String(raw || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function sameMatchByTeams(a: { homeTeam?: string; awayTeam?: string }, b: { homeTeam?: string; awayTeam?: string }): boolean {
-  const ah = normalizePartyName(String(a.homeTeam || ''));
-  const aa = normalizePartyName(String(a.awayTeam || ''));
-  const bh = normalizePartyName(String(b.homeTeam || ''));
-  const ba = normalizePartyName(String(b.awayTeam || ''));
-  return !!ah && !!aa && ah === bh && aa === ba;
-}
-
-function hasUsableOdds(odds: any): boolean {
-  if (!odds || typeof odds !== 'object') return false;
-  const home = Number((odds as any)?.home || 0);
-  const draw = Number((odds as any)?.draw || 0);
-  const away = Number((odds as any)?.away || 0);
-  if (home > 1 && away > 1) return true;
-  if (draw > 1 && (home > 1 || away > 1)) return true;
-  const markets = (odds as any)?.markets;
-  return !!markets && typeof markets === 'object' && Object.keys(markets).length > 0;
-}
 
 // GoalServe's separate Inplay product (server/services/goalserve.ts's fetchInplayEvents) refreshes
 // every second and bundles odds directly on each event — a lot fresher than the getfeed/*
@@ -227,13 +192,7 @@ async function fetchLiveFromProvider(apiKey: string, sport: string): Promise<Any
       return inplay.map((e) => ({ ...e, _inplayLive: true }));
     }
   }
-  const primary = await providerFetchLive(apiKey, sport).catch(() => []);
-  if (Array.isArray(primary) && primary.length > 0) return primary;
-  if (USE_GOALSERVE && SPORTS_API_PRO_FALLBACK_KEY) {
-    const fallback = await fetchSportsApiProLive(SPORTS_API_PRO_FALLBACK_KEY, sport).catch(() => []);
-    if (Array.isArray(fallback) && fallback.length > 0) return fallback;
-  }
-  return primary;
+  return providerFetchLive(apiKey, sport);
 }
 
 export function createEventsService(pool: pg.Pool | null, apiKey: string): EventsService {
@@ -427,16 +386,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const cached = scheduleCache.get(key);
     if (cached && ttlOk(cached.ts, 20 * 60_000)) return cached.data;
     if (cached && ttlOk(cached.ts, 3 * 60 * 60 * 1000)) {
-      const fetchPrimary = async () => {
-        const primary = await providerFetchSchedule(apiKey, sport, date).catch(() => []);
-        if (Array.isArray(primary) && primary.length > 0) return primary;
-        if (USE_GOALSERVE && SPORTS_API_PRO_FALLBACK_KEY) {
-          const fallback = await fetchSportsApiProSchedule(SPORTS_API_PRO_FALLBACK_KEY, sport, date).catch(() => []);
-          if (Array.isArray(fallback) && fallback.length > 0) return fallback;
-        }
-        return primary;
-      };
-      fetchPrimary()
+      providerFetchSchedule(apiKey, sport, date)
         .then((list) => {
           const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
             const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
@@ -450,13 +400,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         .catch(() => void 0);
       return cached.data;
     }
-    const primary = await providerFetchSchedule(apiKey, sport, date).catch(() => []);
-    const list =
-      Array.isArray(primary) && primary.length > 0
-        ? primary
-        : USE_GOALSERVE && SPORTS_API_PRO_FALLBACK_KEY
-          ? await fetchSportsApiProSchedule(SPORTS_API_PRO_FALLBACK_KEY, sport, date).catch(() => primary)
-          : primary;
+    const list = await providerFetchSchedule(apiKey, sport, date).catch(() => []);
     const normalized = (Array.isArray(list) ? list : []).map((e: any) => {
       const id = String((e as any).id || '').trim() || String((e as any).external_event_id || '').split('_').pop() || '';
       const out = { ...e, id, sport };
@@ -465,60 +409,6 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       return out;
     });
     return keepStaleOnEmptyFetch(scheduleCache, key, cached, normalized, 24 * 60 * 60_000);
-  };
-
-  const resolveSportsApiProEventId = async (
-    sport: string,
-    ctx: { isLive?: boolean; homeTeam?: string; awayTeam?: string; eventDate?: string },
-  ): Promise<string | null> => {
-    if (!SPORTS_API_PRO_FALLBACK_KEY) return null;
-    const homeTeam = String(ctx.homeTeam || '').trim();
-    const awayTeam = String(ctx.awayTeam || '').trim();
-    if (!homeTeam || !awayTeam) return null;
-
-    const pickId = (list: AnyEvent[]): string | null => {
-      const matches = list.filter((e: any) =>
-        sameMatchByTeams(
-          { homeTeam, awayTeam },
-          { homeTeam: String(e?.home_team || ''), awayTeam: String(e?.away_team || '') },
-        ),
-      );
-      if (matches.length !== 1) return null;
-      return normalizeMatchId(sport, String((matches[0] as any)?.id || (matches[0] as any)?.external_event_id || ''));
-    };
-
-    if (ctx.isLive) {
-      const live = await fetchSportsApiProLive(SPORTS_API_PRO_FALLBACK_KEY, sport).catch(() => []);
-      const liveId = pickId(Array.isArray(live) ? live : []);
-      if (liveId) return liveId;
-    }
-
-    const dates = new Set<string>();
-    const rawDate = String(ctx.eventDate || '').trim();
-    if (rawDate) {
-      const dt = new Date(rawDate);
-      if (Number.isFinite(dt.getTime())) {
-        for (const delta of [-1, 0, 1, 2]) {
-          const d = new Date(dt);
-          d.setUTCDate(d.getUTCDate() + delta);
-          dates.add(ymd(d));
-        }
-      }
-    }
-    if (dates.size === 0) {
-      for (let delta = 0; delta < 3; delta++) {
-        const d = new Date();
-        d.setUTCDate(d.getUTCDate() + delta);
-        dates.add(ymd(d));
-      }
-    }
-
-    for (const date of dates) {
-      const sched = await fetchSportsApiProSchedule(SPORTS_API_PRO_FALLBACK_KEY, sport, date).catch(() => []);
-      const foundId = pickId(Array.isArray(sched) ? sched : []);
-      if (foundId) return foundId;
-    }
-    return null;
   };
 
   const fetchWorldCupMeta = async (kind: 'tournament' | 'info' | 'groups'): Promise<any | null> => {
@@ -609,7 +499,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const fetchOddsStrict = async (
     sport: string,
     matchId: string,
-    ctx: { isLive?: boolean; homeTeam?: string; awayTeam?: string; eventDate?: string; forceAll?: boolean } = {},
+    ctx: { isLive?: boolean; homeTeam?: string; awayTeam?: string; forceAll?: boolean } = {},
   ): Promise<any | null> => {
     const normalizedId = normalizeMatchId(sport, matchId);
     const key = `${sport}:${normalizedId}`;
@@ -625,18 +515,6 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       let merged: any | null;
       if (USE_GOALSERVE) {
         merged = await providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null);
-        if (!hasUsableOdds(merged) && SPORTS_API_PRO_FALLBACK_KEY) {
-          const sportsApiProId = await resolveSportsApiProEventId(sport, ctx).catch(() => null);
-          if (sportsApiProId) {
-            const [allResult, liveResult, preResult] = await Promise.all([
-              fetchSportsApiProMatchOddsAll(SPORTS_API_PRO_FALLBACK_KEY, sport, sportsApiProId, opts).catch(() => null),
-              fetchSportsApiProMatchOddsLive(SPORTS_API_PRO_FALLBACK_KEY, sport, sportsApiProId, opts).catch(() => null),
-              fetchSportsApiProMatchOddsPreMatch(SPORTS_API_PRO_FALLBACK_KEY, sport, sportsApiProId, opts).catch(() => null),
-            ]);
-            const fallbackMerged = mergeOddsResults([liveResult, allResult, preResult].filter(Boolean));
-            if (hasUsableOdds(fallbackMerged)) merged = fallbackMerged;
-          }
-        }
       } else {
         const [allResult, liveResult, preResult] = await Promise.all([
           providerFetchOddsAll(apiKey, sport, normalizedId, opts).catch(() => null),
@@ -672,7 +550,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
   const fetchOddsBestEffort = async (
     sport: string,
     matchId: string,
-    ctx: { isLive?: boolean; homeTeam?: string; awayTeam?: string; eventDate?: string; forceAll?: boolean },
+    ctx: { isLive?: boolean; homeTeam?: string; awayTeam?: string; forceAll?: boolean },
     refreshBudget: { remaining: number } | null,
   ): Promise<any | null> => {
     const key = `${sport}:${matchId}`;
@@ -729,7 +607,6 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
             isLive: Number(e?.is_live || 0) === 1,
             homeTeam: String(e?.home_team || ''),
             awayTeam: String(e?.away_team || ''),
-            eventDate: String((e as any)?.event_date || (e as any)?.fixture?.date || ''),
           },
           refreshBudget,
         ).catch(() => null);
