@@ -923,17 +923,23 @@ type OddsLookupEntry = {
 type OddsPayloadIndexes = {
   byId: Map<string, OddsLookupEntry>;
   byTeams: Map<string, OddsLookupEntry[]>;
+  rawMatches: number;
+  parsedMatches: number;
 };
 
 function indexOddsPayload(payload: any, sport: string): OddsPayloadIndexes {
   const byId = new Map<string, OddsLookupEntry>();
   const byTeams = new Map<string, OddsLookupEntry[]>();
+  let rawMatches = 0;
+  let parsedMatches = 0;
   for (const cat of extractCategories(payload)) {
     for (const group of extractMatchGroups(cat)) {
       for (const match of group.matches) {
+        rawMatches += 1;
         const id = str(match?.id ?? match?.['@id']);
         const odds = parseOddsMatch(match);
         if (!odds) continue;
+        parsedMatches += 1;
         const { home, away } = extractTeams(match, sport);
         const homeName = teamName(home);
         const awayName = teamName(away);
@@ -948,13 +954,14 @@ function indexOddsPayload(payload: any, sport: string): OddsPayloadIndexes {
       }
     }
   }
-  return { byId, byTeams };
+  return { byId, byTeams, rawMatches, parsedMatches };
 }
 
 type OddsPayloadEntry = { ts: number; payload: any; index: OddsPayloadIndexes };
+type OddsPayloadFailure = { count: number; blockedUntil: number; lastAt: number };
 const oddsPayloadCache = new Map<string, OddsPayloadEntry>();
 const oddsPayloadInflight = new Map<string, Promise<OddsPayloadEntry | null>>();
-const oddsPayloadFailures = new Map<string, { count: number; blockedUntil: number; lastAt: number }>();
+const oddsPayloadFailures = new Map<string, OddsPayloadFailure>();
 const ODDS_BREAKER_BASE_MS = 2 * 60 * 1000;
 const ODDS_BREAKER_MAX_MS = 15 * 60 * 1000;
 
@@ -1009,9 +1016,42 @@ async function fetchOddsPayload(apiKey: string, sport: string): Promise<any | nu
  *  /api/dev/provider-debug), since a real, high-profile match (e.g. a Rio derby) coming back with
  *  no odds is far more likely to be an id mismatch between the two GoalServe feeds than that match
  *  genuinely being unpriced by every bookmaker GoalServe aggregates. */
-export async function fetchOddsPayloadSample(apiKey: string, sport: string): Promise<{ totalMatches: number; sample: Array<{ id: string; home: string; away: string }> } | null> {
-  const payload = await fetchOddsPayload(apiKey, sport);
-  if (!payload) return null;
+export async function fetchOddsPayloadSample(
+  apiKey: string,
+  sport: string,
+): Promise<{
+  cat: string;
+  hasCache: boolean;
+  cacheAgeMs: number | null;
+  breaker: { count: number; blockedUntil: number; blockedForMs: number };
+  totalMatches: number;
+  indexedMatches: number;
+  byId: number;
+  byTeams: number;
+  sample: Array<{ id: string; home: string; away: string }>;
+} | null> {
+  if (!apiKeyOk(apiKey)) return null;
+  const cat = oddsCat(sport);
+  const entry = await fetchOddsPayloadEntry(apiKey, sport);
+  const failure = oddsPayloadFailures.get(cat);
+  if (!entry) {
+    return {
+      cat,
+      hasCache: false,
+      cacheAgeMs: null,
+      breaker: {
+        count: failure?.count || 0,
+        blockedUntil: failure?.blockedUntil || 0,
+        blockedForMs: Math.max(0, (failure?.blockedUntil || 0) - Date.now()),
+      },
+      totalMatches: 0,
+      indexedMatches: 0,
+      byId: 0,
+      byTeams: 0,
+      sample: [],
+    };
+  }
+  const payload = entry.payload;
   const categories = extractCategories(payload);
   const sample: Array<{ id: string; home: string; away: string }> = [];
   let totalMatches = 0;
@@ -1026,7 +1066,21 @@ export async function fetchOddsPayloadSample(apiKey: string, sport: string): Pro
       }
     }
   }
-  return { totalMatches, sample };
+  return {
+    cat,
+    hasCache: true,
+    cacheAgeMs: Math.max(0, Date.now() - entry.ts),
+    breaker: {
+      count: failure?.count || 0,
+      blockedUntil: failure?.blockedUntil || 0,
+      blockedForMs: Math.max(0, (failure?.blockedUntil || 0) - Date.now()),
+    },
+    totalMatches,
+    indexedMatches: entry.index.parsedMatches,
+    byId: entry.index.byId.size,
+    byTeams: entry.index.byTeams.size,
+    sample,
+  };
 }
 
 /** GoalServe doesn't split "all / live / pre-match" odds into separate endpoints the way

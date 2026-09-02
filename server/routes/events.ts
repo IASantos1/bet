@@ -720,7 +720,13 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     // can show exactly which stage (raw fetch -> pregame-candidate filter -> league-allowlist
     // filter -> day-spread limit) events are lost at, instead of only the final count. No real
     // caller passes this, so this is a strictly additive no-op on the actual traffic path.
-    debugCounters?: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number },
+    debugCounters?: {
+      rawFetched?: number;
+      afterCandidate?: number;
+      afterBlocked?: number;
+      afterSpread?: number;
+      candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+    },
   ): Promise<{ live: AnyEvent[]; pregame: AnyEvent[] }> => {
     startOddsQueue();
     const sports = getSports(sportsParam);
@@ -731,13 +737,6 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     const includePregame = only === 'both' || only === 'pregame';
     const days = Math.max(0, Math.min(14, Number.isFinite(daysAhead) ? daysAhead : 0));
     const now = nowMs();
-    const toStartMs = (e: any) => {
-      const raw = (e as any)?.event_date ?? (e as any)?.fixture?.date ?? (e as any)?.start_time ?? (e as any)?.startTimestamp;
-      if (!raw) return 0;
-      if (typeof raw === 'number') return raw > 10_000_000_000 ? raw : raw * 1000;
-      const t = new Date(String(raw)).getTime();
-      return Number.isFinite(t) ? t : 0;
-    };
 
     if (includeLive && sports.length > 0) {
       const lists = await mapLimit(sports, 5, (s) => fetchLive(s).catch(() => []));
@@ -747,6 +746,19 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     }
 
     if (includePregame && sports.length > 0) {
+      const startMeta = (e: any): { ms: number; hasExplicitTime: boolean } => {
+        const raw = (e as any)?.event_date ?? (e as any)?.fixture?.date ?? (e as any)?.start_time ?? (e as any)?.startTimestamp;
+        if (!raw) return { ms: 0, hasExplicitTime: false };
+        if (typeof raw === 'number') {
+          return { ms: raw > 10_000_000_000 ? raw : raw * 1000, hasExplicitTime: true };
+        }
+        const s = String(raw).trim();
+        const ms = new Date(s).getTime();
+        return {
+          ms: Number.isFinite(ms) ? ms : 0,
+          hasExplicitTime: /T\d{2}:\d{2}/.test(s) || /\b\d{1,2}:\d{2}(:\d{2})?\b/.test(s),
+        };
+      };
       const isNotStartedLike = (e: any) => {
         const status = (e as any)?.status ?? (e as any)?.fixture?.status ?? '';
         const raw =
@@ -760,13 +772,29 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         if (/NOT_STARTED|SCHEDUL|UPCOMING|TIMED|PRE_MATCH/.test(s)) return true;
         return false;
       };
+      const noteCandidateReject = (reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus') => {
+        if (!debugCounters) return;
+        debugCounters.candidateRejected ||= {};
+        debugCounters.candidateRejected[reason] = (debugCounters.candidateRejected[reason] || 0) + 1;
+      };
       const isPregameCandidate = (e: any) => {
-        if (Number((e as any)?.is_live || 0) !== 0) return false;
-        if (isFinishedLike(e)) return false;
-        const t = toStartMs(e);
-        if (t && t < now - 2 * 60 * 1000) return false;
+        if (Number((e as any)?.is_live || 0) !== 0) {
+          noteCandidateReject('live');
+          return false;
+        }
+        if (isFinishedLike(e)) {
+          noteCandidateReject('finished');
+          return false;
+        }
+        const { ms: t, hasExplicitTime } = startMeta(e);
+        if (t && hasExplicitTime && t < now - 2 * 60 * 1000) {
+          noteCandidateReject('staleStarted');
+          return false;
+        }
         if (t && t >= now) return true;
-        return isNotStartedLike(e);
+        if (isNotStartedLike(e)) return true;
+        noteCandidateReject('unknownStatus');
+        return false;
       };
       const tasks: Array<{ sport: string; date: string }> = [];
       for (const s of sports) {
@@ -1368,10 +1396,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       if (sport === 'all') {
         const results = await Promise.all(
           SPORTS_SEARCHABLE.map(async (s) => {
-            const counters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
+            const counters: {
+              rawFetched?: number;
+              afterCandidate?: number;
+              afterBlocked?: number;
+              afterSpread?: number;
+              candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+            } = {};
             const built = await buildBySport(s, false, null, false, false, 'pregame', 7, false, false, counters).catch(() => null);
             const pregameCount = built ? built.pregame.length : 0;
             const sample = built && built.pregame.length > 0 ? built.pregame[0] : null;
+            const oddsPayloadSample = USE_GOALSERVE ? await fetchOddsPayloadSample(apiKey, s).catch((e: any) => ({ error: String(e?.message || e) })) : null;
             const odds = sample
               ? await providerFetchOddsAll(apiKey, s, String((sample as any)?.id || (sample as any)?.external_event_id || ''), {
                   homeTeam: String((sample as any)?.home_team || ''),
@@ -1400,6 +1435,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               pregameCount,
               stages: counters,
               oddsTestedMatch: sample ? `${(sample as any)?.league}: ${(sample as any)?.home_team} vs ${(sample as any)?.away_team}` : null,
+              oddsPayloadSample,
               oddsTest: odds,
               goalserveLookup,
             };
@@ -1435,7 +1471,13 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       // enrichment (includeOdds:false) — gets the real, already league-allowlist-filtered matches
       // that actually reach users, without the enrichment step's own side effects (queueing,
       // cache writes) muddying the odds test below.
-      const pipelineCounters: { rawFetched?: number; afterCandidate?: number; afterBlocked?: number; afterSpread?: number } = {};
+      const pipelineCounters: {
+        rawFetched?: number;
+        afterCandidate?: number;
+        afterBlocked?: number;
+        afterSpread?: number;
+        candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+      } = {};
       const pipelineRaw = await buildBySport(sport, false, null, false, false, 'pregame', 7, false, false, pipelineCounters).catch(() => null);
       const pipelineResult = pipelineRaw
         ? { ok: true as const, finalCount: pipelineRaw.pregame.length, stages: pipelineCounters }
