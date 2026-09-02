@@ -284,7 +284,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   let liveTransitionTimer: NodeJS.Timeout | null = null;
   let lastLiveTransitionAt = 0;
   let lastLiveTransitionError: string | null = null;
-  let lastLiveTransitionStats: { prematchToLive: number; liveIds: number; scanned: number } | null = null;
+  let lastLiveTransitionStats: { prematchToLive: number; prematchToLiveByKickoff: number; liveIds: number; scanned: number; kickoffScanned: number } | null = null;
 
   let resultsGuardInFlight: Promise<void> | null = null;
   let resultsGuardTimer: NodeJS.Timeout | null = null;
@@ -790,8 +790,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   async function liveTransitionOnce(): Promise<void> {
     const now = Date.now();
     let prematchToLive = 0;
+    let prematchToLiveByKickoff = 0;
     let liveIdsCount = 0;
     let scanned = 0;
+    let kickoffScanned = 0;
     try {
       const liveAllIds = new Set<string>();
       const liveRawMap = new Map<string, RawPulseScoreLiveEvent>();
@@ -823,12 +825,39 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
           recordH2HOdds(merged as AppEvent, now);
         }
       }
+      // II — Kickoff-based fallback for T4/T5 leagues that the provider does NOT
+      // list in /live-events (confirmed: Nicaragua, Honduras, El Salvador, some
+      // LatAm lower leagues, women lower tiers never appear in /live-events even
+      // 1h+ after kickoff). If kickoff already passed ≥ 30s and the match is still
+      // marked is_live=0 in cache with no finalized score → force is_live=1.
+      const MAX_AGE_TO_LIVE_MS = 12 * 60 * 60 * 1_000; // 12h — prevents marking yesterday's games live
+      const KICKOFF_GRACE_MS = 30_000;                  // 30s after listed kickoff before promotion
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1) continue;
+        if (!ev.event_date || !(ev.event_date instanceof Date) || !Number.isFinite(ev.event_date.getTime())) continue;
+        const kickoffMs = ev.event_date.getTime();
+        const elapsedSinceKickoff = now - kickoffMs;
+        if (elapsedSinceKickoff < KICKOFF_GRACE_MS) continue;
+        if (elapsedSinceKickoff > MAX_AGE_TO_LIVE_MS) continue;
+        const hasFinalScore =
+          ev.score &&
+          typeof ev.score.home === 'number' &&
+          typeof ev.score.away === 'number' &&
+          Number.isFinite(ev.score.home) &&
+          Number.isFinite(ev.score.away) &&
+          (ev.score.home > 0 || ev.score.away > 0 || elapsedSinceKickoff > 2 * 60 * 60_000);
+        if (hasFinalScore && elapsedSinceKickoff > 2 * 60 * 60_000) continue;
+        kickoffScanned += 1;
+        cache.set(ev.id, { ...ev, is_live: 1 });
+        prematchToLiveByKickoff += 1;
+        recordH2HOdds(ev, now);
+      }
       lastLiveTransitionError = null;
     } catch (e: any) {
       lastLiveTransitionError = String(e?.message || e);
     } finally {
       lastLiveTransitionAt = now;
-      lastLiveTransitionStats = { prematchToLive, liveIds: liveIdsCount, scanned };
+      lastLiveTransitionStats = { prematchToLive, prematchToLiveByKickoff, liveIds: liveIdsCount, scanned, kickoffScanned };
     }
   }
 
