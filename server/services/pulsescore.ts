@@ -111,7 +111,41 @@ function apiKeyOk(apiKey: string): boolean {
   return typeof apiKey === 'string' && apiKey.trim().length > 0;
 }
 
-async function fetchJson(url: string, apiKey: string, timeoutMs = 12000): Promise<any | null> {
+// ---- Rate limiting (CONFIRMED via a real production error: "Too many requests. Your MAX plan
+// allows 3 request(s) per second per bookmaker.") ----
+// refreshOnce() in routes/events.ts fires many sequential requests per cycle (9 sports x up to
+// several /events pages, x2 once the /live-events pass was added) with zero delay between them —
+// each request typically completes in well under 333ms, so without pacing this easily bursts past
+// 3/sec, which is exactly what produced real 429s in production. requestGate() serializes every
+// request issued through fetchJson (regardless of caller — refreshOnce()'s sequential per-sport
+// loops, and any concurrent single-event resolveEvent() fallback) and enforces a minimum gap
+// between dispatch times, shared globally across this whole module.
+// Caveat this can't cover: if the server runs multiple replicas of this process against the same
+// API key, each replica paces itself independently, so the combined rate across replicas could
+// still exceed 3/sec — this only guarantees pacing within one process.
+const MIN_REQUEST_INTERVAL_MS = 350; // > 1000/3 ≈ 333ms, with a small safety margin
+let lastDispatchAt = 0;
+let requestGateChain: Promise<void> = Promise.resolve();
+
+function requestGate(): Promise<void> {
+  const gated = requestGateChain.then(async () => {
+    const wait = Math.max(0, lastDispatchAt + MIN_REQUEST_INTERVAL_MS - Date.now());
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastDispatchAt = Date.now();
+  });
+  requestGateChain = gated;
+  return gated;
+}
+
+/** A 401 ("User is not authorized") is a credentials problem — retrying with the same bad
+ *  PULSESCORE_API_KEY value would never help, so it's surfaced immediately via console.error like
+ *  any other non-2xx status, same as before. A 429 is different: it's this client hitting
+ *  PulseScore's own confirmed rate limit, which requestGate() above already paces against but can
+ *  still transiently hit (e.g. right after a redeploy resets `lastDispatchAt`) — retried up to twice
+ *  with backoff (honoring a `Retry-After` header when present) rather than silently dropping that
+ *  page's events for the rest of the current refresh cycle. */
+async function fetchJson(url: string, apiKey: string, timeoutMs = 12000, retriesLeft = 2): Promise<any | null> {
+  await requestGate();
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
@@ -119,6 +153,15 @@ async function fetchJson(url: string, apiKey: string, timeoutMs = 12000): Promis
       headers: { accept: '*/*', 'x-secret': apiKey, 'accept-encoding': 'gzip' },
       signal: controller.signal,
     });
+    if (res.status === 429 && retriesLeft > 0) {
+      const retryAfterHeader = typeof (res as any)?.headers?.get === 'function' ? (res as any).headers.get('retry-after') : null;
+      const retryAfterSec = Number(retryAfterHeader);
+      const backoffMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 500;
+      console.error('[pulsescore] 429 rate limited, retrying in', backoffMs, 'ms:', url);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      clearTimeout(t);
+      return fetchJson(url, apiKey, timeoutMs, retriesLeft - 1);
+    }
     const text = await res.text().catch(() => '');
     if (!res.ok) {
       console.error('[pulsescore] HTTP', res.status, url, text.slice(0, 300));
