@@ -3,24 +3,33 @@
  * GoalServe/sportsApiPro/API-Football/StatPal were all removed from this backend (see git history
  * around the "Remove dead parallel frontend..." / events.ts stub commits).
  *
- * Built against real sample responses pulled directly by the user (not guessed) for FOUR confirmed
- * sports so far — soccer, tennis, volleyball, rugby (rugby union) — each with a /leagues page and
- * an /events page. Three CONFIRMED endpoint shapes:
+ * Built against real sample responses pulled directly by the user (not guessed) for FIVE confirmed
+ * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma — each with a /leagues page
+ * and an /events page. Three CONFIRMED endpoint shapes:
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/leagues?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events/{eventId}   -> { data: <event> }
  *   headers: accept: * / *, x-secret: <key>, Accept-Encoding: gzip
  *
- * Only soccer/tennis/volleyball/rugby are confirmed working — `sport` is a path segment so other
- * sports may follow the same shape, but that's unverified; sportSegment() below only maps sports
- * actually seen in a real response. The single-event endpoint has actually been pulled for tennis
- * and volleyball (2 of the 3 non-soccer sports); using it for soccer/rugby too is a
+ * Only soccer/tennis/volleyball/rugby/mma are confirmed working — `sport` is a path segment so
+ * other sports may follow the same shape, but that's unverified; sportSegment() below only maps
+ * sports actually seen in a real response. The single-event endpoint has actually been pulled for
+ * tennis, volleyball and mma (3 of the 4 non-soccer sports); using it for soccer/rugby too is a
  * pattern-consistency call (the /leagues and /events collection endpoints are already confirmed
- * byte-for-byte identical in shape across all four sports), not a blind guess of an unseen URL.
+ * byte-for-byte identical in shape across all five sports), not a blind guess of an unseen URL.
  * Note: a rugby event's own `sport` field comes back as "rugby_union" (underscore) even though the
  * URL path segment is "rugby-union" (hyphen) — normalizePulseScoreEvent() always stamps the AppEvent
  * with the canonical sport string THIS module was called with, never PulseScore's raw `sport`
  * field, so that mismatch never leaks out.
+ *
+ * MMA/combat-sports quirk (CONFIRMED across real samples): plain "mma"-league fights (e.g. Muay
+ * Thai) carry NO MATCH_RESULT market at all — only a 2-way "Win (2Way)" market (canonicalMarket
+ * OTHER, rawName "Win (2Way)", selections literally named W1/W2, no draw offered), while
+ * "Combatsport."-league fights (ONE Championship, Brave CF, CFFC, ...) carry both MATCH_RESULT
+ * (3-way, DRAW included as a real-but-longshot outcome) and the same Win (2Way) market side by
+ * side. extractH2H() below falls back to Win (2Way) when there's no MATCH_RESULT, otherwise a
+ * Muay-Thai-style fight would report home_odd/draw_odd/away_odd all 0 and get filtered out of
+ * every event list on the frontend despite having real, biddable odds.
  *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
@@ -29,16 +38,17 @@
 
 const PULSESCORE_BASE_URL = 'https://api.pulsescore.net';
 
-// CONFIRMED for soccer, tennis, volleyball and rugby (real sample responses pulled for all four).
-// Add an entry here only once a real response for that sport has actually been pulled — never
-// guess. Note the rugby URL segment is "rugby-union" (hyphen) even though PulseScore's own event
-// payloads report sport "rugby_union" (underscore) — see module docstring.
+// CONFIRMED for soccer, tennis, volleyball, rugby and mma (real sample responses pulled for all
+// five). Add an entry here only once a real response for that sport has actually been pulled —
+// never guess. Note the rugby URL segment is "rugby-union" (hyphen) even though PulseScore's own
+// event payloads report sport "rugby_union" (underscore) — see module docstring.
 function sportSegment(sport: string): string | null {
   const s = String(sport || '').toLowerCase().trim();
   if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
   if (s === 'tennis' || s === 'tenis' || s === 'ténis') return 'tennis';
   if (s === 'volleyball' || s === 'voleibol') return 'volleyball';
   if (s === 'rugby' || s === 'rugby-union' || s === 'rugby_union' || s === 'rúgbi') return 'rugby-union';
+  if (s === 'mma' || s === 'ufc' || s === 'mixed martial arts' || s === 'luta') return 'mma';
   return null;
 }
 
@@ -265,11 +275,20 @@ function mapMarkets(raw: RawMarket[]): AppMarket[] {
 }
 
 /** h2h (1X2) odds, read straight off the FULL_TIME MATCH_RESULT market — the same market every
- *  other consumer in this app expects as home_odd/draw_odd/away_odd. */
+ *  other consumer in this app expects as home_odd/draw_odd/away_odd. Falls back to the "Win
+ *  (2Way)" market (CONFIRMED: plain "mma"-league Muay Thai fights carry no MATCH_RESULT at all,
+ *  only this) so such an event doesn't report all-zero odds and get filtered out everywhere on the
+ *  frontend despite having real, biddable odds — see module docstring. */
 function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: number } {
   const m = (raw || []).find((x) => x.canonicalMarket === 'MATCH_RESULT' && x.period === 'FULL_TIME' && x.isActive);
   const pick = (outcome: string) => Number(m?.selections.find((s) => s.canonicalOutcome === outcome && s.isActive)?.odds || 0);
-  return { home: pick('HOME'), draw: pick('DRAW'), away: pick('AWAY') };
+  const home = pick('HOME');
+  const away = pick('AWAY');
+  if (home > 0 || away > 0) return { home, draw: pick('DRAW'), away };
+
+  const win2way = (raw || []).find((x) => x.period === 'FULL_TIME' && x.isActive && /win.*2.?way/i.test(String(x.rawName || '')));
+  const pickByName = (name: string) => Number(win2way?.selections.find((s) => s.isActive && String(s.rawName || '').toUpperCase() === name)?.odds || 0);
+  return { home: pickByName('W1'), draw: 0, away: pickByName('W2') };
 }
 
 export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent): AppEvent {
@@ -357,4 +376,4 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
   return data && typeof data === 'object' ? (data as RawPulseScoreEvent) : null;
 }
 
-export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby'] as const;
+export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma'] as const;

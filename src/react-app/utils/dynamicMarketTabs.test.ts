@@ -3,10 +3,12 @@ import {
   classifyTennisMarket,
   classifyVolleyballMarket,
   classifyRugbyMarket,
+  classifyMmaMarket,
   buildDynamicMarketTabs,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
+  MMA_BUCKET_ORDER,
 } from './dynamicMarketTabs';
 
 // Key lists below mirror what server/services/pulsescore.ts actually produces (confirmed against
@@ -119,5 +121,33 @@ describe('classifyRugbyMarket', () => {
     expect(tabs.some((t) => t.title === '1º Tempo')).toBe(true);
     expect(tabs.some((t) => t.title === '2º Tempo')).toBe(true);
     expect(tabs.some((t) => t.title === 'HT/FT')).toBe(true);
+  });
+});
+
+describe('classifyMmaMarket', () => {
+  it('buckets both h2h and the "win_2way" fallback market (Muay Thai fights with no MATCH_RESULT) under Vencedor', () => {
+    // "win_2way" is the slug server/services/pulsescore.ts derives from PulseScore's rawName
+    // "Win (2Way)" — the only match-winner market some real mma fights carry (see that module's
+    // extractH2H fallback and its own tests). It should read as equivalent to h2h here, not fall
+    // into Especiais alongside genuinely secondary markets.
+    expect(classifyMmaMarket('h2h')).toBe('Vencedor');
+    expect(classifyMmaMarket('win_2way')).toBe('Vencedor');
+    expect(classifyMmaMarket('dc')).toBe('Dupla Chance');
+    expect(classifyMmaMarket('ou_1.5')).toBe('Totais');
+  });
+
+  it('a realistic mma market key list (Muay Thai: win_2way only, no h2h) is fully covered end to end', () => {
+    const keys = ['win_2way'];
+    const tabs = buildDynamicMarketTabs(keys, classifyMmaMarket, MMA_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys).toEqual(['win_2way']);
+    expect(tabs.some((t) => t.title === 'Vencedor' && t.keys.includes('win_2way'))).toBe(true);
+  });
+
+  it('a realistic mma market key list (Combatsport event: h2h + win_2way + dc + ou + a secondary OTHER market) is fully covered end to end', () => {
+    const keys = ['h2h', 'win_2way', 'dc', 'ou_1.5', 'fight_to_go_the_distance'];
+    const tabs = buildDynamicMarketTabs(keys, classifyMmaMarket, MMA_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys.length).toBe(keys.length);
+    expect(tabs.find((t) => t.title === 'Vencedor')?.keys.sort()).toEqual(['h2h', 'win_2way']);
+    expect(tabs.find((t) => t.title === 'Especiais')?.keys).toEqual(['fight_to_go_the_distance']);
   });
 });
