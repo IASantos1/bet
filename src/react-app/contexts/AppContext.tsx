@@ -276,6 +276,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // AuthContext handles user loading
   }, []);
+
+  // ── BetSlip live odd updater ──────────────────────────────────────────────
+  // Every 3 seconds, pull the full split event list, find each bet's event,
+  // extract the current H2H odd for its selection, and flag changed odds
+  // with a stable yellow indicator (no red pulse / no lightning icon).
+  useEffect(() => {
+    let stopped = false;
+    let timer: any = null;
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+    const tick = async () => {
+      try {
+        if (stopped || isHidden()) return;
+        if (betSlip.length === 0) return;
+        const base = import.meta.env.VITE_API_BASE || '';
+        const raw = await apiFetch<any>(`${base}/api/events/by-sport?sports=all&only=both`, { cache: 'no-store' }).catch(() => null);
+        const arr: any[] = raw
+          ? [...(raw.live || []), ...(raw.pregame || [])]
+          : [];
+        if (arr.length === 0) return;
+        const byId = new Map<string, any>();
+        for (const e of arr) byId.set(String(e.id), e);
+
+        setBetSlip(prev => {
+          let dirty = false;
+          const next = prev.map(b => {
+            const ev = byId.get(String(b.event_id));
+            if (!ev) return b;
+            const pickOdd = (v: any) => {
+              const n = Number(v);
+              return Number.isFinite(n) ? n : 0;
+            };
+            const hh = pickOdd(ev.home_odd);
+            const dd = pickOdd(ev.draw_odd);
+            const aa = pickOdd(ev.away_odd);
+            const sel = String(b.selection || '').toLowerCase();
+            let current = 0;
+            if (sel === 'home' || sel === 'casa') current = hh;
+            else if (sel === 'draw' || sel === 'empate') current = dd;
+            else if (sel === 'away' || sel === 'fora') current = aa;
+            if (!(current > 0)) return b;
+            const prior = Number(b.currentOdd ?? b.odd ?? 0);
+            if (prior > 0 && Math.abs(current - prior) < 1e-6) return b;
+            // If the stored original odd (`b.odd`) already equals the live value,
+            // don't flag as changed (avoids a spurious changed=true when user
+            // added the bet right on a fresh value).
+            if (Math.abs(current - Number(b.odd || 0)) < 1e-6 && !b.changed) return b;
+            dirty = true;
+            return { ...b, currentOdd: current, changed: true };
+          });
+          return dirty ? next : prev;
+        });
+      } catch { /* no-op */ }
+    };
+
+    timer = setInterval(tick, 3000);
+    tick();
+    return () => { stopped = true; if (timer) clearInterval(timer); };
+  }, [betSlip.length]);
  
   const addToBetSlip = (bet: BetSlipItem) => {
     // 6. BET SLIP – BLOQUEIO FINAL (OBRIGATÓRIO)

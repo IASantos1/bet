@@ -16,7 +16,7 @@ export const useTrend = (val: number) => {
     if (Number.isFinite(prev) && prev > 0 && val !== prev) {
       setTrend(val > prev ? 'up' : 'down');
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = setTimeout(() => setTrend('stable'), 3000);
+      resetTimerRef.current = setTimeout(() => setTrend('stable'), 5000);
     }
 
     prevRef.current = val;

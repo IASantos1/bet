@@ -22,6 +22,11 @@ export function BetSlip() {
 
   const multiStake = Number(multiStakeInput) || 0;
  
+  const effectiveOdd = (bet: any) =>
+    Number(bet?.changed && typeof bet?.currentOdd === 'number' && bet.currentOdd > 0
+      ? bet.currentOdd
+      : bet?.odd ?? 0);
+
   const totalStake = useMemo(() => 
     mode === 'single' 
       ? betSlip.reduce((sum, bet) => sum + bet.stake, 0)
@@ -30,7 +35,7 @@ export function BetSlip() {
   ); 
  
   const totalOdds = useMemo(() => 
-    betSlip.reduce((product, bet) => product * bet.odd, 1), 
+    betSlip.reduce((product, bet) => product * effectiveOdd(bet), 1), 
     [betSlip] 
   ); 
 
@@ -42,14 +47,17 @@ export function BetSlip() {
 
   const winProbability = useMemo(() => {
     if (betSlip.length === 0) return 0;
-    const prob = betSlip.reduce((acc, bet) => acc * (1 / bet.odd), 1);
+    const prob = betSlip.reduce((acc, bet) => {
+      const o = effectiveOdd(bet);
+      return acc * (o > 0 ? 1 / o : 0);
+    }, 1);
     return prob * 100;
   }, [betSlip]);
  
   const MAX_PAYOUT = 100000;
   const potentialWin = useMemo(() => {
     if (mode === 'single') {
-      const v = betSlip.reduce((sum, b) => sum + (b.stake * b.odd), 0);
+      const v = betSlip.reduce((sum, b) => sum + (b.stake * effectiveOdd(b)), 0);
       return Math.min(MAX_PAYOUT, v);
     }
     const rawWin = multiStake * totalOdds;
@@ -58,7 +66,7 @@ export function BetSlip() {
   }, [betSlip, totalOdds, mode, multiStake, multiBonusPercent]);
   const isCapped = useMemo(() => {
     const raw = mode === 'single'
-      ? betSlip.reduce((sum, b) => sum + (b.stake * b.odd), 0)
+      ? betSlip.reduce((sum, b) => sum + (b.stake * effectiveOdd(b)), 0)
       : (multiStake * totalOdds);
     return raw > MAX_PAYOUT;
   }, [betSlip, totalOdds, mode, multiStake]);
@@ -194,7 +202,7 @@ export function BetSlip() {
         bets: betSlip.map(b => ({
           event_id: b.event_id,
           selection: b.selection,
-          odd: b.odd,
+          odd: effectiveOdd(b),
           stake: mode === 'single' ? b.stake : undefined,
           sport: b.sport,
           market_id: b.market_id,
@@ -282,11 +290,12 @@ export function BetSlip() {
           <div className="space-y-2 mb-3 max-h-96 overflow-y-auto"> 
              {betSlip.map((bet) => {
                const isConflicting = conflictingEventIds.includes(bet.event_id);
+               const oddChanged = !!bet.changed && typeof bet.currentOdd === 'number' && bet.currentOdd > 0;
                return ( 
                <div 
                  key={bet.id} 
                 className={`p-2 rounded-lg border transition-colors duration-300 ${ 
-                  isConflicting
+                  (isConflicting || oddChanged)
                     ? (darkMode ? 'bg-yellow-900/20 border-yellow-500' : 'bg-yellow-50 border-yellow-500')
                     : (darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200')
                 }`} 
@@ -294,6 +303,11 @@ export function BetSlip() {
                  {isConflicting && (
                     <div className="text-[10px] text-yellow-600 font-bold mb-1 uppercase tracking-wide flex items-center gap-1">
                       <span>⚠️ Múltipla Indisponível: Seleções do mesmo jogo</span>
+                    </div>
+                 )}
+                 {oddChanged && !isConflicting && (
+                    <div className="text-[10px] text-yellow-700 dark:text-yellow-300 font-bold mb-1 uppercase tracking-wide flex items-center gap-1">
+                      <span>Odds atualizadas: {Number(bet.odd||0).toFixed(2)} → {Number(bet.currentOdd||0).toFixed(2)}</span>
                     </div>
                  )}
                  <div className="flex justify-between items-start mb-2"> 
@@ -335,8 +349,8 @@ export function BetSlip() {
                    </button> 
                  </div> 
                  <div className="flex items-center justify-between"> 
-                  <span className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}> 
-                    {bet.odd.toFixed(2)} 
+                  <span className={`font-bold tabular-nums ${oddChanged ? (darkMode ? 'text-yellow-300' : 'text-yellow-700') : (darkMode ? 'text-white' : 'text-gray-900')}`}> 
+                    {effectiveOdd(bet).toFixed(2)} 
                   </span> 
                   <div className="flex items-center gap-1"> 
                      {mode === 'single' && (

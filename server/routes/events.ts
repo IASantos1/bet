@@ -21,6 +21,7 @@ import {
   type LiveUpdate,
 } from '../services/pulsescoreWs';
 import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
+import { blendRefreshInterval, getLeaguePriority, getLeagueTier, type LeagueTier } from '../../src/shared/league-priority';
 
 export type GoalServeSettlementOutcome = 'won' | 'lost' | 'half_won' | 'half_lost' | 'void';
 
@@ -358,15 +359,16 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
           continue;
         }
         const rt = prematchRuntime.get(ev.id);
+        const blended = blendRefreshInterval(bucket.refreshEveryMs, ev.league);
         if (!rt) {
-          prematchRuntime.set(ev.id, { bucket: bucket.label, lastRefreshedAt: lastRefreshAt || now, refreshEveryMs: bucket.refreshEveryMs });
+          prematchRuntime.set(ev.id, { bucket: bucket.label, lastRefreshedAt: lastRefreshAt || now, refreshEveryMs: blended });
           skipped += 1;
           continue;
         }
         const since = now - rt.lastRefreshedAt;
         // Always align `refreshEveryMs` down to the current bucket (in case a match
         // crossed into a closer bucket since the last tick — e.g. 3 hours -> 1 hour ago).
-        rt.refreshEveryMs = bucket.refreshEveryMs;
+        rt.refreshEveryMs = blended;
         rt.bucket = bucket.label;
         if (since < rt.refreshEveryMs) {
           skipped += 1;
@@ -398,9 +400,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
           recordH2HOdds(ev, now);
           const rt = prematchRuntime.get(job.id);
           if (rt) {
+            const evAfter = cache.get(job.id);
             rt.lastRefreshedAt = Date.now();
             rt.bucket = job.bucket.label;
-            rt.refreshEveryMs = job.bucket.refreshEveryMs;
+            rt.refreshEveryMs = blendRefreshInterval(job.bucket.refreshEveryMs, evAfter?.league);
           }
           refreshed += 1;
         } catch (_e: any) {
@@ -747,6 +750,18 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         }
       }
 
+      // Ordenar por tier (P1 primeiro) e depois por data/urgência.
+      const compareByTierAndDate = (a: AppEvent, b: AppEvent): number => {
+        const pA = getLeaguePriority(a.league);
+        const pB = getLeaguePriority(b.league);
+        if (pA !== pB) return pA - pB;
+        const tA = a.event_date ? new Date(a.event_date).getTime() : 0;
+        const tB = b.event_date ? new Date(b.event_date).getTime() : 0;
+        return tA - tB;
+      };
+      live.sort(compareByTierAndDate);
+      pregame.sort(compareByTierAndDate);
+
       sendJson(res, 200, {
         live: only === 'pregame' ? [] : live,
         pregame: only === 'live' ? [] : pregame,
@@ -986,6 +1001,17 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     return res;
   };
 
+  const countByTier = (scope: 'all' | 'live' | 'pregame'): Record<LeagueTier, number> => {
+    const res: Record<LeagueTier, number> = { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0 };
+    for (const ev of cache.values()) {
+      if (scope === 'live' && ev.is_live !== 1) continue;
+      if (scope === 'pregame' && ev.is_live === 1) continue;
+      const t = getLeagueTier(ev.league);
+      res[t] = (res[t] || 0) + 1;
+    }
+    return res;
+  };
+
   const getPollingStatus = () => ({
     mainCycle: {
       intervalMs: POLL_INTERVAL_MS,
@@ -1021,6 +1047,11 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       lastStats: lastPrematchProximityStats,
       lastError: lastPrematchProximityError,
       inFlight: !!prematchProximityInFlight,
+    },
+    leagueTiers: {
+      all: countByTier('all'),
+      live: countByTier('live'),
+      pregame: countByTier('pregame'),
     },
   });
 

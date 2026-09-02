@@ -649,11 +649,14 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
   }, [addNotification, apiCritState, critState, event, eventId, homeTeamName, awayTeamName, isLiveEvent]);
   const apostaJaActive = useMemo(() => {
     if (!isLiveEvent) return false;
-    if (hh > 0 && hh <= 1.01) return true;
-    if (dd > 0 && dd <= 1.01) return true;
-    if (aa > 0 && aa <= 1.01) return true;
+    const h2hCount = (hh > 0 ? 1 : 0) + (dd > 0 ? 1 : 0) + (aa > 0 ? 1 : 0);
+    const isTwoWaySport = ['basketball', 'tennis', 'american-football', 'baseball', 'mma', 'volleyball', 'handball', 'ice-hockey', 'hockey', 'cricket'].includes(sport);
+    if (hh > 0 && hh <= 1.03) return true;
+    if (dd > 0 && dd <= 1.03) return true;
+    if (aa > 0 && aa <= 1.03) return true;
+    if (!isTwoWaySport && h2hCount > 0 && h2hCount < 3) return true;
     return false;
-  }, [isLiveEvent, hh, dd, aa]);
+  }, [isLiveEvent, hh, dd, aa, sport]);
 
   // Choose the favourite (lowest non-zero odd) for one-tap betting
   const favBet = useMemo(() => {
@@ -846,6 +849,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                 })();
                 const setLabel = setNumFromStatus >= 1 ? `${setNumFromStatus}º SET` : '';
                 const timerRaw = String((event as any).timer || (event as any).fixture?.status?.timer || '').trim();
+                const statusU = (statusShort || '').toUpperCase();
                 // For live soccer, use the advancing clock so the badge never lags behind the API poll.
                 const timer = (sport === 'soccer' && isLiveEvent)
                   ? computeFootballClock(

@@ -51,15 +51,15 @@ export function OddButton({ label, price, onClick, className = '', teamName, sus
           </span>
           <div className="flex items-center gap-1 flex-shrink-0">
             {!isSuspended && trend === 'up' && (
-              <span className="text-green-300 animate-bounce text-[10px] sm:text-xs">▲</span>
+              <span className="text-green-500 text-[10px] sm:text-xs font-black">↑</span>
             )}
             {!isSuspended && trend === 'down' && (
-              <span className="text-black dark:text-gray-400 animate-bounce text-[10px] sm:text-xs">▼</span>
+              <span className="text-red-500 text-[10px] sm:text-xs font-black">↓</span>
             )}
             <span className={`text-sm sm:text-base font-bold tabular-nums ${
               isSuspended ? 'text-gray-400' :
-              trend === 'up' ? 'text-green-200' :
-              trend === 'down' ? 'text-black dark:text-gray-400' : 'text-white'
+              trend === 'up' ? 'text-green-500' :
+              trend === 'down' ? 'text-red-500' : 'text-white'
             }`}>
               {priceStr}
             </span>

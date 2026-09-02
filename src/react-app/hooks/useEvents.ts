@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { EventSchema } from '@/shared/types'; 
 import type { Event } from '@/shared/types'; 
 import { apiFetch } from '@/react-app/utils/api';
+import { getLeaguePriority } from '@/shared/league-priority';
  
 export function useEvents(category?: string) {
   const [events, setEvents] = useState<Event[]>([]);
@@ -35,6 +36,25 @@ export function useEvents(category?: string) {
       if (sCur > sPrev) by.set(k, e);
     }
     return Array.from(by.values());
+  };
+
+  const sortByTierAndDate = (list: Event[]): Event[] => {
+    const out = [...list];
+    out.sort((a, b) => {
+      // Live first
+      const la = Number(a.is_live || 0);
+      const lb = Number(b.is_live || 0);
+      if (la !== lb) return lb - la;
+      // Tier priority
+      const pa = getLeaguePriority(String(a.league || ''));
+      const pb = getLeaguePriority(String(b.league || ''));
+      if (pa !== pb) return pa - pb;
+      // Date asc (earliest first)
+      const ta = a.event_date ? new Date(a.event_date).getTime() : 0;
+      const tb = b.event_date ? new Date(b.event_date).getTime() : 0;
+      return ta - tb;
+    });
+    return out;
   };
   
   const fetchEvents = useCallback(async () => {
@@ -109,7 +129,7 @@ export function useEvents(category?: string) {
               return !past;
             });
             console.log('[useEvents] Filtered:', filteredRaw.length, 'Original:', parsed.data.length);
-            const filtered = dedupEvents(filteredRaw);
+            const filtered = sortByTierAndDate(dedupEvents(filteredRaw));
             if (!eq(filtered, lastRef.current)) {
               setEvents(filtered);
               lastRef.current = filtered;
@@ -336,10 +356,11 @@ export function useEvents(category?: string) {
             }
             return out;
           });
-          if (!eq(stable, lastRef.current)) {
-            setEvents(stable);
-            lastRef.current = stable;
-            try { localStorage.setItem(cacheKey, JSON.stringify(stable)); } catch { void 0 }
+          const sorted = sortByTierAndDate(stable);
+          if (!eq(sorted, lastRef.current)) {
+            setEvents(sorted);
+            lastRef.current = sorted;
+            try { localStorage.setItem(cacheKey, JSON.stringify(sorted)); } catch { void 0 }
           }
         }
     } catch (error: any) {
@@ -437,7 +458,7 @@ export function useEvents(category?: string) {
             const past = Number.isFinite(t) && t < now;
             return !past;
           });
-          const filtered = dedupEvents(filteredRaw);
+          const filtered = sortByTierAndDate(dedupEvents(filteredRaw));
           if (!eq(filtered, lastRef.current)) {
             setEvents(filtered);
             lastRef.current = filtered;
