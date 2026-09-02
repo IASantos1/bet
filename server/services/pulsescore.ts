@@ -123,7 +123,10 @@ function apiKeyOk(apiKey: string): boolean {
 // Caveat this can't cover: if the server runs multiple replicas of this process against the same
 // API key, each replica paces itself independently, so the combined rate across replicas could
 // still exceed 3/sec — this only guarantees pacing within one process.
-const MIN_REQUEST_INTERVAL_MS = 350; // > 1000/3 ≈ 333ms, with a small safety margin
+// A real production run still hit an occasional 429 at 350ms spacing (recovered fine by the retry
+// below, but confirms the margin was too tight against real network/event-loop jitter) — widened to
+// 420ms (< 2.4 req/sec) for more headroom.
+const MIN_REQUEST_INTERVAL_MS = 420; // > 1000/3 ≈ 333ms; widened past the original 350ms margin
 let lastDispatchAt = 0;
 let requestGateChain: Promise<void> = Promise.resolve();
 
