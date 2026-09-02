@@ -13,10 +13,35 @@ import {
 
 const PULSESCORE_WS_BASE = 'wss://api.pulsescore.net/api/onexbet/ws/live';
 
-export const WS_LIVE_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
-export type WsLiveSport = (typeof WS_LIVE_SPORTS)[number];
+/** Plan PulseScore MAX: 3 simultaneous WS slots max. User can override via env var
+ *  PULSESCORE_WS_SLOTS = "soccer,tennis,basketball"   (default)
+ *                      = "soccer,tennis,volleyball"
+ *                      = "soccer,tennis,baseball"
+ *  Tennis is ALWAYS kept as one slot (per user mandate) — if the user-provided list
+ *  doesn't include tennis, we append it and drop the last item to keep the cap at 3. */
+function resolveWsLiveSports(): readonly string[] {
+  const DEFAULT = ['soccer', 'tennis', 'basketball'] as const;
+  const envRaw = typeof process !== 'undefined' ? (process.env?.PULSESCORE_WS_SLOTS as string | undefined) : undefined;
+  if (!envRaw) return DEFAULT;
+  const fromEnv = envRaw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const normalized = fromEnv.map((s) => sportSegment(s)).filter((s): s is string => Boolean(s));
+  const deDup = Array.from(new Set(normalized));
+  // Hard cap: 3 slots MAX (MAX plan limit per PulseScore). Always keep tennis.
+  const mustKeep = 'tennis';
+  const hasTennis = deDup.includes(mustKeep);
+  let result = hasTennis ? [...deDup] : [mustKeep, ...deDup];
+  if (result.length > 3) result = result.slice(0, 3);
+  if (result.length === 0) return DEFAULT;
+  return Object.freeze(result);
+}
 
-const FAST_POLL_LIVE_SPORTS_LOCAL = ['ice-hockey', 'baseball'] as const;
+export const WS_LIVE_SPORTS: readonly string[] = resolveWsLiveSports();
+export type WsLiveSport = string;
+
+const FAST_POLL_LIVE_SPORTS_LOCAL = ['ice-hockey', 'baseball', 'volleyball'] as const;
 export const FAST_POLL_LIVE_SPORTS = FAST_POLL_LIVE_SPORTS_LOCAL;
 export type FastPollLiveSport = (typeof FAST_POLL_LIVE_SPORTS_LOCAL)[number];
 

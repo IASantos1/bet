@@ -636,7 +636,51 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
       }
 
       if (sport === 'baseball') {
+        const mc = (event as any)?.matchClock;
+        if (mc && typeof mc === 'object') {
+          const parts: string[] = [];
+          if (typeof mc.period === 'string' && mc.period) parts.push(mc.period);
+          else if (typeof mc.periodId !== undefined && mc.periodId !== null) {
+            const n = Number(mc.periodId);
+            if (Number.isFinite(n) && n >= 1 && n <= 9) {
+              const ord = ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'][n - 1];
+              if (ord) parts.push(ord);
+            }
+          }
+          if (typeof mc.inningHalf === 'string' && mc.inningHalf) parts.unshift(mc.inningHalf);
+          else if (typeof mc.info === 'string' && /\b(TOP|BOTTOM)\b/i.test(mc.info)) {
+            const m = mc.info.match(/\b(TOP|BOTTOM)\b/i);
+            if (m) parts.unshift(m[1]);
+          }
+          if (parts.length > 0) return parts.join(' ');
+          if (typeof mc.info === 'string' && mc.info) return mc.info;
+        }
+        if (typeof (event as any).score?.info === 'string' && (event as any).score.info) return (event as any).score.info;
         if (/\b(TOP|BOTTOM)\b/i.test(candidate) || /\b(1ST|2ND|3RD|4TH|5TH|6TH|7TH|8TH|9TH)\b/i.test(candidate)) return candidate;
+        return '';
+      }
+
+      if (sport === 'volleyball' || sport === 'handball' || sport === 'rugby' || sport === 'mma' || sport === 'cricket' || sport === 'futsal' || sport === 'table-tennis' || sport === 'badminton') {
+        const mc = (event as any)?.matchClock;
+        if (mc && typeof mc === 'object') {
+          const parts: string[] = [];
+          if (typeof mc.period === 'string' && mc.period) parts.push(mc.period);
+          else if (typeof mc.periodId !== undefined && mc.periodId !== null) {
+            const pn = Number(mc.periodId);
+            if (Number.isFinite(pn) && pn >= 1 && pn <= 20) parts.push(`P${pn}`);
+          }
+          if (typeof mc.minute === 'number' || typeof (mc as any).info === 'string') {
+            const min = typeof mc.minute === 'number' ? Math.floor(Number(mc.minute)) : null;
+            const sec = typeof (mc as any).second === 'number' ? Math.floor(Number((mc as any).second)) : null;
+            if (min !== null && sec !== null) parts.push(`${min}:${sec.toString().padStart(2, '0')}`);
+            else if (min !== null) parts.push(`${min}'`);
+          }
+          if (typeof mc.info === 'string' && mc.info && parts.length === 0) parts.push(mc.info);
+          if (parts.length > 0) return parts.join(' · ');
+        }
+        if (timer && /:/.test(timer)) return timer;
+        if (elapsed > 0) return `${Math.floor(elapsed)}'`;
+        if (/\b(SET|PERIOD|HALF|QUARTER|INNING)\b/i.test(candidate)) return candidate;
         return '';
       }
 

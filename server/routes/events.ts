@@ -291,7 +291,9 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   // (date + league + home + away) and surfaces advanced stats through
   // /api/events/:id/advanced and /api/events/:id/stats.
   const pitchClient = new PitchApiClient(
-    typeof process !== 'undefined' ? (process.env?.PITCH_API_KEY as string | undefined) : undefined,
+    typeof process !== 'undefined'
+      ? ((process.env?.PITCH_API_KEY as string | undefined) || (process.env?.PITCHAPI_KEY as string | undefined) || (process.env?.PITCH_KEY as string | undefined))
+      : undefined,
   );
   const pitchAlignCache = new PitchAlignCache();
   async function getPitchAdvancedForEvent(event: AppEvent): Promise<PitchStats> {
