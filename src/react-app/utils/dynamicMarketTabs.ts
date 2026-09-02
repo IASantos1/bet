@@ -71,6 +71,19 @@ export function classifyRugbyMarket(key: string): string {
   return 'Especiais';
 }
 
+// MMA quirk (confirmed in real samples): plain "mma"-league fights (e.g. Muay Thai) carry no
+// MATCH_RESULT market at all — only a 2-way "Win (2Way)" market (OTHER canonicalMarket, slugs to
+// "win_2way" via the rawName fallback in server/services/pulsescore.ts). It's functionally the
+// match-winner market for those fights, so it's bucketed with h2h under "Vencedor" rather than
+// falling into "Especiais" alongside genuinely secondary markets like "Fight To Go The Distance".
+export const MMA_BUCKET_ORDER = ['Vencedor', 'Dupla Chance', 'Totais'];
+export function classifyMmaMarket(key: string): string {
+  if (key === 'h2h' || key.startsWith('win_2way')) return 'Vencedor';
+  if (key.startsWith('dc')) return 'Dupla Chance';
+  if (key.startsWith('ou_')) return 'Totais';
+  return 'Especiais';
+}
+
 /** Buckets `keys` via `classify`, orders named buckets per `bucketOrder` (any bucket discovered
  *  dynamically but not in that list — e.g. "3º Set" in a match that went the distance — is appended
  *  before the "Especiais" catch-all), and builds a "Todos" tab deduped by title (mirrors soccer's
