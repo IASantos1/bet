@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyBasketballMarket,
+  classifyBaseballMarket,
   classifyTennisMarket,
   classifyVolleyballMarket,
   classifyRugbyMarket,
@@ -9,6 +10,7 @@ import {
   classifyHandballMarket,
   buildDynamicMarketTabs,
   BASKETBALL_BUCKET_ORDER,
+  BASEBALL_BUCKET_ORDER,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
@@ -255,6 +257,55 @@ describe('classifyBasketballMarket', () => {
     const halfBucket = tabs.find((t) => t.title === '1º Tempo')?.keys || [];
     const quarterBucket = tabs.find((t) => t.title === '1º Quarto')?.keys || [];
     expect(halfBucket.some((k) => quarterBucket.includes(k))).toBe(false);
+    expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
+  });
+});
+
+describe('classifyBaseballMarket', () => {
+  it('buckets innings-suffixed keys (CONFIRMED: FIRST_INNING/SECOND_INNING/.../NINTH_INNING and the baseball-only FIRST_FIVE_INNINGS shape) by their own ordinal, including the distinct "first 5 innings" bucket', () => {
+    expect(classifyBaseballMarket('h2h')).toBe('Vencedor');
+    expect(classifyBaseballMarket('h2h_1i')).toBe('1º Inning');
+    expect(classifyBaseballMarket('h2h_2i')).toBe('2º Inning');
+    expect(classifyBaseballMarket('dnb_9i')).toBe('9º Inning');
+    expect(classifyBaseballMarket('h2h_f5i')).toBe('Primeiras 5 Innings');
+    expect(classifyBaseballMarket('h2h_1i')).not.toBe(classifyBaseballMarket('h2h_f5i'));
+  });
+
+  it('routes baseball-specific market bases to their own buckets, grouping all player-prop OTHER markets under one tab', () => {
+    expect(classifyBaseballMarket('dc')).toBe('Dupla Chance');
+    expect(classifyBaseballMarket('dnb')).toBe('Empate Anula Aposta');
+    expect(classifyBaseballMarket('ou_9.5')).toBe('Totais');
+    expect(classifyBaseballMarket('hcp_-1.5')).toBe('Handicap');
+    expect(classifyBaseballMarket('odd_even')).toBe('Par/Ímpar');
+    // "Players' stats Pitchers."/"Players' stats Batters." markets (CONFIRMED in a real
+    // single-event sample: 66 such markets on one event) all slug via the OTHER-bucket rawName
+    // fallback in server/services/pulsescore.ts to keys starting with "players_stats" — grouped
+    // together rather than scattered across "Especiais" alongside genuinely miscellaneous markets.
+    expect(classifyBaseballMarket('players_stats_pitchers_total_strikeouts_4.5')).toBe('Estatísticas de Jogadores');
+    expect(classifyBaseballMarket('players_stats_batters_total_hits_0.5')).toBe('Estatísticas de Jogadores');
+    // Miscellaneous OTHER markets with no recognizable base key fall to Especiais.
+    expect(classifyBaseballMarket('first_home_run')).toBe('Especiais');
+    expect(classifyBaseballMarket('highest_scoring_inning')).toBe('Especiais');
+  });
+
+  it('a realistic baseball market key list (real single-event shape: FULL_TIME + 1st/2nd/9th inning + first-5-innings + a large player-stats block) is fully covered end to end', () => {
+    const keys = [
+      'h2h', 'ou_9.5', 'hcp_-1.5', 'ou_home_4.5', 'ou_away_4.5', 'odd_even', 'first_home_run', 'total_hits_10.5', 'highest_scoring_inning',
+      'h2h_1i', 'dnb_1i', 'ou_0.5_1i', '1st_inning_total_hits_0.5_1i',
+      'h2h_2i', 'dnb_2i', 'ou_0.5_2i',
+      'h2h_f5i', 'dnb_f5i', 'ou_4.5_f5i',
+      '9th_inning_will_home_team_bat_at_bottom_of_9th_9i',
+      'players_stats_pitchers_total_strikeouts_4.5', 'players_stats_batters_total_hits_0.5',
+    ];
+    const tabs = buildDynamicMarketTabs(keys, classifyBaseballMarket, BASEBALL_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys.length).toBe(keys.length);
+    expect(tabs.some((t) => t.title === '1º Inning')).toBe(true);
+    expect(tabs.some((t) => t.title === '2º Inning')).toBe(true);
+    expect(tabs.some((t) => t.title === '9º Inning')).toBe(true);
+    expect(tabs.some((t) => t.title === 'Primeiras 5 Innings')).toBe(true);
+    expect(tabs.find((t) => t.title === 'Estatísticas de Jogadores')?.keys.sort()).toEqual(
+      ['players_stats_batters_total_hits_0.5', 'players_stats_pitchers_total_strikeouts_4.5'].sort(),
+    );
     expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
   });
 });

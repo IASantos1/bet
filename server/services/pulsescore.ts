@@ -3,21 +3,22 @@
  * GoalServe/sportsApiPro/API-Football/StatPal were all removed from this backend (see git history
  * around the "Remove dead parallel frontend..." / events.ts stub commits).
  *
- * Built against real sample responses pulled directly by the user (not guessed) for EIGHT confirmed
+ * Built against real sample responses pulled directly by the user (not guessed) for NINE confirmed
  * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma, ice hockey, handball,
- * basketball — each with a /leagues page and an /events page. Three CONFIRMED endpoint shapes:
+ * basketball, baseball — each with a /leagues page and an /events page. Three CONFIRMED endpoint
+ * shapes:
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/leagues?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events/{eventId}   -> { data: <event> }
  *   headers: accept: * / *, x-secret: <key>, Accept-Encoding: gzip
  *
- * Only soccer/tennis/volleyball/rugby/mma/ice-hockey/handball/basketball are confirmed working —
- * `sport` is a path segment so other sports may follow the same shape, but that's unverified;
- * sportSegment() below only maps sports actually seen in a real response. The single-event endpoint
- * has actually been pulled for tennis, volleyball, mma, ice hockey, handball and basketball (6 of
- * the 7 non-soccer sports); using it for soccer/rugby too is a pattern-consistency call (the
- * /leagues and /events collection endpoints are already confirmed byte-for-byte identical in shape
- * across all eight sports), not a blind guess of an unseen URL.
+ * Only soccer/tennis/volleyball/rugby/mma/ice-hockey/handball/basketball/baseball are confirmed
+ * working — `sport` is a path segment so other sports may follow the same shape, but that's
+ * unverified; sportSegment() below only maps sports actually seen in a real response. The
+ * single-event endpoint has actually been pulled for tennis, volleyball, mma, ice hockey, handball,
+ * basketball and baseball (7 of the 8 non-soccer sports); using it for soccer/rugby too is a
+ * pattern-consistency call (the /leagues and /events collection endpoints are already confirmed
+ * byte-for-byte identical in shape across all nine sports), not a blind guess of an unseen URL.
  * Note: both rugby's and ice hockey's own `sport` field come back with an underscore
  * ("rugby_union", "ice_hockey") even though their URL path segments use a hyphen ("rugby-union",
  * "ice-hockey") — normalizePulseScoreEvent() always stamps the AppEvent with the canonical sport
@@ -49,6 +50,19 @@
  * basketball-specific bucketer that keeps halves and quarters in separate tabs rather than reusing
  * ice hockey's shared ordinal-only bucket.
  *
+ * Baseball period quirk (CONFIRMED in a real single-event/-events sample): baseball uses an
+ * "innings" period vocabulary never seen in any other sport so far — FIRST_INNING, SECOND_INNING,
+ * NINTH_INNING, ... (ordinal-word_INNING, handled by periodSuffix()'s generic pattern once INNING
+ * was added to its recognized unit words, plus NINTH/EIGHTH added to ORDINAL_WORD_TO_DIGIT to cover
+ * a full 9-inning game) — and one genuinely new shape, FIRST_FIVE_INNINGS (a "first 5 innings"
+ * market, common in baseball betting), which doesn't fit the ordinal_unit pattern at all and is
+ * special-cased in periodSuffix() to a distinct "f5i" suffix. Baseball also carries a large block of
+ * individual player-prop markets (canonicalMarket OTHER, rawName always prefixed "Players' stats
+ * Pitchers."/"Players' stats Batters." — CONFIRMED in the real single-event sample) that the
+ * frontend's classifyBaseballMarket buckets together under one "Estatísticas de Jogadores" tab
+ * rather than scattering them across "Especiais", since the OTHER-bucket rawName-derived slug
+ * reliably starts with "players_stats" for all of them.
+ *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
  * there is no attribute-prefix bug and no per-sport wrapper-shape guessing needed.
@@ -72,6 +86,7 @@ function sportSegment(sport: string): string | null {
   if (s === 'mma' || s === 'ufc' || s === 'mixed martial arts' || s === 'luta') return 'mma';
   if (s === 'handball' || s === 'handebol') return 'handball';
   if (s === 'basketball' || s === 'basquete' || s === 'basquetebol') return 'basketball';
+  if (s === 'baseball' || s === 'beisebol') return 'baseball';
   return null;
 }
 
@@ -228,6 +243,11 @@ const ORDINAL_WORD_TO_DIGIT: Record<string, string> = {
   FIFTH: '5',
   SIXTH: '6',
   SEVENTH: '7',
+  // EIGHTH/NINTH added for baseball's innings (CONFIRMED: NINTH_INNING in a real sample; EIGHTH
+  // completes the sequence between the confirmed SECOND_INNING and NINTH_INNING for a full 9-inning
+  // game, same pattern-completion reasoning already applied to FOURTH-SEVENTH above).
+  EIGHTH: '8',
+  NINTH: '9',
 };
 
 /** Turns a PulseScore market `period` into a short key suffix ("1h", "2s", ...), or null for
@@ -240,10 +260,13 @@ const ORDINAL_WORD_TO_DIGIT: Record<string, string> = {
 function periodSuffix(period: string): string | null {
   const p = String(period || '').toUpperCase().trim();
   if (!p || p === 'FULL_TIME') return null;
-  const m = /^(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH)_(HALF|SET|QUARTER|PERIOD|ROUND)$/.exec(p);
+  // Baseball-specific shape (CONFIRMED in a real sample): "first 5 innings" markets don't fit the
+  // ordinal_unit pattern below at all — special-cased to its own distinct suffix.
+  if (p === 'FIRST_FIVE_INNINGS') return 'f5i';
+  const m = /^(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH|EIGHTH|NINTH)_(HALF|SET|QUARTER|PERIOD|ROUND|INNING)$/.exec(p);
   if (m) {
     const digit = ORDINAL_WORD_TO_DIGIT[m[1]];
-    const unit = m[2] === 'HALF' ? 'h' : m[2] === 'SET' ? 's' : m[2] === 'QUARTER' ? 'q' : m[2] === 'PERIOD' ? 'p' : 'r';
+    const unit = m[2] === 'HALF' ? 'h' : m[2] === 'SET' ? 's' : m[2] === 'QUARTER' ? 'q' : m[2] === 'PERIOD' ? 'p' : m[2] === 'INNING' ? 'i' : 'r';
     return `${digit}${unit}`;
   }
   return p.toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -399,4 +422,4 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
   return data && typeof data === 'object' ? (data as RawPulseScoreEvent) : null;
 }
 
-export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball'] as const;
+export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball', 'baseball'] as const;

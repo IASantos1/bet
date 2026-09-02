@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Dynamic market tabs for PulseScore-backed sports (tennis/volleyball/rugby/mma/ice-hockey/
-// handball/basketball)
+// handball/basketball/baseball)
 // ─────────────────────────────────────────────────────────────────────────
 // PulseScore market keys carry a per-line/per-period suffix generated server-side
 // (server/services/pulsescore.ts: ou_2.5, hcp_-1, game_hcp_-3.5, htft_1s, ...) that a static
@@ -151,6 +151,37 @@ export function classifyBasketballMarket(key: string): string {
   if (key.startsWith('ehcp') || key.startsWith('hcp')) return 'Handicap';
   if (key.startsWith('race_to_points')) return 'Corrida até Pontos';
   if (key.startsWith('odd_even')) return 'Par/Ímpar';
+  return 'Especiais';
+}
+
+/** Baseball's "innings" period suffixes (CONFIRMED in a real sample): periodSuffix() in
+ *  server/services/pulsescore.ts turns FIRST_INNING/SECOND_INNING/.../NINTH_INNING into `_1i`.._9i`,
+ *  and the "first 5 innings" market (FIRST_FIVE_INNINGS, a shape unique to baseball that doesn't fit
+ *  the generic ordinal_unit pattern) into a distinct `_f5i` suffix — this extracts either into its
+ *  own bucket title. */
+export function inningPeriodBucket(key: string): string | null {
+  if (key.endsWith('_f5i')) return 'Primeiras 5 Innings';
+  const m = /_([1-9])i$/.exec(key);
+  return m ? `${m[1]}º Inning` : null;
+}
+
+// Baseball quirk (CONFIRMED in a real single-event sample): a large block of individual
+// player-prop markets (canonicalMarket OTHER, rawName always prefixed "Players' stats
+// Pitchers."/"Players' stats Batters.") slug via the rawName fallback in
+// server/services/pulsescore.ts to keys reliably starting with "players_stats" — bucketed together
+// under their own tab rather than scattered across "Especiais" alongside genuinely miscellaneous
+// markets like "First Home Run" or "Highest Scoring Inning".
+export const BASEBALL_BUCKET_ORDER = ['Vencedor', 'Dupla Chance', 'Empate Anula Aposta', 'Totais', 'Handicap', 'Par/Ímpar', 'Estatísticas de Jogadores'];
+export function classifyBaseballMarket(key: string): string {
+  const inningBucket = inningPeriodBucket(key);
+  if (inningBucket) return inningBucket;
+  if (key === 'h2h') return 'Vencedor';
+  if (key.startsWith('dc')) return 'Dupla Chance';
+  if (key.startsWith('dnb')) return 'Empate Anula Aposta';
+  if (key.startsWith('ou_')) return 'Totais';
+  if (key.startsWith('hcp')) return 'Handicap';
+  if (key.startsWith('odd_even')) return 'Par/Ímpar';
+  if (key.startsWith('players_stats')) return 'Estatísticas de Jogadores';
   return 'Especiais';
 }
 
