@@ -31,6 +31,7 @@ export type EventsService = {
     url: URL,
   ) => Promise<boolean>;
   getWsStatus: () => any[];
+  getPollingStatus: () => unknown;
   getAdminOddsEvents: () => Promise<any[]>;
   setOddsOverride: (eventId: string, odds: { home_odd?: number; draw_odd?: number; away_odd?: number }) => Promise<void>;
   getEventOdds: (
@@ -80,6 +81,41 @@ const POLL_INTERVAL_MS = 30_000;
 const FAST_POLL_INTERVAL_MS = 3_000;
 const PREMATCH_INTERSPORT_STAGGER_MS = 250;
 const HIGH_VOLUME_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
+const PREMATCH_PROXIMITY_TICK_MS = 30_000;
+const MID_LIVE_POLL_INTERVAL_MS = 5_000;
+
+// User-requested progressive proximity refresh schedule. The 7 buckets are
+// evaluated from TOP (farest) → BOTTOM (nearest), so any event matches the
+// *closest* applicable rule. Each bucket declares:
+//   label          — user-facing short name (for status endpoints / debugging)
+//   maxMsUntilKO   — this bucket applies if `event_date - now` <= `maxMsUntilKO`
+//   refreshEveryMs — the event must be refreshed at least this often via
+//                    `fetchPulseScoreEvent()` (1 REST req / refresh).
+// Events past kickoff (`untilKO <= 0` AND still not marked live) fall into
+// `LIVE` bucket — but in practice those are covered by the WS/fast poll
+// cycles (below) and the proximity loop merely refreshes stragglers.
+type PrematchProximityBucket = {
+  label: string;
+  maxMsUntilKO: number;
+  refreshEveryMs: number;
+};
+const PREMATCH_PROXIMITY_BUCKETS: readonly PrematchProximityBucket[] = [
+  { label: 'LIVE',        maxMsUntilKO:                    0, refreshEveryMs:     1_500 },
+  { label: 'T-5m',        maxMsUntilKO:            5 * 60e3, refreshEveryMs:     5_000 },
+  { label: 'T-30m',       maxMsUntilKO:           30 * 60e3, refreshEveryMs:    30_000 },
+  { label: 'T-2h',        maxMsUntilKO:      2 * 60 * 60e3, refreshEveryMs:   5 * 60e3 },
+  { label: 'T-6h',        maxMsUntilKO:      6 * 60 * 60e3, refreshEveryMs:  15 * 60e3 },
+  { label: 'T-12h',       maxMsUntilKO:     12 * 60 * 60e3, refreshEveryMs:  30 * 60e3 },
+  { label: 'T-24h',       maxMsUntilKO:     24 * 60 * 60e3, refreshEveryMs: 2 * 60 * 60e3 },
+  { label: 'T-48h',       maxMsUntilKO:     48 * 60 * 60e3, refreshEveryMs: 6 * 60 * 60e3 },
+] as const;
+
+type PrematchEventRuntime = {
+  bucket: string;
+  lastRefreshedAt: number;
+  refreshEveryMs: number;
+};
+const MID_LIVE_SPORTS: readonly AppEvent['sport'][] = ['volleyball', 'rugby', 'mma', 'handball'] as const;
 
 type TradingStatus = 'pending' | 'approved' | 'suspended';
 type ManualOdds = { home?: number; draw?: number; away?: number };
@@ -156,6 +192,29 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   let fastPollTimer: NodeJS.Timeout | null = null;
   let lastFastPollAt = 0;
   let lastFastPollError: string | null = null;
+
+  let prematchProximityInFlight: Promise<void> | null = null;
+  let prematchProximityTimer: NodeJS.Timeout | null = null;
+  const prematchRuntime = new Map<string, PrematchEventRuntime>();
+  let lastPrematchProximityAt = 0;
+  let lastPrematchProximityError: string | null = null;
+  let lastPrematchProximityStats: { refreshed: number; skipped: number; errored: number; liveSkipped: number } | null = null;
+
+  let midLivePollInFlight: Promise<void> | null = null;
+  let midLivePollTimer: NodeJS.Timeout | null = null;
+  let lastMidLivePollAt = 0;
+  let lastMidLivePollError: string | null = null;
+
+  function prematchBucketFor(event_date: number | null | undefined | string): PrematchProximityBucket | null {
+    if (event_date == null) return null;
+    const epoch = typeof event_date === 'number' ? event_date : new Date(event_date).getTime();
+    if (!Number.isFinite(epoch)) return null;
+    const until = epoch - Date.now();
+    for (const b of PREMATCH_PROXIMITY_BUCKETS) {
+      if (until <= b.maxMsUntilKO) return b;
+    }
+    return null;
+  }
 
   const wsLiveIdsBySport = new Map<string, Set<string>>();
   const wsClient: PulseScoreWsClient | null =
@@ -278,6 +337,176 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     fastPollTimer = setTimeout(tick, 500);
   }
   startFastLivePoll();
+
+  async function prematchProximityTick(): Promise<void> {
+    const now = Date.now();
+    let refreshed = 0;
+    let skipped = 0;
+    let errored = 0;
+    let liveSkipped = 0;
+    try {
+      // Collect stale events first — avoids mutating prematchRuntime while iterating.
+      const toRefresh: Array<{ id: string; sport: string; bareId: string; bucket: PrematchProximityBucket }> = [];
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1) {
+          liveSkipped += 1;
+          continue;
+        }
+        const bucket = prematchBucketFor(ev.event_date);
+        if (!bucket) {
+          skipped += 1;
+          continue;
+        }
+        const rt = prematchRuntime.get(ev.id);
+        if (!rt) {
+          prematchRuntime.set(ev.id, { bucket: bucket.label, lastRefreshedAt: lastRefreshAt || now, refreshEveryMs: bucket.refreshEveryMs });
+          skipped += 1;
+          continue;
+        }
+        const since = now - rt.lastRefreshedAt;
+        // Always align `refreshEveryMs` down to the current bucket (in case a match
+        // crossed into a closer bucket since the last tick — e.g. 3 hours -> 1 hour ago).
+        rt.refreshEveryMs = bucket.refreshEveryMs;
+        rt.bucket = bucket.label;
+        if (since < rt.refreshEveryMs) {
+          skipped += 1;
+          continue;
+        }
+        const bareId = ev.id.replace(/^pulsescore_/, '');
+        toRefresh.push({ id: ev.id, sport: ev.sport, bareId, bucket });
+      }
+
+      // Sort ascending by bucket.refreshEveryMs so T-5m / T-30m (most urgent) are refreshed
+      // first in this tick — we only get through as many as rate limit allows before
+      // the next 30s tick wakes up, so priority matters for the tightest buckets.
+      toRefresh.sort((a, b) => a.bucket.refreshEveryMs - b.bucket.refreshEveryMs);
+      // Hard cap per tick to avoid a 500-event T-12h batch eating the token bucket for
+      // an entire minute (the next tick picks up whatever was left).
+      const cap = 180;
+      const slice = toRefresh.slice(0, cap);
+      for (const job of slice) {
+        try {
+          const raw = await fetchPulseScoreEvent(apiKey, job.sport, job.bareId);
+          if (isBlockedEvent(raw.league, raw.home, raw.away)) {
+            cache.delete(job.id);
+            prematchRuntime.delete(job.id);
+            refreshed += 1;
+            continue;
+          }
+          const ev = normalizePulseScoreEvent(job.sport, raw);
+          cache.set(ev.id, ev);
+          recordH2HOdds(ev, now);
+          const rt = prematchRuntime.get(job.id);
+          if (rt) {
+            rt.lastRefreshedAt = Date.now();
+            rt.bucket = job.bucket.label;
+            rt.refreshEveryMs = job.bucket.refreshEveryMs;
+          }
+          refreshed += 1;
+        } catch (_e: any) {
+          errored += 1;
+          const rt = prematchRuntime.get(job.id);
+          if (rt) rt.lastRefreshedAt = Date.now();
+        }
+      }
+      lastPrematchProximityError = null;
+    } catch (e: any) {
+      lastPrematchProximityError = String(e?.message || e);
+    } finally {
+      lastPrematchProximityAt = now;
+      lastPrematchProximityStats = { refreshed, skipped, errored, liveSkipped };
+    }
+  }
+
+  function runPrematchProximityTick(): Promise<void> {
+    if (prematchProximityInFlight) return prematchProximityInFlight;
+    prematchProximityInFlight = prematchProximityTick().finally(() => {
+      prematchProximityInFlight = null;
+    });
+    return prematchProximityInFlight;
+  }
+
+  function startPrematchProximityTick(): void {
+    if (prematchProximityTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runPrematchProximityTick().finally(() => {
+        prematchProximityTimer = setTimeout(tick, PREMATCH_PROXIMITY_TICK_MS);
+      });
+    };
+    prematchProximityTimer = setTimeout(tick, 12_000);
+  }
+  startPrematchProximityTick();
+
+  // volleyball / rugby / mma / handball — sports we don't pay a WS slot for, so the
+  // main refresh loop's `REST /live-events` is the only live signal and that only runs
+  // every 30s. User rule: LIVE must be 1–2s, which we can't hit with REST, but a
+  // dedicated 5s loop on JUST these 4 (only when ANY live event actually exists) is
+  // the closest achievable w/o more WS slots. Idle when no live matches.
+  async function midLivePollOnce(): Promise<void> {
+    const now = Date.now();
+    const sportsWithLive = (MID_LIVE_SPORTS as AppEvent['sport'][]).filter((s) =>
+      Array.from(cache.values()).some((e) => e.sport === s && e.is_live === 1),
+    );
+    if (sportsWithLive.length === 0) {
+      lastMidLivePollError = null;
+      lastMidLivePollAt = now;
+      return;
+    }
+    try {
+      const liveIdsBySport = new Map<string, Set<string>>();
+      for (const sport of sportsWithLive) {
+        const raw = await fetchPulseScoreLiveEvents(apiKey, sport, { pageLimit: 100, maxPages: 3 });
+        const ids = new Set<string>();
+        for (const lr of raw) {
+          const id = `pulsescore_${lr.eventId}`;
+          ids.add(id);
+          if (isBlockedEvent(lr.league, lr.home, lr.away)) {
+            cache.delete(id);
+            continue;
+          }
+          const liveState = extractLiveState(lr);
+          const cached = cache.get(id);
+          if (cached) {
+            cache.set(id, { ...cached, ...liveState, is_live: 1 });
+          } else {
+            const ev = normalizePulseScoreEvent(sport, lr);
+            cache.set(id, { ...ev, ...liveState, is_live: 1 });
+            recordH2HOdds(ev, now);
+          }
+        }
+        liveIdsBySport.set(sport, ids);
+      }
+      for (const ev of cache.values()) {
+        if (ev.is_live === 1 && liveIdsBySport.has(ev.sport) && !liveIdsBySport.get(ev.sport)!.has(ev.id)) {
+          cache.set(ev.id, { ...ev, is_live: 0 });
+        }
+      }
+      lastMidLivePollError = null;
+    } catch (e: any) {
+      lastMidLivePollError = String(e?.message || e);
+    } finally {
+      lastMidLivePollAt = now;
+    }
+  }
+
+  function runMidLivePoll(): Promise<void> {
+    if (midLivePollInFlight) return midLivePollInFlight;
+    midLivePollInFlight = midLivePollOnce().finally(() => {
+      midLivePollInFlight = null;
+    });
+    return midLivePollInFlight;
+  }
+
+  function startMidLivePoll(): void {
+    if (midLivePollTimer || !hasApiKey(apiKey)) return;
+    const tick = () => {
+      runMidLivePoll().finally(() => {
+        midLivePollTimer = setTimeout(tick, MID_LIVE_POLL_INTERVAL_MS);
+      });
+    };
+    midLivePollTimer = setTimeout(tick, 8_000);
+  }
+  startMidLivePoll();
 
   async function refreshOnce(): Promise<void> {
     const now = Date.now();
@@ -485,14 +714,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     }
 
     if (req.method === 'GET' && path === '/api/ws/status') {
-      sendJson(res, 200, {
-        ws: wsClient ? wsClient.getStatus() : [],
-        wsSports: Array.from(WS_LIVE_SPORTS),
-        fastPollSports: Array.from(FAST_POLL_LIVE_SPORTS),
-        fastPollIntervalMs: FAST_POLL_INTERVAL_MS,
-        lastFastPollAt: lastFastPollAt || null,
-        lastFastPollError,
-      });
+      sendJson(res, 200, getPollingStatus());
       return true;
     }
 
@@ -550,19 +772,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
 
     if (req.method === 'GET' && path === '/api/dev/cache-debug') {
       sendJson(res, 200, {
+        ...getPollingStatus(),
         provider: 'pulsescore',
         apiKeyConfigured: hasApiKey(apiKey),
         eventsCached: cache.size,
-        lastRefreshAt: lastRefreshAt || null,
-        lastRefreshError,
-        pollIntervalMs: POLL_INTERVAL_MS,
-        fastPoll: {
-          intervalMs: FAST_POLL_INTERVAL_MS,
-          sports: Array.from(FAST_POLL_LIVE_SPORTS),
-          lastPollAt: lastFastPollAt || null,
-          lastPollError: lastFastPollError,
-        },
-        ws: wsClient ? wsClient.getStatus() : null,
         sample: Array.from(cache.values())
           .slice(0, 5)
           .map((e) => ({ id: e.id, match: e.match, league: e.league, is_live: e.is_live })),
@@ -572,20 +785,11 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
 
     if (req.method === 'GET' && (path === '/api/dev/provider-debug' || path === '/api/dev/schedule-debug' || path === '/api/dev/odds-debug')) {
       sendJson(res, 200, {
+        ...getPollingStatus(),
         provider: 'pulsescore',
         sports: PULSESCORE_SPORTS,
         apiKeyConfigured: hasApiKey(apiKey),
         eventsCached: cache.size,
-        lastRefreshAt: lastRefreshAt || null,
-        lastRefreshError,
-        ws: wsClient ? wsClient.getStatus() : null,
-        wsSports: Array.from(WS_LIVE_SPORTS),
-        fastPoll: {
-          intervalMs: FAST_POLL_INTERVAL_MS,
-          sports: Array.from(FAST_POLL_LIVE_SPORTS),
-          lastPollAt: lastFastPollAt || null,
-          lastPollError: lastFastPollError,
-        },
       });
       return true;
     }
@@ -769,9 +973,61 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
 
   const getWsStatus = (): any[] => (wsClient ? wsClient.getStatus() : []);
 
+  const countByBucket = (): Record<string, number> => {
+    const res: Record<string, number> = {};
+    for (const b of PREMATCH_PROXIMITY_BUCKETS) res[b.label] = 0;
+    res['>T-48h'] = 0;
+    for (const ev of cache.values()) {
+      if (ev.is_live === 1) continue;
+      const b = prematchBucketFor(ev.event_date);
+      if (b) res[b.label] = (res[b.label] || 0) + 1;
+      else res['>T-48h'] = (res['>T-48h'] || 0) + 1;
+    }
+    return res;
+  };
+
+  const getPollingStatus = () => ({
+    mainCycle: {
+      intervalMs: POLL_INTERVAL_MS,
+      lastRunAt: lastRefreshAt,
+      lastError: lastRefreshError,
+      inFlight: !!refreshInFlight,
+    },
+    wsLive: wsClient ? { sports: Array.from(WS_LIVE_SPORTS), status: wsClient.getStatus() } : { enabled: false },
+    fastPoll: {
+      enabled: hasApiKey(apiKey),
+      intervalMs: FAST_POLL_INTERVAL_MS,
+      sports: Array.from(FAST_POLL_LIVE_SPORTS),
+      lastRunAt: lastFastPollAt,
+      lastError: lastFastPollError,
+      inFlight: !!fastPollInFlight,
+    },
+    midLivePoll: {
+      enabled: hasApiKey(apiKey),
+      intervalMs: MID_LIVE_POLL_INTERVAL_MS,
+      sports: Array.from(MID_LIVE_SPORTS),
+      lastRunAt: lastMidLivePollAt,
+      lastError: lastMidLivePollError,
+      inFlight: !!midLivePollInFlight,
+      activeSports: (MID_LIVE_SPORTS as AppEvent['sport'][]).filter((s) =>
+        Array.from(cache.values()).some((e) => e.sport === s && e.is_live === 1),
+      ),
+    },
+    prematchProximity: {
+      buckets: PREMATCH_PROXIMITY_BUCKETS.map((b) => ({ label: b.label, maxMsUntilKO: b.maxMsUntilKO, refreshEveryMs: b.refreshEveryMs })),
+      tickerIntervalMs: PREMATCH_PROXIMITY_TICK_MS,
+      perBucketCount: countByBucket(),
+      lastRunAt: lastPrematchProximityAt,
+      lastStats: lastPrematchProximityStats,
+      lastError: lastPrematchProximityError,
+      inFlight: !!prematchProximityInFlight,
+    },
+  });
+
   return {
     handleEventsRoutes,
     getWsStatus,
+    getPollingStatus,
     getAdminOddsEvents,
     setOddsOverride,
     getEventOdds,
