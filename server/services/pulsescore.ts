@@ -511,30 +511,33 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
 
 export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball', 'baseball'] as const;
 
-// The `sport` query value /live-events expects — CONFIRMED directly via real curl responses for
+// The `sport` query value(s) /live-events expects — CONFIRMED directly via real curl responses for
 // soccer, tennis, mma (empty-but-valid), basketball, ice-hockey ("ice_hockey", underscore),
-// volleyball and baseball. Only `handball` and `rugby` remain unconfirmed for this endpoint
-// specifically (both currently have zero live matches, so no response has ever come back for
-// either): handball follows the "plain name, no quirk" pattern already established for its own
-// /events endpoint; rugby uses 'rugby_union' on the theory that this feed follows PulseScore's own
-// payload `sport` field convention (confirmed correct for ice-hockey) rather than the /events
-// URL-segment convention. A wrong guess here just means an empty live list for that sport, same as
-// "no live match right now" — never a hard failure. One confirmed API quirk worth noting: a
-// zero-result /live-events response's own `sport` field cannot be trusted — a real sample queried
-// with sport=basketball (0 live matches at the time) came back echoing `"sport": "rugby_league"`,
-// an entirely unrelated value never used anywhere in this file. This code never reads that echoed
-// field, only `events`/`hasNextPage`, so the quirk is harmless here — documented so a future reader
-// doesn't mistake it for evidence about what value "rugby_league" would even mean for this feed.
-const LIVE_EVENTS_SPORT_PARAM: Record<string, string> = {
-  soccer: 'soccer',
-  tennis: 'tennis',
-  volleyball: 'volleyball',
-  rugby: 'rugby_union',
-  mma: 'mma',
-  'ice-hockey': 'ice_hockey',
-  handball: 'handball',
-  basketball: 'basketball',
-  baseball: 'baseball',
+// volleyball and baseball. `handball` is the only one still fully unconfirmed for this endpoint
+// (zero live matches in every sample so far) — follows the "plain name, no quirk" pattern already
+// established for its own /events endpoint.
+//
+// `rugby` needs TWO query values, not one — CONFIRMED via a real /events sample (rugby-events.json
+// in this integration's sample set): PulseScore's "rugby-union" /events URL segment, which this
+// app's single canonical 'rugby' sport is built on, actually lumps BOTH rugby codes together — real
+// rugby LEAGUE competitions ("Australia. NRL", "England. Super League") appear side by side with
+// rugby UNION ones ("New Zealand. Bunnings NPC", "France. Pro D2") in the very same /events
+// response. The live-events feed does NOT merge them the same way: a real zero-result live-events
+// query for an unrelated sport (basketball) once echoed back `"sport": "rugby_league"` — a value
+// never otherwise used in this file — which only makes sense if live-events tracks rugby league as
+// its own distinct sport bucket, separate from 'rugby_union'. Querying only 'rugby_union' here would
+// mean a live NRL or Super League match could never be detected as live, even though its pregame
+// odds are already correctly ingested under 'rugby' — so both values are queried and merged.
+const LIVE_EVENTS_SPORT_PARAMS: Record<string, string[]> = {
+  soccer: ['soccer'],
+  tennis: ['tennis'],
+  volleyball: ['volleyball'],
+  rugby: ['rugby_union', 'rugby_league'],
+  mma: ['mma'],
+  'ice-hockey': ['ice_hockey'],
+  handball: ['handball'],
+  basketball: ['basketball'],
+  baseball: ['baseball'],
 };
 
 /** Fetches every page of the dedicated /live-events feed for a sport (bounded low on purpose: the
@@ -548,17 +551,19 @@ export async function fetchPulseScoreLiveEvents(
   opts: { pageLimit?: number; maxPages?: number } = {},
 ): Promise<RawPulseScoreLiveEvent[]> {
   if (!apiKeyOk(apiKey)) return [];
-  const param = LIVE_EVENTS_SPORT_PARAM[sport];
-  if (!param) return [];
+  const params = LIVE_EVENTS_SPORT_PARAMS[sport];
+  if (!params || params.length === 0) return [];
   const pageLimit = opts.pageLimit ?? 100;
   const maxPages = opts.maxPages ?? 10;
   const out: RawPulseScoreLiveEvent[] = [];
-  for (let page = 1; page <= maxPages; page += 1) {
-    const url = `${PULSESCORE_BASE_URL}/api/onexbet/live-events?page=${page}&limit=${pageLimit}&sport=${encodeURIComponent(param)}`;
-    const json: EventsResponse | null = await fetchJson(url, apiKey);
-    if (!json || !Array.isArray(json.events)) break;
-    out.push(...(json.events as RawPulseScoreLiveEvent[]));
-    if (!json.hasNextPage) break;
+  for (const param of params) {
+    for (let page = 1; page <= maxPages; page += 1) {
+      const url = `${PULSESCORE_BASE_URL}/api/onexbet/live-events?page=${page}&limit=${pageLimit}&sport=${encodeURIComponent(param)}`;
+      const json: EventsResponse | null = await fetchJson(url, apiKey);
+      if (!json || !Array.isArray(json.events)) break;
+      out.push(...(json.events as RawPulseScoreLiveEvent[]));
+      if (!json.hasNextPage) break;
+    }
   }
   return out;
 }
