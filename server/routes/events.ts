@@ -726,14 +726,29 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   // TENNIS (game points 15/30/40/AD and set scores) — ULTRA LOW LATENCY 1s poll
   // on top of the WS slot (guaranteed fallback when WS drops a frame or
   // disconnects with 4429 rate limit). User hard rule: max delay = 1s.
-  // We only poll when ANY tennis live match actually exists in cache, so this
-  // is idle (zero extra requests) whenever no tennis is being played.
+  // BUG FIX (Catch-22): Originally this early-returned if hasAnyTennisLive===0,
+  // which meant we NEVER fetched /live-events to promote the FIRST pre-match
+  // to live if WS was down. Instead, only idle when no tennis events are
+  // currently relevant (no live, no upcoming <24h, no recently finished <6h).
   async function tennisUltraPollOnce(): Promise<void> {
     const now = Date.now();
     let liveMatches = 0;
     let updated = 0;
+    let newlyPromoted = 0;
+    const RELEVANT_UPCOMING_MS = 24 * 60 * 60 * 1_000;  // any tennis starting within 24h → keep poll alive so we promote instantly
+    const RELEVANT_RECENT_MS = 6 * 60 * 60 * 1_000;     // finished up to 6h ago → still poll to confirm finished
     const hasAnyTennisLive = Array.from(cache.values()).some((e) => e.sport === 'tennis' && e.is_live === 1);
-    if (!hasAnyTennisLive) {
+    const hasAnyRelevantTennis =
+      hasAnyTennisLive ||
+      Array.from(cache.values()).some((e) => {
+        if (e.sport !== 'tennis') return false;
+        const t = e.event_date instanceof Date ? e.event_date.getTime() : 0;
+        if (!t) return false;
+        const untilKickoff = t - now;
+        const sinceKickoff = now - t;
+        return untilKickoff <= RELEVANT_UPCOMING_MS && sinceKickoff <= RELEVANT_RECENT_MS;
+      });
+    if (!hasAnyRelevantTennis) {
       lastTennisUltraPollError = null;
       lastTennisUltraPollAt = now;
       lastTennisUltraPollStats = { liveMatches: 0, updated: 0 };
@@ -757,7 +772,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         const cached = cache.get(id);
         const merged = applyLiveRawState(lr, cached ?? null, 'tennis');
         cache.set(id, merged);
-        if (!cached) recordH2HOdds(merged, now);
+        if (!cached) {
+          recordH2HOdds(merged, now);
+          newlyPromoted += 1;
+        }
         updated += 1;
       }
       if (!providerReturnedEmpty) {
