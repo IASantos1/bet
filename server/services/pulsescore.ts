@@ -430,17 +430,61 @@ function mapMarkets(raw: RawMarket[]): AppMarket[] {
  *  other consumer in this app expects as home_odd/draw_odd/away_odd. Falls back to the "Win
  *  (2Way)" market (CONFIRMED: plain "mma"-league Muay Thai fights carry no MATCH_RESULT at all,
  *  only this) so such an event doesn't report all-zero odds and get filtered out everywhere on the
- *  frontend despite having real, biddable odds — see module docstring. */
+ *  frontend despite having real, biddable odds — see module docstring.
+ *  WebSocket caveat: the onexbet /ws/live feed occasionally drops the `period` field entirely on
+ *  MATCH_RESULT (or reports it as "LIVE"/"MATCH") — the initial MATCH_RESULT + FULL_TIME find()
+ *  would miss it, so we progressively widen the search to ANY active MATCH_RESULT (any period)
+ *  that has at least one of HOME/AWAY with real odds, and finally to ANY market with 2 or 3
+ *  selections whose canonicalOutcomes (or rawNames) clearly spell out {HOME,AWAY,DRAW} — all so a
+ *  live event that has real 1X2 odds on the wire doesn't render as `-----` in the frontend card.*/
 function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: number } {
-  const m = (raw || []).find((x) => x.canonicalMarket === 'MATCH_RESULT' && x.period === 'FULL_TIME' && x.isActive);
-  const pick = (outcome: string) => Number(m?.selections.find((s) => s.canonicalOutcome === outcome && s.isActive)?.odds || 0);
-  const home = pick('HOME');
-  const away = pick('AWAY');
-  if (home > 0 || away > 0) return { home, draw: pick('DRAW'), away };
+  const markets = raw || [];
 
-  const win2way = (raw || []).find((x) => x.period === 'FULL_TIME' && x.isActive && /win.*2.?way/i.test(String(x.rawName || '')));
-  const pickByName = (name: string) => Number(win2way?.selections.find((s) => s.isActive && String(s.rawName || '').toUpperCase() === name)?.odds || 0);
-  return { home: pickByName('W1'), draw: 0, away: pickByName('W2') };
+  function pickFromOutcomes(m: RawMarket): { home: number; draw: number; away: number } | null {
+    const sel = m.selections;
+    const pick = (outcome: string) => Number(sel.find((s) => s.canonicalOutcome === outcome && s.isActive)?.odds || 0);
+    const home = pick('HOME');
+    const away = pick('AWAY');
+    const draw = pick('DRAW');
+    if (home > 0 || away > 0 || draw > 0) return { home, draw, away };
+    // last-ditch: rawName is exactly the team name or W1/D/W2 etc.
+    const homeByName = Number(sel.find((s) => s.isActive && /^(w1|home|casa|1)$/i.test(String(s.rawName || '')))?.odds || 0);
+    const awayByName = Number(sel.find((s) => s.isActive && /^(w2|away|fora|visitante|2)$/i.test(String(s.rawName || '')))?.odds || 0);
+    const drawByName = Number(sel.find((s) => s.isActive && /^(x|draw|empate|d)$/i.test(String(s.rawName || '')))?.odds || 0);
+    if (homeByName > 0 || awayByName > 0 || drawByName > 0) {
+      return { home: home || homeByName, draw: draw || drawByName, away: away || awayByName };
+    }
+    return null;
+  }
+
+  const exact = markets.find((x) => x.canonicalMarket === 'MATCH_RESULT' && x.period === 'FULL_TIME' && x.isActive);
+  if (exact) {
+    const p = pickFromOutcomes(exact);
+    if (p) return p;
+  }
+
+  // step 2: any active MATCH_RESULT any period (WS live often drops the period field)
+  const anyMR = markets.find((x) => x.canonicalMarket === 'MATCH_RESULT' && x.isActive);
+  if (anyMR) {
+    const p = pickFromOutcomes(anyMR);
+    if (p) return p;
+  }
+
+  // step 3: Win 2Way fallback (mma Muay Thai-style fights with no MATCH_RESULT)
+  const win2way = markets.find((x) => x.isActive && /win.*2.?way/i.test(String(x.rawName || '')));
+  if (win2way) {
+    const pickByName = (name: string) => Number(win2way.selections.find((s) => s.isActive && String(s.rawName || '').toUpperCase() === name)?.odds || 0);
+    return { home: pickByName('W1'), draw: 0, away: pickByName('W2') };
+  }
+
+  // step 4: scan all active markets for the first one that looks like a 2/3-way 1X2 market,
+  // regardless of canonicalMarket name (defense against feed aliases we haven't hardcoded).
+  for (const m of markets) {
+    if (!m.isActive) continue;
+    const p = pickFromOutcomes(m);
+    if (p) return p;
+  }
+  return { home: 0, draw: 0, away: 0 };
 }
 
 export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent): AppEvent {

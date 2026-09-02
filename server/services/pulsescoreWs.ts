@@ -73,6 +73,49 @@ const CANONICAL_OUTCOME_MAP: Record<string, string> = {
   no: 'NO',
 };
 
+const CANONICAL_MARKET_ALIASES: Record<string, string> = {
+  MATCH_WINNER: 'MATCH_RESULT',
+  '1X2': 'MATCH_RESULT',
+  'FULL TIME RESULT': 'MATCH_RESULT',
+  'MATCH WINNER': 'MATCH_RESULT',
+  WINNER: 'MATCH_RESULT',
+  TOTAL_GOALS: 'OVER_UNDER',
+  TOTAL: 'OVER_UNDER',
+  OVER_UNDER: 'OVER_UNDER',
+  BTTS: 'BOTH_TEAMS_TO_SCORE',
+  'BOTH TEAMS TO SCORE': 'BOTH_TEAMS_TO_SCORE',
+  GG: 'BOTH_TEAMS_TO_SCORE',
+  DC: 'DOUBLE_CHANCE',
+  DOUBLE_CHANCE: 'DOUBLE_CHANCE',
+  AH: 'ASIAN_HANDICAP',
+  ASIAN_HANDICAP: 'ASIAN_HANDICAP',
+  HANDICAP: 'ASIAN_HANDICAP',
+  DNB: 'DRAW_NO_BET',
+  'DRAW NO BET': 'DRAW_NO_BET',
+  CORRECT_SCORE: 'CORRECT_SCORE',
+  HT_FT: 'HALF_TIME_FULL_TIME',
+  HALF_TIME_FULL_TIME: 'HALF_TIME_FULL_TIME',
+  FIRST_TO_SCORE: 'FIRST_TEAM_TO_SCORE',
+  'FIRST TEAM TO SCORE': 'FIRST_TEAM_TO_SCORE',
+  ODD_EVEN: 'TOTAL_GOALS_ODD_EVEN',
+  TOTAL_GAMES: 'TOTAL_GAMES',
+  GAME_HANDICAP: 'GAME_HANDICAP',
+  SET_HANDICAP: 'GAME_HANDICAP',
+  RACE_TO_POINTS: 'RACE_TO_POINTS',
+  EUROPEAN_HANDICAP: 'EUROPEAN_HANDICAP',
+};
+
+function normalizeCanonicalMarket(cm: string | undefined): string {
+  const raw = String(cm || 'OTHER').trim().toUpperCase().replace(/\s+/g, '_');
+  if (CANONICAL_MARKET_ALIASES[raw]) return CANONICAL_MARKET_ALIASES[raw];
+  // also try without underscore for aliases whose key had punctuation
+  const withoutUnderscore = raw.replace(/_/g, ' ');
+  if (CANONICAL_MARKET_ALIASES[withoutUnderscore] && !CANONICAL_MARKET_ALIASES[raw]) {
+    return CANONICAL_MARKET_ALIASES[withoutUnderscore];
+  }
+  return cm ? raw : 'OTHER';
+}
+
 const PERIOD_MAP: Record<string, string> = {
   fulltime: 'FULL_TIME',
   'first half': 'FIRST_HALF',
@@ -137,6 +180,18 @@ function toCanonicalOutcome(name: string, homeTeam?: string, awayTeam?: string):
   if (n.includes('over')) return 'OVER';
   if (n.includes('under')) return 'UNDER';
   if (n.includes('draw') || n === 'empate' || n === 'x') return 'DRAW';
+  const ht = String(homeTeam || '').trim().toLowerCase();
+  const at = String(awayTeam || '').trim().toLowerCase();
+  // onexbet shortens long team names inside selection.name (e.g. "Club Social y D." vs
+  // "Club Social y Deportivo") → the 1st 5+ chars must agree (handles most abbreviation).
+  if (ht) {
+    const min = Math.min(n.length, ht.length);
+    if (min >= 5 && n.slice(0, min) === ht.slice(0, min)) return 'HOME';
+  }
+  if (at) {
+    const min = Math.min(n.length, at.length);
+    if (min >= 5 && n.slice(0, min) === at.slice(0, min)) return 'AWAY';
+  }
   return 'OTHER';
 }
 
@@ -150,7 +205,7 @@ function mapPeriod(period: string): string {
   return p;
 }
 
-type WsRawSelection = { name?: string; rawName?: string; decimal?: string | number; odds?: number; isActive?: boolean; selectionId?: string; line?: number };
+type WsRawSelection = { name?: string; rawName?: string; canonicalOutcome?: string; decimal?: string | number; odds?: number; isActive?: boolean; selectionId?: string; line?: number };
 type WsRawMarket = {
   canonicalMarket?: string;
   rawName?: string;
@@ -181,8 +236,16 @@ function wsSelectionToRaw(s: WsRawSelection, homeTeam?: string, awayTeam?: strin
     typeof s.odds === 'number' && Number.isFinite(s.odds)
       ? s.odds
       : Number(s.decimal) || 0;
+  // The onexbet WS feed sometimes mirrors the exact REST schema — selections
+  // already carry a precomputed `canonicalOutcome` in {HOME,AWAY,DRAW,OVER,...}
+  // plus numeric `odds`. Trust that if present (avoids re-parsing "Draw"→"DRAW"
+  // which works but also crucially handles team-name selections like "Club Social
+  // y D." whose canonicalOutcome is already HOME/AWAY upstream and would otherwise
+  // fall into OTHER if the abbreviation fuzzy match ever misses).
+  const co = s.canonicalOutcome?.trim().toUpperCase();
+  const canonicalOutcome = co ? co : toCanonicalOutcome(name, homeTeam, awayTeam);
   return {
-    canonicalOutcome: toCanonicalOutcome(name, homeTeam, awayTeam),
+    canonicalOutcome,
     rawName: name,
     odds: oddNum,
     rawOdds: String(s.decimal != null ? s.decimal : oddNum),
@@ -194,7 +257,7 @@ function wsSelectionToRaw(s: WsRawSelection, homeTeam?: string, awayTeam?: strin
 
 function wsMarketToRaw(m: WsRawMarket, homeTeam?: string, awayTeam?: string): RawMarket {
   return {
-    canonicalMarket: String(m.canonicalMarket || 'OTHER').toUpperCase(),
+    canonicalMarket: normalizeCanonicalMarket(m.canonicalMarket),
     rawName: String(m.rawName || m.canonicalMarket || 'Market'),
     period: mapPeriod(m.period || 'fulltime'),
     line: typeof m.line === 'number' ? m.line : undefined,
