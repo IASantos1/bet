@@ -290,7 +290,16 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   let resultsGuardTimer: NodeJS.Timeout | null = null;
   let lastResultsGuardAt = 0;
   let lastResultsGuardError: string | null = null;
-  let lastResultsGuardStats: { scanned: number; finalized: number; sportsChecked: number } | null = null;
+  let lastResultsGuardStats: {
+    scanned: number;
+    finalized: number;
+    finalizedByResults: number;
+    finalizedByClock: number;
+    finalizedBySingleFetch: number;
+    singleFetchCandidates: number;
+    sportsChecked: number;
+    resultsPagesPerSport: number;
+  } | null = null;
 
   let tennisUltraPollInFlight: Promise<void> | null = null;
   let tennisUltraPollTimer: NodeJS.Timeout | null = null;
@@ -891,20 +900,62 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     const now = Date.now();
     let scanned = 0;
     let finalized = 0;
+    let finalizedByResults = 0;
+    let finalizedByClock = 0;
+    let finalizedBySingleFetch = 0;
+    let singleFetchCandidates = 0;
     let sportsChecked = 0;
     try {
       const liveSports = new Set<string>();
+      const hasLowTierLive: Record<string, boolean> = {};
+      const SOCCER_MAX_DURATION_MS = 110 * 60 * 1_000;
+      const SOCCER_SINGLE_FETCH_THRESHOLD_MS = 92 * 60 * 1_000;
+      const FT_CLOCK_RE = /^(FT|Full.?Time|Final(izado)?|90\+?\d*|Ended?|Finished?)$/i;
+      const ADDITIONAL_MS_RE = /^90\+/i;
       for (const ev of cache.values()) {
-        if (ev.is_live === 1) liveSports.add(ev.sport);
+        if (ev.is_live !== 1) continue;
+        liveSports.add(ev.sport);
+        if (ev.sport === 'soccer' && !hasLowTierLive.soccer) {
+          const leagueLower = String(ev.league || '').toLowerCase();
+          if (
+            leagueLower.includes('nicara') ||
+            leagueLower.includes('honduras') ||
+            leagueLower.includes('salvad') ||
+            leagueLower.includes('guatemala') ||
+            leagueLower.includes('costaric') ||
+            leagueLower.includes('panama') ||
+            leagueLower.includes('paraguay') ||
+            leagueLower.includes('bolivia') ||
+            leagueLower.includes('venezu') ||
+            leagueLower.includes('peru') ||
+            leagueLower.includes('ecuador') ||
+            leagueLower.includes('uruguay') ||
+            leagueLower.includes('championship') ||
+            leagueLower.includes('division 2') ||
+            leagueLower.includes('liga 2') ||
+            leagueLower.includes('liga 3') ||
+            leagueLower.includes('segunda') ||
+            leagueLower.includes('tercera') ||
+            leagueLower.includes('lower league')
+          ) {
+            hasLowTierLive.soccer = true;
+          }
+        }
       }
       const sportsArr = Array.from(liveSports);
       sportsChecked = sportsArr.length;
+
+      // I — Pull /results pages (MORE pages when low-tier leagues exist because
+      // T4/T5 finals only show up starting at page 3+ of /results). Pages 1-4 =
+      // 80 results; 1-5 if low tier detected = 100 results per sport.
+      const defaultPages = hasLowTierLive.soccer ? 5 : 4;
       const finalizedIds = new Map<string, { homeFinal: number | null; awayFinal: number | null; league?: string }>();
       let sportIdx = 0;
       for (const sport of sportsArr) {
         if (sportIdx > 0) await new Promise((r) => setTimeout(r, 700));
         sportIdx += 1;
-        const results = await fetchPulseScoreResults(apiKey, sport, { pageLimit: 20, maxPages: 2 }).catch(() => []);
+        const pages = sport === 'soccer' ? defaultPages : 2;
+        const results = await fetchPulseScoreResults(apiKey, sport, { pageLimit: 20, maxPages: pages }).catch(() => []);
         for (const r of results) {
           if (!r || !r.eventId) continue;
           if (isBlockedEvent(r.league, r.home, r.away)) continue;
@@ -918,12 +969,11 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
               awayFinal = a;
             }
           }
-          // The /results feed only lists matches that are finalized (confirmed: the
-          // endpoint name) — so any id in here means the match is finished.
           finalizedIds.set(`pulsescore_${r.eventId}`, { homeFinal, awayFinal, league: r.league });
         }
       }
-      // Now demote matches we currently think are live but /results says finished.
+
+      // I.1 — Demote matches currently live but /results already lists finalized.
       for (const [id, info] of finalizedIds) {
         const cached = cache.get(id);
         if (!cached || cached.is_live !== 1) continue;
@@ -941,13 +991,133 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         }
         cache.set(id, merged);
         finalized += 1;
+        finalizedByResults += 1;
       }
+
+      // II — Zero-request clock-based finalize for events that /results hasn't
+      // picked up yet (confirmed issue: Nicaragua / Honduras / lower LatAm
+      // championships can take 5+ minutes to hit any /results page). If the
+      // game has clearly exceeded regulation duration and/or the clock says
+      // FT/90+ — mark it finalized IMMEDIATELY without waiting for /results
+      // or single-fetch.
+      const pinnedFinalScoreFrom = (ev: AppEvent): { h: number; a: number } | null => {
+        if (ev.score && typeof (ev.score as any).home === 'number' && typeof (ev.score as any).away === 'number') {
+          return { h: Number((ev.score as any).home), a: Number((ev.score as any).away) };
+        }
+        return null;
+      };
+      for (const ev of cache.values()) {
+        if (ev.is_live !== 1) continue;
+        if (ev.sport !== 'soccer') continue;
+        const kickoffMs = ev.event_date instanceof Date && Number.isFinite(ev.event_date.getTime())
+          ? ev.event_date.getTime()
+          : 0;
+        if (!kickoffMs) continue;
+        const elapsed = now - kickoffMs;
+        const matchClockAny: any = (ev as any).matchClock || {};
+        const period: string = String(matchClockAny.period || '').trim();
+        const minuteRaw: string = String(matchClockAny.minute || matchClockAny.min || '').trim();
+        const is90Plus =
+          ADDITIONAL_MS_RE.test(period) ||
+          ADDITIONAL_MS_RE.test(minuteRaw) ||
+          (Number(minuteRaw.replace(/\D/g, '')) >= 90 && Number.isFinite(Number(minuteRaw.replace(/\D/g, ''))));
+        const isFT = FT_CLOCK_RE.test(period) || FT_CLOCK_RE.test(minuteRaw);
+        const expiredDuration = elapsed >= SOCCER_MAX_DURATION_MS;
+        const clockFinalized = isFT || (is90Plus && elapsed >= SOCCER_SINGLE_FETCH_THRESHOLD_MS + 8 * 60 * 1_000);
+        if (!(expiredDuration || clockFinalized)) continue;
+        scanned += 1;
+        const finalScore = pinnedFinalScoreFrom(ev);
+        const merged: AppEvent = { ...ev, is_live: 0 };
+        if (finalScore) {
+          (merged as any).finalScore = { home: finalScore.h, away: finalScore.a };
+          merged.score = {
+            ...(typeof merged.score === 'object' ? ((merged.score as any) || {}) : {}),
+            home: finalScore.h,
+            away: finalScore.a,
+          } as any;
+        }
+        cache.set(ev.id, merged);
+        finalized += 1;
+        finalizedByClock += 1;
+      }
+
+      // III — Single-event endpoint fallback (ROBUST). For every soccer live
+      // event with elapsed >= 92min but still is_live=1, fetch its own
+      // /{sport}/events/{eventId} page directly (no pagination bias). If the
+      // provider's canonical single-event view says "finalized" / has FT clock
+      // / has final score with status finished → mark is_live=0 IMMEDIATELY.
+      // We cap at 20 per 30s cycle to stay within plan MAX 3/sec budget.
+      const MAX_SINGLE_FETCH_PER_CYCLE = 20;
+      const SINGLE_FETCH_STAGGER_MS = 110;
+      const SINGLE_FETCH_FINALIZED_RE = /^(final|finished|ended|completed|finalizado|terminado|ft|full.?time)$/i;
+      let fetchBudget = MAX_SINGLE_FETCH_PER_CYCLE;
+      for (const ev of cache.values()) {
+        if (fetchBudget <= 0) break;
+        if (ev.is_live !== 1) continue;
+        if (ev.sport !== 'soccer') continue;
+        const kickoffMs = ev.event_date instanceof Date && Number.isFinite(ev.event_date.getTime())
+          ? ev.event_date.getTime()
+          : 0;
+        if (!kickoffMs) continue;
+        const elapsed = now - kickoffMs;
+        if (elapsed < SOCCER_SINGLE_FETCH_THRESHOLD_MS) continue;
+        singleFetchCandidates += 1;
+        fetchBudget -= 1;
+        const bareId = String(ev.id).startsWith('pulsescore_')
+          ? String(ev.id).slice('pulsescore_'.length)
+          : String(ev.id);
+        if (fetchBudget < MAX_SINGLE_FETCH_PER_CYCLE - 1) {
+          await new Promise((r) => setTimeout(r, SINGLE_FETCH_STAGGER_MS));
+        }
+        const rawSingle = await fetchPulseScoreEvent(apiKey, ev.sport, bareId).catch(() => null);
+        if (!rawSingle) continue;
+        const status: string = String((rawSingle as any).status || (rawSingle as any).eventStatus || '').trim();
+        const period: string = String(((rawSingle as any).matchClock || {} as any).period || '').trim();
+        const isFinished =
+          SINGLE_FETCH_FINALIZED_RE.test(status) ||
+          SINGLE_FETCH_FINALIZED_RE.test(period) ||
+          FT_CLOCK_RE.test(period);
+        const hasFinalMark =
+          Boolean((rawSingle as any).final) ||
+          Boolean((rawSingle as any).isFinished) ||
+          Boolean((rawSingle as any).finalized) ||
+          Boolean((rawSingle as any).finished);
+        const rsHome = Number((rawSingle as any).score?.home);
+        const rsAway = Number((rawSingle as any).score?.away);
+        const finalScore = (Number.isFinite(rsHome) && Number.isFinite(rsAway) && (rsHome > 0 || rsAway > 0 || isFinished || hasFinalMark))
+          ? { h: rsHome, a: rsAway }
+          : pinnedFinalScoreFrom(ev);
+        if (!(isFinished || hasFinalMark)) continue;
+        scanned += 1;
+        const merged: AppEvent = { ...ev, is_live: 0 };
+        if (finalScore) {
+          (merged as any).finalScore = { home: finalScore.h, away: finalScore.a };
+          merged.score = {
+            ...(typeof merged.score === 'object' ? ((merged.score as any) || {}) : {}),
+            home: finalScore.h,
+            away: finalScore.a,
+          } as any;
+        }
+        cache.set(ev.id, merged);
+        finalized += 1;
+        finalizedBySingleFetch += 1;
+      }
+
       lastResultsGuardError = null;
     } catch (e: any) {
       lastResultsGuardError = String(e?.message || e);
     } finally {
       lastResultsGuardAt = now;
-      lastResultsGuardStats = { scanned, finalized, sportsChecked };
+      lastResultsGuardStats = {
+        scanned,
+        finalized,
+        finalizedByResults,
+        finalizedByClock,
+        finalizedBySingleFetch,
+        singleFetchCandidates,
+        sportsChecked,
+        resultsPagesPerSport: hasLowTierLive.soccer ? 5 : 4,
+      };
     }
   }
 
