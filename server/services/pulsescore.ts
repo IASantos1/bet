@@ -3,20 +3,21 @@
  * GoalServe/sportsApiPro/API-Football/StatPal were all removed from this backend (see git history
  * around the "Remove dead parallel frontend..." / events.ts stub commits).
  *
- * Everything below is built against 3 REAL sample responses pulled directly by the user (not
- * guessed) — a /leagues page, an /events page, and one single-event detail response — plus 2
- * CONFIRMED curl commands for the first two:
+ * Built against real sample responses pulled directly by the user (not guessed) for THREE
+ * confirmed sports so far — soccer, tennis, volleyball — each with a /leagues page and an /events
+ * page, plus one single-event detail response (tennis, eventId 749243435). Three CONFIRMED
+ * endpoint shapes:
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/leagues?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events?page=&limit=
+ *   GET https://api.pulsescore.net/api/onexbet/{sport}/events/{eventId}   -> { data: <event> }
  *   headers: accept: * / *, x-secret: <key>, Accept-Encoding: gzip
  *
- * Only `sport=soccer` is confirmed working — `sport` is a path segment so other sports may follow
- * the same shape, but that's unverified; SPORT_SEGMENTS below only maps sports actually seen.
- *
- * The single-event detail sample (richer: markets split by FULL_TIME/FIRST_HALF/SECOND_HALF, plus
- * a `moreInfo.subGames` counter) has no confirmed URL — nothing here guesses one. A caller that
- * needs one event's odds gets it by pulling that event out of the already-fetched events/leagues
- * page instead (see findPulseScoreEvent in events.ts).
+ * Only soccer/tennis/volleyball are confirmed working — `sport` is a path segment so other sports
+ * may follow the same shape, but that's unverified; sportSegment() below only maps sports actually
+ * seen in a real response. The single-event endpoint has only actually been pulled for tennis;
+ * using it for soccer/volleyball too is a pattern-consistency call (the /leagues and /events
+ * collection endpoints are already confirmed byte-for-byte identical in shape across all three
+ * sports), not a blind guess of an unseen URL.
  *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
@@ -25,11 +26,13 @@
 
 const PULSESCORE_BASE_URL = 'https://api.pulsescore.net';
 
-// CONFIRMED only for soccer (the sport in every sample response/curl seen). Add an entry here only
-// once a real response for that sport has actually been pulled — never guess a sport works.
+// CONFIRMED for soccer, tennis and volleyball (real sample responses pulled for all three). Add an
+// entry here only once a real response for that sport has actually been pulled — never guess.
 function sportSegment(sport: string): string | null {
   const s = String(sport || '').toLowerCase().trim();
   if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
+  if (s === 'tennis' || s === 'tenis' || s === 'ténis') return 'tennis';
+  if (s === 'volleyball' || s === 'voleibol') return 'volleyball';
   return null;
 }
 
@@ -155,13 +158,53 @@ const MARKET_KEY_SLUGS: Record<string, string> = {
   FIRST_TEAM_TO_SCORE: 'first_to_score',
   CORRECT_SCORE: 'correct_score',
   TOTAL_GOALS_ODD_EVEN: 'odd_even',
+  // Tennis/volleyball-specific markets (confirmed in real tennis/volleyball samples).
+  TOTAL_GAMES: 'total_games',
+  GAME_HANDICAP: 'game_hcp',
 };
 
-function slugMarket(canonicalMarket: string): string {
-  return MARKET_KEY_SLUGS[canonicalMarket] || String(canonicalMarket || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+/** PulseScore dumps many genuinely distinct market types into one generic "OTHER" canonicalMarket
+ *  bucket (CONFIRMED: a single tennis event carries "1, Result + Total", "2, Result + Total",
+ *  "Sets Handicap", "Total Sets", "Sets Scoring", "Set / Match" all as canonicalMarket "OTHER") —
+ *  slugging those all down to the literal string "other" collides them together, so OTHER falls
+ *  back to a slug of the market's own rawName instead (still deduped as a final safety net in
+ *  mapMarkets, in case two OTHER markets ever do share a rawName). */
+function slugMarket(m: RawMarket): string {
+  if (m.canonicalMarket === 'OTHER') {
+    const fromName = String(m.rawName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return fromName || 'other';
+  }
+  return MARKET_KEY_SLUGS[m.canonicalMarket] || String(m.canonicalMarket || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '_');
 }
 
-const PERIOD_SUFFIX: Record<string, string> = { FIRST_HALF: '1h', SECOND_HALF: '2h' };
+const ORDINAL_WORD_TO_DIGIT: Record<string, string> = {
+  FIRST: '1',
+  SECOND: '2',
+  THIRD: '3',
+  FOURTH: '4',
+  FIFTH: '5',
+  SIXTH: '6',
+  SEVENTH: '7',
+};
+
+/** Turns a PulseScore market `period` into a short key suffix ("1h", "2s", ...), or null for
+ *  FULL_TIME (no suffix needed). Confirmed periods so far: FULL_TIME, FIRST_HALF/SECOND_HALF
+ *  (soccer), FIRST_SET/SECOND_SET (tennis/volleyball) — but this always returns SOME suffix for a
+ *  non-FULL_TIME period, even one never seen before, because two raw markets that share a
+ *  canonicalMarket+line but differ only in period (e.g. "MATCH_RESULT"/FULL_TIME vs
+ *  "MATCH_RESULT"/FIRST_SET, both seen in the same tennis event) would otherwise collide on the
+ *  same Market.key and silently overwrite each other in marketsAsRecord. */
+function periodSuffix(period: string): string | null {
+  const p = String(period || '').toUpperCase().trim();
+  if (!p || p === 'FULL_TIME') return null;
+  const m = /^(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|SEVENTH)_(HALF|SET|QUARTER|PERIOD|ROUND)$/.exec(p);
+  if (m) {
+    const digit = ORDINAL_WORD_TO_DIGIT[m[1]];
+    const unit = m[2] === 'HALF' ? 'h' : m[2] === 'SET' ? 's' : m[2] === 'QUARTER' ? 'q' : m[2] === 'PERIOD' ? 'p' : 'r';
+    return `${digit}${unit}`;
+  }
+  return p.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
 
 /** A single PulseScore market entry can mix multiple lines in one `selections` array (CONFIRMED:
  *  the single-event sample's OVER_UNDER market carries Over/Under at 2, 2.5, 3 and 3.5 all
@@ -176,11 +219,11 @@ function splitMarketByLine(m: RawMarket): AppMarket[] {
     arr.push(s);
     groups.set(key, arr);
   }
-  const periodSuffix = PERIOD_SUFFIX[m.period];
+  const suffix = periodSuffix(m.period);
   const out: AppMarket[] = [];
   for (const [lineKey, selections] of groups) {
-    const base = slugMarket(m.canonicalMarket);
-    const key = [base, lineKey || null, periodSuffix || null].filter(Boolean).join('_');
+    const base = slugMarket(m);
+    const key = [base, lineKey || null, suffix || null].filter(Boolean).join('_');
     out.push({
       id: `${m.marketId}${lineKey ? `:${lineKey}` : ''}`,
       key,
@@ -197,6 +240,16 @@ function mapMarkets(raw: RawMarket[]): AppMarket[] {
   for (const m of raw || []) {
     if (!m?.isActive) continue;
     out.push(...splitMarketByLine(m));
+  }
+  // Final safety net: even with the OTHER-bucket rawName fallback above, two raw markets could in
+  // principle still slug down to the same key (identical rawName, same line, same period). Rather
+  // than let one silently overwrite the other wherever this feeds a Record<key, ...> (see
+  // events.ts marketsAsRecord), disambiguate any repeat with a numeric suffix.
+  const seen = new Map<string, number>();
+  for (const mkt of out) {
+    const n = (seen.get(mkt.key) || 0) + 1;
+    seen.set(mkt.key, n);
+    if (n > 1) mkt.key = `${mkt.key}__${n}`;
   }
   return out;
 }
@@ -278,4 +331,20 @@ export async function fetchPulseScoreLeagues(
   return out;
 }
 
-export const PULSESCORE_SPORTS = ['soccer'] as const;
+/** Fetches one event by its PulseScore eventId. CONFIRMED URL shape for tennis (real sample
+ *  pulled for eventId 749243435); used for soccer/volleyball too on pattern consistency with the
+ *  already-confirmed-identical /leagues and /events collection endpoints (see module docstring) —
+ *  not a blind guess. Returns null on any failure or unexpected shape, same as fetchJson's callers
+ *  elsewhere in this file. */
+export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventId: string): Promise<RawPulseScoreEvent | null> {
+  if (!apiKeyOk(apiKey)) return null;
+  const seg = sportSegment(sport);
+  const id = String(eventId || '').trim();
+  if (!seg || !id) return null;
+  const url = `${PULSESCORE_BASE_URL}/api/onexbet/${seg}/events/${encodeURIComponent(id)}`;
+  const json = await fetchJson(url, apiKey);
+  const data = json && typeof json === 'object' ? json.data : null;
+  return data && typeof data === 'object' ? (data as RawPulseScoreEvent) : null;
+}
+
+export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball'] as const;

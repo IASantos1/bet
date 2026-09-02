@@ -2,6 +2,7 @@ import type http from 'http';
 import type pg from 'pg';
 import { sendJson } from '../lib/http';
 import {
+  fetchPulseScoreEvent,
   fetchPulseScoreEvents,
   normalizePulseScoreEvent,
   PULSESCORE_SPORTS,
@@ -132,9 +133,32 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
   }
   startPolling();
 
-  function findCached(rawId: string): AppEvent | null {
+  function findCachedSync(rawId: string): AppEvent | null {
     const id = toInternalId(rawId);
     return cache.get(id) || cache.get(String(rawId || '').trim()) || null;
+  }
+
+  /** Cache lookup with a live single-event fallback: the poll loop covers every page of every
+   *  confirmed sport, so a miss here means either the event just isn't PulseScore's (any sport,
+   *  any id), or it fell out of the 30s-old cache window — the fallback fetches it directly via
+   *  fetchPulseScoreEvent instead of forcing a full-catalog refresh for one lookup. */
+  async function resolveEvent(rawId: string, sportHint?: string): Promise<AppEvent | null> {
+    const cached = findCachedSync(rawId);
+    if (cached) return cached;
+    if (!hasApiKey(apiKey)) return null;
+    const bareId = String(rawId || '').trim().replace(/^pulsescore_/, '');
+    if (!bareId) return null;
+    const hint = sportHint && String(sportHint).trim();
+    const sports = hint ? [hint, ...PULSESCORE_SPORTS.filter((s) => s !== hint)] : [...PULSESCORE_SPORTS];
+    for (const sport of sports) {
+      const raw = await fetchPulseScoreEvent(apiKey, sport, bareId).catch(() => null);
+      if (raw) {
+        const ev = normalizePulseScoreEvent(sport, raw);
+        cache.set(ev.id, ev);
+        return ev;
+      }
+    }
+    return null;
   }
 
   function applyOverride(ev: AppEvent): AppEvent {
@@ -178,7 +202,8 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     }
 
     if (req.method === 'GET' && path === '/api/sports') {
-      sendJson(res, 200, PULSESCORE_SPORTS.map((s) => ({ key: s, name: s === 'soccer' ? 'Futebol' : s })));
+      const names: Record<string, string> = { soccer: 'Futebol', tennis: 'Ténis', volleyball: 'Voleibol' };
+      sendJson(res, 200, PULSESCORE_SPORTS.map((s) => ({ key: s, name: names[s] || s })));
       return true;
     }
 
@@ -270,7 +295,8 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     const evMatch = path.match(/^\/api\/events\/([^/]+)$/);
     if (evMatch && req.method === 'GET') {
       await ensureRefreshed();
-      const found = findCached(decodeURIComponent(evMatch[1] || ''));
+      const sportHint = String(url.searchParams.get('sport') || '').trim() || undefined;
+      const found = await resolveEvent(decodeURIComponent(evMatch[1] || ''), sportHint);
       if (!found) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
       sendJson(res, 200, applyOverride(found));
       return true;
@@ -278,7 +304,8 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
 
     const oddsMatch = path.match(/^\/api\/events\/([^/]+)\/odds$/);
     if (oddsMatch && req.method === 'GET') {
-      const odds = await getEventOdds(decodeURIComponent(oddsMatch[1] || ''));
+      const sportHint = String(url.searchParams.get('sport') || '').trim() || undefined;
+      const odds = await getEventOdds(decodeURIComponent(oddsMatch[1] || ''), sportHint);
       if (!odds) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
       sendJson(res, 200, odds);
       return true;
@@ -330,7 +357,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
 
   const getEventOdds = async (
     eventId: string,
-    _sport?: string,
+    sport?: string,
   ): Promise<{
     home: number;
     draw: number;
@@ -339,7 +366,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string): Even
     versions: { home: number; draw: number; away: number };
   } | null> => {
     await ensureRefreshed();
-    const raw = findCached(eventId);
+    const raw = await resolveEvent(eventId, sport);
     if (!raw) return null;
     const ev = applyOverride(raw);
     const now = Date.now();
