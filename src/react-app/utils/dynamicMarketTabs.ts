@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Dynamic market tabs for PulseScore-backed sports (tennis/volleyball/rugby)
+// Dynamic market tabs for PulseScore-backed sports (tennis/volleyball/rugby/mma/ice-hockey/
+// handball/basketball)
 // ─────────────────────────────────────────────────────────────────────────
 // PulseScore market keys carry a per-line/per-period suffix generated server-side
 // (server/services/pulsescore.ts: ou_2.5, hcp_-1, game_hcp_-3.5, htft_1s, ...) that a static
@@ -121,6 +122,34 @@ export function classifyHandballMarket(key: string): string {
   if (key.startsWith('dnb')) return 'Empate Anula Aposta';
   if (key.startsWith('ou_')) return 'Totais';
   if (key.startsWith('ehcp') || key.startsWith('hcp')) return 'Handicap';
+  if (key.startsWith('odd_even')) return 'Par/Ímpar';
+  return 'Especiais';
+}
+
+/** Basketball quarter-suffix bucket: matches trailing `_1q`..`_4q` (FIRST_QUARTER..FOURTH_QUARTER).
+ *  Kept separate from halfPeriodBucket/periodOrdinalBucket because basketball events (CONFIRMED in
+ *  a real single-event sample) carry BOTH half-based markets (FIRST_HALF, suffix `_1h`) AND
+ *  quarter-based markets (FIRST_QUARTER, suffix `_1q`) CONCURRENTLY for the same match — unlike ice
+ *  hockey, which only ever alternates naming style across different, non-overlapping periods.
+ *  Reusing the shared ordinal-only periodOrdinalBucket here would incorrectly merge a "1st half"
+ *  market and a "1st quarter" market into the same tab. */
+export function quarterPeriodBucket(key: string): string | null {
+  const m = /_([1-4])q$/.exec(key);
+  return m ? `${m[1]}º Quarto` : null;
+}
+
+export const BASKETBALL_BUCKET_ORDER = ['Vencedor', 'Dupla Chance', 'Empate Anula Aposta', 'Totais', 'Handicap', 'Corrida até Pontos', 'Par/Ímpar'];
+export function classifyBasketballMarket(key: string): string {
+  const halfBucket = halfPeriodBucket(key);
+  if (halfBucket) return halfBucket;
+  const quarterBucket = quarterPeriodBucket(key);
+  if (quarterBucket) return quarterBucket;
+  if (key === 'h2h') return 'Vencedor';
+  if (key.startsWith('dc') || key.startsWith('regular_time_double_chance')) return 'Dupla Chance';
+  if (key.startsWith('dnb')) return 'Empate Anula Aposta';
+  if (key.startsWith('ou_')) return 'Totais';
+  if (key.startsWith('ehcp') || key.startsWith('hcp')) return 'Handicap';
+  if (key.startsWith('race_to_points')) return 'Corrida até Pontos';
   if (key.startsWith('odd_even')) return 'Par/Ímpar';
   return 'Especiais';
 }

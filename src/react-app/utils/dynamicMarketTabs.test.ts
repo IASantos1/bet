@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  classifyBasketballMarket,
   classifyTennisMarket,
   classifyVolleyballMarket,
   classifyRugbyMarket,
@@ -7,6 +8,7 @@ import {
   classifyIceHockeyMarket,
   classifyHandballMarket,
   buildDynamicMarketTabs,
+  BASKETBALL_BUCKET_ORDER,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
@@ -214,6 +216,45 @@ describe('classifyHandballMarket', () => {
     const tabs = buildDynamicMarketTabs(keys, classifyHandballMarket, HANDBALL_BUCKET_ORDER, (k) => k);
     expect(tabs[0].keys.length).toBe(keys.length);
     expect(tabs.find((t) => t.title === 'Handicap')?.keys.sort()).toEqual(['ehcp_-4', 'hcp_-8.5']);
+    expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
+  });
+});
+
+describe('classifyBasketballMarket', () => {
+  it('keeps half-based and quarter-based markets in DIFFERENT buckets (CONFIRMED: a real basketball event carries BOTH FIRST_HALF and FIRST_QUARTER markets concurrently, unlike ice hockey which only alternates naming style across non-overlapping periods)', () => {
+    expect(classifyBasketballMarket('h2h')).toBe('Vencedor');
+    expect(classifyBasketballMarket('h2h_1h')).toBe('1º Tempo');
+    expect(classifyBasketballMarket('h2h_1q')).toBe('1º Quarto');
+    expect(classifyBasketballMarket('h2h_2h')).not.toBe(classifyBasketballMarket('h2h_1q'));
+    expect(classifyBasketballMarket('dnb_1q')).toBe('1º Quarto');
+  });
+
+  it('routes basketball-specific market bases to their own buckets', () => {
+    expect(classifyBasketballMarket('dc')).toBe('Dupla Chance');
+    // "Regular Time Double Chance" is an OTHER-bucket market that slugs via its rawName fallback
+    // (server/services/pulsescore.ts) rather than the DOUBLE_CHANCE canonicalMarket's "dc" slug —
+    // confirmed in a real basketball single-event sample alongside the regular "dc" market.
+    expect(classifyBasketballMarket('regular_time_double_chance')).toBe('Dupla Chance');
+    expect(classifyBasketballMarket('ou_150.5')).toBe('Totais');
+    expect(classifyBasketballMarket('hcp_-3.5')).toBe('Handicap');
+    expect(classifyBasketballMarket('ehcp_-4')).toBe('Handicap');
+    expect(classifyBasketballMarket('race_to_points_1q')).toBe('1º Quarto');
+    expect(classifyBasketballMarket('odd_even')).toBe('Par/Ímpar');
+  });
+
+  it('a full realistic basketball market key list (real single-event shape: FULL_TIME + FIRST_HALF + FIRST_QUARTER markets all present together) is fully covered end to end', () => {
+    const keys = [
+      'h2h', '1x2_in_regular_time', 'regular_time_double_chance', 'ou_150.5', 'hcp_-3.5', 'ou_home_74.5', 'ou_away_77.5', 'odd_even', 'individual_total_1_even',
+      'h2h_1h', 'dc_1h', 'ou_79.5_1h', 'hcp_-1_1h', 'ou_home_40_1h', 'odd_even_1h', '1_half_individual_total_1_even_1h',
+      'h2h_1q', 'dc_1q', 'ou_39.5_1q', 'dnb_1q', 'ou_home_20_1q', 'odd_even_1q', '1st_quarter_individual_total_1_even_1q',
+    ];
+    const tabs = buildDynamicMarketTabs(keys, classifyBasketballMarket, BASKETBALL_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys.length).toBe(keys.length);
+    expect(tabs.some((t) => t.title === '1º Tempo')).toBe(true);
+    expect(tabs.some((t) => t.title === '1º Quarto')).toBe(true);
+    const halfBucket = tabs.find((t) => t.title === '1º Tempo')?.keys || [];
+    const quarterBucket = tabs.find((t) => t.title === '1º Quarto')?.keys || [];
+    expect(halfBucket.some((k) => quarterBucket.includes(k))).toBe(false);
     expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
   });
 });

@@ -3,21 +3,21 @@
  * GoalServe/sportsApiPro/API-Football/StatPal were all removed from this backend (see git history
  * around the "Remove dead parallel frontend..." / events.ts stub commits).
  *
- * Built against real sample responses pulled directly by the user (not guessed) for SEVEN confirmed
- * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma, ice hockey, handball — each
- * with a /leagues page and an /events page. Three CONFIRMED endpoint shapes:
+ * Built against real sample responses pulled directly by the user (not guessed) for EIGHT confirmed
+ * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma, ice hockey, handball,
+ * basketball — each with a /leagues page and an /events page. Three CONFIRMED endpoint shapes:
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/leagues?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events/{eventId}   -> { data: <event> }
  *   headers: accept: * / *, x-secret: <key>, Accept-Encoding: gzip
  *
- * Only soccer/tennis/volleyball/rugby/mma/ice-hockey/handball are confirmed working — `sport` is a
- * path segment so other sports may follow the same shape, but that's unverified; sportSegment()
- * below only maps sports actually seen in a real response. The single-event endpoint has actually
- * been pulled for tennis, volleyball, mma, ice hockey and handball (5 of the 6 non-soccer sports);
- * using it for soccer/rugby too is a pattern-consistency call (the /leagues and /events collection
- * endpoints are already confirmed byte-for-byte identical in shape across all seven sports), not a
- * blind guess of an unseen URL.
+ * Only soccer/tennis/volleyball/rugby/mma/ice-hockey/handball/basketball are confirmed working —
+ * `sport` is a path segment so other sports may follow the same shape, but that's unverified;
+ * sportSegment() below only maps sports actually seen in a real response. The single-event endpoint
+ * has actually been pulled for tennis, volleyball, mma, ice hockey, handball and basketball (6 of
+ * the 7 non-soccer sports); using it for soccer/rugby too is a pattern-consistency call (the
+ * /leagues and /events collection endpoints are already confirmed byte-for-byte identical in shape
+ * across all eight sports), not a blind guess of an unseen URL.
  * Note: both rugby's and ice hockey's own `sport` field come back with an underscore
  * ("rugby_union", "ice_hockey") even though their URL path segments use a hyphen ("rugby-union",
  * "ice-hockey") — normalizePulseScoreEvent() always stamps the AppEvent with the canonical sport
@@ -39,6 +39,15 @@
  * FIRST_HALF/SECOND_HALF for periods 1-2 with THIRD_PERIOD for period 3 in the very same match.
  * periodSuffix() already handles this correctly with no code change needed — it matches on the
  * generic (ordinal-word)_(unit-word) shape rather than hardcoding which unit word each sport uses.
+ *
+ * Basketball period quirk (CONFIRMED in a real single-event/-events sample): unlike ice hockey
+ * (which just alternates naming style across DIFFERENT, non-overlapping periods of one match),
+ * basketball events carry BOTH half-based markets (FIRST_HALF) AND quarter-based markets
+ * (FIRST_QUARTER) CONCURRENTLY for the very same event — this module's key-slugging code needs no
+ * change for it (periodSuffix() already yields distinct "1h" vs "1q" suffixes so the keys never
+ * collide), but the frontend's dynamic tab-bucketing (dynamicMarketTabs.ts) needs a
+ * basketball-specific bucketer that keeps halves and quarters in separate tabs rather than reusing
+ * ice hockey's shared ordinal-only bucket.
  *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
@@ -62,6 +71,7 @@ function sportSegment(sport: string): string | null {
   if (s === 'ice-hockey' || s === 'ice_hockey' || s === 'icehockey' || s === 'hockey' || s === 'hóquei') return 'ice-hockey';
   if (s === 'mma' || s === 'ufc' || s === 'mixed martial arts' || s === 'luta') return 'mma';
   if (s === 'handball' || s === 'handebol') return 'handball';
+  if (s === 'basketball' || s === 'basquete' || s === 'basquetebol') return 'basketball';
   return null;
 }
 
@@ -389,4 +399,4 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
   return data && typeof data === 'object' ? (data as RawPulseScoreEvent) : null;
 }
 
-export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball'] as const;
+export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball'] as const;
