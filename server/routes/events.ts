@@ -229,6 +229,25 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   async function refreshOnce(): Promise<void> {
     const now = Date.now();
     try {
+      // On the very first refresh (cold start), defer the burst of REST pagination until the
+      // WebSocket startup has fully settled. PulseScore's plan-level token bucket counts the
+      // 3 /ws/live upgrade/handshake requests against the same per-second quota that /events
+      // and /live-events share — opening all 3 sockets and 9 paginated REST pulls simultaneously
+      // reliably 429'd pages 1-5 of soccer/tennis within the first minute (confirmed in
+      // production). Waiting ~13s (3 slots × 6s staggered) for the WS handshakes to complete
+      // first means that bucket is fully free once the REST cycle actually starts pulling.
+      // We never delay *subsequent* refreshes (cache.size > 0) — a user-facing request
+      // mid-cycle must serve stale cache + background refresh, exactly as before.
+      if (cache.size === 0 && wsClient && typeof (wsClient as any).waitUntilStarted === 'function') {
+        try {
+          await Promise.race([
+            (wsClient as any).waitUntilStarted(),
+            new Promise<void>((r) => setTimeout(r, 25_000)),
+          ]);
+        } catch {
+          void 0;
+        }
+      }
       let sportIndex = 0;
       for (const sport of PULSESCORE_SPORTS) {
         if (sportIndex > 0) await new Promise((r) => setTimeout(r, PREMATCH_INTERSPORT_STAGGER_MS));

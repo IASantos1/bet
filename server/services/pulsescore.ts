@@ -125,13 +125,16 @@ function apiKeyOk(apiKey: string): boolean {
 // still exceed 3/sec — this only guarantees pacing within one process.
 // History:
 //   420ms → hit production 429s after cold starts (pacing was too tight against real jitter).
-//   Widened to 520ms (~1.92 req/sec sustained) plus ±60ms jitter so requests don't land on a
-//   perfectly rigid cadence (some provider-side token buckets punish rigid rhythms even below
-//   the nominal rate limit). Retry backoff floor raised from 500ms → 1200ms so a burst of 429s
-//   can't self-reinforce via retries arriving in a tight batch 500ms later.
-const MIN_REQUEST_INTERVAL_MS = 520; // ~1.92 req/s sustained, safe headroom < 3.0
-const GATE_JITTER_MS = 60;            // ±60ms random offset per dispatch to avoid rigid cadence
-const RETRY_BACKOFF_FLOOR_MS = 1200; // retries wait at least this long (Retry-After overrides)
+//   520ms → still rare 429s on pages 1-5 of the high-volume sports within the first minute
+//   (because the 3 WS connect attempts also count against the same plan-level token bucket,
+//   confirmed via the plan 4429 close reason: "3-connection limit").
+//   Widened to 580ms + ±80ms jitter (~1.6-1.8 req/sec sustained). The MAX plan allows 3
+//   req/sec; intentionally leaving ~40% of the budget unused during normal operation so
+//   transient spikes (page retries, concurrent resolveEvent() fallbacks, live-events fast
+//   polling) don't have to fight for tokens against the baseline pre-match cycle.
+const MIN_REQUEST_INTERVAL_MS = 580; // ~1.7 req/sec sustained, wide headroom vs 3.0
+const GATE_JITTER_MS = 80;            // ±80ms random offset — flattens rigid request cadence
+const RETRY_BACKOFF_FLOOR_MS = 1600;
 let lastDispatchAt = 0;
 let requestGateChain: Promise<void> = Promise.resolve();
 

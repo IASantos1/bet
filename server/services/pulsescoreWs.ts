@@ -16,13 +16,17 @@ const PULSESCORE_WS_BASE = 'wss://api.pulsescore.net/api/onexbet/ws/live';
 export const WS_LIVE_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
 export type WsLiveSport = (typeof WS_LIVE_SPORTS)[number];
 
-export const FAST_POLL_LIVE_SPORTS = ['ice-hockey', 'baseball'] as const;
-export type FastPollLiveSport = (typeof FAST_POLL_LIVE_SPORTS)[number];
+const FAST_POLL_LIVE_SPORTS_LOCAL = ['ice-hockey', 'baseball'] as const;
+export const FAST_POLL_LIVE_SPORTS = FAST_POLL_LIVE_SPORTS_LOCAL;
+export type FastPollLiveSport = (typeof FAST_POLL_LIVE_SPORTS_LOCAL)[number];
 
-const RECONNECT_BASE_MS = 1_000;
-const RECONNECT_MAX_MS = 30_000;
+const RECONNECT_BASE_MS = 6_000;
+const RECONNECT_STEP_MS = 2_000;
+const RECONNECT_MAX_MS = 60_000;
+const WS_STARTUP_STAGGER_MS = 6_000;
 const FRAME_TIMEOUT_MS = 15_000;
 const PING_INTERVAL_MS = 10_000;
+const WS_CONNECT_MIN_GAP_MS = 5_100;
 
 export type LiveUpdate = {
   sport: string;
@@ -44,6 +48,13 @@ export type PulseScoreWsClient = {
   stop: () => void;
   onEventUpdate: (sport: WsLiveSport, handler: (updates: LiveUpdate[]) => void) => () => void;
   onSportLiveIds: (sport: WsLiveSport, handler: (ids: Set<string>) => void) => () => void;
+  /** Resolves once every scheduled WS slot has connected successfully on startup.
+   *  Used by the REST refresh cycle to delay its cold-start burst until the WS
+   *  handshake has fully settled — opening 3 WebSockets and firing 9 paginated
+   *  REST pulls simultaneously was saturating the MAX plan's 3 req/sec token
+   *  bucket (confirmed: 429s on page 2 of /soccer/events before the 3rd WS
+   *  had even finished the connect handshake). */
+  waitUntilStarted: () => Promise<void>;
 };
 
 const CANONICAL_OUTCOME_MAP: Record<string, string> = {
@@ -298,11 +309,14 @@ function closeWs(st: SportStatus) {
   }
 }
 
-function scheduleReconnect(st: SportStatus, apiKey: string, connectFn: (st: SportStatus) => void) {
+function scheduleReconnect(st: SportStatus, _apiKey: string, connectFn: (st: SportStatus) => void) {
   if (st.stopped) return;
   st.reconnectAttempts += 1;
   st.reconnectCount += 1;
-  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, Math.min(st.reconnectAttempts, 10)));
+  const delay = Math.min(
+    RECONNECT_MAX_MS,
+    Math.max(RECONNECT_BASE_MS, RECONNECT_BASE_MS + RECONNECT_STEP_MS * (st.reconnectAttempts - 1)),
+  );
   console.error(`[pulsescore-ws:${st.sport}] reconnecting in ${delay}ms (attempt ${st.reconnectAttempts})`);
   st.reconnectTimer = setTimeout(() => connectFn(st), delay);
 }
@@ -314,6 +328,76 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
   const statuses = new Map<string, SportStatus>();
   for (const s of sports) statuses.set(s, createSportStatus(s));
 
+  // PulseScore enforces "wait 5s to replace a connection" on the MAX plan even
+  // across the 3 slots — proven by the cold-start logs (4429 on tennis and
+  // basketball within 210ms of soccer's open). Serialize ALL connect() attempts
+  // through a shared gate so no two WebSocket opens ever land within 5.1s of each
+  // other — regardless of whether that open was triggered by initial startup,
+  // reconnect, or a mix of both. This also keeps the reconnect schedule safe too.
+  let connectGateChain = Promise.resolve();
+  let lastConnectAttemptAt = 0;
+  function gatedConnect(st: SportStatus, connectFn: (st: SportStatus) => void): void {
+    connectGateChain = connectGateChain.then(async () => {
+      const wait = Math.max(0, lastConnectAttemptAt + WS_CONNECT_MIN_GAP_MS - Date.now());
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      lastConnectAttemptAt = Date.now();
+      connectFn(st);
+    });
+  }
+
+  let startupSettled: Promise<void> | null = null;
+  const startupReady: Promise<void> = (async () => {
+    if (!apiKey || !apiKey.trim()) {
+      console.warn('[pulsescore-ws] no API key, all WS connections skipped');
+      return;
+    }
+    const list = Array.from(statuses.values());
+    for (let i = 0; i < list.length; i += 1) {
+      const st = list[i];
+      if (i > 0) await new Promise((r) => setTimeout(r, WS_STARTUP_STAGGER_MS));
+      await new Promise<void>((resolve) => {
+        const doConnect = () => {
+          gatedConnect(st, (s) => connect(s));
+        };
+        const resolveOnce = () => {
+          if (st.ws) {
+            st.ws.removeListener('open', onOpen);
+            st.ws.removeListener('error', onError);
+            st.ws.removeListener('close', resolveOnce);
+          }
+          resolve();
+        };
+        const onOpen = () => {
+          setTimeout(resolveOnce, 500);
+        };
+        const onError = () => {
+          resolveOnce();
+        };
+        // After dispatching, we subscribe to the next socket (gate schedules it, but the ws object may not yet exist
+        // at the moment we return from gatedConnect — poll until ws exists to subscribe, timeout 15s).
+        const startAt = Date.now();
+        const attach = () => {
+          doConnect();
+          const trySub = () => {
+            const ws = statuses.get(st.sport)?.ws;
+            if (ws) {
+              ws.once('open', onOpen);
+              ws.once('error', onError);
+              ws.once('close', resolveOnce);
+            } else if (Date.now() - startAt < 15_000) {
+              setTimeout(trySub, 200);
+            } else {
+              resolveOnce();
+            }
+          };
+          trySub();
+        };
+        attach();
+      });
+    }
+  })();
+  startupSettled = startupReady;
+
   function connect(st: SportStatus) {
     if (st.stopped) return;
     closeWs(st);
@@ -322,13 +406,13 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
     const url = `${PULSESCORE_WS_BASE}?key=${encodeURIComponent(apiKey)}&sport=${encodeURIComponent(seg)}`;
     let opened = false;
     try {
-      st.ws = new WebSocket(url, { perMessageDeflate: false });
-    } catch (e: any) {
-      st.lastError = String(e?.message || e);
-      console.error(`[pulsescore-ws:${st.sport}] constructor failed:`, st.lastError);
-      scheduleReconnect(st, apiKey, connect);
-      return;
-    }
+        st.ws = new WebSocket(url, { perMessageDeflate: false });
+      } catch (e: any) {
+        st.lastError = String(e?.message || e);
+        console.error(`[pulsescore-ws:${st.sport}] constructor failed:`, st.lastError);
+        scheduleReconnect(st, apiKey, (s) => gatedConnect(s, connect));
+        return;
+      }
     const ws = st.ws!;
     ws.on('open', () => {
       opened = true;
@@ -363,7 +447,7 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
       st.connected = false;
       console.warn(`[pulsescore-ws:${st.sport}] closed code=${code} reason=${String(reason || '')}`);
       clearTimers(st);
-      if (!st.stopped) scheduleReconnect(st, apiKey, connect);
+      if (!st.stopped) scheduleReconnect(st, apiKey, (s) => gatedConnect(s, connect));
     });
     ws.on('message', (data) => {
       let parsed: WsFrame | null = null;
@@ -447,12 +531,6 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
     }, 8_000);
   }
 
-  if (apiKey && apiKey.trim().length > 0) {
-    for (const st of statuses.values()) connect(st);
-  } else {
-    console.warn('[pulsescore-ws] no API key, all WS connections skipped');
-  }
-
   function getStatus(): PulseScoreWsStatus[] {
     return Array.from(statuses.values()).map((st) => ({
       sport: st.sport,
@@ -487,7 +565,11 @@ export function createPulseScoreWsClient(apiKey: string, opts?: { sports?: reado
     return () => st.liveIdHandlers.delete(handler);
   }
 
-  return { getStatus, stop, onEventUpdate, onSportLiveIds };
+  function waitUntilStarted(): Promise<void> {
+    return startupSettled ?? Promise.resolve();
+  }
+
+  return { getStatus, stop, onEventUpdate, onSportLiveIds, waitUntilStarted };
 }
 
 export function isWsLiveSport(sport: string): sport is WsLiveSport {
