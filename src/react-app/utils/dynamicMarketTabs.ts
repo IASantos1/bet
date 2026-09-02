@@ -84,6 +84,34 @@ export function classifyMmaMarket(key: string): string {
   return 'Especiais';
 }
 
+/** Ice hockey period-naming quirk (CONFIRMED in a real sample): unlike every other sport, which
+ *  sticks to ONE naming style for its periods, ice hockey mixes FIRST_HALF/SECOND_HALF (periods
+ *  1-2, suffix `_1h`/`_2h`) with THIRD_PERIOD (period 3, suffix `_3p`) in the very same match.
+ *  setPeriodBucket/halfPeriodBucket only recognize one suffix letter each, so this extracts ANY
+ *  trailing numbered-period suffix regardless of its unit letter and labels it uniformly
+ *  ("1º Período"/"2º Período"/"3º Período") rather than splitting periods 1-2 into "Tempo" tabs
+ *  and period 3 into a differently-named one. */
+function periodOrdinalBucket(key: string): string | null {
+  const m = /_([1-7])[a-z]$/.exec(key);
+  return m ? `${m[1]}º Período` : null;
+}
+
+export const ICE_HOCKEY_BUCKET_ORDER = ['Vencedor', 'Dupla Chance', 'Empate Anula Aposta', 'Totais', 'Handicap', 'Ambas Marcam', 'Placar Exato', 'Par/Ímpar', 'Primeiro a Marcar'];
+export function classifyIceHockeyMarket(key: string): string {
+  const periodBucket = periodOrdinalBucket(key);
+  if (periodBucket) return periodBucket;
+  if (key === 'h2h') return 'Vencedor';
+  if (key.startsWith('dc')) return 'Dupla Chance';
+  if (key.startsWith('dnb')) return 'Empate Anula Aposta';
+  if (key.startsWith('ou_')) return 'Totais';
+  if (key.startsWith('hcp')) return 'Handicap';
+  if (key.startsWith('btts')) return 'Ambas Marcam';
+  if (key.startsWith('correct_score')) return 'Placar Exato';
+  if (key.startsWith('odd_even')) return 'Par/Ímpar';
+  if (key.startsWith('first_to_score')) return 'Primeiro a Marcar';
+  return 'Especiais';
+}
+
 /** Buckets `keys` via `classify`, orders named buckets per `bucketOrder` (any bucket discovered
  *  dynamically but not in that list — e.g. "3º Set" in a match that went the distance — is appended
  *  before the "Especiais" catch-all), and builds a "Todos" tab deduped by title (mirrors soccer's

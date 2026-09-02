@@ -4,11 +4,13 @@ import {
   classifyVolleyballMarket,
   classifyRugbyMarket,
   classifyMmaMarket,
+  classifyIceHockeyMarket,
   buildDynamicMarketTabs,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
   MMA_BUCKET_ORDER,
+  ICE_HOCKEY_BUCKET_ORDER,
 } from './dynamicMarketTabs';
 
 // Key lists below mirror what server/services/pulsescore.ts actually produces (confirmed against
@@ -149,5 +151,40 @@ describe('classifyMmaMarket', () => {
     expect(tabs[0].keys.length).toBe(keys.length);
     expect(tabs.find((t) => t.title === 'Vencedor')?.keys.sort()).toEqual(['h2h', 'win_2way']);
     expect(tabs.find((t) => t.title === 'Especiais')?.keys).toEqual(['fight_to_go_the_distance']);
+  });
+});
+
+describe('classifyIceHockeyMarket', () => {
+  it('groups a mixed-suffix period (CONFIRMED: FIRST_HALF/SECOND_HALF for periods 1-2, THIRD_PERIOD for period 3, all in the same real match) uniformly by ordinal, not by unit letter', () => {
+    expect(classifyIceHockeyMarket('h2h')).toBe('Vencedor');
+    expect(classifyIceHockeyMarket('h2h_1h')).toBe('1º Período');
+    expect(classifyIceHockeyMarket('h2h_2h')).toBe('2º Período');
+    // THIRD_PERIOD isn't in the confirmed single-event sample, but the real events-page sample
+    // confirms PulseScore emits it for ice hockey — periodSuffix() (server side) turns it into a
+    // "3p" suffix (ordinal "3" + unit "p" for PERIOD), which must bucket the same way as "3h" would.
+    expect(classifyIceHockeyMarket('h2h_3p')).toBe('3º Período');
+  });
+
+  it('routes ice-hockey-specific market bases to their own buckets', () => {
+    expect(classifyIceHockeyMarket('dc')).toBe('Dupla Chance');
+    expect(classifyIceHockeyMarket('dnb')).toBe('Empate Anula Aposta');
+    expect(classifyIceHockeyMarket('ou_7.5')).toBe('Totais');
+    expect(classifyIceHockeyMarket('hcp_-1')).toBe('Handicap');
+    expect(classifyIceHockeyMarket('btts')).toBe('Ambas Marcam');
+    expect(classifyIceHockeyMarket('correct_score')).toBe('Placar Exato');
+    expect(classifyIceHockeyMarket('first_to_score')).toBe('Primeiro a Marcar');
+  });
+
+  it('a full realistic ice-hockey market key list (real single-event shape: FULL_TIME + FIRST_HALF + SECOND_HALF) is fully covered end to end', () => {
+    const keys = [
+      'h2h', 'dc', 'ou_7.5', 'hcp_-1', 'dnb', 'correct_score', 'odd_even', 'first_to_score', 'to_win_by_1',
+      'h2h_1h', 'dc_1h', 'btts_1h', 'ou_1.5_1h', 'hcp_1_1h', 'dnb_1h', 'correct_score_1h', 'to_win_by_1_1h',
+      'h2h_2h', 'dc_2h', 'btts_2h', 'ou_1.5_2h', 'hcp_1_2h', 'dnb_2h', 'correct_score_2h', 'to_win_by_1_2h',
+    ];
+    const tabs = buildDynamicMarketTabs(keys, classifyIceHockeyMarket, ICE_HOCKEY_BUCKET_ORDER, (k) => k);
+    expect(tabs[0].keys.length).toBe(keys.length);
+    expect(tabs.some((t) => t.title === '1º Período')).toBe(true);
+    expect(tabs.some((t) => t.title === '2º Período')).toBe(true);
+    expect(tabs.some((t) => t.title === 'Especiais')).toBe(true);
   });
 });

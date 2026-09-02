@@ -11,18 +11,19 @@ import {
   FORMULA1_GROUPS,
   AMERICAN_FOOTBALL_GROUPS,
   HANDBALL_GROUPS,
-  ICE_HOCKEY_GROUPS,
 } from '../constants/marketConfig'
 import {
   classifyTennisMarket,
   classifyVolleyballMarket,
   classifyRugbyMarket,
   classifyMmaMarket,
+  classifyIceHockeyMarket,
   buildDynamicMarketTabs,
   TENNIS_BUCKET_ORDER,
   VOLLEYBALL_BUCKET_ORDER,
   RUGBY_BUCKET_ORDER,
   MMA_BUCKET_ORDER,
+  ICE_HOCKEY_BUCKET_ORDER,
 } from '../utils/dynamicMarketTabs'
 
 export interface MarketItem {
@@ -1231,20 +1232,21 @@ export function SubOddsModel({
       const isBasketball = s.includes('basketball') || s.includes('basquete') || s.includes('nba');
       const isTennis = s.includes('tennis') || s.includes('tênis') || s.includes('atp') || s.includes('wta');
       const isBaseball = s.includes('baseball') || s.includes('beisebol') || s.includes('mlb');
-      const isIceHockey = s.includes('ice hockey') || s.includes('hóquei') || s.includes('nhl');
+      // 'ice-hockey' (hyphen) is this app's own canonical sport key (see server/services/pulsescore.ts
+      // PULSESCORE_SPORTS); 'ice hockey' (space)/'nhl' are kept for any other data source.
+      const isIceHockeyEarly = s.includes('ice-hockey') || s.includes('ice hockey') || s.includes('hóquei') || s.includes('nhl');
       const isVolleyballEarly = s.includes('volleyball') || s.includes('vôlei') || s.includes('volei');
       const isRugbyEarly = s.includes('rugby') || s.includes('union') || s.includes('league');
       const isMMAEarly = s.includes('mma') || s.includes('ufc') || s.includes('mixed martial arts') || s.includes('luta');
 
       if (isBasketball) return BASKETBALL_GROUPS;
       if (isBaseball) return BASEBALL_GROUPS;
-      if (isIceHockey) return ICE_HOCKEY_GROUPS;
 
       // See the block comment above classifyTennisMarket near the top of this file: these sports
       // need the event's OWN market keys scanned dynamically (same trick soccer uses below), not a
       // static predefined GROUPS list, because PulseScore keys carry per-line/per-period suffixes
       // a fixed list can't enumerate.
-      if (isTennis || isVolleyballEarly || isRugbyEarly || isMMAEarly) {
+      if (isTennis || isVolleyballEarly || isRugbyEarly || isMMAEarly || isIceHockeyEarly) {
         const allKeys = Object.keys(eventOdds || {});
         const hasContent = (k: string) => { const items = getMarketItems(k); return !!items && items.length > 0; };
         const rawKeys = allKeys.filter(hasContent);
@@ -1252,7 +1254,8 @@ export function SubOddsModel({
         if (isTennis) return buildDynamicMarketTabs(rawKeys, classifyTennisMarket, TENNIS_BUCKET_ORDER, title);
         if (isVolleyballEarly) return buildDynamicMarketTabs(rawKeys, classifyVolleyballMarket, VOLLEYBALL_BUCKET_ORDER, title);
         if (isRugbyEarly) return buildDynamicMarketTabs(rawKeys, classifyRugbyMarket, RUGBY_BUCKET_ORDER, title);
-        return buildDynamicMarketTabs(rawKeys, classifyMmaMarket, MMA_BUCKET_ORDER, title);
+        if (isMMAEarly) return buildDynamicMarketTabs(rawKeys, classifyMmaMarket, MMA_BUCKET_ORDER, title);
+        return buildDynamicMarketTabs(rawKeys, classifyIceHockeyMarket, ICE_HOCKEY_BUCKET_ORDER, title);
       }
 
       const keysWithCategory = Object.keys(eventOdds || {}).filter(k => {
@@ -1318,20 +1321,19 @@ export function SubOddsModel({
      const isF1 = s.includes('formula 1') || s.includes('f1') || s.includes('formula one') || s.includes('automobilismo') || s.includes('motor sports');
      const isAmericanFootball = s.includes('american football') || s.includes('futebol americano') || s.includes('nfl');
      const isHandball = s.includes('handball') || s.includes('handebol');
-     const isIceHockey = s.includes('ice hockey') || s.includes('hóquei') || s.includes('nhl');
+     const isIceHockey = s.includes('ice-hockey') || s.includes('ice hockey') || s.includes('hóquei') || s.includes('nhl');
      const isMMA = s.includes('mma') || s.includes('ufc') || s.includes('mixed martial arts') || s.includes('luta');
      const isRugby = s.includes('rugby') || s.includes('union') || s.includes('league');
 
-     // Soccer/tennis/volleyball/rugby/mma all build their tabs dynamically from the event's own
-     // markets (see finalGroups) and always put "Todos" first.
-     if (isSoccer || isTennis || isVolleyball || isRugby || isMMA) return 'Todos';
+     // Soccer/tennis/volleyball/rugby/mma/ice-hockey all build their tabs dynamically from the
+     // event's own markets (see finalGroups) and always put "Todos" first.
+     if (isSoccer || isTennis || isVolleyball || isRugby || isMMA || isIceHockey) return 'Todos';
      if (isBasketball) return BASKETBALL_GROUPS[0].title;
      if (isAFL) return AFL_GROUPS[0].title;
      if (isBaseball) return BASEBALL_GROUPS[0].title;
      if (isF1) return FORMULA1_GROUPS[0].title;
      if (isAmericanFootball) return AMERICAN_FOOTBALL_GROUPS[0].title;
      if (isHandball) return HANDBALL_GROUPS[0].title;
-     if (isIceHockey) return ICE_HOCKEY_GROUPS[0].title;
      return MARKET_GROUPS[0].title;
   });
   

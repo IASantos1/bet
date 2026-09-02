@@ -3,24 +3,26 @@
  * GoalServe/sportsApiPro/API-Football/StatPal were all removed from this backend (see git history
  * around the "Remove dead parallel frontend..." / events.ts stub commits).
  *
- * Built against real sample responses pulled directly by the user (not guessed) for FIVE confirmed
- * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma — each with a /leagues page
- * and an /events page. Three CONFIRMED endpoint shapes:
+ * Built against real sample responses pulled directly by the user (not guessed) for SIX confirmed
+ * sports so far — soccer, tennis, volleyball, rugby (rugby union), mma, ice hockey — each with a
+ * /leagues page and an /events page. Three CONFIRMED endpoint shapes:
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/leagues?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events?page=&limit=
  *   GET https://api.pulsescore.net/api/onexbet/{sport}/events/{eventId}   -> { data: <event> }
  *   headers: accept: * / *, x-secret: <key>, Accept-Encoding: gzip
  *
- * Only soccer/tennis/volleyball/rugby/mma are confirmed working — `sport` is a path segment so
- * other sports may follow the same shape, but that's unverified; sportSegment() below only maps
- * sports actually seen in a real response. The single-event endpoint has actually been pulled for
- * tennis, volleyball and mma (3 of the 4 non-soccer sports); using it for soccer/rugby too is a
- * pattern-consistency call (the /leagues and /events collection endpoints are already confirmed
- * byte-for-byte identical in shape across all five sports), not a blind guess of an unseen URL.
- * Note: a rugby event's own `sport` field comes back as "rugby_union" (underscore) even though the
- * URL path segment is "rugby-union" (hyphen) — normalizePulseScoreEvent() always stamps the AppEvent
- * with the canonical sport string THIS module was called with, never PulseScore's raw `sport`
- * field, so that mismatch never leaks out.
+ * Only soccer/tennis/volleyball/rugby/mma/ice-hockey are confirmed working — `sport` is a path
+ * segment so other sports may follow the same shape, but that's unverified; sportSegment() below
+ * only maps sports actually seen in a real response. The single-event endpoint has actually been
+ * pulled for tennis, volleyball, mma and ice hockey (4 of the 5 non-soccer sports); using it for
+ * soccer/rugby too is a pattern-consistency call (the /leagues and /events collection endpoints are
+ * already confirmed byte-for-byte identical in shape across all six sports), not a blind guess of
+ * an unseen URL.
+ * Note: both rugby's and ice hockey's own `sport` field come back with an underscore
+ * ("rugby_union", "ice_hockey") even though their URL path segments use a hyphen ("rugby-union",
+ * "ice-hockey") — normalizePulseScoreEvent() always stamps the AppEvent with the canonical sport
+ * string THIS module was called with, never PulseScore's raw `sport` field, so that mismatch never
+ * leaks out.
  *
  * MMA/combat-sports quirk (CONFIRMED across real samples): plain "mma"-league fights (e.g. Muay
  * Thai) carry NO MATCH_RESULT market at all — only a 2-way "Win (2Way)" market (canonicalMarket
@@ -31,6 +33,13 @@
  * Muay-Thai-style fight would report home_odd/draw_odd/away_odd all 0 and get filtered out of
  * every event list on the frontend despite having real, biddable odds.
  *
+ * Ice hockey period-naming quirk (CONFIRMED in a real single-event/-events sample): unlike every
+ * other sport seen so far, which sticks to ONE naming style for its periods (soccer/rugby always
+ * FIRST_HALF/SECOND_HALF, tennis/volleyball always FIRST_SET/SECOND_SET/...), ice hockey mixes
+ * FIRST_HALF/SECOND_HALF for periods 1-2 with THIRD_PERIOD for period 3 in the very same match.
+ * periodSuffix() already handles this correctly with no code change needed — it matches on the
+ * generic (ordinal-word)_(unit-word) shape rather than hardcoding which unit word each sport uses.
+ *
  * Odds here already come normalized by PulseScore itself (canonicalMarket/canonicalOutcome enums,
  * decimal odds, `line` split out of the display label) — unlike GoalServe's raw XML-derived JSON,
  * there is no attribute-prefix bug and no per-sport wrapper-shape guessing needed.
@@ -38,16 +47,18 @@
 
 const PULSESCORE_BASE_URL = 'https://api.pulsescore.net';
 
-// CONFIRMED for soccer, tennis, volleyball, rugby and mma (real sample responses pulled for all
-// five). Add an entry here only once a real response for that sport has actually been pulled —
-// never guess. Note the rugby URL segment is "rugby-union" (hyphen) even though PulseScore's own
-// event payloads report sport "rugby_union" (underscore) — see module docstring.
+// CONFIRMED for soccer, tennis, volleyball, rugby, mma and ice hockey (real sample responses
+// pulled for all six). Add an entry here only once a real response for that sport has actually
+// been pulled — never guess. Note the rugby/ice-hockey URL segments use a hyphen ("rugby-union",
+// "ice-hockey") even though PulseScore's own event payloads report sport with an underscore
+// ("rugby_union", "ice_hockey") — see module docstring.
 function sportSegment(sport: string): string | null {
   const s = String(sport || '').toLowerCase().trim();
   if (s === 'soccer' || s === 'football' || s === 'futebol') return 'soccer';
   if (s === 'tennis' || s === 'tenis' || s === 'ténis') return 'tennis';
   if (s === 'volleyball' || s === 'voleibol') return 'volleyball';
   if (s === 'rugby' || s === 'rugby-union' || s === 'rugby_union' || s === 'rúgbi') return 'rugby-union';
+  if (s === 'ice-hockey' || s === 'ice_hockey' || s === 'icehockey' || s === 'hockey' || s === 'hóquei') return 'ice-hockey';
   if (s === 'mma' || s === 'ufc' || s === 'mixed martial arts' || s === 'luta') return 'mma';
   return null;
 }
@@ -376,4 +387,4 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
   return data && typeof data === 'object' ? (data as RawPulseScoreEvent) : null;
 }
 
-export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma'] as const;
+export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey'] as const;
