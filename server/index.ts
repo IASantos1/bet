@@ -67,26 +67,8 @@ const safePool: any =
     }),
   } as any);
 
-// One key threaded through to whichever sports data provider is active (see
-// SPORTS_DATA_PROVIDER in server/routes/events.ts) — GoalServe's key takes priority only because
-// it's checked first; unrelated providers' keys are never mixed at runtime, only one is ever used.
-const sportsApiKey = String(
-  process.env.GOALSERVE_API_KEY ||
-    process.env.SPORTS_API_PRO_KEY ||
-    process.env.SPORTSAPIPRO_KEY ||
-    process.env.SPORTSAPI_PRO_KEY ||
-    process.env.SPORTS_API_KEY ||
-    process.env.STATPAL_KEY ||
-    '',
-).trim();
-if (!sportsApiKey) {
-  console.warn(
-    '[server] WARNING: No sports data API key found. Sports data endpoints will return empty. Set GOALSERVE_API_KEY (or SPORTS_API_KEY) to enable.',
-  );
-}
-
-const events = createEventsService(safePool, sportsApiKey);
-const liveWs = createLiveWs(sportsApiKey);
+const events = createEventsService(safePool, '');
+const liveWs = createLiveWs();
 
 const distDir = path.resolve(process.cwd(), 'dist');
 const hasDist = fs.existsSync(distDir) && fs.statSync(distDir).isDirectory();
