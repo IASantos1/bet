@@ -901,26 +901,37 @@ const ODDS_PAYLOAD_TTL_MS = 32_000; // 30s documented minimum without `ts` + 2s 
  *  dedup across every market) again for every single match lookup — the soccer feed alone runs
  *  ~150MB with thousands of matches, so re-walking it per event was the real cost behind an odds
  *  lookup, not the network fetch (already cached/throttled above). */
+type OddsLookupEntry = {
+  id: string;
+  home: string;
+  away: string;
+  pairKey: string;
+  odds: OddsResult;
+};
+
 type OddsPayloadIndexes = {
-  byId: Map<string, OddsResult>;
-  byTeams: Map<string, OddsResult[]>;
+  byId: Map<string, OddsLookupEntry>;
+  byTeams: Map<string, OddsLookupEntry[]>;
 };
 
 function indexOddsPayload(payload: any, sport: string): OddsPayloadIndexes {
-  const byId = new Map<string, OddsResult>();
-  const byTeams = new Map<string, OddsResult[]>();
+  const byId = new Map<string, OddsLookupEntry>();
+  const byTeams = new Map<string, OddsLookupEntry[]>();
   for (const cat of extractCategories(payload)) {
     for (const group of extractMatchGroups(cat)) {
       for (const match of group.matches) {
         const id = str(match?.id ?? match?.['@id']);
         const odds = parseOddsMatch(match);
         if (!odds) continue;
-        if (id) byId.set(id, odds);
         const { home, away } = extractTeams(match, sport);
-        const pairKey = teamPairKey(teamName(home), teamName(away));
+        const homeName = teamName(home);
+        const awayName = teamName(away);
+        const pairKey = teamPairKey(homeName, awayName);
+        const item: OddsLookupEntry = { id, home: homeName, away: awayName, pairKey, odds };
+        if (id) byId.set(id, item);
         if (pairKey) {
           const existing = byTeams.get(pairKey) || [];
-          existing.push(odds);
+          existing.push(item);
           byTeams.set(pairKey, existing);
         }
       }
@@ -1011,11 +1022,45 @@ async function fetchGoalServeMatchOdds(
   // our "goalserve_" prefix from normalizeMatch(), so strip it before looking up.
   const normalizedId = str(matchId).replace(/^goalserve_/, '');
   const exact = entry.index.byId.get(normalizedId);
-  if (exact) return exact;
+  if (exact) return exact.odds;
   const pairKey = teamPairKey(str(opts?.homeTeam), str(opts?.awayTeam));
   if (!pairKey) return null;
   const matches = entry.index.byTeams.get(pairKey) || [];
-  return matches.length === 1 ? matches[0] : null;
+  return matches.length === 1 ? matches[0].odds : null;
+}
+
+export async function debugGoalServeOddsLookup(
+  apiKey: string,
+  sport: string,
+  matchId: string,
+  opts?: { homeTeam?: string; awayTeam?: string },
+): Promise<{
+  sport: string;
+  requestedId: string;
+  normalizedId: string;
+  requestedTeams: { home: string; away: string; pairKey: string };
+  cache: { byId: number; byTeams: number };
+  matchedBy: 'id' | 'teams' | 'ambiguous_teams' | 'miss';
+  exactMatch?: { id: string; home: string; away: string };
+  teamCandidates: Array<{ id: string; home: string; away: string }>;
+}> {
+  const entry = await fetchOddsPayloadEntry(apiKey, sport);
+  const normalizedId = str(matchId).replace(/^goalserve_/, '');
+  const pairKey = teamPairKey(str(opts?.homeTeam), str(opts?.awayTeam));
+  const exact = entry?.index.byId.get(normalizedId);
+  const teamCandidates = pairKey
+    ? (entry?.index.byTeams.get(pairKey) || []).map((x) => ({ id: x.id, home: x.home, away: x.away }))
+    : [];
+  return {
+    sport,
+    requestedId: str(matchId),
+    normalizedId,
+    requestedTeams: { home: str(opts?.homeTeam), away: str(opts?.awayTeam), pairKey },
+    cache: { byId: entry?.index.byId.size || 0, byTeams: entry?.index.byTeams.size || 0 },
+    matchedBy: exact ? 'id' : teamCandidates.length === 1 ? 'teams' : teamCandidates.length > 1 ? 'ambiguous_teams' : 'miss',
+    ...(exact ? { exactMatch: { id: exact.id, home: exact.home, away: exact.away } } : {}),
+    teamCandidates,
+  };
 }
 
 export async function fetchGoalServeMatchOddsAll(

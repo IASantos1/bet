@@ -22,6 +22,7 @@ import {
   fetchGoalServeOddSettlement,
   fetchInplayEvents,
   fetchOddsPayloadSample,
+  debugGoalServeOddsLookup,
   type GoalServeSettlementOutcome,
 } from '../services/goalserve';
 import { deriveAdditionalMarkets } from '../services/marketDerivation';
@@ -1352,6 +1353,13 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
                   .then((r: any) => ({ hasResult: !!r, home: r?.home, draw: r?.draw, away: r?.away, marketsCount: r?.markets ? Object.keys(r.markets).length : 0 }))
                   .catch((e: any) => ({ error: String(e?.message || e) }))
               : null;
+            const goalserveLookup =
+              USE_GOALSERVE && sample
+                ? await debugGoalServeOddsLookup(apiKey, s, String((sample as any)?.id || (sample as any)?.external_event_id || ''), {
+                    homeTeam: String((sample as any)?.home_team || ''),
+                    awayTeam: String((sample as any)?.away_team || ''),
+                  }).catch((e: any) => ({ error: String(e?.message || e) }))
+                : null;
             return {
               sport: s,
               ok: !!built,
@@ -1359,6 +1367,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               stages: counters,
               oddsTestedMatch: sample ? `${(sample as any)?.league}: ${(sample as any)?.home_team} vs ${(sample as any)?.away_team}` : null,
               oddsTest: odds,
+              goalserveLookup,
             };
           }),
         );
@@ -1418,6 +1427,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               ),
             )
           : [{ ok: false as const, error: 'no allowed pregame match available to test against' }];
+      const goalserveLookup =
+        USE_GOALSERVE && oddsTestMatches.length > 0
+          ? await Promise.all(
+              oddsTestMatches.map((m: any) =>
+                debugGoalServeOddsLookup(apiKey, sport, String(m?.id || m?.external_event_id || ''), {
+                  homeTeam: String(m?.home_team || ''),
+                  awayTeam: String(m?.away_team || ''),
+                }).catch((e: any) => ({ error: String(e?.message || e), matchTested: `${m?.home_team} vs ${m?.away_team}` })),
+              ),
+            )
+          : null;
 
       // Compares the schedule feed's own match ids against what the odds-comparison feed actually
       // carries for the same sport — the real check for "this specific match's odds test came back
@@ -1435,6 +1455,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         scheduleTest: scheduleResult,
         inplayTest: inplayResult,
         oddsTest: oddsTestResult,
+        goalserveLookup,
         oddsPayloadSample,
         pregamePipelineTest: pipelineResult,
       });
