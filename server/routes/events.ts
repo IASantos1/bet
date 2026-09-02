@@ -1109,7 +1109,16 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
     };
 
     if (realtime) {
-      const budget0 = { remaining: 0 };
+      // In realtime mode the UI still needs some fresh odds for live non-soccer events, otherwise
+      // GoalServe-backed sports that don't have bundled inplay odds (basketball/tennis/hockey/
+      // baseball) render score-only cards forever unless a previous non-realtime request happened
+      // to warm the cache first. Keep this budget intentionally small so the endpoint stays fast,
+      // but large enough to actively enrich the visible live list instead of returning cache-only.
+      const liveRealtimeBudget = Math.min(
+        12,
+        live.filter((e: any) => !(e as any)._inplayLive).length,
+      );
+      const budget0 = { remaining: liveRealtimeBudget };
 
       const liveFiltered = includeLive ? live : [];
       const preFiltered = includePregame ? pregame : [];
