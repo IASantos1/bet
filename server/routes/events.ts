@@ -142,6 +142,28 @@ function summarizeOddsSource(odds: any): {
   };
 }
 
+function summarizeEventDebug(e: any): {
+  id: string;
+  league: string;
+  home: string;
+  away: string;
+  status: string;
+  statusShort: string;
+  eventDate: string;
+  isLive: number;
+} {
+  return {
+    id: String(e?.id || e?.external_event_id || ''),
+    league: String(e?.league || ''),
+    home: String(e?.home_team || ''),
+    away: String(e?.away_team || ''),
+    status: String(e?.status || e?.status_long || ''),
+    statusShort: String(e?.status_short || ''),
+    eventDate: String(e?.event_date || e?.fixture?.date || ''),
+    isLive: Number(e?.is_live || 0),
+  };
+}
+
 export type EventsService = {
   handleEventsRoutes: (
     req: http.IncomingMessage,
@@ -726,6 +748,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
       afterBlocked?: number;
       afterSpread?: number;
       candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+      candidateRejectedSamples?: Array<{
+        reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus';
+        id: string;
+        league: string;
+        home: string;
+        away: string;
+        status: string;
+        statusShort: string;
+        eventDate: string;
+        isLive: number;
+      }>;
     },
   ): Promise<{ live: AnyEvent[]; pregame: AnyEvent[] }> => {
     startOddsQueue();
@@ -772,28 +805,34 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         if (/NOT_STARTED|SCHEDUL|UPCOMING|TIMED|PRE_MATCH/.test(s)) return true;
         return false;
       };
-      const noteCandidateReject = (reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus') => {
+      const noteCandidateReject = (reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus', e?: any) => {
         if (!debugCounters) return;
         debugCounters.candidateRejected ||= {};
         debugCounters.candidateRejected[reason] = (debugCounters.candidateRejected[reason] || 0) + 1;
+        if (e) {
+          debugCounters.candidateRejectedSamples ||= [];
+          if (debugCounters.candidateRejectedSamples.length < 3) {
+            debugCounters.candidateRejectedSamples.push({ reason, ...summarizeEventDebug(e) });
+          }
+        }
       };
       const isPregameCandidate = (e: any) => {
         if (Number((e as any)?.is_live || 0) !== 0) {
-          noteCandidateReject('live');
+          noteCandidateReject('live', e);
           return false;
         }
         if (isFinishedLike(e)) {
-          noteCandidateReject('finished');
+          noteCandidateReject('finished', e);
           return false;
         }
         const { ms: t, hasExplicitTime } = startMeta(e);
         if (t && hasExplicitTime && t < now - 2 * 60 * 1000) {
-          noteCandidateReject('staleStarted');
+          noteCandidateReject('staleStarted', e);
           return false;
         }
         if (t && t >= now) return true;
         if (isNotStartedLike(e)) return true;
-        noteCandidateReject('unknownStatus');
+        noteCandidateReject('unknownStatus', e);
         return false;
       };
       const tasks: Array<{ sport: string; date: string }> = [];
@@ -1402,6 +1441,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
               afterBlocked?: number;
               afterSpread?: number;
               candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+              candidateRejectedSamples?: Array<{
+                reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus';
+                id: string;
+                league: string;
+                home: string;
+                away: string;
+                status: string;
+                statusShort: string;
+                eventDate: string;
+                isLive: number;
+              }>;
             } = {};
             const built = await buildBySport(s, false, null, false, false, 'pregame', 7, false, false, counters).catch(() => null);
             const pregameCount = built ? built.pregame.length : 0;
@@ -1456,7 +1506,7 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         ? {
             ok: true as const,
             count: Array.isArray(scheduleRaw) ? scheduleRaw.length : 0,
-            sample: Array.isArray(scheduleRaw) ? scheduleRaw.slice(0, 5).map((e: any) => ({ league: e?.league, country: e?.country, home: e?.home_team, away: e?.away_team })) : [],
+            sample: Array.isArray(scheduleRaw) ? scheduleRaw.slice(0, 5).map((e: any) => ({ ...summarizeEventDebug(e), country: String(e?.country || '') })) : [],
           }
         : { ok: false as const, error: 'fetch failed' };
 
@@ -1477,6 +1527,17 @@ export function createEventsService(pool: pg.Pool | null, apiKey: string): Event
         afterBlocked?: number;
         afterSpread?: number;
         candidateRejected?: { live?: number; finished?: number; staleStarted?: number; unknownStatus?: number };
+        candidateRejectedSamples?: Array<{
+          reason: 'live' | 'finished' | 'staleStarted' | 'unknownStatus';
+          id: string;
+          league: string;
+          home: string;
+          away: string;
+          status: string;
+          statusShort: string;
+          eventDate: string;
+          isLive: number;
+        }>;
       } = {};
       const pipelineRaw = await buildBySport(sport, false, null, false, false, 'pregame', 7, false, false, pipelineCounters).catch(() => null);
       const pipelineResult = pipelineRaw
