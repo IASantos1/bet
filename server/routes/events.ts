@@ -728,27 +728,26 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   // disconnects with 4429 rate limit). User hard rule: max delay = 1s.
   // BUG FIX (Catch-22): Originally this early-returned if hasAnyTennisLive===0,
   // which meant we NEVER fetched /live-events to promote the FIRST pre-match
-  // to live if WS was down. Instead, only idle when no tennis events are
-  // currently relevant (no live, no upcoming <24h, no recently finished <6h).
+  // to live if WS was down. Second bug: 2nd fix relied on event_date being
+  // *valid Date instanceof Date* — but pre-match tennis events from the paginated
+  // PRE loop sometimes come with a non-parseable raw date/time, so event_date
+  // becomes Invalid Date (getTime()===0) and the "relevant" check returned false
+  // → catch-22 again! FINAL FIX: keep poll active if ANY tennis event exists
+  // in cache (any date/live/finished state) OR WS slot reports live tennis ids.
+  // Budget: PulseScore MAX plan = 3 req/sec bucket; tennisUltraPoll uses EXACTLY
+  // 1 req/sec (pages 1-3 of /live-events=tennis batched single call) when active,
+  // leaving 2 req/sec for soccer+all other sports combined. This satisfies user's
+  // "delay 1s MAX" hard rule even when cache event_dates failed to parse.
   async function tennisUltraPollOnce(): Promise<void> {
     const now = Date.now();
     let liveMatches = 0;
     let updated = 0;
     let newlyPromoted = 0;
-    const RELEVANT_UPCOMING_MS = 24 * 60 * 60 * 1_000;  // any tennis starting within 24h → keep poll alive so we promote instantly
-    const RELEVANT_RECENT_MS = 6 * 60 * 60 * 1_000;     // finished up to 6h ago → still poll to confirm finished
     const hasAnyTennisLive = Array.from(cache.values()).some((e) => e.sport === 'tennis' && e.is_live === 1);
-    const hasAnyRelevantTennis =
-      hasAnyTennisLive ||
-      Array.from(cache.values()).some((e) => {
-        if (e.sport !== 'tennis') return false;
-        const t = e.event_date instanceof Date ? e.event_date.getTime() : 0;
-        if (!t) return false;
-        const untilKickoff = t - now;
-        const sinceKickoff = now - t;
-        return untilKickoff <= RELEVANT_UPCOMING_MS && sinceKickoff <= RELEVANT_RECENT_MS;
-      });
-    if (!hasAnyRelevantTennis) {
+    const hasAnyTennisInCache = Array.from(cache.values()).some((e) => e.sport === 'tennis');
+    const wsHasTennisIds = (wsLiveIdsBySport.get('tennis')?.size ?? 0) > 0;
+    const keepPollAlive = hasAnyTennisLive || hasAnyTennisInCache || wsHasTennisIds;
+    if (!keepPollAlive) {
       lastTennisUltraPollError = null;
       lastTennisUltraPollAt = now;
       lastTennisUltraPollStats = { liveMatches: 0, updated: 0 };
