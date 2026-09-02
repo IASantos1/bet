@@ -240,3 +240,72 @@ export interface SuspendedMarket {
   marketId: string;
   reason: string;
 }
+
+// ---------------------------------------------------------------------------
+// PitchAPI shared types (byte-for-byte mirror of server/services/pitchapi.ts
+// public shapes so we can cast the JSON response returned by
+// GET /api/events/:id/advanced without re-typing).
+// ---------------------------------------------------------------------------
+export interface PitchShot {
+  id: string;
+  player?: { id: string; name: string };
+  team_id?: string;
+  teamSide?: 'home' | 'away';
+  /** 0–105 (metres, always attacks the goal at x=105 — never invert) */
+  x: number;
+  /** 0–68 (metres, lateral across the pitch) */
+  y: number;
+  expected_goals?: number;
+  expected_goals_on_target?: number;
+  is_on_target?: boolean;
+  goal_crossed_y?: number;
+  goal_crossed_z?: number;
+  is_inside_box?: boolean;
+  event_type?: 'Goal' | 'AttemptSaved' | 'Miss' | 'Post' | (string & {});
+  situation?: 'RegularPlay' | 'FromCorner' | 'SetPiece' | 'FastBreak' | 'FreeKick' | 'ThrowInSetPiece' | 'Penalty' | 'IndividualPlay' | (string & {});
+  shot_type?: 'RightFoot' | 'LeftFoot' | 'Header' | 'OtherBodyParts' | (string & {});
+  minute?: number;
+  minute_added?: number;
+  is_blocked?: boolean;
+  blocked_x?: number;
+  blocked_y?: number;
+  is_own_goal?: boolean;
+}
+
+export interface PitchTimelineEvent {
+  type: 'goal' | 'yellowcard' | 'redcard' | 'substitution';
+  minute: number;
+  teamSide?: 'home' | 'away';
+  description: string;
+  score_after?: { home: number; away: number };
+  player_out?: string;
+  player_in?: string;
+}
+
+export interface PitchMomentumPoint {
+  minute: number;
+  /** -100..100; positive favours home, negative favours away */
+  value: number;
+}
+
+export interface PitchAnalytics {
+  possession?: { home: number; away: number };
+  shots?: { home: number; away: number };
+  onTarget?: { home: number; away: number };
+  corners?: { home: number; away: number };
+  cards?: { home: number; away: number };
+  xg?: { home: number; away: number };
+}
+
+export interface PitchAdvancedStats {
+  aligned: boolean;
+  pitchMatchId: string | null;
+  alignedAt?: number;
+  alignmentScore?: number;
+  shots: PitchShot[];
+  events: PitchTimelineEvent[];
+  momentum: PitchMomentumPoint[];
+  analytics: PitchAnalytics;
+  note?: string;
+}
+

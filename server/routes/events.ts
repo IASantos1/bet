@@ -22,6 +22,16 @@ import {
 } from '../services/pulsescoreWs';
 import { createOddsStore, oddsKey, recordOdd } from '../lib/oddsVersioning';
 import { blendRefreshInterval, getLeaguePriority, getLeagueTier, type LeagueTier } from '../../src/shared/league-priority';
+import {
+  PitchApiClient,
+  PitchAlignCache,
+  pulseToAlignKey,
+  alignPulseToPitchSchedule,
+  buildPitchAdvancedStats,
+  buildEmptyStats,
+  ymdFromPulseDate,
+  type PitchAdvancedStats as PitchStats,
+} from '../services/pitchapi';
 
 export type GoalServeSettlementOutcome = 'won' | 'lost' | 'half_won' | 'half_lost' | 'void';
 
@@ -257,6 +267,64 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   const wsLiveIdsBySport = new Map<string, Set<string>>();
   const wsClient: PulseScoreWsClient | null =
     wsClientIn ?? (hasApiKey(apiKey) ? createPulseScoreWsClient(apiKey) : null);
+
+  // PitchAPI integration (optional, configured via PITCH_API_KEY env).
+  // Aligns soccer events from PulseScore → PitchAPI by fuzzy composite key
+  // (date + league + home + away) and surfaces advanced stats through
+  // /api/events/:id/advanced and /api/events/:id/stats.
+  const pitchClient = new PitchApiClient(
+    typeof process !== 'undefined' ? (process.env?.PITCH_API_KEY as string | undefined) : undefined,
+  );
+  const pitchAlignCache = new PitchAlignCache();
+  async function getPitchAdvancedForEvent(event: AppEvent): Promise<PitchStats> {
+    if (!pitchClient.configured) return buildEmptyStats('PitchAPI key not configured');
+    if (String(event.sport || '').toLowerCase() !== 'soccer' && String(event.sport || '').toLowerCase() !== 'football') {
+      return buildEmptyStats('Only soccer/football events can be aligned to PitchAPI');
+    }
+    const cachedAlign = pitchAlignCache.get(event.id);
+    if (cachedAlign) {
+      if (!cachedAlign.matchId) return buildEmptyStats('No PitchAPI match alignment for this event');
+      return buildPitchAdvancedStats(pitchClient, cachedAlign.matchId, {
+        pitchHomeTeamId: cachedAlign.pitchHomeId,
+        pitchAwayTeamId: cachedAlign.pitchAwayId,
+        alignmentScore: cachedAlign.score,
+      }) as Promise<PitchStats>;
+    }
+    const key = pulseToAlignKey({
+      event_date: event.event_date,
+      league: event.league,
+      home_team: event.home_team,
+      away_team: event.away_team,
+    });
+    if (!key) {
+      pitchAlignCache.set(event.id, null, undefined);
+      return buildEmptyStats('Missing event_date for alignment');
+    }
+    const ymd = ymdFromPulseDate(event.event_date);
+    if (!ymd) {
+      pitchAlignCache.set(event.id, null, undefined);
+      return buildEmptyStats('Invalid event_date for alignment');
+    }
+    const schedule = await pitchClient.getDateSchedule(ymd);
+    const aligned = alignPulseToPitchSchedule(key, schedule);
+    if (!aligned) {
+      pitchAlignCache.set(event.id, null, undefined);
+      return buildEmptyStats('No PitchAPI match aligned');
+    }
+    const scheduleMatch = schedule.find((m) => m.id === aligned.matchId);
+    pitchAlignCache.set(
+      event.id,
+      aligned.matchId,
+      aligned.score,
+      scheduleMatch?.home_team_id,
+      scheduleMatch?.away_team_id,
+    );
+    return buildPitchAdvancedStats(pitchClient, aligned.matchId, {
+      pitchHomeTeamId: scheduleMatch?.home_team_id,
+      pitchAwayTeamId: scheduleMatch?.away_team_id,
+      alignmentScore: aligned.score,
+    }) as Promise<PitchStats>;
+  }
 
   function recordH2HOdds(ev: AppEvent, now: number) {
     if (ev.home_odd > 0) recordOdd(oddsStore, oddsKey(ev.id, 'h2h', 'home'), ev.home_odd, now);
@@ -861,8 +929,48 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
 
     const statsMatch = path.match(/^\/api\/events\/([^/]+)\/stats$/);
     if (statsMatch && req.method === 'GET') {
-      // PulseScore carries no in-match statistics in any confirmed response — empty, not guessed.
-      sendJson(res, 200, { stats: [], events: [] });
+      await ensureRefreshed();
+      const sportHint = String(url.searchParams.get('sport') || '').trim() || undefined;
+      const found = await resolveEvent(decodeURIComponent(statsMatch[1] || ''), sportHint);
+      if (!found) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
+      const pitch = await getPitchAdvancedForEvent(found);
+      if (pitch.aligned) {
+        const s = pitch.analytics || {};
+        const h2h = [
+          { type: 'Posse de bola', home: `${s.possession?.home ?? 50}%`, away: `${s.possession?.away ?? 50}%` },
+          { type: 'Remates', home: s.shots?.home ?? 0, away: s.shots?.away ?? 0 },
+          { type: 'Remates no alvo', home: s.onTarget?.home ?? 0, away: s.onTarget?.away ?? 0 },
+          { type: 'Escanteios', home: s.corners?.home ?? 0, away: s.corners?.away ?? 0 },
+          { type: 'Cartões', home: s.cards?.home ?? 0, away: s.cards?.away ?? 0 },
+          { type: 'xG', home: s.xg?.home ?? 0, away: s.xg?.away ?? 0 },
+        ];
+        sendJson(res, 200, {
+          provider: 'pitchapi',
+          aligned: true,
+          pitchMatchId: pitch.pitchMatchId,
+          stats: h2h,
+          events: pitch.events,
+        });
+      } else {
+        sendJson(res, 200, {
+          provider: 'none',
+          aligned: false,
+          note: pitch.note || 'PulseScore não expôs estatísticas em feed confirmado e PitchAPI não alinhado; campo pronto para receber assim que mapear.',
+          stats: [],
+          events: [],
+        });
+      }
+      return true;
+    }
+
+    const advancedMatch = path.match(/^\/api\/events\/([^/]+)\/advanced$/);
+    if (advancedMatch && req.method === 'GET') {
+      await ensureRefreshed();
+      const sportHint = String(url.searchParams.get('sport') || '').trim() || undefined;
+      const found = await resolveEvent(decodeURIComponent(advancedMatch[1] || ''), sportHint);
+      if (!found) return sendJson(res, 404, { error: 'Evento não encontrado' }), true;
+      const pitch = await getPitchAdvancedForEvent(found);
+      sendJson(res, 200, pitch as any);
       return true;
     }
 
