@@ -77,7 +77,9 @@ export type EventsService = {
 // since odds on a sportsbook feed this size don't realistically move faster than every few seconds
 // anyway. Revisit once PulseScore states an actual limit.
 const POLL_INTERVAL_MS = 30_000;
-const FAST_POLL_INTERVAL_MS = 2_000;
+const FAST_POLL_INTERVAL_MS = 3_000;
+const PREMATCH_INTERSPORT_STAGGER_MS = 250;
+const HIGH_VOLUME_SPORTS = ['soccer', 'tennis', 'basketball'] as const;
 
 type TradingStatus = 'pending' | 'approved' | 'suspended';
 type ManualOdds = { home?: number; draw?: number; away?: number };
@@ -227,8 +229,13 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
   async function refreshOnce(): Promise<void> {
     const now = Date.now();
     try {
+      let sportIndex = 0;
       for (const sport of PULSESCORE_SPORTS) {
-        const raw = await fetchPulseScoreEvents(apiKey, sport);
+        if (sportIndex > 0) await new Promise((r) => setTimeout(r, PREMATCH_INTERSPORT_STAGGER_MS));
+        sportIndex += 1;
+        const highVolume = (HIGH_VOLUME_SPORTS as readonly string[]).includes(sport);
+        const maxPages = highVolume ? 20 : 10;
+        const raw = await fetchPulseScoreEvents(apiKey, sport, { maxPages });
         for (const r of raw) {
           const id = `pulsescore_${r.eventId}`;
           const wsLive = cache.get(id)?.is_live === 1 && isWsLiveSportActive(sport);
@@ -253,7 +260,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         }
       }
       const liveIdsBySport = new Map<string, Set<string>>();
+      let liveSportIndex = 0;
       for (const sport of PULSESCORE_SPORTS) {
+        if (liveSportIndex > 0) await new Promise((r) => setTimeout(r, 200));
+        liveSportIndex += 1;
         if (isWsLiveSportActive(sport)) {
           liveIdsBySport.set(sport, new Set(wsLiveIdsBySport.get(sport) || []));
           continue;
@@ -261,7 +271,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         if (isFastPollLiveSport(sport)) continue;
         let liveRaw: RawPulseScoreLiveEvent[];
         try {
-          liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport);
+          liveRaw = await fetchPulseScoreLiveEvents(apiKey, sport, { maxPages: 3 });
         } catch {
           continue;
         }

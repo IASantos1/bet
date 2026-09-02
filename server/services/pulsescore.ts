@@ -123,16 +123,22 @@ function apiKeyOk(apiKey: string): boolean {
 // Caveat this can't cover: if the server runs multiple replicas of this process against the same
 // API key, each replica paces itself independently, so the combined rate across replicas could
 // still exceed 3/sec — this only guarantees pacing within one process.
-// A real production run still hit an occasional 429 at 350ms spacing (recovered fine by the retry
-// below, but confirms the margin was too tight against real network/event-loop jitter) — widened to
-// 420ms (< 2.4 req/sec) for more headroom.
-const MIN_REQUEST_INTERVAL_MS = 420; // > 1000/3 ≈ 333ms; widened past the original 350ms margin
+// History:
+//   420ms → hit production 429s after cold starts (pacing was too tight against real jitter).
+//   Widened to 520ms (~1.92 req/sec sustained) plus ±60ms jitter so requests don't land on a
+//   perfectly rigid cadence (some provider-side token buckets punish rigid rhythms even below
+//   the nominal rate limit). Retry backoff floor raised from 500ms → 1200ms so a burst of 429s
+//   can't self-reinforce via retries arriving in a tight batch 500ms later.
+const MIN_REQUEST_INTERVAL_MS = 520; // ~1.92 req/s sustained, safe headroom < 3.0
+const GATE_JITTER_MS = 60;            // ±60ms random offset per dispatch to avoid rigid cadence
+const RETRY_BACKOFF_FLOOR_MS = 1200; // retries wait at least this long (Retry-After overrides)
 let lastDispatchAt = 0;
 let requestGateChain: Promise<void> = Promise.resolve();
 
 function requestGate(): Promise<void> {
   const gated = requestGateChain.then(async () => {
-    const wait = Math.max(0, lastDispatchAt + MIN_REQUEST_INTERVAL_MS - Date.now());
+    const jitter = Math.random() * 2 * GATE_JITTER_MS - GATE_JITTER_MS;
+    const wait = Math.max(0, lastDispatchAt + MIN_REQUEST_INTERVAL_MS + jitter - Date.now());
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     lastDispatchAt = Date.now();
   });
@@ -144,10 +150,18 @@ function requestGate(): Promise<void> {
  *  PULSESCORE_API_KEY value would never help, so it's surfaced immediately via console.error like
  *  any other non-2xx status, same as before. A 429 is different: it's this client hitting
  *  PulseScore's own confirmed rate limit, which requestGate() above already paces against but can
- *  still transiently hit (e.g. right after a redeploy resets `lastDispatchAt`) — retried up to twice
- *  with backoff (honoring a `Retry-After` header when present) rather than silently dropping that
- *  page's events for the rest of the current refresh cycle. */
-async function fetchJson(url: string, apiKey: string, timeoutMs = 12000, retriesLeft = 2): Promise<any | null> {
+ *  still transiently hit (e.g. right after a redeploy resets `lastDispatchAt`) — retried up to
+ *  once for paginated pre-match pulls (those pages will simply be revisited on the next 30s cycle
+ *  anyway, so stacking retries just deepens a 429 cascade) and up to twice for live/fast-poll
+ *  pages where freshness actually matters. Retry backoff floor is now 1200ms (not 500ms), with
+ *  exponential stepping so a cluster of colliding retries doesn't re-429 as a batch. */
+async function fetchJson(
+  url: string,
+  apiKey: string,
+  timeoutMs = 12000,
+  retriesLeft = 1,
+  retryAttempt = 0,
+): Promise<any | null> {
   await requestGate();
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
@@ -159,11 +173,13 @@ async function fetchJson(url: string, apiKey: string, timeoutMs = 12000, retries
     if (res.status === 429 && retriesLeft > 0) {
       const retryAfterHeader = typeof (res as any)?.headers?.get === 'function' ? (res as any).headers.get('retry-after') : null;
       const retryAfterSec = Number(retryAfterHeader);
-      const backoffMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 500;
-      console.error('[pulsescore] 429 rate limited, retrying in', backoffMs, 'ms:', url);
+      const explicitSec = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 0;
+      const steppedFloor = RETRY_BACKOFF_FLOOR_MS * Math.pow(2, retryAttempt);
+      const backoffMs = Math.max(explicitSec, steppedFloor);
+      console.error('[pulsescore] 429 rate limited, retrying in', backoffMs, 'ms (attempt', retryAttempt + 1, '):', url);
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
       clearTimeout(t);
-      return fetchJson(url, apiKey, timeoutMs, retriesLeft - 1);
+      return fetchJson(url, apiKey, timeoutMs, retriesLeft - 1, retryAttempt + 1);
     }
     const text = await res.text().catch(() => '');
     if (!res.ok) {
@@ -443,10 +459,12 @@ export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent)
   };
 }
 
-/** Fetches every page of the flat /events list for a sport (bounded by a safety cap, since the
- *  real total can be in the thousands — CONFIRMED: 3420 soccer events / 684 pages at limit=5 in
- *  the sample). `pageLimit` is a default guess (PulseScore's docs/curl samples never stated a max
- *  page size) — kept conservative on purpose until a real limit is confirmed. */
+/** Fetches every page of the flat /events list for a sport (bounded by a safety cap — the real
+ *  total can be thousands of pages deep on soccer alone, but pages ~25+ are almost always fixtures
+ *  2-3 weeks out, stable enough that re-pulling them every 30s is pure waste and a guaranteed way
+ *  to 429 the MAX-plan 3/sec budget. Cold-start run confirmed: 49 pages of soccer x 100 items =
+ *  ~22% of a full 3/sec minute just for ONE sport. Default capped to the near-future horizon that
+ *  actually matters for a betting product; callers can still widen on demand via opts. */
 export async function fetchPulseScoreEvents(
   apiKey: string,
   sport: string,
@@ -456,7 +474,7 @@ export async function fetchPulseScoreEvents(
   const seg = sportSegment(sport);
   if (!seg) return [];
   const pageLimit = opts.pageLimit ?? 100;
-  const maxPages = opts.maxPages ?? 50;
+  const maxPages = opts.maxPages ?? 20;
   const out: RawPulseScoreEvent[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const url = `${PULSESCORE_BASE_URL}/api/onexbet/${seg}/events?page=${page}&limit=${pageLimit}`;
@@ -479,7 +497,7 @@ export async function fetchPulseScoreLeagues(
   const seg = sportSegment(sport);
   if (!seg) return [];
   const pageLimit = opts.pageLimit ?? 100;
-  const maxPages = opts.maxPages ?? 50;
+  const maxPages = opts.maxPages ?? 20;
   const out: RawPulseScoreEvent[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const url = `${PULSESCORE_BASE_URL}/api/onexbet/${seg}/leagues?page=${page}&limit=${pageLimit}`;
@@ -540,11 +558,11 @@ const LIVE_EVENTS_SPORT_PARAMS: Record<string, string[]> = {
   baseball: ['baseball'],
 };
 
-/** Fetches every page of the dedicated /live-events feed for a sport (bounded low on purpose: the
+/** Fetches every page of the dedicated /live-events feed for a sport (bounded low on purpose — the
  *  real /live-events/sports sample showed 170 live events across ALL nine sports COMBINED at one
- *  moment, several orders of magnitude smaller than a single sport's full /events catalog). Returns
- *  [] for a sport with no known live-events `sport` query value, or with zero live matches right
- *  now — both are normal, not errors. */
+ *  moment, so limit=100 × 3 pages is comfortably more than any single-sport live feed will ever
+ *  realistically hold. Capped tighter than /events because live bursts compete for the same 3/sec
+ *  budget with fast-poll timers and in-flight pre-match page pulls on cold start. */
 export async function fetchPulseScoreLiveEvents(
   apiKey: string,
   sport: string,
@@ -554,7 +572,7 @@ export async function fetchPulseScoreLiveEvents(
   const params = LIVE_EVENTS_SPORT_PARAMS[sport];
   if (!params || params.length === 0) return [];
   const pageLimit = opts.pageLimit ?? 100;
-  const maxPages = opts.maxPages ?? 10;
+  const maxPages = opts.maxPages ?? 3;
   const out: RawPulseScoreLiveEvent[] = [];
   for (const param of params) {
     for (let page = 1; page <= maxPages; page += 1) {
