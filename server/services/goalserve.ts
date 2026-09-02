@@ -137,8 +137,15 @@ function bodyPreview(text: string, max = 300): string {
 // exactly this class of intermittent, infra-level failure while the whitelist gap is closed.
 const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
 const RETRY_DELAYS_MS = [1000, 3000, 7000];
+type FetchErrorMeta = { at: number; url: string; status: number; message: string; preview: string };
 
-async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = false, _attempt = 0): Promise<any | null> {
+async function fetchJson(
+  url: string,
+  timeoutMs = 12000,
+  _retriedJsonParam = false,
+  _attempt = 0,
+  errorSink?: { key: string; store: Map<string, FetchErrorMeta> },
+): Promise<any | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
@@ -152,31 +159,69 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
       // at all, which made a real outage or misconfiguration indistinguishable from an empty
       // schedule in production. Always log the status so that distinction is visible.
       console.error('[goalserve] HTTP', res.status, redactKey(url), bodyPreview(text));
+      if (errorSink) {
+        errorSink.store.set(errorSink.key, {
+          at: Date.now(),
+          url: redactKey(url),
+          status: res.status,
+          message: `HTTP ${res.status}`,
+          preview: bodyPreview(text),
+        });
+      }
       if (RETRYABLE_STATUS.has(res.status) && _attempt < RETRY_DELAYS_MS.length) {
         await sleep(RETRY_DELAYS_MS[_attempt]);
-        return fetchJson(url, timeoutMs, _retriedJsonParam, _attempt + 1);
+        return fetchJson(url, timeoutMs, _retriedJsonParam, _attempt + 1, errorSink);
       }
       return null;
     }
     if (!text) {
       console.error('[goalserve] empty response body:', redactKey(url));
+      if (errorSink) {
+        errorSink.store.set(errorSink.key, {
+          at: Date.now(),
+          url: redactKey(url),
+          status: 0,
+          message: 'empty response body',
+          preview: '',
+        });
+      }
       return null;
     }
     try {
-      return stripAttrPrefix(JSON.parse(text));
+      const parsed = stripAttrPrefix(JSON.parse(text));
+      if (errorSink) errorSink.store.delete(errorSink.key);
+      return parsed;
     } catch {
       // GoalServe's own docs disagree on the boolean-flag spelling: the general reference doc and
       // 4 of 5 sport PDFs say `?json=1`, but the Soccer PDF's own "Basic feed format" section says
       // `?json=true` — since this is unverified against a live response, try the other spelling
       // once before giving up, instead of assuming "1" is universally correct.
       if (!_retriedJsonParam && /[?&]json=1(&|$)/.test(url)) {
-        return fetchJson(url.replace(/([?&])json=1(&|$)/, '$1json=true$2'), timeoutMs, true);
+        return fetchJson(url.replace(/([?&])json=1(&|$)/, '$1json=true$2'), timeoutMs, true, _attempt, errorSink);
       }
       console.error('[goalserve] non-JSON response (check ?json=1/?json=true and the feed path):', redactKey(url), bodyPreview(text, 200));
+      if (errorSink) {
+        errorSink.store.set(errorSink.key, {
+          at: Date.now(),
+          url: redactKey(url),
+          status: 0,
+          message: 'non-JSON response',
+          preview: bodyPreview(text, 200),
+        });
+      }
       return null;
     }
   } catch (e) {
     console.error('[goalserve] fetch failed:', redactKey(url), String((e as any)?.message || e));
+    if (errorSink) {
+      errorSink.store.set(errorSink.key, {
+        at: Date.now(),
+        url: redactKey(url),
+        status: 0,
+        message: String((e as any)?.message || e),
+        preview: '',
+      });
+    }
     return null;
   } finally {
     clearTimeout(t);
@@ -962,6 +1007,7 @@ type OddsPayloadFailure = { count: number; blockedUntil: number; lastAt: number 
 const oddsPayloadCache = new Map<string, OddsPayloadEntry>();
 const oddsPayloadInflight = new Map<string, Promise<OddsPayloadEntry | null>>();
 const oddsPayloadFailures = new Map<string, OddsPayloadFailure>();
+const oddsPayloadLastError = new Map<string, FetchErrorMeta>();
 const ODDS_BREAKER_BASE_MS = 2 * 60 * 1000;
 const ODDS_BREAKER_MAX_MS = 15 * 60 * 1000;
 
@@ -976,7 +1022,7 @@ async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<Odd
   if (inflight) return inflight;
 
   const url = `${ODDS_BASE_URL}/${encodeURIComponent(apiKey)}/getodds/soccer?cat=${cat}_10&json=1`;
-  const p = fetchJson(url, 15000)
+  const p = fetchJson(url, 15000, false, 0, { key: cat, store: oddsPayloadLastError })
     .then((json) => {
       // A transient GoalServe failure (fetchJson already retried and still came back null) must
       // never blank out odds that were serving fine a moment ago — that turns a momentary 500 on
@@ -986,6 +1032,7 @@ async function fetchOddsPayloadEntry(apiKey: string, sport: string): Promise<Odd
         const entry: OddsPayloadEntry = { ts: Date.now(), payload: json, index: indexOddsPayload(json, sport) };
         oddsPayloadCache.set(cat, entry);
         oddsPayloadFailures.delete(cat);
+        oddsPayloadLastError.delete(cat);
         return entry;
       }
       const prev = oddsPayloadFailures.get(cat);
@@ -1024,6 +1071,7 @@ export async function fetchOddsPayloadSample(
   hasCache: boolean;
   cacheAgeMs: number | null;
   breaker: { count: number; blockedUntil: number; blockedForMs: number };
+  lastError: { at: number; url: string; status: number; message: string; preview: string } | null;
   totalMatches: number;
   indexedMatches: number;
   byId: number;
@@ -1034,6 +1082,7 @@ export async function fetchOddsPayloadSample(
   const cat = oddsCat(sport);
   const entry = await fetchOddsPayloadEntry(apiKey, sport);
   const failure = oddsPayloadFailures.get(cat);
+  const lastError = oddsPayloadLastError.get(cat) || null;
   if (!entry) {
     return {
       cat,
@@ -1044,6 +1093,7 @@ export async function fetchOddsPayloadSample(
         blockedUntil: failure?.blockedUntil || 0,
         blockedForMs: Math.max(0, (failure?.blockedUntil || 0) - Date.now()),
       },
+      lastError,
       totalMatches: 0,
       indexedMatches: 0,
       byId: 0,
@@ -1075,6 +1125,7 @@ export async function fetchOddsPayloadSample(
       blockedUntil: failure?.blockedUntil || 0,
       blockedForMs: Math.max(0, (failure?.blockedUntil || 0) - Date.now()),
     },
+    lastError,
     totalMatches,
     indexedMatches: entry.index.parsedMatches,
     byId: entry.index.byId.size,
