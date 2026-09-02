@@ -38,6 +38,14 @@ import type { NormalizedEvent, OddsResult } from './sportsApiPro';
 const BASE_URL = 'https://www.goalserve.com/getfeed';
 const ODDS_BASE_URL = 'https://www.goalserve.com/getfeed';
 
+// Node's fetch (undici) sends no User-Agent header at all unless one is set explicitly — unlike a
+// browser. GoalServe's edge is IIS-based (its 403 pages are IIS's own default "Access is denied"
+// template), and IIS deployments commonly reject requests with no/blank User-Agent as bot/script
+// traffic before the request ever reaches the whitelist/entitlement check. Every fetch to a
+// GoalServe host in this file goes through this header, so a missing-UA block would explain 403s
+// showing up identically across every feed (schedule/odds/logos/inplay) regardless of IP.
+const GOALSERVE_USER_AGENT = 'Mozilla/5.0 (compatible; BET62/1.0; +https://bet62.plus)';
+
 /** GoalServe uses a different URL segment per sport, unlike sportsApiPro's uniform subdomain
  *  pattern. Matches the "SPORT_TYPES" list and per-sport feed paths in the shared docs. */
 function sportSegment(sport: string): string {
@@ -121,7 +129,7 @@ async function fetchJson(url: string, timeoutMs = 12000, _retriedJsonParam = fal
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
-    const res = await fetch(url, { headers: { accept: 'application/json' }, signal: controller.signal });
+    const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': GOALSERVE_USER_AGENT }, signal: controller.signal });
     const text = await res.text().catch(() => '');
     clearTimeout(t);
     if (!res.ok) {
@@ -1270,7 +1278,7 @@ export async function fetchInplayFeed(sport: string, timeoutMs = 8000, _attempt 
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { headers: { 'user-agent': GOALSERVE_USER_AGENT }, signal: controller.signal });
     const buf = Buffer.from(await res.arrayBuffer());
     if (!res.ok) {
       console.error('[goalserve-inplay] HTTP', res.status, url, buf.toString('utf8').slice(0, 300));
