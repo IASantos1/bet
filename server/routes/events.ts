@@ -741,6 +741,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     }
     try {
       const liveRaw = await fetchPulseScoreLiveEvents(apiKey, 'tennis', { pageLimit: 100, maxPages: 3 });
+      // BUG FIX (TÊNIS SUMIU): Rate limit 429 / provider flakiness sometimes returns 0 items
+      // even though tennis matches are live. If liveRaw.length===0 we MUST NOT mark
+      // every cached tennis live match is_live=0 (mass wipe). Skip demotion entirely.
+      const providerReturnedEmpty = !Array.isArray(liveRaw) || liveRaw.length === 0;
       const tennisLiveIds = new Set<string>();
       for (const lr of liveRaw) {
         const id = `pulsescore_${lr.eventId}`;
@@ -756,9 +760,11 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         if (!cached) recordH2HOdds(merged, now);
         updated += 1;
       }
-      for (const ev of cache.values()) {
-        if (ev.sport === 'tennis' && ev.is_live === 1 && !tennisLiveIds.has(ev.id)) {
-          cache.set(ev.id, { ...ev, is_live: 0 });
+      if (!providerReturnedEmpty) {
+        for (const ev of cache.values()) {
+          if (ev.sport === 'tennis' && ev.is_live === 1 && !tennisLiveIds.has(ev.id)) {
+            cache.set(ev.id, { ...ev, is_live: 0 });
+          }
         }
       }
       lastTennisUltraPollError = null;
@@ -839,8 +845,24 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       // LatAm lower leagues, women lower tiers never appear in /live-events even
       // 1h+ after kickoff). If kickoff already passed ≥ 30s and the match is still
       // marked is_live=0 in cache with no finalized score → force is_live=1.
+      // BUG FIX (DUPLICATA Flamengo×Mirassol): PulseScore sometimes emits TWICE the
+      // same fixture with different eventIds (one "live stream" appearing in
+      // /live-events with is_live=1 45', one "odds" staying in PRE 23h30 forever
+      // with stale odds 1.24/7/12.50). Kickoff fallback MUST NOT promote PRE to
+      // LIVE when there ALREADY EXISTS another event in cache with is_live=1 AND
+      // same (normalized home_team + normalized away_team + same sport).
       const MAX_AGE_TO_LIVE_MS = 12 * 60 * 60 * 1_000; // 12h — prevents marking yesterday's games live
       const KICKOFF_GRACE_MS = 30_000;                  // 30s after listed kickoff before promotion
+      const liveMatchesBySport = new Map<string, Set<string>>();
+      for (const existing of cache.values()) {
+        if (existing.is_live !== 1) continue;
+        const sKey = existing.sport;
+        const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const hA = `${norm(existing.home_team)}::${norm(existing.away_team)}`;
+        if (!liveMatchesBySport.has(sKey)) liveMatchesBySport.set(sKey, new Set());
+        liveMatchesBySport.get(sKey)!.add(hA);
+      }
+      const normMatch = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
       for (const ev of cache.values()) {
         if (ev.is_live === 1) continue;
         if (!ev.event_date || !(ev.event_date instanceof Date) || !Number.isFinite(ev.event_date.getTime())) continue;
@@ -848,6 +870,14 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         const elapsedSinceKickoff = now - kickoffMs;
         if (elapsedSinceKickoff < KICKOFF_GRACE_MS) continue;
         if (elapsedSinceKickoff > MAX_AGE_TO_LIVE_MS) continue;
+        // ANTI-DUPLICATE: Skip kickoff promote if another live match already
+        // exists with same home+away normalized pair in same sport (avoid
+        // Flamengo 45' + Flamengo 23h30 duplicate side-by-side).
+        const existingLiveSet = liveMatchesBySport.get(ev.sport);
+        if (existingLiveSet && existingLiveSet.size > 0) {
+          const hA = `${normMatch(ev.home_team)}::${normMatch(ev.away_team)}`;
+          if (existingLiveSet.has(hA)) continue;
+        }
         const hasFinalScore =
           ev.score &&
           typeof ev.score.home === 'number' &&
@@ -1233,6 +1263,35 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         if (ev.is_live === 1 && liveIdsBySport.has(ev.sport) && !liveIdsBySport.get(ev.sport)!.has(ev.id)) {
           cache.set(ev.id, { ...ev, is_live: 0 });
         }
+      }
+      // IV — Global PRE×LIVE dedup sweep. BUG FIX (DUPLICATA Flamengo×Mirassol
+      // AO VIVO 45' + PRE 23h30 side-by-side with stale 1.24/7/12.50): PulseScore
+      // emits TWO different eventIds for the exact same real fixture (stream vs
+      // odds-stub). If a live event already exists with normalized home::away pair,
+      // DELETE any PRE stub is_live=0 with identical pair. Runs AFTER all ingest
+      // loops so both events exist in cache when sweep runs.
+      {
+        const livePairsBySport = new Map<string, Set<string>>();
+        const norm1 = (s: string) =>
+          String(s || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '');
+        for (const e of cache.values()) {
+          if (e.is_live !== 1) continue;
+          if (!livePairsBySport.has(e.sport)) livePairsBySport.set(e.sport, new Set());
+          livePairsBySport.get(e.sport)!.add(`${norm1(e.home_team)}::${norm1(e.away_team)}`);
+        }
+        const idsToDelete: string[] = [];
+        for (const e of cache.values()) {
+          if (e.is_live === 1) continue;
+          const pairs = livePairsBySport.get(e.sport);
+          if (!pairs || pairs.size === 0) continue;
+          const candidate = `${norm1(e.home_team)}::${norm1(e.away_team)}`;
+          if (pairs.has(candidate)) idsToDelete.push(e.id);
+        }
+        for (const deadId of idsToDelete) cache.delete(deadId);
       }
       lastRefreshError = null;
     } catch (e: any) {
