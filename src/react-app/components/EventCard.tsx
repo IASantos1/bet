@@ -304,14 +304,14 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
     let pAway: '15' | '30' | '40' | 'AD' | null = null;
 
     const normalizePoint = (v: any): '15' | '30' | '40' | 'AD' | null => {
-      const s = String(v ?? '').trim().toUpperCase();
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim().toUpperCase();
+      if (!s) return null;
+      if (s === '0' || s === 'LOVE') return null;
       if (s === '15' || s === '30' || s === '40') return s as any;
       if (s === 'A' || s === 'AD' || s === 'ADV' || s === 'ADVANTAGE') return 'AD';
       const n = Number(s);
-      if (Number.isFinite(n) && (n === 0 || n === 15 || n === 30 || n === 40)) {
-        if (n === 0) return '15' as any;
-        return String(n) as any;
-      }
+      if (Number.isFinite(n) && (n === 15 || n === 30 || n === 40)) return String(n) as any;
       return null;
     };
 
@@ -383,13 +383,8 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
         }
       }
       const setCount = setPairs.length;
-      const scoreInfo = rawString.toUpperCase();
-      const currSetMatch = scoreInfo.match(/\bS\s*(\d{1,2})\b/);
-      let rawSetsNeeded = 0;
-      if (currSetMatch) rawSetsNeeded = Math.max(setCount, Number(currSetMatch[1]));
-      else rawSetsNeeded = setCount;
-      for (let i = sets.length; i < rawSetsNeeded; i++) sets.push({ home: null, away: null });
-      for (let i = 0; i < setPairs.length && i < sets.length; i++) {
+      for (let i = 0; i < setPairs.length; i++) {
+        if (sets[i] == null) sets.push({ home: null, away: null });
         if (sets[i].home == null) sets[i].home = setPairs[i][0];
         if (sets[i].away == null) sets[i].away = setPairs[i][1];
       }
@@ -399,15 +394,14 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
         const tail = rawString.slice(lastIdx + lastSetStr.length);
         const pt = tail.match(/(\d{1,2}|AD|A)\s*[-:]\s*(\d{1,2}|AD|A)/i);
         if (pt) {
-          if (!pHome) pHome = normalizePoint(pt[1]);
-          if (!pAway) pAway = normalizePoint(pt[2]);
+          const candidateHome = normalizePoint(pt[1]);
+          const candidateAway = normalizePoint(pt[2]);
+          if (candidateHome && candidateAway) {
+            if (!pHome) pHome = candidateHome;
+            if (!pAway) pAway = candidateAway;
+          }
         }
       }
-    }
-
-    const curSet = detectTennisCurrentSet;
-    if (typeof curSet === 'number' && curSet > 0) {
-      for (let i = sets.length; i < curSet; i++) sets.push({ home: null, away: null });
     }
 
     const hasAnySet = sets.some((s) => s.home != null || s.away != null);
@@ -886,6 +880,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
               <div className="flex flex-col gap-1.5 min-w-0 flex-1 pr-14">
                 {(() => {
                   const curSet = detectTennisCurrentSet;
+                  const curSetNum = typeof curSet === 'number' ? curSet : 0;
 
                   const setsAll = tennisScore?.sets || [];
                   let maxWithAny = 0;
@@ -898,55 +893,78 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                   const maxCols = 5;
                   let cols: number;
                   if (isLiveEvent) {
-                    const fromSet = typeof curSet === 'number' && curSet > 0 ? curSet : 0;
-                    cols = Math.min(maxCols, Math.max(fromSet, maxWithAny));
+                    cols = Math.min(maxCols, Math.max(curSetNum, maxWithAny));
                   } else {
                     cols = Math.min(maxCols, maxWithAny);
                   }
-                  const showSets = cols > 0 && (isLiveEvent || !!tennisScore?.hasAnySet);
-                  const sets = Array.from({ length: cols }, (_, i) => setsAll[i] || { home: null, away: null });
+                  const visibleColIndexes: number[] = [];
+                  for (let i = 0; i < cols; i++) {
+                    const setIdx = i;
+                    const existing = setsAll[setIdx];
+                    const hasScore = existing && (existing.home != null || existing.away != null);
+                    const isCurrentSet = isLiveEvent && curSetNum >= 1 && (setIdx + 1) === curSetNum;
+                    if (hasScore || isCurrentSet) visibleColIndexes.push(i);
+                  }
+                  const displayCols = visibleColIndexes.length;
+                  const showSets = displayCols > 0 && (isLiveEvent || !!tennisScore?.hasAnySet);
+                  const pointHome = tennisScore?.pHome ?? null;
+                  const pointAway = tennisScore?.pAway ?? null;
+                  const showPoint = isLiveEvent && (pointHome != null || pointAway != null);
 
                   return (
                     <div
                       className="grid gap-x-1 gap-y-1 items-center tabular-nums"
                       style={{
-                        gridTemplateColumns: showSets ? `minmax(0,1fr) repeat(${cols}, 1.25rem) auto` : `minmax(0,1fr) auto`,
+                        gridTemplateColumns:
+                          showSets
+                            ? `minmax(0,1fr) repeat(${displayCols}, 1.25rem) ${showPoint ? 'auto' : 'minmax(0,0.01px)'}`
+                            : `minmax(0,1fr) ${showPoint ? 'auto' : 'minmax(0,0.01px)'}`,
                       }}
                     >
                       {showSets ? (
                         <>
                           <span />
-                          {Array.from({ length: cols }).map((_, i) => (
-                            <span key={`hdr-s-${i + 1}`} className={`text-[10px] font-bold text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                              {`S${i + 1}`}
+                          {visibleColIndexes.map((origIdx) => (
+                            <span key={`hdr-s-${origIdx + 1}`} className={`text-[10px] font-bold text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                              {`S${origIdx + 1}`}
                             </span>
                           ))}
+                          {showPoint && (
+                            <span className={`text-[10px] font-bold text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>PT</span>
+                          )}
+                        </>
+                      ) : showPoint ? (
+                        <>
+                          <span />
                           <span className={`text-[10px] font-bold text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>PT</span>
                         </>
                       ) : null}
 
                       {(['home', 'away'] as const).map((side) => {
                         const name = side === 'home' ? homeTeamName : awayTeamName;
-                        const point = side === 'home' ? tennisScore?.pHome : tennisScore?.pAway;
+                        const point = side === 'home' ? pointHome : pointAway;
                         return (
                           <Fragment key={side}>
                             <span className="text-sm font-semibold truncate leading-tight min-w-0">
                               {String(name || '').split(',')[0].trim() || '-'}
                             </span>
                             {showSets
-                              ? sets.map((s, idx) => {
+                              ? visibleColIndexes.map((origIdx) => {
+                                  const s = setsAll[origIdx] || { home: null, away: null };
                                   const val = side === 'home' ? s.home : s.away;
                                   return (
-                                    <span key={`${side}-s-${idx}`} className={`text-right text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                    <span key={`${side}-s-${origIdx}`} className={`text-right text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                                       {val ?? ''}
                                     </span>
                                   );
                                 })
                               : null}
-                            {isLiveEvent && point ? (
+                            {showPoint && point ? (
                               <span className="text-right text-xs font-black text-[#39FF14]">
                                 {point}
                               </span>
+                            ) : showPoint ? (
+                              <span className="text-right text-xs opacity-40">—</span>
                             ) : (
                               <span />
                             )}
