@@ -191,9 +191,10 @@ type EventsResponse = {
   events: RawPulseScoreEvent[];
 };
 
-// ---- Live in-play feed (CONFIRMED via a real /live-events?sport=<x> sample for soccer, tennis,
-// basketball, plus an empty-but-valid response for mma) — a DEDICATED feed, separate from the
-// per-sport /events endpoint above. Its events carry the exact same `markets` shape (so its
+// ---- Live in-play feed (CONFIRMED via real /live-events?sport=<x> samples for soccer, tennis,
+// basketball, ice-hockey, volleyball and baseball, plus an empty-but-valid response for mma) — a
+// DEDICATED feed, separate from the per-sport /events endpoint above. Its events carry the exact
+// same `markets` shape (so its
 // odds/markets are redundant with what the regular per-sport pull already ingests), but ALSO carry
 // `matchClock`/`score`/`statistics`, none of which ever appear in a regular /events or /leagues
 // response — this is the only confirmed source of real-time score/clock data PulseScore offers. See
@@ -464,17 +465,20 @@ export async function fetchPulseScoreEvent(apiKey: string, sport: string, eventI
 
 export const PULSESCORE_SPORTS = ['soccer', 'tennis', 'volleyball', 'rugby', 'mma', 'ice-hockey', 'handball', 'basketball', 'baseball'] as const;
 
-// The `sport` query value /live-events expects — CONFIRMED directly (soccer/tennis/mma/basketball,
-// via real curl responses, mma's being an empty-but-valid result). The others are a
-// pattern-consistency call, NOT confirmed via this endpoint specifically: ice-hockey's value is
-// taken verbatim from what /live-events/sports itself reports for that sport ("ice_hockey",
-// underscore — the strongest evidence available, since it's the same endpoint family), and
-// volleyball/handball/baseball follow the "plain name, no quirk" pattern already established for
-// their own /events endpoint. Rugby has no live-events evidence at all (it didn't even appear in
-// the /live-events/sports listing, meaning zero live matches at sampling time) — 'rugby_union' is
-// used on the theory that this feed follows PulseScore's own payload `sport` field convention (like
-// ice-hockey did) rather than the /events URL-segment convention; if wrong, fetchPulseScoreLiveEvents
-// just returns an empty list for rugby, same as "no live match right now" — never a hard failure.
+// The `sport` query value /live-events expects — CONFIRMED directly via real curl responses for
+// soccer, tennis, mma (empty-but-valid), basketball, ice-hockey ("ice_hockey", underscore),
+// volleyball and baseball. Only `handball` and `rugby` remain unconfirmed for this endpoint
+// specifically (both currently have zero live matches, so no response has ever come back for
+// either): handball follows the "plain name, no quirk" pattern already established for its own
+// /events endpoint; rugby uses 'rugby_union' on the theory that this feed follows PulseScore's own
+// payload `sport` field convention (confirmed correct for ice-hockey) rather than the /events
+// URL-segment convention. A wrong guess here just means an empty live list for that sport, same as
+// "no live match right now" — never a hard failure. One confirmed API quirk worth noting: a
+// zero-result /live-events response's own `sport` field cannot be trusted — a real sample queried
+// with sport=basketball (0 live matches at the time) came back echoing `"sport": "rugby_league"`,
+// an entirely unrelated value never used anywhere in this file. This code never reads that echoed
+// field, only `events`/`hasNextPage`, so the quirk is harmless here — documented so a future reader
+// doesn't mistake it for evidence about what value "rugby_league" would even mean for this feed.
 const LIVE_EVENTS_SPORT_PARAM: Record<string, string> = {
   soccer: 'soccer',
   tennis: 'tennis',
