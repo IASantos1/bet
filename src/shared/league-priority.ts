@@ -142,8 +142,10 @@ const P5_MARKERS: readonly RegExp[] = [
   /\b(?:women|feminino|ladies|woman)\b|\(w\)/i,
   /cyber/i,
   /short football|division\s*[0-9]*x[0-9]+|socca world cup/i,
-  /\b(ncaa|naia|student league|6x6|fifa 23|nba 2k|nhl 26|ipbl|3hl|rhl|tbl)\b/i,
+  /\b(ncaa|naia|student league|6x6|fifa 23|nba 2k|nhl 26|ipbl|3hl|rhl|tbl|mnhl)\b/i,
   /table basketball/i,
+  /\b\d+x\d+\b/i,
+  /\b(budnesliga|lfl\s*5x5|isfa\s+world\s+cup|isfa|esoccer|efootball|efutebol|simulated.*soccer|futebol\s*eletr[ôo]nico)\b/i,
 ];
 
 export function getLeagueTier(leagueRaw: string | null | undefined): LeagueTier {

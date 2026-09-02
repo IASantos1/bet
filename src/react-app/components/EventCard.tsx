@@ -209,65 +209,211 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
     return abbreviateTeamName(head.trim());
   };
 
+  const detectTennisCurrentSet = useMemo((): number | 'TB' | 0 => {
+    if (sport !== 'tennis') return 0;
+    const mc = (event as any)?.matchClock;
+    if (mc && typeof mc === 'object' && typeof mc.period === 'string') {
+      const p = mc.period.toUpperCase().trim();
+      if (p === 'FIRST_SET' || p === '1ST_SET' || p === 'SET_1') return 1;
+      if (p === 'SECOND_SET' || p === '2ND_SET' || p === 'SET_2') return 2;
+      if (p === 'THIRD_SET' || p === '3RD_SET' || p === 'SET_3') return 3;
+      if (p === 'FOURTH_SET' || p === '4TH_SET' || p === 'SET_4') return 4;
+      if (p === 'FIFTH_SET' || p === '5TH_SET' || p === 'SET_5') return 5;
+      if (p === 'TIEBREAK' || p === 'TIE_BREAK' || p === 'TB') return 'TB';
+    }
+    const sc = (event as any)?.score;
+    let scoreObj: any = null;
+    if (sc && typeof sc === 'object') scoreObj = sc;
+    else if (typeof sc === 'string') {
+      try { const j = JSON.parse(sc); if (j && typeof j === 'object') scoreObj = j; } catch { /* */ }
+    }
+    if (scoreObj && typeof scoreObj.info === 'string') {
+      const info = scoreObj.info.toUpperCase();
+      const m = info.match(/\b(?:SET|S)\s*(\d{1,2})\b/);
+      if (m) return Number(m[1]) || 0;
+      if (/TIE[-_ ]?BREAK/i.test(info)) return 'TB';
+    }
+    if (Array.isArray(currentMarkets) && currentMarkets.length > 0) {
+      let best: number | 'TB' | 0 = 0;
+      for (const m of currentMarkets) {
+        const period = String(m?.period || '').toUpperCase().trim();
+        const rawName = String(m?.rawName || '').toUpperCase().trim();
+        let p: number | 'TB' | 0 = 0;
+        if (period === 'FIRST_SET' || period === '1ST_SET') p = 1;
+        else if (period === 'SECOND_SET' || period === '2ND_SET') p = 2;
+        else if (period === 'THIRD_SET' || period === '3RD_SET') p = 3;
+        else if (period === 'FOURTH_SET' || period === '4TH_SET') p = 4;
+        else if (period === 'FIFTH_SET' || period === '5TH_SET') p = 5;
+        else if (period === 'TIEBREAK' || /TIE[-_ ]?BREAK/i.test(period)) p = 'TB';
+        if (!p) {
+          const mm = rawName.match(/(\d{1,2})(?:ST|ND|RD|TH)\s+SET/);
+          if (mm) p = Number(mm[1]) || 0;
+          else {
+            const mm2 = rawName.match(/\bSET\s*(\d{1,2})\b/);
+            if (mm2) p = Number(mm2[1]) || 0;
+          }
+        }
+        if (p === 'TB') { best = 'TB'; break; }
+        if (typeof p === 'number' && p > (typeof best === 'number' ? best : 0)) best = p;
+      }
+      if (best !== 0) return best;
+    }
+    const statusShort = String((event as any)?.status ?? (event as any)?.fixture?.status?.short ?? '').toUpperCase().trim();
+    const statusLong = String((event as any)?.fixture?.status?.long ?? (event as any)?.status_long ?? '').toUpperCase().trim();
+    const m1 = statusShort.match(/^S(\d{1,2})$/);
+    if (m1) return Number(m1[1]);
+    const m2 = statusLong.match(/\bSET\s*(\d{1,2})\b/);
+    if (m2) return Number(m2[1]);
+    const m3 = statusShort.match(/\bSET\s*(\d{1,2})\b/);
+    if (m3) return Number(m3[1]);
+    const m4 = statusShort.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
+    if (m4) return Number(m4[1]);
+    const m5 = statusLong.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
+    if (m5) return Number(m5[1]);
+    return 0;
+  }, [event, sport, currentMarkets]);
+
   const tennisScore = useMemo(() => {
     if (sport !== 'tennis') return null;
     const raw = (event as any)?.score;
+    const matchClockInfo = String((event as any)?.matchClock?.info || '').trim();
+    const statistics = (event as any)?.statistics;
+
     let obj: any = null;
+    let rawString = '';
     if (typeof raw === 'string') {
-      const str = raw.trim();
-      if (str && (str.startsWith('{') || str.startsWith('['))) {
-        try { obj = JSON.parse(str); } catch { obj = null; }
+      rawString = raw.trim();
+      if (rawString && (rawString.startsWith('{') || rawString.startsWith('['))) {
+        try { obj = JSON.parse(rawString); } catch { obj = null; }
       }
     } else if (raw && typeof raw === 'object') {
       obj = raw;
     }
-    if (!obj || typeof obj !== 'object') return null;
 
     const toNumOrNull = (v: any) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     };
-
     const readSetPair = (v: any): { home: number | null; away: number | null } => {
       if (!v || typeof v !== 'object') return { home: null, away: null };
       return { home: toNumOrNull(v.home), away: toNumOrNull(v.away) };
     };
 
-    const setsRoot = obj.sets || obj.set || {};
-    const maxIdx = (() => {
-      if (!setsRoot || typeof setsRoot !== 'object') return 0;
-      let m = 0;
-      for (const k of Object.keys(setsRoot)) {
-        const mm = /^(?:s|set)\s*(\d{1,2})$/i.exec(String(k).trim());
-        if (!mm) continue;
-        const n = Number(mm[1]);
-        if (Number.isFinite(n) && n > m) m = n;
-      }
-      return Math.min(10, Math.max(0, m));
-    })();
     const sets: Array<{ home: number | null; away: number | null }> = [];
-    for (let i = 1; i <= maxIdx; i++) {
-      const v = (setsRoot as any)[`s${i}`] ?? (setsRoot as any)[`set${i}`] ?? (setsRoot as any)[`S${i}`] ?? (setsRoot as any)[`SET${i}`];
-      sets.push(readSetPair(v));
-    }
+    let pHome: '15' | '30' | '40' | 'AD' | null = null;
+    let pAway: '15' | '30' | '40' | 'AD' | null = null;
 
     const normalizePoint = (v: any): '15' | '30' | '40' | 'AD' | null => {
       const s = String(v ?? '').trim().toUpperCase();
       if (s === '15' || s === '30' || s === '40') return s as any;
       if (s === 'A' || s === 'AD' || s === 'ADV' || s === 'ADVANTAGE') return 'AD';
       const n = Number(s);
-      if (Number.isFinite(n) && (n === 15 || n === 30 || n === 40)) return String(n) as any;
+      if (Number.isFinite(n) && (n === 0 || n === 15 || n === 30 || n === 40)) {
+        if (n === 0) return '15' as any;
+        return String(n) as any;
+      }
       return null;
     };
 
-    const pointRoot = obj.point || obj.points || obj.currentPoint || obj.current_point || {};
-    const pHome = normalizePoint(pointRoot.home ?? pointRoot.h ?? obj.pointHome ?? obj.homePoint);
-    const pAway = normalizePoint(pointRoot.away ?? pointRoot.a ?? obj.pointAway ?? obj.awayPoint);
+    if (obj && typeof obj === 'object') {
+      const setsRoot = obj.sets || obj.set || {};
+      let maxIdxObj = 0;
+      if (setsRoot && typeof setsRoot === 'object') {
+        for (const k of Object.keys(setsRoot)) {
+          const mm = /^(?:s|set)\s*(\d{1,2})$/i.exec(String(k).trim());
+          if (!mm) continue;
+          const n = Number(mm[1]);
+          if (Number.isFinite(n) && n > maxIdxObj) maxIdxObj = n;
+        }
+      }
+      maxIdxObj = Math.min(10, Math.max(0, maxIdxObj));
+      for (let i = 1; i <= maxIdxObj; i++) {
+        const v = (setsRoot as any)[`s${i}`] ?? (setsRoot as any)[`set${i}`] ?? (setsRoot as any)[`S${i}`] ?? (setsRoot as any)[`SET${i}`];
+        sets.push(readSetPair(v));
+      }
+
+      const pointRoot = obj.point || obj.points || obj.currentPoint || obj.current_point || {};
+      pHome = normalizePoint(pointRoot.home ?? pointRoot.h ?? obj.pointHome ?? obj.homePoint);
+      pAway = normalizePoint(pointRoot.away ?? pointRoot.a ?? obj.pointAway ?? obj.awayPoint);
+
+      if ((!pHome || !pAway) && obj.currentGame && typeof obj.currentGame === 'object') {
+        const cg = obj.currentGame;
+        if (!pHome) pHome = normalizePoint(cg.home ?? cg.h ?? cg.points?.home ?? cg.score?.home);
+        if (!pAway) pAway = normalizePoint(cg.away ?? cg.a ?? cg.points?.away ?? cg.score?.away);
+      }
+      if ((!pHome || !pAway) && obj.info && typeof obj.info === 'string') {
+        const im = obj.info.match(/(\d{1,2}|AD|A|ADV|ADVANTAGE)\s*[-:]\s*(\d{1,2}|AD|A|ADV|ADVANTAGE)/i);
+        if (im) {
+          if (!pHome) pHome = normalizePoint(im[1]);
+          if (!pAway) pAway = normalizePoint(im[2]);
+        }
+      }
+    }
+
+    if ((!pHome || !pAway) && matchClockInfo) {
+      const im = matchClockInfo.match(/(\d{1,2}|AD|A|ADV)\s*[-:]\s*(\d{1,2}|AD|A|ADV)/i);
+      if (im) {
+        if (!pHome) pHome = normalizePoint(im[1]);
+        if (!pAway) pAway = normalizePoint(im[2]);
+      }
+    }
+    if ((!pHome || !pAway) && statistics && typeof statistics === 'object') {
+      const gs = (statistics as any).gameScore ?? (statistics as any).currentGame ?? (statistics as any).points;
+      if (gs && typeof gs === 'object') {
+        if (!pHome) pHome = normalizePoint(gs.home ?? gs.h ?? gs.pointHome);
+        if (!pAway) pAway = normalizePoint(gs.away ?? gs.a ?? gs.pointAway);
+      } else if (typeof gs === 'string') {
+        const im = gs.match(/(\d{1,2}|AD|A)\s*[-:]\s*(\d{1,2}|AD|A)/i);
+        if (im) {
+          if (!pHome) pHome = normalizePoint(im[1]);
+          if (!pAway) pAway = normalizePoint(im[2]);
+        }
+      }
+    }
+
+    if (rawString) {
+      const setMatches = rawString.match(/(\d+)\s*[-–]\s*(\d+)/g);
+      const setPairs: Array<[number, number]> = [];
+      if (setMatches) {
+        for (const sm of setMatches) {
+          const parts = sm.split(/[-–]/).map(s => Number(s.trim()));
+          if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+            setPairs.push([parts[0], parts[1]]);
+          }
+        }
+      }
+      const setCount = setPairs.length;
+      const scoreInfo = rawString.toUpperCase();
+      const currSetMatch = scoreInfo.match(/\bS\s*(\d{1,2})\b/);
+      let rawSetsNeeded = 0;
+      if (currSetMatch) rawSetsNeeded = Math.max(setCount, Number(currSetMatch[1]));
+      else rawSetsNeeded = setCount;
+      for (let i = sets.length; i < rawSetsNeeded; i++) sets.push({ home: null, away: null });
+      for (let i = 0; i < setPairs.length && i < sets.length; i++) {
+        if (sets[i].home == null) sets[i].home = setPairs[i][0];
+        if (sets[i].away == null) sets[i].away = setPairs[i][1];
+      }
+      if ((!pHome || !pAway) && setCount > 0 && setMatches) {
+        const lastSetStr = setMatches[setMatches.length - 1];
+        const lastIdx = rawString.lastIndexOf(lastSetStr);
+        const tail = rawString.slice(lastIdx + lastSetStr.length);
+        const pt = tail.match(/(\d{1,2}|AD|A)\s*[-:]\s*(\d{1,2}|AD|A)/i);
+        if (pt) {
+          if (!pHome) pHome = normalizePoint(pt[1]);
+          if (!pAway) pAway = normalizePoint(pt[2]);
+        }
+      }
+    }
+
+    const curSet = detectTennisCurrentSet;
+    if (typeof curSet === 'number' && curSet > 0) {
+      for (let i = sets.length; i < curSet; i++) sets.push({ home: null, away: null });
+    }
 
     const hasAnySet = sets.some((s) => s.home != null || s.away != null);
 
     return { hasAnySet, sets, pHome, pAway };
-  }, [event, sport]);
+  }, [event, sport, detectTennisCurrentSet, currentMarkets]);
 
   // Score + live-clock derivation for the stacked team rows below. Same parsing logic the
   // single-line layout used to run inline; just relocated so both team rows (and the status
@@ -739,21 +885,7 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
             <span className="relative flex items-center gap-2 w-full justify-start">
               <div className="flex flex-col gap-1.5 min-w-0 flex-1 pr-14">
                 {(() => {
-                  const statusShort = String(event?.status ?? event?.fixture?.status?.short ?? '').toUpperCase().trim();
-                  const statusLong = String(event?.fixture?.status?.long ?? (event as any)?.status_long ?? '').toUpperCase().trim();
-                  const setNumFromStatus = (() => {
-                    const m1 = statusShort.match(/^S(\d{1,2})$/);
-                    if (m1) return Number(m1[1]);
-                    const m2 = statusLong.match(/\bSET\s*(\d{1,2})\b/);
-                    if (m2) return Number(m2[1]);
-                    const m3 = statusShort.match(/\bSET\s*(\d{1,2})\b/);
-                    if (m3) return Number(m3[1]);
-                    const m4 = statusShort.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
-                    if (m4) return Number(m4[1]);
-                    const m5 = statusLong.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
-                    if (m5) return Number(m5[1]);
-                    return 0;
-                  })();
+                  const curSet = detectTennisCurrentSet;
 
                   const setsAll = tennisScore?.sets || [];
                   let maxWithAny = 0;
@@ -764,10 +896,13 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                   }
 
                   const maxCols = 5;
-                  const cols =
-                    isLiveEvent
-                      ? Math.min(maxCols, Math.max(1, setNumFromStatus || 1, maxWithAny))
-                      : Math.min(maxCols, maxWithAny);
+                  let cols: number;
+                  if (isLiveEvent) {
+                    const fromSet = typeof curSet === 'number' && curSet > 0 ? curSet : 0;
+                    cols = Math.min(maxCols, Math.max(fromSet, maxWithAny));
+                  } else {
+                    cols = Math.min(maxCols, maxWithAny);
+                  }
                   const showSets = cols > 0 && (isLiveEvent || !!tennisScore?.hasAnySet);
                   const sets = Array.from({ length: cols }, (_, i) => setsAll[i] || { home: null, away: null });
 
@@ -832,25 +967,14 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                   );
                 }
 
+                const curSet = detectTennisCurrentSet;
+                let setLabel = '';
+                if (curSet === 'TB') setLabel = 'TIE-BREAK';
+                else if (typeof curSet === 'number' && curSet >= 1) setLabel = `${curSet}º SET`;
+
                 const statusShort = String(event?.status ?? event?.fixture?.status?.short ?? '').toUpperCase().trim();
-                const statusLong = String(event?.fixture?.status?.long ?? (event as any)?.status_long ?? '').toUpperCase().trim();
-                const setNumFromStatus = (() => {
-                  const m1 = statusShort.match(/^S(\d{1,2})$/);
-                  if (m1) return Number(m1[1]);
-                  const m2 = statusLong.match(/\bSET\s*(\d{1,2})\b/);
-                  if (m2) return Number(m2[1]);
-                  const m3 = statusShort.match(/\bSET\s*(\d{1,2})\b/);
-                  if (m3) return Number(m3[1]);
-                  const m4 = statusShort.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
-                  if (m4) return Number(m4[1]);
-                  const m5 = statusLong.match(/\b(\d{1,2})(?:ST|ND|RD|TH)\s+SET\b/);
-                  if (m5) return Number(m5[1]);
-                  return 0;
-                })();
-                const setLabel = setNumFromStatus >= 1 ? `${setNumFromStatus}º SET` : '';
                 const timerRaw = String((event as any).timer || (event as any).fixture?.status?.timer || '').trim();
                 const statusU = (statusShort || '').toUpperCase();
-                // For live soccer, use the advancing clock so the badge never lags behind the API poll.
                 const timer = (sport === 'soccer' && isLiveEvent)
                   ? computeFootballClock(
                       String((event as any)?.event_date || (event as any)?.fixture?.date || ''),
@@ -868,9 +992,6 @@ export function EventCard({ event, onOpenEvent, suspension, signals }: EventCard
                     ) : (
                       <span className="text-xs font-bold text-red-600">AO VIVO</span>
                     )}
-                    {/* Tennis has no match clock — GoalServe's own "timer"/"elapsed" field for
-                        tennis is just the current set number again, which duplicated setLabel
-                        above (e.g. both showing "4"), reading as a stray floating digit. */}
                     {timer && sport !== 'tennis' ? (
                       <span className="text-[10px] font-bold text-[#39FF14]">{timer}</span>
                     ) : null}

@@ -158,11 +158,22 @@ const BLOCKED_LEAGUE_CONTAINS = [
   'IPBL',
   '3HL League',
   'RHL',
+  'BudnesLiga',
+  'ISFA World Cup',
+  'eSoccer',
+  'eFootball',
+  'LFL 5x5',
+  'Simulated Soccer',
+  'eFutebol',
+  'Futebol Eletrônico',
+  'Russia MNHL',
 ] as const;
 const BLOCKED_LEAGUE_REGEX = [
   /\bU(?:1[6-9]|2[0-5])\b/i,
   /\b(Women|Feminino|Ladies)\b|\(W\)/i,
   /\bCyber\b/i,
+  /\b\d+x\d+\b/i,
+  /\b(isfA|isfA\s+world\s+cup|budnesliga|lfl\s*5x5|esoccer|efootball|efutebol|simulated.*soccer|futebol\s*eletr[ôo]nico|mnHL)\b/i,
 ] as const;
 
 function isBlockedEvent(league?: string | null, home?: string | null, away?: string | null): boolean {
