@@ -31,6 +31,7 @@ import {
   buildPitchAdvancedStats,
   buildEmptyStats,
   ymdFromPulseDate,
+  storeAlignedBridge,
   type PitchAdvancedStats as PitchStats,
 } from '../services/pitchapi';
 
@@ -210,10 +211,27 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     const lrAny = lr as any;
     const rawHome = String(lr.home || '');
     const rawAway = String(lr.away || '');
+    const scoreHomePlayer =
+      lrAny.score && typeof lrAny.score === 'object'
+        ? (lrAny.score.home_player as string | undefined)
+        : undefined;
+    const scoreAwayPlayer =
+      lrAny.score && typeof lrAny.score === 'object'
+        ? (lrAny.score.away_player as string | undefined)
+        : undefined;
+    const liveHomeName = String(lrAny.home_player || lrAny.homePlayer || scoreHomePlayer || rawHome || '');
+    const liveAwayName = String(lrAny.away_player || lrAny.awayPlayer || scoreAwayPlayer || rawAway || '');
     const base: AppEvent = existing ?? normalizePulseScoreEvent(sportFromContext, lr);
     const merged: any = { ...base, ...liveBase, is_live: 1 };
-    if (rawHome && !merged.home_team) merged.home_team = rawHome;
-    if (rawAway && !merged.away_team) merged.away_team = rawAway;
+
+    if (liveHomeName) merged.home_team = liveHomeName;
+    else if (existing?.home_team) merged.home_team = existing.home_team;
+    else if (rawHome) merged.home_team = rawHome;
+
+    if (liveAwayName) merged.away_team = liveAwayName;
+    else if (existing?.away_team) merged.away_team = existing.away_team;
+    else if (rawAway) merged.away_team = rawAway;
+
     if (typeof lr.league === 'string' && lr.league && !merged.league) merged.league = lr.league;
     if (lrAny.matchClock) merged.matchClock = lrAny.matchClock;
     if (lrAny.statistics) merged.statistics = lrAny.statistics;
@@ -225,6 +243,8 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       const newScore: any = { ...lrAny.score };
       if (prevScore && newScore.home === undefined && prevScore.home !== undefined) newScore.home = prevScore.home;
       if (prevScore && newScore.away === undefined && prevScore.away !== undefined) newScore.away = prevScore.away;
+      if (prevScore && !newScore.home_player && prevScore.home_player) newScore.home_player = prevScore.home_player;
+      if (prevScore && !newScore.away_player && prevScore.away_player) newScore.away_player = prevScore.away_player;
       merged.score = newScore;
     } else if (typeof merged.score === 'undefined' && (liveBase.score != null)) {
       merged.score = liveBase.score;
@@ -311,11 +331,16 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
     const cachedAlign = pitchAlignCache.get(event.id);
     if (cachedAlign) {
       if (!cachedAlign.matchId) return buildEmptyStats('No PitchAPI match alignment for this event');
-      return buildPitchAdvancedStats(pitchClient, cachedAlign.matchId, {
+      const out = await buildPitchAdvancedStats(pitchClient, cachedAlign.matchId, {
         pitchHomeTeamId: cachedAlign.pitchHomeId,
         pitchAwayTeamId: cachedAlign.pitchAwayId,
         alignmentScore: cachedAlign.score,
-      }) as Promise<PitchStats>;
+      }) as any;
+      if (out && !out.bet62InternalId && cachedAlign.providerMapEntry) {
+        out.bet62InternalId = cachedAlign.providerMapEntry.bet62InternalId;
+        out.kickoffDiffMs = cachedAlign.providerMapEntry.kickoffDiffMs;
+      }
+      return out as PitchStats;
     }
     const key = pulseToAlignKey({
       event_date: event.event_date,
@@ -339,18 +364,41 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       return buildEmptyStats('No PitchAPI match aligned');
     }
     const scheduleMatch = schedule.find((m) => m.id === aligned.matchId);
+    const pt = event.event_date ? new Date(event.event_date).getTime() : NaN;
+    const kt = scheduleMatch?.kickoff ? new Date(String(scheduleMatch.kickoff)).getTime() : NaN;
+    const kickoffDiffMs = Number.isFinite(pt) && Number.isFinite(kt) ? Math.abs(pt - kt) : -1;
+    const providerEventId = String(event.id || '').replace(/^pulsescore_/, '');
+    let bridge: any = null;
+    if (kickoffDiffMs >= 0 && kickoffDiffMs <= 600_000) {
+      bridge = storeAlignedBridge({
+        provider: 'pulsescore',
+        providerEventId: event.id,
+        pitchapiMatchId: aligned.matchId,
+        pitchapiHomeId: scheduleMatch?.home_team_id,
+        pitchapiAwayId: scheduleMatch?.away_team_id,
+        alignmentScore: aligned.score,
+        kickoffDiffMs,
+      });
+    }
     pitchAlignCache.set(
       event.id,
       aligned.matchId,
       aligned.score,
       scheduleMatch?.home_team_id,
       scheduleMatch?.away_team_id,
+      bridge,
     );
-    return buildPitchAdvancedStats(pitchClient, aligned.matchId, {
+    const out = await buildPitchAdvancedStats(pitchClient, aligned.matchId, {
       pitchHomeTeamId: scheduleMatch?.home_team_id,
       pitchAwayTeamId: scheduleMatch?.away_team_id,
       alignmentScore: aligned.score,
-    }) as Promise<PitchStats>;
+    }) as any;
+    if (out && bridge) {
+      out.bet62InternalId = bridge.bet62InternalId;
+      out.providerMap = { providerEventId, pulseId: event.id, pitchapiMatchId: aligned.matchId };
+      out.kickoffDiffMs = kickoffDiffMs;
+    }
+    return out as PitchStats;
   }
 
   function recordH2HOdds(ev: AppEvent, now: number) {
@@ -370,22 +418,55 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
             continue;
           }
           const existing = cache.get(u.event.id);
+          const prevHomeName = (existing as any)?.home_team as string | undefined;
+          const prevAwayName = (existing as any)?.away_team as string | undefined;
+          const prevStatistics = (existing as any)?.statistics;
+          const prevMoreInfo = (existing as any)?.moreInfo;
+          const prevMatchClock = (existing as any)?.matchClock;
+          const prevScoreObj = (existing as any)?.score && typeof (existing as any).score === 'object' ? (existing as any).score : null;
+          const newHomeName = String((u.event as any).home_team || '').trim();
+          const newAwayName = String((u.event as any).away_team || '').trim();
+          const uAny = u.event as any;
+          const pinnedHomePlayer =
+            prevScoreObj && prevScoreObj.home_player ? String(prevScoreObj.home_player) :
+            (prevHomeName && /\s/.test(prevHomeName)) ? prevHomeName : null;
+          const pinnedAwayPlayer =
+            prevScoreObj && prevScoreObj.away_player ? String(prevScoreObj.away_player) :
+            (prevAwayName && /\s/.test(prevAwayName)) ? prevAwayName : null;
+          const uScoreObj = uAny.score && typeof uAny.score === 'object' ? { ...uAny.score } : null;
+          if (uScoreObj && !uScoreObj.home_player && pinnedHomePlayer) uScoreObj.home_player = pinnedHomePlayer;
+          if (uScoreObj && !uScoreObj.away_player && pinnedAwayPlayer) uScoreObj.away_player = pinnedAwayPlayer;
+          const finalHomeName = newHomeName || pinnedHomePlayer || prevHomeName || '';
+          const finalAwayName = newAwayName || pinnedAwayPlayer || prevAwayName || '';
+          const finalStatistics = uAny.statistics
+            ? (Array.isArray(uAny.statistics) || Object.keys(uAny.statistics).length > 0 ? uAny.statistics : prevStatistics)
+            : prevStatistics;
+          const finalMoreInfo = uAny.moreInfo
+            ? (typeof uAny.moreInfo === 'object' && Object.keys(uAny.moreInfo).length > 0 ? uAny.moreInfo : prevMoreInfo)
+            : prevMoreInfo;
+          const finalMatchClock = uAny.matchClock ?? prevMatchClock;
           const merged: AppEvent = existing
             ? {
                 ...existing,
                 ...u.event,
+                home_team: finalHomeName,
+                away_team: finalAwayName,
                 home_odd: u.event.home_odd > 0 ? u.event.home_odd : existing.home_odd,
                 draw_odd: u.event.draw_odd > 0 ? u.event.draw_odd : existing.draw_odd,
                 away_odd: u.event.away_odd > 0 ? u.event.away_odd : existing.away_odd,
                 markets: u.event.markets && u.event.markets.length > 0 ? u.event.markets : existing.markets,
                 event_date: u.event.event_date || existing.event_date,
                 league: u.event.league || existing.league,
-                home_team: u.event.home_team || existing.home_team,
-                away_team: u.event.away_team || existing.away_team,
-                match: u.event.match || existing.match,
+                match: u.event.match || (finalHomeName && finalAwayName ? `${finalHomeName} vs ${finalAwayName}` : existing.match),
               }
             : u.event;
-          merged.is_live = 1;
+          const mergedAny: any = merged;
+          if (finalStatistics) mergedAny.statistics = finalStatistics;
+          if (finalMoreInfo) mergedAny.moreInfo = finalMoreInfo;
+          if (finalMatchClock) mergedAny.matchClock = finalMatchClock;
+          if (uScoreObj) mergedAny.score = uScoreObj;
+          else if (prevScoreObj) mergedAny.score = prevScoreObj;
+          mergedAny.is_live = 1;
           cache.set(merged.id, merged);
           recordH2HOdds(merged, now);
         }
@@ -892,9 +973,10 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         for (const r of raw) {
           if (isBlockedEvent(r.league, r.home, r.away)) continue;
           const id = `pulsescore_${r.eventId}`;
-          const wsLive = cache.get(id)?.is_live === 1 && isWsLiveSportActive(sport);
+          const cachedLive = cache.get(id)?.is_live === 1;
+          const protectedLive = cachedLive && (isWsLiveSportActive(sport) || sport === 'tennis');
           const ev = normalizePulseScoreEvent(sport, r);
-          if (wsLive) {
+          if (protectedLive) {
             const existing = cache.get(id);
             const merged: AppEvent = existing
               ? {
@@ -916,6 +998,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
       const liveIdsBySport = new Map<string, Set<string>>();
       let liveSportIndex = 0;
       for (const sport of PULSESCORE_SPORTS) {
+        if (sport === 'tennis') continue;
         if (liveSportIndex > 0) await new Promise((r) => setTimeout(r, 200));
         liveSportIndex += 1;
         if (isWsLiveSportActive(sport)) {
@@ -945,6 +1028,7 @@ export function createEventsService(_pool: pg.Pool | null, apiKey: string, wsCli
         liveIdsBySport.set(sport, liveIds);
       }
       for (const ev of cache.values()) {
+        if (ev.sport === 'tennis') continue;
         if (ev.is_live === 1 && liveIdsBySport.has(ev.sport) && !liveIdsBySport.get(ev.sport)!.has(ev.id)) {
           cache.set(ev.id, { ...ev, is_live: 0 });
         }

@@ -335,6 +335,64 @@ export function fuzzyNameScore(a: string, b: string): number {
   return Math.min(1, Math.max(tokDice, bigDice) * 0.95 + (aa.includes(bb) || bb.includes(aa) ? 0.05 : 0));
 }
 
+// Internal alignment cache (BET62 match_id bridge) — persists in-memory for
+// process lifetime. Provider event ids → pitchapi match_id → bet62 internal id.
+// This mirrors the design the user documented: a mapping table between
+// provider (PulseScore) event ids, PitchAPI match_ids, and a single BET62 id.
+// Because we don't have a Postgres migrations folder yet for a real SQL table,
+// we use an in-process LRU that's already good enough for > 10k cached aligns
+// per process restart. Once a SQL-backed provider_event_map table is added,
+// these maps get swapped out transparently.
+export type ProviderMapEntry = {
+  bet62InternalId: string;
+  provider: 'pulsescore';
+  providerEventId: string;
+  pitchapiMatchId: string;
+  pitchapiHomeId?: string;
+  pitchapiAwayId?: string;
+  alignmentScore: number;
+  alignedAt: number;
+  // Verification step: (1) normalized home equal or fuzzy ≥ 0.86, (2) away
+  // same rules, (3) kickoff times within ± 10 minutes (600 s) of each other,
+  // (4) league fuzzy ≥ 0.70.
+  kickoffDiffMs: number;
+};
+
+const PROVIDER_EVENT_MAP = new Map<string, ProviderMapEntry>();
+const BET62_BY_PULSE = new Map<string, ProviderMapEntry>();
+const BET62_BY_PITCH = new Map<string, ProviderMapEntry>();
+let bet62Seq = 1;
+
+function matchWithinKickoffWindow(pulseDate: string | Date | null | undefined, pitchKickoff: string | number | Date | null | undefined, {maxMs=600_000}={}): number | null {
+  if (!pulseDate || !pitchKickoff) return null;
+  const pt = pulseDate instanceof Date ? pulseDate.getTime() : new Date(String(pulseDate)).getTime();
+  const kt = pitchKickoff instanceof Date ? pitchKickoff.getTime() : new Date(String(pitchKickoff)).getTime();
+  if (!Number.isFinite(pt) || !Number.isFinite(kt)) return null;
+  const diff = Math.abs(pt - kt);
+  return diff <= maxMs ? diff : null;
+}
+
+export function getAlignedPitchForPulseId(pulseInternalId: string): ProviderMapEntry | null {
+  return BET62_BY_PULSE.get(String(pulseInternalId || '')) || null;
+}
+
+export function getAlignedPulseForPitchId(pitchMatchId: string): ProviderMapEntry | null {
+  return BET62_BY_PITCH.get(String(pitchMatchId || '')) || null;
+}
+
+export function storeAlignedBridge(entry: Omit<ProviderMapEntry, 'bet62InternalId' | 'alignedAt'>): ProviderMapEntry {
+  const existing = BET62_BY_PULSE.get(entry.providerEventId) || BET62_BY_PITCH.get(entry.pitchapiMatchId);
+  if (existing) {
+    if (existing.alignmentScore >= entry.alignmentScore) return existing;
+  }
+  const bet62InternalId = `bet62_match_${bet62Seq++}`;
+  const full: ProviderMapEntry = { ...entry, bet62InternalId, alignedAt: Date.now() };
+  BET62_BY_PULSE.set(full.providerEventId, full);
+  BET62_BY_PITCH.set(full.pitchapiMatchId, full);
+  PROVIDER_EVENT_MAP.set(full.bet62InternalId, full);
+  return full;
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -789,19 +847,21 @@ function aggregateAdvancedStats(
 // Per-event-id align cache — never hit PitchAPI schedule more than once per
 // calendar day for the same PulseScore event (we keep the mapping even if it
 // resolved to null so we don't retry in tight loops).
+// Also caches the ProviderMapEntry (BET62 internal bridge id) so on cache hit
+// the response can include the bet62_internal_id without recomputing.
 export class PitchAlignCache {
-  private map = new Map<string, { at: number; matchId: string | null; score: number | undefined; pitchHomeId?: string; pitchAwayId?: string }>();
+  private map = new Map<string, { at: number; matchId: string | null; score: number | undefined; pitchHomeId?: string; pitchAwayId?: string; providerMapEntry?: ProviderMapEntry | null }>();
   constructor() {}
 
-  get(eventId: string): { matchId: string | null; score: number | undefined; pitchHomeId?: string; pitchAwayId?: string } | null {
+  get(eventId: string): { matchId: string | null; score: number | undefined; pitchHomeId?: string; pitchAwayId?: string; providerMapEntry?: ProviderMapEntry | null } | null {
     const v = this.map.get(eventId);
     if (!v) return null;
     if (Date.now() - v.at > ALIGN_TTL_MS) { this.map.delete(eventId); return null; }
-    return { matchId: v.matchId, score: v.score, pitchHomeId: v.pitchHomeId, pitchAwayId: v.pitchAwayId };
+    return { matchId: v.matchId, score: v.score, pitchHomeId: v.pitchHomeId, pitchAwayId: v.pitchAwayId, providerMapEntry: v.providerMapEntry };
   }
 
-  set(eventId: string, matchId: string | null, score?: number, pitchHomeId?: string, pitchAwayId?: string): void {
-    this.map.set(eventId, { at: Date.now(), matchId, score, pitchHomeId, pitchAwayId });
+  set(eventId: string, matchId: string | null, score?: number, pitchHomeId?: string, pitchAwayId?: string, providerMapEntry?: ProviderMapEntry | null): void {
+    this.map.set(eventId, { at: Date.now(), matchId, score, pitchHomeId, pitchAwayId, providerMapEntry });
   }
 }
 

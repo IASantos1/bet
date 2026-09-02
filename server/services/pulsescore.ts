@@ -265,10 +265,12 @@ type EventsResponse = {
 // response — this is the only confirmed source of real-time score/clock data PulseScore offers. See
 // fetchPulseScoreLiveEvents() below. */
 type RawLiveMatchClock = { minute?: number; second?: number; period?: string; periodId?: string };
-type RawLiveScore = { home?: string; away?: string; info?: string };
+type RawLiveScore = { home?: string; away?: string; info?: string; home_player?: string; away_player?: string };
 export type RawPulseScoreLiveEvent = RawPulseScoreEvent & {
   matchClock?: RawLiveMatchClock;
   score?: RawLiveScore;
+  home_player?: string;
+  away_player?: string;
   // Sport-dependent freeform block (CONFIRMED shapes so far: football -> {home,away: {yellowCards,
   // redCards, corners}}, tennis -> {sets: {home: number[], away: number[]}}) — passed through
   // untyped since only two sports' shapes have actually been seen and no consumer needs it yet.
@@ -521,13 +523,14 @@ function extractH2H(raw: RawMarket[]): { home: number; draw: number; away: numbe
 
 export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent): AppEvent {
   const { home, draw, away } = extractH2H(raw.markets);
+  const rawAny = raw as any;
   const base: AppEvent = {
     id: `pulsescore_${raw.eventId}`,
     external_event_id: `pulsescore_${raw.eventId}`,
     match: `${raw.home} vs ${raw.away}`,
     league: raw.league,
-    home_team: raw.home,
-    away_team: raw.away,
+    home_team: rawAny.home_player || rawAny.homePlayer || (rawAny.score && typeof rawAny.score === 'object' && rawAny.score.home_player) || raw.home,
+    away_team: rawAny.away_player || rawAny.awayPlayer || (rawAny.score && typeof rawAny.score === 'object' && rawAny.score.away_player) || raw.away,
     home_odd: home,
     draw_odd: draw,
     away_odd: away,
@@ -536,7 +539,6 @@ export function normalizePulseScoreEvent(sport: string, raw: RawPulseScoreEvent)
     sport,
     markets: mapMarkets(raw.markets),
   };
-  const rawAny = raw as any;
   if (rawAny.matchClock) (base as any).matchClock = rawAny.matchClock;
   if (rawAny.score) (base as any).score = rawAny.score;
   if (rawAny.statistics) (base as any).statistics = rawAny.statistics;
