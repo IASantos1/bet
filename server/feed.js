@@ -169,6 +169,75 @@ export function normalizeIncidents(data) {
   }).filter(Boolean).sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0));
 }
 
+const pct = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v) * 10) / 10);
+
+/** /events/{id}/h2h/ → totals oriented to this fixture plus the last meetings (sides by team id). */
+export function normalizeH2H(data) {
+  if (!data || typeof data !== 'object') return null;
+  const recent = listOf(first(data.recent_matches, data.matches, data.meetings)).map((m) => ({
+    eventId: first(m.event_id, m.id) ?? null, date: first(m.date, m.event_date) || null,
+    home: name(first(m.home, m.home_team)) || '', away: name(first(m.away, m.away_team)) || '',
+    homeTeamId: toInt(first(m.home_team_id, m.home_team?.id)), awayTeamId: toInt(first(m.away_team_id, m.away_team?.id)),
+    // null means "no result recorded", never 0-0.
+    homeScore: toInt(m.home_score), awayScore: toInt(m.away_score),
+  })).slice(0, 10);
+  const total = toInt(first(data.total_matches, data.total));
+  if (!total && !recent.length) return null;
+  return {
+    total: total ?? recent.length, homeWins: toInt(data.home_wins) ?? 0, draws: toInt(data.draws) ?? 0, awayWins: toInt(data.away_wins) ?? 0,
+    homeGoals: toInt(data.home_goals), awayGoals: toInt(data.away_goals), avgGoals: pct(data.avg_total_goals), recent,
+  };
+}
+
+/** /events/{id}/prediction/ → model probabilities (0–100) per market. */
+export function normalizePrediction(data) {
+  const m = data?.markets;
+  if (!m || typeof m !== 'object') return null;
+  const r = m.match_result || {};
+  if (r.prob_home === undefined && r.prob_away === undefined) return null;
+  const ou = m.over_under || {};
+  return {
+    home: pct(r.prob_home), draw: pct(r.prob_draw), away: pct(r.prob_away), predicted: r.predicted || null,
+    xgHome: pct(m.expected_goals?.home), xgAway: pct(m.expected_goals?.away),
+    over15: pct(ou.prob_over_15), over25: pct(ou.prob_over_25), over35: pct(ou.prob_over_35),
+    bttsYes: pct(m.btts?.prob_yes), mostLikely: m.score?.most_likely || null,
+    confidence: data.model?.confidence !== undefined ? pct(Number(data.model.confidence) * 100) : null,
+  };
+}
+
+function standingRow(r) {
+  return {
+    position: toInt(first(r.position, r.rank, r.pos)), teamId: toInt(first(r.team_id, r.team?.id)),
+    team: String(first(r.team_name, name(r.team), r.name, '')).slice(0, 60),
+    played: toInt(first(r.played, r.matches, r.mp)), won: toInt(first(r.won, r.wins, r.w)), drawn: toInt(first(r.drawn, r.draws, r.d)),
+    lost: toInt(first(r.lost, r.losses, r.l)), goalsFor: toInt(first(r.goals_for, r.gf, r.scored)),
+    goalsAgainst: toInt(first(r.goals_against, r.ga, r.conceded)), points: toInt(first(r.pts, r.points)),
+    form: typeof r.form === 'string' ? r.form.slice(-5) : Array.isArray(r.form) ? r.form.slice(-5).join('') : null,
+    zone: r.zone && typeof r.zone === 'object' ? { type: r.zone.type || 'other', label: r.zone.label || '' } : null,
+  };
+}
+
+/**
+ * /leagues/{id}/standings/ → { name, rows, zones } for the table holding either team. Cup-style
+ * competitions return one table per group; we keep the group of the teams in this match.
+ */
+export function normalizeStandings(data, teamIds = []) {
+  if (!data || typeof data !== 'object') return null;
+  const ids = teamIds.map(Number).filter(Boolean);
+  const zoneList = (z) => (Array.isArray(z) ? z : []).map((x) => ({ type: x.type || 'other', label: x.label || '', from: toInt(x.from), to: toInt(x.to) }));
+  if (Array.isArray(data.groups) && data.groups.length) {
+    const groups = data.groups.map((g) => ({
+      name: String(first(g.name, g.group, g.group_name, '')),
+      rows: listOf(first(g.standings, g.rows, g.table)).map(standingRow),
+    }));
+    const g = groups.find((x) => x.rows.some((r) => ids.includes(r.teamId))) || groups[0];
+    const zones = data.zones && !Array.isArray(data.zones) ? data.zones[g.name] : data.zones;
+    return g.rows.length ? { name: g.name, rows: g.rows, zones: zoneList(zones) } : null;
+  }
+  const rows = listOf(first(data.standings, data.table, data.results, data)).map(standingRow).filter((r) => r.team);
+  return rows.length ? { name: null, rows, zones: zoneList(data.zones) } : null;
+}
+
 // ---------- feed ----------
 
 export function createFeed(db, {
@@ -508,5 +577,41 @@ export function createFeed(db, {
     return data;
   }
 
-  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras };
+  // Pre-match insight: head-to-head, model prediction and the league table.
+  const insightCache = new Map();
+  const seasonCache = new Map();
+  async function currentSeason(leagueId) {
+    const hit = seasonCache.get(leagueId);
+    if (hit && Date.now() - hit.at < 30 * 60_000) return hit.id;
+    const data = await get(`/leagues/${encodeURIComponent(leagueId)}/season/`);
+    const id = toInt(first(data?.id, data?.season_id, data?.season?.id));
+    seasonCache.set(leagueId, { at: Date.now(), id });
+    return id;
+  }
+  async function standingsFor(leagueId, teamIds) {
+    if (!leagueId) return null;
+    const season = await currentSeason(leagueId);
+    const data = await get(`/leagues/${encodeURIComponent(leagueId)}/standings/`, season ? { season_id: season } : {});
+    return normalizeStandings(data, teamIds);
+  }
+  async function matchInsights(row) {
+    const key = row.external_id;
+    const hit = insightCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60_000) return hit.data;
+    const ext = encodeURIComponent(key);
+    const [h2h, prediction, standings] = await Promise.all([
+      get(`/events/${ext}/h2h/`).then(normalizeH2H).catch(() => null),
+      get(`/events/${ext}/prediction/`).then(normalizePrediction).catch(() => null),
+      standingsFor(row.league_ext, [row.home_team_ext, row.away_team_ext]).catch(() => null),
+    ]);
+    const data = {
+      h2h, prediction, standings,
+      homeTeamId: toInt(row.home_team_ext), awayTeamId: toInt(row.away_team_ext),
+    };
+    insightCache.set(key, { at: Date.now(), data });
+    if (insightCache.size > 500) insightCache.delete(insightCache.keys().next().value);
+    return data;
+  }
+
+  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras, matchInsights };
 }
