@@ -162,6 +162,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents),
+      liveOddsMaxAge: config.liveOddsMaxAgeSeconds,
       sports: SPORTS,
     });
   });

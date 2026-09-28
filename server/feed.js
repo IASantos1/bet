@@ -60,6 +60,7 @@ export function normalizeEvent(ev) {
     clock: minute !== null ? `${minute}'` : /half.?time|^ht$/i.test(String(period || '')) ? 'Intervalo' : null,
     homeTeamId: teamId(first(ev.home_team?.id, ev.home_team_id, ev.home?.id, ev.teams?.home?.id)),
     awayTeamId: teamId(first(ev.away_team?.id, ev.away_team_id, ev.away?.id, ev.teams?.away?.id)),
+    liveWs: ev.live_websocket === true,
   };
 }
 
@@ -89,16 +90,24 @@ export function normalizeOddsRow(r) {
   const code = OUTCOME_CODE[String(first(r.outcome, r.selection, '')).toUpperCase()];
   const n = Number(first(r.decimal_odds, r.odds, r.price));
   if (eventId === undefined || !code || !Number.isFinite(n) || n <= 1) return null;
-  return { eventId: String(eventId), code, oddsX100: Math.round(n * 100), updatedAt: first(r.updated_at, r.last_seen_at) || null };
+  return {
+    eventId: String(eventId), code, oddsX100: Math.round(n * 100), updatedAt: first(r.updated_at, r.last_seen_at) || null,
+    book: String(first(r.bookmaker_slug, r.bookmaker?.slug, 'consensus')),
+  };
 }
 
 // ---------- feed ----------
 
 export function createFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/api/v2', days = 3, maxOddsCalls = 60, maxResultCalls = 40,
-  fetchImpl = globalThis.fetch, log = () => {},
+  fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
-  const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, oddsCursor: null };
+  const state = {
+    enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, oddsCursor: null,
+    // Latest price per event|outcome per bookmaker. On a free key the feed sends only the
+    // "consensus" row; with Football Unlimited it sends every book, and we average them.
+    books: new Map(),
+  };
 
   async function get(path, params = {}) {
     const url = new URL(`${baseUrl}${path}`);
@@ -242,9 +251,21 @@ export function createFeed(db, {
     const byEvent = new Map();
     let cursor = state.oddsCursor;
     for (const r of rows) {
+      const key = `${r.eventId}|${r.code}`;
+      if (!state.books.has(key)) state.books.set(key, new Map());
+      state.books.get(key).set(r.book, r.oddsX100);
       if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, {});
-      byEvent.get(r.eventId)[r.code] = r.oddsX100;
       if (r.updatedAt && (!cursor || r.updatedAt > cursor)) cursor = r.updatedAt;
+    }
+    for (const [ext, prices] of byEvent) {
+      for (const code of ['1', 'X', '2']) {
+        const quotes = state.books.get(`${ext}|${code}`);
+        if (!quotes?.size) continue;
+        // The provider's own consensus wins; otherwise the mean across the books quoting it.
+        prices[code] = quotes.has('consensus')
+          ? quotes.get('consensus')
+          : Math.round([...quotes.values()].reduce((a, b) => a + b, 0) / quotes.size);
+      }
     }
     const now = nowIso();
     const upsert = db.prepare(
@@ -281,14 +302,23 @@ export function createFeed(db, {
         }
         if (row.status === 'finished' || row.status === 'cancelled') return null;
         if (ev.status === 'finished' || ev.status === 'cancelled' || ev.status === 'postponed') return { terminal: row };
+        const home = ev.homeScore ?? 0;
+        const away = ev.awayScore ?? 0;
+        const scoreChanged = row.status === 'live' && (row.home_score !== home || row.away_score !== away);
         db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
-          .run(ev.homeScore ?? 0, ev.awayScore ?? 0, ev.clock, nowIso(), row.id);
-        suspendMarkets(row.id); // pre-match prices only: never leave a stale price open in play
+          .run(home, away, ev.clock, nowIso(), row.id);
+        // Pre-match prices never carry into play. Only an in-play price from the live socket
+        // (live_odds_at) keeps the market open, and a goal voids that too.
+        if (row.status !== 'live' || scoreChanged || !row.live_odds_at) {
+          suspendMarkets(row.id);
+          db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+        }
         return { id: row.id };
       });
       if (r?.terminal) applyTerminal(r.terminal, ev);
       if (r) updated += 1;
     }
+    liveSocket?.track(live.filter((ev) => ev.liveWs && ev.status === 'live').map((ev) => ev.externalId));
     return { live: live.length, updated };
   }
 
@@ -364,6 +394,7 @@ export function createFeed(db, {
 
   const status = () => ({
     provider: 'sports.bzzoiro.com', enabled: state.enabled, running: state.running,
+    liveSocket: liveSocket ? liveSocket.status() : { enabled: false },
     last: state.last, lastError: state.lastError, lastErrorAt: state.lastErrorAt,
     events: db.prepare("SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status").all(SOURCE)
       .reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {}),

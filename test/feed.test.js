@@ -56,7 +56,7 @@ test('normalizers accept the documented shapes', () => {
   });
   assert.deepEqual(ev, {
     externalId: '212581', home: 'Netherlands', away: 'Germany', startTime: '2026-09-24T20:45:00.000Z',
-    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'", homeTeamId: '1', awayTeamId: null,
+    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'", homeTeamId: '1', awayTeamId: null, liveWs: false,
   });
   assert.equal(normalizeEvent({ id: 1, home_team: 'A' }), null);
 
@@ -249,5 +249,28 @@ test('bulk odds never reopen a match that has kicked off', async () => {
   await feed.syncOdds();
   assert.ok(sels(db, eventRow(db, 21).id).every((x) => x.active === 0));
   assert.equal(normalizeOddsRow({ event_id: 1, market: '1x2', outcome: 'DRAW', decimal_odds: 1 }), null);
+  db.close();
+});
+
+test('with per-bookmaker rows (Football Unlimited) the price is the mean across books', async () => {
+  const db = openDb(':memory:');
+  let round = 0;
+  const routes = {
+    '/events/': { results: [{ id: 31, home_team: 'A', away_team: 'B', event_date: iso(5 * H), status: 'notstarted' }] },
+    '/odds/': () => (round++ === 0
+      ? { results: [
+        { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.0, bookmaker_slug: 'pinnacle', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.2, bookmaker_slug: 'bet365', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'AWAY', decimal_odds: 3.0, bookmaker_slug: 'pinnacle', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'AWAY', decimal_odds: 3.4, bookmaker_slug: 'bet365', updated_at: '2026-09-28T10:00:00Z' },
+      ] }
+      // Delta: only bet365 moved; pinnacle's earlier price still counts.
+      : { results: [{ event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.4, bookmaker_slug: 'bet365', updated_at: '2026-09-28T11:00:00Z' }] }),
+  };
+  const { feed } = feedFor(db, routes);
+  await feed.syncFixtures();
+  assert.deepEqual(sels(db, eventRow(db, 31).id).map((x) => [x.code, x.odds_x100]), [['1', 210], ['2', 320]]);
+  await feed.syncFixtures();
+  assert.equal(sels(db, eventRow(db, 31).id)[0].odds_x100, 220);
   db.close();
 });

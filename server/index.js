@@ -3,9 +3,14 @@ import { openDb } from './db.js';
 import { seed } from './seed.js';
 import { createApp } from './app.js';
 import { createFeed } from './feed.js';
+import { createLiveSocket } from './livews.js';
 
 const db = openDb(config.dbPath);
-const feed = createFeed(db, { ...config.feed, log: (msg) => console.warn(`[feed] ${msg}`) });
+const log = (msg) => console.warn(`[feed] ${msg}`);
+const liveSocket = config.feed.token && config.feed.liveWs
+  ? createLiveSocket(db, { token: config.feed.token, url: config.feed.liveWsUrl, maxSockets: config.feed.liveMaxSockets, log })
+  : null;
+const feed = createFeed(db, { ...config.feed, log, liveSocket });
 seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });
 const stopFeed = feed.start();
 
@@ -15,6 +20,7 @@ const server = createApp(db, { feed }).listen(config.port, () => {
 
 const shutdown = () => {
   stopFeed();
+  liveSocket?.stop();
   server.close(() => {
     db.close();
     process.exit(0);

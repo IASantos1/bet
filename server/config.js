@@ -28,7 +28,14 @@ export const config = {
     days: int(env.BZZOIRO_DAYS, 3), // how many days of fixtures to import
     maxOddsCalls: int(env.BZZOIRO_MAX_ODDS_CALLS, 60), // odds requests per fixtures sync
     maxResultCalls: int(env.BZZOIRO_MAX_RESULT_CALLS, 40), // detail requests per results sync
+    // Live WebSocket (paid addon): in-play scores and odds. Set BZZOIRO_LIVE_WS=0 to turn off.
+    liveWs: env.BZZOIRO_LIVE_WS !== '0',
+    liveWsUrl: env.BZZOIRO_LIVE_WS_URL || 'wss://sports.bzzoiro.com/live/football/',
+    liveMaxSockets: int(env.BZZOIRO_LIVE_MAX_SOCKETS, 5), // 10 matches per socket
   },
+
+  // In-play bets on feed matches are refused when the last live price is older than this.
+  liveOddsMaxAgeSeconds: int(env.LIVE_ODDS_MAX_AGE_SECONDS, 180),
 
   sessionDays: int(env.SESSION_DAYS, 30),
   minAge: 18,

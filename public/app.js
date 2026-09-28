@@ -512,6 +512,16 @@ function adminEventCard(e) {
   </form>`;
 }
 
+function liveSocketPanel(ws) {
+  if (!ws?.enabled) return '<p class="muted">Apostas ao vivo: desligadas (sem WebSocket).</p>';
+  const badge = ws.fatal ? `<span class="pill lost">Parado — ${esc(ws.fatal)}</span>`
+    : ws.connected ? '<span class="pill won">Ligado</span>' : '<span class="pill">A aguardar jogos ao vivo</span>';
+  return `<h3>WebSocket ao vivo ${badge}</h3>
+    <p class="muted">Odds em jogo e marcador em tempo real. O mercado fecha em cada golo e reabre com o preço seguinte; apostas com odds em jogo com mais de ${esc(state.config?.liveOddsMaxAge ?? 180)} s são recusadas.</p>
+    <p>Jogos seguidos: <strong>${ws.following}</strong> · ligações: ${ws.connected}/${ws.sockets} · sem cobertura: ${ws.notCovered} · mensagens: ${ws.frames}${ws.lastFrameAt ? ` (última ${esc(fmtDateTime(ws.lastFrameAt))})` : ''}</p>
+    ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}<br>`;
+}
+
 function adminFeed(f) {
   const last = (k, label) => {
     const r = f.last?.[k];
@@ -523,12 +533,13 @@ function adminFeed(f) {
   return `<div class="panel">
     <div class="section-head"><h2>Futebol — ${esc(f.provider)}</h2><span class="pill ${f.enabled ? 'won' : 'lost'}">${f.enabled ? 'Ligado' : 'Desligado'}</span></div>
     ${f.enabled
-      ? `<p class="muted">Jogos, odds de consenso (pré-jogo), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina. Em jogo, os mercados ficam suspensos porque o fornecedor só publica odds antes do início.</p>
+      ? `<p class="muted">Jogos, odds (média das casas de apostas), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina.</p>
          <p>Eventos importados: <strong>${esc(counts)}</strong></p>
          ${f.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(f.lastErrorAt))}): ${esc(f.lastError)}</div>` : ''}
          <div class="table-wrap"><table><thead><tr><th>Sincronização</th><th>Última execução</th><th>Resultado</th></tr></thead><tbody>
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
          </tbody></table></div><br>
+         ${liveSocketPanel(f.liveSocket)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
