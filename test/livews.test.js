@@ -59,6 +59,11 @@ test('subscribes with the token subprotocol, opens in-play prices and suspends o
   sock.push({ type: 'subscribed', event_id: 223510, source: 'basic',
     event: { score: { home: 0, away: 0 }, time: { minute: 30, display: "30'", status: 'live' } },
     odds: { odds: { match_winner: { home: 2.1, draw: 3.2, away: 3.6 } } } });
+  // First sight of a price with nothing to compare it with: remembered, not offered yet.
+  assert.ok(sels(db, id).every((s) => s.active === 0));
+  assert.equal(ev(db, id).live_odds_at, null);
+  sock.push({ type: 'odds', event_id: 223510, odds: { match_winner: { home: 2.05, draw: 3.2, away: 3.7 } } });
+  sock.push({ type: 'odds', event_id: 223510, odds: { match_winner: { home: 2.1, draw: 3.2, away: 3.6 } } });
   assert.deepEqual(sels(db, id), [{ code: '1', odds_x100: 210, active: 1 }, { code: '2', odds_x100: 360, active: 1 }, { code: 'X', odds_x100: 320, active: 1 }]);
   assert.ok(ev(db, id).live_odds_at);
 
@@ -160,5 +165,30 @@ test('REST live sync hands covered matches to the socket and keeps fresh live pr
   routes['/events/live/'].results[0].home_score = 1;
   await feed.syncLive();
   assert.ok(sels(db, id).every((s) => s.active === 0));
+  db.close();
+});
+
+test('in play the pre-match book, or one that ignores the score, never opens the market', async () => {
+  FakeSocket.all = [];
+  const db = openDb(':memory:');
+  const id = liveEvent(db, 99);
+  db.prepare("INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, '1', 218, 0), (?, 'X', 332, 0), (?, '2', 324, 0)").run(id, id, id);
+  const live = createLiveSocket(db, { token: 'tok', WebSocketImpl: FakeSocket });
+  live.track(['99']);
+  await tick();
+  const sock = FakeSocket.all[0];
+  sock.push({ type: 'event', event_id: 99, score: { home: 1, away: 3 }, time: { minute: 45, display: "45'", status: 'live' } });
+  // Same prices as before kick-off: refused.
+  sock.push({ type: 'odds', event_id: 99, odds: { match_winner: { home: 2.18, draw: 3.32, away: 3.24 } } });
+  assert.ok(sels(db, id).every((s) => s.active === 0));
+  // Moved, but the side two goals up is still the longer price: refused.
+  sock.push({ type: 'odds', event_id: 99, odds: { match_winner: { home: 2.2, draw: 3.3, away: 3.2 } } });
+  assert.ok(sels(db, id).every((s) => s.active === 0));
+  assert.equal(ev(db, id).live_odds_at, null);
+  // A real in-play book: opens.
+  sock.push({ type: 'odds', event_id: 99, odds: { match_winner: { home: 21, draw: 8.5, away: 1.08 } } });
+  assert.ok(sels(db, id).every((s) => s.active === 1));
+  assert.ok(ev(db, id).live_odds_at);
+  live.stop();
   db.close();
 });

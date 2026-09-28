@@ -13,6 +13,7 @@
 
 import { EventEmitter } from 'node:events';
 import { nowIso, tx } from './db.js';
+import { createLivePriceGate } from './sports.js';
 
 // Tennis streams over the multi-sport channel (wss://sports.bzzoiro.com/ws/live/) with
 // `"sport": "tennis"` on each subscription: 'event' frames carry the full match state (sets,
@@ -22,7 +23,7 @@ const FATAL_CLOSE = { 4401: 'token inválido', 4402: 'addon WebSocket não ativo
 
 export function createLiveSocket(db, {
   token, url = 'wss://sports.bzzoiro.com/live/football/', WebSocketImpl = globalThis.WebSocket,
-  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000, sport = null, source = 'bzzoiro',
+  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000, sport = null, source = 'bzzoiro', liveOddsMaxAge = 180,
 } = {}) {
   const SOURCE = source;
   const state = {
@@ -33,6 +34,14 @@ export function createLiveSocket(db, {
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const suspend = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(id);
+  // Odds frames carry no timestamp, and the provider keeps sending the pre-match book in play: a
+  // frame opens the market only when its match-result prices differ from the ones we hold (the
+  // pre-match or pre-goal ones) and closes it once they stop moving (see createLivePriceGate).
+  const gate = createLivePriceGate(liveOddsMaxAge * 1000);
+  const mainPrices = (p) => Object.fromEntries(Object.entries(p).filter(([k]) => k.startsWith('1x2|')));
+  const heldMain = (id) => Object.fromEntries(
+    db.prepare("SELECT code, odds_x100 FROM selections WHERE event_id = ? AND market = '1x2'").all(id).map((r) => [`1x2|${r.code}`, r.odds_x100])
+  );
 
   const bus = new EventEmitter();
   bus.setMaxListeners(0);
@@ -86,8 +95,9 @@ export function createLiveSocket(db, {
       db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
         .run(home, away, clock, nowIso(), row.id);
       if (scoreChanged || f.time?.status === 'finished') {
-        // A goal invalidates every price; wait for the next odds frame to reopen.
+        // A goal invalidates every price; wait for an odds frame that has moved since to reopen.
         suspend(row.id);
+        gate.forget(row.id);
         db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
       }
     });
@@ -101,7 +111,13 @@ export function createLiveSocket(db, {
     if (!row || row.status !== 'live') return;
     const prices = liveOddsPrices(f.odds);
     tx(db, () => {
-      if (!prices['1x2|1'] || !prices['1x2|2']) { suspend(row.id); return; }
+      if (!prices['1x2|1'] || !prices['1x2|2'] || implausible(prices, row)) { suspend(row.id); return; }
+      const verdict = gate(row.id, { any: mainPrices(prices), previous: heldMain(row.id) });
+      if (!verdict) {
+        suspend(row.id);
+        db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+        return;
+      }
       const upsert = db.prepare(
         `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
          ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
@@ -112,7 +128,7 @@ export function createLiveSocket(db, {
         const [market, code] = key.split('|');
         upsert.run(row.id, market, code, x100);
       }
-      db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
+      db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(new Date(verdict.at).toISOString(), row.id);
     });
     publish(row.id, 'odds', { at: nowIso() });
   }
@@ -284,6 +300,16 @@ export function createLiveSocket(db, {
 }
 
 /** In-play odds frame → { 'market|code': x100 } for the markets we offer. */
+/**
+ * A book that cannot belong to the current score: the side two or more goals up priced no
+ * shorter than the side behind (e.g. 1-3 at half-time with the home win still at 2.18).
+ */
+export function implausible(prices, { home_score: h, away_score: a }) {
+  if (!Number.isInteger(h) || !Number.isInteger(a) || Math.abs(h - a) < 2) return false;
+  const [lead, trail] = h > a ? [prices['1x2|1'], prices['1x2|2']] : [prices['1x2|2'], prices['1x2|1']];
+  return !!lead && !!trail && lead >= trail;
+}
+
 export function liveOddsPrices(odds) {
   const o = odds || {};
   const px = (v) => { const n = Number(v); return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null; };
