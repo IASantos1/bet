@@ -164,6 +164,7 @@ const inSlip = (selId) => state.slip.some((s) => s.selectionId === selId);
 
 function oddsButtons(e, { labels = 'code' } = {}) {
   const sels = e.selections;
+  if (!sels.length) return '<div class="odds-off">Apostas indisponíveis neste jogo</div>';
   return `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => {
     const prev = state.previousOdds.get(s.id);
     const move = prev && prev !== s.odds ? (s.odds > prev ? ' up' : ' down') : '';
@@ -434,7 +435,7 @@ function responsibleView() {
 function adminPage() {
   if (!state.user) return accountPage();
   if (state.user.role !== 'admin') return '<div class="panel empty">Acesso reservado a administradores.</div>';
-  const tabs = [['eventos', 'Eventos'], ['novo', 'Novo evento'], ['levantamentos', 'Levantamentos'], ['apostas', 'Apostas'], ['utilizadores', 'Utilizadores']];
+  const tabs = [['eventos', 'Eventos'], ['novo', 'Novo evento'], ['feed', 'Dados ao vivo'], ['levantamentos', 'Levantamentos'], ['apostas', 'Apostas'], ['utilizadores', 'Utilizadores']];
   setTimeout(loadAdmin);
   return `<div class="page-title"><h1>Administração</h1><p>Gestão de eventos, odds, resultados e pagamentos.</p></div>
     <div class="stat-grid four" id="adminStats"></div>
@@ -456,6 +457,7 @@ async function loadAdmin() {
     if (!main) return;
     const tab = state.adminTab;
     if (tab === 'novo') main.innerHTML = adminNewEvent();
+    else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'levantamentos') {
       const { withdrawals } = await api('/api/admin/withdrawals');
       main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -485,7 +487,7 @@ function adminEventCard(e) {
   const oddInput = (code) => `<div class="field"><span>Odd ${code}</span><input name="odd${code}" value="${odd(code)?.active ? fmtOdds(odd(code).odds) : ''}" inputmode="decimal" ${closed ? 'disabled' : ''} placeholder="—"></div>`;
   return `<form class="admin-event" data-form="admin-event" data-id="${e.id}" data-featured="${e.featured ? 1 : 0}">
     <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(SPORT_META[e.sport]?.name || e.sport)} · ${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
-      <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}</div></div>
+      <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
     <div class="admin-grid">
       <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}" ${closed ? 'disabled' : ''}></div>
       <div class="field"><span>Fora</span><input name="awayScore" type="number" min="0" value="${e.awayScore ?? ''}" ${closed ? 'disabled' : ''}></div>
@@ -501,6 +503,28 @@ function adminEventCard(e) {
       <button class="danger-btn btn-sm" data-op="cancel">Cancelar evento</button>
     </div>`}
   </form>`;
+}
+
+function adminFeed(f) {
+  const last = (k, label) => {
+    const r = f.last?.[k];
+    if (!r) return `<tr><td>${label}</td><td colspan="2" class="muted">ainda não executado</td></tr>`;
+    const info = Object.entries(r).filter(([key]) => key !== 'at').map(([key, v]) => `${key}: ${v}`).join(' · ');
+    return `<tr><td>${label}</td><td>${esc(fmtDateTime(r.at))}</td><td>${esc(info)}</td></tr>`;
+  };
+  const counts = Object.entries(f.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
+  return `<div class="panel">
+    <div class="section-head"><h2>Futebol — ${esc(f.provider)}</h2><span class="pill ${f.enabled ? 'won' : 'lost'}">${f.enabled ? 'Ligado' : 'Desligado'}</span></div>
+    ${f.enabled
+      ? `<p class="muted">Jogos, odds de consenso (pré-jogo), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina. Em jogo, os mercados ficam suspensos porque o fornecedor só publica odds antes do início.</p>
+         <p>Eventos importados: <strong>${esc(counts)}</strong></p>
+         ${f.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(f.lastErrorAt))}): ${esc(f.lastError)}</div>` : ''}
+         <div class="table-wrap"><table><thead><tr><th>Sincronização</th><th>Última execução</th><th>Resultado</th></tr></thead><tbody>
+           ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
+         </tbody></table></div><br>
+         <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
+      : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
+  </div>`;
 }
 
 function adminNewEvent() {
@@ -888,6 +912,15 @@ document.addEventListener('click', async (e) => {
     updateHeader(); renderSlip();
     location.hash = '#/';
     toast('Sessão terminada');
+  } else if (action === 'feed-sync') {
+    actionEl.disabled = true;
+    actionEl.textContent = 'A sincronizar…';
+    try {
+      await api('/api/admin/feed/sync', { method: 'POST', body: {} });
+      toast('Sincronização concluída');
+      refreshEvents();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadAdmin();
   } else if (action === 'wd-approve' || action === 'wd-reject') {
     const verb = action === 'wd-approve' ? 'approve' : 'reject';
     if (!confirm(verb === 'approve' ? 'Aprovar este levantamento (confirmando que a transferência foi feita)?' : 'Rejeitar e devolver o valor ao jogador?')) return;

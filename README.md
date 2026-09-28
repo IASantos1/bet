@@ -34,6 +34,27 @@ administrador de desenvolvimento: **admin@classicbet.local / admin12345**. Em pr
 | Jogo responsável | Autoexclusão (24 h a 1 ano) que bloqueia apostas e depósitos |
 | Administração | Criar eventos, editar odds, iniciar ao vivo, atualizar marcador, suspender mercados, destacar, lançar resultado, cancelar; aprovar/rejeitar levantamentos; ver apostas, utilizadores e receita |
 
+## Jogos e odds reais (futebol)
+
+A plataforma importa futebol real de [sports.bzzoiro.com](https://sports.bzzoiro.com) (API v2, gratuita,
+30+ ligas). Registe-se para obter um token e defina-o antes de arrancar:
+
+```bash
+BZZOIRO_API_TOKEN=o-seu-token npm start
+```
+
+Com o token definido, o servidor deixa de criar eventos de exemplo e passa a:
+
+| Sincronização | Intervalo | O que faz |
+| --- | --- | --- |
+| Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias e as odds de consenso 1X2, respeitando o `next_update_at` de cada jogo para não pedir mais do que o necessário |
+| Ao vivo | 30 s | Atualiza marcador e minuto; suspende os mercados em jogo (o fornecedor só publica odds pré-jogo) |
+| Resultados | 2 min | Quando o jogo termina, grava o resultado do tempo regulamentar e liquida as apostas; jogos cancelados/abandonados são anulados e reembolsados; adiados ficam suspensos até terem nova data |
+
+Jogos importados só aparecem aos jogadores depois de terem odds. O estado do feed (última execução,
+erros, eventos importados) e um botão **Sincronizar agora** estão em *Administração → Dados ao vivo*.
+Os eventos criados manualmente no painel continuam a funcionar em paralelo.
+
 ## Estrutura
 
 ```
@@ -41,6 +62,7 @@ server/
   index.js      arranque do servidor
   app.js        rotas da API (auth, conta, carteira, apostas, admin) e ficheiros estáticos
   betting.js    colocação de apostas e liquidação
+  feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite
   seed.js       administrador inicial e eventos de exemplo
@@ -71,8 +93,8 @@ podem vir no código:
    até lá. Os levantamentos já funcionam como pedidos que o administrador aprova após fazer a
    transferência.
 3. **Verificação de identidade (KYC)** e limites de depósito exigidos pelo regulador.
-4. **Fonte de odds e resultados** — hoje geridos manualmente no painel de administração; pode ligar
-   um fornecedor de dados desportivos que escreva nas tabelas `events` e `selections`.
+4. **Fonte de odds e resultados** — o feed de futebol acima cobre jogos, odds pré-jogo e resultados;
+   para odds ao vivo ou outros desportos é preciso um fornecedor adicional (ou gestão manual no painel).
 5. **Fornecedor de casino** licenciado — a página de casino mostra o catálogo mas os jogos só
    abrem após essa integração.
 6. HTTPS (atrás de um proxy como Nginx/Caddy) e cópias de segurança de `data/`.
