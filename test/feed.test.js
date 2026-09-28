@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createFeed, mapStatus, normalizeEvent, normalizeOdds } from '../server/feed.js';
+import { createFeed, mapStatus, normalizeEvent, normalizeOdds, normalizeOddsRow } from '../server/feed.js';
+import { createApp } from '../server/app.js';
 import { placeBets } from '../server/betting.js';
 import { tx, nowIso } from '../server/db.js';
 import { postTransaction } from '../server/wallet.js';
@@ -55,7 +56,7 @@ test('normalizers accept the documented shapes', () => {
   });
   assert.deepEqual(ev, {
     externalId: '212581', home: 'Netherlands', away: 'Germany', startTime: '2026-09-24T20:45:00.000Z',
-    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'",
+    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'", homeTeamId: '1', awayTeamId: null, liveWs: false,
   });
   assert.equal(normalizeEvent({ id: 1, home_team: 'A' }), null);
 
@@ -88,7 +89,7 @@ test('fixtures sync imports upcoming matches with consensus odds and sends the t
   const before = calls.length;
   const r2 = await feed.syncFixtures();
   assert.deepEqual(r2, { fixtures: 2, created: 0, priced: 0 });
-  assert.equal(calls.length - before, 1);
+  assert.equal(calls.length - before, 2); // fixtures list + bulk odds (404 here → per-match fallback)
   db.close();
 });
 
@@ -182,5 +183,94 @@ test('an API error is recorded without crashing the sync', async () => {
   const r = await feed.syncAll();
   assert.match(r.fixtures.error, /HTTP 404/);
   assert.match(feed.status().lastError, /HTTP 404/);
+  db.close();
+});
+
+test('bulk odds feed prices many matches in one call and only sends deltas afterwards', async () => {
+  const db = openDb(':memory:');
+  const oddsQueries = [];
+  const routes = {
+    '/events/': { results: [
+      { id: 11, home_team: { id: 35, name: 'Benfica' }, away_team: { id: 36, name: 'Porto' }, event_date: iso(4 * H), status: 'notstarted' },
+      { id: 12, home_team: { id: 40, name: 'Braga' }, away_team: { id: 41, name: 'Sporting' }, event_date: iso(6 * H), status: 'notstarted' },
+    ] },
+    '/odds/': (u) => {
+      oddsQueries.push(Object.fromEntries(u.searchParams));
+      if (u.searchParams.get('updated_after')) {
+        return { results: [{ event_id: 11, market: '1x2', outcome: 'HOME', decimal_odds: 1.95, bookmaker_slug: 'consensus', updated_at: '2026-09-28T11:00:00Z' }] };
+      }
+      return { count: 7, next: null, results: [
+        { event_id: 11, market: '1x2', outcome: 'HOME', decimal_odds: 2.05, updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 11, market: '1x2', outcome: 'DRAW', decimal_odds: 3.3, updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 11, market: '1x2', outcome: 'AWAY', decimal_odds: 3.6, updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 12, market: '1x2', outcome: 'HOME', decimal_odds: 2.4, updated_at: '2026-09-28T10:05:00Z' },
+        { event_id: 12, market: '1x2', outcome: 'AWAY', decimal_odds: 2.9, updated_at: '2026-09-28T10:05:00Z' },
+        { event_id: 12, market: 'btts', outcome: 'yes', decimal_odds: 1.8, updated_at: '2026-09-28T10:05:00Z' },
+        { event_id: 99, market: '1x2', outcome: 'HOME', decimal_odds: 1.5, updated_at: '2026-09-28T10:05:00Z' },
+      ] };
+    },
+  };
+  const { feed, calls } = feedFor(db, routes);
+  const r = await feed.syncFixtures();
+  assert.equal(r.priced, 2);
+  assert.ok(!calls.some((c) => /\/events\/\d+\/odds\//.test(c.path)), 'no per-match odds calls needed');
+  assert.equal(oddsQueries[0].market, '1x2');
+  assert.deepEqual(sels(db, eventRow(db, 11).id).map((x) => [x.code, x.odds_x100]), [['1', 205], ['2', 360], ['X', 330]]);
+  assert.deepEqual(sels(db, eventRow(db, 12).id).map((x) => [x.code, x.odds_x100]), [['1', 240], ['2', 290]]);
+
+  await feed.syncFixtures();
+  assert.equal(oddsQueries[1].updated_after, '2026-09-28T10:05:00Z');
+  assert.equal(sels(db, eventRow(db, 11).id)[0].odds_x100, 195);
+
+  // Team badges come from the provider's image proxy.
+  const server = createApp(db).listen(0);
+  await new Promise((res) => server.once('listening', res));
+  const events = (await (await fetch(`http://127.0.0.1:${server.address().port}/api/events`)).json()).events;
+  server.close();
+  const benfica = events.find((e) => e.home === 'Benfica');
+  assert.equal(benfica.homeLogo, 'https://sports.bzzoiro.com/img/team/35/?bg=transparent');
+  assert.equal(benfica.awayLogo, 'https://sports.bzzoiro.com/img/team/36/?bg=transparent');
+  db.close();
+});
+
+test('bulk odds never reopen a match that has kicked off', async () => {
+  const db = openDb(':memory:');
+  const routes = {
+    '/events/': { results: [{ id: 21, home_team: 'A', away_team: 'B', event_date: iso(2 * H), status: 'notstarted' }] },
+    '/odds/': { results: [
+      { event_id: 21, market: '1x2', outcome: 'HOME', decimal_odds: 2 },
+      { event_id: 21, market: '1x2', outcome: 'AWAY', decimal_odds: 3 },
+    ] },
+  };
+  const { feed } = feedFor(db, routes);
+  await feed.syncFixtures();
+  db.prepare("UPDATE events SET status = 'live', start_time = ? WHERE external_id = '21'").run(iso(-H));
+  db.prepare('UPDATE selections SET active = 0').run();
+  await feed.syncOdds();
+  assert.ok(sels(db, eventRow(db, 21).id).every((x) => x.active === 0));
+  assert.equal(normalizeOddsRow({ event_id: 1, market: '1x2', outcome: 'DRAW', decimal_odds: 1 }), null);
+  db.close();
+});
+
+test('with per-bookmaker rows (Football Unlimited) the price is the mean across books', async () => {
+  const db = openDb(':memory:');
+  let round = 0;
+  const routes = {
+    '/events/': { results: [{ id: 31, home_team: 'A', away_team: 'B', event_date: iso(5 * H), status: 'notstarted' }] },
+    '/odds/': () => (round++ === 0
+      ? { results: [
+        { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.0, bookmaker_slug: 'pinnacle', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.2, bookmaker_slug: 'bet365', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'AWAY', decimal_odds: 3.0, bookmaker_slug: 'pinnacle', updated_at: '2026-09-28T10:00:00Z' },
+        { event_id: 31, market: '1x2', outcome: 'AWAY', decimal_odds: 3.4, bookmaker_slug: 'bet365', updated_at: '2026-09-28T10:00:00Z' },
+      ] }
+      // Delta: only bet365 moved; pinnacle's earlier price still counts.
+      : { results: [{ event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.4, bookmaker_slug: 'bet365', updated_at: '2026-09-28T11:00:00Z' }] }),
+  };
+  const { feed } = feedFor(db, routes);
+  await feed.syncFixtures();
+  assert.deepEqual(sels(db, eventRow(db, 31).id).map((x) => [x.code, x.odds_x100]), [['1', 210], ['2', 320]]);
+  await feed.syncFixtures();
+  assert.equal(sels(db, eventRow(db, 31).id)[0].odds_x100, 220);
   db.close();
 });

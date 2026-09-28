@@ -121,6 +121,10 @@ h1, h2, h3 { margin-top: 0; }
 .team { font-weight: 800; font-size: 12px; }
 .team-icon { width: 35px; height: 35px; border-radius: 50%; background: #252b33; display: grid; place-items: center; margin: 0 auto 6px; font-weight: 900; color: #cfd5dc; }
 .vs { color: #69727d; font-size: 10px; }
+.team-icon.has-logo { background: transparent; }
+.team-icon img { width: 30px; height: 30px; object-fit: contain; }
+.team-icon.mini { display: inline-grid; width: 18px; height: 18px; margin: 0 7px 0 0; vertical-align: middle; background: transparent; }
+.team-icon.mini img { width: 18px; height: 18px; }
 .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .odds.two { grid-template-columns: repeat(2, 1fr); }
 .odds-off { color: #69727d; font-size: 11px; padding: 10px 0; text-align: center; border: 1px dashed #303640; border-radius: 5px; }

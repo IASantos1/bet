@@ -117,6 +117,11 @@ function migrate(db) {
   if (!cols.has('source')) db.exec("ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
   if (!cols.has('external_id')) db.exec('ALTER TABLE events ADD COLUMN external_id TEXT');
   if (!cols.has('odds_next_at')) db.exec('ALTER TABLE events ADD COLUMN odds_next_at TEXT');
+  // Provider team ids, used for the club badges served by the provider's image proxy.
+  if (!cols.has('home_team_ext')) db.exec('ALTER TABLE events ADD COLUMN home_team_ext TEXT');
+  if (!cols.has('away_team_ext')) db.exec('ALTER TABLE events ADD COLUMN away_team_ext TEXT');
+  // When the current in-play price was received (live odds over the provider's WebSocket).
+  if (!cols.has('live_odds_at')) db.exec('ALTER TABLE events ADD COLUMN live_odds_at TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_events_external ON events(source, external_id) WHERE external_id IS NOT NULL');
 }
 

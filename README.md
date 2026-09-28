@@ -47,11 +47,15 @@ Com o token definido, o servidor deixa de criar eventos de exemplo e passa a:
 
 | Sincronização | Intervalo | O que faz |
 | --- | --- | --- |
-| Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias e as odds de consenso 1X2, respeitando o `next_update_at` de cada jogo para não pedir mais do que o necessário |
-| Ao vivo | 30 s | Atualiza marcador e minuto; suspende os mercados em jogo (o fornecedor só publica odds pré-jogo) |
+| Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias. As odds de consenso 1X2 chegam numa só chamada ao feed `/odds/`, pedindo depois só o que mudou (`updated_after`); jogos ainda sem preço caem para `/events/{id}/odds/`, respeitando o `next_update_at` de cada um |
+| Ao vivo | 30 s | Atualiza marcador e minuto e entrega ao WebSocket os jogos com cobertura (`live_websocket`) |
+| WebSocket | tempo real | Odds 1X2 em jogo e marcador (addon pago). Cada golo fecha o mercado até chegar a odd seguinte; sem odd ao vivo recente (`LIVE_ODDS_MAX_AGE_SECONDS`, 180 s) não se aceitam apostas em jogo. Sem o addon, os jogos em curso ficam só com marcador |
 | Resultados | 2 min | Quando o jogo termina, grava o resultado do tempo regulamentar e liquida as apostas; jogos cancelados/abandonados são anulados e reembolsados; adiados ficam suspensos até terem nova data |
 
-Jogos importados só aparecem aos jogadores depois de terem odds. O estado do feed (última execução,
+Com uma chave Football Unlimited o feed `/odds/` traz o preço de cada casa de apostas: a plataforma usa
+a média entre elas (numa chave gratuita, o consenso do próprio fornecedor).
+
+Jogos importados só aparecem aos jogadores depois de terem odds. Os escudos dos clubes vêm do proxy de imagens do fornecedor (sem token); quando não há escudo, mostram-se as iniciais. O estado do feed (última execução,
 erros, eventos importados) e um botão **Sincronizar agora** estão em *Administração → Dados ao vivo*.
 Os eventos criados manualmente no painel continuam a funcionar em paralelo.
 
@@ -63,6 +67,7 @@ server/
   app.js        rotas da API (auth, conta, carteira, apostas, admin) e ficheiros estáticos
   betting.js    colocação de apostas e liquidação
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
+  livews.js     WebSocket ao vivo (odds e marcador em jogo)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite
   seed.js       administrador inicial e eventos de exemplo

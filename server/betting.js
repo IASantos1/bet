@@ -33,7 +33,7 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Seleção repetida no boletim.');
 
   const getSel = db.prepare(
-    `SELECT s.id, s.code, s.odds_x100, s.active, e.id AS event_id, e.status, e.start_time, e.home, e.away
+    `SELECT s.id, s.code, s.odds_x100, s.active, e.id AS event_id, e.status, e.start_time, e.home, e.away, e.source, e.live_odds_at
        FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id = ?`
   );
   const now = nowIso();
@@ -42,7 +42,10 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   for (const pick of picks) {
     const sel = getSel.get(Number(pick.selectionId));
     if (!sel) throw new HttpError(400, 'Seleção inexistente.');
-    const open = sel.status === 'live' || (sel.status === 'scheduled' && sel.start_time > now);
+    // Feed matches in play need a recent live price; manual events are the operator's call.
+    const liveFresh = sel.source === 'manual'
+      || (sel.live_odds_at && Date.now() - new Date(sel.live_odds_at).getTime() <= config.liveOddsMaxAgeSeconds * 1000);
+    const open = (sel.status === 'live' && liveFresh) || (sel.status === 'scheduled' && sel.start_time > now);
     if (!open || !sel.active) {
       throw new HttpError(409, `Mercado fechado: ${sel.home} vs ${sel.away}.`, { closed: [sel.id] });
     }

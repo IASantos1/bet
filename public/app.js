@@ -175,13 +175,20 @@ function oddsButtons(e, { labels = 'code' } = {}) {
   }).join('')}</div>`;
 }
 
+/** Club badge from the data provider, falling back to initials (see the image error listener). */
+function teamBadge(logo, name, size = '') {
+  const cls = `team-icon${size ? ` ${size}` : ''}`;
+  if (!logo) return size ? '' : `<div class="${cls}">${esc(initials(name))}</div>`;
+  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
+}
+
 function matchCard(e) {
   return `<article class="match-card">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? `<span class="live-label">● AO VIVO ${esc(e.clock || '')}</span>` : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
-      <div class="team"><div class="team-icon">${esc(initials(e.home))}</div>${esc(e.home)}</div>
+      <div class="team">${teamBadge(e.homeLogo, e.home)}${esc(e.home)}</div>
       <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
-      <div class="team"><div class="team-icon">${esc(initials(e.away))}</div>${esc(e.away)}</div>
+      <div class="team">${teamBadge(e.awayLogo, e.away)}${esc(e.away)}</div>
     </div>
     ${oddsButtons(e)}
   </article>`;
@@ -190,7 +197,7 @@ function matchCard(e) {
 function liveCard(e) {
   return `<article class="live-card">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
-    <div class="live-teams"><div><span>${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
+    <div class="live-teams"><div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
 }
@@ -505,6 +512,16 @@ function adminEventCard(e) {
   </form>`;
 }
 
+function liveSocketPanel(ws) {
+  if (!ws?.enabled) return '<p class="muted">Apostas ao vivo: desligadas (sem WebSocket).</p>';
+  const badge = ws.fatal ? `<span class="pill lost">Parado — ${esc(ws.fatal)}</span>`
+    : ws.connected ? '<span class="pill won">Ligado</span>' : '<span class="pill">A aguardar jogos ao vivo</span>';
+  return `<h3>WebSocket ao vivo ${badge}</h3>
+    <p class="muted">Odds em jogo e marcador em tempo real. O mercado fecha em cada golo e reabre com o preço seguinte; apostas com odds em jogo com mais de ${esc(state.config?.liveOddsMaxAge ?? 180)} s são recusadas.</p>
+    <p>Jogos seguidos: <strong>${ws.following}</strong> · ligações: ${ws.connected}/${ws.sockets} · sem cobertura: ${ws.notCovered} · mensagens: ${ws.frames}${ws.lastFrameAt ? ` (última ${esc(fmtDateTime(ws.lastFrameAt))})` : ''}</p>
+    ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}<br>`;
+}
+
 function adminFeed(f) {
   const last = (k, label) => {
     const r = f.last?.[k];
@@ -516,12 +533,13 @@ function adminFeed(f) {
   return `<div class="panel">
     <div class="section-head"><h2>Futebol — ${esc(f.provider)}</h2><span class="pill ${f.enabled ? 'won' : 'lost'}">${f.enabled ? 'Ligado' : 'Desligado'}</span></div>
     ${f.enabled
-      ? `<p class="muted">Jogos, odds de consenso (pré-jogo), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina. Em jogo, os mercados ficam suspensos porque o fornecedor só publica odds antes do início.</p>
+      ? `<p class="muted">Jogos, odds (média das casas de apostas), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina.</p>
          <p>Eventos importados: <strong>${esc(counts)}</strong></p>
          ${f.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(f.lastErrorAt))}): ${esc(f.lastError)}</div>` : ''}
          <div class="table-wrap"><table><thead><tr><th>Sincronização</th><th>Última execução</th><th>Resultado</th></tr></thead><tbody>
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
          </tbody></table></div><br>
+         ${liveSocketPanel(f.liveSocket)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
@@ -931,6 +949,21 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
 });
+
+// A badge that fails to load (the provider answers 204/404 when it has none) becomes initials.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
+  const box = img.parentElement;
+  box.classList.remove('has-logo');
+  box.textContent = box.classList.contains('mini') ? '' : box.dataset.initials;
+  if (box.classList.contains('mini')) box.remove();
+}, true);
+// A 204 response is a "successful" empty image: treat zero-size loads the same way.
+document.addEventListener('load', (e) => {
+  const img = e.target;
+  if (img instanceof HTMLImageElement && img.classList.contains('team-logo') && !img.naturalWidth) img.dispatchEvent(new Event('error'));
+}, true);
 
 document.addEventListener('input', (e) => {
   if (e.target.id === 'searchInput') renderSearch(e.target.value);
