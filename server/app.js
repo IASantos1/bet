@@ -10,11 +10,12 @@ import {
 } from './security.js';
 import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
-import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
+import { MARKETS, MARKET_ORDER, selectionLabel, codeRank } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
+import { createMarketCatalog } from './catalog.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -129,7 +130,9 @@ export function createApp(db, {
     if (origin) {
       let host = '';
       try { host = new URL(origin).host; } catch { /* invalid origin */ }
-      if (host !== req.get('host')) return next(new HttpError(403, 'Origem não permitida.'));
+      // Behind a proxy (Railway, Render…) the public host can arrive as X-Forwarded-Host.
+      const own = [req.get('host'), ...String(req.get('x-forwarded-host') || '').split(',')].map((h) => h?.trim()).filter(Boolean);
+      if (!own.includes(host)) return next(new HttpError(403, 'Origem não permitida.'));
     }
     next();
   });
@@ -178,15 +181,15 @@ export function createApp(db, {
 
   // ---------- events ----------
 
-  const codeRank = (market, code) => MARKETS[market]?.codes.indexOf(code) ?? 99;
 
   /**
    * Events with their match-result (1X2) selections — what lists and cards show. With
    * `allMarkets`, also every market grouped for the match page.
    */
+  const TENNIS_NAMES = { '1x2': 'Vencedor do encontro', ou: 'Total de sets', hcp: 'Handicap de sets' };
   // Market titles per sport ("Vencedor do encontro" in tennis, regulation time in ice hockey…).
   const marketName = (sport, m) => {
-    if (sport === 'tenis' && m === '1x2') return 'Vencedor do encontro';
+    if (sport === 'tenis' && TENNIS_NAMES[m]) return TENNIS_NAMES[m];
     return SPORT_SPECS[sport]?.marketName?.[m] || MARKETS[m].name;
   };
 
@@ -353,7 +356,9 @@ export function createApp(db, {
     if (!loginLimiter(`${req.ip}|${email}`)) throw new HttpError(429, 'Demasiadas tentativas. Tente mais tarde.');
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user || !verifyPassword(password, user.password_hash)) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
+    // The administrator's password is stored trimmed; a phone keyboard may add a trailing space.
+    const ok = user && (verifyPassword(password, user.password_hash) || (password.trim() !== password && verifyPassword(password.trim(), user.password_hash)));
+    if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
     startSession(res, user.id);
     res.json({ user: publicUser(user) });
   });
@@ -465,14 +470,14 @@ export function createApp(db, {
     if (!bets.length) return [];
     const ids = bets.map((b) => b.id);
     const legs = db.prepare(
-      `SELECT l.bet_id, l.market, l.code, l.odds_x100, l.status, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
+      `SELECT l.bet_id, l.market, l.code, l.odds_x100, l.status, e.sport, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
     return bets.map((b) => ({
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market]?.name || l.market,
+        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market] ? marketName(l.sport, l.market) : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
       })),
@@ -548,6 +553,20 @@ export function createApp(db, {
   admin.get('/events', (_req, res) => {
     res.json({ events: loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [new Date(Date.now() - 3 * 86_400_000).toISOString()],
       "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500) });
+  });
+
+  // Market catalogue: what the provider really returns, sampled on real games of each sport.
+  const catalog = createMarketCatalog(db, [
+    feed && { sport: 'futebol', source: 'bzzoiro', enabled: () => feed.status().enabled, rawOdds: feed.rawOdds, extra: feed.rawOddsExtra },
+    tennis && { sport: 'tenis', source: TENNIS_SOURCE, enabled: () => tennis.status().enabled, rawOdds: tennis.rawOdds },
+    ...Object.entries(sports).map(([sport, f]) => ({ sport, source: f.source, enabled: () => f.status().enabled, rawOdds: f.rawOdds })),
+  ].filter((p) => p && p.rawOdds));
+  admin.get('/market-catalog', (_req, res) => res.json({ catalog: catalog.last(), running: catalog.running() }));
+  admin.post('/market-catalog/run', async (req, res, next) => {
+    try {
+      const sample = Math.min(30, Math.max(3, Number(req.body.sample) || 12));
+      res.json({ catalog: await catalog.run({ sample }) });
+    } catch (err) { next(err); }
   });
 
   // Diagnostics: what the data provider answers for this event's odds, as received.

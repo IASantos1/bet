@@ -119,6 +119,17 @@ test('mutating requests must be JSON (CSRF guard)', async () => {
   assert.equal(res.status, 415);
 });
 
+test('origin check accepts the public host a proxy forwards', async () => {
+  const post = (headers) => fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{}' });
+  assert.equal((await post({ Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await post({ Origin: 'https://bet.up.railway.app', 'X-Forwarded-Host': 'bet.up.railway.app' })).status, 200);
+});
+
+test('login tolerates a trailing space typed after the password', async () => {
+  const c = client();
+  assert.equal((await c('POST', '/api/auth/login', { email: ' Admin@classicbet.local ', password: 'admin12345 ' })).status, 200);
+});
+
 test('single bet: debits stake, pays out on win', async () => {
   const adm = await adminClient();
   const ev = await createEvent(adm);

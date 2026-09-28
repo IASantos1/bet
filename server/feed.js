@@ -617,5 +617,13 @@ export function createFeed(db, {
     return data;
   }
 
-  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras, matchInsights };
+  // Raw provider odds for one match (admin market catalogue): the consensus prices, plus the
+  // per-bookmaker grid (Football Unlimited) and the bulk rows, which list every market by name.
+  const rawOdds = (externalId) => get(`/events/${encodeURIComponent(externalId)}/odds/`);
+  const rawOddsExtra = (externalId) => [
+    get(`/events/${encodeURIComponent(externalId)}/odds/comparison/`),
+    get('/odds/', { event_id: externalId, limit: 200 }),
+  ];
+
+  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras, matchInsights, rawOdds, rawOddsExtra };
 }

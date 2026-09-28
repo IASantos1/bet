@@ -129,3 +129,18 @@ test('live stream: snapshot then real-time frames over server-sent events', asyn
     db.close();
   }
 });
+
+test('handicap, games total and odd/even settlement', () => {
+  const g = { homeGames: 16, awayGames: 13 };
+  const cases = [
+    ['hcp', '1-1.5', 2, 0, 'won'], ['hcp', '1-1.5', 2, 1, 'lost'], ['hcp', '2+1.5', 2, 1, 'won'], ['hcp', '1-1', 2, 1, 'void'],
+    ['gou', 'O28.5', 2, 1, 'won'], ['gou', 'U28.5', 2, 1, 'lost'],
+    ['ghcp', '1-3.5', 2, 1, 'lost'], ['ghcp', '2+3.5', 2, 1, 'won'],
+    ['goe', 'ODD', 2, 1, 'won'], ['goe', 'EVEN', 2, 1, 'lost'],
+  ];
+  for (const [m, code, h, a, want] of cases) assert.equal(legOutcome(m, code, h, a, g), want, `${m} ${code}`);
+  assert.equal(legOutcome('gou', 'O20.5', 2, 1), 'void'); // games unknown
+  assert.ok(isValidSelection('hcp', '1-1.5') && isValidSelection('gou', 'O20.5') && !isValidSelection('gou', 'O20'));
+  assert.equal(selectionLabel('ghcp', '1+3.5', 'Alcaraz', 'Sinner'), 'Alcaraz +3.5');
+  assert.equal(selectionLabel('goe', 'EVEN'), 'Par');
+});

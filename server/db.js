@@ -68,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, start_time);
 CREATE TABLE IF NOT EXISTS selections (
   id        INTEGER PRIMARY KEY,
   event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  market    TEXT    NOT NULL DEFAULT '1x2' CHECK (market IN ('1x2', 'dc', 'dnb', 'ou', 'btts', 'ml')),
+  market    TEXT    NOT NULL DEFAULT '1x2' CHECK (market IN ('1x2', 'dc', 'dnb', 'ou', 'btts', 'ml', 'hcp', 'gou', 'ghcp', 'goe')),
   code      TEXT    NOT NULL,
   odds_x100 INTEGER NOT NULL CHECK (odds_x100 > 100),
   active    INTEGER NOT NULL DEFAULT 1,
@@ -149,6 +149,10 @@ function migrate(db) {
   if (!cols.has('live_detail')) db.exec('ALTER TABLE events ADD COLUMN live_detail TEXT');
   if (!cols.has('reg_home_score')) db.exec('ALTER TABLE events ADD COLUMN reg_home_score INTEGER');
   if (!cols.has('reg_away_score')) db.exec('ALTER TABLE events ADD COLUMN reg_away_score INTEGER');
+  // Tennis: games won over every set (games markets) and whether the match ended in a retirement.
+  if (!cols.has('home_games')) db.exec('ALTER TABLE events ADD COLUMN home_games INTEGER');
+  if (!cols.has('away_games')) db.exec('ALTER TABLE events ADD COLUMN away_games INTEGER');
+  if (!cols.has('retired')) db.exec('ALTER TABLE events ADD COLUMN retired INTEGER NOT NULL DEFAULT 0');
 
   // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
   // bet legs stay linked) and bet legs record the market they were placed on.
@@ -157,9 +161,10 @@ function migrate(db) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)
       SELECT id, event_id, '1x2', code, odds_x100, active FROM selections_old`);
   }
-  // Match-winner market for other sports ('ml'): the market CHECK is widened by a rebuild.
+  // Match-winner market for other sports ('ml') and tennis handicaps / games totals: the market
+  // CHECK is widened by a rebuild.
   const selSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'selections'").get()?.sql || '';
-  if (!selSql.includes("'ml'")) {
+  if (!selSql.includes("'goe'")) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)
       SELECT id, event_id, market, code, odds_x100, active FROM selections_old`);
   }

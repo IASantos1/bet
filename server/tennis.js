@@ -13,7 +13,20 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
-import { twoWayPrices, createLivePriceGate } from './sports.js';
+import { twoWayPrices, createLivePriceGate, lineMarketPrices, parsePeriods } from './sports.js';
+
+/**
+ * Games won by each player over the match, from "6-4, 3-6, 7-6(5)". Null unless every set played
+ * is there (the count matches the sets score), so a partial score never settles a games market.
+ */
+export function matchGames(m) {
+  const sets = parsePeriods(m?.setsDetail);
+  if (!sets.length || sets.length !== (m.homeSets ?? -1) + (m.awaySets ?? -1)) return null;
+  return { home: sets.reduce((t, [h]) => t + h, 0), away: sets.reduce((t, [, a]) => t + a, 0) };
+}
+
+/** Sets / games markets the provider prices before the match (none of them in play). */
+export const TENNIS_LINE_MARKETS = { OU_SETS: 'ou', SET_HCP: 'hcp', OU_GAMES: 'gou', GAMES_HCP: 'ghcp', OE_GAMES: 'goe' };
 
 export const TENNIS_SOURCE = 'bzzoiro-tennis';
 
@@ -188,7 +201,7 @@ export function createTennisFeed(db, {
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const upsertSel = db.prepare(
-    `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', ?, ?, 1)
+    `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
      ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
   );
   const suspend = (eventId) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
@@ -214,13 +227,15 @@ export function createTennisFeed(db, {
     return findEvent.get(TENNIS_SOURCE, m.externalId);
   }
 
+  const hasLineMarkets = db.prepare("SELECT 1 FROM selections WHERE event_id = ? AND market <> '1x2' AND active = 1 LIMIT 1");
+
   /** Prices from the match list when it carries them; otherwise /matches/{id}/odds/ (syncOdds). */
   function writePrices(row, m) {
     if (row.status !== 'scheduled' || m.status !== 'scheduled') return false;
-    if (!m.odds1 || !m.odds2) return false;
-    upsertSel.run(row.id, '1', m.odds1);
-    upsertSel.run(row.id, '2', m.odds2);
-    db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(Date.now() + prematchOddsSeconds * 1000).toISOString(), row.id);
+    // /odds/ (syncOdds) also brings the sets / games markets; once it has, its winner price stays.
+    if (!m.odds1 || !m.odds2 || hasLineMarkets.get(row.id)) return false;
+    upsertSel.run(row.id, '1x2', '1', m.odds1);
+    upsertSel.run(row.id, '1x2', '2', m.odds2);
     return true;
   }
 
@@ -228,7 +243,7 @@ export function createTennisFeed(db, {
 
   function applyPrices(eventId, prices) {
     db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
-    for (const [key, v] of Object.entries(prices)) upsertSel.run(eventId, key.split('|')[1], v);
+    for (const [key, v] of Object.entries(prices)) upsertSel.run(eventId, ...key.split('|'), v);
   }
 
   /** Upcoming matches without a list price, soonest first, each asked every 10 min (3 in the last hour). */
@@ -242,7 +257,8 @@ export function createTennisFeed(db, {
     for (const row of rows) {
       let next = prematchOddsSeconds;
       try {
-        const prices = oddsPrices(await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`));
+        const data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);
+        const prices = { ...oddsPrices(data), ...lineMarketPrices(data, TENNIS_LINE_MARKETS) };
         if (new Date(row.start_time).getTime() - now < 3_600_000) next = prematchOddsSeconds / 2;
         tx(db, () => applyPrices(row.id, prices));
         if (Object.keys(prices).length) priced += 1;
@@ -323,9 +339,12 @@ export function createTennisFeed(db, {
     if (winner === '2' && away <= home) away = home + 1;
     if (home === away) return 0; // no winner yet: ask again on the next pass
     const clock = m.status === 'retired' ? `Desistência · ${m.setsDetail || ''}`.trim() : m.setsDetail || 'Final';
+    const games = matchGames(m);
     return tx(db, () => {
-      db.prepare("UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = ?, updated_at = ? WHERE id = ?")
-        .run(home, away, home > away ? '1' : '2', clock.slice(0, 60), nowIso(), row.id);
+      db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = ?, home_games = ?, away_games = ?,
+          retired = ?, updated_at = ? WHERE id = ?`)
+        .run(home, away, home > away ? '1' : '2', clock.slice(0, 60), games?.home ?? null, games?.away ?? null,
+          m.status === 'retired' ? 1 : 0, nowIso(), row.id);
       return settleEvent(db, row.id, { source: 'feed' });
     });
   }
