@@ -21,14 +21,14 @@
 
 export const OU_LINES = ['0.5', '1.5', '2.5', '3.5', '4.5'];
 
-const LINE = /^[OU]\d{1,3}\.5$/;
+const LINE = /^[OU]\d{1,3}\.5$/; // over / under a half line (no push)
 const HCP = /^[12][+-]\d{1,3}(\.5)?$/;
 
 export const MARKETS = {
   '1x2': { name: 'Resultado final', codes: ['1', 'X', '2'] },
   dc: { name: 'Dupla hipótese', codes: ['1X', '12', 'X2'] },
   dnb: { name: 'Empate anula aposta', codes: ['1', '2'] },
-  ou: { name: 'Total de golos', codes: OU_LINES.flatMap((l) => [`O${l}`, `U${l}`]) },
+  ou: { name: 'Total de golos', valid: LINE },
   btts: { name: 'Ambas as equipas marcam', codes: ['Y', 'N'] },
   ml: { name: 'Vencedor', codes: ['1', '2'] },
   hcp: { name: 'Handicap', valid: HCP },

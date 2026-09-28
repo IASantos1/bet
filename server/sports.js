@@ -71,8 +71,16 @@ function baseMatch(m, { homeKey = 'home_team', awayKey = 'away_team', dateKeys =
  * pre-match price never carries into the game; `since: 'untimed'` keeps only rows without a
  * timestamp (plus a top-level consensus price), which the live gate trusts only while they move.
  */
-const freshBooks = (list, since) => (Array.isArray(list) ? list : [])
-  .filter((b) => (since === 'untimed' ? !b.updated_at : !since || (b.updated_at && new Date(b.updated_at).getTime() >= since)));
+const freshBooks = (list, since) => {
+  const books = (Array.isArray(list) ? list : [])
+    .filter((b) => (since === 'untimed' ? !b.updated_at : !since || (b.updated_at && new Date(b.updated_at).getTime() >= since)));
+  // Consensus rows (e.g. "OddsSafari Consensus") are recomputed from the books and get a new
+  // updated_at even when every book is still on its pre-match price: never an in-play price,
+  // and before the match only a fallback, so they are not counted twice.
+  const real = books.filter((b) => !isConsensus(b));
+  return typeof since === 'number' || real.length ? real : books;
+};
+const isConsensus = (b) => /consensus/i.test(String(b?.bookmaker_slug || b?.bookmaker || ''));
 
 const winnerAverages = (data, homeKeys, awayKeys, since = null) => {
   const books = freshBooks(data?.bookmakers, since);
@@ -118,17 +126,18 @@ export function twoWayPrices(data, homeKeys, awayKeys, { market = 'ml', since = 
  * under become O<line> / U<line>; handicaps carry the line from P1's side (P2 gets the opposite);
  * odd / even keep ODD / EVEN. Every line the provider lists is kept.
  */
-export function lineMarketPrices(data, kinds, { since = null } = {}) {
-  const out = {};
+export function lineMarketPrices(data, kinds, { since = null, maxLines = 5 } = {}) {
+  const found = [];
   for (const m of Array.isArray(data?.markets) ? data.markets : []) {
-    const market = kinds[m?.market_kind];
+    const market = kinds[String(m?.market_kind || '').toUpperCase()];
     if (!market || String(m.market_period || 'FT').toUpperCase() !== 'FT') continue;
     const line = num(m.market_line);
-    const books = freshBooks(m.bookmakers, since).filter((b) => String(b.bookmaker_slug || b.bookmaker || '').toLowerCase() !== 'consensus');
-    const avg = (sel) => {
-      const vals = books.map((b) => num(b.prices?.[sel]?.price ?? b.prices?.[sel])).filter((v) => v !== null && v > 1);
+    const books = freshBooks(m.bookmakers, since);
+    const avg = (sels) => {
+      const vals = books.map((b) => num(first(...sels.map((sel) => b.prices?.[sel]?.price ?? b.prices?.[sel])))).filter((v) => v !== null && v > 1);
       return vals.length ? x100(vals.reduce((x, y) => x + y, 0) / vals.length) : null;
     };
+    const SIDE = { P1: ['P1', 'HOME'], P2: ['P2', 'AWAY'], OVER: ['OVER'], UNDER: ['UNDER'], ODD: ['ODD'], EVEN: ['EVEN'] };
     let codes;
     if (market === 'goe') codes = { ODD: 'ODD', EVEN: 'EVEN' };
     else if (line === null || Math.abs(line) >= 1000) continue;
@@ -137,11 +146,23 @@ export function lineMarketPrices(data, kinds, { since = null } = {}) {
       codes = { OVER: `O${line}`, UNDER: `U${line}` };
     } else if (Number.isInteger(line * 2)) codes = { P1: hcpCode('1', line), P2: hcpCode('2', -line) };
     else continue; // quarter lines are not offered
-    const priced = Object.entries(codes).map(([sel, code]) => [code, avg(sel)]);
-    if (priced.every(([, v]) => v)) for (const [code, v] of priced) out[`${market}|${code}`] = v;
+    const priced = Object.entries(codes).map(([sel, code]) => [code, avg(SIDE[sel])]);
+    if (priced.every(([, v]) => v)) found.push({ market, priced, balance: Math.abs(Math.log(priced[0][1] / priced[1][1])) });
+  }
+  // Providers list a ladder of lines (basketball: -13.5 … +13.5); keep the most balanced few.
+  const out = {};
+  const byMarket = new Map();
+  for (const f of found) byMarket.set(f.market, [...(byMarket.get(f.market) || []), f]);
+  for (const list of byMarket.values()) {
+    for (const f of list.sort((a, b) => a.balance - b.balance).slice(0, maxLines)) {
+      for (const [code, v] of f.priced) out[`${f.market}|${code}`] = v;
+    }
   }
   return out;
 }
+
+/** Totals keys the provider uses across sports. */
+const TOTALS = { OU: 'ou', TOTAL: 'ou', TOTALS: 'ou', OU_POINTS: 'ou', OU_GOALS: 'ou', OU_MAPS: 'ou', OU_LEGS: 'ou', OU_SETS: 'ou' };
 
 const priceSig = (p) => JSON.stringify(Object.entries(p || {}).sort(([a], [b]) => a.localeCompare(b)));
 
@@ -204,7 +225,8 @@ const predictionFrom = (p, homeId, { homeKey = 'home_win_prob', awayKey = 'away_
 export const SPORT_SPECS = {
   basquetebol: {
     name: 'Basquetebol', source: 'bzzoiro-basketball', path: '/basketball/api/v2', list: '/events/', img: 'basketball/team',
-    marketName: { ml: 'Vencedor (incl. prolongamento)' },
+    marketName: { ml: 'Vencedor (incl. prolongamento)', ou: 'Total de pontos (incl. prolongamento)', hcp: 'Handicap (incl. prolongamento)' },
+    lines: { ...TOTALS, AH: 'hcp', SPREAD: 'hcp', HCP: 'hcp' }, unit: 'pontos',
     normalize(m) {
       const b = baseMatch(m);
       if (!b) return null;
@@ -249,7 +271,11 @@ export const SPORT_SPECS = {
   },
   hoquei: {
     name: 'Hóquei no gelo', source: 'bzzoiro-hockey', path: '/hockey/api/v2', list: '/matches/', img: 'hockey/team',
-    marketName: { ml: 'Vencedor (incl. prolongamento)', '1x2': 'Resultado (tempo regulamentar)', dnb: 'Empate anula (tempo regulamentar)' },
+    marketName: {
+      ml: 'Vencedor (incl. prolongamento)', '1x2': 'Resultado (tempo regulamentar)', dnb: 'Empate anula (tempo regulamentar)',
+      ou: 'Total de golos (tempo regulamentar)', hcp: 'Handicap (tempo regulamentar)',
+    },
+    lines: { ...TOTALS, AH: 'hcp', HCP: 'hcp' }, unit: 'golos',
     normalize(m) {
       const b = baseMatch(m);
       if (!b) return null;
@@ -635,7 +661,9 @@ export function createSportFeed(db, sport, {
     let priced = 0;
     for (const row of rows) {
       try {
-        const prices = spec.prices(await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`));
+        const data = await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`);
+        // Line markets (handicap, totals) before the start only: in play they stay closed.
+        const prices = { ...spec.prices(data), ...(spec.lines ? lineMarketPrices(data, spec.lines) : {}) };
         const soon = new Date(row.start_time).getTime() - now < 3_600_000;
         tx(db, () => {
           writePrices(row.id, prices);
