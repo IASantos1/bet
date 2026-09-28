@@ -399,3 +399,33 @@ test('ice hockey: handicap and total settle on regulation time; whole lines push
   assert.equal(t.betStatus(minus), 'lost');
   assert.equal(t.betStatus(under), 'won');
 });
+
+test('tennis live socket: odds frames with player1/player2 open the market and the REST loop leaves it open', async () => {
+  const db = openDb(':memory:');
+  const sockets = [];
+  class FakeSocket {
+    constructor() { this.sent = []; sockets.push(this); queueMicrotask(() => this.onopen?.()); }
+    send(m) { this.sent.push(JSON.parse(m)); }
+    close() {}
+    push(f) { this.onmessage?.({ data: JSON.stringify(f) }); }
+  }
+  const live = createLiveSocket(db, { token: 't', url: 'wss://sports.bzzoiro.com/ws/live/', sport: 'tennis', source: TENNIS_SOURCE, WebSocketImpl: FakeSocket });
+  const m = { id: 52777, tournament: { id: 9, name: 'WTA', circuit: 'WTA' }, player1: { id: 1, name: 'Ksenia Efremova' }, player2: { id: 2, name: 'Martyna Kubka' }, match_date: iso(-H), status: 'live', player1_sets: 0, player2_sets: 0, sets_detail: '2-3' };
+  // REST only has the day-before prices.
+  const stale = { bookmakers: [{ bookmaker_slug: 'bet365', odds_player1: 2.5, odds_player2: 1.5, updated_at: iso(-20 * H) }] };
+  const fetchImpl = fakeApi('/tennis/api/v2', { '/matches/live/': { results: [m] }, '/matches/52777/odds/': stale });
+  const tennis = createTennisFeed(db, { token: 't', fetchImpl, liveSocket: live });
+  await tennis.syncLive();
+  await new Promise((r) => setImmediate(r));
+  const id = db.prepare('SELECT id FROM events WHERE external_id = ?').get('52777').id;
+  db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', '1', 250, 0), (?, '1x2', '2', 150, 0)").run(id, id);
+  const open = () => db.prepare("SELECT code, odds_x100, active FROM selections WHERE event_id = ? ORDER BY code").all(id).map((r) => `${r.code}=${r.odds_x100}:${r.active}`);
+  // An odds frame of an unknown shape is ignored (does not close anything).
+  sockets[0].push({ type: 'odds', event_id: 52777, odds: { something_else: {} } });
+  sockets[0].push({ type: 'odds', event_id: 52777, odds: { match_winner: { player1: 3.1, player2: 1.36 } } });
+  assert.deepEqual(open(), ['1=310:1', '2=136:1']);
+  await tennis.syncLive();
+  assert.deepEqual(open(), ['1=310:1', '2=136:1']);
+  assert.equal(live.status().oddsLog[0].decision, 'aberto');
+  live.stop();
+});

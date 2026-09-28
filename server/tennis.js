@@ -284,6 +284,8 @@ export function createTennisFeed(db, {
     const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(TENNIS_SOURCE, maxLiveOddsCalls);
     let open = 0;
     for (const row of rows) {
+      // The live socket's own price is newer than anything REST has: leave the market to it.
+      if (liveSocket?.hasFreshOdds?.(row.external_id)) { open += 1; continue; }
       let data = null;
       try {
         data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);

@@ -47,6 +47,7 @@ export function createLiveSocket(db, {
   // take precedence over the consensus while they keep arriving.
   const gate = createLivePriceGate(liveOddsStale * 1000);
   const lastBook = new Map(); // event id -> time of the last odds_book frame
+  const wsOpen = new Map(); // provider id -> time this socket last opened the market with a price
   const oddsLog = []; // last odds frames and what was done with them (admin diagnostics)
   const note = (row, kind, prices, decision) => {
     oddsLog.unshift({ at: nowIso(), match: `${row.home} vs ${row.away}`, score: `${row.home_score ?? '-'}-${row.away_score ?? '-'}`, clock: row.clock,
@@ -128,16 +129,22 @@ export function createLiveSocket(db, {
     if (kind === 'odds_book') lastBook.set(row.id, Date.now());
     else if (Date.now() - (lastBook.get(row.id) || 0) < 120_000) return; // the bookmaker's own prices are in use
     const close = (why) => {
+      wsOpen.delete(row.external_id);
       suspend(row.id);
       db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
       note(row, kind, prices, why);
     };
     tx(db, () => {
-      if (!prices['1x2|1'] || !prices['1x2|2']) return close('fechado: sem preço de resultado');
+      if (!prices['1x2|1'] || !prices['1x2|2']) {
+        // A frame of another shape must not close a market the REST prices opened (tennis).
+        if (sport) return note(row, kind, prices, 'ignorado: sem preço de vencedor');
+        return close('fechado: sem preço de resultado');
+      }
       if (implausible(prices, row)) return close('fechado: preço não bate com o placar');
       const verdict = gate(row.id, { any: mainPrices(prices), previous: heldMain(row.id) });
       if (!verdict) return close('fechado: ainda o preço de antes do jogo / do golo');
       note(row, kind, prices, 'aberto');
+      wsOpen.set(row.external_id, Date.now());
       const upsert = db.prepare(
         `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
          ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
@@ -322,6 +329,8 @@ export function createLiveSocket(db, {
         try { s.ws?.close(); } catch { /* already closed */ }
       }
     },
+    /** True while this socket's own in-play price for the match is current (the REST loop leaves it alone). */
+    hasFreshOdds: (externalId, maxAgeMs = 60_000) => Date.now() - (wsOpen.get(String(externalId)) || 0) < maxAgeMs,
     status: () => ({
       enabled: state.enabled, fatal: state.fatal, lastError: state.lastError,
       sockets: state.sockets.length, connected: state.sockets.filter((s) => s.open).length,
@@ -348,8 +357,11 @@ export function liveOddsPrices(odds) {
   const px = (v) => { const n = Number(v); return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null; };
   const out = {};
   const put = (key, v) => { const x = px(v); if (x) out[key] = x; };
-  const mw = o.match_winner || {};
-  put('1x2|1', mw.home); put('1x2|X', mw.draw); put('1x2|2', mw.away);
+  // Football sends home/draw/away; tennis and other two-way sports name the sides player1/player2.
+  const mw = o.match_winner || o.winner || {};
+  put('1x2|1', first(mw.home, mw.player1, mw.p1, o.odds_player1, o.odds_home));
+  put('1x2|X', mw.draw);
+  put('1x2|2', first(mw.away, mw.player2, mw.p2, o.odds_player2, o.odds_away));
   const ou = o.over_under || {};
   for (const [k, v] of Object.entries(ou)) {
     const m = /^(over|under)_(\d)(\d)$/.exec(k);
