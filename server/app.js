@@ -533,6 +533,20 @@ export function createApp(db, {
       "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500) });
   });
 
+  // Diagnostics: what the data provider answers for this event's odds, as received.
+  admin.get('/events/:id/provider-odds', async (req, res, next) => {
+    try {
+      const ev = eventRow(req.params.id);
+      if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      const provider = providerFor(ev);
+      if (!provider?.rawOdds) throw new HttpError(409, 'Evento sem fornecedor de odds (futebol usa o painel Dados ao vivo).');
+      let data;
+      try { data = await provider.rawOdds(ev.external_id); } catch (err) { data = { erro: err.message }; }
+      const text = JSON.stringify(data, null, 2);
+      res.json({ status: ev.status, liveOddsAt: ev.live_odds_at, raw: text.length > 20_000 ? `${text.slice(0, 20_000)}\n…` : text });
+    } catch (err) { next(err); }
+  });
+
   function writeOdds(eventId, odds) {
     if (!odds || typeof odds !== 'object') return;
     const upsert = db.prepare(
@@ -728,7 +742,14 @@ export function createApp(db, {
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Recurso não encontrado.')));
 
   // ---------- static frontend ----------
-  app.use(express.static(PUBLIC_DIR, { index: 'index.html', maxAge: config.isProduction ? '1h' : 0 }));
+  // Pages, scripts and styles are revalidated on every load (ETag), so a new version is picked up
+  // right after a deploy; images and icons can be cached for a day.
+  app.use(express.static(PUBLIC_DIR, {
+    index: 'index.html',
+    setHeaders(res, file) {
+      res.setHeader('Cache-Control', /\.(html|js|css|json)$/.test(file) ? 'no-cache' : 'public, max-age=86400');
+    },
+  }));
 
   // ---------- errors ----------
   app.use((err, req, res, _next) => {

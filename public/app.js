@@ -171,7 +171,9 @@ const inSlip = (selId) => state.slip.some((s) => s.selectionId === selId);
 
 function oddsButtons(e, { labels = 'code' } = {}) {
   const sels = e.selections;
-  if (!sels.length) return '<div class="odds-off">Apostas indisponíveis neste jogo</div>';
+  if (!sels.length || (e.status === 'live' && sels.every((s) => !s.active))) {
+    return `<div class="odds-off">${e.status === 'live' ? 'Mercado ao vivo suspenso — à espera de odds' : 'Apostas indisponíveis neste jogo'}</div>`;
+  }
   return `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => {
     const prev = state.previousOdds.get(s.id);
     const move = prev && prev !== s.odds ? (s.odds > prev ? ' up' : ' down') : '';
@@ -189,7 +191,14 @@ function teamBadge(logo, name, size = '') {
   return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
 }
 
-const flagEmoji = (cc) => String(cc || '').toUpperCase().replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1a5 + c.charCodeAt(0)));
+// The provider uses non-ISO codes for the home nations (darts): EN England, SX Scotland, WA/WL Wales.
+const SUBDIVISION_FLAG = { EN: 'gbeng', SX: 'gbsct', WA: 'gbwls', WL: 'gbwls' };
+const flagEmoji = (cc) => {
+  const code = String(cc || '').toUpperCase();
+  const sub = SUBDIVISION_FLAG[code];
+  if (sub) return String.fromCodePoint(0x1f3f4, ...[...sub].map((c) => 0xe0000 + c.charCodeAt(0)), 0xe007f);
+  return code.replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1a5 + c.charCodeAt(0)));
+};
 
 /** Club badge, or the player's flag in tennis. */
 function sideBadge(e, side, size = '') {
@@ -711,6 +720,7 @@ function adminEventCard(e) {
   return `<form class="admin-event" data-form="admin-event" data-id="${e.id}" data-featured="${e.featured ? 1 : 0}">
     <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(SPORT_META[e.sport]?.name || e.sport)} · ${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
       <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
+    ${e.source && e.source !== 'manual' && e.source !== 'bzzoiro' ? `<div class="admin-actions"><button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button></div><pre class="raw-odds hidden" id="rawOdds${e.id}"></pre>` : ''}
     <div class="admin-grid">
       <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}" ${closed ? 'disabled' : ''}></div>
       <div class="field"><span>Fora</span><input name="awayScore" type="number" min="0" value="${e.awayScore ?? ''}" ${closed ? 'disabled' : ''}></div>
@@ -1315,6 +1325,13 @@ document.addEventListener('click', async (e) => {
       toast('Liquidação executada', `${result.settled} evento(s) liquidado(s), ${result.voided} anulado(s).`);
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadAdmin();
+  } else if (action === 'provider-odds') {
+    const box = $(`#rawOdds${actionEl.dataset.id}`);
+    try {
+      const r = await api(`/api/admin/events/${actionEl.dataset.id}/provider-odds`);
+      box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'feed-sync') {
     actionEl.disabled = true;
     actionEl.textContent = 'A sincronizar…';

@@ -88,9 +88,11 @@ Também com o Sports Addon (`server/sports.js`, um motor comum com uma configura
 | CS2 | Vencedor do encontro | por mapas; empate num BO2 anula | mapas, comparação das equipas (mapas, rondas T/CT, K/D), H2H, previsão |
 
 - As odds são a média das casas de apostas (`/{id}/odds/`), atualizadas a cada 10 min (3 min na
-  última hora). **Ao vivo** (também no ténis) o mercado abre só com as odds que as casas atualizaram
-  depois do início e nos últimos `LIVE_ODDS_MAX_AGE_SECONDS` (180 s), revistas a cada 30 s; sem odds
-  frescas fica fechado. No ténis, quando a lista de encontros não traz odds, vêm de `/matches/{id}/odds/`.
+  última hora). **Ao vivo** (também no ténis), a cada 30 s: abre com as odds que as casas atualizaram
+  depois do início e nos últimos `LIVE_ODDS_MAX_AGE_SECONDS` (180 s); quando a odd não traz data (preço
+  de consenso ou a odd da lista de jogos ao vivo), só abre enquanto se mexe — abre quando muda em
+  relação à anterior e fecha se ficar parada mais de 180 s. Sem nada disto fica "Mercado ao vivo
+  suspenso". Em *Administração → Eventos*, "Ver odds do fornecedor" mostra a resposta crua. No ténis, quando a lista de encontros não traz odds, vêm de `/matches/{id}/odds/`.
 - `SPORTS_ADDON=basquetebol,hoquei,dardos,esports` escolhe os desportos (vazio desliga todos) e
   `SPORTS_DAYS` quantos dias importar.
 - Padel não tem odds na API (não dá para apostar) e as corridas de cavalos precisam de um modelo de

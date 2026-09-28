@@ -66,11 +66,12 @@ function baseMatch(m, { homeKey = 'home_team', awayKey = 'away_team', dateKeys =
 // ---------- per-sport specs ----------
 
 /**
- * Books to average. In play (`since` set) only prices a bookmaker updated after `since` count, so a
- * pre-match price never carries into the game.
+ * Books to average. In play (`since` a time) only prices a bookmaker updated after it count, so a
+ * pre-match price never carries into the game; `since: 'untimed'` keeps only rows without a
+ * timestamp (plus a top-level consensus price), which the live gate trusts only while they move.
  */
 const freshBooks = (list, since) => (Array.isArray(list) ? list : [])
-  .filter((b) => !since || (b.updated_at && new Date(b.updated_at).getTime() >= since));
+  .filter((b) => (since === 'untimed' ? !b.updated_at : !since || (b.updated_at && new Date(b.updated_at).getTime() >= since)));
 
 const winnerAverages = (data, homeKeys, awayKeys, since = null) => {
   const books = freshBooks(data?.bookmakers, since);
@@ -79,7 +80,7 @@ const winnerAverages = (data, homeKeys, awayKeys, since = null) => {
     return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
   };
   // A single consensus price at the top level has no timestamp: pre-match only.
-  const top = (keys) => (since ? null : num(first(...keys.map((k) => data?.[k]))));
+  const top = (keys) => (since && since !== 'untimed' ? null : num(first(...keys.map((k) => data?.[k]))));
   return {
     home: avg(homeKeys) ?? top(homeKeys), away: avg(awayKeys) ?? top(awayKeys),
     draw: avg(['odds_draw']) ?? top(['odds_draw']),
@@ -108,6 +109,37 @@ export function twoWayPrices(data, homeKeys, awayKeys, { market = 'ml', since = 
   const h = x100(w.home);
   const a = x100(w.away);
   return h && a ? { [`${market}|1`]: h, [`${market}|2`]: a } : {};
+}
+
+const priceSig = (p) => JSON.stringify(Object.entries(p || {}).sort(([a], [b]) => a.localeCompare(b)));
+
+/**
+ * Decides whether an in-play price can be offered. Bookmaker rows updated in the last minutes are
+ * trusted as they are. A price without a timestamp (single consensus price, or a book row with no
+ * updated_at) is only trusted while it keeps moving: it opens the market when it differs from the
+ * one seen before (the pre-match price, at first) and closes it once it has not changed for
+ * `maxAgeMs`. The time of the last change becomes events.live_odds_at, which betting.js checks.
+ */
+export function createLivePriceGate(maxAgeMs) {
+  const seen = new Map(); // event id -> { sig, at }
+  return function decide(eventId, { fresh = {}, any = {}, previous = {} }) {
+    const now = Date.now();
+    if (Object.keys(fresh).length) {
+      seen.set(eventId, { sig: priceSig(fresh), at: now });
+      return { prices: fresh, at: now };
+    }
+    if (!Object.keys(any).length) return null;
+    const sig = priceSig(any);
+    // First sight with no earlier price to compare with: remember it, open on the next move.
+    const last = seen.get(eventId) || { sig: Object.keys(previous).length ? priceSig(previous) : sig, at: 0 };
+    if (sig !== last.sig) {
+      seen.set(eventId, { sig, at: now });
+      if (seen.size > 3000) seen.delete(seen.keys().next().value);
+      return { prices: any, at: now };
+    }
+    seen.set(eventId, last);
+    return now - last.at <= maxAgeMs ? { prices: any, at: last.at } : null;
+  };
 }
 
 const twoWay = (homeKeys, awayKeys) => (data, { since = null } = {}) => twoWayPrices(data, homeKeys, awayKeys, { since });
@@ -582,7 +614,10 @@ export function createSportFeed(db, sport, {
   }
 
   async function syncLive() {
-    const live = listOf(await get(`${spec.list}live/`)).map((g) => spec.normalize(g)).filter(Boolean);
+    const raw = listOf(await get(`${spec.list}live/`));
+    const live = raw.map((g) => spec.normalize(g)).filter(Boolean);
+    // Prices carried by the live list itself (cached ~30 s upstream), a second in-play source.
+    const listPrices = new Map(raw.filter((g) => g && g.id !== undefined).map((g) => [String(g.id), spec.prices(g)]));
     let updated = 0;
     for (const m of live) {
       const terminal = tx(db, () => {
@@ -596,35 +631,45 @@ export function createSportFeed(db, sport, {
       });
       if (terminal) applyTerminal(terminal, m);
     }
-    const inPlay = await syncLiveOdds();
+    const inPlay = await syncLiveOdds(listPrices);
     return { live: live.length, updated, ...inPlay };
   }
 
+  const gate = createLivePriceGate(liveOddsMaxAge * 1000);
+  const currentPrices = (eventId) => Object.fromEntries(
+    db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ?').all(eventId).map((r) => [`${r.market}|${r.code}`, r.odds_x100])
+  );
+
   /**
-   * In-play prices: the bookmakers' prices updated in the last LIVE_ODDS_MAX_AGE_SECONDS (and after
-   * kick-off). With none the market stays closed; betting.js refuses a bet once live_odds_at ages.
+   * In-play prices, every 30 s: bookmaker prices updated after kick-off and in the last
+   * LIVE_ODDS_MAX_AGE_SECONDS; failing that, a price that keeps moving (see createLivePriceGate).
+   * With neither the market stays closed; betting.js refuses a bet once live_odds_at ages.
    */
-  async function syncLiveOdds() {
+  async function syncLiveOdds(listPrices = new Map()) {
     const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(SOURCE, maxLiveOddsCalls);
     let open = 0;
     for (const row of rows) {
+      let data = null;
       try {
-        const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
-        const prices = spec.prices(await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`), { since });
-        tx(db, () => {
-          if (!Object.keys(prices).length) {
-            suspend(row.id);
-            db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
-            return;
-          }
-          writePrices(row.id, prices);
-          db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
-          open += 1;
-        });
+        data = await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`);
       } catch (err) {
         log(`${spec.name} odds ao vivo ${row.external_id}: ${err.message}`);
-        suspend(row.id);
       }
+      const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
+      const fresh = data ? spec.prices(data, { since }) : {};
+      const fromOdds = data ? spec.prices(data, { since: 'untimed' }) : {};
+      const any = Object.keys(fromOdds).length ? fromOdds : listPrices.get(row.external_id) || {};
+      tx(db, () => {
+        const verdict = gate(row.id, { fresh, any, previous: currentPrices(row.id) });
+        if (!verdict) {
+          suspend(row.id);
+          db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+          return;
+        }
+        writePrices(row.id, verdict.prices);
+        db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(new Date(verdict.at).toISOString(), row.id);
+        open += 1;
+      });
     }
     return { liveOddsChecked: rows.length, liveMarketsOpen: open };
   }
@@ -717,7 +762,10 @@ export function createSportFeed(db, sport, {
     }));
   }
 
-  return { source: SOURCE, syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
+  /** Raw provider odds for one game (admin diagnostics). */
+  const rawOdds = (externalId) => get(`${spec.list}${encodeURIComponent(externalId)}/odds/`);
+
+  return { source: SOURCE, rawOdds, syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
 }
 
 /** Badge from the provider's image proxy for a team of this source (null for player sports). */
