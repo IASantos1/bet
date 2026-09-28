@@ -15,6 +15,8 @@ import { EventEmitter } from 'node:events';
 import { nowIso, tx } from './db.js';
 import { createLivePriceGate } from './sports.js';
 
+const first = (...vals) => vals.find((v) => v !== undefined && v !== null);
+
 // Tennis streams over the multi-sport channel (wss://sports.bzzoiro.com/ws/live/) with
 // `"sport": "tennis"` on each subscription: 'event' frames carry the full match state (sets,
 // games, point, server, serve statistics) and 'score' frames arrive after every point. Tennis
@@ -23,7 +25,8 @@ const FATAL_CLOSE = { 4401: 'token inválido', 4402: 'addon WebSocket não ativo
 
 export function createLiveSocket(db, {
   token, url = 'wss://sports.bzzoiro.com/live/football/', WebSocketImpl = globalThis.WebSocket,
-  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000, sport = null, source = 'bzzoiro', liveOddsMaxAge = 180,
+  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000, sport = null, source = 'bzzoiro', liveOddsStale = 600,
+  bookmaker = null,
 } = {}) {
   const SOURCE = source;
   const state = {
@@ -34,10 +37,20 @@ export function createLiveSocket(db, {
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const suspend = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(id);
-  // Odds frames carry no timestamp, and the provider keeps sending the pre-match book in play: a
-  // frame opens the market only when its match-result prices differ from the ones we hold (the
-  // pre-match or pre-goal ones) and closes it once they stop moving (see createLivePriceGate).
-  const gate = createLivePriceGate(liveOddsMaxAge * 1000);
+  // Odds frames carry no timestamp, and the consensus frame (re-read every ~30 s) can still be the
+  // pre-match book well into the game. A frame opens the market only once its match-result prices
+  // differ from the ones held (pre-match, or before the last goal); it then stays open while
+  // frames keep coming, until the price has not changed for `liveOddsStale` seconds.
+  // With `bookmaker` set, the subscription also asks for that book's own prices (odds_book), which
+  // take precedence over the consensus while they keep arriving.
+  const gate = createLivePriceGate(liveOddsStale * 1000);
+  const lastBook = new Map(); // event id -> time of the last odds_book frame
+  const oddsLog = []; // last odds frames and what was done with them (admin diagnostics)
+  const note = (row, kind, prices, decision) => {
+    oddsLog.unshift({ at: nowIso(), match: `${row.home} vs ${row.away}`, score: `${row.home_score ?? '-'}-${row.away_score ?? '-'}`, clock: row.clock,
+      kind, odds: ['1', 'X', '2'].map((c) => (prices[`1x2|${c}`] ? prices[`1x2|${c}`] / 100 : '-')).join(' / '), decision });
+    oddsLog.length = Math.min(oddsLog.length, 25);
+  };
   const mainPrices = (p) => Object.fromEntries(Object.entries(p).filter(([k]) => k.startsWith('1x2|')));
   const heldMain = (id) => Object.fromEntries(
     db.prepare("SELECT code, odds_x100 FROM selections WHERE event_id = ? AND market = '1x2'").all(id).map((r) => [`1x2|${r.code}`, r.odds_x100])
@@ -106,18 +119,23 @@ export function createLiveSocket(db, {
     publish(row.id, 'event', data);
   }
 
-  function applyOdds(f) {
+  function applyOdds(f, kind = 'odds') {
     const row = findEvent.get(SOURCE, String(f.event_id));
     if (!row || row.status !== 'live') return;
-    const prices = liveOddsPrices(f.odds);
+    const prices = liveOddsPrices(first(f.odds?.match_winner ? f.odds : null, f.odds?.odds, f.odds_book?.odds, f.odds_book, f.book?.odds, f.odds));
+    if (kind === 'odds_book') lastBook.set(row.id, Date.now());
+    else if (Date.now() - (lastBook.get(row.id) || 0) < 120_000) return; // the bookmaker's own prices are in use
+    const close = (why) => {
+      suspend(row.id);
+      db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+      note(row, kind, prices, why);
+    };
     tx(db, () => {
-      if (!prices['1x2|1'] || !prices['1x2|2'] || implausible(prices, row)) { suspend(row.id); return; }
+      if (!prices['1x2|1'] || !prices['1x2|2']) return close('fechado: sem preço de resultado');
+      if (implausible(prices, row)) return close('fechado: preço não bate com o placar');
       const verdict = gate(row.id, { any: mainPrices(prices), previous: heldMain(row.id) });
-      if (!verdict) {
-        suspend(row.id);
-        db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
-        return;
-      }
+      if (!verdict) return close('fechado: ainda o preço de antes do jogo / do golo');
+      note(row, kind, prices, 'aberto');
       const upsert = db.prepare(
         `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
          ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
@@ -128,7 +146,7 @@ export function createLiveSocket(db, {
         const [market, code] = key.split('|');
         upsert.run(row.id, market, code, x100);
       }
-      db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(new Date(verdict.at).toISOString(), row.id);
+      db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
     });
     publish(row.id, 'odds', { at: nowIso() });
   }
@@ -184,10 +202,12 @@ export function createLiveSocket(db, {
       else if (f.type === 'subscribed') {
         if (f.event) applyEvent({ ...f.event, event_id: f.event_id });
         if (f.odds) applyOdds({ ...f.odds, event_id: f.event_id });
+        if (f.odds_book) applyOdds({ odds_book: f.odds_book, event_id: f.event_id }, 'odds_book');
         for (const ld of Array.isArray(f.livedata) ? f.livedata : []) applyLivedata({ ...ld, event_id: f.event_id });
         for (const a of Array.isArray(f.history) ? f.history : []) applyAction({ ...a, event_id: f.event_id });
       } else if (f.type === 'event') applyEvent(f);
       else if (f.type === 'odds') applyOdds(f);
+      else if (f.type === 'odds_book') applyOdds(f, 'odds_book');
       else if (f.type === 'livedata') applyLivedata(f);
       else if (f.type === 'action') applyAction(f);
       else if (f.type === 'error') {
@@ -207,7 +227,7 @@ export function createLiveSocket(db, {
 
   // ---------- sockets ----------
 
-  const subscribeMsg = (id) => ({ action: 'subscribe', event_id: Number(id), ...(sport ? { sport } : {}) });
+  const subscribeMsg = (id) => ({ action: 'subscribe', event_id: Number(id), ...(sport ? { sport } : {}), ...(bookmaker ? { bookmaker_slug: bookmaker } : {}) });
 
   function send(sock, msg) {
     if (sock.open) sock.ws.send(JSON.stringify(msg));
@@ -294,6 +314,7 @@ export function createLiveSocket(db, {
       enabled: state.enabled, fatal: state.fatal, lastError: state.lastError,
       sockets: state.sockets.length, connected: state.sockets.filter((s) => s.open).length,
       following: state.sockets.reduce((n, s) => n + s.subs.size, 0), notCovered: state.untracked.size,
+      bookmaker, oddsLog: oddsLog.slice(0, 15),
       frames: state.frames, lastFrameAt: state.lastFrameAt,
     }),
   };
@@ -323,5 +344,7 @@ export function liveOddsPrices(odds) {
     if (m) put(`ou|${m[1] === 'over' ? 'O' : 'U'}${m[2]}.${m[3]}`, v);
   }
   put('btts|Y', o.btts?.yes); put('btts|N', o.btts?.no);
+  // Asian handicap is left out on purpose: in play it is settled on the goals scored after the
+  // bet (from the score at that moment), which this settlement does not track.
   return out;
 }

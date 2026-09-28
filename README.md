@@ -49,7 +49,7 @@ Com o token definido, o servidor deixa de criar eventos de exemplo e passa a:
 | --- | --- | --- |
 | Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias. As odds de consenso 1X2 chegam numa só chamada ao feed `/odds/`, pedindo depois só o que mudou (`updated_after`); jogos ainda sem preço caem para `/events/{id}/odds/`, respeitando o `next_update_at` de cada um |
 | Ao vivo | 30 s | Atualiza marcador e minuto e entrega ao WebSocket os jogos com cobertura (`live_websocket`) |
-| WebSocket | tempo real | Odds 1X2 em jogo e marcador (addon pago). Cada golo fecha o mercado até chegar a odd seguinte; sem odd ao vivo recente (`LIVE_ODDS_MAX_AGE_SECONDS`, 180 s) não se aceitam apostas em jogo. Sem o addon, os jogos em curso ficam só com marcador |
+| WebSocket | tempo real | Odds em jogo (consenso ~30 s e, com `BZZOIRO_LIVE_BOOKMAKER`, as da casa escolhida — `odds_book`) e marcador (addon pago). A odd só abre o mercado quando já difere da de antes do jogo / do último golo e bate com o placar; parada mais de `LIVE_ODDS_STALE_SECONDS` (600 s) fecha. Cada golo fecha o mercado até chegar uma odd nova; sem odd ao vivo recente (`LIVE_ODDS_MAX_AGE_SECONDS`, 180 s) não se aceitam apostas em jogo. Sem o addon, os jogos em curso ficam só com marcador |
 | Resultados | 2 min | Quando o jogo termina, grava o resultado do tempo regulamentar e liquida as apostas; jogos cancelados/abandonados são anulados e reembolsados; adiados ficam suspensos até terem nova data |
 
 Com uma chave Football Unlimited o feed `/odds/` traz o preço de cada casa de apostas: a plataforma usa

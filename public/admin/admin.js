@@ -251,7 +251,12 @@ function liveSocketPanel(ws) {
   return `<h3>WebSocket ao vivo ${badge}</h3>
     <p class="muted">Odds em jogo e marcador em tempo real. O mercado fecha em cada golo e reabre com o preço seguinte; apostas com odds em jogo com mais de ${esc(state.config?.liveOddsMaxAge ?? 180)} s são recusadas.</p>
     <p>Jogos seguidos: <strong>${ws.following}</strong> · ligações: ${ws.connected}/${ws.sockets} · sem cobertura: ${ws.notCovered} · mensagens: ${ws.frames}${ws.lastFrameAt ? ` (última ${esc(fmtDateTime(ws.lastFrameAt))})` : ''}</p>
-    ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}<br>`;
+    ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}
+    <p class="muted">Casa de apostas em jogo (odds_book): <strong>${esc(ws.bookmaker || 'nenhuma — só consenso')}</strong></p>
+    ${ws.oddsLog?.length ? `<div class="table-wrap"><table><thead><tr><th>Hora</th><th>Jogo</th><th>Placar</th><th>Fonte</th><th>1 / X / 2</th><th>Decisão</th></tr></thead><tbody>
+      ${ws.oddsLog.map((o) => `<tr><td>${esc(fmtDateTime(o.at))}</td><td>${esc(o.match)}</td><td>${esc(o.score)} ${esc(o.clock || '')}</td><td>${esc(o.kind === 'odds_book' ? 'casa' : 'consenso')}</td><td>${esc(o.odds)}</td>
+        <td><span class="pill ${o.decision === 'aberto' ? 'won' : 'lost'}">${esc(o.decision)}</span></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda não chegaram odds em jogo.</p>'}<br>`;
 }
 
 function adminCasino(c) {
