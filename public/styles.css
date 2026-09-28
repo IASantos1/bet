@@ -21,7 +21,6 @@ h1, h2, h3 { margin-top: 0; }
 .topbar { height: 68px; background: #0f1115; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 20px; gap: 25px; position: sticky; top: 0; z-index: 50; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 900; font-size: 20px; letter-spacing: -.8px; white-space: nowrap; }
 .brand > span:last-child span { color: var(--red2); }
-.brand-mark { width: 35px; height: 35px; border-radius: 9px; background: var(--red); display: grid; place-items: center; font-size: 21px; font-weight: 900; box-shadow: 0 5px 20px #d7192038; }
 .topnav { display: flex; height: 100%; align-items: center; gap: 5px; flex: 1; }
 .topnav a { height: 100%; display: flex; align-items: center; padding: 0 15px; color: #b9c0ca; font-weight: 700; border-bottom: 3px solid transparent; }
 .topnav a:hover, .topnav a.active { color: #fff; border-bottom-color: var(--red); }
@@ -309,7 +308,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 @media (max-width: 700px) {
   .topbar { padding: 0 10px; gap: 10px; height: 60px; }
   .brand { font-size: 16px; }
-  .brand-mark { width: 30px; height: 30px; font-size: 17px; }
   .top-actions { margin-left: auto; gap: 6px; }
   .top-actions .balance-btn { padding: 6px 4px; font-size: 12px; }
   .top-actions .deposit-btn, #searchBtn { display: none; }
@@ -630,3 +628,7 @@ table.compare td.center { text-align: center; }
 .trk-score #trkPoint { font-size: 15px; color: var(--gold); }
 .raw-odds { max-height: 320px; overflow: auto; background: #07090c; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 11px; white-space: pre-wrap; margin-top: 8px; }
 .tn-sets { color: #cfd5dc; font-weight: 800; font-size: 13px; }
+.brand-word { font-weight: 900; font-style: italic; letter-spacing: -1px; font-size: 26px; color: #fff; }
+.brand-word span { color: var(--red2); }
+.brand-word.small { font-size: 18px; }
+@media (max-width: 700px) { .brand-word { font-size: 21px; } }

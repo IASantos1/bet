@@ -1,4 +1,4 @@
-# ClassicBet
+# Bet62
 
 Plataforma de apostas desportivas com contas de utilizador, carteira, apostas simples e múltiplas,
 liquidação automática e painel de administração. Visual escuro vermelho/preto, responsivo (desktop,
@@ -240,3 +240,14 @@ podem vir no código:
 5. **Fornecedor de casino** licenciado — a integração está feita (ver acima); o agregador tem de
    fornecer jogos originais e licenciados para o seu mercado.
 6. HTTPS (atrás de um proxy como Nginx/Caddy) e cópias de segurança de `data/`.
+
+## Administração (`/admin`)
+
+O painel de administração é uma página à parte em **`seudominio/admin`** (também `/administrador`),
+com login próprio; o site de apostas não o mostra.
+
+- Entra-se com a conta definida por `ADMIN_EMAIL` e `ADMIN_PASSWORD` no servidor: ao arrancar, essa
+  conta é criada, ou — se já existir (por exemplo registada no site) — passa a administrador com
+  essa palavra-passe. Uma conta que não seja de administrador é recusada no login do painel.
+- Secções: Painel (resumo do dia, levantamentos pendentes), Eventos, Liquidação, Apostas,
+  Levantamentos, Utilizadores, Novo evento, Dados ao vivo e Casino.

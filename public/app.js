@@ -1,4 +1,4 @@
-// ClassicBet frontend — vanilla JS single-page app talking to the JSON API in /server.
+// Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -38,7 +38,6 @@ const state = {
   slip: loadSlip(),
   mode: 'single',
   sport: '',
-  adminTab: 'eventos',
   previousOdds: new Map(),
 };
 
@@ -70,12 +69,12 @@ function toLocalInput(iso) {
 
 function loadSlip() {
   try {
-    const v = JSON.parse(localStorage.getItem('classicbet_slip') || '[]');
+    const v = JSON.parse(localStorage.getItem('bet62_slip') || '[]');
     return Array.isArray(v) ? v : [];
   } catch { return []; }
 }
 function saveSlip() {
-  try { localStorage.setItem('classicbet_slip', JSON.stringify(state.slip)); } catch { /* storage unavailable */ }
+  try { localStorage.setItem('bet62_slip', JSON.stringify(state.slip)); } catch { /* storage unavailable */ }
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -296,11 +295,11 @@ function groupByCompetition(events) {
 
 function footer() {
   return `<footer class="site-footer">
-    <div><strong>CLASSICBET</strong><p>Apostas desportivas, ao vivo e casino num único lugar.</p><p>Pagamentos: MB WAY · Multibanco · Cartão</p></div>
+    <div><strong class="brand-word small">BET<span>62</span></strong><p>Apostas desportivas, ao vivo e casino num único lugar.</p><p>Pagamentos: MB WAY · Multibanco · Cartão</p></div>
     <div><strong>Apostas</strong><a href="#/desporto">Desporto</a><a href="#/ao-vivo">Ao Vivo</a><a href="#/desporto/resultados">Resultados</a><a href="#/casino">Casino</a></div>
     <div><strong>A minha conta</strong><a href="#/perfil/carteira">Carteira</a><a href="#/perfil/apostas">As minhas apostas</a><a href="#/perfil">Dados pessoais</a></div>
     <div><strong>Informações</strong><a href="#/perfil/jogo-responsavel">Jogo responsável</a><a href="#/promocoes">Promoções</a></div>
-    <div class="copyright"><span>© ${new Date().getFullYear()} ClassicBet${state.config?.version ? ` · versão ${esc(state.config.version)}` : ''}</span><span><span class="age">18+</span>Proibido a menores de 18 anos. Jogue com responsabilidade.</span></div>
+    <div class="copyright"><span>© ${new Date().getFullYear()} Bet62${state.config?.version ? ` · versão ${esc(state.config.version)}` : ''}</span><span><span class="age">18+</span>Proibido a menores de 18 anos. Jogue com responsabilidade.</span></div>
   </footer>`;
 }
 
@@ -429,7 +428,7 @@ function casinoPage() {
   if (!c.games.length && !filtered && !c.loading) {
     return `<div class="page-title"><h1>Casino</h1></div>
       <div class="notice"><strong>Casino sem jogos de momento.</strong> ${esc(c.error || '')}
-      ${state.user?.role === 'admin' ? '<br><br><a class="mini-btn" href="#/admin">Diagnosticar em Administração → Casino</a>' : ''}</div>
+      ${state.user?.role === 'admin' ? '<br><br><a class="mini-btn" href="/admin#casino">Diagnosticar em Administração → Casino</a>' : ''}</div>
       ${footer()}`;
   }
   const more = c.games.length < c.total;
@@ -475,7 +474,7 @@ async function loadCasino({ reset = false } = {}) {
   }
 }
 
-/** Opens a game inside ClassicBet. The balance follows the player into the casino automatically. */
+/** Opens a game inside Bet62. The balance follows the player into the casino automatically. */
 async function openGame(index) {
   const g = state.casino.games[index];
   if (!g) return;
@@ -545,7 +544,7 @@ function promosPage() {
     ['DESPORTO', 'Odds especiais', 'Seleções promocionais em eventos selecionados.'],
     ['CASINO', 'Free Spins', 'Giros promocionais em jogos elegíveis.'],
   ];
-  return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da ClassicBet.</p></div>
+  return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da Bet62.</p></div>
     <div class="promo-grid grid">${cards.map(([eyebrow, title, text]) => `<div class="promo-card"><div class="eyebrow">${eyebrow}</div><h3>${title}</h3><p>${text}</p><span class="tag">EM BREVE</span></div>`).join('')}</div>
     <section class="section notice">Cada campanha terá condições próprias (elegibilidade, período, limites e requisitos de aposta), publicadas antes de ficar ativa.</section>
     ${footer()}`;
@@ -559,7 +558,7 @@ function accountPage(sub) {
   }
   const tabs = [['', 'Visão geral'], ['carteira', 'Carteira'], ['apostas', 'As minhas apostas'], ['jogo-responsavel', 'Jogo responsável']];
   const nav = `<div class="profile-nav">${tabs.map(([k, l]) => `<a href="#/perfil${k ? `/${k}` : ''}" class="${(sub || '') === k ? 'active' : ''}">${l}</a>`).join('')}
-    ${state.user.role === 'admin' ? '<a href="#/admin">Administração</a>' : ''}<button data-action="logout">Terminar sessão</button></div>`;
+    ${state.user.role === 'admin' ? '<a href="/admin">Administração</a>' : ''}<button data-action="logout">Terminar sessão</button></div>`;
   let main = '';
   if (sub === 'carteira') main = walletView();
   else if (sub === 'apostas') main = betsView();
@@ -667,219 +666,6 @@ function responsibleView() {
       <option value="1">24 horas</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">3 meses</option><option value="180">6 meses</option><option value="365">1 ano</option>
     </select></div></div><div class="form-actions"><button class="danger-btn">Ativar autoexclusão</button></div></form>
     <p class="muted">A autoexclusão não pode ser cancelada antes de terminar. Os levantamentos continuam disponíveis.</p>`;
-}
-
-// ---------- admin ----------
-
-function adminPage() {
-  if (!state.user) return accountPage();
-  if (state.user.role !== 'admin') return '<div class="panel empty">Acesso reservado a administradores.</div>';
-  const tabs = [['eventos', 'Eventos'], ['liquidacao', 'Liquidação'], ['novo', 'Novo evento'], ['feed', 'Dados ao vivo'], ['casino', 'Casino'], ['levantamentos', 'Levantamentos'], ['apostas', 'Apostas'], ['utilizadores', 'Utilizadores']];
-  setTimeout(loadAdmin);
-  return `<div class="page-title"><h1>Administração</h1><p>Gestão de eventos, odds, resultados e pagamentos.</p></div>
-    <div class="stat-grid four" id="adminStats"></div>
-    <div class="admin-tabs">${tabs.map(([k, l]) => `<button class="${state.adminTab === k ? 'primary-btn' : 'ghost-btn'} btn-sm" data-admin-tab="${k}">${l}</button>`).join('')}</div>
-    <div id="adminMain"><div class="loading">A carregar…</div></div>`;
-}
-
-async function loadAdmin() {
-  try {
-    const s = await api('/api/admin/stats');
-    const stats = $('#adminStats');
-    if (stats) {
-      stats.innerHTML = [
-        ['Jogadores', s.users], ['Apostas em aberto', `${s.openBets} · ${money(s.openStake)}`],
-        ['Receita bruta (liquidadas)', money(s.grossRevenue)], ['Levantamentos pendentes', `${s.pendingWithdrawals} · ${money(s.pendingWithdrawalAmount)}`],
-      ].map(([l, v]) => `<div class="stat"><small>${l}</small><strong>${esc(v)}</strong></div>`).join('');
-    }
-    const main = $('#adminMain');
-    if (!main) return;
-    const tab = state.adminTab;
-    if (tab === 'novo') main.innerHTML = adminNewEvent();
-    else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
-    else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
-    else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
-    else if (tab === 'levantamentos') {
-      const { withdrawals } = await api('/api/admin/withdrawals');
-      main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
-        ${withdrawals.map((w) => `<tr><td>${esc(fmtDateTime(w.createdAt))}</td><td>${esc(w.user)}<br><small class="muted">${esc(w.email)}</small></td><td>${esc(w.iban)}</td><td class="num">${money(w.amount)}</td>
-          <td><span class="pill ${w.status}">${STATUS_LABEL[w.status]}</span></td>
-          <td>${w.status === 'pending' ? `<div class="form-actions"><button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button><button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>` : esc(fmtDateTime(w.decidedAt))}</td></tr>`).join('')}
-      </tbody></table></div>` : '<div class="panel empty">Sem pedidos de levantamento.</div>';
-    } else if (tab === 'apostas') {
-      const { bets } = await api('/api/admin/bets');
-      main.innerHTML = bets.length ? bets.map((b) => betCard(b, { showUser: true })).join('') : '<div class="panel empty">Sem apostas.</div>';
-    } else if (tab === 'utilizadores') {
-      const { users } = await api('/api/admin/users');
-      main.innerHTML = `<div class="table-wrap"><table><thead><tr><th>#</th><th>Nome</th><th>Email</th><th>Perfil</th><th class="num">Apostas</th><th class="num">Saldo</th><th>Registo</th></tr></thead><tbody>
-        ${users.map((u) => `<tr><td>${u.id}</td><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role === 'admin' ? 'Admin' : 'Jogador'}</td><td class="num">${u.bets}</td><td class="num">${money(u.balance)}</td><td>${esc(fmtDateTime(u.createdAt))}</td></tr>`).join('')}
-      </tbody></table></div>`;
-    } else {
-      const { events } = await api('/api/admin/events');
-      main.innerHTML = events.length ? events.map(adminEventCard).join('') : '<div class="panel empty">Sem eventos. Crie um em "Novo evento".</div>';
-    }
-  } catch (err) { toast('Erro', err.message, 'error'); }
-}
-
-function adminEventCard(e) {
-  const odd = (code) => e.selections.find((s) => s.code === code);
-  const closed = e.status === 'finished' || e.status === 'cancelled';
-  const suspended = e.selections.length && e.selections.every((s) => !s.active);
-  const oddInput = (code) => `<div class="field"><span>Odd ${code}</span><input name="odd${code}" value="${odd(code)?.active ? fmtOdds(odd(code).odds) : ''}" inputmode="decimal" ${closed ? 'disabled' : ''} placeholder="—"></div>`;
-  return `<form class="admin-event" data-form="admin-event" data-id="${e.id}" data-featured="${e.featured ? 1 : 0}">
-    <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(SPORT_META[e.sport]?.name || e.sport)} · ${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
-      <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
-    ${e.source && e.source !== 'manual' && e.source !== 'bzzoiro' ? `<div class="admin-actions"><button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button></div><pre class="raw-odds hidden" id="rawOdds${e.id}"></pre>` : ''}
-    <div class="admin-grid">
-      <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}" ${closed ? 'disabled' : ''}></div>
-      <div class="field"><span>Fora</span><input name="awayScore" type="number" min="0" value="${e.awayScore ?? ''}" ${closed ? 'disabled' : ''}></div>
-      <div class="field"><span>Tempo</span><input name="clock" value="${esc(e.clock || '')}" placeholder="67'" ${closed ? 'disabled' : ''}></div>
-      ${oddInput('1')}${oddInput('X')}${oddInput('2')}
-    </div>
-    ${closed ? '' : `<div class="admin-actions">
-      <button class="primary-btn btn-sm" data-op="save">Guardar</button>
-      ${e.status === 'scheduled' ? '<button class="ghost-btn btn-sm" data-op="live">Iniciar ao vivo</button>' : ''}
-      <button class="ghost-btn btn-sm" data-op="${suspended ? 'resume' : 'suspend'}">${suspended ? 'Reabrir mercado' : 'Suspender mercado'}</button>
-      <button class="ghost-btn btn-sm" data-op="feature">${e.featured ? 'Remover destaque' : 'Destacar'}</button>
-      <button class="primary-btn btn-sm" data-op="result">Resultado final e liquidar</button>
-      <button class="danger-btn btn-sm" data-op="cancel">Cancelar evento</button>
-    </div>`}
-  </form>`;
-}
-
-function liveSocketPanel(ws) {
-  if (!ws?.enabled) return '<p class="muted">Apostas ao vivo: desligadas (sem WebSocket).</p>';
-  const badge = ws.fatal ? `<span class="pill lost">Parado — ${esc(ws.fatal)}</span>`
-    : ws.connected ? '<span class="pill won">Ligado</span>' : '<span class="pill">A aguardar jogos ao vivo</span>';
-  return `<h3>WebSocket ao vivo ${badge}</h3>
-    <p class="muted">Odds em jogo e marcador em tempo real. O mercado fecha em cada golo e reabre com o preço seguinte; apostas com odds em jogo com mais de ${esc(state.config?.liveOddsMaxAge ?? 180)} s são recusadas.</p>
-    <p>Jogos seguidos: <strong>${ws.following}</strong> · ligações: ${ws.connected}/${ws.sockets} · sem cobertura: ${ws.notCovered} · mensagens: ${ws.frames}${ws.lastFrameAt ? ` (última ${esc(fmtDateTime(ws.lastFrameAt))})` : ''}</p>
-    ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}<br>`;
-}
-
-function adminCasino(c) {
-  const test = '<br><button class="primary-btn" data-action="casino-test">Testar ligação</button><div id="casinoTest"></div>';
-  if (!c.enabled) {
-    return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
-      <strong>CASINO_API_URL</strong> ${c.urlSet ? '✔ definido' : '✘ em falta'} ·
-      <strong>CASINO_API_TOKEN</strong> ${c.tokenSet ? '✔ definido' : '✘ em falta'}.<br>
-      Defina-as no servidor (ou no ficheiro <code>.env</code> na pasta do projeto) e reinicie o servidor.</div>${test}</div>`;
-  }
-  return `<div class="panel">
-    <div class="section-head"><h2>Casino — agente ${esc(c.agent?.name || '')}</h2><span class="pill ${c.error ? 'lost' : 'won'}">${c.error ? 'Erro' : 'Ligado'}</span></div>
-    ${c.error ? `<div class="form-error">${esc(c.error)}</div>` : ''}
-    <div class="stat-grid"><div class="stat"><small>Pontos do agente</small><strong>${c.agent ? esc(Number(c.agent.balance).toLocaleString('pt-PT')) : '—'}</strong></div>
-      <div class="stat"><small>Enviado para o casino</small><strong>${money(c.sentToCasino)}</strong></div>
-      <div class="stat"><small>Devolvido do casino</small><strong>${money(c.returnedFromCasino)}</strong></div></div>
-    ${test}
-    <p class="muted">Cada depósito de um jogador no casino consome pontos do agente. Mantenha pontos suficientes, ou os jogadores não conseguem entrar nos jogos. Os jogos correm sempre com o RTP por omissão do fornecedor.</p>
-  </div>`;
-}
-
-function addonPanel(title, t, what) {
-  if (!t?.enabled) return `<p class="muted">${esc(title)}: desligado.</p>`;
-  const counts = Object.entries(t.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
-  const f = t.last?.fixtures;
-  const lv = t.last?.live;
-  const last = (f ? `última importação ${esc(fmtDateTime(f.at))} (${f.matches ?? f.games ?? 0} jogos, ${f.priced ?? 0} com odds)` : 'ainda não executado')
-    + (lv && lv.liveOddsChecked !== undefined ? ` · ao vivo: ${lv.live ?? 0} jogos, ${lv.liveMarketsOpen ?? 0} com mercado aberto` : '');
-  const badge = t.addonMissing ? '<span class="pill lost">Sem Sports Addon</span>' : t.lastError ? '<span class="pill lost">Erro</span>' : '<span class="pill won">Ligado</span>';
-  const ws = t.liveSocket?.enabled
-    ? ` · ao vivo por WebSocket: ${t.liveSocket.fatal ? `parado (${esc(t.liveSocket.fatal)})` : `${t.liveSocket.following} encontro(s) seguidos`}` : '';
-  return `<h3>${esc(title)} ${badge}</h3>
-    <p class="muted">${esc(what)} ${last}${ws}.</p>
-    <p>Eventos: <strong>${esc(counts)}</strong></p>
-    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para este desporto.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}`;
-}
-
-function sportsAddonPanels(f) {
-  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo e ao vivo), pontos ao vivo, H2H, previsões e ranking.')];
-  const what = {
-    basquetebol: 'Vencedor com prolongamento (pré-jogo e ao vivo), estatísticas por equipa e box score, previsões e classificação.',
-    hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',
-    dardos: 'Vencedor do encontro, legs por set, H2H com médias, previsões e ranking PDC.',
-    esports: 'Vencedor do encontro, mapas, comparação das equipas, H2H e previsões.',
-  };
-  for (const s of f.sports || []) panels.push(addonPanel(SPORT_META[s.sport]?.name || s.name, s, what[s.sport] || ''));
-  return `<h3>Sports Addon</h3>${panels.map((p) => `<div class="addon-block">${p}</div>`).join('')}<br>`;
-}
-
-function adminFeed(f) {
-  const last = (k, label) => {
-    const r = f.last?.[k];
-    if (!r) return `<tr><td>${label}</td><td colspan="2" class="muted">ainda não executado</td></tr>`;
-    const info = Object.entries(r).filter(([key]) => key !== 'at').map(([key, v]) => `${key}: ${v}`).join(' · ');
-    return `<tr><td>${label}</td><td>${esc(fmtDateTime(r.at))}</td><td>${esc(info)}</td></tr>`;
-  };
-  const counts = Object.entries(f.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
-  return `<div class="panel">
-    <div class="section-head"><h2>Futebol — ${esc(f.provider)}</h2><span class="pill ${f.enabled ? 'won' : 'lost'}">${f.enabled ? 'Ligado' : 'Desligado'}</span></div>
-    ${f.enabled
-      ? `<p class="muted">Jogos, odds (média das casas de apostas), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina.</p>
-         <p>Eventos importados: <strong>${esc(counts)}</strong></p>
-         ${f.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(f.lastErrorAt))}): ${esc(f.lastError)}</div>` : ''}
-         <div class="table-wrap"><table><thead><tr><th>Sincronização</th><th>Última execução</th><th>Resultado</th></tr></thead><tbody>
-           ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
-         </tbody></table></div><br>
-         ${liveSocketPanel(f.liveSocket)}
-         ${sportsAddonPanels(f)}
-         <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
-      : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
-  </div>`;
-}
-
-function adminSettlement({ summary: s, queue, history }) {
-  const SOURCE = { feed: 'Dados ao vivo', admin: 'Administrador', engine: 'Automático' };
-  const stats = [
-    ['Apostas em aberto', `${s.openBets} · ${money(s.openStake)}`], ['Responsabilidade máxima', money(s.maxLiability)],
-    ['Liquidadas hoje', `${s.settledToday} · ${money(s.stakesSettledToday)}`], ['Pago hoje', money(s.paidToday)],
-    ['Margem hoje', money(s.marginToday)],
-  ].map(([l, v]) => `<div class="stat"><small>${l}</small><strong>${esc(v)}</strong></div>`).join('');
-  const queueHtml = queue.length ? queue.map((e) => `<form class="admin-event" data-form="settle-queue" data-id="${e.id}">
-      <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
-        <div><span class="pill ${e.status}">${STATUS_LABEL[e.status] || e.status}</span></div></div>
-      <p class="muted">${esc(e.reason)} · ${e.openBets} aposta(s) em aberto · ${money(e.openStake)} apostado · até ${money(e.openPotential)} a pagar</p>
-      <div class="admin-grid">
-        <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}"></div>
-        <div class="field"><span>Fora</span><input name="awayScore" type="number" min="0" value="${e.awayScore ?? ''}"></div>
-        <div class="field"><span>Motivo da anulação</span><input name="reason" maxlength="200" placeholder="Jogo adiado / abandonado"></div>
-      </div>
-      <div class="admin-actions">
-        <button class="primary-btn btn-sm" data-op="result">Liquidar com este resultado</button>
-        <button class="danger-btn btn-sm" data-op="void">Anular apostas</button>
-      </div></form>`).join('') : '<div class="panel empty">Nada pendente — todos os eventos estão a ser liquidados automaticamente.</div>';
-  const historyHtml = history.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Evento</th><th>Ação</th><th class="num">Apostas</th><th class="num">Pago</th><th>Origem</th></tr></thead><tbody>
-      ${history.map((h) => `<tr><td>${esc(fmtDateTime(h.createdAt))}</td><td>${esc(h.match)}<br><small class="muted">${esc(h.competition)}</small></td>
-        <td>${h.action === 'result' ? `Resultado ${esc(h.score)}` : 'Anulado'}${h.note ? `<br><small class="muted">${esc(h.note)}</small>` : ''}</td>
-        <td class="num">${h.betsSettled}</td><td class="num">${money(h.payout)}</td>
-        <td>${esc(SOURCE[h.source] || h.source)}${h.user ? `<br><small class="muted">${esc(h.user)}</small>` : ''}</td></tr>`).join('')}
-    </tbody></table></div>` : '<div class="panel empty">Ainda não houve liquidações.</div>';
-  const last = s.lastRun ? `Última verificação automática: ${fmtDateTime(s.lastRun)}${s.lastResult ? ` (${s.lastResult.settled} liquidados, ${s.lastResult.voided} anulados)` : ''}` : 'A verificação automática ainda não correu.';
-  return `<div class="panel">
-      <div class="section-head"><h2>Liquidação de mercados</h2><button class="primary-btn btn-sm" data-action="settlement-run">Executar liquidação agora</button></div>
-      <p class="muted">Todos os mercados (1X2, dupla hipótese, empate anula, mais/menos golos e ambas marcam) são liquidados pelo resultado do tempo regulamentar assim que o jogo termina. Jogos cancelados são anulados (odd 1.00); jogos adiados sem nova data são anulados após ${s.postponedVoidHours} h. ${esc(last)}</p>
-      <div class="stat-grid">${stats}</div></div>
-    <div class="section-head"><h2>A precisar de decisão</h2></div>${queueHtml}
-    <div class="section-head"><h2>Histórico</h2></div>${historyHtml}`;
-}
-
-function adminNewEvent() {
-  const start = new Date(Date.now() + 2 * 3600_000);
-  start.setMinutes(0, 0, 0);
-  return `<form class="panel" data-form="admin-new">
-    <div class="form-grid three">
-      <div class="field"><label>Desporto</label><select name="sport">${Object.entries(SPORT_META).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}</select></div>
-      <div class="field"><label>Competição</label><input name="competition" required placeholder="Liga Portugal"></div>
-      <div class="field"><label>Início</label><input name="startTime" type="datetime-local" required value="${toLocalInput(start.toISOString())}"></div>
-      <div class="field"><label>Equipa da casa</label><input name="home" required></div>
-      <div class="field"><label>Equipa visitante</label><input name="away" required></div>
-      <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="featured"> Destacar na página inicial</label></div>
-      <div class="field"><label>Odd 1 (casa)</label><input name="odd1" required inputmode="decimal" placeholder="2.10"></div>
-      <div class="field"><label>Odd X (empate — vazio se não houver)</label><input name="oddX" inputmode="decimal" placeholder="3.30"></div>
-      <div class="field"><label>Odd 2 (fora)</label><input name="odd2" required inputmode="decimal" placeholder="3.40"></div>
-    </div>
-    <div class="form-actions"><button class="primary-btn">Criar evento</button></div>
-  </form>`;
 }
 
 // ---------- bet slip ----------
@@ -1045,7 +831,6 @@ function updateHeader() {
   $('#balanceBtn').classList.toggle('hidden', !u);
   $('#depositBtn').classList.toggle('hidden', !u);
   $('#profileBtn').classList.toggle('hidden', !u);
-  $('#adminLink').classList.toggle('hidden', u?.role !== 'admin');
   if (u) {
     $('#headerBalance').textContent = money(u.balance);
     $('#profileBtn').textContent = initials(u.name);
@@ -1070,7 +855,7 @@ function render({ keepScroll = false } = {}) {
   const { page, sub } = currentRoute();
   const pages = {
     home: homePage, desporto: () => sportsPage(sub), 'ao-vivo': livePage, casino: casinoPage,
-    promocoes: promosPage, perfil: () => accountPage(sub), admin: adminPage, jogo: () => matchPage(sub),
+    promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub),
   };
   if (page !== 'jogo') leaveMatch();
   const immersive = page === 'casino' && sub === 'jogar';
@@ -1190,70 +975,6 @@ const formHandlers = {
     toast('Autoexclusão ativada');
     render({ keepScroll: true });
   },
-  async 'settle-queue'(form, submitter) {
-    const id = form.dataset.id;
-    const d = formData(form);
-    if (submitter?.dataset.op === 'void') {
-      if (!confirm('Anular todas as apostas neste evento (devolver os montantes apostados)?')) return;
-      const r = await api(`/api/admin/events/${id}/cancel`, { method: 'POST', body: { reason: d.reason || undefined } });
-      toast('Evento anulado', `${r.settledBets} aposta(s) processada(s).`);
-    } else {
-      if (d.homeScore === '' || d.awayScore === '') throw new Error('Preencha o resultado final (casa e fora).');
-      if (!confirm(`Confirmar resultado final ${d.homeScore}-${d.awayScore} e liquidar as apostas?`)) return;
-      const r = await api(`/api/admin/events/${id}/result`, { method: 'POST', body: { homeScore: Number(d.homeScore), awayScore: Number(d.awayScore) } });
-      toast('Evento liquidado', `${r.settledBets} aposta(s) processada(s).`);
-    }
-    loadAdmin();
-    refreshEvents();
-  },
-  async 'admin-new'(form) {
-    const d = formData(form);
-    await api('/api/admin/events', {
-      method: 'POST',
-      body: {
-        sport: d.sport, competition: d.competition, home: d.home, away: d.away, featured: !!form.featured.checked,
-        startTime: new Date(d.startTime).toISOString(), odds: { 1: d.odd1, X: d.oddX, 2: d.odd2 },
-      },
-    });
-    toast('Evento criado');
-    state.adminTab = 'eventos';
-    render({ keepScroll: true });
-    refreshEvents();
-  },
-  async 'admin-event'(form, submitter) {
-    const id = form.dataset.id;
-    const op = submitter?.dataset.op || 'save';
-    const d = formData(form);
-    const url = `/api/admin/events/${id}`;
-    const score = (v) => (v === '' || v === undefined ? null : Number(v));
-    if (op === 'result') {
-      if (d.homeScore === '' || d.awayScore === '') throw new Error('Preencha o resultado final (casa e fora).');
-      if (!confirm(`Confirmar resultado final ${d.homeScore}-${d.awayScore} e liquidar as apostas?`)) return;
-      const r = await api(`${url}/result`, { method: 'POST', body: { homeScore: Number(d.homeScore), awayScore: Number(d.awayScore) } });
-      toast('Evento liquidado', `${r.settledBets} aposta(s) processada(s).`);
-    } else if (op === 'cancel') {
-      if (!confirm('Cancelar o evento? Todas as apostas neste evento serão anuladas.')) return;
-      const r = await api(`${url}/cancel`, { method: 'POST', body: {} });
-      toast('Evento cancelado', `${r.settledBets} aposta(s) processada(s).`);
-    } else if (op === 'live') {
-      await api(url, { method: 'PATCH', body: { status: 'live', homeScore: score(d.homeScore) ?? 0, awayScore: score(d.awayScore) ?? 0, clock: d.clock || "1'" } });
-      toast('Evento ao vivo');
-    } else if (op === 'suspend' || op === 'resume') {
-      await api(url, { method: 'PATCH', body: { suspended: op === 'suspend' } });
-      toast(op === 'suspend' ? 'Mercado suspenso' : 'Mercado reaberto');
-    } else if (op === 'feature') {
-      const featured = form.dataset.featured !== '1';
-      await api(url, { method: 'PATCH', body: { featured } });
-    } else {
-      await api(url, {
-        method: 'PATCH',
-        body: { homeScore: score(d.homeScore), awayScore: score(d.awayScore), clock: d.clock, odds: { 1: d.odd1, X: d.oddX, 2: d.odd2 } },
-      });
-      toast('Evento atualizado');
-    }
-    loadAdmin();
-    refreshEvents();
-  },
 };
 
 document.addEventListener('submit', async (e) => {
@@ -1301,9 +1022,6 @@ document.addEventListener('click', async (e) => {
   const prov = e.target.closest('[data-casino-prov]');
   if (prov) { state.casinoFilter.provider = prov.dataset.casinoProv; loadCasino({ reset: true }); return; }
 
-  const adminTab = e.target.closest('[data-admin-tab]');
-  if (adminTab) { state.adminTab = adminTab.dataset.adminTab; render({ keepScroll: true }); return; }
-
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
@@ -1316,48 +1034,7 @@ document.addEventListener('click', async (e) => {
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
   } else if (action === 'casino-more') {
     loadCasino();
-  } else if (action === 'casino-test') {
-    actionEl.disabled = true;
-    actionEl.textContent = 'A testar…';
-    try {
-      const { steps } = await api('/api/admin/casino/test', { method: 'POST', body: {} });
-      $('#casinoTest').innerHTML = `<br><div class="table-wrap"><table><tbody>${steps.map((s) =>
-        `<tr><td>${s.ok ? '✅' : '❌'}</td><td><strong>${esc(s.name)}</strong></td><td>${esc(s.detail)}</td></tr>`).join('')}</tbody></table></div>`;
-      loadCasino();
-    } catch (err) { toast('Erro', err.message, 'error'); }
-    actionEl.disabled = false;
-    actionEl.textContent = 'Testar ligação';
-  } else if (action === 'settlement-run') {
-    actionEl.disabled = true;
-    try {
-      const { result } = await api('/api/admin/settlement/run', { method: 'POST', body: {} });
-      toast('Liquidação executada', `${result.settled} evento(s) liquidado(s), ${result.voided} anulado(s).`);
-    } catch (err) { toast('Erro', err.message, 'error'); }
-    loadAdmin();
-  } else if (action === 'provider-odds') {
-    const box = $(`#rawOdds${actionEl.dataset.id}`);
-    try {
-      const r = await api(`/api/admin/events/${actionEl.dataset.id}/provider-odds`);
-      box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
-      box.classList.remove('hidden');
-    } catch (err) { toast('Erro', err.message, 'error'); }
-  } else if (action === 'feed-sync') {
-    actionEl.disabled = true;
-    actionEl.textContent = 'A sincronizar…';
-    try {
-      await api('/api/admin/feed/sync', { method: 'POST', body: {} });
-      toast('Sincronização concluída');
-      refreshEvents();
-    } catch (err) { toast('Erro', err.message, 'error'); }
-    loadAdmin();
-  } else if (action === 'wd-approve' || action === 'wd-reject') {
-    const verb = action === 'wd-approve' ? 'approve' : 'reject';
-    if (!confirm(verb === 'approve' ? 'Aprovar este levantamento (confirmando que a transferência foi feita)?' : 'Rejeitar e devolver o valor ao jogador?')) return;
-    try {
-      await api(`/api/admin/withdrawals/${actionEl.dataset.id}/${verb}`, { method: 'POST', body: {} });
-      toast(verb === 'approve' ? 'Levantamento aprovado' : 'Levantamento rejeitado');
-      loadAdmin();
-    } catch (err) { toast('Erro', err.message, 'error'); }
+
   }
 });
 

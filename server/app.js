@@ -22,10 +22,13 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 // files stamped (app.js?v=…), so a browser can never keep running an old script after a deploy,
 // and the footer shows it so the running version can be checked.
 const readPublic = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
-export const APP_VERSION = createHash('sha256').update(readPublic('app.js')).update(readPublic('styles.css')).digest('hex').slice(0, 8);
+export const APP_VERSION = createHash('sha256').update(readPublic('app.js')).update(readPublic('styles.css'))
+  .update(readPublic('admin/admin.js')).update(readPublic('admin/admin.css')).digest('hex').slice(0, 8);
 const INDEX_HTML = readPublic('index.html')
   .replace('src="app.js"', `src="app.js?v=${APP_VERSION}"`)
   .replace('href="styles.css"', `href="styles.css?v=${APP_VERSION}"`);
+// The administration is a separate page at /admin, with its own login.
+const ADMIN_HTML = readPublic('admin/index.html').replace(/(\/(?:admin\/admin|styles)\.(?:js|css))"/g, `$1?v=${APP_VERSION}"`);
 const COOKIE = 'cb_session';
 const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -760,6 +763,9 @@ export function createApp(db, {
   // right after a deploy; images and icons can be cached for a day.
   app.get(['/', '/index.html'], (_req, res) => {
     res.set('Cache-Control', 'no-cache').type('html').send(INDEX_HTML);
+  });
+  app.get(['/admin', '/admin/', '/admin/index.html', '/administrador'], (_req, res) => {
+    res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' }).type('html').send(ADMIN_HTML);
   });
   app.use(express.static(PUBLIC_DIR, {
     index: 'index.html',
