@@ -1,0 +1,157 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openDb, nowIso, tx } from '../server/db.js';
+import { createCasino } from '../server/casino.js';
+import { postTransaction } from '../server/wallet.js';
+import { createApp } from '../server/app.js';
+import { seed } from '../server/seed.js';
+
+/** Fake Agent API v4 with an in-memory casino wallet per user. */
+function fakeAgentApi({ failDeposit = null } = {}) {
+  const wallets = new Map();
+  const calls = [];
+  let nextCode = 400000001;
+  const users = new Map();
+  const ok = (data) => new Response(JSON.stringify({ code: 0, message: 'OK', data }), { status: 200 });
+  const fail = (code) => new Response(JSON.stringify({ code, message: 'err' }), { status: 200 });
+  const fetchImpl = async (url, opts) => {
+    const path = new URL(url).pathname;
+    const body = JSON.parse(opts.body || '{}');
+    calls.push({ path, body, auth: opts.headers.Authorization });
+    switch (path) {
+      case '/v4/user/create': {
+        if (!users.has(body.name)) users.set(body.name, nextCode++);
+        return ok({ user_code: users.get(body.name), is_new_user: true });
+      }
+      case '/v4/user/info': return ok({ name: 'x', balance: wallets.get(body.user_code) || 0 });
+      case '/v4/wallet/deposit': {
+        if (failDeposit === 'error') return fail(1001);
+        wallets.set(body.user_code, (wallets.get(body.user_code) || 0) + body.amount);
+        if (failDeposit === 'lost') throw new Error('socket hang up');
+        return ok({ balance: wallets.get(body.user_code), amount: body.amount });
+      }
+      case '/v4/wallet/withdraw-all': {
+        const amount = wallets.get(body.user_code) || 0;
+        wallets.set(body.user_code, 0);
+        return ok({ balance: 0, amount });
+      }
+      case '/v4/game/providers': return ok([{ provider_id: 1, provider_name: 'Pragmatic Play', status: 1 }, { provider_id: 2, provider_name: 'PG', status: 2 }]);
+      case '/v4/game/games': return ok([
+        { provider_id: 1, game_code: 'vs20doghouse', game_name: 'The Dog House', game_image: 'https://img.example/dh.jpg', launch_enable: true, category: 'Slots' },
+        { provider_id: 1, game_code: 'off', game_name: 'Off', launch_enable: false, category: 'Slots' },
+      ]);
+      case '/v4/game/game-url': return ok({ game_url: `https://games.example/play?u=${body.user_code}&g=${body.game_symbol}` });
+      case '/v4/agent/info': return ok({ name: 'classicbet', balance: 50000, currency: 2 });
+      default: return fail(1012);
+    }
+  };
+  return { fetchImpl, calls, wallets };
+}
+
+function player(db, cents = 10_000) {
+  const { lastInsertRowid } = db.prepare(
+    "INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES (?, 'P', '1990-01-01', 'x', ?)"
+  ).run(`p${Math.random()}@x.pt`, nowIso());
+  const id = Number(lastInsertRowid);
+  if (cents) tx(db, () => postTransaction(db, id, cents, 'deposit', 'teste'));
+  return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+}
+const balance = (db, id) => db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(id).balance_cents;
+
+test('catalogue lists launchable games of providers not in maintenance', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl: api.fetchImpl });
+  const { games, providers } = await casino.games();
+  assert.deepEqual(games.map((g) => g.code), ['vs20doghouse']);
+  assert.equal(providers.find((p) => p.id === 2).maintenance, true);
+  assert.ok(api.calls.every((c) => c.auth === 'Bearer tok'));
+  await casino.games();
+  assert.equal(api.calls.filter((c) => c.path === '/v4/game/providers').length, 1, 'cached');
+  db.close();
+});
+
+test('transfer in, launch without RTP override, transfer out', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl: api.fetchImpl });
+  const p = player(db, 10_000);
+  const r = await casino.transferIn(p, 2_500);
+  assert.equal(r.casinoCents, 2_500);
+  assert.equal(balance(db, p.id), 7_500);
+
+  const url = await casino.launch(p, { providerId: 1, gameCode: 'vs20doghouse', returnUrl: 'https://cb/#/casino' });
+  assert.match(url, /games\.example/);
+  const launchCall = api.calls.find((c) => c.path === '/v4/game/game-url');
+  assert.equal(launchCall.body.rtp, undefined);
+  assert.equal(launchCall.body.win_ratio, undefined);
+  assert.ok(!api.calls.some((c) => c.path === '/v4/agent/rtp' || c.path.startsWith('/v4/game/call_')));
+
+  // Player wins 12,00 in the game, then brings everything back.
+  const code = db.prepare('SELECT casino_user_code FROM users WHERE id = ?').get(p.id).casino_user_code;
+  api.wallets.set(code, 37);
+  const out = await casino.transferOut(p);
+  assert.equal(out.amountCents, 3_700);
+  assert.equal(balance(db, p.id), 11_200);
+  const types = db.prepare('SELECT type FROM transactions WHERE user_id = ? ORDER BY id').all(p.id).map((t) => t.type);
+  assert.deepEqual(types, ['deposit', 'casino_out', 'casino_in']);
+  db.close();
+});
+
+test('a refused deposit is refunded; a lost answer that landed is not', async () => {
+  const db = openDb(':memory:');
+  const refused = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: fakeAgentApi({ failDeposit: 'error' }).fetchImpl });
+  const p = player(db, 5_000);
+  await assert.rejects(() => refused.transferIn(p, 1_000));
+  assert.equal(balance(db, p.id), 5_000);
+
+  const db2 = openDb(':memory:');
+  const lost = createCasino(db2, { baseUrl: 'https://a', token: 't', fetchImpl: fakeAgentApi({ failDeposit: 'lost' }).fetchImpl });
+  const q = player(db2, 5_000);
+  const r = await lost.transferIn(q, 1_000);
+  assert.equal(r.casinoCents, 1_000);
+  assert.equal(balance(db2, q.id), 4_000, 'no double credit');
+  db.close();
+  db2.close();
+});
+
+test('self-excluded players cannot play', async () => {
+  const db = openDb(':memory:');
+  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: fakeAgentApi().fetchImpl });
+  const p = player(db, 5_000);
+  db.prepare('UPDATE users SET excluded_until = ? WHERE id = ?').run(new Date(Date.now() + 86_400_000).toISOString(), p.id);
+  const excluded = db.prepare('SELECT * FROM users WHERE id = ?').get(p.id);
+  await assert.rejects(() => casino.transferIn(excluded, 1_000), /autoexclusão/);
+  await assert.rejects(() => casino.launch(excluded, { providerId: 1, gameCode: 'x' }), /autoexclusão/);
+  db.close();
+});
+
+test('HTTP API: games are public, wallet and launch need a session', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: fakeAgentApi().fetchImpl });
+  const server = createApp(db, { casino, loginAttempts: 100, registrations: 100 }).listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let cookie = '';
+  const call = async (method, path, body) => {
+    const res = await fetch(base + path, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const set = res.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return { status: res.status, body: await res.json() };
+  };
+  assert.equal((await call('GET', '/api/casino/games')).body.games.length, 1);
+  assert.equal((await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' })).status, 401);
+  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/wallet/deposit', { amount: 50 });
+  assert.equal((await call('POST', '/api/casino/transfer-in', { amount: 80 })).status, 400, 'more than the balance');
+  const t = await call('POST', '/api/casino/transfer-in', { amount: 20 });
+  assert.deepEqual(t.body, { balance: 30, casinoBalance: 20 });
+  const l = await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' });
+  assert.equal(l.status, 200);
+  assert.match(l.body.url, /^https:\/\/games\.example/);
+  const o = await call('POST', '/api/casino/transfer-out', {});
+  assert.deepEqual(o.body, { amount: 20, balance: 50, casinoBalance: 0 });
+  server.close();
+  db.close();
+});

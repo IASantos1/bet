@@ -16,6 +16,7 @@ const GAMES = [
 ];
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
+  casino_out: 'Para o casino', casino_in: 'Do casino',
   bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
 };
 const STATUS_LABEL = {
@@ -28,6 +29,9 @@ const state = {
   config: null,
   events: [],
   eventsLoaded: false,
+  casino: { enabled: false, games: [], providers: [], loaded: false },
+  casinoFilter: { provider: '', category: '' },
+  casinoBalance: null,
   slip: loadSlip(),
   mode: 'single',
   sport: '',
@@ -252,7 +256,7 @@ function homePage() {
     ${live.length ? `<section class="section"><div class="section-head"><h2>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div><div class="live-grid grid">${live.slice(0, 4).map(liveCard).join('')}</div></section>` : ''}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
       ${featured.length ? `<div class="match-grid grid">${featured.map(matchCard).join('')}</div>` : emptyEvents()}</section>
-    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div><div class="game-grid grid">${GAMES.slice(0, 5).map(gameCard).join('')}</div></section>
+    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div><div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div></section>
     ${footer()}`;
 }
 
@@ -300,11 +304,79 @@ function livePage() {
 
 const gameCard = (g) => `<button class="game-card" data-action="game"><div class="game-art">${g[2]}</div><div class="game-info"><strong>${esc(g[0])}</strong><small>${esc(g[1])}</small></div></button>`;
 
+function casinoGameCard(g, i) {
+  return `<button class="game-card" data-game="${i}">
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+    <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)} · ${esc(g.category)}</small></div></button>`;
+}
+
 function casinoPage() {
-  return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
-    <div class="notice"><strong>Casino em integração.</strong> Os jogos ficam disponíveis assim que um fornecedor de casino licenciado for ligado à plataforma.</div>
-    <section class="section"><div class="section-head"><h2>Catálogo</h2><span>${GAMES.length} jogos</span></div><div class="game-grid grid">${GAMES.map(gameCard).join('')}</div></section>
+  const c = state.casino;
+  if (!c.enabled) {
+    return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
+      <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
+      <section class="section"><div class="section-head"><h2>Catálogo</h2><span>${GAMES.length} jogos</span></div><div class="game-grid grid">${GAMES.map(gameCard).join('')}</div></section>
+      ${footer()}`;
+  }
+  if (state.user && state.casinoBalance === null) setTimeout(loadCasinoBalance);
+  const f = state.casinoFilter;
+  const list = c.games.map((g, i) => [g, i]).filter(([g]) => (!f.provider || String(g.providerId) === f.provider) && (!f.category || g.category === f.category));
+  const wallet = state.user
+    ? `<div class="casino-wallet"><span>Saldo no casino: <strong id="casinoBalance">${state.casinoBalance === null ? '…' : money(state.casinoBalance)}</strong></span>
+        <button class="outline-btn btn-sm" data-action="casino-out">Trazer para a carteira</button></div>`
+    : '';
+  return `<div class="page-title"><h1>Casino</h1><p>${c.games.length} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
+    ${wallet}
+    <div class="casino-tabs">
+      ${[['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']].map(([k, l]) => `<button class="casino-tab${f.category === k ? ' active' : ''}" data-casino-cat="${k}">${l}</button>`).join('')}
+    </div>
+    <div class="sport-strip">
+      <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
+      ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
+    </div>
+    <section class="section"><div class="game-grid grid">${list.length ? list.map(([g, i]) => casinoGameCard(g, i)).join('') : '<div class="empty">Sem jogos neste filtro.</div>'}</div></section>
     ${footer()}`;
+}
+
+async function loadCasino() {
+  try {
+    const data = await api('/api/casino/games');
+    state.casino = { ...data, loaded: true };
+  } catch {
+    state.casino = { enabled: false, games: [], providers: [], loaded: true };
+  }
+  if (['casino', 'home'].includes(currentRoute().page)) render({ keepScroll: true });
+}
+
+async function loadCasinoBalance() {
+  if (!state.user || !state.casino.enabled) return;
+  try {
+    const w = await api('/api/casino/wallet');
+    state.casinoBalance = w.casinoBalance;
+    state.user.balance = w.balance;
+    updateHeader();
+    if ($('#casinoBalance')) $('#casinoBalance').textContent = money(w.casinoBalance);
+    if ($('#playCasinoBalance')) $('#playCasinoBalance').textContent = money(w.casinoBalance);
+  } catch (err) { toast('Casino', err.message, 'error'); }
+}
+
+function openGame(index) {
+  const g = state.casino.games[index];
+  if (!g) return;
+  if (!state.user) return openAuth('login');
+  const suggested = Math.min(20, Math.floor(state.user.balance));
+  openModal(g.name, `
+    <form data-form="casino-play" data-game="${index}">
+      <div class="form-error hidden"></div>
+      <p class="muted">${esc(g.provider)} · ${esc(g.category)}</p>
+      <div class="stat-grid"><div class="stat"><small>Carteira</small><strong>${money(state.user.balance)}</strong></div>
+        <div class="stat"><small>Saldo no casino</small><strong id="playCasinoBalance">${state.casinoBalance === null ? '…' : money(state.casinoBalance)}</strong></div></div>
+      <div class="field"><label>Levar para o jogo (€) — 0 para usar só o saldo do casino</label>
+        <input name="amount" type="number" min="0" step="0.01" value="${suggested > 0 ? suggested : 0}" inputmode="decimal"></div>
+      <button class="primary-btn btn-block">JOGAR</button>
+      <p class="muted">O jogo abre numa nova janela. No fim, use "Trazer para a carteira" na página do casino para voltar a ter o saldo disponível para apostas.</p>
+    </form>`);
+  loadCasinoBalance();
 }
 
 function promosPage() {
@@ -442,7 +514,7 @@ function responsibleView() {
 function adminPage() {
   if (!state.user) return accountPage();
   if (state.user.role !== 'admin') return '<div class="panel empty">Acesso reservado a administradores.</div>';
-  const tabs = [['eventos', 'Eventos'], ['novo', 'Novo evento'], ['feed', 'Dados ao vivo'], ['levantamentos', 'Levantamentos'], ['apostas', 'Apostas'], ['utilizadores', 'Utilizadores']];
+  const tabs = [['eventos', 'Eventos'], ['novo', 'Novo evento'], ['feed', 'Dados ao vivo'], ['casino', 'Casino'], ['levantamentos', 'Levantamentos'], ['apostas', 'Apostas'], ['utilizadores', 'Utilizadores']];
   setTimeout(loadAdmin);
   return `<div class="page-title"><h1>Administração</h1><p>Gestão de eventos, odds, resultados e pagamentos.</p></div>
     <div class="stat-grid four" id="adminStats"></div>
@@ -465,6 +537,7 @@ async function loadAdmin() {
     const tab = state.adminTab;
     if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
+    else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
     else if (tab === 'levantamentos') {
       const { withdrawals } = await api('/api/admin/withdrawals');
       main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -520,6 +593,20 @@ function liveSocketPanel(ws) {
     <p class="muted">Odds em jogo e marcador em tempo real. O mercado fecha em cada golo e reabre com o preço seguinte; apostas com odds em jogo com mais de ${esc(state.config?.liveOddsMaxAge ?? 180)} s são recusadas.</p>
     <p>Jogos seguidos: <strong>${ws.following}</strong> · ligações: ${ws.connected}/${ws.sockets} · sem cobertura: ${ws.notCovered} · mensagens: ${ws.frames}${ws.lastFrameAt ? ` (última ${esc(fmtDateTime(ws.lastFrameAt))})` : ''}</p>
     ${ws.lastError && !ws.fatal ? `<p class="muted">Último aviso: ${esc(ws.lastError)}</p>` : ''}<br>`;
+}
+
+function adminCasino(c) {
+  if (!c.enabled) {
+    return '<div class="panel"><div class="notice">Defina <strong>CASINO_API_URL</strong> e <strong>CASINO_API_TOKEN</strong> no servidor e reinicie para ligar o casino.</div></div>';
+  }
+  return `<div class="panel">
+    <div class="section-head"><h2>Casino — agente ${esc(c.agent?.name || '')}</h2><span class="pill ${c.error ? 'lost' : 'won'}">${c.error ? 'Erro' : 'Ligado'}</span></div>
+    ${c.error ? `<div class="form-error">${esc(c.error)}</div>` : ''}
+    <div class="stat-grid"><div class="stat"><small>Pontos do agente</small><strong>${c.agent ? esc(Number(c.agent.balance).toLocaleString('pt-PT')) : '—'}</strong></div>
+      <div class="stat"><small>Enviado para o casino</small><strong>${money(c.sentToCasino)}</strong></div>
+      <div class="stat"><small>Devolvido do casino</small><strong>${money(c.returnedFromCasino)}</strong></div></div>
+    <p class="muted">Cada depósito de um jogador no casino consome pontos do agente. Mantenha pontos suficientes, ou os jogadores não conseguem entrar nos jogos. Os jogos correm sempre com o RTP por omissão do fornecedor.</p>
+  </div>`;
 }
 
 function adminFeed(f) {
@@ -831,6 +918,28 @@ const formHandlers = {
     toast('Autoexclusão ativada');
     render({ keepScroll: true });
   },
+  async 'casino-play'(form) {
+    // Open the window during the click, before any await, so it is not blocked as a pop-up.
+    const win = window.open('', '_blank');
+    try {
+      const g = state.casino.games[Number(form.dataset.game)];
+      const amount = Number(String(formData(form).amount || '0').replace(',', '.'));
+      if (amount > 0) {
+        const w = await api('/api/casino/transfer-in', { method: 'POST', body: { amount } });
+        state.user.balance = w.balance;
+        state.casinoBalance = w.casinoBalance;
+        updateHeader();
+      }
+      const { url } = await api('/api/casino/launch', { method: 'POST', body: { providerId: g.providerId, gameCode: g.code } });
+      if (win) win.location.href = url; else location.href = url;
+      closeModal();
+      render({ keepScroll: true });
+    } catch (err) {
+      win?.close();
+      loadCasinoBalance();
+      throw err;
+    }
+  },
   async 'admin-new'(form) {
     const d = formData(form);
     await api('/api/admin/events', {
@@ -914,6 +1023,13 @@ document.addEventListener('click', async (e) => {
   const sportLink = e.target.closest('[data-sport-link]');
   if (sportLink) { state.sport = sportLink.dataset.sportLink; if (location.hash === '#/desporto') render(); return; }
 
+  const game = e.target.closest('[data-game]');
+  if (game && !game.matches('form')) { openGame(Number(game.dataset.game)); return; }
+  const cat = e.target.closest('[data-casino-cat]');
+  if (cat) { state.casinoFilter.category = cat.dataset.casinoCat; render({ keepScroll: true }); return; }
+  const prov = e.target.closest('[data-casino-prov]');
+  if (prov) { state.casinoFilter.provider = prov.dataset.casinoProv; render({ keepScroll: true }); return; }
+
   const adminTab = e.target.closest('[data-admin-tab]');
   if (adminTab) { state.adminTab = adminTab.dataset.adminTab; render({ keepScroll: true }); return; }
 
@@ -923,10 +1039,22 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
-  else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação a um fornecedor licenciado.');
+  else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação ao fornecedor de casino.');
+  else if (action === 'casino-out') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/casino/transfer-out', { method: 'POST', body: {} });
+      state.user.balance = r.balance;
+      state.casinoBalance = 0;
+      updateHeader();
+      toast(r.amount > 0 ? 'Saldo transferido' : 'Sem saldo no casino', r.amount > 0 ? `${money(r.amount)} voltaram para a carteira.` : '');
+      render({ keepScroll: true });
+    } catch (err) { toast('Casino', err.message, 'error'); actionEl.disabled = false; }
+  }
   else if (action === 'logout') {
     await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
     state.user = null;
+    state.casinoBalance = null;
     updateHeader(); renderSlip();
     location.hash = '#/';
     toast('Sessão terminada');
@@ -949,6 +1077,11 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
 });
+
+// A casino thumbnail that fails to load shows the generic art instead.
+document.addEventListener('error', (e) => {
+  if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img')) e.target.replaceWith('🎰');
+}, true);
 
 // A badge that fails to load (the provider answers 204/404 when it has none) becomes initials.
 document.addEventListener('error', (e) => {
@@ -1004,6 +1137,7 @@ async function init() {
   state.config = config;
   if (config) $('#stake').min = config.minStake;
   render();
+  loadCasino();
   await refreshEvents();
   // Live events refresh every 10s; the rest of the board rides along.
   setInterval(() => { if (!document.hidden) refreshEvents(); }, 10_000);

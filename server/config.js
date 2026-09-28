@@ -34,6 +34,14 @@ export const config = {
     liveMaxSockets: int(env.BZZOIRO_LIVE_MAX_SOCKETS, 5), // 10 matches per socket
   },
 
+  // Casino games (aggregator Agent API v4, Transfer mode). Disabled until both are set.
+  casino: {
+    baseUrl: (env.CASINO_API_URL || '').trim(),
+    token: (env.CASINO_API_TOKEN || '').trim(),
+    lang: int(env.CASINO_LANG, 6), // 6 = Português
+    minTransferCents: int(env.CASINO_MIN_TRANSFER_CENTS, 100),
+  },
+
   // In-play bets on feed matches are refused when the last live price is older than this.
   liveOddsMaxAgeSeconds: int(env.LIVE_ODDS_MAX_AGE_SECONDS, 180),
 

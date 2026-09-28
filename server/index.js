@@ -4,6 +4,7 @@ import { seed } from './seed.js';
 import { createApp } from './app.js';
 import { createFeed } from './feed.js';
 import { createLiveSocket } from './livews.js';
+import { createCasino } from './casino.js';
 
 const db = openDb(config.dbPath);
 const log = (msg) => console.warn(`[feed] ${msg}`);
@@ -14,7 +15,9 @@ const feed = createFeed(db, { ...config.feed, log, liveSocket });
 seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });
 const stopFeed = feed.start();
 
-const server = createApp(db, { feed }).listen(config.port, () => {
+const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
+
+const server = createApp(db, { feed, casino }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
