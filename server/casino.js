@@ -1,8 +1,11 @@
 // Casino games through the aggregator's Agent API (v4), Transfer mode.
 //
-// Money model: the ClassicBet wallet and the player's casino wallet are separate. The player moves
-// money into the casino before playing (ledger: casino_out) and brings it back afterwards
-// (ledger: casino_in). Every move is written to the ClassicBet ledger.
+// Money model — one wallet for the player. The aggregator runs in Transfer mode, so behind the
+// scenes: opening a game moves the whole ClassicBet balance into the player's casino wallet
+// (ledger: casino_out, users.casino_active = 1) and leaving the game, or doing anything that needs
+// the balance (a sports bet, a withdrawal, opening the wallet), brings it all back (ledger:
+// casino_in). The player never moves money by hand. Operations per player are serialised so a
+// launch and a reclaim can never interleave.
 //
 // Deliberately NOT used: /v4/agent/rtp, the per-launch `rtp` / `win_ratio` overrides and the
 // "bonus call" endpoints. Games always run at the provider's default return-to-player.
@@ -217,10 +220,78 @@ export function createCasino(db, {
     return data.game_url;
   }
 
+  // ---------- single wallet ----------
+
+  const locks = new Map();
+  /** Runs fn after any previous operation for the same player has finished. */
+  function withLock(userId, fn) {
+    const prev = locks.get(userId) || Promise.resolve();
+    const run = prev.catch(() => {}).then(fn);
+    const tail = run.catch(() => {});
+    locks.set(userId, tail);
+    tail.then(() => { if (locks.get(userId) === tail) locks.delete(userId); });
+    return run;
+  }
+  const freshUser = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+
+  /** Opens a game: the whole balance follows the player into the casino. Returns { url, casinoCents }. */
+  function enterGame(user, { providerId, gameCode, returnUrl }) {
+    return withLock(user.id, async () => {
+      const u = freshUser(user.id);
+      assertCanPlay(u);
+      let casinoCents = null;
+      if (u.balance_cents > 0) casinoCents = (await transferIn(u, u.balance_cents)).casinoCents;
+      db.prepare('UPDATE users SET casino_active = 1 WHERE id = ?').run(u.id);
+      try {
+        const url = await launch(u, { providerId, gameCode, returnUrl });
+        return { url, casinoCents: casinoCents ?? await casinoBalanceCents(u) };
+      } catch (err) {
+        // Could not start the game: give the money straight back.
+        await transferOut(u).catch(() => {});
+        db.prepare('UPDATE users SET casino_active = 0 WHERE id = ?').run(u.id);
+        throw err;
+      }
+    });
+  }
+
+  /** Brings the casino balance back into the ClassicBet wallet. Returns the amount moved (cents). */
+  function leaveGame(user) {
+    return withLock(user.id, async () => {
+      const u = freshUser(user.id);
+      if (!u?.casino_user_code) return 0;
+      const { amountCents } = await transferOut(u);
+      db.prepare('UPDATE users SET casino_active = 0 WHERE id = ?').run(u.id);
+      return amountCents;
+    });
+  }
+
+  /** Before anything that spends the ClassicBet balance: reclaim money left in the casino. */
+  async function syncBack(user) {
+    if (!enabled) return 0;
+    const u = freshUser(user.id);
+    if (!u?.casino_active) return 0;
+    return leaveGame(u);
+  }
+
   async function agentInfo() {
     const a = await call('/v4/agent/info');
     return { name: a?.name, balance: a?.balance, currency: a?.currency };
   }
 
-  return { enabled, games, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo };
+  /** One page of the catalogue, filtered by provider / category / name. */
+  async function gamesPage({ offset = 0, limit = 24, provider = '', category = '', q = '' } = {}) {
+    const all = await games();
+    const term = String(q || '').trim().toLowerCase();
+    const list = all.games.filter((g) => (!provider || String(g.providerId) === String(provider))
+      && (!category || g.category === category)
+      && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term)));
+    const start = Math.max(0, Number(offset) || 0);
+    const size = Math.min(60, Math.max(1, Number(limit) || 24));
+    return { ...all, total: list.length, offset: start, games: list.slice(start, start + size) };
+  }
+
+  return {
+    enabled, games, gamesPage, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo,
+    enterGame, leaveGame, syncBack,
+  };
 }

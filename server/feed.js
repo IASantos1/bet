@@ -228,7 +228,8 @@ export function createFeed(db, {
     }
     if (row.status === 'finished' || row.status === 'cancelled') return { id: row.id, closed: true };
     db.prepare(
-      `UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
+      // Listed as upcoming again (e.g. a postponed match with a new date): it stands, no longer postponed.
+      `UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, postponed_at = NULL, home_team_ext = COALESCE(?, home_team_ext),
          away_team_ext = COALESCE(?, away_team_ext), league_ext = COALESCE(?, league_ext), updated_at = ? WHERE id = ?`
     ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ev.leagueId ?? null, ts, row.id);
     return { id: row.id };
@@ -259,12 +260,12 @@ export function createFeed(db, {
     db.prepare(
       "UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = 'Final', updated_at = ? WHERE id = ?"
     ).run(home, away, resultCode(home, away), nowIso(), eventId);
-    return settleEvent(db, eventId);
+    return settleEvent(db, eventId, { source: 'feed' });
   }
 
   function cancel(eventId) {
     db.prepare("UPDATE events SET status = 'cancelled', updated_at = ? WHERE id = ?").run(nowIso(), eventId);
-    return settleEvent(db, eventId);
+    return settleEvent(db, eventId, { source: 'feed', note: 'Cancelado/abandonado segundo o fornecedor' });
   }
 
   /** Applies a finished / cancelled / postponed status from the provider. Returns settled bet count. */
@@ -275,8 +276,8 @@ export function createFeed(db, {
       // No price while the new date is unknown; the fixtures sync reopens it when a date is set.
       tx(db, () => {
         suspendMarkets(row.id);
-        db.prepare("UPDATE events SET status = 'scheduled', clock = NULL, start_time = ?, odds_next_at = NULL, updated_at = ? WHERE id = ?")
-          .run(ev.startTime, nowIso(), row.id);
+        db.prepare(`UPDATE events SET status = 'scheduled', clock = NULL, start_time = ?, odds_next_at = NULL,
+          postponed_at = COALESCE(postponed_at, ?), updated_at = ? WHERE id = ?`).run(ev.startTime, nowIso(), nowIso(), row.id);
       });
     }
     return 0;
@@ -428,8 +429,9 @@ export function createFeed(db, {
         if (ev.status === 'finished' || ev.status === 'cancelled' || ev.status === 'postponed') {
           const n = applyTerminal(row, ev);
           if (ev.status !== 'postponed') { settledEvents += 1; settledBets += n; }
-        } else if (ev.status === 'scheduled' && ev.startTime !== row.start_time) {
-          db.prepare('UPDATE events SET start_time = ?, updated_at = ? WHERE id = ?').run(ev.startTime, nowIso(), row.id);
+        } else if (ev.status === 'scheduled' && (ev.startTime !== row.start_time || row.postponed_at)) {
+          // Rescheduled: a postponed match with a new date stands again.
+          db.prepare('UPDATE events SET start_time = ?, postponed_at = NULL, updated_at = ? WHERE id = ?').run(ev.startTime, nowIso(), row.id);
         }
       } catch (err) {
         log(`resultado ${row.external_id}: ${err.message}`);
