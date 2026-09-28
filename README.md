@@ -74,13 +74,16 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
   o agente (token, IP autorizado), os fornecedores atribuídos e os jogos, e diz o que falta.
 - O catálogo (fornecedores e jogos) é lido da API e guardado em cache durante 1 hora. Fornecedores em
   manutenção aparecem desativados.
-- Os jogos abrem **dentro da ClassicBet** (`#/casino/jogar`), num ecrã embutido com a barra do site; o
-  botão "casa" do jogo volta ao casino sem sair da plataforma.
-- A carteira do casino é separada. Ao abrir um jogo, o jogador escolhe quanto leva da carteira ClassicBet
-  para o casino, e no fim usa **Trazer para a carteira**. Cada transferência fica no extrato
-  (`casino_out` / `casino_in`). O débito é feito antes do depósito no casino, e se o depósito falhar o
-  valor é devolvido. Se a resposta se perder, o saldo do casino é verificado antes, para nunca creditar
-  duas vezes.
+- A página do casino carrega os jogos **por blocos** de 24 (botão *Mostrar mais jogos*), com pesquisa,
+  categorias e fornecedores filtrados no servidor (`/api/casino/games?offset=&limit=&provider=&category=&q=`).
+- Os jogos abrem **dentro da ClassicBet** (`#/casino/jogar`), só com o jogo em ecrã embutido; o botão
+  "casa" do jogo volta ao casino sem sair da plataforma.
+- **Carteira única**: o jogador só tem a carteira ClassicBet. Ao abrir um jogo, o saldo inteiro passa
+  automaticamente para o casino (`casino_out`); ao sair do jogo (ou ao voltar ao site, apostar, ver a
+  carteira ou levantar) o saldo do casino volta todo para a carteira (`casino_in`). O saldo mostrado é
+  sempre carteira + casino. As transferências são feitas uma de cada vez por jogador; o débito é feito
+  antes do depósito no casino e devolvido se falhar; se uma resposta se perder, o saldo do casino é
+  verificado antes, para nunca creditar duas vezes.
 - Os depósitos no casino consomem **pontos do agente**: acompanhe-os em *Administração → Casino*.
 - A autoexclusão também bloqueia o casino.
 - **Não usamos** a alteração de RTP (`/v4/agent/rtp`, `rtp`/`win_ratio` no arranque do jogo) nem as
@@ -105,6 +108,23 @@ Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma
 O servidor reencaminha o WebSocket para o navegador em tempo real por Server-Sent Events
 (`/api/events/<id>/live`); sem WebSocket, a página atualiza a cada 15 s.
 
+## Liquidação de mercados
+
+Todos os mercados são liquidados pelo resultado do tempo regulamentar:
+
+| Situação | O que acontece |
+|---|---|
+| Jogo termina (dados ao vivo ou resultado no painel) | Todas as seleções são resolvidas (ganha / perde / anulada — "empate anula" num empate); múltiplas pagam o produto das odds das pernas ganhas, pernas anuladas contam 1.00 |
+| Jogo cancelado ou abandonado | Apostas anuladas e montantes devolvidos |
+| Jogo adiado | Mercado suspenso; se não tiver nova data em `POSTPONED_VOID_HOURS` (48 h), é anulado automaticamente |
+| Evento terminado com apostas ainda em aberto | O motor de liquidação (corre a cada minuto) liquida-as — rede de segurança |
+
+Em **Administração → Liquidação** vê as apostas em aberto, a responsabilidade máxima, o que foi pago e a
+margem do dia, e a fila de eventos que precisam de decisão (ao vivo há mais de 4 h, atrasados sem
+resultado, adiados). Pode liquidar com um resultado, anular com motivo ou executar a liquidação na hora.
+Cada liquidação fica registada (tabela `settlements`) com a origem — dados ao vivo, automático ou o
+administrador que a fez.
+
 ## Estrutura
 
 ```
@@ -112,6 +132,7 @@ server/
   index.js      arranque do servidor
   app.js        rotas da API (auth, conta, carteira, apostas, admin) e ficheiros estáticos
   betting.js    colocação de apostas e liquidação
+  settlement.js motor de liquidação (rede de segurança, adiados, fila para o operador)
   markets.js    mercados disponíveis e regras de liquidação
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)

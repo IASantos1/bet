@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS bet_legs (
 );
 CREATE INDEX IF NOT EXISTS idx_bet_legs_event ON bet_legs(event_id, status);
 CREATE INDEX IF NOT EXISTS idx_bet_legs_bet ON bet_legs(bet_id);
+
+-- Settlement audit log: every result or void applied to an event, by whom and with what effect.
+CREATE TABLE IF NOT EXISTS settlements (
+  id           INTEGER PRIMARY KEY,
+  event_id     INTEGER NOT NULL REFERENCES events(id),
+  action       TEXT    NOT NULL CHECK (action IN ('result', 'void')),
+  home_score   INTEGER,
+  away_score   INTEGER,
+  bets_settled INTEGER NOT NULL DEFAULT 0,
+  payout_cents INTEGER NOT NULL DEFAULT 0,
+  source       TEXT    NOT NULL CHECK (source IN ('feed', 'admin', 'engine')),
+  user_id      INTEGER REFERENCES users(id),
+  note         TEXT,
+  created_at   TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_event ON settlements(event_id);
 `;
 
 export function openDb(file) {
@@ -125,6 +141,8 @@ function migrate(db) {
   if (!cols.has('away_team_ext')) db.exec('ALTER TABLE events ADD COLUMN away_team_ext TEXT');
   // When the current in-play price was received (live odds over the provider's WebSocket).
   if (!cols.has('live_odds_at')) db.exec('ALTER TABLE events ADD COLUMN live_odds_at TEXT');
+  // When the provider first reported the match postponed (voided after 48 h without a new date).
+  if (!cols.has('postponed_at')) db.exec('ALTER TABLE events ADD COLUMN postponed_at TEXT');
 
   // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
   // bet legs stay linked) and bet legs record the market they were placed on.
@@ -139,6 +157,8 @@ function migrate(db) {
   // Casino (aggregator Agent API): the player's code there.
   const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
+  // Single wallet: 1 while the player's balance is in the casino (a game is open).
+  if (!userCols.has('casino_active')) db.exec('ALTER TABLE users ADD COLUMN casino_active INTEGER NOT NULL DEFAULT 0');
 
   // Ledger types for casino transfers. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.

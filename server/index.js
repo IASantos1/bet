@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { createFeed } from './feed.js';
 import { createLiveSocket } from './livews.js';
 import { createCasino } from './casino.js';
+import { createSettlementEngine } from './settlement.js';
 
 const db = openDb(config.dbPath);
 const log = (msg) => console.warn(`[feed] ${msg}`);
@@ -17,12 +18,19 @@ const stopFeed = feed.start();
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
-const server = createApp(db, { feed, casino, liveSocket }).listen(config.port, () => {
+const settlement = createSettlementEngine(db, {
+  postponedVoidHours: config.settlement.postponedVoidHours,
+  log: (msg) => console.log(`[liquidação] ${msg}`),
+});
+const stopSettlement = settlement.start();
+
+const server = createApp(db, { feed, casino, liveSocket, settlement }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
 const shutdown = () => {
   stopFeed();
+  stopSettlement();
   liveSocket?.stop();
   server.close(() => {
     db.close();

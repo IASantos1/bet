@@ -126,10 +126,11 @@ test('self-excluded players cannot play', async () => {
   db.close();
 });
 
-test('HTTP API: games are public, wallet and launch need a session', async () => {
+test('single wallet: the balance follows the player into the game and back', async () => {
   const db = openDb(':memory:');
   seed(db);
-  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: fakeAgentApi().fetchImpl });
+  const api = fakeAgentApi();
+  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: api.fetchImpl });
   const server = createApp(db, { casino, loginAttempts: 100, registrations: 100 }).listen(0);
   await new Promise((r) => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -140,19 +141,62 @@ test('HTTP API: games are public, wallet and launch need a session', async () =>
     if (set) cookie = set.split(';')[0];
     return { status: res.status, body: await res.json() };
   };
-  assert.equal((await call('GET', '/api/casino/games')).body.games.length, 1);
-  assert.equal((await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' })).status, 401);
-  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
-  await call('POST', '/api/wallet/deposit', { amount: 50 });
-  assert.equal((await call('POST', '/api/casino/transfer-in', { amount: 80 })).status, 400, 'more than the balance');
-  const t = await call('POST', '/api/casino/transfer-in', { amount: 20 });
-  assert.deepEqual(t.body, { balance: 30, casinoBalance: 20 });
-  const l = await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' });
-  assert.equal(l.status, 200);
-  assert.match(l.body.url, /^https:\/\/games\.example/);
-  const o = await call('POST', '/api/casino/transfer-out', {});
-  assert.deepEqual(o.body, { amount: 20, balance: 50, casinoBalance: 0 });
-  server.close();
+  try {
+    assert.equal((await call('GET', '/api/casino/games')).body.games.length, 1);
+    assert.equal((await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' })).status, 401);
+    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+    await call('POST', '/api/wallet/deposit', { amount: 50 });
+
+    // Opening a game moves the whole balance; no amount is asked.
+    const l = await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' });
+    assert.equal(l.status, 200, JSON.stringify(l.body));
+    assert.match(l.body.url, /^https:\/\/games\.example/);
+    assert.equal(l.body.balance, 50);
+    assert.equal((await call('GET', '/api/me')).body.user.casinoActive, true);
+    assert.deepEqual((await call('GET', '/api/casino/wallet')).body, { balance: 50, inCasino: true });
+
+    // The player wins in the game (casino wallet 50 -> 65) …
+    const code = db.prepare('SELECT casino_user_code FROM users WHERE email = ?').get('rui@x.pt').casino_user_code;
+    api.wallets.set(code, 65);
+    // … then places a sports bet without leaving the game first: the money comes back automatically.
+    const ev = (await call('GET', '/api/events')).body.events.find((e) => e.status === 'scheduled');
+    const sel = ev.selections[0];
+    const bet = await call('POST', '/api/bets', { mode: 'single', stake: 5, selections: [{ selectionId: sel.id, odds: sel.odds }] });
+    assert.equal(bet.status, 201, JSON.stringify(bet.body));
+    assert.equal(bet.body.balance, 60);
+    assert.equal((await call('GET', '/api/me')).body.user.casinoActive, false);
+    assert.equal(api.wallets.get(code), 0);
+
+    // Leaving a game with nothing in it is harmless.
+    await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' });
+    const c = await call('POST', '/api/casino/close', {});
+    assert.deepEqual(c.body, { amount: 60, balance: 60 });
+    assert.deepEqual((await call('POST', '/api/casino/close', {})).body, { amount: 0, balance: 60 });
+    const types = (await call('GET', '/api/wallet')).body.transactions.map((t) => t.type).reverse();
+    assert.deepEqual(types, ['deposit', 'casino_out', 'casino_in', 'bet', 'casino_out', 'casino_in']);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    db.close();
+  }
+});
+
+test('catalogue is served in pages with filters', async () => {
+  const db = openDb(':memory:');
+  const many = Array.from({ length: 50 }, (_, i) => ({ provider_id: 1, game_code: `g${i}`, game_name: i % 10 === 0 ? `Roleta ${i}` : `Slot ${i}`, launch_enable: true, category: i % 10 === 0 ? 'Live' : 'Slots' }));
+  const fetchImpl = async (url) => {
+    const path = new URL(url).pathname;
+    const data = path === '/v4/game/providers' ? [{ provider_id: 1, provider_name: 'P', status: 1 }] : path === '/v4/game/games' ? many : null;
+    return new Response(JSON.stringify({ code: 0, data }), { status: 200 });
+  };
+  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl });
+  const p1 = await casino.gamesPage({ offset: 0, limit: 24 });
+  assert.equal(p1.total, 50);
+  assert.equal(p1.games.length, 24);
+  const p3 = await casino.gamesPage({ offset: 48, limit: 24 });
+  assert.deepEqual(p3.games.map((g) => g.code), ['g48', 'g49']);
+  assert.equal((await casino.gamesPage({ category: 'Ao Vivo' })).total, 5);
+  assert.equal((await casino.gamesPage({ q: 'roleta' })).total, 5);
   db.close();
 });
 

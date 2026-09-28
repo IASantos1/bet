@@ -341,9 +341,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .clickable { cursor: pointer; }
 .match-card.clickable:hover, .live-card.clickable:hover { border-color: #3a414b; }
 .event-row.clickable:hover { background: #161a20; }
-.more-markets { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 800; color: #ff666b; }
-.more-markets:hover { color: #fff; }
-.event-teams .more-markets { margin-top: 2px; font-size: 10px; }
 
 /* ---------- match page ---------- */
 .back-link { display: inline-block; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
@@ -424,17 +421,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .immersive .left-sidebar, .immersive .betslip, .immersive .slip-fab { display: none !important; }
 .immersive .content { padding: 0; }
 .casino-player { display: flex; flex-direction: column; height: calc(100vh - 68px); }
-.casino-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0f1115; border-bottom: 1px solid var(--line); }
-.casino-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.casino-title strong, .casino-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.casino-title small { color: var(--muted); font-size: 11px; }
 .casino-frame { flex: 1; width: 100%; border: 0; background: #000; }
 @media (max-width: 1000px) {
   .casino-player { height: calc(100vh - 68px - 62px); }
 }
 @media (max-width: 700px) {
   .casino-player { height: calc(100vh - 60px - 62px); }
-  .casino-bar .ghost-btn[data-action="casino-fullscreen"] { display: none; }
   .match-teams { gap: 6px; }
   .match-team { font-size: 12px; }
   .team-icon.big { width: 48px; height: 48px; font-size: 16px; }
@@ -444,3 +436,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .match-stats-grid { grid-template-columns: 1fr; }
   .market-line { grid-template-columns: 70px 1fr; }
 }
+
+.casino-filters { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.casino-filters .casino-tabs { margin: 0; }
+.casino-search { flex: 1; min-width: 200px; max-width: 360px; margin: 0; height: 38px; }
+.load-more { display: flex; justify-content: center; margin-top: 18px; }
+.casino-loading { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid #303640; border-top-color: var(--red); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

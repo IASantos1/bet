@@ -55,6 +55,11 @@ export const config = {
     minTransferCents: int(env.CASINO_MIN_TRANSFER_CENTS, 100),
   },
 
+  // Settlement engine: postponed matches without a new date are voided after this many hours.
+  settlement: {
+    postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
+  },
+
   // In-play bets on feed matches are refused when the last live price is older than this.
   liveOddsMaxAgeSeconds: int(env.LIVE_ODDS_MAX_AGE_SECONDS, 180),
 

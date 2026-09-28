@@ -86,44 +86,57 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   return betIds;
 }
 
-/** Decides a bet once its legs allow it and pays winnings/refunds. Runs inside a transaction. */
+/**
+ * Decides a bet once its legs allow it and pays winnings/refunds. Runs inside a transaction.
+ * Returns the amount credited (cents): winnings, a refund, or 0.
+ */
 export function settleBet(db, betId) {
   const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(betId);
-  if (!bet || bet.status !== 'open') return;
+  if (!bet || bet.status !== 'open') return 0;
   const legs = db.prepare('SELECT status, odds_x100 FROM bet_legs WHERE bet_id = ?').all(betId);
   const now = nowIso();
 
   if (legs.some((l) => l.status === 'lost')) {
     db.prepare("UPDATE bets SET status = 'lost', settled_at = ? WHERE id = ?").run(now, betId);
-    return;
+    return 0;
   }
-  if (legs.some((l) => l.status === 'open')) return;
+  if (legs.some((l) => l.status === 'open')) return 0;
 
   const won = legs.filter((l) => l.status === 'won');
   if (won.length === 0) {
     db.prepare("UPDATE bets SET status = 'void', payout_cents = ?, settled_at = ? WHERE id = ?")
       .run(bet.stake_cents, now, betId);
     postTransaction(db, bet.user_id, bet.stake_cents, 'refund', `Aposta #${betId} anulada — reembolso`, `bet:${betId}`);
-    return;
+    return bet.stake_cents;
   }
   // Void legs count as odds 1.00, so the payout uses only the winning legs.
   const { payoutCents } = payoutFor(bet.stake_cents, won.map((l) => l.odds_x100));
   db.prepare("UPDATE bets SET status = 'won', payout_cents = ?, settled_at = ? WHERE id = ?").run(payoutCents, now, betId);
   postTransaction(db, bet.user_id, payoutCents, 'payout', `Aposta #${betId} ganha`, `bet:${betId}`);
+  return payoutCents;
 }
 
-/** Settles every open leg on an event that is finished (by result) or cancelled (void). */
-export function settleEvent(db, eventId) {
-  const ev = db.prepare('SELECT status, result FROM events WHERE id = ?').get(eventId);
+/**
+ * Settles every open leg on an event that is finished (by result, per market) or cancelled (void),
+ * and records it in the settlements log. Runs inside a transaction. Returns the bets touched.
+ * `source` says who triggered it: 'feed' (provider result), 'admin' or 'engine' (automatic rules).
+ */
+export function settleEvent(db, eventId, { source = 'engine', userId = null, note = null } = {}) {
+  const ev = db.prepare('SELECT status, home_score, away_score FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
-  const ev2 = db.prepare('SELECT home_score, away_score FROM events WHERE id = ?').get(eventId);
   const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
   const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
   for (const leg of legs) {
-    const status = ev.status === 'cancelled' ? 'void' : legOutcome(leg.market, leg.code, ev2.home_score, ev2.away_score);
+    const status = ev.status === 'cancelled' ? 'void' : legOutcome(leg.market, leg.code, ev.home_score, ev.away_score);
     setLeg.run(status, leg.id);
   }
   const betIds = [...new Set(legs.map((l) => l.bet_id))];
-  for (const id of betIds) settleBet(db, id);
+  let payoutCents = 0;
+  for (const id of betIds) payoutCents += settleBet(db, id);
+  db.prepare(
+    `INSERT INTO settlements (event_id, action, home_score, away_score, bets_settled, payout_cents, source, user_id, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(eventId, ev.status === 'cancelled' ? 'void' : 'result', ev.status === 'cancelled' ? null : ev.home_score,
+    ev.status === 'cancelled' ? null : ev.away_score, betIds.length, payoutCents, source, userId, note, nowIso());
   return betIds.length;
 }

@@ -9,6 +9,7 @@ import {
 import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
+import { createSettlementEngine } from './settlement.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE = 'cb_session';
@@ -50,6 +51,7 @@ function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, phone: u.phone, birthdate: u.birthdate, role: u.role,
     balance: cents(u.balance_cents), excludedUntil: u.excluded_until, createdAt: u.created_at,
+    casinoActive: !!u.casino_active,
   };
 }
 
@@ -68,7 +70,9 @@ function scoreInput(v, label) {
 
 // ---------- app ----------
 
-export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null, casino = null, liveSocket = null } = {}) {
+export function createApp(db, {
+  loginAttempts = 10, registrations = 10, feed = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
+} = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -136,6 +140,18 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
   }
 
   const userById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+
+  // Single wallet: anything that uses the balance first brings back money left in the casino.
+  const reclaimCasino = async (req, _res, next) => {
+    if (!req.user?.casino_active || !casino?.enabled) return next();
+    try {
+      await casino.syncBack(req.user);
+      req.user = userById(req.user.id);
+      next();
+    } catch (err) {
+      next(err instanceof HttpError ? err : new HttpError(502, `Não foi possível recuperar o saldo do casino: ${err.message}`));
+    }
+  };
 
   // ---------- events ----------
 
@@ -329,7 +345,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
 
   // ---------- wallet ----------
 
-  app.get('/api/wallet', requireUser, (req, res) => {
+  app.get('/api/wallet', requireUser, reclaimCasino, (req, res) => {
     const transactions = db.prepare(
       'SELECT id, type, amount_cents, balance_after_cents, description, created_at FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 100'
     ).all(req.user.id).map((t) => ({
@@ -361,7 +377,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     res.status(201).json({ balance: cents(balance) });
   });
 
-  app.post('/api/wallet/withdraw', requireUser, (req, res) => {
+  app.post('/api/wallet/withdraw', requireUser, reclaimCasino, (req, res) => {
     const amount = parseEuros(req.body.amount, 'Valor do levantamento');
     if (amount < config.limits.minWithdrawCents) throw new HttpError(400, `Levantamento mínimo: €${cents(config.limits.minWithdrawCents)}.`);
     const iban = str(req.body.iban, 60).replace(/\s+/g, '').toUpperCase();
@@ -377,7 +393,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
 
   // ---------- bets ----------
 
-  app.post('/api/bets', requireUser, (req, res) => {
+  app.post('/api/bets', requireUser, reclaimCasino, (req, res) => {
     const stakeCents = parseEuros(req.body.stake, 'Valor da aposta');
     const picks = Array.isArray(req.body.selections)
       ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
@@ -421,34 +437,23 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
   };
 
   app.get('/api/casino/games', wrap(async (req, res) => {
-    if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [] });
-    const data = await casino.games();
+    if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [], total: 0 });
+    const q = req.query;
+    const data = await casino.gamesPage({ offset: q.offset, limit: q.limit, provider: str(q.provider, 20), category: str(q.category, 20), q: str(q.q, 60) });
     // Players get a generic message; the operator sees the provider's reason.
     if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
     res.json(data);
   }));
 
+  // One wallet: the balance shown while playing is the casino balance (the ClassicBet part is 0).
   app.get('/api/casino/wallet', requireUser, wrap(async (req, res) => {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
-    const casinoCents = await casino.casinoBalanceCents(req.user);
-    res.json({ balance: cents(userById(req.user.id).balance_cents), casinoBalance: cents(casinoCents) });
+    const u = userById(req.user.id);
+    const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
+    res.json({ balance: cents(u.balance_cents + casinoCents), inCasino: !!u.casino_active });
   }));
 
-  app.post('/api/casino/transfer-in', requireUser, wrap(async (req, res) => {
-    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
-    const amount = parseEuros(req.body.amount, 'Valor');
-    if (amount < config.casino.minTransferCents) throw new HttpError(400, `Mínimo: €${cents(config.casino.minTransferCents)}.`);
-    if (amount > req.user.balance_cents) throw new HttpError(400, 'Saldo insuficiente.');
-    const { casinoCents } = await casino.transferIn(req.user, amount);
-    res.json({ balance: cents(userById(req.user.id).balance_cents), casinoBalance: cents(casinoCents) });
-  }));
-
-  app.post('/api/casino/transfer-out', requireUser, wrap(async (req, res) => {
-    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
-    const { amountCents } = await casino.transferOut(req.user);
-    res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents), casinoBalance: 0 });
-  }));
-
+  // Opens a game: the whole balance goes with the player into the casino.
   app.post('/api/casino/launch', requireUser, wrap(async (req, res) => {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
     const providerId = Number(req.body.providerId);
@@ -456,8 +461,15 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     if (!Number.isInteger(providerId) || !gameCode) throw new HttpError(400, 'Jogo inválido.');
     const origin = `${req.protocol}://${req.get('host')}`;
     // The game runs in an iframe; its "home" button lands on a page that sends the tab back to the casino.
-    const url = await casino.launch(req.user, { providerId, gameCode, returnUrl: `${origin}/casino-return.html` });
-    res.json({ url });
+    const { url, casinoCents } = await casino.enterGame(req.user, { providerId, gameCode, returnUrl: `${origin}/casino-return.html` });
+    res.json({ url, balance: cents(casinoCents) });
+  }));
+
+  // Leaving the game: the balance comes back to the ClassicBet wallet.
+  app.post('/api/casino/close', requireUser, wrap(async (req, res) => {
+    if (!casinoOn()) return res.json({ amount: 0, balance: cents(req.user.balance_cents) });
+    const amountCents = await casino.leaveGame(req.user);
+    res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents) });
   }));
 
   // ---------- admin ----------
@@ -570,7 +582,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
       db.prepare(
         "UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = 'Final', updated_at = ? WHERE id = ?"
       ).run(home, away, resultCode(home, away), nowIso(), ev.id);
-      return settleEvent(db, ev.id);
+      return settleEvent(db, ev.id, { source: 'admin', userId: req.user.id, note: str(req.body.note, 200) || null });
     });
     res.json({ event: loadEvents('e.id = ?', [ev.id])[0], settledBets: settled });
   });
@@ -579,9 +591,18 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     const ev = editableEvent(req.params.id);
     const settled = tx(db, () => {
       db.prepare("UPDATE events SET status = 'cancelled', updated_at = ? WHERE id = ?").run(nowIso(), ev.id);
-      return settleEvent(db, ev.id);
+      return settleEvent(db, ev.id, { source: 'admin', userId: req.user.id, note: str(req.body.reason, 200) || 'Anulado pelo operador' });
     });
     res.json({ event: loadEvents('e.id = ?', [ev.id])[0], settledBets: settled });
+  });
+
+  // Settlement desk: what is at stake, what needs a decision, and everything already settled.
+  admin.get('/settlement', (_req, res) => {
+    res.json({ summary: settlement.summary(), queue: settlement.queue(), history: settlement.history(50) });
+  });
+
+  admin.post('/settlement/run', (_req, res) => {
+    res.json({ result: settlement.runOnce(), summary: settlement.summary() });
   });
 
   admin.get('/withdrawals', (_req, res) => {
