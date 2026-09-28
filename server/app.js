@@ -8,6 +8,7 @@ import {
 } from './security.js';
 import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
+import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE = 'cb_session';
@@ -67,7 +68,7 @@ function scoreInput(v, label) {
 
 // ---------- app ----------
 
-export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null, casino = null } = {}) {
+export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null, casino = null, liveSocket = null } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -79,10 +80,12 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     res.set({
       'Content-Security-Policy':
         "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self'; " +
-        "manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        // Casino games run inside the page in an iframe from the provider's host.
+        `frame-src https:${config.isProduction ? '' : ' http:'}; ` +
+        "manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'same-origin',
-      'X-Frame-Options': 'DENY',
+      'X-Frame-Options': 'SAMEORIGIN',
     });
     if (config.isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
@@ -136,25 +139,46 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
 
   // ---------- events ----------
 
-  function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300) {
+  const codeRank = (market, code) => MARKETS[market]?.codes.indexOf(code) ?? 99;
+
+  /**
+   * Events with their match-result (1X2) selections — what lists and cards show. With
+   * `allMarkets`, also every market grouped for the match page.
+   */
+  function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
     const events = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
-      `SELECT id, event_id, code, odds_x100, active FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})
-       ORDER BY CASE code WHEN '1' THEN 0 WHEN 'X' THEN 1 ELSE 2 END`
+      `SELECT id, event_id, market, code, odds_x100, active FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})
+       ${allMarkets ? '' : "AND (market = '1x2' OR active = 1)"}`
     ).all(...ids);
     const byEvent = new Map(ids.map((id) => [id, []]));
-    for (const s of sels) {
-      byEvent.get(s.event_id).push({ id: s.id, code: s.code, odds: s.odds_x100 / 100, active: !!s.active });
-    }
-    return events.map((e) => ({
-      id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
-      startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
-      clock: e.clock, result: e.result, featured: !!e.featured, source: e.source, selections: byEvent.get(e.id),
-      homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
-      leagueLogo: leagueLogo(e.source, e.league_ext),
-    }));
+    for (const s of sels) byEvent.get(s.event_id).push(s);
+    return events.map((e) => {
+      const rows = byEvent.get(e.id);
+      const pub = (s) => ({ id: s.id, market: s.market, code: s.code, label: selectionLabel(s.market, s.code, e.home, e.away), odds: s.odds_x100 / 100, active: !!s.active });
+      const out = {
+        id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
+        startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
+        clock: e.clock, result: e.result, featured: !!e.featured, source: e.source,
+        selections: rows.filter((s) => s.market === '1x2').sort((a, b) => codeRank('1x2', a.code) - codeRank('1x2', b.code)).map(pub),
+        // How many more markets the match page offers (drives the "+N" on cards).
+        marketCount: new Set(rows.filter((s) => s.active && s.market !== '1x2').map((s) => s.market)).size,
+        homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
+        leagueLogo: leagueLogo(e.source, e.league_ext),
+        liveTracker: e.source === 'bzzoiro' && e.status === 'live',
+      };
+      if (allMarkets) {
+        out.markets = MARKET_ORDER
+          .map((m) => ({
+            market: m, name: MARKETS[m].name,
+            selections: rows.filter((s) => s.market === m).sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
+          }))
+          .filter((m) => m.selections.length);
+      }
+      return out;
+    });
   }
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -185,6 +209,44 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     // Imported fixtures stay hidden until the feed has priced them.
     clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
     res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 800), serverTime: now });
+  });
+
+  // One match with every market (the match page).
+  app.get('/api/events/:id', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, 'Evento não encontrado.');
+    const [event] = loadEvents('e.id = ?', [id], 'e.id', 1, { allMarkets: true });
+    if (!event) throw new HttpError(404, 'Evento não encontrado.');
+    res.json({ event });
+  });
+
+  const eventRow = (id) => db.prepare('SELECT * FROM events WHERE id = ?').get(Number(id));
+
+  // Statistics and timeline for the match page (feed matches only).
+  app.get('/api/events/:id/stats', async (req, res, next) => {
+    try {
+      const ev = eventRow(req.params.id);
+      if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      if (ev.source !== 'bzzoiro' || !feed?.status().enabled || ev.status === 'scheduled') return res.json({ stats: [], incidents: [] });
+      res.json(await feed.matchExtras(ev.external_id, { live: ev.status === 'live' }));
+    } catch (err) { next(err); }
+  });
+
+  // Server-sent events for a live match: score/clock/stats, ball position, actions and odds changes.
+  app.get('/api/events/:id/live', (req, res) => {
+    const ev = eventRow(req.params.id);
+    if (!ev || ev.source !== 'bzzoiro' || ev.status !== 'live' || !liveSocket) return res.status(204).end();
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders();
+    const send = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    send('snapshot', { ...liveSocket.snapshot(ev.id), following: liveSocket.isFollowing(ev.external_id) });
+    const onMessage = (m) => send(m.type, m.data);
+    liveSocket.bus.on(`e:${ev.id}`, onMessage);
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      liveSocket.bus.off(`e:${ev.id}`, onMessage);
+    });
   });
 
   app.get('/api/results', (_req, res) => {
@@ -333,14 +395,15 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     if (!bets.length) return [];
     const ids = bets.map((b) => b.id);
     const legs = db.prepare(
-      `SELECT l.bet_id, l.code, l.odds_x100, l.status, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
+      `SELECT l.bet_id, l.market, l.code, l.odds_x100, l.status, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
     return bets.map((b) => ({
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        match: `${l.home} vs ${l.away}`, competition: l.competition, code: l.code, odds: l.odds_x100 / 100,
+        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market]?.name || l.market,
+        code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
       })),
     }));
@@ -392,7 +455,8 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     const gameCode = str(req.body.gameCode, 80);
     if (!Number.isInteger(providerId) || !gameCode) throw new HttpError(400, 'Jogo inválido.');
     const origin = `${req.protocol}://${req.get('host')}`;
-    const url = await casino.launch(req.user, { providerId, gameCode, returnUrl: `${origin}/#/casino` });
+    // The game runs in an iframe; its "home" button lands on a page that sends the tab back to the casino.
+    const url = await casino.launch(req.user, { providerId, gameCode, returnUrl: `${origin}/casino-return.html` });
     res.json({ url });
   }));
 
@@ -423,13 +487,13 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
   function writeOdds(eventId, odds) {
     if (!odds || typeof odds !== 'object') return;
     const upsert = db.prepare(
-      `INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, ?, ?, 1)
-       ON CONFLICT (event_id, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+      `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', ?, ?, 1)
+       ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
     );
     for (const code of ['1', 'X', '2']) {
       if (!(code in odds)) continue;
       const v = oddsInput(odds[code], code);
-      if (v === null) db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND code = ?').run(eventId, code);
+      if (v === null) db.prepare("UPDATE selections SET active = 0 WHERE event_id = ? AND market = '1x2' AND code = ?").run(eventId, code);
       else upsert.run(eventId, code, v);
     }
   }

@@ -65,36 +65,108 @@ export function normalizeEvent(ev) {
   };
 }
 
-/** Consensus 1X2 prices from /events/{id}/odds/ → { '1': 2.1, X: 3.3, '2': 3.5 } (null when absent). */
+const toX100 = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null;
+};
+
+// The eleven consensus keys of /events/{id}/odds/ → our market|code.
+const EVENT_ODDS_KEYS = [
+  ['1x2|1', ['home_win', 'home', '1']], ['1x2|X', ['draw', 'X', 'x']], ['1x2|2', ['away_win', 'away', '2']],
+  ['ou|O1.5', ['over_15_goals']], ['ou|U1.5', ['under_15_goals']],
+  ['ou|O2.5', ['over_25_goals']], ['ou|U2.5', ['under_25_goals']],
+  ['ou|O3.5', ['over_35_goals']], ['ou|U3.5', ['under_35_goals']],
+  ['btts|Y', ['btts_yes']], ['btts|N', ['btts_no']],
+];
+export const EVENT_ODDS_COVERED = EVENT_ODDS_KEYS.map(([k]) => k);
+
+/** Consensus prices from /events/{id}/odds/ → { prices: { '1x2|1': 210, 'ou|O2.5': 185, … }, nextUpdateAt }. */
 export function normalizeOdds(data) {
   const o = data?.odds || data || {};
-  const price = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null;
-  };
-  return {
-    odds: { 1: price(first(o.home_win, o.home, o['1'])), X: price(first(o.draw, o.X, o.x)), 2: price(first(o.away_win, o.away, o['2'])) },
-    nextUpdateAt: data?.next_update_at || null,
-  };
+  const prices = {};
+  for (const [key, names] of EVENT_ODDS_KEYS) {
+    const v = toX100(first(...names.map((n) => o[n])));
+    if (v) prices[key] = v;
+  }
+  return { prices, nextUpdateAt: data?.next_update_at || null };
 }
 
-const OUTCOME_CODE = { HOME: '1', DRAW: 'X', AWAY: '2', 1: '1', X: 'X', 2: '2' };
+// Markets requested from the bulk /odds/ feed (its `market` vocabulary).
+export const BULK_MARKETS = ['1x2', 'over_under_15', 'over_under_25', 'over_under_35', 'btts', 'double_chance', 'draw_no_bet'];
 
-/** One row of the /odds/ feed (consensus on a free key) → { eventId, code, oddsX100, updatedAt } or null. */
+/** Maps the provider's (market, outcome) to our market|code, or null. */
+export function mapMarket(rawMarket, rawOutcome) {
+  const m = String(rawMarket || '').toLowerCase();
+  const out = String(rawOutcome || '');
+  const up = out.toUpperCase();
+  if (['1x2', 'match_result', 'match_winner', 'h2h'].includes(m)) {
+    const code = { HOME: '1', DRAW: 'X', AWAY: '2', 1: '1', X: 'X', 2: '2' }[up];
+    return code ? `1x2|${code}` : null;
+  }
+  const ou = /^over_under_(\d)(\d)$/.exec(m);
+  if (ou) {
+    const line = `${ou[1]}.${ou[2]}`;
+    return up === 'OVER' ? `ou|O${line}` : up === 'UNDER' ? `ou|U${line}` : null;
+  }
+  if (m === 'btts' || m === 'both_teams_to_score') return up === 'YES' ? 'btts|Y' : up === 'NO' ? 'btts|N' : null;
+  if (m === 'double_chance') return ['1X', '12', 'X2'].includes(up) ? `dc|${up}` : null;
+  if (m === 'draw_no_bet' || m === 'dnb') {
+    const code = { HOME: '1', AWAY: '2', 1: '1', 2: '2' }[up];
+    return code ? `dnb|${code}` : null;
+  }
+  return null;
+}
+
+/** One row of the /odds/ feed → { eventId, key: 'market|code', oddsX100, updatedAt, book } or null. */
 export function normalizeOddsRow(r) {
   if (!r || typeof r !== 'object') return null;
-  const market = String(first(r.market, r.market_slug, '1x2')).toLowerCase();
-  if (!['1x2', 'match_result', 'match_winner', 'h2h'].includes(market)) return null;
   const period = String(first(r.period, 'ft')).toLowerCase();
   if (!['ft', 'full_time', 'fulltime', 'full-time', 'match'].includes(period)) return null;
   const eventId = first(r.event_id, r.event?.id, typeof r.event === 'number' || typeof r.event === 'string' ? r.event : undefined);
-  const code = OUTCOME_CODE[String(first(r.outcome, r.selection, '')).toUpperCase()];
-  const n = Number(first(r.decimal_odds, r.odds, r.price));
-  if (eventId === undefined || !code || !Number.isFinite(n) || n <= 1) return null;
+  const key = mapMarket(first(r.market, r.market_slug, '1x2'), first(r.outcome, r.selection, ''));
+  const x100 = toX100(first(r.decimal_odds, r.odds, r.price));
+  if (eventId === undefined || !key || !x100) return null;
   return {
-    eventId: String(eventId), code, oddsX100: Math.round(n * 100), updatedAt: first(r.updated_at, r.last_seen_at) || null,
+    eventId: String(eventId), key, oddsX100: x100, updatedAt: first(r.updated_at, r.last_seen_at) || null,
     book: String(first(r.bookmaker_slug, r.bookmaker?.slug, 'consensus')),
   };
+}
+
+const STAT_LABELS = [
+  ['ball_possession', 'Posse de bola', '%'], ['xg', 'Golos esperados (xG)', ''], ['total_shots', 'Remates', ''],
+  ['shots_on_target', 'Remates à baliza', ''], ['big_chances', 'Grandes oportunidades', ''], ['corner_kicks', 'Cantos', ''],
+  ['fouls', 'Faltas', ''], ['offsides', 'Foras de jogo', ''], ['yellow_cards', 'Cartões amarelos', ''], ['red_cards', 'Cartões vermelhos', ''],
+];
+
+/** /events/{id}/stats/ → [{ key, label, home, away, unit }] with only the stats the match reported. */
+export function normalizeStats(data) {
+  const home = data?.stats?.home || data?.home || {};
+  const away = data?.stats?.away || data?.away || {};
+  const val = (v) => (v && typeof v === 'object' ? first(v.actual, v.value, v.total) : v);
+  return STAT_LABELS
+    .map(([key, label, unit]) => ({ key, label, unit, home: val(home[key]), away: val(away[key]) }))
+    .filter((s) => s.home !== undefined && s.home !== null && s.away !== undefined && s.away !== null)
+    .map((s) => ({ ...s, home: Number(s.home), away: Number(s.away) }));
+}
+
+/** /events/{id}/incidents/ → [{ minute, type: goal|yellow|red|sub|var, side, player, detail }]. */
+export function normalizeIncidents(data) {
+  return listOf(Array.isArray(data?.incidents) ? data.incidents : data).map((i) => {
+    const raw = String(first(i.type, i.incident_type, i.incidentType, '')).toLowerCase();
+    const cls = String(first(i.card_type, i.incident_class, i.incidentClass, i.class, '')).toLowerCase();
+    let type = null;
+    if (raw.includes('goal')) type = 'goal';
+    else if (raw.includes('card')) type = cls.includes('red') ? 'red' : 'yellow';
+    else if (raw.includes('sub')) type = 'sub';
+    else if (raw.includes('var')) type = 'var';
+    if (!type || i.rescinded === true) return null;
+    const home = first(i.is_home, i.isHome, i.home);
+    const side = home === true ? 'home' : home === false ? 'away' : String(first(i.team, i.side, '')).toLowerCase() || null;
+    return {
+      minute: toInt(first(i.minute, i.time, i.min)), type, side: side === 'home' || side === 'away' ? side : null,
+      player: first(name(i.player), i.player_name, name(i.player_in)) || null, detail: first(i.text, cls) || null,
+    };
+  }).filter(Boolean).sort((a, b) => (a.minute ?? 0) - (b.minute ?? 0));
 }
 
 // ---------- feed ----------
@@ -104,7 +176,7 @@ export function createFeed(db, {
   fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = {
-    enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, oddsCursor: null,
+    enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, oddsCursors: {},
     // Latest price per event|outcome per bookmaker. On a free key the feed sends only the
     // "consensus" row; with Football Unlimited it sends every book, and we average them.
     books: new Map(),
@@ -162,15 +234,22 @@ export function createFeed(db, {
     return { id: row.id };
   }
 
-  function writeOdds(eventId, odds) {
-    const upsert = db.prepare(
-      `INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, ?, ?, 1)
-       ON CONFLICT (event_id, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
-    );
-    const off = db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND code = ?');
-    for (const code of ['1', 'X', '2']) {
-      if (odds[code]) upsert.run(eventId, code, odds[code]);
-      else off.run(eventId, code);
+  const upsertSel = db.prepare(
+    `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+  );
+  const offSel = db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND market = ? AND code = ?');
+
+  /** Writes { 'market|code': x100 }; keys in `covered` but absent from `prices` are closed. */
+  function writeOdds(eventId, prices, covered = []) {
+    for (const [key, x100] of Object.entries(prices)) {
+      const [market, code] = key.split('|');
+      upsertSel.run(eventId, market, code, x100);
+    }
+    for (const key of covered) {
+      if (prices[key]) continue;
+      const [market, code] = key.split('|');
+      offSel.run(eventId, market, code);
     }
   }
 
@@ -232,10 +311,10 @@ export function createFeed(db, {
     let priced = bulk ? bulk.events : 0;
     for (const row of due) {
       try {
-        const { odds, nextUpdateAt } = normalizeOdds(await get(`/events/${encodeURIComponent(row.external_id)}/odds/`));
+        const { prices, nextUpdateAt } = normalizeOdds(await get(`/events/${encodeURIComponent(row.external_id)}/odds/`));
         const next = nextUpdateAt && new Date(nextUpdateAt) > new Date() ? nextUpdateAt : new Date(Date.now() + 30 * 60_000).toISOString();
         tx(db, () => {
-          if (odds['1'] && odds['2']) { writeOdds(row.id, odds); priced += 1; } else suspendMarkets(row.id);
+          if (prices['1x2|1'] && prices['1x2|2']) { writeOdds(row.id, prices, EVENT_ODDS_COVERED); priced += 1; } else suspendMarkets(row.id);
           db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(next, row.id);
         });
       } catch (err) {
@@ -245,48 +324,59 @@ export function createFeed(db, {
     return { fixtures: fixtures.length, created, priced };
   }
 
-  /** Bulk consensus 1X2 prices from /odds/, incrementally via updated_after. Returns counts. */
+  /**
+   * Bulk consensus prices from /odds/, one call per market and incrementally via updated_after.
+   * Returns counts; throws only if every market failed (then callers fall back per match).
+   */
   async function syncOdds() {
-    const rows = (await getAll('/odds/', { market: '1x2', updated_after: state.oddsCursor ?? undefined }, 25))
-      .map(normalizeOddsRow).filter(Boolean);
-    const byEvent = new Map();
-    let cursor = state.oddsCursor;
-    for (const r of rows) {
-      const key = `${r.eventId}|${r.code}`;
-      if (!state.books.has(key)) state.books.set(key, new Map());
-      state.books.get(key).set(r.book, r.oddsX100);
-      if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, {});
-      if (r.updatedAt && (!cursor || r.updatedAt > cursor)) cursor = r.updatedAt;
-    }
-    for (const [ext, prices] of byEvent) {
-      for (const code of ['1', 'X', '2']) {
-        const quotes = state.books.get(`${ext}|${code}`);
-        if (!quotes?.size) continue;
-        // The provider's own consensus wins; otherwise the mean across the books quoting it.
-        prices[code] = quotes.has('consensus')
-          ? quotes.get('consensus')
-          : Math.round([...quotes.values()].reduce((a, b) => a + b, 0) / quotes.size);
+    const rows = [];
+    let failures = 0;
+    for (const market of BULK_MARKETS) {
+      try {
+        const got = (await getAll('/odds/', { market, updated_after: state.oddsCursors[market] ?? undefined }, 25))
+          .map(normalizeOddsRow).filter(Boolean);
+        let cursor = state.oddsCursors[market];
+        for (const r of got) if (r.updatedAt && (!cursor || r.updatedAt > cursor)) cursor = r.updatedAt;
+        state.oddsCursors[market] = cursor;
+        rows.push(...got);
+      } catch (err) {
+        failures += 1;
+        log(`odds (lote, ${market}): ${err.message}`);
+        if (market === '1x2') throw err; // without match result there is nothing to offer
       }
     }
+    if (failures === BULK_MARKETS.length) throw new Error('feed de odds indisponível');
+
+    const byEvent = new Map();
+    for (const r of rows) {
+      const bookKey = `${r.eventId}|${r.key}`;
+      if (!state.books.has(bookKey)) state.books.set(bookKey, new Map());
+      state.books.get(bookKey).set(r.book, r.oddsX100);
+      if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, new Set());
+      byEvent.get(r.eventId).add(r.key);
+    }
     const now = nowIso();
-    const upsert = db.prepare(
-      `INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, ?, ?, 1)
-       ON CONFLICT (event_id, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
-    );
     let events = 0;
     tx(db, () => {
-      for (const [ext, prices] of byEvent) {
+      for (const [ext, keys] of byEvent) {
         const row = findEvent.get(SOURCE, ext);
         // Pre-match prices only: never (re)open a market that has kicked off.
         if (!row || row.status !== 'scheduled' || row.start_time <= now) continue;
-        const existing = new Set(db.prepare('SELECT code FROM selections WHERE event_id = ? AND active = 1').all(row.id).map((s) => s.code));
-        // A first price needs both sides; later rows may update one outcome at a time.
-        if (!existing.size && !(prices['1'] && prices['2'])) continue;
-        for (const [code, x100] of Object.entries(prices)) upsert.run(row.id, code, x100);
+        const prices = {};
+        for (const key of keys) {
+          const quotes = state.books.get(`${ext}|${key}`);
+          // The provider's own consensus wins; otherwise the mean across the books quoting it.
+          prices[key] = quotes.has('consensus')
+            ? quotes.get('consensus')
+            : Math.round([...quotes.values()].reduce((a, b) => a + b, 0) / quotes.size);
+        }
+        const has1x2 = db.prepare("SELECT 1 FROM selections WHERE event_id = ? AND market = '1x2' AND active = 1").get(row.id);
+        // A match opens only with both sides of its result; after that any market may update alone.
+        if (!has1x2 && !(prices['1x2|1'] && prices['1x2|2'])) continue;
+        writeOdds(row.id, prices);
         events += 1;
       }
     });
-    state.oddsCursor = cursor;
     return { rows: rows.length, events };
   }
 
@@ -401,5 +491,20 @@ export function createFeed(db, {
       .reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {}),
   });
 
-  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status };
+  // Match page extras (stats + timeline), cached briefly so many viewers cost one request.
+  const extrasCache = new Map();
+  async function matchExtras(externalId, { live = false } = {}) {
+    const hit = extrasCache.get(externalId);
+    if (hit && Date.now() - hit.at < (live ? 30_000 : 5 * 60_000)) return hit.data;
+    const [stats, incidents] = await Promise.all([
+      get(`/events/${encodeURIComponent(externalId)}/stats/`).then(normalizeStats).catch(() => []),
+      get(`/events/${encodeURIComponent(externalId)}/incidents/`).then(normalizeIncidents).catch(() => []),
+    ]);
+    const data = { stats, incidents };
+    extrasCache.set(externalId, { at: Date.now(), data });
+    if (extrasCache.size > 500) extrasCache.delete(extrasCache.keys().next().value);
+    return data;
+  }
+
+  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras };
 }

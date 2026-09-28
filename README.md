@@ -74,6 +74,8 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
   o agente (token, IP autorizado), os fornecedores atribuídos e os jogos, e diz o que falta.
 - O catálogo (fornecedores e jogos) é lido da API e guardado em cache durante 1 hora. Fornecedores em
   manutenção aparecem desativados.
+- Os jogos abrem **dentro da ClassicBet** (`#/casino/jogar`), num ecrã embutido com a barra do site; o
+  botão "casa" do jogo volta ao casino sem sair da plataforma.
 - A carteira do casino é separada. Ao abrir um jogo, o jogador escolhe quanto leva da carteira ClassicBet
   para o casino, e no fim usa **Trazer para a carteira**. Cada transferência fica no extrato
   (`casino_out` / `casino_in`). O débito é feito antes do depósito no casino, e se o depósito falhar o
@@ -85,6 +87,24 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
   "bonus calls": os jogos correm sempre com o RTP por omissão do fornecedor. Confirme com o agregador
   que os jogos são originais e licenciados para o seu mercado.
 
+## Página do jogo e mercados
+
+Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma página só desse jogo:
+
+- **Cabeçalho**: escudos, competição, marcador e minuto ao vivo, ou a data do jogo.
+- **Mercados**: Resultado final (1X2), Dupla hipótese, Empate anula aposta, Total de golos
+  (mais/menos 0.5–4.5) e Ambas as equipas marcam. Pré-jogo vem das odds de consenso do fornecedor
+  (`/odds/` e `/events/{id}/odds/`); em jogo, do WebSocket. Todos são liquidados pelo resultado do
+  tempo regulamentar (o "empate anula" devolve a aposta em caso de empate). Numa múltipla só entra uma
+  seleção por jogo.
+- **Estatísticas**: posse, xG, remates, cantos, faltas, cartões e a cronologia (golos, cartões,
+  substituições, VAR), de `/events/{id}/stats/` e `/incidents/`.
+- **Tracker**: campo 2D com a posição da bola, a situação de jogo (ataque, ataque perigoso, canto…) e
+  as ações recentes, a partir das mensagens `livedata` e `action` do WebSocket.
+
+O servidor reencaminha o WebSocket para o navegador em tempo real por Server-Sent Events
+(`/api/events/<id>/live`); sem WebSocket, a página atualiza a cada 15 s.
+
 ## Estrutura
 
 ```
@@ -92,6 +112,7 @@ server/
   index.js      arranque do servidor
   app.js        rotas da API (auth, conta, carteira, apostas, admin) e ficheiros estáticos
   betting.js    colocação de apostas e liquidação
+  markets.js    mercados disponíveis e regras de liquidação
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
   casino.js     casino (agregador Agent API v4, modo Transfer)

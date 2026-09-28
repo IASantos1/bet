@@ -32,6 +32,8 @@ const state = {
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '' },
   casinoBalance: null,
+  casinoSession: null,
+  match: { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(),
   mode: 'single',
   sport: '',
@@ -182,12 +184,14 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
 function teamBadge(logo, name, size = '') {
   const cls = `team-icon${size ? ` ${size}` : ''}`;
-  if (!logo) return `<div class="${cls}">${esc(size ? initials(name).slice(0, 1) : initials(name))}</div>`;
+  if (!logo) return `<div class="${cls}">${esc(size === 'mini' ? initials(name).slice(0, 1) : initials(name))}</div>`;
   return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
 }
 
+const moreMarkets = (e) => `<a class="more-markets" href="#/jogo/${e.id}">${e.marketCount ? `+${e.marketCount} mercados ›` : 'Ver jogo ›'}</a>`;
+
 function matchCard(e) {
-  return `<article class="match-card">
+  return `<article class="match-card clickable" data-open="${e.id}">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? `<span class="live-label">● AO VIVO ${esc(e.clock || '')}</span>` : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
       <div class="team">${teamBadge(e.homeLogo, e.home)}${esc(e.home)}</div>
@@ -195,14 +199,16 @@ function matchCard(e) {
       <div class="team">${teamBadge(e.awayLogo, e.away)}${esc(e.away)}</div>
     </div>
     ${oddsButtons(e)}
+    ${moreMarkets(e)}
   </article>`;
 }
 
 function liveCard(e) {
-  return `<article class="live-card">
+  return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
     <div class="live-teams"><div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
+    ${moreMarkets(e)}
   </article>`;
 }
 
@@ -211,11 +217,12 @@ function eventRow(e) {
     ? `<span class="live-label">● AO VIVO</span><br>${esc(e.clock || '')}`
     : esc(fmtWhen(e.startTime)).replace(' ', '<br>');
   const score = (side) => (e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
-  return `<div class="event-row">
+  return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
       <div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span>${score('h')}</div>
       <div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span>${score('a')}</div>
+      ${moreMarkets(e)}
     </div>
     ${oddsButtons(e)}
   </div>`;
@@ -387,9 +394,29 @@ function openGame(index) {
       <div class="field"><label>Levar para o jogo (€) — 0 para usar só o saldo do casino</label>
         <input name="amount" type="number" min="0" step="0.01" value="${suggested > 0 ? suggested : 0}" inputmode="decimal"></div>
       <button class="primary-btn btn-block">JOGAR</button>
-      <p class="muted">O jogo abre numa nova janela. No fim, use "Trazer para a carteira" na página do casino para voltar a ter o saldo disponível para apostas.</p>
+      <p class="muted">O jogo abre aqui mesmo, dentro da ClassicBet. Ao sair do jogo pode trazer o saldo de volta para a carteira.</p>
     </form>`);
   loadCasinoBalance();
+}
+
+// ---------- casino player (the game runs inside the page) ----------
+
+function casinoPlayPage() {
+  const g = state.casinoSession;
+  if (!g) {
+    setTimeout(() => { location.hash = '#/casino'; });
+    return '<div class="loading">A voltar ao casino…</div>';
+  }
+  return `<div class="casino-player">
+    <div class="casino-bar">
+      <a class="ghost-btn btn-sm" href="#/casino">‹ Casino</a>
+      <div class="casino-title"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div>
+      <button class="ghost-btn btn-sm" data-action="casino-fullscreen">⛶ Ecrã inteiro</button>
+      <button class="primary-btn btn-sm" data-action="casino-leave">Sair e trazer saldo</button>
+    </div>
+    <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
+      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>
+  </div>`;
 }
 
 function promosPage() {
@@ -495,7 +522,7 @@ function betsView() {
 function betCard(b, { showUser = false } = {}) {
   return `<div class="bet-card">
     <div class="bet-card-head"><span>#${b.id} · ${b.type === 'multiple' ? `Múltipla (${b.legs.length})` : 'Simples'} · ${esc(fmtDateTime(b.createdAt))}${showUser ? ` · ${esc(b.email)}` : ''}</span><span class="pill ${b.status}">${STATUS_LABEL[b.status]}</span></div>
-    ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${CODE_LABEL[l.code]}${l.score ? ` · ${esc(l.score)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span></div></div>`).join('')}
+    ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${esc(l.marketName && l.market !== '1x2' ? `${l.marketName}: ` : '')}${esc(l.label || CODE_LABEL[l.code])}${l.score ? ` · ${esc(l.score)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span></div></div>`).join('')}
     <div class="bet-card-foot"><span>Aposta <strong>${money(b.stake)}</strong></span><span>Cotação <strong>${fmtOdds(b.totalOdds)}</strong></span>
       <span>${b.status === 'open' ? 'Retorno potencial' : 'Pago'} <strong class="${b.status === 'won' ? 'green' : ''}">${money(b.status === 'open' ? b.potential : b.payout)}</strong></span></div>
   </div>`;
@@ -671,17 +698,36 @@ function adminNewEvent() {
 
 // ---------- bet slip ----------
 
+/** Finds a selection shown anywhere (lists carry 1X2; the match page carries every market). */
+function findSelection(selId) {
+  const m = state.match.data;
+  if (m) {
+    for (const mk of m.markets || []) {
+      const sel = mk.selections.find((s) => s.id === selId);
+      if (sel) return { ev: m, sel: { ...sel, marketName: mk.name } };
+    }
+  }
+  for (const ev of state.events) {
+    const sel = ev.selections.find((s) => s.id === selId);
+    if (sel) return { ev, sel: { ...sel, marketName: 'Resultado final' } };
+  }
+  return null;
+}
+
 function toggleSelection(selId) {
-  const ev = state.events.find((e) => e.selections.some((s) => s.id === selId));
-  if (!ev) return;
-  const sel = ev.selections.find((s) => s.id === selId);
+  const found = findSelection(selId);
+  if (!found) return;
+  const { ev, sel } = found;
   const idx = state.slip.findIndex((s) => s.selectionId === selId);
   if (idx >= 0) {
     state.slip.splice(idx, 1);
   } else {
     // One pick per event: choosing another outcome replaces the previous one.
     state.slip = state.slip.filter((s) => s.eventId !== ev.id);
-    state.slip.push({ selectionId: sel.id, eventId: ev.id, code: sel.code, odds: sel.odds, match: `${ev.home} vs ${ev.away}`, competition: ev.competition });
+    state.slip.push({
+      selectionId: sel.id, eventId: ev.id, market: sel.market || '1x2', marketName: sel.marketName, code: sel.code,
+      label: sel.label, odds: sel.odds, match: `${ev.home} vs ${ev.away}`, competition: ev.competition,
+    });
   }
   autoMode();
   saveSlip();
@@ -703,8 +749,14 @@ function syncSelectedButtons() {
 /** Refreshes slip entries against the latest event data (price moves, closed markets). */
 function reconcileSlip() {
   for (const item of state.slip) {
-    const ev = state.events.find((e) => e.id === item.eventId);
-    const sel = ev?.selections.find((s) => s.id === item.selectionId);
+    const found = findSelection(item.selectionId);
+    const ev = found?.ev || state.events.find((e) => e.id === item.eventId);
+    const sel = found?.sel;
+    // Other markets are only known while their match page is open; otherwise the server checks them.
+    if (!sel && ev && (item.market || '1x2') !== '1x2') {
+      item.closed = !isOpen(ev);
+      continue;
+    }
     item.closed = !ev || !sel || !sel.active || !isOpen(ev);
     item.newOdds = sel && sel.odds !== item.odds ? sel.odds : undefined;
   }
@@ -731,7 +783,7 @@ function renderSlip() {
   $('#betItems').innerHTML = n
     ? state.slip.map((s) => `<div class="bet-item${s.closed ? ' closed' : s.newOdds ? ' warn' : ''}">
         <div class="bet-item-top"><span>${esc(s.competition)}</span><span><span class="odd">${fmtOdds(s.odds)}</span><button class="remove-bet" data-remove="${s.selectionId}" aria-label="Remover">×</button></span></div>
-        <strong>${esc(s.match)}</strong><div class="selection">${CODE_LABEL[s.code]}</div>
+        <strong>${esc(s.match)}</strong><div class="selection">${esc(s.label || CODE_LABEL[s.code])}${s.marketName && s.market !== '1x2' ? ` <small class="muted">· ${esc(s.marketName)}</small>` : ''}</div>
         ${s.closed ? '<div class="note red">Mercado fechado — remova esta seleção.</div>' : s.newOdds ? `<div class="note">Odd alterada: ${fmtOdds(s.odds)} → ${fmtOdds(s.newOdds)}</div>` : ''}
       </div>`).join('')
     : '<div class="empty-bet"><div>🎟️</div><strong>O seu boletim está vazio</strong><span>Selecione uma odd para começar a sua aposta.</span></div>';
@@ -832,9 +884,13 @@ function render({ keepScroll = false } = {}) {
   const { page, sub } = currentRoute();
   const pages = {
     home: homePage, desporto: () => sportsPage(sub), 'ao-vivo': livePage, casino: casinoPage,
-    promocoes: promosPage, perfil: () => accountPage(sub), admin: adminPage,
+    promocoes: promosPage, perfil: () => accountPage(sub), admin: adminPage, jogo: () => matchPage(sub),
   };
-  $('#content').innerHTML = (pages[page] || homePage)();
+  if (page !== 'jogo') leaveMatch();
+  const immersive = page === 'casino' && sub === 'jogar';
+  document.body.classList.toggle('immersive', immersive);
+  $('#content').innerHTML = immersive ? casinoPlayPage() : (pages[page] || homePage)();
+  if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
   $('#leftSidebar').classList.remove('open');
@@ -937,8 +993,6 @@ const formHandlers = {
     render({ keepScroll: true });
   },
   async 'casino-play'(form) {
-    // Open the window during the click, before any await, so it is not blocked as a pop-up.
-    const win = window.open('', '_blank');
     try {
       const g = state.casino.games[Number(form.dataset.game)];
       const amount = Number(String(formData(form).amount || '0').replace(',', '.'));
@@ -949,11 +1003,11 @@ const formHandlers = {
         updateHeader();
       }
       const { url } = await api('/api/casino/launch', { method: 'POST', body: { providerId: g.providerId, gameCode: g.code } });
-      if (win) win.location.href = url; else location.href = url;
+      // The game runs inside ClassicBet, in the casino player page.
+      state.casinoSession = { url, name: g.name, provider: g.provider };
       closeModal();
-      render({ keepScroll: true });
+      location.hash = '#/casino/jogar';
     } catch (err) {
-      win?.close();
       loadCasinoBalance();
       throw err;
     }
@@ -1029,6 +1083,11 @@ document.addEventListener('click', async (e) => {
   const odd = e.target.closest('.odd-btn[data-sel]');
   if (odd) { toggleSelection(Number(odd.dataset.sel)); return; }
 
+  const opener = e.target.closest('[data-open]');
+  if (opener && !e.target.closest('a, button')) { location.hash = `#/jogo/${opener.dataset.open}`; return; }
+  const matchTab = e.target.closest('[data-match-tab]');
+  if (matchTab) { state.match.tab = matchTab.dataset.matchTab; render({ keepScroll: true }); return; }
+
   const remove = e.target.closest('[data-remove]');
   if (remove) {
     state.slip = state.slip.filter((s) => s.selectionId !== Number(remove.dataset.remove));
@@ -1058,7 +1117,20 @@ document.addEventListener('click', async (e) => {
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
   else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação ao fornecedor de casino.');
-  else if (action === 'casino-out') {
+  else if (action === 'casino-fullscreen') {
+    $('#casinoFrame')?.requestFullscreen?.().catch(() => {});
+  } else if (action === 'casino-leave') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/casino/transfer-out', { method: 'POST', body: {} });
+      state.user.balance = r.balance;
+      state.casinoBalance = 0;
+      updateHeader();
+      if (r.amount > 0) toast('Saldo transferido', `${money(r.amount)} voltaram para a carteira.`);
+    } catch (err) { toast('Casino', err.message, 'error'); }
+    state.casinoSession = null;
+    location.hash = '#/casino';
+  } else if (action === 'casino-out') {
     actionEl.disabled = true;
     try {
       const r = await api('/api/casino/transfer-out', { method: 'POST', body: {} });
@@ -1160,6 +1232,287 @@ function bindChrome() {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); } });
   window.addEventListener('hashchange', () => render());
+}
+
+// ---------- match page (#/jogo/<id>): markets, statistics, 2D tracker, live stream ----------
+
+const SITUATION_LABEL = {
+  dangerous_attack: 'Ataque perigoso', attack: 'Ataque', possession: 'Posse de bola', safe: 'Posse segura',
+  goal: 'GOLO!', corner: 'Canto', freekick: 'Livre', throwin: 'Lançamento lateral', offside: 'Fora de jogo',
+  goalkeeper_saved: 'Defesa do guarda-redes', shotoffwoodwork: 'Bola no ferro',
+};
+const INCIDENT_ICON = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔁', var: '📺' };
+const ACTION_LABEL = {
+  pass: 'Passe', take_on: 'Drible', tackle: 'Desarme', interception: 'Interceção', save: 'Defesa', clearance: 'Alívio',
+  miss: 'Remate ao lado', post: 'Bola no poste', attempt_saved: 'Remate defendido', goal: '⚽ Golo', temp_goal: 'Possível golo',
+  temp_attempt: 'Remate', foul: 'Falta', out: 'Bola fora', corner_awarded: 'Canto', offside_pass: 'Fora de jogo', card: 'Cartão',
+  player_off: 'Substituição (sai)', player_on: 'Substituição (entra)', ball_recovery: 'Recuperação', dispossessed: 'Perda de bola',
+  aerial: 'Duelo aéreo', challenge: 'Disputa', keeper_pickup: 'Guarda-redes agarra', penalty_faced: 'Penálti', period_start: 'Início do período',
+  period_end: 'Fim do período', deleted_event: 'Lance anulado', rescinded_card: 'Cartão anulado',
+};
+
+function leaveMatch() {
+  const m = state.match;
+  m.es?.close();
+  clearInterval(m.timer);
+  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false });
+}
+
+async function loadMatch(id, { quiet = false } = {}) {
+  try {
+    const { event } = await api(`/api/events/${id}`);
+    if (state.match.id !== id) return;
+    const wasLive = state.match.data?.status === 'live';
+    state.match.data = event;
+    if (event.status !== 'scheduled') loadMatchExtras(id);
+    if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
+    renderSlip();
+    if (currentRoute().page === 'jogo') render({ keepScroll: true });
+  } catch (err) {
+    if (!quiet) toast('Jogo', err.message, 'error');
+  }
+}
+
+async function loadMatchExtras(id) {
+  try {
+    const extras = await api(`/api/events/${id}/stats`);
+    if (state.match.id !== id) return;
+    state.match.extras = extras;
+    if (currentRoute().page === 'jogo' && state.match.tab !== 'tracker') render({ keepScroll: true });
+  } catch { /* extras are optional */ }
+}
+
+function startMatchStream(id) {
+  const m = state.match;
+  m.es?.close();
+  if (typeof EventSource !== 'function') return;
+  const es = new EventSource(`/api/events/${id}/live`);
+  m.es = es;
+  const on = (type, fn) => es.addEventListener(type, (ev) => { try { fn(JSON.parse(ev.data)); } catch { /* bad frame */ } });
+  on('snapshot', (s) => {
+    m.streaming = !!s.following;
+    if (s.event) applyLiveEvent(s.event);
+    for (const d of s.livedata || []) pushBall(d);
+    m.actions = (s.actions || []).slice(-15);
+    updateTracker();
+  });
+  on('event', applyLiveEvent);
+  on('livedata', (d) => { pushBall(d); updateTracker(); });
+  on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); });
+  on('odds', () => loadMatch(id, { quiet: true }));
+  // No stream (match not covered by the live socket): the page keeps polling instead.
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.es = null; };
+}
+
+function applyLiveEvent(e) {
+  const d = state.match.data;
+  if (!d) return;
+  const scored = d.homeScore !== e.homeScore || d.awayScore !== e.awayScore;
+  d.homeScore = e.homeScore;
+  d.awayScore = e.awayScore;
+  d.clock = e.clock || d.clock;
+  state.match.live = e.stats || state.match.live;
+  const score = $('#matchScore');
+  if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
+  const clock = $('#matchClock');
+  if (clock) clock.textContent = d.clock || '';
+  if (scored) {
+    toast('Golo!', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
+    loadMatch(d.id, { quiet: true }); // markets were suspended; fetch their new state
+  }
+}
+
+function pushBall(d) {
+  if (d.x === null || d.y === null) {
+    state.match.ball = { ...(state.match.ball || {}), situation: d.situation, side: d.side, commentary: d.commentary };
+    return;
+  }
+  const m = state.match;
+  if (m.ball && m.ball.x !== null) m.trail.push({ x: m.ball.x, y: m.ball.y });
+  m.trail = m.trail.slice(-8);
+  m.ball = d;
+}
+
+function matchPage(sub) {
+  const id = Number(sub);
+  const m = state.match;
+  if (!Number.isInteger(id) || id <= 0) return '<div class="panel empty">Jogo não encontrado.</div>';
+  if (m.id !== id) {
+    leaveMatch();
+    m.id = id;
+    setTimeout(() => loadMatch(id));
+    // Markets and score keep refreshing while the page is open (the stream adds real time on top).
+    m.timer = setInterval(() => {
+      if (document.hidden || state.match.id !== id) return;
+      const live = state.match.data?.status === 'live';
+      loadMatch(id, { quiet: true });
+      if (live) loadMatchExtras(id);
+    }, 15_000);
+  }
+  const e = m.data;
+  if (!e) return '<div class="loading">A carregar o jogo…</div>';
+
+  const live = e.status === 'live';
+  const center = live
+    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>`
+    : e.status === 'finished'
+      ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
+      : `<div class="match-kickoff">${esc(fmtWhen(e.startTime))}</div><div class="muted">${esc(new Date(e.startTime).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>`;
+  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas']];
+  if (e.liveTracker) tabs.push(['tracker', 'Tracker']);
+  if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
+
+  let body = '';
+  if (m.tab === 'estatisticas') body = matchStatsView(e);
+  else if (m.tab === 'tracker') body = trackerView(e);
+  else body = marketsView(e);
+
+  return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
+    <section class="match-hero">
+      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : '⚽'} ${esc(e.competition)}</div>
+      <div class="match-teams">
+        <div class="match-team">${teamBadge(e.homeLogo, e.home, 'big')}<strong>${esc(e.home)}</strong></div>
+        <div class="match-center">${center}</div>
+        <div class="match-team">${teamBadge(e.awayLogo, e.away, 'big')}<strong>${esc(e.away)}</strong></div>
+      </div>
+    </section>
+    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}${k === 'tracker' ? ' <i class="live-dot"></i>' : ''}</button>`).join('')}</div>
+    <div class="match-body">${body}</div>
+    ${footer()}`;
+}
+
+function marketsView(e) {
+  if (!e.markets?.length) {
+    return `<div class="panel empty">${e.status === 'live' ? 'Mercados suspensos neste momento. Voltam a abrir quando chegar a próxima odd.' : 'Ainda não há mercados para este jogo.'}</div>`;
+  }
+  const locked = !isOpen(e);
+  const btn = (s, label = s.label) => {
+    const off = locked || !s.active;
+    return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${off ? ' locked' : ''}" data-sel="${s.id}" ${off ? 'disabled' : ''}>
+      <small>${esc(label)}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
+  };
+  return e.markets.map((mk) => {
+    let grid;
+    if (mk.market === 'ou') {
+      const lines = [...new Set(mk.selections.map((s) => s.code.slice(1)))].sort((a, b) => a - b);
+      grid = lines.map((line) => {
+        const over = mk.selections.find((s) => s.code === `O${line}`);
+        const under = mk.selections.find((s) => s.code === `U${line}`);
+        return `<div class="market-line"><span class="market-line-label">${esc(line)} golos</span>
+          <div class="odds two">${over ? btn(over, 'Mais') : '<span></span>'}${under ? btn(under, 'Menos') : '<span></span>'}</div></div>`;
+      }).join('');
+    } else {
+      grid = `<div class="odds${mk.selections.length === 2 ? ' two' : ''}">${mk.selections.map((s) => btn(s)).join('')}</div>`;
+    }
+    return `<div class="market-block"><div class="market-head">${esc(mk.name)}</div>${grid}</div>`;
+  }).join('');
+}
+
+function matchStatsView(e) {
+  const x = state.match.extras;
+  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
+  if (!x) return '<div class="loading">A carregar estatísticas…</div>';
+  const stats = x.stats?.length ? x.stats : liveStatsFallback();
+  const bars = stats.map((s) => {
+    const total = (s.home || 0) + (s.away || 0);
+    const hp = total ? Math.round(((s.home || 0) / total) * 100) : 50;
+    const fmt = (v) => (s.key === 'xg' ? Number(v).toFixed(2) : `${v}${s.unit || ''}`);
+    return `<div class="stat-row"><div class="stat-vals"><b>${esc(fmt(s.home))}</b><span>${esc(s.label)}</span><b>${esc(fmt(s.away))}</b></div>
+      <div class="stat-bar"><i class="w${Math.round(hp / 5) * 5}"></i></div></div>`;
+  }).join('');
+  const inc = (x.incidents || []).map((i) => `<div class="incident ${i.side || ''}"><span class="inc-min">${i.minute ?? ''}'</span>
+    <span class="inc-icon">${INCIDENT_ICON[i.type] || '•'}</span><span>${esc(i.player || '')}${i.side ? ` <small class="muted">(${esc(i.side === 'home' ? e.home : e.away)})</small>` : ''}</span></div>`).join('');
+  return `<div class="grid match-stats-grid">
+    <div class="panel"><h3>Estatísticas</h3>${bars || '<p class="muted">Sem estatísticas para este jogo.</p>'}</div>
+    <div class="panel"><h3>Cronologia</h3>${inc || '<p class="muted">Sem golos nem cartões até agora.</p>'}</div>
+  </div>`;
+}
+
+/** Live socket stats (possession, shots, corners, xG) when the REST stats are not in yet. */
+function liveStatsFallback() {
+  const l = state.match.live;
+  if (!l?.home || !l?.away) return [];
+  return [['possession', 'Posse de bola', '%'], ['xg', 'Golos esperados (xG)', ''], ['shots_total', 'Remates', ''], ['corners', 'Cantos', '']]
+    .filter(([k]) => l.home[k] !== undefined && l.away[k] !== undefined)
+    .map(([k, label, unit]) => ({ key: k === 'possession' ? 'ball_possession' : k, label, unit, home: Number(l.home[k]), away: Number(l.away[k]) }));
+}
+
+function trackerView(e) {
+  const m = state.match;
+  const note = m.es ? (m.streaming ? '' : '<p class="muted">A aguardar dados de posição deste jogo…</p>')
+    : '<p class="muted">Tracker indisponível para este jogo (sem cobertura ao vivo do fornecedor).</p>';
+  const lines = `
+    <rect x="0" y="0" width="105" height="68" class="pitch-grass"/>
+    <rect x="0.5" y="0.5" width="104" height="67" class="pitch-line"/>
+    <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" class="pitch-line"/>
+    <circle cx="52.5" cy="34" r="9.15" class="pitch-line"/><circle cx="52.5" cy="34" r="0.5" class="pitch-spot"/>
+    <rect x="0.5" y="13.85" width="16.5" height="40.3" class="pitch-line"/><rect x="88" y="13.85" width="16.5" height="40.3" class="pitch-line"/>
+    <rect x="0.5" y="24.85" width="5.5" height="18.3" class="pitch-line"/><rect x="99" y="24.85" width="5.5" height="18.3" class="pitch-line"/>
+    <circle cx="11" cy="34" r="0.5" class="pitch-spot"/><circle cx="94" cy="34" r="0.5" class="pitch-spot"/>`;
+  return `<div class="panel tracker">
+    <div class="tracker-head"><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><span id="trackerSituation" class="tracker-situation">—</span><span>${esc(e.away)}${teamBadge(e.awayLogo, e.away, 'mini')}</span></div>
+    <svg class="pitch" viewBox="0 0 105 68" role="img" aria-label="Campo com a posição da bola">
+      ${lines}
+      <rect id="zoneHome" x="52.5" y="0.5" width="52" height="67" class="zone zone-home"/>
+      <rect id="zoneAway" x="0.5" y="0.5" width="52" height="67" class="zone zone-away"/>
+      <g id="ballTrail"></g>
+      <circle id="ball" cx="52.5" cy="34" r="1.6" class="ball"/>
+    </svg>
+    <p id="trackerCommentary" class="tracker-commentary"></p>
+    ${note}
+    <h3>Ações recentes</h3><div id="trackerActions" class="tracker-actions"></div>
+  </div>`;
+}
+
+function afterMatchRender() {
+  if (state.match.tab === 'tracker') {
+    updateTracker();
+    updateActionsList();
+  }
+}
+
+function updateTracker() {
+  const ball = $('#ball');
+  if (!ball) return;
+  const b = state.match.ball;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  if (b && b.x !== null && b.x !== undefined) {
+    ball.setAttribute('cx', String((b.x / 100) * 105));
+    ball.setAttribute('cy', String((b.y / 100) * 68));
+  }
+  const trail = $('#ballTrail');
+  if (trail) {
+    trail.replaceChildren(...state.match.trail.map((p, i, arr) => {
+      const c = document.createElementNS(svgNS, 'circle');
+      c.setAttribute('cx', String((p.x / 100) * 105));
+      c.setAttribute('cy', String((p.y / 100) * 68));
+      c.setAttribute('r', '0.9');
+      c.setAttribute('class', 'trail');
+      c.setAttribute('opacity', String(((i + 1) / arr.length) * 0.5));
+      return c;
+    }));
+  }
+  const side = b?.side;
+  $('#zoneHome')?.classList.toggle('on', side === 'home');
+  $('#zoneAway')?.classList.toggle('on', side === 'away');
+  const sit = $('#trackerSituation');
+  if (sit) {
+    sit.textContent = b?.situation ? (SITUATION_LABEL[b.situation] || b.situation) : '—';
+    sit.className = `tracker-situation ${b?.situation === 'dangerous_attack' || b?.situation === 'goal' ? 'hot' : ''}`;
+  }
+  const com = $('#trackerCommentary');
+  if (com) com.textContent = b?.commentary || '';
+}
+
+function updateActionsList() {
+  const box = $('#trackerActions');
+  if (!box) return;
+  const e = state.match.data;
+  const items = [...state.match.actions].reverse().slice(0, 10);
+  box.innerHTML = items.length
+    ? items.map((a) => `<div class="incident ${a.team || ''}"><span class="inc-min">${a.minute ?? ''}'</span><span>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</span>
+      <span class="muted">${esc(a.player || '')}${a.team ? ` · ${esc(a.team === 'home' ? e?.home : e?.away)}` : ''}</span></div>`).join('')
+    : '<p class="muted">Sem ações detalhadas para este jogo.</p>';
 }
 
 async function init() {

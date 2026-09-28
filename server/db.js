@@ -64,14 +64,15 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, start_time);
 
--- Match-result (1X2) market. Odds are stored as integer hundredths (2.15 -> 215).
+-- Priced selections per market (see server/markets.js). Odds are integer hundredths (2.15 -> 215).
 CREATE TABLE IF NOT EXISTS selections (
   id        INTEGER PRIMARY KEY,
   event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  code      TEXT    NOT NULL CHECK (code IN ('1', 'X', '2')),
+  market    TEXT    NOT NULL DEFAULT '1x2' CHECK (market IN ('1x2', 'dc', 'dnb', 'ou', 'btts')),
+  code      TEXT    NOT NULL,
   odds_x100 INTEGER NOT NULL CHECK (odds_x100 > 100),
   active    INTEGER NOT NULL DEFAULT 1,
-  UNIQUE (event_id, code)
+  UNIQUE (event_id, market, code)
 );
 
 CREATE TABLE IF NOT EXISTS bets (
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS bet_legs (
   bet_id       INTEGER NOT NULL REFERENCES bets(id) ON DELETE CASCADE,
   event_id     INTEGER NOT NULL REFERENCES events(id),
   selection_id INTEGER NOT NULL REFERENCES selections(id),
+  market       TEXT    NOT NULL DEFAULT '1x2',
   code         TEXT    NOT NULL,
   odds_x100    INTEGER NOT NULL,
   status       TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'won', 'lost', 'void'))
@@ -124,6 +126,16 @@ function migrate(db) {
   // When the current in-play price was received (live odds over the provider's WebSocket).
   if (!cols.has('live_odds_at')) db.exec('ALTER TABLE events ADD COLUMN live_odds_at TEXT');
 
+  // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
+  // bet legs stay linked) and bet legs record the market they were placed on.
+  const selCols = new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name));
+  if (!selCols.has('market')) {
+    rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)
+      SELECT id, event_id, '1x2', code, odds_x100, active FROM selections_old`);
+  }
+  const legCols = new Set(db.prepare('PRAGMA table_info(bet_legs)').all().map((c) => c.name));
+  if (!legCols.has('market')) db.exec("ALTER TABLE bet_legs ADD COLUMN market TEXT NOT NULL DEFAULT '1x2'");
+
   // Casino (aggregator Agent API): the player's code there.
   const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
@@ -132,21 +144,33 @@ function migrate(db) {
   // table rebuilt with the same rows.
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
   if (!txSql.includes('casino_out')) {
-    db.exec('PRAGMA foreign_keys = OFF');
-    db.exec('BEGIN');
-    try {
-      db.exec('ALTER TABLE transactions RENAME TO transactions_old');
-      db.exec(SCHEMA);
-      db.exec(`INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
-               SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
-      db.exec('DROP TABLE transactions_old');
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    } finally {
-      db.exec('PRAGMA foreign_keys = ON');
+    rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
+      SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
+  }
+}
+
+/** Recreates a table from SCHEMA (to change constraints SQLite cannot ALTER), copying its rows. */
+function rebuild(db, table, copySql) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  // Keep other tables' foreign keys pointing at the name, not at the renamed old table.
+  db.exec('PRAGMA legacy_alter_table = ON');
+  db.exec('BEGIN');
+  try {
+    db.exec(`ALTER TABLE ${table} RENAME TO ${table}_old`);
+    // Indexes keep their names across a rename; drop them so SCHEMA can recreate them.
+    for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(`${table}_old`)) {
+      db.exec(`DROP INDEX ${name}`);
     }
+    db.exec(SCHEMA);
+    db.exec(copySql);
+    db.exec(`DROP TABLE ${table}_old`);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA legacy_alter_table = OFF');
+    db.exec('PRAGMA foreign_keys = ON');
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_events_external ON events(source, external_id) WHERE external_id IS NOT NULL');
 }

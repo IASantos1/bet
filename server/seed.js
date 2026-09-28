@@ -30,7 +30,8 @@ export function seed(db, log = () => {}, { sampleEvents = true } = {}) {
     `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, featured, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  const insertSel = db.prepare('INSERT INTO selections (event_id, code, odds_x100) VALUES (?, ?, ?)');
+  const insertSel = db.prepare("INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, '1x2', ?, ?)");
+  const insertMarket = db.prepare('INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, ?, ?, ?)');
   tx(db, () => {
     for (const e of SAMPLE_EVENTS) {
       const start = new Date(Math.round((now + e.in * H) / (15 * 60_000)) * 15 * 60_000).toISOString();
@@ -43,6 +44,10 @@ export function seed(db, log = () => {}, { sampleEvents = true } = {}) {
       ['1', 'X', '2'].forEach((code, i) => {
         if (e.odds[i]) insertSel.run(Number(lastInsertRowid), code, Math.round(e.odds[i] * 100));
       });
+      // Football samples also get the other markets, derived from the 1X2 prices.
+      if (e.sport === 'futebol') {
+        for (const [market, code, odds] of sampleMarkets(e.odds)) insertMarket.run(Number(lastInsertRowid), market, code, odds);
+      }
     }
   });
   log(`Criados ${SAMPLE_EVENTS.length} eventos de exemplo.`);
@@ -70,4 +75,20 @@ function seedAdmin(db, log) {
   db.prepare(
     `INSERT INTO users (email, name, birthdate, password_hash, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)`
   ).run(email, 'Administrador', '1990-01-01', hashPassword(password), nowIso());
+}
+
+/** Plausible sample prices for the extra markets, derived from the 1X2 odds (5% margin). */
+function sampleMarkets([h, d, a]) {
+  const inv = [1 / h, 1 / d, 1 / a];
+  const sum = inv.reduce((x, y) => x + y, 0);
+  const [ph, pd, pa] = inv.map((v) => v / sum);
+  const price = (p) => Math.max(101, Math.round((1 / (p * 1.05)) * 100));
+  const out = [
+    ['dc', '1X', price(ph + pd)], ['dc', '12', price(ph + pa)], ['dc', 'X2', price(pd + pa)],
+    ['dnb', '1', price(ph / (ph + pa))], ['dnb', '2', price(pa / (ph + pa))],
+    ['btts', 'Y', 185], ['btts', 'N', 190],
+  ];
+  const over = { '0.5': 0.93, '1.5': 0.75, '2.5': 0.52, '3.5': 0.3, '4.5': 0.15 };
+  for (const [line, p] of Object.entries(over)) out.push(['ou', `O${line}`, price(p)], ['ou', `U${line}`, price(1 - p)]);
+  return out;
 }
