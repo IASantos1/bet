@@ -455,7 +455,7 @@ function statGroups(data) {
 
 export function createSportFeed(db, sport, {
   token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25,
-  liveOddsMaxAge = 180, fetchImpl = globalThis.fetch, log = () => {},
+  liveOddsMaxAge = 180, prematchOddsSeconds = 60, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const spec = SPORT_SPECS[sport];
   if (!spec) throw new Error(`Desporto desconhecido: ${sport}`);
@@ -607,12 +607,13 @@ export function createSportFeed(db, sport, {
         const soon = new Date(row.start_time).getTime() - now < 3_600_000;
         tx(db, () => {
           writePrices(row.id, prices);
-          db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + (soon ? 3 : 10) * 60_000).toISOString(), row.id);
+          // Each game is asked again after PREMATCH_ODDS_SECONDS (half of it in the last hour).
+          db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + (soon ? prematchOddsSeconds / 2 : prematchOddsSeconds) * 1000).toISOString(), row.id);
         });
         if (Object.keys(prices).length) priced += 1;
       } catch (err) {
         log(`${spec.name} odds ${row.external_id}: ${err.message}`);
-        db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + 10 * 60_000).toISOString(), row.id);
+        db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + prematchOddsSeconds * 1000).toISOString(), row.id);
       }
     }
     return { oddsChecked: rows.length, priced };
@@ -727,12 +728,14 @@ export function createSportFeed(db, sport, {
     }
   }
 
-  function start({ liveMs = 30_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000, oddsMs = 3 * 60_000 } = {}) {
+  function start({ liveMs = 5_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000, oddsMs = 15_000 } = {}) {
     if (!state.enabled) return () => {};
+    // One lock per loop: a slow fixtures import never holds back the live score (every few seconds).
+    const busy = new Set();
     const guard = (kind, fn) => async () => {
-      if (state.running || (state.addonMissing && kind !== 'fixtures')) return;
-      state.running = true;
-      try { await run(kind, fn); } finally { state.running = false; }
+      if (busy.has(kind) || (state.addonMissing && kind !== 'fixtures')) return;
+      busy.add(kind);
+      try { await run(kind, fn); } finally { busy.delete(kind); }
     };
     const timers = [
       setInterval(guard('live', syncLive), liveMs),

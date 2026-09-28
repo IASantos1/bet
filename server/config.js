@@ -84,6 +84,10 @@ export const config = {
 
   // In-play bets on feed matches are refused when the last live price is older than this.
   liveOddsMaxAgeSeconds: int(env.LIVE_ODDS_MAX_AGE_SECONDS, 180),
+  // How often the server asks the data provider for scores and in-play odds (seconds), and how
+  // often each upcoming game's pre-match odds are re-read (half of it in the last hour).
+  livePollSeconds: Math.max(2, int(env.LIVE_POLL_SECONDS, 5)),
+  prematchOddsSeconds: Math.max(20, int(env.PREMATCH_ODDS_SECONDS, 60)),
 
   sessionDays: int(env.SESSION_DAYS, 30),
   minAge: 18,

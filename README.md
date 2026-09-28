@@ -251,3 +251,14 @@ com login próprio; o site de apostas não o mostra.
   essa palavra-passe. Uma conta que não seja de administrador é recusada no login do painel.
 - Secções: Painel (resumo do dia, levantamentos pendentes), Eventos, Liquidação, Apostas,
   Levantamentos, Utilizadores, Novo evento, Dados ao vivo e Casino.
+
+## Frequência de atualização
+
+| O quê | Intervalo | Variável |
+|---|---|---|
+| Placar e odds ao vivo (servidor ⇄ fornecedor) | 5 s (futebol e ténis com WebSocket: instantâneo) | `LIVE_POLL_SECONDS` |
+| Odds pré-jogo de cada jogo | 60 s (30 s na última hora) | `PREMATCH_ODDS_SECONDS` |
+| Importação de jogos / resultados | 10 min / 2 min | — |
+| Páginas no navegador (listas, jogo, saldo no casino) | 5 s | — |
+
+Cada ciclo tem o seu próprio bloqueio, por isso uma importação demorada não atrasa o placar ao vivo.
