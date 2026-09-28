@@ -494,3 +494,8 @@ tr.zone-other td.pos { border-left-color: #2f7de1; }
   .standings .form-cell { display: none; }
   .prob strong { font-size: 18px; }
 }
+.serve-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: transparent; vertical-align: middle; margin-left: 4px; }
+.serve-dot.serving { background: var(--gold); box-shadow: 0 0 6px var(--gold); }
+table.compare td.center { text-align: center; }
+.addon-block { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.addon-block h3 { font-size: 14px; }

@@ -6,7 +6,8 @@ import { createFeed } from './feed.js';
 import { createLiveSocket } from './livews.js';
 import { createCasino } from './casino.js';
 import { createSettlementEngine } from './settlement.js';
-import { createTennisFeed } from './tennis.js';
+import { createTennisFeed, TENNIS_SOURCE } from './tennis.js';
+import { createSportFeed, SPORT_SPECS } from './sports.js';
 
 const db = openDb(config.dbPath);
 const log = (msg) => console.warn(`[feed] ${msg}`);
@@ -16,11 +17,23 @@ const liveSocket = config.feed.token && config.feed.liveWs
 const feed = createFeed(db, { ...config.feed, log, liveSocket });
 seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });
 const stopFeed = feed.start();
+const tennisToken = config.tennis.enabled ? config.feed.token : '';
+const tennisLive = tennisToken && config.feed.liveWs
+  ? createLiveSocket(db, {
+    token: tennisToken, url: config.tennis.liveWsUrl, sport: 'tennis', source: TENNIS_SOURCE,
+    maxSockets: 2, log: (msg) => console.warn(`[ténis] ${msg}`),
+  })
+  : null;
 const tennis = createTennisFeed(db, {
-  token: config.tennis.enabled ? config.feed.token : '', baseUrl: config.tennis.baseUrl, days: config.tennis.days,
+  token: tennisToken, baseUrl: config.tennis.baseUrl, days: config.tennis.days, liveSocket: tennisLive,
   log: (msg) => console.warn(`[ténis] ${msg}`),
 });
 const stopTennis = tennis.start();
+
+const sports = Object.fromEntries(config.sportsAddon.sports.filter((k) => SPORT_SPECS[k]).map((k) => [k, createSportFeed(db, k, {
+  token: config.feed.token, days: config.sportsAddon.days, log: (msg) => console.warn(`[${k}] ${msg}`),
+})]));
+const stopSports = Object.values(sports).map((f) => f.start());
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
@@ -30,13 +43,15 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, casino, liveSocket, settlement }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
 const shutdown = () => {
   stopFeed();
   stopTennis();
+  stopSports.forEach((stop) => stop());
+  tennisLive?.stop();
   stopSettlement();
   liveSocket?.stop();
   server.close(() => {

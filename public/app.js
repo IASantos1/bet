@@ -5,6 +5,8 @@ const SPORT_META = {
   basquetebol: { name: 'Basquetebol', icon: '🏀' },
   tenis: { name: 'Ténis', icon: '🎾' },
   hoquei: { name: 'Hóquei no Gelo', icon: '🏒' },
+  dardos: { name: 'Dardos', icon: '🎯' },
+  esports: { name: 'CS2 (eSports)', icon: '🎮' },
   voleibol: { name: 'Voleibol', icon: '🏐' },
   andebol: { name: 'Andebol', icon: '🤾' },
 };
@@ -688,15 +690,30 @@ function adminCasino(c) {
   </div>`;
 }
 
-function tennisPanel(t) {
-  if (!t?.enabled) return '<p class="muted">Ténis: desligado (TENNIS=0).</p><br>';
+function addonPanel(title, t, what) {
+  if (!t?.enabled) return `<p class="muted">${esc(title)}: desligado.</p>`;
   const counts = Object.entries(t.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
-  const last = t.last?.fixtures ? `última importação ${esc(fmtDateTime(t.last.fixtures.at))} (${t.last.fixtures.matches ?? 0} encontros, ${t.last.fixtures.priced ?? 0} com odds)` : 'ainda não executado';
+  const f = t.last?.fixtures;
+  const last = f ? `última importação ${esc(fmtDateTime(f.at))} (${f.matches ?? f.games ?? 0} jogos, ${f.priced ?? 0} com odds)` : 'ainda não executado';
   const badge = t.addonMissing ? '<span class="pill lost">Sem Sports Addon</span>' : t.lastError ? '<span class="pill lost">Erro</span>' : '<span class="pill won">Ligado</span>';
-  return `<h3>Ténis ATP/WTA ${badge}</h3>
-    <p class="muted">Encontros e odds de vencedor (pré-jogo), resultados por sets, confrontos diretos, previsões e ranking. ${last}.</p>
-    <p>Eventos de ténis: <strong>${esc(counts)}</strong></p>
-    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para a API de ténis.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}<br>`;
+  const ws = t.liveSocket?.enabled
+    ? ` · ao vivo por WebSocket: ${t.liveSocket.fatal ? `parado (${esc(t.liveSocket.fatal)})` : `${t.liveSocket.following} encontro(s) seguidos`}` : '';
+  return `<h3>${esc(title)} ${badge}</h3>
+    <p class="muted">${esc(what)} ${last}${ws}.</p>
+    <p>Eventos: <strong>${esc(counts)}</strong></p>
+    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para este desporto.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}`;
+}
+
+function sportsAddonPanels(f) {
+  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo), sets ao vivo, H2H, previsões e ranking.')];
+  const what = {
+    basquetebol: 'Vencedor com prolongamento, estatísticas por equipa e box score, previsões e classificação.',
+    hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',
+    dardos: 'Vencedor do encontro, legs por set, H2H com médias, previsões e ranking PDC.',
+    esports: 'Vencedor do encontro, mapas, comparação das equipas, H2H e previsões.',
+  };
+  for (const s of f.sports || []) panels.push(addonPanel(SPORT_META[s.sport]?.name || s.name, s, what[s.sport] || ''));
+  return `<h3>Sports Addon</h3>${panels.map((p) => `<div class="addon-block">${p}</div>`).join('')}<br>`;
 }
 
 function adminFeed(f) {
@@ -717,7 +734,7 @@ function adminFeed(f) {
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
          </tbody></table></div><br>
          ${liveSocketPanel(f.liveSocket)}
-         ${tennisPanel(f.tennis)}
+         ${sportsAddonPanels(f)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
@@ -1399,15 +1416,22 @@ function applyLiveEvent(e) {
   d.homeScore = e.homeScore;
   d.awayScore = e.awayScore;
   d.clock = e.clock || d.clock;
+  if (e.server) d.server = e.server;
   state.match.live = e.stats || state.match.live;
   const score = $('#matchScore');
   if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
   const clock = $('#matchClock');
   if (clock) clock.textContent = d.clock || '';
-  if (scored) {
+  if (scored && d.sport === 'futebol') {
     toast('Golo!', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
     loadMatch(d.id, { quiet: true }); // markets were suspended; fetch their new state
-  }
+  } else if (scored && d.sport === 'tenis') toast('Set', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
+  if (d.sport === 'tenis') updateServe(d);
+}
+
+/** Tennis: who is serving, from the live frames. */
+function updateServe(e) {
+  $$('[data-serve]').forEach((el) => el.classList.toggle('serving', el.dataset.serve === e.server));
 }
 
 function pushBall(d) {
@@ -1420,6 +1444,12 @@ function pushBall(d) {
   m.trail = m.trail.slice(-8);
   m.ball = d;
 }
+
+// Last tab of the match page: league table or players' ranking, where the sport has one.
+const TABLE_TAB = {
+  futebol: ['classificacao', 'Classificação'], basquetebol: ['classificacao', 'Classificação'], hoquei: ['classificacao', 'Classificação'],
+  tenis: ['ranking', 'Ranking'], dardos: ['ranking', 'Ranking'],
+};
 
 function matchPage(sub) {
   const id = Number(sub);
@@ -1446,14 +1476,15 @@ function matchPage(sub) {
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
       : `<div class="match-kickoff">${esc(fmtWhen(e.startTime))}</div><div class="muted">${esc(new Date(e.startTime).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>`;
-  const tennis = e.sport === 'tenis';
-  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão'],
-    tennis ? ['ranking', 'Ranking'] : ['classificacao', 'Classificação']];
+  const football = e.sport === 'futebol';
+  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão']];
+  const table = TABLE_TAB[e.sport];
+  if (table && e.source !== 'manual') tabs.push(table);
   if (e.liveTracker) tabs.push(['tracker', 'Tracker']);
   if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
 
   let body = '';
-  if (m.tab === 'estatisticas') body = tennis ? tennisStatsView(e) : matchStatsView(e);
+  if (m.tab === 'estatisticas') body = football ? matchStatsView(e) : sportStatsView(e);
   else if (m.tab === 'h2h') body = insightView(e, h2hView);
   else if (m.tab === 'previsao') body = insightView(e, predictionView);
   else if (m.tab === 'classificacao') body = insightView(e, standingsView);
@@ -1465,9 +1496,9 @@ function matchPage(sub) {
     <section class="match-hero">
       <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : SPORT_META[e.sport]?.icon || '⚽'} ${esc(e.competition)}</div>
       <div class="match-teams">
-        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
-        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
     </section>
     <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}${k === 'tracker' ? ' <i class="live-dot"></i>' : ''}</button>`).join('')}</div>
@@ -1557,27 +1588,25 @@ function formChips(list) {
 function h2hView(e, x) {
   const h = x.h2h;
   if (!h) return '<div class="panel empty">Sem confrontos diretos registados entre estes adversários.</div>';
-  const tennis = e.sport === 'tenis';
+  const draws = h.draws !== null && h.draws !== undefined;
   const summary = `<div class="panel">
     <h3>${h.total} confronto${h.total === 1 ? '' : 's'} direto${h.total === 1 ? '' : 's'}</h3>
     <div class="h2h-summary">
       <div><strong>${h.homeWins}</strong><small>Vitórias ${esc(e.home)}</small></div>
-      ${tennis ? '' : `<div><strong>${h.draws}</strong><small>Empates</small></div>`}
+      ${draws ? `<div><strong>${h.draws}</strong><small>Empates</small></div>` : ''}
       <div><strong>${h.awayWins}</strong><small>Vitórias ${esc(e.away)}</small></div>
     </div>
-    ${splitBar([{ value: h.homeWins, cls: 'home' }, ...(tennis ? [] : [{ value: h.draws, cls: 'draw' }]), { value: h.awayWins, cls: 'away' }])}
-    ${!tennis && h.homeGoals !== null ? `<p class="muted">Golos: ${esc(e.home)} ${h.homeGoals} · ${esc(e.away)} ${h.awayGoals}${h.avgGoals !== null ? ` · média ${String(h.avgGoals).replace('.', ',')} por jogo` : ''}</p>` : ''}
+    ${h.total ? splitBar([{ value: h.homeWins, cls: 'home' }, ...(draws ? [{ value: h.draws, cls: 'draw' }] : []), { value: h.awayWins, cls: 'away' }]) : ''}
+    ${h.homeGoals !== null && h.homeGoals !== undefined ? `<p class="muted">${e.sport === 'futebol' || e.sport === 'hoquei' ? 'Golos' : 'Pontos'}: ${esc(e.home)} ${h.homeGoals} · ${esc(e.away)} ${h.awayGoals}${h.avgGoals !== null && h.avgGoals !== undefined ? ` · média ${String(h.avgGoals).replace('.', ',')} por jogo` : ''}</p>` : ''}
   </div>`;
-  let list;
-  if (tennis) {
-    const row = (m) => `<tr><td>${esc(fmtShortDate(m.date))}</td><td>${esc(m.home)} vs ${esc(m.away)}<br><small class="muted">${esc(m.competition || '')}</small></td><td class="num">${esc(m.score || '—')}</td></tr>`;
-    const form = (rows) => formChips(rows.map((r) => (r.won === null ? '?' : r.won ? 'V' : 'D')));
-    list = `${h.meetings.length ? `<div class="panel"><h3>Últimos confrontos</h3><div class="table-wrap"><table><tbody>${h.meetings.map(row).join('')}</tbody></table></div></div>` : ''}
-      <div class="panel"><h3>Forma recente</h3>
-        <div class="form-line"><span>${esc(e.home)}</span><span>${form(h.homeForm)}</span></div>
-        <div class="form-line"><span>${esc(e.away)}</span><span>${form(h.awayForm)}</span></div></div>`;
-  } else {
-    // Sides by team id: names get rewritten upstream, ids do not.
+  let list = '';
+  if (h.meetings) {
+    // Meetings already oriented: `won` is from the home side's point of view.
+    const row = (m) => `<tr><td>${esc(fmtShortDate(m.date))}</td><td>${esc(m.home)} vs ${esc(m.away)}${m.competition ? `<br><small class="muted">${esc(m.competition)}</small>` : ''}</td>
+      <td class="num">${esc(m.score || '—')}</td><td>${m.won === null || m.won === undefined ? '' : formChips([m.won ? 'V' : 'D'])}</td></tr>`;
+    if (h.meetings.length) list += `<div class="panel"><h3>Últimos confrontos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p><div class="table-wrap"><table><tbody>${h.meetings.map(row).join('')}</tbody></table></div></div>`;
+  } else if (h.recent?.length) {
+    // Football: sides by team id, since names get rewritten upstream.
     const row = (m) => {
       const ours = m.homeTeamId === x.homeTeamId ? 'h' : m.awayTeamId === x.homeTeamId ? 'a' : null;
       let res = '';
@@ -1589,8 +1618,22 @@ function h2hView(e, x) {
         <td class="num"><b>${m.homeScore === null ? '—' : `${m.homeScore}-${m.awayScore}`}</b></td><td>${esc(m.away)}</td>
         <td>${res ? formChips([res]) : ''}</td></tr>`;
     };
-    list = h.recent.length ? `<div class="panel"><h3>Últimos jogos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p>
-      <div class="table-wrap"><table><tbody>${h.recent.map(row).join('')}</tbody></table></div></div>` : '';
+    list += `<div class="panel"><h3>Últimos jogos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p>
+      <div class="table-wrap"><table><tbody>${h.recent.map(row).join('')}</tbody></table></div></div>`;
+  }
+  const formOf = (rows, letters) => (letters?.length ? formChips(letters) : rows?.length ? formChips(rows.map((r) => (r.won === null ? '?' : r.won ? 'V' : 'D'))) : null);
+  const hf = formOf(h.homeForm, h.homeFormLetters);
+  const af = formOf(h.awayForm, h.awayFormLetters);
+  if (hf || af) {
+    list += `<div class="panel"><h3>Forma recente</h3>
+      <div class="form-line"><span>${esc(e.home)}</span><span>${hf || '<span class="muted">—</span>'}</span></div>
+      <div class="form-line"><span>${esc(e.away)}</span><span>${af || '<span class="muted">—</span>'}</span></div></div>`;
+  }
+  if (h.compare?.length) {
+    const fmt = (v) => (typeof v === 'number' ? v.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) : v);
+    list += `<div class="panel"><h3>Comparação</h3><div class="table-wrap"><table class="compare"><thead><tr><th class="num">${esc(e.home)}</th><th></th><th>${esc(e.away)}</th></tr></thead><tbody>
+      ${h.compare.map(([label, a, b]) => `<tr><td class="num"><b>${esc(fmt(a))}</b></td><td class="muted center">${esc(label)}</td><td><b>${esc(fmt(b))}</b></td></tr>`).join('')}
+    </tbody></table></div></div>`;
   }
   return `<div class="insight-stack">${summary}${list}</div>`;
 }
@@ -1598,7 +1641,7 @@ function h2hView(e, x) {
 function predictionView(e, x) {
   const p = x.prediction;
   if (!p) return '<div class="panel empty">Ainda não há previsão para este jogo.</div>';
-  const tennis = e.sport === 'tenis';
+  const twoWay = p.draw === null || p.draw === undefined;
   const pick = { home: e.home, draw: 'Empate', away: e.away }[p.predicted];
   const outcome = (label, v, cls) => `<div class="prob ${cls}${p.predicted === cls ? ' picked' : ''}"><small>${esc(label)}</small><strong>${pctText(v)}</strong></div>`;
   const extra = [];
@@ -1609,11 +1652,11 @@ function predictionView(e, x) {
   }
   return `<div class="insight-stack"><div class="panel">
       <h3>Probabilidades do modelo</h3>
-      <div class="prob-grid${tennis || p.draw === null ? ' two' : ''}">${outcome(e.home, p.home, 'home')}${tennis || p.draw === null ? '' : outcome('Empate', p.draw, 'draw')}${outcome(e.away, p.away, 'away')}</div>
-      ${splitBar([{ value: p.home, cls: 'home' }, ...(tennis || p.draw === null ? [] : [{ value: p.draw, cls: 'draw' }]), { value: p.away, cls: 'away' }])}
+      <div class="prob-grid${twoWay ? ' two' : ''}">${outcome(e.home, p.home, 'home')}${twoWay ? '' : outcome('Empate', p.draw, 'draw')}${outcome(e.away, p.away, 'away')}</div>
+      ${splitBar([{ value: p.home, cls: 'home' }, ...(twoWay ? [] : [{ value: p.draw, cls: 'draw' }]), { value: p.away, cls: 'away' }])}
       <p class="muted">${pick ? `Favorito do modelo: <strong>${esc(pick)}</strong>` : ''}${p.confidence !== null && p.confidence !== undefined ? ` · confiança ${pctText(p.confidence)}` : ''}</p>
     </div>
-    ${extra.length ? `<div class="panel"><h3>Golos</h3><div class="stat-grid">${extra.map(([l, v]) => `<div class="stat"><small>${esc(l)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>` : ''}
+    ${extra.length ? `<div class="panel"><h3>Mercados de golos</h3><div class="stat-grid">${extra.map(([l, v]) => `<div class="stat"><small>${esc(l)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>` : ''}
     <p class="muted small-note">Previsão estatística do fornecedor de dados. Não é garantia de resultado.</p></div>`;
 }
 
@@ -1622,13 +1665,17 @@ function standingsView(e, x) {
   if (!t?.rows?.length) return '<div class="panel empty">Classificação indisponível para esta competição.</div>';
   const ours = [x.homeTeamId, x.awayTeamId];
   const zones = (t.zones || []).filter((z) => z.label);
+  // Football columns by default; other sports send their own (wins/losses, overtime, % wins…).
+  const cols = t.columns || [{ key: 'played', label: 'J' }, { key: 'won', label: 'V' }, { key: 'drawn', label: 'E' }, { key: 'lost', label: 'D' },
+    { key: 'goals', label: 'Golos' }, { key: 'points', label: 'Pts' }];
+  const cell = (r, k) => (k === 'goals' && r.goals === undefined ? `${r.goalsFor ?? ''}:${r.goalsAgainst ?? ''}` : r[k] ?? '');
+  const formOf = (f) => (!f ? '' : formChips([...f.toUpperCase()].map((c) => ({ W: 'V', D: 'E', L: 'D' }[c] || c))));
   const row = (r) => `<tr class="${ours.includes(r.teamId) ? 'highlight' : ''}${r.zone ? ` zone-${esc(r.zone.type)}` : ''}">
-    <td class="pos">${r.position ?? ''}</td><td>${esc(r.team)}</td><td class="num">${r.played ?? ''}</td><td class="num">${r.won ?? ''}</td>
-    <td class="num">${r.drawn ?? ''}</td><td class="num">${r.lost ?? ''}</td>
-    <td class="num">${r.goalsFor ?? ''}:${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td>
-    <td class="form-cell">${r.form ? formChips([...r.form.toUpperCase()].map((c) => ({ W: 'V', D: 'E', L: 'D' }[c] || c))) : ''}</td></tr>`;
+    <td class="pos">${r.position ?? ''}</td><td>${esc(r.team)}</td>
+    ${cols.map((c) => `<td class="num">${c.key === 'points' ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join('')}
+    <td class="form-cell">${formOf(r.form)}</td></tr>`;
   return `<div class="panel"><h3>${esc(e.competition)}${t.name ? ` — ${esc(t.name)}` : ''}</h3>
-    <div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num">V</th><th class="num">E</th><th class="num">D</th><th class="num">Golos</th><th class="num">Pts</th><th class="form-cell">Forma</th></tr></thead>
+    <div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Equipa</th>${cols.map((c) => `<th class="num">${esc(c.label)}</th>`).join('')}<th class="form-cell">Forma</th></tr></thead>
     <tbody>${t.rows.map(row).join('')}</tbody></table></div>
     ${zones.length ? `<div class="zone-legend">${zones.map((z) => `<span class="zone-${esc(z.type)}"><i></i>${esc(z.label)}${z.from ? ` (${z.from}${z.to && z.to !== z.from ? `–${z.to}` : ''})` : ''}</span>`).join('')}</div>` : ''}
   </div>`;
@@ -1639,30 +1686,49 @@ function rankingView(e, x) {
   if (!r) return '<div class="panel empty">Ranking indisponível neste momento.</div>';
   const card = (side) => {
     const k = r[side];
-    return `<div class="stat"><small>${sideBadge(e, side, 'mini')}${esc(e[side])}</small><strong>${k?.position ? `${k.position}.º` : 'Sem ranking'}</strong>${k?.points ? `<small>${k.points.toLocaleString('pt-PT')} pontos</small>` : ''}</div>`;
+    return `<div class="stat"><small>${sideBadge(e, side, 'mini')}${esc(e[side])}</small><strong>${k?.position ? `${k.position}.º` : 'Sem ranking'}</strong>${k?.points ? `<small>${k.points.toLocaleString('pt-PT')} ${r.valueLabel ? esc(r.valueLabel.toLowerCase()) : 'pontos'}</small>` : ''}</div>`;
   };
   const ours = [x.homeTeamId, x.awayTeamId];
   return `<div class="insight-stack"><div class="stat-grid two-col">${card('home')}${card('away')}</div>
-    ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">Pontos</th></tr></thead><tbody>
+    ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">${esc(r.valueLabel || 'Pontos')}</th></tr></thead><tbody>
       ${r.rows.map((p) => `<tr class="${ours.includes(p.playerId) ? 'highlight' : ''}"><td class="pos">${p.position ?? ''}</td><td>${p.country ? `${flagEmoji(p.country)} ` : ''}${esc(p.player)}</td><td class="num">${(p.points ?? 0).toLocaleString('pt-PT')}</td></tr>`).join('')}
     </tbody></table></div></div>` : ''}</div>`;
 }
 
-function tennisStatsView(e) {
+function sportStatsView(e) {
   const x = state.match.extras;
-  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas por set aparecem quando o encontro começar. Veja os confrontos diretos, a previsão e o ranking nos outros separadores.</div>';
+  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas aparecem quando o jogo começar. Veja os confrontos diretos, a previsão e a tabela nos outros separadores.</div>';
+  if (e.source === 'manual') return '<div class="panel empty">Sem estatísticas para este evento.</div>';
   if (!x) return '<div class="loading">A carregar estatísticas…</div>';
-  const sets = x.sets || [];
-  const detail = x.setsDetail || e.clock;
-  const block = (s) => `<div class="panel"><h3>${esc(s.set)}</h3>${s.stats.map((st) => {
+  const bars = (stats) => stats.map((st) => {
     const total = st.home + st.away;
     const hp = total ? (st.home / total) * 100 : 50;
-    return `<div class="stat-row"><div class="stat-vals"><b>${esc(`${st.home}${st.unit}`)}</b><span>${esc(st.label)}</span><b>${esc(`${st.away}${st.unit}`)}</b></div>
+    return `<div class="stat-row"><div class="stat-vals"><b>${esc(`${st.home}${st.unit || ''}`)}</b><span>${esc(st.label)}</span><b>${esc(`${st.away}${st.unit || ''}`)}</b></div>
       <div class="stat-bar"><i data-w="${hp}"></i></div></div>`;
-  }).join('')}</div>`;
-  return `<div class="insight-stack">${detail ? `<div class="panel"><h3>Parciais</h3><p class="sets-detail">${esc(detail)}</p></div>` : ''}
-    ${sets.length ? sets.map(block).join('') : '<div class="panel empty">Sem estatísticas por set para este encontro.</div>'}</div>`;
+  }).join('');
+  const groups = [...(x.sets || [])];
+  // Serve statistics streamed during a tennis match.
+  const live = state.match.live;
+  if (e.sport === 'tenis' && live?.home && live?.away) {
+    const liveStats = Object.keys(live.home).filter((k) => Number.isFinite(Number(live.home[k])) && Number.isFinite(Number(live.away[k])))
+      .map((k) => ({ label: TENNIS_STAT[k] || k.replace(/_/g, ' '), home: Number(live.home[k]), away: Number(live.away[k]), unit: /pct/.test(k) ? '%' : '' }));
+    if (liveStats.length) groups.unshift({ set: 'Ao vivo', stats: liveStats });
+  }
+  const sideName = (k) => (k === 'home' ? e.home : k === 'away' ? e.away : '');
+  const tables = (x.tables || []).map((t) => `<div class="panel"><h3>${esc(t.title || sideName(t.side))}</h3><div class="table-wrap"><table>
+    <thead><tr>${t.columns.map(([, l], i) => `<th${i ? ' class="num"' : ''}>${esc(l === 'Casa' ? e.home : l === 'Fora' ? e.away : l)}</th>`).join('')}</tr></thead>
+    <tbody>${t.rows.map((r) => `<tr>${t.columns.map(([k], i) => `<td${i ? ' class="num"' : ''}>${esc(r[k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`).join('');
+  const detail = x.setsDetail || e.clock;
+  const title = e.sport === 'tenis' ? 'Parciais' : 'Resultado';
+  const body = groups.map((g) => `<div class="panel"><h3>${esc(g.set)}</h3>${bars(g.stats)}</div>`).join('') + tables;
+  return `<div class="insight-stack">${detail ? `<div class="panel"><h3>${title}</h3><p class="sets-detail">${esc(detail)}</p></div>` : ''}
+    ${body || '<div class="panel empty">Sem estatísticas detalhadas para este jogo.</div>'}</div>`;
 }
+
+const TENNIS_STAT = {
+  aces: 'Ases', double_faults: 'Duplas faltas', first_serve_pct: '1.º serviço (%)', first_serve_won_pct: 'Pontos ganhos no 1.º serviço (%)',
+  second_serve_won_pct: 'Pontos ganhos no 2.º serviço (%)', break_points_saved_pct: 'Break points salvos (%)',
+};
 
 function trackerView(e) {
   const m = state.match;
@@ -1693,6 +1759,7 @@ function trackerView(e) {
 
 function afterMatchRender() {
   // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
+  if (state.match.data?.sport === 'tenis') updateServe(state.match.data);
   $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
   if (state.match.tab === 'tracker') {
     updateTracker();

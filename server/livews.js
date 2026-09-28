@@ -14,13 +14,17 @@
 import { EventEmitter } from 'node:events';
 import { nowIso, tx } from './db.js';
 
-const SOURCE = 'bzzoiro';
+// Tennis streams over the multi-sport channel (wss://sports.bzzoiro.com/ws/live/) with
+// `"sport": "tennis"` on each subscription: 'event' frames carry the full match state (sets,
+// games, point, server, serve statistics) and 'score' frames arrive after every point. Tennis
+// markets are pre-match only, so these frames drive the scoreboard and nothing else.
 const FATAL_CLOSE = { 4401: 'token inválido', 4402: 'addon WebSocket não ativo', 4404: 'caminho desconhecido' };
 
 export function createLiveSocket(db, {
   token, url = 'wss://sports.bzzoiro.com/live/football/', WebSocketImpl = globalThis.WebSocket,
-  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000,
+  maxSockets = 5, perSocket = 10, log = () => {}, reconnectMs = 5_000, sport = null, source = 'bzzoiro',
 } = {}) {
+  const SOURCE = source;
   const state = {
     enabled: !!token && typeof WebSocketImpl === 'function',
     wanted: new Set(), untracked: new Set(), sockets: [], fatal: null, lastError: null, frames: 0, lastFrameAt: null,
@@ -113,13 +117,53 @@ export function createLiveSocket(db, {
     publish(row.id, 'odds', { at: nowIso() });
   }
 
+  // ---------- tennis ----------
+
+  const setsOf = (v) => (Array.isArray(v) ? v.filter((x) => Array.isArray(x) && x.length >= 2).map(([a, b]) => [Number(a), Number(b)]) : null);
+
+  /** Sets won so far: completed sets only (6+ games with a 2-game lead, or a 7-6 tiebreak). */
+  function setsWon(sets) {
+    let h = 0;
+    let a = 0;
+    for (const [x, y] of sets) {
+      const done = (Math.max(x, y) >= 6 && Math.abs(x - y) >= 2) || (Math.max(x, y) === 7 && Math.min(x, y) === 6);
+      if (done) { if (x > y) h += 1; else a += 1; }
+    }
+    return [h, a];
+  }
+
+  function applyTennis(f, kind) {
+    const row = findEvent.get(SOURCE, String(f.event_id));
+    if (!row || row.status === 'finished' || row.status === 'cancelled') return;
+    const sc = kind === 'event' ? f.score || {} : f;
+    const sets = setsOf(sc.sets) || [];
+    const prev = snap(row.id).event || {};
+    let [home, away] = [Number(sc.home_sets), Number(sc.away_sets)];
+    if (!Number.isInteger(home) || !Number.isInteger(away)) [home, away] = setsWon(sets);
+    const point = sc.point ?? prev.point ?? null;
+    const serverSide = sc.server ?? prev.server ?? null;
+    const setsText = sets.map(([x, y]) => `${x}-${y}`).join(', ');
+    const clock = [setsText, point ? `(${point})` : null].filter(Boolean).join(' ').slice(0, 60) || row.clock;
+    db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
+      .run(home, away, clock, nowIso(), row.id);
+    const data = {
+      homeScore: home, awayScore: away, clock, sets, point, server: serverSide,
+      stats: kind === 'event' && f.stats ? f.stats : prev.stats ?? null,
+    };
+    snap(row.id).event = data;
+    publish(row.id, 'event', data);
+  }
+
   function handle(sock, raw) {
     let f;
     try { f = JSON.parse(typeof raw === 'string' ? raw : String(raw)); } catch { return; }
     state.frames += 1;
     state.lastFrameAt = nowIso();
     try {
-      if (f.type === 'subscribed') {
+      if (sport === 'tennis' && f.type === 'event') applyTennis(f, 'event');
+      else if (sport === 'tennis' && f.type === 'score') applyTennis(f, 'score');
+      else if (sport === 'tennis' && f.type === 'subscribed') { if (f.event) applyTennis({ ...f.event, event_id: f.event_id }, 'event'); }
+      else if (f.type === 'subscribed') {
         if (f.event) applyEvent({ ...f.event, event_id: f.event_id });
         if (f.odds) applyOdds({ ...f.odds, event_id: f.event_id });
         for (const ld of Array.isArray(f.livedata) ? f.livedata : []) applyLivedata({ ...ld, event_id: f.event_id });
@@ -145,6 +189,8 @@ export function createLiveSocket(db, {
 
   // ---------- sockets ----------
 
+  const subscribeMsg = (id) => ({ action: 'subscribe', event_id: Number(id), ...(sport ? { sport } : {}) });
+
   function send(sock, msg) {
     if (sock.open) sock.ws.send(JSON.stringify(msg));
   }
@@ -163,7 +209,7 @@ export function createLiveSocket(db, {
     ws.onopen = () => {
       sock.open = true;
       sock.attempts = 0;
-      for (const id of sock.subs) send(sock, { action: 'subscribe', event_id: Number(id) });
+      for (const id of sock.subs) send(sock, subscribeMsg(id));
     };
     ws.onmessage = (ev) => handle(sock, ev.data);
     ws.onerror = () => { state.lastError = 'erro de ligação'; };
@@ -187,7 +233,7 @@ export function createLiveSocket(db, {
     for (const sock of state.sockets) {
       for (const id of [...sock.subs]) {
         if (!state.wanted.has(id)) {
-          send(sock, { action: 'unsubscribe', event_id: Number(id) });
+          send(sock, { ...subscribeMsg(id), action: 'unsubscribe' });
           sock.subs.delete(id);
         }
       }
@@ -204,7 +250,7 @@ export function createLiveSocket(db, {
         connect(sock);
       }
       sock.subs.add(id);
-      send(sock, { action: 'subscribe', event_id: Number(id) });
+      send(sock, subscribeMsg(id));
     }
   }
 

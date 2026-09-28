@@ -70,8 +70,29 @@ API (`/tennis/api/v2/`):
   1.º set anula; desistência depois disso dá a vitória a quem passa.
 - Na página do encontro: estatísticas por set (ases, duplas faltas, serviço…), confrontos diretos e
   forma recente, previsão do modelo e ranking ATP/WTA (top 20 com os dois jogadores).
+- Ao vivo, com o addon WebSocket, o marcador é atualizado ponto a ponto pelo canal multi-desporto
+  (`wss://sports.bzzoiro.com/ws/live/`, `"sport": "tennis"`): sets, jogos, pontos, quem serve e as
+  estatísticas de serviço. Sem cobertura, o marcador vem da API a cada 30 s.
 - Sem o addon a API responde 402: o painel *Administração → Dados ao vivo* mostra "Sem Sports Addon".
   `TENNIS=0` desliga o ténis.
+
+## Basquetebol, hóquei no gelo, dardos e CS2
+
+Também com o Sports Addon (`server/sports.js`, um motor comum com uma configuração por desporto):
+
+| Desporto | Mercados | Liquidação | Página do jogo |
+|---|---|---|---|
+| Basquetebol | Vencedor (incl. prolongamento) | resultado final | estatísticas por equipa, box score, previsão, classificação |
+| Hóquei no gelo | Resultado 1X2 **em tempo regulamentar** e empate anula; ou vencedor incl. prolongamento quando as casas só dão 2 odds | 1X2 pelos 3 períodos; vencedor pelo final | golos por período, H2H e forma, previsão, classificação (com VP/DP) |
+| Dardos | Vencedor do encontro | por sets/legs; walkover anula | legs por set, H2H com médias de 3 dardos, previsão, ranking PDC |
+| CS2 | Vencedor do encontro | por mapas; empate num BO2 anula | mapas, comparação das equipas (mapas, rondas T/CT, K/D), H2H, previsão |
+
+- As odds são a média das casas de apostas (`/{id}/odds/`), atualizadas a cada 10 min (3 min na
+  última hora). Os mercados fecham ao início do jogo (as odds são só pré-jogo).
+- `SPORTS_ADDON=basquetebol,hoquei,dardos,esports` escolhe os desportos (vazio desliga todos) e
+  `SPORTS_DAYS` quantos dias importar.
+- Padel não tem odds na API (não dá para apostar) e as corridas de cavalos precisam de um modelo de
+  corrida com vários participantes — ficaram de fora nesta versão.
 
 ## Casino (slots e casino ao vivo)
 
@@ -160,6 +181,7 @@ server/
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
   tennis.js     importação de ténis ATP/WTA (encontros, odds, resultados, H2H, previsões, ranking)
+  sports.js     basquetebol, hóquei no gelo, dardos e CS2 (Sports Addon)
   casino.js     casino (agregador Agent API v4, modo Transfer)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite
