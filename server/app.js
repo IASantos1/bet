@@ -10,7 +10,7 @@ import {
 } from './security.js';
 import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
-import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
+import { MARKETS, MARKET_ORDER, selectionLabel, codeRank } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
@@ -181,15 +181,15 @@ export function createApp(db, {
 
   // ---------- events ----------
 
-  const codeRank = (market, code) => MARKETS[market]?.codes.indexOf(code) ?? 99;
 
   /**
    * Events with their match-result (1X2) selections — what lists and cards show. With
    * `allMarkets`, also every market grouped for the match page.
    */
+  const TENNIS_NAMES = { '1x2': 'Vencedor do encontro', ou: 'Total de sets', hcp: 'Handicap de sets' };
   // Market titles per sport ("Vencedor do encontro" in tennis, regulation time in ice hockey…).
   const marketName = (sport, m) => {
-    if (sport === 'tenis' && m === '1x2') return 'Vencedor do encontro';
+    if (sport === 'tenis' && TENNIS_NAMES[m]) return TENNIS_NAMES[m];
     return SPORT_SPECS[sport]?.marketName?.[m] || MARKETS[m].name;
   };
 
@@ -470,14 +470,14 @@ export function createApp(db, {
     if (!bets.length) return [];
     const ids = bets.map((b) => b.id);
     const legs = db.prepare(
-      `SELECT l.bet_id, l.market, l.code, l.odds_x100, l.status, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
+      `SELECT l.bet_id, l.market, l.code, l.odds_x100, l.status, e.sport, e.home, e.away, e.competition, e.home_score, e.away_score, e.status AS event_status
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
     return bets.map((b) => ({
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market]?.name || l.market,
+        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market] ? marketName(l.sport, l.market) : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
       })),

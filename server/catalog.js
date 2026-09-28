@@ -14,7 +14,7 @@ const isPrice = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim
 /** Markets Bet62 already offers, per sport (market kinds in the provider's vocabulary). */
 export const WIRED = {
   futebol: ['1x2', 'match_winner', 'home_win', 'draw', 'away_win', 'over_under', 'btts', 'double_chance', 'draw_no_bet'],
-  tenis: ['WINNER', 'odds_player1'],
+  tenis: ['WINNER', 'odds_player1', 'OU_SETS', 'SET_HCP', 'OU_GAMES', 'GAMES_HCP', 'OE_GAMES'],
   basquetebol: ['WINNER', 'odds_home'],
   hoquei: ['1X2', 'DNB', 'odds_home'],
   dardos: ['WINNER', 'odds_player1'],

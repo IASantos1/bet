@@ -14,6 +14,7 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
+import { hcpCode } from './markets.js';
 
 const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
 const toInt = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
@@ -109,6 +110,37 @@ export function twoWayPrices(data, homeKeys, awayKeys, { market = 'ml', since = 
   const h = x100(w.home);
   const a = x100(w.away);
   return h && a ? { [`${market}|1`]: h, [`${market}|2`]: a } : {};
+}
+
+/**
+ * Line markets from the Sports Pack `markets[]` list (full time only), averaged over the books:
+ * `kinds` maps the provider's market_kind to ours — { OU_SETS: 'ou', SET_HCP: 'hcp', … }. Over /
+ * under become O<line> / U<line>; handicaps carry the line from P1's side (P2 gets the opposite);
+ * odd / even keep ODD / EVEN. Every line the provider lists is kept.
+ */
+export function lineMarketPrices(data, kinds, { since = null } = {}) {
+  const out = {};
+  for (const m of Array.isArray(data?.markets) ? data.markets : []) {
+    const market = kinds[m?.market_kind];
+    if (!market || String(m.market_period || 'FT').toUpperCase() !== 'FT') continue;
+    const line = num(m.market_line);
+    const books = freshBooks(m.bookmakers, since).filter((b) => String(b.bookmaker_slug || b.bookmaker || '').toLowerCase() !== 'consensus');
+    const avg = (sel) => {
+      const vals = books.map((b) => num(b.prices?.[sel]?.price ?? b.prices?.[sel])).filter((v) => v !== null && v > 1);
+      return vals.length ? x100(vals.reduce((x, y) => x + y, 0) / vals.length) : null;
+    };
+    let codes;
+    if (market === 'goe') codes = { ODD: 'ODD', EVEN: 'EVEN' };
+    else if (line === null || Math.abs(line) >= 1000) continue;
+    else if (['ou', 'gou'].includes(market)) {
+      if (line <= 0 || Math.round(line * 2) % 2 !== 1) continue; // half lines only: no push
+      codes = { OVER: `O${line}`, UNDER: `U${line}` };
+    } else if (Number.isInteger(line * 2)) codes = { P1: hcpCode('1', line), P2: hcpCode('2', -line) };
+    else continue; // quarter lines are not offered
+    const priced = Object.entries(codes).map(([sel, code]) => [code, avg(sel)]);
+    if (priced.every(([, v]) => v)) for (const [code, v] of priced) out[`${market}|${code}`] = v;
+  }
+  return out;
 }
 
 const priceSig = (p) => JSON.stringify(Object.entries(p || {}).sort(([a], [b]) => a.localeCompare(b)));

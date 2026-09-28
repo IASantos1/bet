@@ -1335,13 +1335,22 @@ function marketsView(e) {
   };
   return e.markets.map((mk) => {
     let grid;
-    if (mk.market === 'ou') {
+    if (mk.market === 'ou' || mk.market === 'gou') {
+      const unit = mk.market === 'gou' ? 'jogos' : e.sport === 'tenis' ? 'sets' : 'golos';
       const lines = [...new Set(mk.selections.map((s) => s.code.slice(1)))].sort((a, b) => a - b);
       grid = lines.map((line) => {
         const over = mk.selections.find((s) => s.code === `O${line}`);
         const under = mk.selections.find((s) => s.code === `U${line}`);
-        return `<div class="market-line"><span class="market-line-label">${esc(line)} golos</span>
+        return `<div class="market-line"><span class="market-line-label">${esc(line)} ${unit}</span>
           <div class="odds two">${over ? btn(over, 'Mais') : '<span></span>'}${under ? btn(under, 'Menos') : '<span></span>'}</div></div>`;
+      }).join('');
+    } else if (mk.market === 'hcp' || mk.market === 'ghcp') {
+      // One row per line: player 1 with the line, player 2 with the opposite one.
+      const rows = [...new Set(mk.selections.filter((s) => s.code[0] === '1').map((s) => s.code.slice(1)))];
+      grid = rows.map((line) => {
+        const one = mk.selections.find((s) => s.code === `1${line}`);
+        const two = mk.selections.find((s) => s.code === `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`);
+        return `<div class="odds two">${one ? btn(one) : '<span></span>'}${two ? btn(two) : '<span></span>'}</div>`;
       }).join('');
     } else {
       grid = `<div class="odds${mk.selections.length === 2 ? ' two' : ''}">${mk.selections.map((s) => btn(s)).join('')}</div>`;

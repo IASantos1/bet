@@ -243,3 +243,82 @@ test('football match insights resolve the current season for the league table', 
   assert.deepEqual(seen, ['1635']);
   assert.equal(x.homeTeamId, 3001);
 });
+
+// Shape of /matches/{id}/odds/ as the provider returns it (trimmed from a real response).
+const book = (slug, prices) => ({ bookmaker: slug, bookmaker_slug: slug, prices: Object.fromEntries(Object.entries(prices).map(([k, v]) => [k, { price: v, movement: null }])), updated_at: '2026-09-27T22:10:30Z' });
+const tennisOdds = {
+  match_id: 7, bookmakers: [{ bookmaker_slug: 'bet365', odds_player1: 2.5, odds_player2: 1.5, updated_at: '2026-09-27T22:10:35Z' }],
+  markets: [
+    { market_kind: 'WINNER', market_line: null, market_period: 'FT', bookmakers: [book('bet365', { P1: 2.5, P2: 1.5 })] },
+    { market_kind: 'OU_GAMES', market_line: 20.5, market_period: 'FT', bookmakers: [book('bet365', { OVER: 1.9, UNDER: 1.8 }), book('betway', { OVER: 1.86, UNDER: 1.84 }), book('Consensus', { OVER: 5, UNDER: 5 })] },
+    { market_kind: 'GAMES_HCP', market_line: 3.5, market_period: 'FT', bookmakers: [book('bet365', { P1: 1.87, P2: 1.82 })] },
+    { market_kind: 'OE_GAMES', market_line: null, market_period: 'FT', bookmakers: [book('bet365', { ODD: 1.84, EVEN: 1.84 })] },
+    { market_kind: 'OU_SETS', market_line: 2.5, market_period: 'FT', bookmakers: [book('bet365', { OVER: 2.5, UNDER: 1.45 })] },
+    { market_kind: 'SET_HCP', market_line: -1.5, market_period: 'FT', bookmakers: [book('bet365', { P1: 3.94, P2: 1.19 })] },
+    { market_kind: 'OU_GAMES', market_line: 9.5, market_period: '1S', bookmakers: [book('bet365', { OVER: 1.8, UNDER: 1.9 })] },
+  ],
+};
+
+test('pre-match sets and games markets come from /odds/ and settle on sets and games', async () => {
+  let status = { status: 'scheduled' };
+  const t = setup({
+    '/matches/': { results: [match(7, { odds_player1: null, odds_player2: null })] },
+    '/matches/7/': () => match(7, status),
+    '/matches/7/odds/': tennisOdds,
+  });
+  await t.tennis.syncFixtures();
+  const sels = Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ?').all(t.row(7).id)
+    .map((s) => [`${s.market}|${s.code}`, s.odds_x100]));
+  assert.deepEqual(sels, {
+    '1x2|1': 250, '1x2|2': 150,
+    'gou|O20.5': 188, 'gou|U20.5': 182, // consensus row left out of the average
+    'ghcp|1+3.5': 187, 'ghcp|2-3.5': 182,
+    'goe|ODD': 184, 'goe|EVEN': 184,
+    'ou|O2.5': 250, 'ou|U2.5': 145,
+    'hcp|1-1.5': 394, 'hcp|2+1.5': 119,
+  });
+
+  const bets = Object.fromEntries(['gou|O20.5', 'ghcp|1+3.5', 'goe|ODD', 'ou|O2.5', 'hcp|2+1.5'].map((k) => {
+    const [market, code] = k.split('|');
+    return [k, t.db.prepare('SELECT id FROM selections WHERE market = ? AND code = ?').get(market, code).id];
+  }));
+  const user = t.db.prepare('SELECT * FROM users').get();
+  const ids = Object.fromEntries(Object.entries(bets).map(([k, selId]) => {
+    const odds = t.db.prepare('SELECT odds_x100 FROM selections WHERE id = ?').get(selId).odds_x100 / 100;
+    return [k, tx(t.db, () => placeBets(t.db, user, { mode: 'single', stakeCents: 500, picks: [{ selectionId: selId, odds }] }))[0]];
+  }));
+
+  t.startNow(7);
+  // 6-4 3-6 7-6: 2-1 in sets, 16-16 in games (32, even).
+  status = { status: 'finished', player1_sets: 2, player2_sets: 1, sets_detail: '6-4, 3-6, 7-6(5)', winner_id: 4211 };
+  await t.tennis.syncResults();
+  const ev = t.row(7);
+  assert.deepEqual([ev.home_games, ev.away_games, ev.retired], [16, 16, 0]);
+  const st = (k) => t.betStatus(ids[k]).status;
+  assert.equal(st('gou|O20.5'), 'won');
+  assert.equal(st('ghcp|1+3.5'), 'won');
+  assert.equal(st('goe|ODD'), 'lost');
+  assert.equal(st('ou|O2.5'), 'won');
+  assert.equal(st('hcp|2+1.5'), 'won');
+});
+
+test('a retirement voids sets and games markets but settles the winner', async () => {
+  let status = { status: 'scheduled' };
+  const t = setup({
+    '/matches/': { results: [match(8, { odds_player1: null, odds_player2: null })] },
+    '/matches/8/': () => match(8, status),
+    '/matches/8/odds/': tennisOdds,
+  });
+  await t.tennis.syncFixtures();
+  const sel = (market, code) => t.db.prepare('SELECT id, odds_x100 FROM selections WHERE market = ? AND code = ?').get(market, code);
+  const user = t.db.prepare('SELECT * FROM users').get();
+  const place = (s) => tx(t.db, () => placeBets(t.db, user, { mode: 'single', stakeCents: 500, picks: [{ selectionId: s.id, odds: s.odds_x100 / 100 }] }))[0];
+  const onGames = place(sel('gou', 'U20.5'));
+  const onWinner = place(sel('1x2', '1'));
+  t.startNow(8);
+  status = { status: 'retired', player1_sets: 1, player2_sets: 0, sets_detail: '6-2, 3-1', winner_id: 4211 };
+  await t.tennis.syncResults();
+  assert.equal(t.betStatus(onGames).status, 'void');
+  assert.equal(t.betStatus(onWinner).status, 'won');
+  assert.equal(t.row(8).retired, 1);
+});
