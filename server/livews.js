@@ -110,6 +110,10 @@ export function createLiveSocket(db, {
       const scoreChanged = row.home_score !== home || row.away_score !== away;
       db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
         .run(home, away, clock, nowIso(), row.id);
+      // Half-time score for the half markets, recorded once at the interval.
+      if (/^(ht|half.?time|break|interval)$/i.test(String(f.time?.period ?? f.time?.status ?? ''))) {
+        db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ? AND ht_home IS NULL').run(home, away, row.id);
+      }
       if (scoreChanged || f.time?.status === 'finished') {
         // A goal invalidates every price; wait for an odds frame that has moved since to reopen.
         suspend(row.id);

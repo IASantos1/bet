@@ -12,6 +12,7 @@
 
 import { nowIso, tx } from './db.js';
 import { resultCode, settleEvent } from './betting.js';
+import { periodNumber } from './markets.js';
 
 const SOURCE = 'bzzoiro';
 
@@ -35,6 +36,17 @@ export function mapStatus(raw) {
   if (['postponed', 'delayed', 'suspended', 'interrupted', 'unresolved'].includes(s)) return 'postponed';
   if (['cancelled', 'canceled', 'abandoned', 'walkover', 'awarded', 'removed'].includes(s)) return 'cancelled';
   return 'live'; // inprogress, live, 1sthalf, halftime, 2ndhalf, extratime, penalties, …
+}
+
+/** Half-time score if the provider sends one ({ htHome, htAway }), in any of its usual spellings. */
+function halfTime(ev) {
+  const pair = (h, a) => { const x = toInt(h); const y = toInt(a); return x !== null && y !== null ? { htHome: x, htAway: y } : null; };
+  const str = first(ev.ht_score, ev.halftime_score, ev.half_time_score, ev.score?.ht, ev.scores?.ht, ev.score?.halftime);
+  const fromStr = typeof str === 'string' ? /^(\d+)\s*[-:]\s*(\d+)$/.exec(str.trim()) : null;
+  return pair(ev.ht_home_score, ev.ht_away_score) || pair(ev.home_score_ht, ev.away_score_ht)
+    || pair(ev.halftime_home_score, ev.halftime_away_score) || pair(ev.home_ht_score, ev.away_ht_score)
+    || (str && typeof str === 'object' ? pair(first(str.home, str[0]), first(str.away, str[1])) : null)
+    || (fromStr ? pair(fromStr[1], fromStr[2]) : null) || {};
 }
 
 export function normalizeEvent(ev) {
@@ -62,6 +74,7 @@ export function normalizeEvent(ev) {
     homeTeamId: teamId(first(ev.home_team?.id, ev.home_team_id, ev.home?.id, ev.teams?.home?.id)),
     awayTeamId: teamId(first(ev.away_team?.id, ev.away_team_id, ev.away?.id, ev.teams?.away?.id)),
     liveWs: ev.live_websocket === true,
+    ...halfTime(ev),
   };
 }
 
@@ -97,10 +110,18 @@ export function normalizeOdds(data) {
 export const BULK_MARKETS = ['1x2', 'over_under_05', 'over_under_15', 'over_under_25', 'over_under_35', 'over_under_45', 'btts', 'double_chance', 'draw_no_bet'];
 
 /** Maps the provider's (market, outcome) to our market|code, or null. */
-export function mapMarket(rawMarket, rawOutcome) {
+export function mapMarket(rawMarket, rawOutcome, half = null) {
   const m = String(rawMarket || '').toLowerCase();
   const out = String(rawOutcome || '');
   const up = out.toUpperCase();
+  if (half) {
+    // First / second half: result, both teams to score and goal lines of that half only.
+    const full = mapMarket(rawMarket, rawOutcome);
+    if (!full) return null;
+    const [market, code] = full.split('|');
+    const to = { '1x2': 'pw', btts: 'pbtts', ou: 'pou' }[market];
+    return to ? `${to}|${half}:${code}` : null;
+  }
   if (['1x2', 'match_result', 'match_winner', 'h2h'].includes(m)) {
     const code = { HOME: '1', DRAW: 'X', AWAY: '2', 1: '1', X: 'X', 2: '2' }[up];
     return code ? `1x2|${code}` : null;
@@ -123,9 +144,11 @@ export function mapMarket(rawMarket, rawOutcome) {
 export function normalizeOddsRow(r) {
   if (!r || typeof r !== 'object') return null;
   const period = String(first(r.period, 'ft')).toLowerCase();
-  if (!['ft', 'full_time', 'fulltime', 'full-time', 'match'].includes(period)) return null;
+  const full = ['ft', 'full_time', 'fulltime', 'full-time', 'match'].includes(period);
+  const half = full ? null : periodNumber(period);
+  if (!full && half !== 1 && half !== 2) return null;
   const eventId = first(r.event_id, r.event?.id, typeof r.event === 'number' || typeof r.event === 'string' ? r.event : undefined);
-  const key = mapMarket(first(r.market, r.market_slug, '1x2'), first(r.outcome, r.selection, ''));
+  const key = mapMarket(first(r.market, r.market_slug, '1x2'), first(r.outcome, r.selection, ''), half);
   const x100 = toX100(first(r.decimal_odds, r.odds, r.price));
   if (eventId === undefined || !key || !x100) return null;
   return {
@@ -327,10 +350,15 @@ export function createFeed(db, {
 
   const suspendMarkets = (eventId) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
 
-  function finish(eventId, home, away) {
+  function finish(eventId, home, away, ht = {}) {
+    if (Number.isInteger(ht.htHome)) db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ?').run(ht.htHome, ht.htAway, eventId);
+    // Goals per half for the half markets, when the half-time score is known and consistent.
+    const e = db.prepare('SELECT ht_home, ht_away FROM events WHERE id = ?').get(eventId);
+    const halves = Number.isInteger(e?.ht_home) && Number.isInteger(e?.ht_away) && e.ht_home <= home && e.ht_away <= away
+      ? JSON.stringify([[e.ht_home, e.ht_away], [home - e.ht_home, away - e.ht_away]]) : null;
     db.prepare(
-      "UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = 'Final', updated_at = ? WHERE id = ?"
-    ).run(home, away, resultCode(home, away), nowIso(), eventId);
+      "UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = 'Final', period_scores = ?, updated_at = ? WHERE id = ?"
+    ).run(home, away, resultCode(home, away), halves, nowIso(), eventId);
     return settleEvent(db, eventId, { source: 'feed' });
   }
 
@@ -341,7 +369,7 @@ export function createFeed(db, {
 
   /** Applies a finished / cancelled / postponed status from the provider. Returns settled bet count. */
   function applyTerminal(row, ev) {
-    if (ev.status === 'finished' && ev.homeScore !== null && ev.awayScore !== null) return tx(db, () => finish(row.id, ev.homeScore, ev.awayScore));
+    if (ev.status === 'finished' && ev.homeScore !== null && ev.awayScore !== null) return tx(db, () => finish(row.id, ev.homeScore, ev.awayScore, ev));
     if (ev.status === 'cancelled') return tx(db, () => cancel(row.id));
     if (ev.status === 'postponed') {
       // No price while the new date is unknown; the fixtures sync reopens it when a date is set.
@@ -470,6 +498,9 @@ export function createFeed(db, {
         const scoreChanged = row.status === 'live' && (row.home_score !== home || row.away_score !== away);
         db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
           .run(home, away, ev.clock, nowIso(), row.id);
+        // Half-time score: from the provider's own field, or the score shown at the interval.
+        if (Number.isInteger(ev.htHome)) db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ?').run(ev.htHome, ev.htAway, row.id);
+        else if (ev.clock === 'Intervalo') db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ? AND ht_home IS NULL').run(home, away, row.id);
         // Pre-match prices never carry into play. Only an in-play price from the live socket
         // (live_odds_at) keeps the market open, and a goal voids that too.
         if (row.status !== 'live' || scoreChanged || !row.live_odds_at) {

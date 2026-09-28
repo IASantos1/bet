@@ -2,7 +2,7 @@ import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
-import { legOutcome, resultCode } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS } from './markets.js';
 
 export { resultCode };
 
@@ -121,8 +121,10 @@ export function settleBet(db, betId) {
  * and records it in the settlements log. Runs inside a transaction. Returns the bets touched.
  * `source` says who triggered it: 'feed' (provider result), 'admin' or 'engine' (automatic rules).
  */
+const parsePeriodScores = (v) => { try { const p = JSON.parse(v || 'null'); return Array.isArray(p) ? p : null; } catch { return null; } };
+
 export function settleEvent(db, eventId, { source = 'engine', userId = null, note = null } = {}) {
-  const ev = db.prepare('SELECT status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired FROM events WHERE id = ?').get(eventId);
+  const ev = db.prepare('SELECT status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
   const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
   const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
@@ -130,9 +132,10 @@ export function settleEvent(db, eventId, { source = 'engine', userId = null, not
     // Regulation-time markets use the regulation score where the sport has one (ice hockey).
     const reg = leg.market !== 'ml' && ev.reg_home_score !== null && ev.reg_away_score !== null;
     // After a retirement only the winner stands; totals and handicaps are void.
-    const status = ev.status === 'cancelled' || (ev.retired && !['1x2', 'ml'].includes(leg.market)) ? 'void'
+    // (period markets: a set completed before the retirement stands, the others are void)
+    const status = ev.status === 'cancelled' || (ev.retired && !['1x2', 'ml'].includes(leg.market) && !PERIOD_MARKETS.has(leg.market)) ? 'void'
       : legOutcome(leg.market, leg.code, reg ? ev.reg_home_score : ev.home_score, reg ? ev.reg_away_score : ev.away_score,
-        { homeGames: ev.home_games, awayGames: ev.away_games });
+        { homeGames: ev.home_games, awayGames: ev.away_games, periods: parsePeriodScores(ev.period_scores) });
     setLeg.run(status, leg.id);
   }
   const betIds = [...new Set(legs.map((l) => l.bet_id))];

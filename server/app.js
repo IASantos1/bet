@@ -10,7 +10,7 @@ import {
 } from './security.js';
 import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
-import { MARKETS, MARKET_ORDER, selectionLabel, codeRank } from './markets.js';
+import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
@@ -186,11 +186,16 @@ export function createApp(db, {
    * Events with their match-result (1X2) selections — what lists and cards show. With
    * `allMarkets`, also every market grouped for the match page.
    */
-  const TENNIS_NAMES = { '1x2': 'Vencedor do encontro', ou: 'Total de sets', hcp: 'Handicap de sets' };
+  const TENNIS_NAMES = {
+    '1x2': 'Vencedor do encontro', ou: 'Total de sets', hcp: 'Handicap de sets',
+    pw: 'Vencedor do set', pou: 'Total de jogos', phcp: 'Handicap de jogos', poe: 'Jogos par / ímpar',
+  };
+  const PERIOD_NAMES = { pw: 'Resultado', pou: 'Total de golos', phcp: 'Handicap', poe: 'Par / ímpar', pbtts: 'Ambas as equipas marcam' };
+  const periodLabel = (sport, n) => (sport === 'tenis' ? `${n}.º set` : sport === 'futebol' ? `${n}.ª parte` : `${n}.º período`);
   // Market titles per sport ("Vencedor do encontro" in tennis, regulation time in ice hockey…).
   const marketName = (sport, m) => {
     if (sport === 'tenis' && TENNIS_NAMES[m]) return TENNIS_NAMES[m];
-    return SPORT_SPECS[sport]?.marketName?.[m] || MARKETS[m].name;
+    return SPORT_SPECS[sport]?.marketName?.[m] || PERIOD_NAMES[m] || MARKETS[m].name;
   };
 
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
@@ -222,12 +227,17 @@ export function createApp(db, {
         liveTracker: e.source === 'bzzoiro' && e.status === 'live',
       };
       if (allMarkets) {
-        out.markets = MARKET_ORDER
-          .map((m) => ({
-            market: m, name: marketName(e.sport, m),
-            selections: rows.filter((s) => s.market === m).sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
-          }))
-          .filter((m) => m.selections.length);
+        const block = (m, list, suffix = '') => ({
+          market: m, name: marketName(e.sport, m) + suffix,
+          selections: list.sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
+        });
+        const full = MARKET_ORDER.filter((m) => !PERIOD_MARKETS.has(m))
+          .map((m) => block(m, rows.filter((s) => s.market === m)));
+        // Period markets: one block per set / half, after the full-match ones.
+        const periods = [...new Set(rows.filter((s) => PERIOD_MARKETS.has(s.market)).map((s) => splitPeriod(s.code)?.period).filter(Boolean))].sort();
+        const perPeriod = periods.flatMap((n) => MARKET_ORDER.filter((m) => PERIOD_MARKETS.has(m))
+          .map((m) => block(m, rows.filter((s) => s.market === m && splitPeriod(s.code)?.period === n), ` — ${periodLabel(e.sport, n)}`)));
+        out.markets = [...full, ...perPeriod].filter((m) => m.selections.length);
       }
       return out;
     });
@@ -477,7 +487,8 @@ export function createApp(db, {
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market, marketName: MARKETS[l.market] ? marketName(l.sport, l.market) : l.market,
+        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
+        marketName: MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
       })),

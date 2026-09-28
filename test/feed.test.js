@@ -285,3 +285,57 @@ test('0.5 and 4.5 goal lines come from the consensus keys and the bulk feed', ()
   assert.equal(mapMarket('over_under_05', 'Over'), 'ou|O0.5');
   assert.equal(mapMarket('over_under_45', 'Under'), 'ou|U4.5');
 });
+
+test('half markets come from the bulk feed rows of each half and settle on the half-time score', async () => {
+  const db = openDb(':memory:');
+  const rows = [
+    ['1x2', 'HOME', 'ft', 1.13], ['1x2', 'DRAW', 'ft', 7.5], ['1x2', 'AWAY', 'ft', 13.36],
+    ['1x2', 'HOME', '1h', 1.46], ['1x2', 'DRAW', '1h', 3.0], ['1x2', 'AWAY', '1h', 12],
+    ['1x2', 'HOME', '2h', 1.33], ['1x2', 'DRAW', '2h', 3.6], ['1x2', 'AWAY', '2h', 11.9],
+    ['btts', 'yes', 'first_half', 5.45], ['btts', 'no', 'first_half', 1.13],
+    ['over_under_05', 'over', '1h', 1.22], ['over_under_05', 'under', '1h', 3.85],
+    ['1x2', 'HOME', 'et', 1.9],
+  ];
+  const routes = {
+    '/events/': { results: [{ id: 31, home_team: 'Cuba', away_team: 'Bonaire', event_date: iso(4 * H), status: 'notstarted' }] },
+    '/odds/': (u) => ({ results: rows.filter(([m]) => m === u.searchParams.get('market'))
+      .map(([market, outcome, period, odds]) => ({ event_id: 31, market, outcome, period, decimal_odds: odds, updated_at: '2026-09-28T10:00:00Z' })) }),
+  };
+  const { feed } = feedFor(db, routes);
+  await feed.syncFixtures();
+  const ev = eventRow(db, 31);
+  const all = Object.fromEntries(db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ?').all(ev.id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
+  assert.equal(all['pw|1:1'], 146);
+  assert.equal(all['pw|2:X'], 360);
+  assert.equal(all['pbtts|1:Y'], 545);
+  assert.equal(all['pou|1:U0.5'], 385);
+  assert.equal(Object.keys(all).some((k) => k.includes('et')), false);
+
+  const p = player(db);
+  const pick = (market, code) => {
+    const s = db.prepare('SELECT id, odds_x100 FROM selections WHERE event_id = ? AND market = ? AND code = ?').get(ev.id, market, code);
+    return tx(db, () => placeBets(db, p, { mode: 'single', stakeCents: 500, picks: [{ selectionId: s.id, odds: s.odds_x100 / 100 }] }))[0];
+  };
+  const htDraw = pick('pw', '1:X');
+  const firstHalfOver = pick('pou', '1:O0.5');
+  const secondHome = pick('pw', '2:1');
+  const htBttsNo = pick('pbtts', '1:N');
+
+  // 0-0 at half-time (seen in play), 2-0 at full time.
+  db.prepare("UPDATE events SET start_time = ? WHERE id = ?").run(iso(-3 * H), ev.id);
+  routes['/events/live/'] = { results: [{ id: 31, home_team: 'Cuba', away_team: 'Bonaire', event_date: iso(-H), status: 'inprogress', home_score: 0, away_score: 0, period: 'halftime' }] };
+  await feed.syncLive();
+  assert.deepEqual([eventRow(db, 31).ht_home, eventRow(db, 31).ht_away], [0, 0]);
+  routes['/events/31/'] = { id: 31, home_team: 'Cuba', away_team: 'Bonaire', event_date: iso(-3 * H), status: 'finished', home_score: 2, away_score: 0 };
+  await feed.syncResults();
+  const st = (id) => db.prepare('SELECT status FROM bets WHERE id = ?').get(id).status;
+  assert.deepEqual([st(htDraw), st(firstHalfOver), st(secondHome), st(htBttsNo)], ['won', 'lost', 'won', 'won']);
+  assert.equal(eventRow(db, 31).period_scores, '[[0,0],[2,0]]');
+  db.close();
+});
+
+test('without a half-time score the half markets are void', async () => {
+  const { legOutcome } = await import('../server/markets.js');
+  assert.equal(legOutcome('pw', '1:X', 2, 0, {}), 'void');
+  assert.equal(legOutcome('pw', '1:X', 2, 0, { periods: [[0, 0], [2, 0]] }), 'won');
+});

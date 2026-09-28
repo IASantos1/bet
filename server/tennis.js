@@ -27,6 +27,11 @@ export function matchGames(m) {
 
 /** Sets / games markets the provider prices before the match (none of them in play). */
 export const TENNIS_LINE_MARKETS = { OU_SETS: 'ou', SET_HCP: 'hcp', OU_GAMES: 'gou', GAMES_HCP: 'ghcp', OE_GAMES: 'goe' };
+/** The same markets for a single set (market_period 1S, 2S…), settled on that set's games. */
+export const TENNIS_SET_MARKETS = { WINNER: 'pw', OU_GAMES: 'pou', GAMES_HCP: 'phcp', OE_GAMES: 'poe' };
+
+/** A set is over at 6+ games with a two-game lead, or 7-6 after the tie-break. */
+const setComplete = ([h, a]) => (Math.max(h, a) >= 6 && Math.abs(h - a) >= 2) || (Math.max(h, a) === 7 && Math.min(h, a) === 6);
 
 export const TENNIS_SOURCE = 'bzzoiro-tennis';
 
@@ -258,7 +263,7 @@ export function createTennisFeed(db, {
       let next = prematchOddsSeconds;
       try {
         const data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);
-        const prices = { ...oddsPrices(data), ...lineMarketPrices(data, TENNIS_LINE_MARKETS) };
+        const prices = { ...oddsPrices(data), ...lineMarketPrices(data, TENNIS_LINE_MARKETS, { periodKinds: TENNIS_SET_MARKETS, maxLines: 3 }) };
         if (new Date(row.start_time).getTime() - now < 3_600_000) next = prematchOddsSeconds / 2;
         tx(db, () => applyPrices(row.id, prices));
         if (Object.keys(prices).length) priced += 1;
@@ -342,11 +347,14 @@ export function createTennisFeed(db, {
     if (home === away) return 0; // no winner yet: ask again on the next pass
     const clock = m.status === 'retired' ? `Desistência · ${m.setsDetail || ''}`.trim() : m.setsDetail || 'Final';
     const games = matchGames(m);
+    // Games per set for the set markets; after a retirement only the sets that were completed.
+    let sets = parsePeriods(m.setsDetail);
+    if (m.status === 'retired') sets = sets.filter(setComplete);
     return tx(db, () => {
       db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, clock = ?, home_games = ?, away_games = ?,
-          retired = ?, updated_at = ? WHERE id = ?`)
+          retired = ?, period_scores = ?, updated_at = ? WHERE id = ?`)
         .run(home, away, home > away ? '1' : '2', clock.slice(0, 60), games?.home ?? null, games?.away ?? null,
-          m.status === 'retired' ? 1 : 0, nowIso(), row.id);
+          m.status === 'retired' ? 1 : 0, sets.length ? JSON.stringify(sets) : null, nowIso(), row.id);
       return settleEvent(db, row.id, { source: 'feed' });
     });
   }
