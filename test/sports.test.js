@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, nowIso, tx } from '../server/db.js';
-import { createSportFeed, formLetters, parsePeriods } from '../server/sports.js';
+import { createSportFeed, formLetters, parsePeriods, createLivePriceGate } from '../server/sports.js';
 import { createLiveSocket } from '../server/livews.js';
 import { createTennisFeed, TENNIS_SOURCE } from '../server/tennis.js';
 import { placeBets } from '../server/betting.js';
@@ -279,4 +279,42 @@ test('tennis: a match without a list price is priced from /matches/{id}/odds/', 
   assert.equal(r.priced, 1);
   const id = db.prepare('SELECT id FROM events WHERE external_id = ?').get('77').id;
   assert.deepEqual(db.prepare('SELECT code, odds_x100 FROM selections WHERE event_id = ? AND active = 1 ORDER BY code').all(id).map((x) => `${x.code}=${x.odds_x100}`), ['1=195', '2=187']);
+});
+
+test('live gate: an undated price opens the market only while it keeps moving', () => {
+  const realNow = Date.now;
+  let clock = 1_000_000;
+  Date.now = () => clock;
+  try {
+    const gate = createLivePriceGate(180_000);
+    const pre = { 'ml|1': 150, 'ml|2': 260 };
+    assert.equal(gate(1, { any: pre, previous: pre }), null); // still the pre-match price
+    clock += 30_000;
+    assert.deepEqual(gate(1, { any: { 'ml|1': 140, 'ml|2': 290 }, previous: pre }), { prices: { 'ml|1': 140, 'ml|2': 290 }, at: clock });
+    const movedAt = clock;
+    clock += 60_000;
+    assert.equal(gate(1, { any: { 'ml|1': 140, 'ml|2': 290 } }).at, movedAt); // unchanged, still recent
+    clock += 150_000;
+    assert.equal(gate(1, { any: { 'ml|1': 140, 'ml|2': 290 } }), null); // frozen for more than 3 min
+    const fresh = { 'ml|1': 120, 'ml|2': 400 };
+    assert.deepEqual(gate(1, { fresh, any: {} }), { prices: fresh, at: clock }); // dated fresh book: open
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('tennis in play: the live list price opens the market once it moves', async () => {
+  const db = openDb(':memory:');
+  let odds = [1.8, 2.0];
+  const m = () => ({ id: 5, tournament: { id: 1, name: 'Chengdu', circuit: 'ATP' }, player1: { id: 1, name: 'A' }, player2: { id: 2, name: 'B' }, match_date: iso(-H), status: 'live', player1_sets: 0, player2_sets: 0, sets_detail: '3-2', odds_player1: odds[0], odds_player2: odds[1] });
+  const fetchImpl = fakeApi('/tennis/api/v2', { '/matches/live/': () => ({ results: [m()] }) });
+  const tennis = createTennisFeed(db, { token: 't', fetchImpl });
+  let r = await tennis.syncLive();
+  assert.equal(r.liveMarketsOpen, 0); // first sight: nothing to compare with (no pre-match price stored)
+  odds = [1.6, 2.3];
+  r = await tennis.syncLive();
+  assert.equal(r.liveMarketsOpen, 1);
+  const ev = db.prepare('SELECT id, live_odds_at FROM events WHERE external_id = ?').get('5');
+  assert.ok(ev.live_odds_at);
+  assert.deepEqual(db.prepare('SELECT code, odds_x100 FROM selections WHERE event_id = ? AND active = 1 ORDER BY code').all(ev.id).map((x) => `${x.code}=${x.odds_x100}`), ['1=160', '2=230']);
 });

@@ -13,7 +13,7 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
-import { twoWayPrices } from './sports.js';
+import { twoWayPrices, createLivePriceGate } from './sports.js';
 
 export const TENNIS_SOURCE = 'bzzoiro-tennis';
 
@@ -254,28 +254,41 @@ export function createTennisFeed(db, {
     return { oddsChecked: rows.length, oddsPriced: priced };
   }
 
-  /** In play: only bookmaker prices updated in the last minutes (and after the start) open the market. */
-  async function syncLiveOdds() {
+  const gate = createLivePriceGate(liveOddsMaxAge * 1000);
+  const currentPrices = (eventId) => Object.fromEntries(
+    db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ?').all(eventId).map((r) => [`${r.market}|${r.code}`, r.odds_x100])
+  );
+
+  /**
+   * In play, every 30 s: bookmaker prices updated after the start and in the last minutes; failing
+   * that, the match price (from /odds/ or the live list) while it keeps moving — see
+   * createLivePriceGate. With neither the market stays closed.
+   */
+  async function syncLiveOdds(listPrices = new Map()) {
     const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(TENNIS_SOURCE, maxLiveOddsCalls);
     let open = 0;
     for (const row of rows) {
+      let data = null;
       try {
-        const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
-        const prices = oddsPrices(await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`), since);
-        tx(db, () => {
-          if (!Object.keys(prices).length) {
-            suspend(row.id);
-            db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
-            return;
-          }
-          applyPrices(row.id, prices);
-          db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
-          open += 1;
-        });
+        data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);
       } catch (err) {
         log(`ténis odds ao vivo ${row.external_id}: ${err.message}`);
-        suspend(row.id);
       }
+      const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
+      const fresh = data ? oddsPrices(data, since) : {};
+      const fromOdds = data ? oddsPrices(data, 'untimed') : {};
+      const any = Object.keys(fromOdds).length ? fromOdds : listPrices.get(row.external_id) || {};
+      tx(db, () => {
+        const verdict = gate(row.id, { fresh, any, previous: currentPrices(row.id) });
+        if (!verdict) {
+          suspend(row.id);
+          db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+          return;
+        }
+        applyPrices(row.id, verdict.prices);
+        db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(new Date(verdict.at).toISOString(), row.id);
+        open += 1;
+      });
     }
     return { liveOddsChecked: rows.length, liveMarketsOpen: open };
   }
@@ -359,7 +372,8 @@ export function createTennisFeed(db, {
     }
     // Point-by-point scoreboard for the matches in play (WebSocket addon).
     liveSocket?.track(live.filter((m) => m.status === 'live' || m.status === 'scheduled').map((m) => m.externalId));
-    const inPlay = await syncLiveOdds();
+    const listPrices = new Map(live.filter((m) => m.odds1 && m.odds2).map((m) => [m.externalId, { '1x2|1': m.odds1, '1x2|2': m.odds2 }]));
+    const inPlay = await syncLiveOdds(listPrices);
     return { live: live.length, updated, ...inPlay };
   }
 
@@ -497,5 +511,7 @@ export function createTennisFeed(db, {
     });
   }
 
-  return { syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
+  const rawOdds = (externalId) => get(`/matches/${encodeURIComponent(externalId)}/odds/`);
+
+  return { rawOdds, syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
 }
