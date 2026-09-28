@@ -13,6 +13,7 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
+import { twoWayPrices } from './sports.js';
 
 export const TENNIS_SOURCE = 'bzzoiro-tennis';
 
@@ -149,8 +150,8 @@ export function normalizeTennisPrediction(data, homeId) {
 // ---------- feed ----------
 
 export function createTennisFeed(db, {
-  token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40,
-  fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
+  token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40, maxOddsCalls = 40,
+  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
 
@@ -213,12 +214,70 @@ export function createTennisFeed(db, {
     return findEvent.get(TENNIS_SOURCE, m.externalId);
   }
 
+  /** Prices from the match list when it carries them; otherwise /matches/{id}/odds/ (syncOdds). */
   function writePrices(row, m) {
-    if (row.status !== 'scheduled' || m.status !== 'scheduled') return;
-    if (m.odds1 && m.odds2) {
-      upsertSel.run(row.id, '1', m.odds1);
-      upsertSel.run(row.id, '2', m.odds2);
-    } else suspend(row.id);
+    if (row.status !== 'scheduled' || m.status !== 'scheduled') return false;
+    if (!m.odds1 || !m.odds2) return false;
+    upsertSel.run(row.id, '1', m.odds1);
+    upsertSel.run(row.id, '2', m.odds2);
+    db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(Date.now() + 10 * 60_000).toISOString(), row.id);
+    return true;
+  }
+
+  const oddsPrices = (data, since = null) => twoWayPrices(data, ['odds_player1', 'odds_home'], ['odds_player2', 'odds_away'], { market: '1x2', since });
+
+  function applyPrices(eventId, prices) {
+    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+    for (const [key, v] of Object.entries(prices)) upsertSel.run(eventId, key.split('|')[1], v);
+  }
+
+  /** Upcoming matches without a list price, soonest first, each asked every 10 min (3 in the last hour). */
+  async function syncOdds() {
+    const now = Date.now();
+    const rows = db.prepare(
+      `SELECT * FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND postponed_at IS NULL
+         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY start_time LIMIT ?`
+    ).all(TENNIS_SOURCE, new Date(now).toISOString(), new Date(now).toISOString(), maxOddsCalls);
+    let priced = 0;
+    for (const row of rows) {
+      let next = 10;
+      try {
+        const prices = oddsPrices(await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`));
+        if (new Date(row.start_time).getTime() - now < 3_600_000) next = 3;
+        tx(db, () => applyPrices(row.id, prices));
+        if (Object.keys(prices).length) priced += 1;
+      } catch (err) {
+        log(`ténis odds ${row.external_id}: ${err.message}`);
+      }
+      db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + next * 60_000).toISOString(), row.id);
+    }
+    return { oddsChecked: rows.length, oddsPriced: priced };
+  }
+
+  /** In play: only bookmaker prices updated in the last minutes (and after the start) open the market. */
+  async function syncLiveOdds() {
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(TENNIS_SOURCE, maxLiveOddsCalls);
+    let open = 0;
+    for (const row of rows) {
+      try {
+        const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
+        const prices = oddsPrices(await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`), since);
+        tx(db, () => {
+          if (!Object.keys(prices).length) {
+            suspend(row.id);
+            db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+            return;
+          }
+          applyPrices(row.id, prices);
+          db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
+          open += 1;
+        });
+      } catch (err) {
+        log(`ténis odds ao vivo ${row.external_id}: ${err.message}`);
+        suspend(row.id);
+      }
+    }
+    return { liveOddsChecked: rows.length, liveMarketsOpen: open };
   }
 
   const voidMatch = (row, note) => {
@@ -270,11 +329,11 @@ export function createTennisFeed(db, {
         const row = upsert(m);
         if (!row || row.closed) return;
         if (row.created) created += 1;
-        writePrices(row, m);
-        if (m.odds1 && m.odds2 && m.status === 'scheduled') priced += 1;
+        if (writePrices(row, m)) priced += 1;
       });
     }
-    return { matches: matches.length, created, priced };
+    const odds = await syncOdds();
+    return { matches: matches.length, created, priced: priced + odds.oddsPriced, oddsChecked: odds.oddsChecked };
   }
 
   async function syncLive() {
@@ -293,7 +352,6 @@ export function createTennisFeed(db, {
           db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, live_detail = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
             .run(m.homeSets ?? 0, m.awaySets ?? 0, m.setsDetail, detail, nowIso(), row.id);
         } else db.prepare("UPDATE events SET status = 'live', postponed_at = NULL WHERE id = ?").run(row.id);
-        suspend(row.id); // pre-match price only
         updated += 1;
         return null;
       });
@@ -301,7 +359,8 @@ export function createTennisFeed(db, {
     }
     // Point-by-point scoreboard for the matches in play (WebSocket addon).
     liveSocket?.track(live.filter((m) => m.status === 'live' || m.status === 'scheduled').map((m) => m.externalId));
-    return { live: live.length, updated };
+    const inPlay = await syncLiveOdds();
+    return { live: live.length, updated, ...inPlay };
   }
 
   async function syncResults() {
@@ -438,5 +497,5 @@ export function createTennisFeed(db, {
     });
   }
 
-  return { syncFixtures, syncLive, syncResults, syncAll, start, status, matchExtras, matchInsights };
+  return { syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
 }

@@ -761,7 +761,9 @@ function addonPanel(title, t, what) {
   if (!t?.enabled) return `<p class="muted">${esc(title)}: desligado.</p>`;
   const counts = Object.entries(t.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
   const f = t.last?.fixtures;
-  const last = f ? `última importação ${esc(fmtDateTime(f.at))} (${f.matches ?? f.games ?? 0} jogos, ${f.priced ?? 0} com odds)` : 'ainda não executado';
+  const lv = t.last?.live;
+  const last = (f ? `última importação ${esc(fmtDateTime(f.at))} (${f.matches ?? f.games ?? 0} jogos, ${f.priced ?? 0} com odds)` : 'ainda não executado')
+    + (lv && lv.liveOddsChecked !== undefined ? ` · ao vivo: ${lv.live ?? 0} jogos, ${lv.liveMarketsOpen ?? 0} com mercado aberto` : '');
   const badge = t.addonMissing ? '<span class="pill lost">Sem Sports Addon</span>' : t.lastError ? '<span class="pill lost">Erro</span>' : '<span class="pill won">Ligado</span>';
   const ws = t.liveSocket?.enabled
     ? ` · ao vivo por WebSocket: ${t.liveSocket.fatal ? `parado (${esc(t.liveSocket.fatal)})` : `${t.liveSocket.following} encontro(s) seguidos`}` : '';
@@ -772,9 +774,9 @@ function addonPanel(title, t, what) {
 }
 
 function sportsAddonPanels(f) {
-  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo), sets ao vivo, H2H, previsões e ranking.')];
+  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo e ao vivo), pontos ao vivo, H2H, previsões e ranking.')];
   const what = {
-    basquetebol: 'Vencedor com prolongamento, estatísticas por equipa e box score, previsões e classificação.',
+    basquetebol: 'Vencedor com prolongamento (pré-jogo e ao vivo), estatísticas por equipa e box score, previsões e classificação.',
     hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',
     dardos: 'Vencedor do encontro, legs por set, H2H com médias, previsões e ranking PDC.',
     esports: 'Vencedor do encontro, mapas, comparação das equipas, H2H e previsões.',
