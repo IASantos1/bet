@@ -14,7 +14,9 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
-import { hcpCode } from './markets.js';
+import { hcpCode, periodNumber } from './markets.js';
+
+export { periodNumber };
 
 const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
 const toInt = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
@@ -126,11 +128,15 @@ export function twoWayPrices(data, homeKeys, awayKeys, { market = 'ml', since = 
  * under become O<line> / U<line>; handicaps carry the line from P1's side (P2 gets the opposite);
  * odd / even keep ODD / EVEN. Every line the provider lists is kept.
  */
-export function lineMarketPrices(data, kinds, { since = null, maxLines = 5 } = {}) {
+export function lineMarketPrices(data, kinds, { since = null, maxLines = 5, periodKinds = null } = {}) {
   const found = [];
   for (const m of Array.isArray(data?.markets) ? data.markets : []) {
-    const market = kinds[String(m?.market_kind || '').toUpperCase()];
-    if (!market || String(m.market_period || 'FT').toUpperCase() !== 'FT') continue;
+    const kind = String(m?.market_kind || '').toUpperCase();
+    const periodRaw = String(m?.market_period || 'FT').toUpperCase();
+    const period = periodRaw === 'FT' ? null : periodNumber(periodRaw);
+    if (periodRaw !== 'FT' && (!period || !periodKinds)) continue;
+    const market = period ? periodKinds[kind] : kinds[kind];
+    if (!market) continue;
     const line = num(m.market_line);
     const books = freshBooks(m.bookmakers, since);
     const avg = (sels) => {
@@ -139,20 +145,21 @@ export function lineMarketPrices(data, kinds, { since = null, maxLines = 5 } = {
     };
     const SIDE = { P1: ['P1', 'HOME'], P2: ['P2', 'AWAY'], OVER: ['OVER'], UNDER: ['UNDER'], ODD: ['ODD'], EVEN: ['EVEN'] };
     let codes;
-    if (market === 'goe') codes = { ODD: 'ODD', EVEN: 'EVEN' };
+    if (market === 'pw') codes = { P1: '1', P2: '2' };
+    else if (market === 'goe' || market === 'poe') codes = { ODD: 'ODD', EVEN: 'EVEN' };
     else if (line === null || Math.abs(line) >= 1000) continue;
-    else if (['ou', 'gou'].includes(market)) {
+    else if (['ou', 'gou', 'pou'].includes(market)) {
       if (line <= 0 || Math.round(line * 2) % 2 !== 1) continue; // half lines only: no push
       codes = { OVER: `O${line}`, UNDER: `U${line}` };
     } else if (Number.isInteger(line * 2)) codes = { P1: hcpCode('1', line), P2: hcpCode('2', -line) };
     else continue; // quarter lines are not offered
-    const priced = Object.entries(codes).map(([sel, code]) => [code, avg(SIDE[sel])]);
-    if (priced.every(([, v]) => v)) found.push({ market, priced, balance: Math.abs(Math.log(priced[0][1] / priced[1][1])) });
+    const priced = Object.entries(codes).map(([sel, code]) => [period ? `${period}:${code}` : code, avg(SIDE[sel])]);
+    if (priced.every(([, v]) => v)) found.push({ market, group: `${market}|${period || 0}`, priced, balance: Math.abs(Math.log(priced[0][1] / priced[1][1])) });
   }
   // Providers list a ladder of lines (basketball: -13.5 … +13.5); keep the most balanced few.
   const out = {};
   const byMarket = new Map();
-  for (const f of found) byMarket.set(f.market, [...(byMarket.get(f.market) || []), f]);
+  for (const f of found) byMarket.set(f.group, [...(byMarket.get(f.group) || []), f]);
   for (const list of byMarket.values()) {
     for (const f of list.sort((a, b) => a.balance - b.balance).slice(0, maxLines)) {
       for (const [code, v] of f.priced) out[`${f.market}|${code}`] = v;

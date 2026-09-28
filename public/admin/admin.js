@@ -296,7 +296,8 @@ function addonPanel(title, t, what) {
 }
 
 function sportsAddonPanels(f) {
-  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo e ao vivo), pontos ao vivo, H2H, previsões e ranking.')];
+  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo e ao vivo), pontos ao vivo, H2H, previsões e ranking.')
+    + (f.tennis?.liveSocket?.enabled ? liveSocketPanel(f.tennis.liveSocket).replace('WebSocket ao vivo', 'WebSocket ao vivo — ténis') : '')];
   const what = {
     basquetebol: 'Vencedor com prolongamento (pré-jogo e ao vivo), estatísticas por equipa e box score, previsões e classificação.',
     hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',

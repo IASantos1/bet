@@ -1335,21 +1335,24 @@ function marketsView(e) {
   };
   return e.markets.map((mk) => {
     let grid;
-    if (mk.market === 'ou' || mk.market === 'gou') {
-      const unit = mk.market === 'gou' ? 'jogos' : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
-      const lines = [...new Set(mk.selections.map((s) => s.code.slice(1)))].sort((a, b) => a - b);
+    // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
+    const bare = (s) => s.code.replace(/^\d:/, '');
+    if (mk.market === 'ou' || mk.market === 'gou' || mk.market === 'pou') {
+      const unit = mk.market === 'gou' || (mk.market === 'pou' && e.sport === 'tenis') ? 'jogos'
+        : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
+      const lines = [...new Set(mk.selections.map((s) => bare(s).slice(1)))].sort((a, b) => a - b);
       grid = lines.map((line) => {
-        const over = mk.selections.find((s) => s.code === `O${line}`);
-        const under = mk.selections.find((s) => s.code === `U${line}`);
+        const over = mk.selections.find((s) => bare(s) === `O${line}`);
+        const under = mk.selections.find((s) => bare(s) === `U${line}`);
         return `<div class="market-line"><span class="market-line-label">${esc(line)} ${unit}</span>
           <div class="odds two">${over ? btn(over, 'Mais') : '<span></span>'}${under ? btn(under, 'Menos') : '<span></span>'}</div></div>`;
       }).join('');
-    } else if (mk.market === 'hcp' || mk.market === 'ghcp') {
+    } else if (mk.market === 'hcp' || mk.market === 'ghcp' || mk.market === 'phcp') {
       // One row per line: player 1 with the line, player 2 with the opposite one.
-      const rows = [...new Set(mk.selections.filter((s) => s.code[0] === '1').map((s) => s.code.slice(1)))];
+      const rows = [...new Set(mk.selections.filter((s) => bare(s)[0] === '1').map((s) => bare(s).slice(1)))];
       grid = rows.map((line) => {
-        const one = mk.selections.find((s) => s.code === `1${line}`);
-        const two = mk.selections.find((s) => s.code === `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`);
+        const one = mk.selections.find((s) => bare(s) === `1${line}`);
+        const two = mk.selections.find((s) => bare(s) === `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`);
         return `<div class="odds two">${one ? btn(one) : '<span></span>'}${two ? btn(two) : '<span></span>'}</div>`;
       }).join('');
     } else {

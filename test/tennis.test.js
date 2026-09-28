@@ -276,6 +276,7 @@ test('pre-match sets and games markets come from /odds/ and settle on sets and g
     'goe|ODD': 184, 'goe|EVEN': 184,
     'ou|O2.5': 250, 'ou|U2.5': 145,
     'hcp|1-1.5': 394, 'hcp|2+1.5': 119,
+    'pou|1:O9.5': 180, 'pou|1:U9.5': 190, // first set only
   });
 
   const bets = Object.fromEntries(['gou|O20.5', 'ghcp|1+3.5', 'goe|ODD', 'ou|O2.5', 'hcp|2+1.5'].map((k) => {
@@ -321,4 +322,54 @@ test('a retirement voids sets and games markets but settles the winner', async (
   assert.equal(t.betStatus(onGames).status, 'void');
   assert.equal(t.betStatus(onWinner).status, 'won');
   assert.equal(t.row(8).retired, 1);
+});
+
+test('set markets settle on that set; after a retirement only completed sets stand', async () => {
+  let status = { status: 'scheduled' };
+  const setOdds = {
+    bookmakers: [{ bookmaker_slug: 'bet365', odds_player1: 1.8, odds_player2: 1.9, updated_at: '2026-09-27T22:10:30Z' }],
+    markets: [
+      { market_kind: 'WINNER', market_line: null, market_period: '1S', bookmakers: [book('bet365', { P1: 1.82, P2: 1.88 })] },
+      { market_kind: 'WINNER', market_line: null, market_period: '2S', bookmakers: [book('bet365', { P1: 1.84, P2: 1.86 })] },
+      { market_kind: 'OU_GAMES', market_line: 8.5, market_period: '1S', bookmakers: [book('bet365', { OVER: 1.27, UNDER: 3.38 })] },
+      { market_kind: 'GAMES_HCP', market_line: -2.5, market_period: '1S', bookmakers: [book('bet365', { P1: 3.38, P2: 1.28 })] },
+      { market_kind: 'OE_GAMES', market_line: null, market_period: '2S', bookmakers: [book('bet365', { ODD: 1.86, EVEN: 1.8 })] },
+    ],
+  };
+  const t = setup({
+    '/matches/': { results: [match(9, { odds_player1: null, odds_player2: null })] },
+    '/matches/9/': () => match(9, status),
+    '/matches/9/odds/': setOdds,
+  });
+  await t.tennis.syncFixtures();
+  const user = t.db.prepare('SELECT * FROM users').get();
+  const place = (market, code) => {
+    const s = t.db.prepare('SELECT id, odds_x100 FROM selections WHERE market = ? AND code = ?').get(market, code);
+    assert.ok(s, `${market} ${code}`);
+    return tx(t.db, () => placeBets(t.db, user, { mode: 'single', stakeCents: 500, picks: [{ selectionId: s.id, odds: s.odds_x100 / 100 }] }))[0];
+  };
+  const set1 = place('pw', '1:1');
+  const set1Over = place('pou', '1:O8.5');
+  const set1Hcp = place('phcp', '1:2+2.5');
+  const set2 = place('pw', '2:2');
+  const set2Odd = place('poe', '2:ODD');
+
+  // The API lists the set markets under their own titles.
+  const app = createApp(t.db, { tennis: t.tennis });
+  const server = app.listen(0);
+  try {
+    const { event } = await (await fetch(`http://127.0.0.1:${server.address().port}/api/events/${t.row(9).id}`)).json();
+    const names = event.markets.map((m) => m.name);
+    assert.ok(names.includes('Vencedor do set — 1.º set') && names.includes('Total de jogos — 1.º set') && names.includes('Jogos par / ímpar — 2.º set'), names.join(', '));
+  } finally { server.close(); }
+
+  t.startNow(9);
+  // 6-3 to Alcaraz, then retirement at 2-1 in the second set: Alcaraz advances.
+  status = { status: 'retired', player1_sets: 1, player2_sets: 0, sets_detail: '6-3, 2-1', winner_id: 4211 };
+  await t.tennis.syncResults();
+  assert.equal(t.betStatus(set1).status, 'won');
+  assert.equal(t.betStatus(set1Over).status, 'won');
+  assert.equal(t.betStatus(set1Hcp).status, 'lost'); // 6-3: Sinner +2.5 → 5.5 < 6
+  assert.equal(t.betStatus(set2).status, 'void');
+  assert.equal(t.betStatus(set2Odd).status, 'void');
 });
