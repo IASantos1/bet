@@ -58,6 +58,7 @@ export function normalizeEvent(ev) {
     homeScore: toInt(first(ev.home_score, ev.score?.home, ev.scores?.home, ev.home_goals)),
     awayScore: toInt(first(ev.away_score, ev.score?.away, ev.scores?.away, ev.away_goals)),
     clock: minute !== null ? `${minute}'` : /half.?time|^ht$/i.test(String(period || '')) ? 'Intervalo' : null,
+    leagueId: teamId(first(ev.league?.id, ev.league_id, ev.competition?.id, ev.tournament?.id)),
     homeTeamId: teamId(first(ev.home_team?.id, ev.home_team_id, ev.home?.id, ev.teams?.home?.id)),
     awayTeamId: teamId(first(ev.away_team?.id, ev.away_team_id, ev.away?.id, ev.teams?.away?.id)),
     liveWs: ev.live_websocket === true,
@@ -146,18 +147,18 @@ export function createFeed(db, {
       if (ev.status !== 'scheduled' && ev.status !== 'live') return null;
       const { lastInsertRowid } = db.prepare(
         `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id,
-                             home_team_ext, away_team_ext, created_at, updated_at)
-         VALUES ('futebol', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             home_team_ext, away_team_ext, league_ext, created_at, updated_at)
+         VALUES ('futebol', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.status === 'live' ? 'live' : 'scheduled',
         ev.status === 'live' ? ev.homeScore ?? 0 : null, ev.status === 'live' ? ev.awayScore ?? 0 : null,
-        ev.status === 'live' ? ev.clock : null, SOURCE, ev.externalId, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ts, ts);
+        ev.status === 'live' ? ev.clock : null, SOURCE, ev.externalId, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ev.leagueId ?? null, ts, ts);
       return { id: Number(lastInsertRowid), created: true };
     }
     if (row.status === 'finished' || row.status === 'cancelled') return { id: row.id, closed: true };
     db.prepare(
       `UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
-         away_team_ext = COALESCE(?, away_team_ext), updated_at = ? WHERE id = ?`
-    ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ts, row.id);
+         away_team_ext = COALESCE(?, away_team_ext), league_ext = COALESCE(?, league_ext), updated_at = ? WHERE id = ?`
+    ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ev.leagueId ?? null, ts, row.id);
     return { id: row.id };
   }
 

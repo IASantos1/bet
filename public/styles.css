@@ -125,6 +125,10 @@ h1, h2, h3 { margin-top: 0; }
 .team-icon img { width: 30px; height: 30px; object-fit: contain; }
 .team-icon.mini { display: inline-grid; width: 18px; height: 18px; margin: 0 7px 0 0; vertical-align: middle; background: transparent; }
 .team-icon.mini img { width: 18px; height: 18px; }
+.team-icon.mini:not(.has-logo) { background: #252b33; color: #aeb6c1; font-size: 9px; font-weight: 900; border-radius: 50%; place-items: center; }
+.comp-name { display: inline-flex; align-items: center; gap: 8px; }
+.league-logo { display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 13px; }
+.league-logo img { width: 20px; height: 20px; object-fit: contain; }
 .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .odds.two { grid-template-columns: repeat(2, 1fr); }
 .odds-off { color: #69727d; font-size: 11px; padding: 10px 0; text-align: center; border: 1px dashed #303640; border-radius: 5px; }
@@ -279,7 +283,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .game-grid { grid-template-columns: repeat(4, 1fr); }
   .topnav a { padding: 0 9px; }
   .event-row { grid-template-columns: 60px minmax(0, 1fr); }
-  .event-row .odds { grid-column: 1 / -1; }
+  .event-row .odds, .event-row .odds-off { grid-column: 1 / -1; }
   .admin-grid { grid-template-columns: repeat(3, 1fr); }
   .admin-grid .field:nth-child(n+4) { grid-column: auto; }
 }
