@@ -180,7 +180,9 @@ export const SPORT_SPECS = {
       return {
         ...b, competition: b.competitionName || 'Basquetebol',
         homeScore: toInt(m.home_score), awayScore: toInt(m.away_score),
-        clock: first(m.clock, m.time?.display, m.status_detail) || (q ? `${q > 4 ? 'Prol.' : `${q}.º Q`}${m.time_remaining ? ` ${m.time_remaining}` : ''}` : null),
+        // Quarter as Q1–Q4 (OT after the fourth), plus the time left when the provider sends it.
+        clock: (q ? `${q > 4 ? 'OT' : `Q${q}`}${m.time_remaining ? ` ${m.time_remaining}` : ''}` : null)
+          || first(m.clock, m.time?.display, m.status_detail) || null,
       };
     },
     prices: twoWay(['odds_home'], ['odds_away']),
@@ -230,7 +232,7 @@ export const SPORT_SPECS = {
       return {
         ...b, competition: [b.competitionName || 'Hóquei', m.round_name && m.round_name !== 'Regular season' ? m.round_name : null].filter(Boolean).join(' · '),
         homeScore: home, awayScore: away, regHome: reg?.[0] ?? null, regAway: reg?.[1] ?? null,
-        clock: per ? `${per > 3 ? 'Prol.' : `${per}.º P`}${toInt(m.current_minute) !== null ? ` ${m.current_minute}'` : ''}` : null,
+        clock: per ? `${per > 3 ? 'OT' : `P${per}`}${toInt(m.current_minute) !== null ? ` ${m.current_minute}'` : ''}` : null,
         detail: [typeof m.periods_score === 'string' ? m.periods_score : null, m.is_shootout ? 'penáltis' : m.is_overtime ? 'prolongamento' : null].filter(Boolean).join(' · ') || null,
       };
     },
@@ -295,11 +297,14 @@ export const SPORT_SPECS = {
       const bySets = toInt(m.player1_sets) !== null && (toInt(m.best_of_sets) ?? 2) > 1;
       const home = bySets ? toInt(m.player1_sets) : toInt(first(m.player1_legs, m.player1_sets));
       const away = bySets ? toInt(m.player2_sets) : toInt(first(m.player2_legs, m.player2_sets));
-      const legs = toInt(m.player1_legs) !== null && bySets ? ` · legs ${m.player1_legs}-${m.player2_legs}` : '';
+      const legs = toInt(m.player1_legs) !== null && bySets ? ` (${m.player1_legs}-${m.player2_legs})` : '';
       return {
         ...b, competition: [b.competitionName || 'Dardos', m.round_name].filter(Boolean).join(' · '),
         homeScore: home, awayScore: away,
-        clock: b.status === 'live' ? `${bySets ? 'Sets' : 'Legs'} ${home ?? 0}-${away ?? 0}${legs}` : null,
+        // Set in play (S3) for set matches, leg in play (L7) for leg matches.
+        clock: b.status === 'live'
+          ? (bySets ? `S${toInt(m.current_set) ?? (home ?? 0) + (away ?? 0) + 1}${legs}` : `L${(home ?? 0) + (away ?? 0) + 1}`)
+          : null,
         detail: typeof m.sets_detail === 'string' ? m.sets_detail : null,
       };
     },
@@ -352,7 +357,7 @@ export const SPORT_SPECS = {
       const away = toInt(m.away_score);
       return {
         ...b, competition: [b.competitionName || 'CS2', m.stage, m.best_of ? `BO${m.best_of}` : null].filter(Boolean).join(' · '),
-        homeScore: home, awayScore: away, clock: b.status === 'live' ? `Mapas ${home ?? 0}-${away ?? 0}` : null,
+        homeScore: home, awayScore: away, clock: b.status === 'live' ? `Mapa ${(home ?? 0) + (away ?? 0) + 1}` : null,
       };
     },
     prices: twoWay(['odds_home'], ['odds_away']),

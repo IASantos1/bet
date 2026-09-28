@@ -58,7 +58,10 @@ function ageOn(birthdate, today = new Date()) {
 // Club badges from the data provider's public image proxy (no token needed).
 const providerImg = (type) => (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${type}/${id}/?bg=transparent` : null);
 const footballLogo = providerImg('team');
-const teamLogo = (source, id) => footballLogo(source, id) || sportTeamImage(source, id);
+// Player photos for tennis and darts from the same image proxy (the page falls back to the flag).
+const PLAYER_IMG = { 'bzzoiro-tennis': 'tennis/player', 'bzzoiro-darts': 'darts/player' };
+const playerPhoto = (source, id) => (PLAYER_IMG[source] && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${PLAYER_IMG[source]}/${id}/?bg=transparent` : null);
+const teamLogo = (source, id) => footballLogo(source, id) || sportTeamImage(source, id) || playerPhoto(source, id);
 // League badge; for national-team competitions this is the flag/emblem the provider publishes.
 const leagueLogo = providerImg('league');
 

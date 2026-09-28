@@ -185,31 +185,34 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 }
 
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
-function teamBadge(logo, name, size = '') {
+function teamBadge(logo, name, size = '', fallback = null) {
   const cls = `team-icon${size ? ` ${size}` : ''}`;
-  if (!logo) return `<div class="${cls}">${esc(size === 'mini' ? initials(name).slice(0, 1) : initials(name))}</div>`;
-  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
+  const mini = size.split(' ').includes('mini');
+  if (!logo) return `<div class="${cls}">${esc(mini ? initials(name).slice(0, 1) : initials(name))}</div>`;
+  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}></div>`;
 }
 
-// The provider uses non-ISO codes for the home nations (darts): EN England, SX Scotland, WA/WL Wales.
-const SUBDIVISION_FLAG = { EN: 'gbeng', SX: 'gbsct', WA: 'gbwls', WL: 'gbwls' };
-const flagEmoji = (cc) => {
+// Flags as images (Windows does not draw flag emoji). The provider uses non-ISO codes for the
+// home nations (darts): EN England, SX Scotland, WA/WL Wales.
+const FLAG_CODE = { EN: 'gb-eng', SX: 'gb-sct', WA: 'gb-wls', WL: 'gb-wls' };
+const flagUrl = (cc) => {
   const code = String(cc || '').toUpperCase();
-  const sub = SUBDIVISION_FLAG[code];
-  if (sub) return String.fromCodePoint(0x1f3f4, ...[...sub].map((c) => 0xe0000 + c.charCodeAt(0)), 0xe007f);
-  return code.replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1a5 + c.charCodeAt(0)));
+  if (!/^[A-Z]{2}$/.test(code)) return null;
+  return `https://flagcdn.com/w80/${FLAG_CODE[code] || code.toLowerCase()}.png`;
 };
+const flagImg = (cc) => (flagUrl(cc) ? `<img class="flag-img" src="${esc(flagUrl(cc))}" alt="${esc(cc)}" title="${esc(cc)}" loading="lazy">` : '');
 
-/** Club badge, or the player's flag in tennis. */
+/** Club badge or player photo; for players, the country flag when there is no photo. */
 function sideBadge(e, side, size = '') {
-  const country = e[`${side}Country`];
-  if (!e[`${side}Logo`] && country) return `<div class="team-icon flag${size ? ` ${size}` : ''}" title="${esc(country)}">${flagEmoji(country)}</div>`;
-  return teamBadge(e[`${side}Logo`], e[side], size);
+  const flag = flagUrl(e[`${side}Country`]);
+  const logo = e[`${side}Logo`];
+  if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
+  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag);
 }
 
 function matchCard(e) {
   return `<article class="match-card clickable" data-open="${e.id}">
-    <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? `<span class="live-label">● AO VIVO ${esc(e.clock || '')}</span>` : esc(fmtWhen(e.startTime))}</span></div>
+    <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? (e.sport === 'tenis' ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e)) : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
       <div class="team">${sideBadge(e, 'home')}${esc(e.home)}</div>
       <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
@@ -219,11 +222,17 @@ function matchCard(e) {
   </article>`;
 }
 
+/** In play: the match time in red after a pulsing dot (45', S1, Q3, P2…) instead of "AO VIVO". */
+function liveClock(e) {
+  const text = e.sport === 'tenis' ? `S${e.tennis?.set || 1}` : e.clock || 'Ao vivo';
+  return `<span class="live-clock"><i class="pulse-dot"></i>${esc(text)}</span>`;
+}
+
 /** Tennis in play: "S2" and the point (15 / 30 / 40 / AD) under it. */
 function tennisLiveCell(e) {
   const t = e.tennis || {};
   const pts = tennisPoints(t.point);
-  return `<span class="tn-set">S${t.set || 1}</span><span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
+  return `${liveClock(e)}<span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
 }
 
 /** Per-player tennis line: sets won, games in the current set and the point, with the server marked. */
@@ -238,13 +247,13 @@ function tennisSide(e, side) {
 function liveCard(e) {
   if (e.sport === 'tenis') {
     return `<article class="live-card clickable" data-open="${e.id}">
-    <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)}</span><span class="tn-cell">${tennisLiveCell(e)}</span></div>
+    <div class="match-top"><span class="tn-cell">${tennisLiveCell(e)}</span><span>${esc(e.competition)}</span></div>
     <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisSide(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisSide(e, 'away')}</div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
   }
   return `<article class="live-card clickable" data-open="${e.id}">
-    <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
+    <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
     <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
@@ -253,7 +262,7 @@ function liveCard(e) {
 function eventRow(e) {
   const tennisLive = e.status === 'live' && e.sport === 'tenis';
   const when = e.status === 'live'
-    ? `<span class="live-label">● AO VIVO</span><br>${tennisLive ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : esc(e.clock || '')}`
+    ? (tennisLive ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e))
     : esc(fmtWhen(e.startTime)).replace(' ', '<br>');
   const score = (side) => (tennisLive ? tennisSide(e, side === 'h' ? 'home' : 'away')
     : e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
@@ -1361,8 +1370,16 @@ document.addEventListener('error', (e) => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
+  // No player photo: show the flag instead.
+  if (img.dataset.fallback) {
+    img.src = img.dataset.fallback;
+    delete img.dataset.fallback;
+    img.parentElement.classList.add('flag');
+    return;
+  }
   const box = img.parentElement;
   box.classList.remove('has-logo');
+  box.classList.remove('flag');
   box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
 }, true);
 // A league badge that fails to load falls back to the sport icon.
@@ -1521,7 +1538,7 @@ function applyLiveEvent(e) {
   state.match.live = e.stats || state.match.live;
   const score = $('#matchScore');
   if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
-  const clock = $('#matchClock');
+  const clock = $('#matchClock span');
   if (clock) clock.textContent = d.clock || '';
   const w = state.match.widget;
   if (w && state.match.widgetKind === 'football') {
@@ -1595,7 +1612,7 @@ function matchPage(sub) {
 
   const live = e.status === 'live';
   const center = live
-    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>
+    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div>${e.sport === 'tenis' ? `<div class="tn-sets" id="matchClock"><span>${esc(e.clock || '')}</span></div>` : `<div class="live-clock big" id="matchClock"><i class="pulse-dot"></i><span>${esc(e.clock || 'Ao vivo')}</span></div>`}
        ${e.sport === 'tenis' ? `<div class="tn-cell tn-hero" id="matchTennis">${tennisLiveCell(e)}</div>` : ''}`
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
@@ -1814,7 +1831,7 @@ function rankingView(e, x) {
   const ours = [x.homeTeamId, x.awayTeamId];
   return `<div class="insight-stack"><div class="stat-grid two-col">${card('home')}${card('away')}</div>
     ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">${esc(r.valueLabel || 'Pontos')}</th></tr></thead><tbody>
-      ${r.rows.map((p) => `<tr class="${ours.includes(p.playerId) ? 'highlight' : ''}"><td class="pos">${p.position ?? ''}</td><td>${p.country ? `${flagEmoji(p.country)} ` : ''}${esc(p.player)}</td><td class="num">${(p.points ?? 0).toLocaleString('pt-PT')}</td></tr>`).join('')}
+      ${r.rows.map((p) => `<tr class="${ours.includes(p.playerId) ? 'highlight' : ''}"><td class="pos">${p.position ?? ''}</td><td>${flagImg(p.country)} ${esc(p.player)}</td><td class="num">${(p.points ?? 0).toLocaleString('pt-PT')}</td></tr>`).join('')}
     </tbody></table></div></div>` : ''}</div>`;
 }
 
