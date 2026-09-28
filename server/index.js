@@ -12,7 +12,7 @@ import { createSportFeed, SPORT_SPECS } from './sports.js';
 const db = openDb(config.dbPath);
 const log = (msg) => console.warn(`[feed] ${msg}`);
 const liveSocket = config.feed.token && config.feed.liveWs
-  ? createLiveSocket(db, { token: config.feed.token, url: config.feed.liveWsUrl, maxSockets: config.feed.liveMaxSockets, log })
+  ? createLiveSocket(db, { token: config.feed.token, url: config.feed.liveWsUrl, maxSockets: config.feed.liveMaxSockets, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, log })
   : null;
 const feed = createFeed(db, { ...config.feed, log, liveSocket });
 seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });

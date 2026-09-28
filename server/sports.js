@@ -175,7 +175,7 @@ const priceSig = (p) => JSON.stringify(Object.entries(p || {}).sort(([a], [b]) =
  */
 export function createLivePriceGate(maxAgeMs) {
   const seen = new Map(); // event id -> { sig, at }
-  return function decide(eventId, { fresh = {}, any = {}, previous = {} }) {
+  const decide = function decide(eventId, { fresh = {}, any = {}, previous = {} }) {
     const now = Date.now();
     if (Object.keys(fresh).length) {
       seen.set(eventId, { sig: priceSig(fresh), at: now });
@@ -193,6 +193,9 @@ export function createLivePriceGate(maxAgeMs) {
     seen.set(eventId, last);
     return now - last.at <= maxAgeMs ? { prices: any, at: last.at } : null;
   };
+  /** Forgets the event (after a goal): the next price must differ from the ones held to open. */
+  decide.forget = (eventId) => seen.delete(eventId);
+  return decide;
 }
 
 const twoWay = (homeKeys, awayKeys) => (data, { since = null } = {}) => twoWayPrices(data, homeKeys, awayKeys, { since });
