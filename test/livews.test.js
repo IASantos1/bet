@@ -192,3 +192,30 @@ test('in play the pre-match book, or one that ignores the score, never opens the
   live.stop();
   db.close();
 });
+
+test('bookmaker prices (odds_book) are subscribed and preferred; a consensus price stays open while frames come', async () => {
+  FakeSocket.all = [];
+  const db = openDb(':memory:');
+  const id = liveEvent(db, 42);
+  db.prepare("INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, '1', 200, 0), (?, 'X', 330, 0), (?, '2', 380, 0)").run(id, id, id);
+  const live = createLiveSocket(db, { token: 'tok', WebSocketImpl: FakeSocket, bookmaker: 'bet365' });
+  live.track(['42']);
+  await tick();
+  const sock = FakeSocket.all[0];
+  assert.deepEqual(sock.sent, [{ action: 'subscribe', event_id: 42, bookmaker_slug: 'bet365' }]);
+  sock.push({ type: 'event', event_id: 42, score: { home: 0, away: 0 }, time: { minute: 20, display: "20'", status: 'live' } });
+  // Consensus moved away from the pre-match price: open, and it stays open on the same price.
+  sock.push({ type: 'odds', event_id: 42, odds: { match_winner: { home: 2.2, draw: 3.1, away: 3.9 } } });
+  sock.push({ type: 'odds', event_id: 42, odds: { match_winner: { home: 2.2, draw: 3.1, away: 3.9 } } });
+  assert.ok(sels(db, id).every((s) => s.active === 1));
+  assert.ok(ev(db, id).live_odds_at);
+  // The bookmaker's own price takes over; the consensus is then ignored.
+  sock.push({ type: 'odds_book', event_id: 42, bookmaker: 'bet365', odds: { match_winner: { home: 2.3, draw: 3.0, away: 3.75 } } });
+  sock.push({ type: 'odds', event_id: 42, odds: { match_winner: { home: 2.1, draw: 3.2, away: 4 } } });
+  assert.equal(sels(db, id)[0].odds_x100, 230);
+  const log = live.status().oddsLog;
+  assert.equal(log[0].kind, 'odds_book');
+  assert.equal(log[0].decision, 'aberto');
+  live.stop();
+  db.close();
+});

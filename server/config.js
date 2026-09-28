@@ -57,6 +57,10 @@ export const config = {
     liveWs: env.BZZOIRO_LIVE_WS !== '0',
     liveWsUrl: env.BZZOIRO_LIVE_WS_URL || 'wss://sports.bzzoiro.com/live/football/',
     liveMaxSockets: int(env.BZZOIRO_LIVE_MAX_SOCKETS, 5), // 10 matches per socket
+    // In-play prices of one bookmaker (odds_book frames) on top of the consensus; empty = consensus only.
+    liveOddsBookmaker: (env.BZZOIRO_LIVE_BOOKMAKER ?? 'bet365').trim().toLowerCase() || null,
+    // An in-play price that has not changed for this long is treated as stale and the market closes.
+    liveOddsStaleSeconds: int(env.LIVE_ODDS_STALE_SECONDS, 600),
   },
 
   // Casino games (aggregator Agent API v4, Transfer mode). Disabled until both are set.
