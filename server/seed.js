@@ -53,28 +53,39 @@ export function seed(db, log = () => {}, { sampleEvents = true } = {}) {
   log(`Criados ${SAMPLE_EVENTS.length} eventos de exemplo.`);
 }
 
+/**
+ * The administrator. With ADMIN_EMAIL and ADMIN_PASSWORD set, that account is created, or made
+ * admin with that password if it already exists (so the environment always opens the panel).
+ * Without them, a development admin is created when there is none (never in production).
+ */
 function seedAdmin(db, log) {
-  const { n } = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();
-  if (n > 0) return;
-  let email = config.adminEmail;
-  let password = config.adminPassword;
-  if (!email || !password) {
-    if (config.isProduction) {
-      log('AVISO: defina ADMIN_EMAIL e ADMIN_PASSWORD para criar o administrador.');
+  const email = config.adminEmail;
+  const password = config.adminPassword;
+  if (email && password) {
+    const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(email);
+    if (existing) {
+      db.prepare("UPDATE users SET role = 'admin', password_hash = ? WHERE id = ?").run(hashPassword(password), existing.id);
+      if (existing.role !== 'admin') log(`Conta ${email} passou a administrador.`);
       return;
     }
-    email = 'admin@classicbet.local';
-    password = 'admin12345';
-    log(`Administrador de desenvolvimento: ${email} / ${password}`);
-  }
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (existing) {
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(existing.id);
+    db.prepare(
+      `INSERT INTO users (email, name, birthdate, password_hash, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)`
+    ).run(email, 'Administrador', '1990-01-01', hashPassword(password), nowIso());
+    log(`Administrador criado: ${email}`);
     return;
   }
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();
+  if (n > 0) return;
+  if (config.isProduction) {
+    log('AVISO: defina ADMIN_EMAIL e ADMIN_PASSWORD para criar o administrador.');
+    return;
+  }
+  const devEmail = 'admin@classicbet.local';
+  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(devEmail)) return;
   db.prepare(
     `INSERT INTO users (email, name, birthdate, password_hash, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)`
-  ).run(email, 'Administrador', '1990-01-01', hashPassword(password), nowIso());
+  ).run(devEmail, 'Administrador', '1990-01-01', hashPassword('admin12345'), nowIso());
+  log(`Administrador de desenvolvimento: ${devEmail} / admin12345`);
 }
 
 /** Plausible sample prices for the extra markets, derived from the 1X2 odds (5% margin). */
