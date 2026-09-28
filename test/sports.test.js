@@ -242,7 +242,7 @@ test('tennis live socket: event and per-point score frames drive the scoreboard'
   sockets[0].push({ type: 'event', event_id: 36835, sport: 'tennis', score: { sets: [[6, 4], [3, 6], [5, 4]], home_sets: 1, away_sets: 1, point: '40-30', server: 'home' }, stats: { home: { aces: 7 }, away: { aces: 9 } } });
   sockets[0].push({ type: 'score', event_id: 36835, sets: [[6, 4], [3, 6], [6, 4]], point: '0-0', server: 'away' });
   const ev = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(id);
-  assert.deepEqual({ ...ev }, { home_score: 2, away_score: 1, clock: '6-4, 3-6, 6-4 (0-0)' });
+  assert.deepEqual({ ...ev }, { home_score: 2, away_score: 1, clock: '6-4, 3-6, 6-4' });
   assert.equal(got.length, 2);
   assert.equal(got[1].data.server, 'away');
   assert.deepEqual(got[1].data.stats, { home: { aces: 7 }, away: { aces: 9 } });

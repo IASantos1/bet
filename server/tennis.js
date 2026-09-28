@@ -287,8 +287,11 @@ export function createTennisFeed(db, {
         if (!['live', 'scheduled'].includes(m.status)) return row;
         // A match followed on the WebSocket has a point-by-point score; the REST poll only opens it.
         if (!liveSocket?.isFollowing(m.externalId)) {
-          db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
-            .run(m.homeSets ?? 0, m.awaySets ?? 0, m.setsDetail, nowIso(), row.id);
+          // Without the point-by-point feed the set in play comes from the set scores.
+          const sets = String(m.setsDetail || '').split(',').map((x) => x.trim().match(/^(\d+)\s*-\s*(\d+)/)).filter(Boolean).map((x) => [Number(x[1]), Number(x[2])]);
+          const detail = JSON.stringify({ set: sets.length || 1, point: null, server: null, sets });
+          db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, live_detail = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
+            .run(m.homeSets ?? 0, m.awaySets ?? 0, m.setsDetail, detail, nowIso(), row.id);
         } else db.prepare("UPDATE events SET status = 'live', postponed_at = NULL WHERE id = ?").run(row.id);
         suspend(row.id); // pre-match price only
         updated += 1;

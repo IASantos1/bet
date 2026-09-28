@@ -12,6 +12,7 @@ import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
+import { leagueTier } from './leagues.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE = 'cb_session';
@@ -70,6 +71,8 @@ function scoreInput(v, label) {
   if (!Number.isInteger(n) || n < 0 || n > 999) throw new HttpError(400, `Resultado (${label}) inválido.`);
   return n;
 }
+
+const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
 
 // ---------- app ----------
 
@@ -194,6 +197,8 @@ export function createApp(db, {
         homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
+        tier: leagueTier(e.sport, e.competition),
+        tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
         liveTracker: e.source === 'bzzoiro' && e.status === 'live',
       };
       if (allMarkets) {

@@ -125,6 +125,19 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
   "bonus calls": os jogos correm sempre com o RTP por omissão do fornecedor. Confirme com o agregador
   que os jogos são originais e licenciados para o seu mercado.
 
+## Destaques e Ao Vivo
+
+- **Ordem**: futebol primeiro, depois ténis, basquetebol, hóquei, dardos e CS2; dentro de cada
+  desporto, as ligas grandes primeiro (`server/leagues.js`: Liga dos Campeões, Premier League, LaLiga,
+  Serie A, Bundesliga, Ligue 1, Liga Portugal…; Grand Slams e Masters; NBA/EuroLeague; NHL; majors
+  de dardos e de CS2).
+- **Destaques** (página inicial): "Ao Vivo agora" e "Eventos em destaque" são carrosséis na
+  horizontal. Entram primeiro os eventos destacados no painel, depois todo o futebol de ligas grandes
+  e um evento de cada um dos outros desportos (o de liga maior). Sem futebol de liga grande, entram
+  os melhores jogos de futebol que houver.
+- **Ténis ao vivo**: em vez do minuto aparece o set (S1, S2, S3…) e, por baixo, o ponto (15, 30,
+  40, AD); em cada jogador, sets ganhos, jogos no set e ponto, com quem serve assinalado.
+
 ## Página do jogo e mercados
 
 Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma página só desse jogo:
@@ -137,8 +150,13 @@ Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma
   seleção por jogo.
 - **Estatísticas**: posse, xG, remates, cantos, faltas, cartões e a cronologia (golos, cartões,
   substituições, VAR), de `/events/{id}/stats/` e `/incidents/`.
-- **Tracker**: campo 2D com a posição da bola, a situação de jogo (ataque, ataque perigoso, canto…) e
-  as ações recentes, a partir das mensagens `livedata` e `action` do WebSocket.
+- **Minicampo 2D** (por cima do boletim; no telemóvel, por cima dos separadores): relvado com linhas,
+  meias-luas, arcos e bandeirolas de canto e balizas com rede; bola oficial com rasto que se desvanece;
+  seta de pressão desde a baliza da equipa que ataca até à bola (mais forte em ataque perigoso/canto);
+  etiqueta com a equipa e a situação; últimas ações. As coordenadas vêm do WebSocket "a atacar da
+  esquerda para a direita" para a equipa com a bola, por isso as da equipa visitante são espelhadas.
+- **Ténis**: campo com a bola do lado de quem serve (lado dos pares/ímpares conforme os pontos do
+  jogo) e os sets. A API de ténis não envia posição da bola, só pontos e serviço.
 
 - **Confrontos (H2H)**: vitórias, empates e golos entre as duas equipas e os últimos jogos (com o
   resultado do ponto de vista da equipa da casa), de `/events/{id}/h2h/`.

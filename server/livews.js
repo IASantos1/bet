@@ -143,9 +143,11 @@ export function createLiveSocket(db, {
     const point = sc.point ?? prev.point ?? null;
     const serverSide = sc.server ?? prev.server ?? null;
     const setsText = sets.map(([x, y]) => `${x}-${y}`).join(', ');
-    const clock = [setsText, point ? `(${point})` : null].filter(Boolean).join(' ').slice(0, 60) || row.clock;
-    db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, updated_at = ? WHERE id = ?")
-      .run(home, away, clock, nowIso(), row.id);
+    // The point is shown on its own (S1/S2/S3 with 15/30/40/AD under it); the clock keeps the sets.
+    const clock = setsText.slice(0, 60) || row.clock;
+    const detail = { set: sets.length || null, point, server: serverSide, sets };
+    db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, live_detail = ?, updated_at = ? WHERE id = ?")
+      .run(home, away, clock, JSON.stringify(detail), nowIso(), row.id);
     const data = {
       homeScore: home, awayScore: away, clock, sets, point, server: serverSide,
       stats: kind === 'event' && f.stats ? f.stats : prev.stats ?? null,

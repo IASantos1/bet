@@ -210,7 +210,30 @@ function matchCard(e) {
   </article>`;
 }
 
+/** Tennis in play: "S2" and the point (15 / 30 / 40 / AD) under it. */
+function tennisLiveCell(e) {
+  const t = e.tennis || {};
+  const pts = tennisPoints(t.point);
+  return `<span class="tn-set">S${t.set || 1}</span><span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
+}
+
+/** Per-player tennis line: sets won, games in the current set and the point, with the server marked. */
+function tennisSide(e, side) {
+  const t = e.tennis || {};
+  const i = side === 'home' ? 0 : 1;
+  const cur = (t.sets || [])[(t.sets || []).length - 1];
+  const pts = tennisPoints(t.point);
+  return `<span class="tn-line">${t.server === side ? '<i class="tn-serve" title="Ao serviço"></i>' : ''}<b>${side === 'home' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>${cur ? `<em>${cur[i]}</em>` : ''}${pts ? `<strong>${esc(pts[i])}</strong>` : ''}</span>`;
+}
+
 function liveCard(e) {
+  if (e.sport === 'tenis') {
+    return `<article class="live-card clickable" data-open="${e.id}">
+    <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)}</span><span class="tn-cell">${tennisLiveCell(e)}</span></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisSide(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisSide(e, 'away')}</div></div>
+    ${oddsButtons(e, { labels: 'name' })}
+  </article>`;
+  }
   return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
     <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
@@ -219,10 +242,12 @@ function liveCard(e) {
 }
 
 function eventRow(e) {
+  const tennisLive = e.status === 'live' && e.sport === 'tenis';
   const when = e.status === 'live'
-    ? `<span class="live-label">● AO VIVO</span><br>${esc(e.clock || '')}`
+    ? `<span class="live-label">● AO VIVO</span><br>${tennisLive ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : esc(e.clock || '')}`
     : esc(fmtWhen(e.startTime)).replace(' ', '<br>');
-  const score = (side) => (e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
+  const score = (side) => (tennisLive ? tennisSide(e, side === 'h' ? 'home' : 'away')
+    : e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
@@ -235,7 +260,8 @@ function eventRow(e) {
 
 function groupByCompetition(events) {
   const groups = new Map();
-  for (const e of events) {
+  const ordered = [...events].sort((a, b) => (sportRank(a.sport) - sportRank(b.sport)) || byPriority(a, b));
+  for (const e of ordered) {
     const key = `${e.sport}|${e.competition}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(e);
@@ -262,19 +288,53 @@ function footer() {
 
 // ---------- pages ----------
 
+// Sports in the order the site shows them: football always first.
+const SPORT_ORDER = ['futebol', 'tenis', 'basquetebol', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
+const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
+
+/** Featured by the operator first, then big leagues (tier), then the earliest. */
+const byPriority = (a, b) => (b.featured - a.featured) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
+
+/**
+ * Home page highlights: big-league football first (all of it, up to the limit), then the best
+ * event of each other sport, big leagues first. Without big-league football, the best football
+ * matches still lead. Only events with odds are listed.
+ */
+function pickHighlights(events, limit = 12) {
+  const out = [];
+  const add = (e) => { if (e && out.length < limit && !out.includes(e)) out.push(e); };
+  const pool = [...events].sort(byPriority);
+  pool.filter((e) => e.featured).forEach(add);
+  const football = pool.filter((e) => e.sport === 'futebol');
+  const bigFootball = football.filter((e) => e.tier <= 2);
+  (bigFootball.length ? bigFootball : football.slice(0, 3)).forEach(add);
+  const others = [...new Set(pool.map((e) => e.sport))].filter((sp) => sp !== 'futebol').sort((a, b) => sportRank(a) - sportRank(b));
+  for (const sp of others) add(pool.find((e) => e.sport === sp));
+  // Room left and big leagues elsewhere: more of them.
+  pool.filter((e) => e.tier <= 2).forEach(add);
+  return out;
+}
+
+function carousel(id, cards) {
+  return `<div class="carousel" id="${id}">
+    <button class="car-btn prev" data-action="car-prev" data-target="${id}" aria-label="Anterior">‹</button>
+    <div class="car-track">${cards.join('')}</div>
+    <button class="car-btn next" data-action="car-next" data-target="${id}" aria-label="Seguinte">›</button>
+  </div>`;
+}
+
 function homePage() {
-  const live = state.events.filter((e) => e.status === 'live');
-  const upcoming = state.events.filter((e) => e.status === 'scheduled');
-  const featured = [...upcoming.filter((e) => e.featured), ...upcoming.filter((e) => !e.featured)].slice(0, 6);
+  const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
+  const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
   const hero = state.user
     ? `<div class="eyebrow">BEM-VINDO DE VOLTA</div><h1>Olá, ${esc(state.user.name.split(' ')[0])}.</h1><p>O seu saldo é <strong>${money(state.user.balance)}</strong>. Escolha um jogo e faça a sua aposta.</p>
        <div class="hero-actions"><a class="primary-btn" href="#/desporto">Explorar desporto</a><a class="outline-btn" href="#/perfil/carteira">Carteira</a></div>`
     : `<div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
   return `<section class="hero"><div class="hero-copy">${hero}</div></section>
-    ${live.length ? `<section class="section"><div class="section-head"><h2>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div><div class="live-grid grid">${live.slice(0, 4).map(liveCard).join('')}</div></section>` : ''}
+    ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
-      ${featured.length ? `<div class="match-grid grid">${featured.map(matchCard).join('')}</div>` : emptyEvents()}</section>
+      ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
     <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div><div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div></section>
     ${footer()}`;
 }
@@ -283,7 +343,7 @@ const emptyEvents = () => `<div class="panel empty">${state.eventsLoaded ? 'Sem 
 
 function sportsPage(sub) {
   if (sub === 'resultados') return resultsPage();
-  const sports = [...new Set(state.events.map((e) => e.sport))];
+  const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
     <div class="sport-strip">
@@ -316,8 +376,15 @@ function resultsPage() {
 
 function livePage() {
   const live = state.events.filter((e) => e.status === 'live');
+  // Football first, then the other sports; big leagues first inside each sport.
+  const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
+  const blocks = sports.map((sp) => {
+    const list = live.filter((e) => e.sport === sp).sort(byPriority);
+    return `<section class="section"><div class="section-head"><h2>${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
+      <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
+  }).join('');
   return `<div class="page-title"><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
-    ${live.length ? `<div class="live-grid grid">${live.map(liveCard).join('')}</div>` : `<div class="panel empty">${state.eventsLoaded ? 'Não há eventos ao vivo neste momento.' : 'A carregar…'}</div>`}
+    ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? 'Não há eventos ao vivo neste momento.' : 'A carregar…'}</div>`}
     ${footer()}`;
 }
 
@@ -996,7 +1063,10 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 10_000);
   }
   document.body.classList.toggle('immersive', immersive);
+  // Carousels keep their position when the page refreshes itself (odds, live scores).
+  const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
   $('#content').innerHTML = immersive ? casinoPlayPage() : (pages[page] || homePage)();
+  for (const [id, left] of carScroll) { const t = $(`#${id} .car-track`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
@@ -1220,7 +1290,10 @@ document.addEventListener('click', async (e) => {
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
   else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação ao fornecedor de casino.');
-  else if (action === 'casino-more') {
+  else if (action === 'car-prev' || action === 'car-next') {
+    const track = $(`#${actionEl.dataset.target} .car-track`);
+    if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
+  } else if (action === 'casino-more') {
     loadCasino();
   } else if (action === 'casino-test') {
     actionEl.disabled = true;
@@ -1324,6 +1397,12 @@ function bindChrome() {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); } });
   window.addEventListener('hashchange', () => render());
+  // The live widget sits above the slip on wide screens and inside the match page on narrow ones.
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (currentRoute().page === 'jogo') mountLiveWidget(); }, 150);
+  });
 }
 
 // ---------- match page (#/jogo/<id>): markets, statistics, 2D tracker, live stream ----------
@@ -1347,7 +1426,8 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
+  $('#sideTracker')?.replaceChildren();
 }
 
 async function loadMatch(id, { quiet = false } = {}) {
@@ -1398,8 +1478,10 @@ function startMatchStream(id) {
     m.streaming = !!s.following;
     if (s.event) applyLiveEvent(s.event);
     for (const d of s.livedata || []) pushBall(d);
+    m.prevBall = null;
     m.actions = (s.actions || []).slice(-15);
     updateTracker();
+    updateActionsList();
   });
   on('event', applyLiveEvent);
   on('livedata', (d) => { pushBall(d); updateTracker(); });
@@ -1422,11 +1504,23 @@ function applyLiveEvent(e) {
   if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
   const clock = $('#matchClock');
   if (clock) clock.textContent = d.clock || '';
+  const w = state.match.widget;
+  if (w && state.match.widgetKind === 'football') {
+    $('#trkHomeScore', w).textContent = d.homeScore ?? 0;
+    $('#trkAwayScore', w).textContent = d.awayScore ?? 0;
+    $('#trkClock', w).textContent = d.clock || '';
+  }
   if (scored && d.sport === 'futebol') {
     toast('Golo!', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
     loadMatch(d.id, { quiet: true }); // markets were suspended; fetch their new state
   } else if (scored && d.sport === 'tenis') toast('Set', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
-  if (d.sport === 'tenis') updateServe(d);
+  if (d.sport === 'tenis') {
+    if (e.point !== undefined || e.sets) d.tennis = { set: e.sets?.length || d.tennis?.set || 1, point: e.point ?? null, server: e.server ?? null, sets: e.sets || d.tennis?.sets || [] };
+    updateServe(d);
+    updateTennisCourt();
+    const cell = $('#matchTennis');
+    if (cell) cell.innerHTML = tennisLiveCell(d);
+  }
 }
 
 /** Tennis: who is serving, from the live frames. */
@@ -1434,15 +1528,25 @@ function updateServe(e) {
   $$('[data-serve]').forEach((el) => el.classList.toggle('serving', el.dataset.serve === e.server));
 }
 
+/**
+ * Ball fixes arrive "attacking left→right" for the side in possession (provider docs), so on our
+ * fixed pitch — home attacking left→right — an away fix is mirrored on both axes.
+ */
+function toPitch(p, side) {
+  if (p?.x === null || p?.x === undefined || p?.y === null || p?.y === undefined) return null;
+  const clamp = (v) => Math.max(1, Math.min(99, Number(v)));
+  return side === 'away' ? { x: clamp(100 - p.x), y: clamp(100 - p.y) } : { x: clamp(p.x), y: clamp(p.y) };
+}
+
 function pushBall(d) {
-  if (d.x === null || d.y === null) {
-    state.match.ball = { ...(state.match.ball || {}), situation: d.situation, side: d.side, commentary: d.commentary };
+  const m = state.match;
+  const spot = toPitch(d, d.side);
+  if (!spot) {
+    m.ball = { ...(m.ball || {}), situation: d.situation, side: d.side, commentary: d.commentary };
     return;
   }
-  const m = state.match;
-  if (m.ball && m.ball.x !== null) m.trail.push({ x: m.ball.x, y: m.ball.y });
-  m.trail = m.trail.slice(-8);
-  m.ball = d;
+  m.prevBall = m.ball?.x !== undefined && m.ball?.x !== null ? { x: m.ball.x, y: m.ball.y } : null;
+  m.ball = { ...d, ...spot };
 }
 
 // Last tab of the match page: league table or players' ranking, where the sport has one.
@@ -1472,7 +1576,8 @@ function matchPage(sub) {
 
   const live = e.status === 'live';
   const center = live
-    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>`
+    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>
+       ${e.sport === 'tenis' ? `<div class="tn-cell tn-hero" id="matchTennis">${tennisLiveCell(e)}</div>` : ''}`
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
       : `<div class="match-kickoff">${esc(fmtWhen(e.startTime))}</div><div class="muted">${esc(new Date(e.startTime).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>`;
@@ -1480,7 +1585,6 @@ function matchPage(sub) {
   const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão']];
   const table = TABLE_TAB[e.sport];
   if (table && e.source !== 'manual') tabs.push(table);
-  if (e.liveTracker) tabs.push(['tracker', 'Tracker']);
   if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
 
   let body = '';
@@ -1489,7 +1593,6 @@ function matchPage(sub) {
   else if (m.tab === 'previsao') body = insightView(e, predictionView);
   else if (m.tab === 'classificacao') body = insightView(e, standingsView);
   else if (m.tab === 'ranking') body = insightView(e, rankingView);
-  else if (m.tab === 'tracker') body = trackerView(e);
   else body = marketsView(e);
 
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
@@ -1501,7 +1604,8 @@ function matchPage(sub) {
         <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
     </section>
-    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}${k === 'tracker' ? ' <i class="live-dot"></i>' : ''}</button>`).join('')}</div>
+    <div id="trackerInline" class="tracker-inline"></div>
+    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
     <div class="match-body">${body}</div>
     ${footer()}`;
 }
@@ -1730,85 +1834,199 @@ const TENNIS_STAT = {
   second_serve_won_pct: 'Pontos ganhos no 2.º serviço (%)', break_points_saved_pct: 'Break points salvos (%)',
 };
 
-function trackerView(e) {
-  const m = state.match;
-  const note = m.es ? (m.streaming ? '' : '<p class="muted">A aguardar dados de posição deste jogo…</p>')
-    : '<p class="muted">Tracker indisponível para este jogo (sem cobertura ao vivo do fornecedor).</p>';
-  const lines = `
-    <rect x="0" y="0" width="105" height="68" class="pitch-grass"/>
-    <rect x="0.5" y="0.5" width="104" height="67" class="pitch-line"/>
-    <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" class="pitch-line"/>
-    <circle cx="52.5" cy="34" r="9.15" class="pitch-line"/><circle cx="52.5" cy="34" r="0.5" class="pitch-spot"/>
-    <rect x="0.5" y="13.85" width="16.5" height="40.3" class="pitch-line"/><rect x="88" y="13.85" width="16.5" height="40.3" class="pitch-line"/>
-    <rect x="0.5" y="24.85" width="5.5" height="18.3" class="pitch-line"/><rect x="99" y="24.85" width="5.5" height="18.3" class="pitch-line"/>
-    <circle cx="11" cy="34" r="0.5" class="pitch-spot"/><circle cx="94" cy="34" r="0.5" class="pitch-spot"/>`;
-  return `<div class="panel tracker">
-    <div class="tracker-head"><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><span id="trackerSituation" class="tracker-situation">—</span><span>${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
-    <svg class="pitch" viewBox="0 0 105 68" role="img" aria-label="Campo com a posição da bola">
-      ${lines}
-      <rect id="zoneHome" x="52.5" y="0.5" width="52" height="67" class="zone zone-home"/>
-      <rect id="zoneAway" x="0.5" y="0.5" width="52" height="67" class="zone zone-away"/>
-      <g id="ballTrail"></g>
-      <circle id="ball" cx="52.5" cy="34" r="1.6" class="ball"/>
-    </svg>
-    <p id="trackerCommentary" class="tracker-commentary"></p>
-    ${note}
-    <h3>Ações recentes</h3><div id="trackerActions" class="tracker-actions"></div>
+// ---------- live widget: football mini-pitch / tennis court ----------
+// Lives above the bet slip on wide screens (between the top menu and the slip) and above the
+// tabs of the match page on narrow ones. One node per match, moved between the two slots, so
+// the ball keeps animating across re-renders.
+
+const BALL_SVG = `<svg viewBox="0 0 64 64" class="trk-ball-svg" aria-hidden="true">
+  <defs><radialGradient id="trkBallShade" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#ffffff"/><stop offset="0.7" stop-color="#eceff3"/><stop offset="1" stop-color="#aab1bb"/></radialGradient></defs>
+  <circle cx="32" cy="32" r="30" fill="url(#trkBallShade)" stroke="#1b1f24" stroke-width="2"/>
+  <polygon points="32,21 42.5,28.6 38.5,41 25.5,41 21.5,28.6" fill="#15181c"/>
+  <polygon points="32,3 40,8.5 37,17 27,17 24,8.5" fill="#15181c"/>
+  <polygon points="58,24 60.5,33.5 54,40 47.5,33 50,24.5" fill="#15181c"/>
+  <polygon points="47,55 38,60.5 32,57 35,49 44.5,48" fill="#15181c"/>
+  <polygon points="17,55 26,60.5 32,57 29,49 19.5,48" fill="#15181c"/>
+  <polygon points="6,24 3.5,33.5 10,40 16.5,33 14,24.5" fill="#15181c"/>
+  <path d="M32 21V17M42.5 28.6L50 24.5M38.5 41L44.5 48M25.5 41L19.5 48M21.5 28.6L14 24.5" stroke="#1b1f24" stroke-width="1.6"/>
+</svg>`;
+
+function footballWidget(e) {
+  const flags = ['tl', 'tr', 'bl', 'br'].map((c) => `<i class="trk-corner c-${c}"></i><i class="trk-flag f-${c}"></i>`).join('');
+  return `<div class="trk" data-kind="football">
+    <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(e.home)}</span>
+      <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
+      <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
+    <div class="trk-turf"><div class="trk-pitch" id="trkPitch">
+      <div class="trk-arrow" id="trkArrow"></div>
+      <i class="trk-half"></i><i class="trk-circle"></i><i class="trk-spot"></i>
+      <i class="trk-box l"></i><i class="trk-box r"></i><i class="trk-six l"></i><i class="trk-six r"></i>
+      <i class="trk-pen l"></i><i class="trk-pen r"></i><i class="trk-arc l"></i><i class="trk-arc r"></i>
+      ${flags}
+      <div class="trk-goal l"><i></i></div><div class="trk-goal r"><i></i></div>
+      <div class="trk-trails" id="trkTrails"></div>
+      <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
+      <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
+    </div></div>
+    <p class="trk-note" id="trkNote"></p>
+    <div class="trk-actions" id="trackerActions"></div>
   </div>`;
+}
+
+function tennisWidget(e) {
+  return `<div class="trk" data-kind="tennis">
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>
+      <span class="trk-score"><b id="trkSetLabel">S1</b><small id="trkPoint">—</small></span>
+      <span class="trk-team away">${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
+    <div class="court-wrap"><div class="court" id="trkCourt">
+      <i class="court-alley top"></i><i class="court-alley bottom"></i><i class="court-service l"></i><i class="court-service r"></i>
+      <i class="court-center l"></i><i class="court-center r"></i><i class="court-net"></i>
+      <div class="court-ball" id="trkTennisBall"></div>
+    </div></div>
+    <div class="court-sets" id="trkSets"></div>
+    <p class="trk-note">A bola marca quem serve e de que lado do campo (pares/ímpares de pontos).</p>
+  </div>`;
+}
+
+/** Mounts / moves the widget for the current match into the right slot. */
+function mountLiveWidget() {
+  const m = state.match;
+  const e = m.data;
+  const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
+  if (!kind) {
+    m.widget?.remove();
+    m.widget = null;
+    return;
+  }
+  if (!m.widget || m.widgetKind !== kind) {
+    m.widget?.remove();
+    const holder = document.createElement('div');
+    holder.innerHTML = kind === 'football' ? footballWidget(e) : tennisWidget(e);
+    m.widget = holder.firstElementChild;
+    m.widgetKind = kind;
+  }
+  const wide = window.matchMedia('(min-width: 1001px)').matches;
+  const slot = wide ? $('#sideTracker') : $('#trackerInline');
+  if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
+  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); } else updateTennisCourt();
 }
 
 function afterMatchRender() {
   // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
   if (state.match.data?.sport === 'tenis') updateServe(state.match.data);
   $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
-  if (state.match.tab === 'tracker') {
-    updateTracker();
-    updateActionsList();
-  }
+  mountLiveWidget();
 }
 
-function updateTracker() {
-  const ball = $('#ball');
-  if (!ball) return;
-  const b = state.match.ball;
-  const svgNS = 'http://www.w3.org/2000/svg';
-  if (b && b.x !== null && b.x !== undefined) {
-    ball.setAttribute('cx', String((b.x / 100) * 105));
-    ball.setAttribute('cy', String((b.y / 100) * 68));
+const DANGER = new Set(['dangerous_attack', 'corner', 'goal', 'freekick', 'shotoffwoodwork', 'goalkeeper_saved']);
+
+function updateTracker({ instant = false } = {}) {
+  const m = state.match;
+  const w = m.widget;
+  if (!w || m.widgetKind !== 'football') return;
+  const e = m.data;
+  $('#trkHomeScore', w).textContent = e.homeScore ?? 0;
+  $('#trkAwayScore', w).textContent = e.awayScore ?? 0;
+  $('#trkClock', w).textContent = e.clock || '';
+  const b = m.ball;
+  const note = $('#trkNote', w);
+  note.textContent = m.es ? (m.streaming ? (b?.commentary || '') : 'A aguardar dados de posição deste jogo…')
+    : 'Posição da bola indisponível (jogo sem cobertura ao vivo do fornecedor).';
+  const ball = $('#trkBall', w);
+  const arrow = $('#trkArrow', w);
+  const badge = $('#trkBadge', w);
+  if (!b || b.x === undefined || b.x === null) {
+    ball.classList.add('idle');
+    arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+    badge.classList.remove('on');
+    return;
   }
-  const trail = $('#ballTrail');
-  if (trail) {
-    trail.replaceChildren(...state.match.trail.map((p, i, arr) => {
-      const c = document.createElementNS(svgNS, 'circle');
-      c.setAttribute('cx', String((p.x / 100) * 105));
-      c.setAttribute('cy', String((p.y / 100) * 68));
-      c.setAttribute('r', '0.9');
-      c.setAttribute('class', 'trail');
-      c.setAttribute('opacity', String(((i + 1) / arr.length) * 0.5));
-      return c;
-    }));
+  ball.classList.remove('idle');
+  ball.classList.toggle('instant', instant);
+  ball.style.left = `${b.x}%`;
+  ball.style.top = `${b.y}%`;
+
+  // Momentum arrow: from the attacking side's own goal line to the ball, stronger when dangerous.
+  const side = b.side === 'away' ? 'away' : 'home';
+  const danger = DANGER.has(b.situation);
+  const depth = side === 'home' ? b.x : 100 - b.x;
+  const tier = danger ? 'danger' : depth > 60 ? 'attacking' : 'neutral';
+  const near = side === 'home' ? 0 : 100;
+  const dir = b.x >= near ? 1 : -1;
+  const body = dir === 1 ? Math.max(near, b.x - 6) : Math.min(near, b.x + 6);
+  arrow.style.clipPath = `polygon(${near}% 0%, ${body}% 0%, ${b.x}% 50%, ${body}% 100%, ${near}% 100%)`;
+  arrow.className = `trk-arrow ${side} ${tier}`;
+
+  // Situation badge floating near the ball.
+  badge.classList.add('on');
+  badge.classList.toggle('away', side === 'away');
+  badge.classList.toggle('hot', danger);
+  $('#trkBadgeTeam', w).textContent = side === 'away' ? e.away : e.home;
+  $('#trkBadgeText', w).textContent = SITUATION_LABEL[b.situation] || (b.situation ? String(b.situation).replaceAll('_', ' ') : 'Em jogo');
+  badge.style.left = `${Math.min(78, Math.max(22, b.x))}%`;
+  badge.style.top = `${b.y > 55 ? Math.max(14, b.y - 22) : Math.min(86, b.y + 22)}%`;
+
+  // Fading trail behind the ball, from where it was to where it is (a comet that dissolves).
+  const from = m.prevBall;
+  if (!instant && from) {
+    const pitch = $('#trkPitch', w).getBoundingClientRect();
+    const dx = ((b.x - from.x) / 100) * pitch.width;
+    const dy = ((b.y - from.y) / 100) * pitch.height;
+    const len = Math.hypot(dx, dy);
+    if (len > 6) {
+      const trail = document.createElement('i');
+      trail.className = `trk-trail ${danger ? 'hot' : ''}`;
+      trail.style.left = `${from.x}%`;
+      trail.style.top = `${from.y}%`;
+      trail.style.width = `${len}px`;
+      trail.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      const box = $('#trkTrails', w);
+      box.append(trail);
+      while (box.children.length > 4) box.firstElementChild.remove();
+      trail.addEventListener('animationend', () => trail.remove());
+    }
   }
-  const side = b?.side;
-  $('#zoneHome')?.classList.toggle('on', side === 'home');
-  $('#zoneAway')?.classList.toggle('on', side === 'away');
-  const sit = $('#trackerSituation');
-  if (sit) {
-    sit.textContent = b?.situation ? (SITUATION_LABEL[b.situation] || b.situation) : '—';
-    sit.className = `tracker-situation ${b?.situation === 'dangerous_attack' || b?.situation === 'goal' ? 'hot' : ''}`;
-  }
-  const com = $('#trackerCommentary');
-  if (com) com.textContent = b?.commentary || '';
+  m.prevBall = null;
 }
 
 function updateActionsList() {
-  const box = $('#trackerActions');
+  const box = state.match.widget && $('#trackerActions', state.match.widget);
   if (!box) return;
   const e = state.match.data;
-  const items = [...state.match.actions].reverse().slice(0, 10);
-  box.innerHTML = items.length
-    ? items.map((a) => `<div class="incident ${a.team || ''}"><span class="inc-min">${a.minute ?? ''}'</span><span>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</span>
-      <span class="muted">${esc(a.player || '')}${a.team ? ` · ${esc(a.team === 'home' ? e?.home : e?.away)}` : ''}</span></div>`).join('')
-    : '<p class="muted">Sem ações detalhadas para este jogo.</p>';
+  const items = [...state.match.actions].reverse().slice(0, 4);
+  box.innerHTML = items.map((a) => `<div class="trk-action ${a.team || ''}"><span>${a.minute ?? ''}'</span><b>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</b>
+    <small>${esc(a.player || (a.team === 'home' ? e?.home : a.team === 'away' ? e?.away : ''))}</small></div>`).join('');
+}
+
+const POINT_VALUE = { 0: 0, 15: 1, 30: 2, 40: 3, A: 4, AD: 4 };
+/** Tennis point as shown to the user: 15 / 30 / 40 / AD. */
+const fmtPoint = (p) => (String(p).toUpperCase() === 'A' ? 'AD' : String(p));
+
+function tennisPoints(point) {
+  const [h, a] = String(point || '').split('-').map((x) => x.trim());
+  return h === undefined || a === undefined || h === '' ? null : [fmtPoint(h), fmtPoint(a)];
+}
+
+function updateTennisCourt() {
+  const m = state.match;
+  const w = m.widget;
+  if (!w || m.widgetKind !== 'tennis') return;
+  const t = m.data.tennis || {};
+  const pts = tennisPoints(t.point);
+  $('#trkSetLabel', w).textContent = `S${t.set || 1}`;
+  $('#trkPoint', w).textContent = pts ? `${pts[0]} - ${pts[1]}` : '—';
+  $('#trkSets', w).innerHTML = (t.sets || []).map(([h, a], i) => `<span class="${i === (t.sets.length - 1) ? 'cur' : ''}"><small>S${i + 1}</small>${h}-${a}</span>`).join('');
+  const ball = $('#trkTennisBall', w);
+  if (!t.server) { ball.classList.add('idle'); return; }
+  // Server at their baseline; deuce court after an even number of points, ad court after odd.
+  const raw = String(t.point || '0-0').split('-').map((x) => x.trim().toUpperCase());
+  const played = raw.reduce((n, p) => n + (POINT_VALUE[p] ?? (Number(p) || 0)), 0);
+  const deuce = played % 2 === 0;
+  const home = t.server === 'home';
+  ball.classList.remove('idle');
+  ball.style.left = home ? '3%' : '97%';
+  // Facing the net from the left, the right-hand (deuce) court is the bottom half; from the right, the top.
+  ball.style.top = home ? (deuce ? '70%' : '30%') : (deuce ? '30%' : '70%');
 }
 
 async function init() {

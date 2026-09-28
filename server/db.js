@@ -145,6 +145,8 @@ function migrate(db) {
   if (!cols.has('postponed_at')) db.exec('ALTER TABLE events ADD COLUMN postponed_at TEXT');
   if (!cols.has('home_country')) db.exec('ALTER TABLE events ADD COLUMN home_country TEXT');
   if (!cols.has('away_country')) db.exec('ALTER TABLE events ADD COLUMN away_country TEXT');
+  // Live scoreboard details that do not fit the score/clock columns (tennis: set, point, server).
+  if (!cols.has('live_detail')) db.exec('ALTER TABLE events ADD COLUMN live_detail TEXT');
   if (!cols.has('reg_home_score')) db.exec('ALTER TABLE events ADD COLUMN reg_home_score INTEGER');
   if (!cols.has('reg_away_score')) db.exec('ALTER TABLE events ADD COLUMN reg_away_score INTEGER');
 
