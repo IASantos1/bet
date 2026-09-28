@@ -70,12 +70,14 @@ const toX100 = (v) => {
   return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null;
 };
 
-// The eleven consensus keys of /events/{id}/odds/ → our market|code.
+// The consensus keys of /events/{id}/odds/ → our market|code (0.5 and 4.5 goal lines when present).
 const EVENT_ODDS_KEYS = [
   ['1x2|1', ['home_win', 'home', '1']], ['1x2|X', ['draw', 'X', 'x']], ['1x2|2', ['away_win', 'away', '2']],
+  ['ou|O0.5', ['over_05_goals']], ['ou|U0.5', ['under_05_goals']],
   ['ou|O1.5', ['over_15_goals']], ['ou|U1.5', ['under_15_goals']],
   ['ou|O2.5', ['over_25_goals']], ['ou|U2.5', ['under_25_goals']],
   ['ou|O3.5', ['over_35_goals']], ['ou|U3.5', ['under_35_goals']],
+  ['ou|O4.5', ['over_45_goals']], ['ou|U4.5', ['under_45_goals']],
   ['btts|Y', ['btts_yes']], ['btts|N', ['btts_no']],
 ];
 export const EVENT_ODDS_COVERED = EVENT_ODDS_KEYS.map(([k]) => k);
@@ -92,7 +94,7 @@ export function normalizeOdds(data) {
 }
 
 // Markets requested from the bulk /odds/ feed (its `market` vocabulary).
-export const BULK_MARKETS = ['1x2', 'over_under_15', 'over_under_25', 'over_under_35', 'btts', 'double_chance', 'draw_no_bet'];
+export const BULK_MARKETS = ['1x2', 'over_under_05', 'over_under_15', 'over_under_25', 'over_under_35', 'over_under_45', 'btts', 'double_chance', 'draw_no_bet'];
 
 /** Maps the provider's (market, outcome) to our market|code, or null. */
 export function mapMarket(rawMarket, rawOutcome) {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createFeed, mapStatus, normalizeEvent, normalizeOdds, normalizeOddsRow } from '../server/feed.js';
+import { createFeed, mapStatus, normalizeEvent, normalizeOdds, normalizeOddsRow, mapMarket } from '../server/feed.js';
 import { createApp } from '../server/app.js';
 import { placeBets } from '../server/betting.js';
 import { tx, nowIso } from '../server/db.js';
@@ -277,4 +277,11 @@ test('with per-bookmaker rows (Football Unlimited) the price is the mean across 
   await feed.syncFixtures();
   assert.equal(sels(db, eventRow(db, 31).id)[0].odds_x100, 220);
   db.close();
+});
+
+test('0.5 and 4.5 goal lines come from the consensus keys and the bulk feed', () => {
+  const { prices } = normalizeOdds({ odds: { home_win: 1.13, draw: 7.5, away_win: 13.36, over_05_goals: 1.01, under_05_goals: 17.75, over_45_goals: 3.47, under_45_goals: 1.25 } });
+  assert.deepEqual([prices['ou|O0.5'], prices['ou|U0.5'], prices['ou|O4.5'], prices['ou|U4.5']], [101, 1775, 347, 125]);
+  assert.equal(mapMarket('over_under_05', 'Over'), 'ou|O0.5');
+  assert.equal(mapMarket('over_under_45', 'Under'), 'ou|U4.5');
 });
