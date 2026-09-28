@@ -65,13 +65,21 @@ function baseMatch(m, { homeKey = 'home_team', awayKey = 'away_team', dateKeys =
 
 // ---------- per-sport specs ----------
 
-const winnerAverages = (data, homeKeys, awayKeys) => {
-  const books = Array.isArray(data?.bookmakers) ? data.bookmakers : [];
+/**
+ * Books to average. In play (`since` set) only prices a bookmaker updated after `since` count, so a
+ * pre-match price never carries into the game.
+ */
+const freshBooks = (list, since) => (Array.isArray(list) ? list : [])
+  .filter((b) => !since || (b.updated_at && new Date(b.updated_at).getTime() >= since));
+
+const winnerAverages = (data, homeKeys, awayKeys, since = null) => {
+  const books = freshBooks(data?.bookmakers, since);
   const avg = (keys) => {
     const vals = books.map((b) => num(first(...keys.map((k) => b[k])))).filter((v) => v !== null && v > 1);
     return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
   };
-  const top = (keys) => num(first(...keys.map((k) => data?.[k])));
+  // A single consensus price at the top level has no timestamp: pre-match only.
+  const top = (keys) => (since ? null : num(first(...keys.map((k) => data?.[k]))));
   return {
     home: avg(homeKeys) ?? top(homeKeys), away: avg(awayKeys) ?? top(awayKeys),
     draw: avg(['odds_draw']) ?? top(['odds_draw']),
@@ -81,25 +89,28 @@ const winnerAverages = (data, homeKeys, awayKeys) => {
 const x100 = (v) => (v !== null && v > 1.01 && v < 1000 ? Math.round(v * 100) : null);
 
 /** Average price of one market from the `markets` list (e.g. hockey DNB). */
-function marketAverage(data, kind, selections) {
+function marketAverage(data, kind, selections, since = null) {
   const mk = (Array.isArray(data?.markets) ? data.markets : [])
     .find((m) => String(m.market_kind).toUpperCase() === kind && (m.market_period || 'FT') === 'FT' && (m.market_line === null || m.market_line === undefined));
   if (!mk) return null;
   const out = {};
   for (const sel of selections) {
-    const vals = (mk.bookmakers || []).map((b) => num(b.prices?.[sel]?.price)).filter((v) => v !== null && v > 1);
+    const vals = freshBooks(mk.bookmakers, since).map((b) => num(b.prices?.[sel]?.price)).filter((v) => v !== null && v > 1);
     if (!vals.length) return null;
     out[sel] = vals.reduce((x, y) => x + y, 0) / vals.length;
   }
   return out;
 }
 
-const twoWay = (homeKeys, awayKeys) => (data) => {
-  const w = winnerAverages(data, homeKeys, awayKeys);
+/** Match-winner prices (two outcomes) from an /odds/ payload: { 'market|1', 'market|2' }. */
+export function twoWayPrices(data, homeKeys, awayKeys, { market = 'ml', since = null } = {}) {
+  const w = winnerAverages(data, homeKeys, awayKeys, since);
   const h = x100(w.home);
   const a = x100(w.away);
-  return h && a ? { 'ml|1': h, 'ml|2': a } : {};
-};
+  return h && a ? { [`${market}|1`]: h, [`${market}|2`]: a } : {};
+}
+
+const twoWay = (homeKeys, awayKeys) => (data, { since = null } = {}) => twoWayPrices(data, homeKeys, awayKeys, { since });
 
 function streakRows(list, selfId) {
   return (Array.isArray(list) ? list : []).map((r) => {
@@ -191,15 +202,15 @@ export const SPORT_SPECS = {
         detail: [typeof m.periods_score === 'string' ? m.periods_score : null, m.is_shootout ? 'penáltis' : m.is_overtime ? 'prolongamento' : null].filter(Boolean).join(' · ') || null,
       };
     },
-    prices(data) {
-      const w = winnerAverages(data, ['odds_home'], ['odds_away']);
+    prices(data, { since = null } = {}) {
+      const w = winnerAverages(data, ['odds_home'], ['odds_away'], since);
       const out = {};
       // Books quoting a draw price the 3-way regulation market; otherwise it is the moneyline.
       if (w.draw && w.drawBooks * 2 >= Math.max(1, w.books)) {
         const [h, d, a] = [x100(w.home), x100(w.draw), x100(w.away)];
         if (h && d && a) Object.assign(out, { '1x2|1': h, '1x2|X': d, '1x2|2': a });
       } else if (x100(w.home) && x100(w.away)) Object.assign(out, { 'ml|1': x100(w.home), 'ml|2': x100(w.away) });
-      const dnb = marketAverage(data, 'DNB', ['HOME', 'AWAY']);
+      const dnb = marketAverage(data, 'DNB', ['HOME', 'AWAY'], since);
       if (dnb && x100(dnb.HOME) && x100(dnb.AWAY)) Object.assign(out, { 'dnb|1': x100(dnb.HOME), 'dnb|2': x100(dnb.AWAY) });
       return out;
     },
@@ -406,8 +417,8 @@ function statGroups(data) {
 // ---------- feed engine ----------
 
 export function createSportFeed(db, sport, {
-  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40,
-  fetchImpl = globalThis.fetch, log = () => {},
+  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25,
+  liveOddsMaxAge = 180, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const spec = SPORT_SPECS[sport];
   if (!spec) throw new Error(`Desporto desconhecido: ${sport}`);
@@ -580,13 +591,42 @@ export function createSportFeed(db, sport, {
         if (!['live', 'scheduled'].includes(m.status)) return row;
         db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
           .run(m.homeScore ?? 0, m.awayScore ?? 0, m.clock, nowIso(), row.id);
-        suspend(row.id); // pre-match prices only
         updated += 1;
         return null;
       });
       if (terminal) applyTerminal(terminal, m);
     }
-    return { live: live.length, updated };
+    const inPlay = await syncLiveOdds();
+    return { live: live.length, updated, ...inPlay };
+  }
+
+  /**
+   * In-play prices: the bookmakers' prices updated in the last LIVE_ODDS_MAX_AGE_SECONDS (and after
+   * kick-off). With none the market stays closed; betting.js refuses a bet once live_odds_at ages.
+   */
+  async function syncLiveOdds() {
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(SOURCE, maxLiveOddsCalls);
+    let open = 0;
+    for (const row of rows) {
+      try {
+        const since = Math.max(Date.now() - liveOddsMaxAge * 1000, new Date(row.start_time).getTime());
+        const prices = spec.prices(await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`), { since });
+        tx(db, () => {
+          if (!Object.keys(prices).length) {
+            suspend(row.id);
+            db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+            return;
+          }
+          writePrices(row.id, prices);
+          db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
+          open += 1;
+        });
+      } catch (err) {
+        log(`${spec.name} odds ao vivo ${row.external_id}: ${err.message}`);
+        suspend(row.id);
+      }
+    }
+    return { liveOddsChecked: rows.length, liveMarketsOpen: open };
   }
 
   async function syncResults() {
@@ -677,7 +717,7 @@ export function createSportFeed(db, sport, {
     }));
   }
 
-  return { source: SOURCE, syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status, matchExtras, matchInsights };
+  return { source: SOURCE, syncFixtures, syncOdds, syncLive, syncLiveOdds, syncResults, syncAll, start, status, matchExtras, matchInsights };
 }
 
 /** Badge from the provider's image proxy for a team of this source (null for player sports). */

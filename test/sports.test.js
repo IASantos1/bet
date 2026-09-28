@@ -248,3 +248,35 @@ test('tennis live socket: event and per-point score frames drive the scoreboard'
   assert.deepEqual(got[1].data.stats, { home: { aces: 7 }, away: { aces: 9 } });
   live.stop();
 });
+
+test('in play: markets open only on bookmaker prices updated after kick-off and in the last minutes', async () => {
+  const now = Date.now();
+  let books = [{ odds_home: 1.4, odds_away: 2.9, updated_at: new Date(now - 30_000).toISOString() }, { odds_home: 1.6, odds_away: 2.5, updated_at: new Date(now - 3_600_000).toISOString() }];
+  const game = { id: 9, league: { id: 12, name: 'NBA' }, home_team: team(1, 'A'), away_team: team(2, 'B'), event_date: new Date(now - 30 * 60_000).toISOString(), status: 'live', home_score: 50, away_score: 48 };
+  const t = setup('basquetebol', '/basketball/api/v2', {
+    '/events/': { results: [] },
+    '/events/live/': { results: [game] },
+    '/events/9/odds/': () => ({ bookmakers: books }),
+  });
+  const r = await t.feed.syncLive();
+  assert.equal(r.liveMarketsOpen, 1);
+  // Only the fresh book counts (the other one is a pre-match price).
+  assert.deepEqual(t.prices(9), ['ml|1=140', 'ml|2=290']);
+  assert.ok(t.row(9).live_odds_at);
+  t.bet(9, 'ml', '1');
+  books = [{ odds_home: 1.3, odds_away: 3.2, updated_at: new Date(now - 3_600_000).toISOString() }];
+  await t.feed.syncLive();
+  assert.deepEqual(t.prices(9), []);
+  assert.equal(t.row(9).live_odds_at, null);
+});
+
+test('tennis: a match without a list price is priced from /matches/{id}/odds/', async () => {
+  const db = openDb(':memory:');
+  const m = { id: 77, tournament: { id: 1, name: 'US Open', circuit: 'ATP' }, player1: { id: 1, name: 'A' }, player2: { id: 2, name: 'B' }, match_date: iso(5 * H), status: 'scheduled', odds_player1: null, odds_player2: null };
+  const fetchImpl = fakeApi('/tennis/api/v2', { '/matches/': { results: [m] }, '/matches/77/odds/': { match_id: 77, odds_player1: 1.95, odds_player2: 1.87 } });
+  const tennis = createTennisFeed(db, { token: 't', fetchImpl });
+  const r = await tennis.syncFixtures();
+  assert.equal(r.priced, 1);
+  const id = db.prepare('SELECT id FROM events WHERE external_id = ?').get('77').id;
+  assert.deepEqual(db.prepare('SELECT code, odds_x100 FROM selections WHERE event_id = ? AND active = 1 ORDER BY code').all(id).map((x) => `${x.code}=${x.odds_x100}`), ['1=195', '2=187']);
+});
