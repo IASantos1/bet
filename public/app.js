@@ -175,13 +175,20 @@ function oddsButtons(e, { labels = 'code' } = {}) {
   }).join('')}</div>`;
 }
 
+/** Club badge from the data provider, falling back to initials (see the image error listener). */
+function teamBadge(logo, name, size = '') {
+  const cls = `team-icon${size ? ` ${size}` : ''}`;
+  if (!logo) return size ? '' : `<div class="${cls}">${esc(initials(name))}</div>`;
+  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
+}
+
 function matchCard(e) {
   return `<article class="match-card">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? `<span class="live-label">● AO VIVO ${esc(e.clock || '')}</span>` : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
-      <div class="team"><div class="team-icon">${esc(initials(e.home))}</div>${esc(e.home)}</div>
+      <div class="team">${teamBadge(e.homeLogo, e.home)}${esc(e.home)}</div>
       <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
-      <div class="team"><div class="team-icon">${esc(initials(e.away))}</div>${esc(e.away)}</div>
+      <div class="team">${teamBadge(e.awayLogo, e.away)}${esc(e.away)}</div>
     </div>
     ${oddsButtons(e)}
   </article>`;
@@ -190,7 +197,7 @@ function matchCard(e) {
 function liveCard(e) {
   return `<article class="live-card">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
-    <div class="live-teams"><div><span>${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
+    <div class="live-teams"><div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
 }
@@ -931,6 +938,21 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
 });
+
+// A badge that fails to load (the provider answers 204/404 when it has none) becomes initials.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
+  const box = img.parentElement;
+  box.classList.remove('has-logo');
+  box.textContent = box.classList.contains('mini') ? '' : box.dataset.initials;
+  if (box.classList.contains('mini')) box.remove();
+}, true);
+// A 204 response is a "successful" empty image: treat zero-size loads the same way.
+document.addEventListener('load', (e) => {
+  const img = e.target;
+  if (img instanceof HTMLImageElement && img.classList.contains('team-logo') && !img.naturalWidth) img.dispatchEvent(new Event('error'));
+}, true);
 
 document.addEventListener('input', (e) => {
   if (e.target.id === 'searchInput') renderSearch(e.target.value);

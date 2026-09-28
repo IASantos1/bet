@@ -47,11 +47,11 @@ Com o token definido, o servidor deixa de criar eventos de exemplo e passa a:
 
 | Sincronização | Intervalo | O que faz |
 | --- | --- | --- |
-| Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias e as odds de consenso 1X2, respeitando o `next_update_at` de cada jogo para não pedir mais do que o necessário |
+| Jogos e odds | 10 min | Importa os jogos dos próximos `BZZOIRO_DAYS` dias. As odds de consenso 1X2 chegam numa só chamada ao feed `/odds/`, pedindo depois só o que mudou (`updated_after`); jogos ainda sem preço caem para `/events/{id}/odds/`, respeitando o `next_update_at` de cada um |
 | Ao vivo | 30 s | Atualiza marcador e minuto; suspende os mercados em jogo (o fornecedor só publica odds pré-jogo) |
 | Resultados | 2 min | Quando o jogo termina, grava o resultado do tempo regulamentar e liquida as apostas; jogos cancelados/abandonados são anulados e reembolsados; adiados ficam suspensos até terem nova data |
 
-Jogos importados só aparecem aos jogadores depois de terem odds. O estado do feed (última execução,
+Jogos importados só aparecem aos jogadores depois de terem odds. Os escudos dos clubes vêm do proxy de imagens do fornecedor (sem token); quando não há escudo, mostram-se as iniciais. O estado do feed (última execução,
 erros, eventos importados) e um botão **Sincronizar agora** estão em *Administração → Dados ao vivo*.
 Os eventos criados manualmente no painel continuam a funcionar em paralelo.
 

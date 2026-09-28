@@ -47,6 +47,7 @@ export function normalizeEvent(ev) {
   const league = first(name(ev.league), ev.league_name, name(ev.competition), name(ev.tournament), 'Futebol');
   const minute = toInt(first(ev.current_minute, ev.minute, ev.elapsed));
   const period = first(ev.period, ev.status_detail);
+  const teamId = (v) => { const n = toInt(v); return n !== null && n > 0 ? String(n) : null; };
   return {
     externalId: String(id),
     home: String(home).slice(0, 80),
@@ -57,6 +58,8 @@ export function normalizeEvent(ev) {
     homeScore: toInt(first(ev.home_score, ev.score?.home, ev.scores?.home, ev.home_goals)),
     awayScore: toInt(first(ev.away_score, ev.score?.away, ev.scores?.away, ev.away_goals)),
     clock: minute !== null ? `${minute}'` : /half.?time|^ht$/i.test(String(period || '')) ? 'Intervalo' : null,
+    homeTeamId: teamId(first(ev.home_team?.id, ev.home_team_id, ev.home?.id, ev.teams?.home?.id)),
+    awayTeamId: teamId(first(ev.away_team?.id, ev.away_team_id, ev.away?.id, ev.teams?.away?.id)),
   };
 }
 
@@ -73,13 +76,29 @@ export function normalizeOdds(data) {
   };
 }
 
+const OUTCOME_CODE = { HOME: '1', DRAW: 'X', AWAY: '2', 1: '1', X: 'X', 2: '2' };
+
+/** One row of the /odds/ feed (consensus on a free key) → { eventId, code, oddsX100, updatedAt } or null. */
+export function normalizeOddsRow(r) {
+  if (!r || typeof r !== 'object') return null;
+  const market = String(first(r.market, r.market_slug, '1x2')).toLowerCase();
+  if (!['1x2', 'match_result', 'match_winner', 'h2h'].includes(market)) return null;
+  const period = String(first(r.period, 'ft')).toLowerCase();
+  if (!['ft', 'full_time', 'fulltime', 'full-time', 'match'].includes(period)) return null;
+  const eventId = first(r.event_id, r.event?.id, typeof r.event === 'number' || typeof r.event === 'string' ? r.event : undefined);
+  const code = OUTCOME_CODE[String(first(r.outcome, r.selection, '')).toUpperCase()];
+  const n = Number(first(r.decimal_odds, r.odds, r.price));
+  if (eventId === undefined || !code || !Number.isFinite(n) || n <= 1) return null;
+  return { eventId: String(eventId), code, oddsX100: Math.round(n * 100), updatedAt: first(r.updated_at, r.last_seen_at) || null };
+}
+
 // ---------- feed ----------
 
 export function createFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/api/v2', days = 3, maxOddsCalls = 60, maxResultCalls = 40,
   fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
-  const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null };
+  const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, oddsCursor: null };
 
   async function get(path, params = {}) {
     const url = new URL(`${baseUrl}${path}`);
@@ -117,16 +136,19 @@ export function createFeed(db, {
     if (!row) {
       if (ev.status !== 'scheduled' && ev.status !== 'live') return null;
       const { lastInsertRowid } = db.prepare(
-        `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
-         VALUES ('futebol', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id,
+                             home_team_ext, away_team_ext, created_at, updated_at)
+         VALUES ('futebol', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.status === 'live' ? 'live' : 'scheduled',
         ev.status === 'live' ? ev.homeScore ?? 0 : null, ev.status === 'live' ? ev.awayScore ?? 0 : null,
-        ev.status === 'live' ? ev.clock : null, SOURCE, ev.externalId, ts, ts);
+        ev.status === 'live' ? ev.clock : null, SOURCE, ev.externalId, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ts, ts);
       return { id: Number(lastInsertRowid), created: true };
     }
     if (row.status === 'finished' || row.status === 'cancelled') return { id: row.id, closed: true };
-    db.prepare('UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, updated_at = ? WHERE id = ?')
-      .run(ev.competition, ev.home, ev.away, ev.startTime, ts, row.id);
+    db.prepare(
+      `UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
+         away_team_ext = COALESCE(?, away_team_ext), updated_at = ? WHERE id = ?`
+    ).run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeTeamId ?? null, ev.awayTeamId ?? null, ts, row.id);
     return { id: row.id };
   }
 
@@ -186,13 +208,18 @@ export function createFeed(db, {
       if (r?.created) created += 1;
     }
 
-    // Odds: only for matches not started, soonest first, when the provider says they may have moved.
+    // Odds, cheapest first: one call to the bulk feed for every line re-read since last time. Matches it
+    // has not priced yet (or every due match, if the bulk feed failed) fall back to one call each.
+    let bulk = null;
+    try { bulk = await syncOdds(); } catch (err) { log(`odds (lote): ${err.message}`); }
     const now = nowIso();
     const due = db.prepare(
       `SELECT id, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ?
-         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY start_time LIMIT ?`
+         AND (odds_next_at IS NULL OR odds_next_at <= ?)
+         ${bulk ? 'AND NOT EXISTS (SELECT 1 FROM selections s WHERE s.event_id = events.id AND s.active = 1)' : ''}
+       ORDER BY start_time LIMIT ?`
     ).all(SOURCE, now, now, maxOddsCalls);
-    let priced = 0;
+    let priced = bulk ? bulk.events : 0;
     for (const row of due) {
       try {
         const { odds, nextUpdateAt } = normalizeOdds(await get(`/events/${encodeURIComponent(row.external_id)}/odds/`));
@@ -206,6 +233,39 @@ export function createFeed(db, {
       }
     }
     return { fixtures: fixtures.length, created, priced };
+  }
+
+  /** Bulk consensus 1X2 prices from /odds/, incrementally via updated_after. Returns counts. */
+  async function syncOdds() {
+    const rows = (await getAll('/odds/', { market: '1x2', updated_after: state.oddsCursor ?? undefined }, 25))
+      .map(normalizeOddsRow).filter(Boolean);
+    const byEvent = new Map();
+    let cursor = state.oddsCursor;
+    for (const r of rows) {
+      if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, {});
+      byEvent.get(r.eventId)[r.code] = r.oddsX100;
+      if (r.updatedAt && (!cursor || r.updatedAt > cursor)) cursor = r.updatedAt;
+    }
+    const now = nowIso();
+    const upsert = db.prepare(
+      `INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, ?, ?, 1)
+       ON CONFLICT (event_id, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+    );
+    let events = 0;
+    tx(db, () => {
+      for (const [ext, prices] of byEvent) {
+        const row = findEvent.get(SOURCE, ext);
+        // Pre-match prices only: never (re)open a market that has kicked off.
+        if (!row || row.status !== 'scheduled' || row.start_time <= now) continue;
+        const existing = new Set(db.prepare('SELECT code FROM selections WHERE event_id = ? AND active = 1').all(row.id).map((s) => s.code));
+        // A first price needs both sides; later rows may update one outcome at a time.
+        if (!existing.size && !(prices['1'] && prices['2'])) continue;
+        for (const [code, x100] of Object.entries(prices)) upsert.run(row.id, code, x100);
+        events += 1;
+      }
+    });
+    state.oddsCursor = cursor;
+    return { rows: rows.length, events };
   }
 
   async function syncLive() {
@@ -309,5 +369,5 @@ export function createFeed(db, {
       .reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {}),
   });
 
-  return { syncFixtures, syncLive, syncResults, syncAll, start, status };
+  return { syncFixtures, syncOdds, syncLive, syncResults, syncAll, start, status };
 }

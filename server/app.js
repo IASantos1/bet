@@ -39,6 +39,9 @@ function ageOn(birthdate, today = new Date()) {
   return age;
 }
 
+// Club badges from the data provider's public image proxy (no token needed).
+const teamLogo = (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/team/${id}/?bg=transparent` : null);
+
 function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, phone: u.phone, birthdate: u.birthdate, role: u.role,
@@ -72,7 +75,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
   app.use((req, res, next) => {
     res.set({
       'Content-Security-Policy':
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; " +
+        "default-src 'self'; img-src 'self' data: https://sports.bzzoiro.com; style-src 'self'; script-src 'self'; connect-src 'self'; " +
         "manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'same-origin',
@@ -146,6 +149,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
       id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
       startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
       clock: e.clock, result: e.result, featured: !!e.featured, source: e.source, selections: byEvent.get(e.id),
+      homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
     }));
   }
 
