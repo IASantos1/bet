@@ -262,3 +262,11 @@ com login próprio; o site de apostas não o mostra.
 | Páginas no navegador (listas, jogo, saldo no casino) | 5 s | — |
 
 Cada ciclo tem o seu próprio bloqueio, por isso uma importação demorada não atrasa o placar ao vivo.
+
+## Catálogo de mercados (admin)
+
+Em **/admin → Catálogo de mercados**, "Consultar a API agora" pega numa amostra de jogos reais de cada
+desporto (pré-jogo e ao vivo), lê as odds que o fornecedor devolve e lista, por desporto: tipo de mercado,
+família, período, linhas, seleções, número de casas e em quantos jogos aparece, marcando os que a
+Bet62 já oferece. "Copiar resultado (JSON)" exporta a tabela. Serve para decidir que mercados ligar
+com base no que a API entrega de facto (a cobertura varia por liga).

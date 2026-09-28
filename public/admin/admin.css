@@ -54,3 +54,5 @@
   .adm-bottom button span { font-size: 17px; }
   .adm-bottom button.active { color: #ff5a61; }
 }
+.adm-inline { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.adm-inline input { width: 80px; }

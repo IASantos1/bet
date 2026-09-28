@@ -15,6 +15,7 @@ import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
+import { createMarketCatalog } from './catalog.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -548,6 +549,20 @@ export function createApp(db, {
   admin.get('/events', (_req, res) => {
     res.json({ events: loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [new Date(Date.now() - 3 * 86_400_000).toISOString()],
       "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500) });
+  });
+
+  // Market catalogue: what the provider really returns, sampled on real games of each sport.
+  const catalog = createMarketCatalog(db, [
+    feed && { sport: 'futebol', source: 'bzzoiro', enabled: () => feed.status().enabled, rawOdds: feed.rawOdds, extra: feed.rawOddsExtra },
+    tennis && { sport: 'tenis', source: TENNIS_SOURCE, enabled: () => tennis.status().enabled, rawOdds: tennis.rawOdds },
+    ...Object.entries(sports).map(([sport, f]) => ({ sport, source: f.source, enabled: () => f.status().enabled, rawOdds: f.rawOdds })),
+  ].filter((p) => p && p.rawOdds));
+  admin.get('/market-catalog', (_req, res) => res.json({ catalog: catalog.last(), running: catalog.running() }));
+  admin.post('/market-catalog/run', async (req, res, next) => {
+    try {
+      const sample = Math.min(30, Math.max(3, Number(req.body.sample) || 12));
+      res.json({ catalog: await catalog.run({ sample }) });
+    } catch (err) { next(err); }
   });
 
   // Diagnostics: what the data provider answers for this event's odds, as received.

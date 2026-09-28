@@ -21,6 +21,7 @@ const TABS = [
   { id: 'novo', label: 'Novo evento', icon: '➕', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: '📡', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: '🎰', section: 'Avançado' },
+  { id: 'mercados', label: 'Catálogo de mercados', icon: '🧾', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
 
@@ -159,6 +160,7 @@ async function loadTab() {
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
+    else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'levantamentos') {
       const { withdrawals } = await api('/api/admin/withdrawals');
@@ -186,6 +188,35 @@ async function loadTab() {
 }
 
 // ---------- tab renderers ----------
+
+let lastCatalog = null;
+
+function marketCatalog({ catalog, running }) {
+  lastCatalog = catalog;
+  const intro = `<div class="panel"><h3>Catálogo de mercados do fornecedor</h3>
+    <p class="muted">Consulta jogos reais de cada desporto (pré-jogo e ao vivo) e lista os mercados que a API devolve de facto:
+    tipo, família, período, linhas, seleções, número de casas e em quantos jogos da amostra aparece. "Na Bet62" marca os já ligados.
+    Cada jogo consultado gasta 1 a 3 pedidos à API.</p>
+    <div class="form-actions"><label class="field adm-inline">Jogos por desporto <input id="catSample" type="number" min="3" max="30" value="12"></label>
+      <button class="primary-btn" data-action="catalog-run" ${running ? 'disabled' : ''}>${running ? 'A consultar…' : 'Consultar a API agora'}</button>
+      ${catalog ? '<button class="ghost-btn" data-action="catalog-copy">Copiar resultado (JSON)</button>' : ''}</div>
+    ${catalog ? `<p class="muted">Última consulta: ${esc(fmtDateTime(catalog.at))} · ${catalog.calls} pedidos.</p>` : ''}</div>`;
+  if (!catalog) return `${intro}<div class="panel empty">Ainda não foi feita nenhuma consulta.</div>`;
+  return intro + catalog.sports.map((sp) => {
+    const name = `${SPORT_META[sp.sport]?.icon || ''} ${SPORT_META[sp.sport]?.name || sp.sport}`;
+    if (sp.disabled) return `<div class="panel"><h3>${esc(name)}</h3><p class="muted">Desligado (sem token ou sem Sports Addon).</p></div>`;
+    const rows = sp.markets.map((m) => `<tr><td><b>${esc(m.kind)}</b>${m.family !== m.kind ? `<br><small class="muted">${esc(m.family)}</small>` : ''}</td>
+      <td>${esc(m.period)}</td><td>${esc(m.lines.join(', ') || '—')}</td><td><small>${esc(m.selections.join(', '))}</small></td>
+      <td class="num">${m.bookmakers || '—'}</td><td class="num">${m.events}/${sp.sampled}</td><td class="num">${m.pre} / ${m.live}</td>
+      <td>${m.wired ? '<span class="pill won">Sim</span>' : '<span class="pill">Não</span>'}</td></tr>`).join('');
+    return `<div class="panel"><h3>${esc(name)} <small class="muted">· ${sp.sampled} jogos (${sp.sampledLive} ao vivo)</small></h3>
+      ${sp.leagues.length ? `<p class="muted"><small>${esc(sp.leagues.join(' · '))}</small></p>` : ''}
+      ${sp.errors.length ? `<div class="form-error">${esc(sp.errors.join(' | '))}</div>` : ''}
+      ${sp.markets.length ? `<div class="table-wrap"><table><thead><tr><th>Mercado</th><th>Período</th><th>Linhas</th><th>Seleções</th><th class="num">Casas</th><th class="num">Jogos</th><th class="num">Pré / Vivo</th><th>Na Bet62</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>` : '<p class="muted">A API não devolveu mercados para estes jogos.</p>'}</div>`;
+  }).join('');
+}
+
 
 function adminEventCard(e) {
   const odd = (code) => e.selections.find((s) => s.code === code);
@@ -455,6 +486,23 @@ document.addEventListener('click', async (e) => {
     await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
     state.user = null;
     render();
+    return;
+  }
+  if (action === 'catalog-run') {
+    actionEl.disabled = true;
+    actionEl.textContent = 'A consultar… (pode demorar 1–2 min)';
+    try {
+      const sample = Number($('#catSample')?.value) || 12;
+      const { catalog } = await api('/api/admin/market-catalog/run', { method: 'POST', body: { sample } });
+      $('#adminMain').innerHTML = marketCatalog({ catalog, running: false });
+    } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; }
+    return;
+  }
+  if (action === 'catalog-copy') {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(lastCatalog, null, 1));
+      toast('Copiado', 'Cole o resultado na conversa.');
+    } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
     return;
   }
   if (action === 'casino-test') {
