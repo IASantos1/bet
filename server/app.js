@@ -61,7 +61,7 @@ function scoreInput(v, label) {
 
 // ---------- app ----------
 
-export function createApp(db, { loginAttempts = 10, registrations = 10 } = {}) {
+export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -145,7 +145,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10 } = {}) {
     return events.map((e) => ({
       id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
       startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
-      clock: e.clock, result: e.result, featured: !!e.featured, selections: byEvent.get(e.id),
+      clock: e.clock, result: e.result, featured: !!e.featured, source: e.source, selections: byEvent.get(e.id),
     }));
   }
 
@@ -173,7 +173,9 @@ export function createApp(db, { loginAttempts = 10, registrations = 10 } = {}) {
     else if (status === 'upcoming') { clauses.push("e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?"); params.push(now, until); }
     else { clauses.push("(e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))"); params.push(now, until); }
     if (sport) { clauses.push('e.sport = ?'); params.push(sport); }
-    res.json({ events: loadEvents(clauses.join(' AND '), params), serverTime: now });
+    // Imported fixtures stay hidden until the feed has priced them.
+    clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
+    res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 800), serverTime: now });
   });
 
   app.get('/api/results', (_req, res) => {
@@ -502,6 +504,17 @@ export function createApp(db, { loginAttempts = 10, registrations = 10 } = {}) {
     ).all();
     const emails = new Map(bets.map((b) => [b.id, b.email]));
     res.json({ bets: withLegs(bets).map((b) => ({ ...b, email: emails.get(b.id) })) });
+  });
+
+  admin.get('/feed', (_req, res) => {
+    res.json(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' });
+  });
+
+  admin.post('/feed/sync', async (_req, res, next) => {
+    try {
+      if (!feed || !feed.status().enabled) throw new HttpError(409, 'Feed desativado: defina BZZOIRO_API_TOKEN no servidor.');
+      res.json({ result: await feed.syncAll(), status: feed.status() });
+    } catch (err) { next(err); }
   });
 
   app.use('/api/admin', admin);

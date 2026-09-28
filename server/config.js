@@ -21,6 +21,15 @@ export const config = {
   // "disabled": deposits are refused until a real payment provider is integrated.
   paymentsMode: env.PAYMENTS_MODE || 'demo',
 
+  // Football data feed (sports.bzzoiro.com). Disabled while no token is set.
+  feed: {
+    token: (env.BZZOIRO_API_TOKEN || '').trim(),
+    baseUrl: (env.BZZOIRO_BASE_URL || 'https://sports.bzzoiro.com/api/v2').replace(/\/+$/, ''),
+    days: int(env.BZZOIRO_DAYS, 3), // how many days of fixtures to import
+    maxOddsCalls: int(env.BZZOIRO_MAX_ODDS_CALLS, 60), // odds requests per fixtures sync
+    maxResultCalls: int(env.BZZOIRO_MAX_RESULT_CALLS, 40), // detail requests per results sync
+  },
+
   sessionDays: int(env.SESSION_DAYS, 30),
   minAge: 18,
 

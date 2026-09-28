@@ -106,7 +106,18 @@ export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** Additive migrations for databases created by earlier versions. */
+function migrate(db) {
+  const cols = new Set(db.prepare('PRAGMA table_info(events)').all().map((c) => c.name));
+  // Events imported from an external data feed: where they came from and their id there.
+  if (!cols.has('source')) db.exec("ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+  if (!cols.has('external_id')) db.exec('ALTER TABLE events ADD COLUMN external_id TEXT');
+  if (!cols.has('odds_next_at')) db.exec('ALTER TABLE events ADD COLUMN odds_next_at TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_events_external ON events(source, external_id) WHERE external_id IS NOT NULL');
 }
 
 /** Runs fn inside a write transaction; rolls back if it throws. Must not be nested. */

@@ -123,6 +123,7 @@ h1, h2, h3 { margin-top: 0; }
 .vs { color: #69727d; font-size: 10px; }
 .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .odds.two { grid-template-columns: repeat(2, 1fr); }
+.odds-off { color: #69727d; font-size: 11px; padding: 10px 0; text-align: center; border: 1px dashed #303640; border-radius: 5px; }
 .odd-btn { border: 1px solid #303640; background: #191d23; color: #fff; border-radius: 5px; padding: 9px 4px; font-weight: 800; font-size: 12px; min-width: 0; transition: border-color .15s, background .15s; }
 .odd-btn:hover:not(:disabled), .odd-btn.selected { border-color: var(--red); background: #311418; }
 .odd-btn small { display: block; color: #77818d; font-size: 9px; font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

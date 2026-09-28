@@ -19,8 +19,10 @@ const SAMPLE_EVENTS = [
   { sport: 'basquetebol', competition: 'EuroLeague', home: 'Madrid Hoops', away: 'Athens BC', in: 29, odds: [1.55, null, 2.45] },
 ];
 
-export function seed(db, log = () => {}) {
+export function seed(db, log = () => {}, { sampleEvents = true } = {}) {
   seedAdmin(db, log);
+  // With a live data feed configured, real fixtures replace the sample ones.
+  if (!sampleEvents) return;
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM events').get();
   if (n > 0) return;
   const now = Date.now();
