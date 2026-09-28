@@ -65,13 +65,13 @@ function seedAdmin(db, log) {
     const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(email);
     if (existing) {
       db.prepare("UPDATE users SET role = 'admin', password_hash = ? WHERE id = ?").run(hashPassword(password), existing.id);
-      if (existing.role !== 'admin') log(`Conta ${email} passou a administrador.`);
+      log(`Administrador ${email}: conta existente ${existing.role === 'admin' ? 'atualizada' : 'promovida a administrador'} com a palavra-passe de ADMIN_PASSWORD (${password.length} caracteres). Painel em /admin.`);
       return;
     }
     db.prepare(
       `INSERT INTO users (email, name, birthdate, password_hash, role, created_at) VALUES (?, ?, ?, ?, 'admin', ?)`
     ).run(email, 'Administrador', '1990-01-01', hashPassword(password), nowIso());
-    log(`Administrador criado: ${email}`);
+    log(`Administrador criado: ${email} com a palavra-passe de ADMIN_PASSWORD (${password.length} caracteres). Painel em /admin.`);
     return;
   }
   const { n } = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();

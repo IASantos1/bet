@@ -6,9 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 // Load a .env file (project folder, then the current directory) when there is one. Variables
 // already set in the environment win over the file.
+const presetPassword = process.env.ADMIN_PASSWORD;
 for (const file of [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env'), path.resolve('.env')]) {
   if (fs.existsSync(file) && typeof process.loadEnvFile === 'function') {
     try { process.loadEnvFile(file); } catch (err) { console.warn(`[config] não foi possível ler ${file}: ${err.message}`); }
+    // In a .env file everything after "#" is a comment, so a password such as "Senha#2024" would
+    // be cut to "Senha". The admin password is read whole from its line instead.
+    if (presetPassword === undefined) {
+      const line = fs.readFileSync(file, 'utf8').split(/\r?\n/).find((l) => /^\s*(export\s+)?ADMIN_PASSWORD\s*=/.test(l));
+      const raw = line?.replace(/^\s*(export\s+)?ADMIN_PASSWORD\s*=\s*/, '').trim();
+      if (raw && !/^["'`]/.test(raw)) process.env.ADMIN_PASSWORD = raw;
+    }
     break;
   }
 }
@@ -28,7 +36,8 @@ export const config = {
 
   // Initial administrator. In production both must be set explicitly.
   adminEmail: (env.ADMIN_EMAIL || '').trim().toLowerCase(),
-  adminPassword: env.ADMIN_PASSWORD || '',
+  // Surrounding spaces and line breaks (common when pasting into a hosting panel) are dropped.
+  adminPassword: (env.ADMIN_PASSWORD || '').trim(),
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.
