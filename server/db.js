@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -122,6 +122,31 @@ function migrate(db) {
   if (!cols.has('away_team_ext')) db.exec('ALTER TABLE events ADD COLUMN away_team_ext TEXT');
   // When the current in-play price was received (live odds over the provider's WebSocket).
   if (!cols.has('live_odds_at')) db.exec('ALTER TABLE events ADD COLUMN live_odds_at TEXT');
+
+  // Casino (aggregator Agent API): the player's code there.
+  const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+  if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
+
+  // Ledger types for casino transfers. SQLite cannot alter a CHECK, so older databases get the
+  // table rebuilt with the same rows.
+  const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
+  if (!txSql.includes('casino_out')) {
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec('ALTER TABLE transactions RENAME TO transactions_old');
+      db.exec(SCHEMA);
+      db.exec(`INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
+               SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
+      db.exec('DROP TABLE transactions_old');
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_events_external ON events(source, external_id) WHERE external_id IS NOT NULL');
 }
 

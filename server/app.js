@@ -64,7 +64,7 @@ function scoreInput(v, label) {
 
 // ---------- app ----------
 
-export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null } = {}) {
+export function createApp(db, { loginAttempts = 10, registrations = 10, feed = null, casino = null } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -75,7 +75,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
   app.use((req, res, next) => {
     res.set({
       'Content-Security-Policy':
-        "default-src 'self'; img-src 'self' data: https://sports.bzzoiro.com; style-src 'self'; script-src 'self'; connect-src 'self'; " +
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self'; " +
         "manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'same-origin',
@@ -342,6 +342,53 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     }));
   }
 
+  // ---------- casino ----------
+
+  const casinoOn = () => casino && casino.enabled;
+  const casinoError = (err) => {
+    if (err instanceof HttpError) return err;
+    return new HttpError(502, err.message || 'Erro no servidor de jogos.');
+  };
+  const wrap = (fn) => async (req, res, next) => {
+    try { await fn(req, res); } catch (err) { next(casinoError(err)); }
+  };
+
+  app.get('/api/casino/games', wrap(async (_req, res) => {
+    if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [] });
+    res.json(await casino.games());
+  }));
+
+  app.get('/api/casino/wallet', requireUser, wrap(async (req, res) => {
+    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    const casinoCents = await casino.casinoBalanceCents(req.user);
+    res.json({ balance: cents(userById(req.user.id).balance_cents), casinoBalance: cents(casinoCents) });
+  }));
+
+  app.post('/api/casino/transfer-in', requireUser, wrap(async (req, res) => {
+    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    const amount = parseEuros(req.body.amount, 'Valor');
+    if (amount < config.casino.minTransferCents) throw new HttpError(400, `Mínimo: €${cents(config.casino.minTransferCents)}.`);
+    if (amount > req.user.balance_cents) throw new HttpError(400, 'Saldo insuficiente.');
+    const { casinoCents } = await casino.transferIn(req.user, amount);
+    res.json({ balance: cents(userById(req.user.id).balance_cents), casinoBalance: cents(casinoCents) });
+  }));
+
+  app.post('/api/casino/transfer-out', requireUser, wrap(async (req, res) => {
+    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    const { amountCents } = await casino.transferOut(req.user);
+    res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents), casinoBalance: 0 });
+  }));
+
+  app.post('/api/casino/launch', requireUser, wrap(async (req, res) => {
+    if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    const providerId = Number(req.body.providerId);
+    const gameCode = str(req.body.gameCode, 80);
+    if (!Number.isInteger(providerId) || !gameCode) throw new HttpError(400, 'Jogo inválido.');
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const url = await casino.launch(req.user, { providerId, gameCode, returnUrl: `${origin}/#/casino` });
+    res.json({ url });
+  }));
+
   // ---------- admin ----------
 
   const admin = express.Router();
@@ -510,6 +557,17 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     const emails = new Map(bets.map((b) => [b.id, b.email]));
     res.json({ bets: withLegs(bets).map((b) => ({ ...b, email: emails.get(b.id) })) });
   });
+
+  admin.get('/casino', wrap(async (_req, res) => {
+    if (!casinoOn()) return res.json({ enabled: false });
+    let agent = null;
+    let error = null;
+    try { agent = await casino.agentInfo(); } catch (err) { error = err.message; }
+    const moved = db.prepare(
+      "SELECT type, COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE type IN ('casino_out', 'casino_in') GROUP BY type"
+    ).all().reduce((acc, r) => ({ ...acc, [r.type]: cents(r.s) }), {});
+    res.json({ enabled: true, agent, error, sentToCasino: -(moved.casino_out || 0), returnedFromCasino: moved.casino_in || 0 });
+  }));
 
   admin.get('/feed', (_req, res) => {
     res.json(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' });

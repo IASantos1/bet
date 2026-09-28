@@ -59,6 +59,28 @@ Jogos importados só aparecem aos jogadores depois de terem odds. Os escudos dos
 erros, eventos importados) e um botão **Sincronizar agora** estão em *Administração → Dados ao vivo*.
 Os eventos criados manualmente no painel continuam a funcionar em paralelo.
 
+## Casino (slots e casino ao vivo)
+
+O casino liga-se à Agent API v4 de um agregador de jogos (Pragmatic Play, PG, Evolution, Hacksaw…), em
+modo **Transfer**:
+
+```bash
+CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm start
+```
+
+- O catálogo (fornecedores e jogos) é lido da API e guardado em cache durante 1 hora. Fornecedores em
+  manutenção aparecem desativados.
+- A carteira do casino é separada. Ao abrir um jogo, o jogador escolhe quanto leva da carteira ClassicBet
+  para o casino, e no fim usa **Trazer para a carteira**. Cada transferência fica no extrato
+  (`casino_out` / `casino_in`). O débito é feito antes do depósito no casino, e se o depósito falhar o
+  valor é devolvido. Se a resposta se perder, o saldo do casino é verificado antes, para nunca creditar
+  duas vezes.
+- Os depósitos no casino consomem **pontos do agente**: acompanhe-os em *Administração → Casino*.
+- A autoexclusão também bloqueia o casino.
+- **Não usamos** a alteração de RTP (`/v4/agent/rtp`, `rtp`/`win_ratio` no arranque do jogo) nem as
+  "bonus calls": os jogos correm sempre com o RTP por omissão do fornecedor. Confirme com o agregador
+  que os jogos são originais e licenciados para o seu mercado.
+
 ## Estrutura
 
 ```
@@ -68,6 +90,7 @@ server/
   betting.js    colocação de apostas e liquidação
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
+  casino.js     casino (agregador Agent API v4, modo Transfer)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite
   seed.js       administrador inicial e eventos de exemplo
@@ -100,6 +123,6 @@ podem vir no código:
 3. **Verificação de identidade (KYC)** e limites de depósito exigidos pelo regulador.
 4. **Fonte de odds e resultados** — o feed de futebol acima cobre jogos, odds pré-jogo e resultados;
    para odds ao vivo ou outros desportos é preciso um fornecedor adicional (ou gestão manual no painel).
-5. **Fornecedor de casino** licenciado — a página de casino mostra o catálogo mas os jogos só
-   abrem após essa integração.
+5. **Fornecedor de casino** licenciado — a integração está feita (ver acima); o agregador tem de
+   fornecer jogos originais e licenciados para o seu mercado.
 6. HTTPS (atrás de um proxy como Nginx/Caddy) e cópias de segurança de `data/`.
