@@ -1,1 +1,0 @@
-- [Events cold-start empty list bug](events-cold-start-bug.md) — realtime+requireOdds path drops all events on cold cache; never apply requireOdds in the realtime branch.

@@ -1,1 +1,0 @@
-SELECT payload FROM imported_odds WHERE id = 'soccer_1514683';

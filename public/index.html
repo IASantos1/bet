@@ -1,48 +1,85 @@
-<!DOCTYPE html>
-<html lang="pt">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="description" content="ClassicBet — apostas desportivas, ao vivo e casino." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <title>ClassicBet</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <button class="icon-btn mobile-only" id="menuBtn" aria-label="Menu">☰</button>
+    <a class="brand" href="#/" aria-label="ClassicBet"><span class="brand-mark">C</span><span>CLASSIC<span>BET</span></span></a>
+    <nav class="topnav" id="topnav">
+      <a href="#/" data-route="home">Destaques</a>
+      <a href="#/desporto" data-route="desporto">Desporto</a>
+      <a href="#/ao-vivo" data-route="ao-vivo"><i class="live-dot"></i> Ao Vivo</a>
+      <a href="#/casino" data-route="casino">Casino</a>
+      <a href="#/promocoes" data-route="promocoes">Promoções</a>
+      <a href="#/admin" data-route="admin" class="hidden" id="adminLink">Admin</a>
+    </nav>
+    <div class="top-actions">
+      <button class="icon-btn" id="searchBtn" aria-label="Pesquisar">⌕</button>
+      <a class="balance-btn hidden" id="balanceBtn" href="#/perfil/carteira">Saldo <strong id="headerBalance">€0,00</strong></a>
+      <a class="primary-btn deposit-btn hidden" id="depositBtn" href="#/perfil/carteira">Depositar</a>
+      <button class="outline-btn" id="loginBtn">Entrar</button>
+      <button class="primary-btn" id="registerBtn">Registar</button>
+      <a class="avatar-btn hidden" id="profileBtn" href="#/perfil" aria-label="O meu perfil">U</a>
+    </div>
+  </header>
 
-    <!-- Primary Meta -->
-    <title>Bet62 - Apostas Esportivas</title>
-    <meta name="description" content="Plataforma moderna de apostas esportivas ao vivo e pré-jogo" />
+  <div class="layout">
+    <aside class="sidebar left-sidebar" id="leftSidebar">
+      <div class="sidebar-head"><span>DESPORTOS</span><button class="close-mobile" id="closeMenu" aria-label="Fechar">×</button></div>
+      <div id="sportLinks"></div>
+      <div class="side-divider"></div>
+      <div class="sidebar-head">EXPLORAR</div>
+      <a class="side-link" href="#/ao-vivo"><span class="red-icon">●</span> Ao Vivo <b id="liveCount"></b></a>
+      <a class="side-link" href="#/desporto/resultados"><span>🏁</span> Resultados</a>
+      <a class="side-link" href="#/casino"><span>🎰</span> Casino</a>
+      <a class="side-link" href="#/promocoes"><span>🎁</span> Promoções</a>
+      <a class="side-link" href="#/perfil/jogo-responsavel"><span>🛡️</span> Jogo responsável</a>
+      <div class="side-divider"></div>
+      <div class="mini-promo"><small>APOSTE COM RESPONSABILIDADE</small><strong>Defina os seus limites</strong><a class="mini-btn" href="#/perfil/jogo-responsavel">Saber mais</a></div>
+    </aside>
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="Bet62 - Apostas Esportivas" />
-    <meta property="og:description" content="Plataforma moderna de apostas esportivas ao vivo e pré-jogo" />
-    <meta property="og:image" content="https://bet62.com/og.png" />
-    <meta property="og:url" content="https://bet62.com" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Bet62" />
+    <main class="content" id="content"><div class="loading">A carregar…</div></main>
 
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Bet62 - Apostas Esportivas" />
-    <meta name="twitter:description" content="Plataforma moderna de apostas esportivas ao vivo e pré-jogo" />
-    <meta name="twitter:image" content="https://bet62.com/og.png" />
+    <aside class="sidebar betslip" id="betslip">
+      <div class="betslip-header"><div><strong>BOLETIM</strong><span id="betCount">0 seleções</span></div><div><button id="clearBets">Limpar</button><button class="slip-close" id="closeSlip" aria-label="Fechar boletim">×</button></div></div>
+      <div class="bet-tabs"><button class="active" data-tab="single">Simples</button><button data-tab="multiple">Múltipla</button></div>
+      <div id="betItems" class="bet-items"></div>
+      <div class="bet-footer hidden" id="betFooter">
+        <div class="bet-summary"><span id="oddsLabel">Cotação total</span><strong id="totalOdds">0.00</strong></div>
+        <label class="stake-label"><span id="stakeLabel">Valor da aposta</span><span class="stake-input"><span>€</span><input id="stake" type="number" min="1" step="0.50" value="10" inputmode="decimal" /></span></label>
+        <div class="quick-stakes"><button data-stake="5">5</button><button data-stake="10">10</button><button data-stake="25">25</button><button data-stake="50">50</button></div>
+        <div class="bet-summary"><span>Total apostado</span><strong id="totalStake">€0,00</strong></div>
+        <div class="bet-summary"><span>Retorno potencial</span><strong class="gold" id="potential">€0,00</strong></div>
+        <div class="slip-error hidden" id="slipError"></div>
+        <button class="place-bet" id="placeBet">APOSTAR AGORA</button>
+        <small class="legal-note">+18 · Jogue com responsabilidade.</small>
+      </div>
+    </aside>
+  </div>
 
-    <!-- Icons -->
-    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+  <button class="slip-fab hidden" id="slipFab" aria-label="Abrir boletim"><span>🎟️</span><b id="slipFabCount">0</b></button>
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
+  <nav class="mobile-nav">
+    <a href="#/" data-route="home"><span>⌂</span>Início</a>
+    <a href="#/desporto" data-route="desporto"><span>⚽</span>Desporto</a>
+    <a href="#/ao-vivo" data-route="ao-vivo"><span>●</span>Ao Vivo</a>
+    <a href="#/casino" data-route="casino"><span>🎰</span>Casino</a>
+    <a href="#/perfil" data-route="perfil"><span>◉</span>Perfil</a>
+  </nav>
+</div>
 
-   
-    <!-- Vite Build -->
-    <!-- Note: Vite injects scripts automatically during development and build.
-         The manual script tags provided in the input (crossorigin src="/assets/...")
-         are for a built production environment. Since we are in a dev environment/source code,
-         we should keep the Vite entry point. -->
-    
-    <script type="module" crossorigin src="/assets/index-NW_02DfN.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Dz3q_qAb.css">
-  </head>
-
-  <body>
-    <div id="root"></div>
-  </body>
+<div class="modal-backdrop hidden" id="modalBackdrop"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+<div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+</body>
 </html>
