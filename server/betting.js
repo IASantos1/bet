@@ -2,8 +2,9 @@ import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
+import { legOutcome, resultCode } from './markets.js';
 
-export const resultCode = (home, away) => (home > away ? '1' : home < away ? '2' : 'X');
+export { resultCode };
 
 /** Payout for `stakeCents` at the product of the given odds (x100), floored and capped. */
 export function payoutFor(stakeCents, oddsX100List) {
@@ -33,7 +34,7 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Seleção repetida no boletim.');
 
   const getSel = db.prepare(
-    `SELECT s.id, s.code, s.odds_x100, s.active, e.id AS event_id, e.status, e.start_time, e.home, e.away, e.source, e.live_odds_at
+    `SELECT s.id, s.market, s.code, s.odds_x100, s.active, e.id AS event_id, e.status, e.start_time, e.home, e.away, e.source, e.live_odds_at
        FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id = ?`
   );
   const now = nowIso();
@@ -68,14 +69,14 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
     `INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertLeg = db.prepare(
-    `INSERT INTO bet_legs (bet_id, event_id, selection_id, code, odds_x100) VALUES (?, ?, ?, ?, ?)`
+    `INSERT INTO bet_legs (bet_id, event_id, selection_id, market, code, odds_x100) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const betIds = [];
   for (const slipLegs of slips) {
     const { totalOdds, payoutCents } = payoutFor(stakeCents, slipLegs.map((l) => l.odds_x100));
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
-    for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.code, l.odds_x100);
+    for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
     betIds.push(betId);
   }
   // Debit last so the ledger entry can reference the bets; a short balance rolls everything back.
@@ -115,10 +116,11 @@ export function settleBet(db, betId) {
 export function settleEvent(db, eventId) {
   const ev = db.prepare('SELECT status, result FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
-  const legs = db.prepare("SELECT id, bet_id, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
+  const ev2 = db.prepare('SELECT home_score, away_score FROM events WHERE id = ?').get(eventId);
+  const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
   const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
   for (const leg of legs) {
-    const status = ev.status === 'cancelled' ? 'void' : leg.code === ev.result ? 'won' : 'lost';
+    const status = ev.status === 'cancelled' ? 'void' : legOutcome(leg.market, leg.code, ev2.home_score, ev2.away_score);
     setLeg.run(status, leg.id);
   }
   const betIds = [...new Set(legs.map((l) => l.bet_id))];

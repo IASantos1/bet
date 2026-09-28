@@ -60,8 +60,8 @@ test('normalizers accept the documented shapes', () => {
   });
   assert.equal(normalizeEvent({ id: 1, home_team: 'A' }), null);
 
-  const { odds, nextUpdateAt } = normalizeOdds({ odds: { home_win: 1.17, draw: 7.26, away_win: null }, next_update_at: '2026-08-17T01:18:14Z' });
-  assert.deepEqual(odds, { 1: 117, X: 726, 2: null });
+  const { prices, nextUpdateAt } = normalizeOdds({ odds: { home_win: 1.17, draw: 7.26, away_win: null, over_25_goals: 1.56, under_25_goals: 2.35, btts_yes: 2.48 }, next_update_at: '2026-08-17T01:18:14Z' });
+  assert.deepEqual(prices, { '1x2|1': 117, '1x2|X': 726, 'ou|O2.5': 156, 'ou|U2.5': 235, 'btts|Y': 248 });
   assert.equal(nextUpdateAt, '2026-08-17T01:18:14Z');
 });
 
@@ -196,6 +196,7 @@ test('bulk odds feed prices many matches in one call and only sends deltas after
     ] },
     '/odds/': (u) => {
       oddsQueries.push(Object.fromEntries(u.searchParams));
+      if (u.searchParams.get('market') !== '1x2') return { results: [] };
       if (u.searchParams.get('updated_after')) {
         return { results: [{ event_id: 11, market: '1x2', outcome: 'HOME', decimal_odds: 1.95, bookmaker_slug: 'consensus', updated_at: '2026-09-28T11:00:00Z' }] };
       }
@@ -216,10 +217,12 @@ test('bulk odds feed prices many matches in one call and only sends deltas after
   assert.ok(!calls.some((c) => /\/events\/\d+\/odds\//.test(c.path)), 'no per-match odds calls needed');
   assert.equal(oddsQueries[0].market, '1x2');
   assert.deepEqual(sels(db, eventRow(db, 11).id).map((x) => [x.code, x.odds_x100]), [['1', 205], ['2', 360], ['X', 330]]);
-  assert.deepEqual(sels(db, eventRow(db, 12).id).map((x) => [x.code, x.odds_x100]), [['1', 240], ['2', 290]]);
+  // The btts row is now a market of its own.
+  assert.deepEqual(sels(db, eventRow(db, 12).id).map((x) => [x.code, x.odds_x100]), [['1', 240], ['2', 290], ['Y', 180]]);
 
   await feed.syncFixtures();
-  assert.equal(oddsQueries[1].updated_after, '2026-09-28T10:05:00Z');
+  const second1x2 = oddsQueries.filter((q) => q.market === '1x2')[1];
+  assert.equal(second1x2.updated_after, '2026-09-28T10:05:00Z');
   assert.equal(sels(db, eventRow(db, 11).id)[0].odds_x100, 195);
 
   // Team badges come from the provider's image proxy.
@@ -258,7 +261,7 @@ test('with per-bookmaker rows (Football Unlimited) the price is the mean across 
   let round = 0;
   const routes = {
     '/events/': { results: [{ id: 31, home_team: 'A', away_team: 'B', event_date: iso(5 * H), status: 'notstarted' }] },
-    '/odds/': () => (round++ === 0
+    '/odds/': (u) => (u.searchParams.get('market') !== '1x2' ? { results: [] } : round++ === 0
       ? { results: [
         { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.0, bookmaker_slug: 'pinnacle', updated_at: '2026-09-28T10:00:00Z' },
         { event_id: 31, market: '1x2', outcome: 'HOME', decimal_odds: 2.2, bookmaker_slug: 'bet365', updated_at: '2026-09-28T10:00:00Z' },

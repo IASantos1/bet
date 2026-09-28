@@ -155,3 +155,57 @@ test('HTTP API: games are public, wallet and launch need a session', async () =>
   server.close();
   db.close();
 });
+
+test('base URL is normalised whatever form it is pasted in', async () => {
+  const { normalizeBaseUrl } = await import('../server/casino.js');
+  for (const raw of ['api.agg.example', 'https://api.agg.example/', 'https://api.agg.example/v4', 'https://api.agg.example/v4/', ' "https://api.agg.example/v4/game/games" ']) {
+    assert.equal(normalizeBaseUrl(raw), 'https://api.agg.example', raw);
+  }
+  assert.equal(normalizeBaseUrl('http://10.0.0.5:8080/api/'), 'http://10.0.0.5:8080/api');
+  assert.equal(normalizeBaseUrl(''), '');
+});
+
+test('catalogue errors are reported instead of silently showing nothing', async () => {
+  const db = openDb(':memory:');
+  const denied = async () => new Response(JSON.stringify({ code: 1020, message: 'IP_NOT_ALLOWED' }), { status: 200 });
+  const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: denied });
+  const r = await casino.games();
+  assert.equal(r.enabled, true);
+  assert.equal(r.games.length, 0);
+  assert.match(r.error, /IP_NOT_ALLOWED/);
+  const steps = await casino.diagnose();
+  assert.equal(steps[0].ok, true);
+  assert.equal(steps[1].ok, false);
+  assert.match(steps[1].detail, /autorizar o IP/);
+
+  const noProviders = async () => new Response(JSON.stringify({ code: 0, data: [] }), { status: 200 });
+  const empty = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: noProviders });
+  assert.match((await empty.games()).error, /fornecedores atribuídos/);
+  db.close();
+});
+
+test('diagnose walks agent → providers → games', async () => {
+  const db = openDb(':memory:');
+  const casino = createCasino(db, { baseUrl: 'https://agent.example/v4', token: 'tok', fetchImpl: fakeAgentApi().fetchImpl });
+  const steps = await casino.diagnose();
+  assert.deepEqual(steps.map((s) => [s.name, s.ok]), [['Configuração', true], ['Agente', true], ['Fornecedores', true], ['Jogos', true]]);
+  assert.match(steps[3].detail, /1 jogos/);
+  db.close();
+});
+
+test('a .env file in the working directory is loaded', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'cb-env-'));
+  writeFileSync(join(dir, '.env'), 'CASINO_API_URL=https://from-dotenv.example/v4\nCASINO_API_TOKEN=abc\n');
+  const configUrl = new URL('../server/config.js', import.meta.url).href;
+  const env = { ...process.env };
+  delete env.CASINO_API_URL;
+  delete env.CASINO_API_TOKEN;
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e',
+    `const { config } = await import(${JSON.stringify(configUrl)}); console.log(config.casino.baseUrl + '|' + config.casino.token);`],
+  { cwd: dir, env }).toString().trim();
+  assert.equal(out, 'https://from-dotenv.example/v4|abc');
+});

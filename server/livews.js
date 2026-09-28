@@ -6,7 +6,12 @@
 //   - a score change suspends it until a new price arrives (the old one was for another scoreline);
 //   - betting.js refuses live bets once live_odds_at is older than the configured max age.
 // The socket allows 10 subscriptions each, so several sockets are opened as needed.
+//
+// Everything received is also published on `bus` (per ClassicBet event id) so the match page can
+// stream it to the browser: 'event' (score, clock, live stats), 'livedata' (ball position and
+// situation for the 2D tracker), 'action' (per-action events with coordinates) and 'odds'.
 
+import { EventEmitter } from 'node:events';
 import { nowIso, tx } from './db.js';
 
 const SOURCE = 'bzzoiro';
@@ -24,6 +29,44 @@ export function createLiveSocket(db, {
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const suspend = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(id);
+
+  const bus = new EventEmitter();
+  bus.setMaxListeners(0);
+  // Last state per ClassicBet event id, replayed to a browser that opens the match page mid-game.
+  const snapshots = new Map();
+  const snap = (id) => {
+    if (!snapshots.has(id)) snapshots.set(id, { event: null, livedata: [], actions: [] });
+    return snapshots.get(id);
+  };
+  const publish = (id, type, data) => bus.emit(`e:${id}`, { type, data });
+
+  function applyLivedata(f) {
+    const row = findEvent.get(SOURCE, String(f.event_id));
+    if (!row) return;
+    const points = Array.isArray(f.coordinates) ? f.coordinates : [];
+    const p = points[points.length - 1];
+    const data = {
+      uts: f.uts ?? Math.floor(Date.now() / 1000), side: f.side ?? null, situation: f.situation ?? null,
+      commentary: f.commentary ?? null, x: Number.isFinite(Number(p?.x)) ? Number(p.x) : null, y: Number.isFinite(Number(p?.y)) ? Number(p.y) : null,
+    };
+    const s = snap(row.id);
+    s.livedata.push(data);
+    if (s.livedata.length > 30) s.livedata.shift();
+    publish(row.id, 'livedata', data);
+  }
+
+  function applyAction(f) {
+    const row = findEvent.get(SOURCE, String(f.event_id));
+    if (!row) return;
+    const data = {
+      type: f.action_type, team: f.team ?? null, player: f.player?.name ?? null, minute: f.minute ?? null,
+      x: Number.isFinite(Number(f.x)) ? Number(f.x) : null, y: Number.isFinite(Number(f.y)) ? Number(f.y) : null,
+    };
+    const s = snap(row.id);
+    s.actions.push(data);
+    if (s.actions.length > 40) s.actions.shift();
+    publish(row.id, 'action', data);
+  }
 
   // ---------- frame handling ----------
 
@@ -44,26 +87,30 @@ export function createLiveSocket(db, {
         db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
       }
     });
+    const data = { homeScore: home, awayScore: away, clock, period: f.time?.period ?? null, stats: f.stats ?? null };
+    snap(row.id).event = data;
+    publish(row.id, 'event', data);
   }
 
   function applyOdds(f) {
     const row = findEvent.get(SOURCE, String(f.event_id));
     if (!row || row.status !== 'live') return;
-    const mw = f.odds?.match_winner || {};
-    const price = (v) => { const n = Number(v); return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null; };
-    const odds = { 1: price(mw.home), X: price(mw.draw), 2: price(mw.away) };
+    const prices = liveOddsPrices(f.odds);
     tx(db, () => {
-      if (!odds['1'] || !odds['2']) { suspend(row.id); return; }
+      if (!prices['1x2|1'] || !prices['1x2|2']) { suspend(row.id); return; }
       const upsert = db.prepare(
-        `INSERT INTO selections (event_id, code, odds_x100, active) VALUES (?, ?, ?, 1)
-         ON CONFLICT (event_id, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+        `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
+         ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
       );
-      for (const code of ['1', 'X', '2']) {
-        if (odds[code]) upsert.run(row.id, code, odds[code]);
-        else db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND code = ?').run(row.id, code);
+      // The frame is the full in-play book: anything not in it is closed.
+      db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+      for (const [key, x100] of Object.entries(prices)) {
+        const [market, code] = key.split('|');
+        upsert.run(row.id, market, code, x100);
       }
       db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(nowIso(), row.id);
     });
+    publish(row.id, 'odds', { at: nowIso() });
   }
 
   function handle(sock, raw) {
@@ -75,8 +122,12 @@ export function createLiveSocket(db, {
       if (f.type === 'subscribed') {
         if (f.event) applyEvent({ ...f.event, event_id: f.event_id });
         if (f.odds) applyOdds({ ...f.odds, event_id: f.event_id });
+        for (const ld of Array.isArray(f.livedata) ? f.livedata : []) applyLivedata({ ...ld, event_id: f.event_id });
+        for (const a of Array.isArray(f.history) ? f.history : []) applyAction({ ...a, event_id: f.event_id });
       } else if (f.type === 'event') applyEvent(f);
       else if (f.type === 'odds') applyOdds(f);
+      else if (f.type === 'livedata') applyLivedata(f);
+      else if (f.type === 'action') applyAction(f);
       else if (f.type === 'error') {
         state.lastError = `${f.code}: ${f.message || ''}`.trim();
         if (f.event_id !== undefined && f.event_id !== null && ['not_tracked', 'bad_event_id'].includes(f.code)) {
@@ -158,6 +209,10 @@ export function createLiveSocket(db, {
   }
 
   return {
+    bus,
+    /** What a browser joining mid-game should see first. */
+    snapshot: (eventId) => snapshots.get(eventId) || { event: null, livedata: [], actions: [] },
+    isFollowing: (externalId) => state.sockets.some((s) => s.subs.has(String(externalId))),
     /** Sets the provider event ids to follow (called by the REST live sync). */
     track(ids) {
       state.wanted = new Set([...ids].map(String));
@@ -178,4 +233,21 @@ export function createLiveSocket(db, {
       frames: state.frames, lastFrameAt: state.lastFrameAt,
     }),
   };
+}
+
+/** In-play odds frame → { 'market|code': x100 } for the markets we offer. */
+export function liveOddsPrices(odds) {
+  const o = odds || {};
+  const px = (v) => { const n = Number(v); return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null; };
+  const out = {};
+  const put = (key, v) => { const x = px(v); if (x) out[key] = x; };
+  const mw = o.match_winner || {};
+  put('1x2|1', mw.home); put('1x2|X', mw.draw); put('1x2|2', mw.away);
+  const ou = o.over_under || {};
+  for (const [k, v] of Object.entries(ou)) {
+    const m = /^(over|under)_(\d)(\d)$/.exec(k);
+    if (m) put(`ou|${m[1] === 'over' ? 'O' : 'U'}${m[2]}.${m[3]}`, v);
+  }
+  put('btts|Y', o.btts?.yes); put('btts|N', o.btts?.no);
+  return out;
 }

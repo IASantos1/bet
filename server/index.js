@@ -17,7 +17,7 @@ const stopFeed = feed.start();
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
-const server = createApp(db, { feed, casino }).listen(config.port, () => {
+const server = createApp(db, { feed, casino, liveSocket }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
