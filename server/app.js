@@ -1,5 +1,7 @@
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { nowIso, tx } from './db.js';
@@ -15,6 +17,15 @@ import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+
+// Version of the frontend: a hash of the script and the stylesheet. index.html is served with the
+// files stamped (app.js?v=…), so a browser can never keep running an old script after a deploy,
+// and the footer shows it so the running version can be checked.
+const readPublic = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
+export const APP_VERSION = createHash('sha256').update(readPublic('app.js')).update(readPublic('styles.css')).digest('hex').slice(0, 8);
+const INDEX_HTML = readPublic('index.html')
+  .replace('src="app.js"', `src="app.js?v=${APP_VERSION}"`)
+  .replace('href="styles.css"', `href="styles.css?v=${APP_VERSION}"`);
 const COOKIE = 'cb_session';
 const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -223,7 +234,7 @@ export function createApp(db, {
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents),
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds,
-      sports: SPORTS,
+      sports: SPORTS, version: APP_VERSION,
     });
   });
 
@@ -744,6 +755,9 @@ export function createApp(db, {
   // ---------- static frontend ----------
   // Pages, scripts and styles are revalidated on every load (ETag), so a new version is picked up
   // right after a deploy; images and icons can be cached for a day.
+  app.get(['/', '/index.html'], (_req, res) => {
+    res.set('Cache-Control', 'no-cache').type('html').send(INDEX_HTML);
+  });
   app.use(express.static(PUBLIC_DIR, {
     index: 'index.html',
     setHeaders(res, file) {

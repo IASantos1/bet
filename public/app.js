@@ -291,7 +291,7 @@ function footer() {
     <div><strong>Apostas</strong><a href="#/desporto">Desporto</a><a href="#/ao-vivo">Ao Vivo</a><a href="#/desporto/resultados">Resultados</a><a href="#/casino">Casino</a></div>
     <div><strong>A minha conta</strong><a href="#/perfil/carteira">Carteira</a><a href="#/perfil/apostas">As minhas apostas</a><a href="#/perfil">Dados pessoais</a></div>
     <div><strong>Informações</strong><a href="#/perfil/jogo-responsavel">Jogo responsável</a><a href="#/promocoes">Promoções</a></div>
-    <div class="copyright"><span>© ${new Date().getFullYear()} ClassicBet</span><span><span class="age">18+</span>Proibido a menores de 18 anos. Jogue com responsabilidade.</span></div>
+    <div class="copyright"><span>© ${new Date().getFullYear()} ClassicBet${state.config?.version ? ` · versão ${esc(state.config.version)}` : ''}</span><span><span class="age">18+</span>Proibido a menores de 18 anos. Jogue com responsabilidade.</span></div>
   </footer>`;
 }
 
@@ -2054,6 +2054,13 @@ async function init() {
   renderSlip();
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
+  // A new deploy changes the version: reload once so nobody keeps an old page open for hours.
+  setInterval(async () => {
+    try {
+      const c = await api('/api/config');
+      if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) window.location.reload();
+    } catch { /* offline for a moment */ }
+  }, 5 * 60_000);
   if (config) $('#stake').min = config.minStake;
   // A game left open when the tab was closed: bring that balance back now.
   if (state.user?.casinoActive && !(currentRoute().page === 'casino' && currentRoute().sub === 'jogar')) closeCasino();
