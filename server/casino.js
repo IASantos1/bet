@@ -21,6 +21,15 @@ const CODE_MESSAGES = {
   2014: 'Moeda não suportada.',
 };
 
+/** Accepts "host", "https://host/", "https://host/v4" … and returns "https://host" (paths add /v4/...). */
+export function normalizeBaseUrl(raw) {
+  let url = String(raw || '').trim().replace(/^["']|["']$/g, '');
+  if (!url) return '';
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  url = url.replace(/\/+$/, '').replace(/\/v4(\/(agent|user|wallet|game|statistics)(\/.*)?)?$/i, '').replace(/\/+$/, '');
+  return url;
+}
+
 export class CasinoError extends Error {
   constructor(code, message) {
     super(message || `Erro do casino (${code})`);
@@ -31,8 +40,8 @@ export class CasinoError extends Error {
 export function createCasino(db, {
   baseUrl, token, lang = 6, fetchImpl = globalThis.fetch, log = () => {}, cacheMs = 60 * 60_000,
 } = {}) {
-  const enabled = !!(baseUrl && token);
-  const root = String(baseUrl || '').replace(/\/+$/, '');
+  const root = normalizeBaseUrl(baseUrl);
+  const enabled = !!(root && token);
   let catalog = { at: 0, games: [], providers: [] };
   let loading = null;
 
@@ -88,16 +97,57 @@ export function createCasino(db, {
     return catalog;
   }
 
+  let lastError = null;
+
   async function games() {
     if (!enabled) return { enabled: false, games: [], providers: [] };
-    if (Date.now() - catalog.at > cacheMs) {
+    // An empty catalogue is retried after 2 minutes instead of being cached for the full hour.
+    const ttl = catalog.games.length ? cacheMs : 2 * 60_000;
+    if (Date.now() - catalog.at > ttl) {
       loading ??= loadCatalog().finally(() => { loading = null; });
-      try { await loading; } catch (err) {
+      try {
+        await loading;
+        lastError = catalog.games.length ? null
+          : catalog.providers.length ? 'O agregador não devolveu jogos para os fornecedores deste agente.'
+            : 'O agregador não tem fornecedores atribuídos a este agente (peça ao agregador para os ligar).';
+      } catch (err) {
+        lastError = err.message;
         log(`casino catálogo: ${err.message}`);
-        if (!catalog.at) throw err;
       }
     }
-    return { enabled: true, games: catalog.games, providers: catalog.providers };
+    return { enabled: true, games: catalog.games, providers: catalog.providers, error: catalog.games.length ? null : lastError };
+  }
+
+  /** Step-by-step connection check for the admin panel. */
+  async function diagnose() {
+    const steps = [];
+    const step = (name, ok, detail) => steps.push({ name, ok, detail });
+    step('Configuração', !!(root && token), `CASINO_API_URL ${root ? `= ${root}` : 'em falta'} · CASINO_API_TOKEN ${token ? 'definido' : 'em falta'}`);
+    if (!enabled) return steps;
+    try {
+      const a = await call('/v4/agent/info');
+      step('Agente', true, `${a?.name ?? '?'} · pontos ${a?.balance ?? '?'} · moeda ${a?.currency ?? '?'}${a?.client_ip ? ` · IP do servidor: ${a.client_ip}` : ''}`);
+    } catch (err) {
+      const hint = err.code === 1020 ? ' — peça ao agregador para autorizar o IP deste servidor.'
+        : [1007, 1009].includes(err.code) ? ' — confirme o CASINO_API_TOKEN.'
+          : err.code === -1 || err.code >= 300 ? ' — confirme o CASINO_API_URL.' : '';
+      step('Agente', false, `${err.message} (código ${err.code})${hint}`);
+      return steps;
+    }
+    let providers = [];
+    try {
+      providers = (await call('/v4/game/providers', { lang })) || [];
+      step('Fornecedores', providers.length > 0, providers.length
+        ? providers.map((p) => `${p.provider_name}${p.status === 1 ? '' : ' (manutenção)'}`).join(', ')
+        : 'Nenhum fornecedor atribuído a este agente — peça ao agregador para os ligar.');
+    } catch (err) {
+      step('Fornecedores', false, `${err.message} (código ${err.code})`);
+      return steps;
+    }
+    catalog.at = 0; // force a fresh catalogue with what we now know
+    const result = await games();
+    step('Jogos', result.games.length > 0, result.games.length ? `${result.games.length} jogos disponíveis` : (result.error || 'Sem jogos.'));
+    return steps;
   }
 
   // ---------- players ----------
@@ -172,5 +222,5 @@ export function createCasino(db, {
     return { name: a?.name, balance: a?.balance, currency: a?.currency };
   }
 
-  return { enabled, games, casinoBalanceCents, transferIn, transferOut, launch, agentInfo };
+  return { enabled, games, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo };
 }

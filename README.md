@@ -68,6 +68,10 @@ modo **Transfer**:
 CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm start
 ```
 
+- As variáveis podem estar no ambiente do servidor ou num ficheiro `.env` na pasta do projeto (lido ao
+  arrancar; reinicie depois de o alterar). O URL pode ser colado com ou sem `https://` e `/v4`.
+- Se os jogos não aparecerem, use **Administração → Casino → Testar ligação**: verifica a configuração,
+  o agente (token, IP autorizado), os fornecedores atribuídos e os jogos, e diz o que falta.
 - O catálogo (fornecedores e jogos) é lido da API e guardado em cache durante 1 hora. Fornecedores em
   manutenção aparecem desativados.
 - A carteira do casino é separada. Ao abrir um jogo, o jogador escolhe quanto leva da carteira ClassicBet

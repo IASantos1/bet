@@ -1,5 +1,18 @@
 // Central configuration. Every value can be overridden with an environment variable
 // (see .env.example). Money is always handled in integer cents.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Load a .env file (project folder, then the current directory) when there is one. Variables
+// already set in the environment win over the file.
+for (const file of [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env'), path.resolve('.env')]) {
+  if (fs.existsSync(file) && typeof process.loadEnvFile === 'function') {
+    try { process.loadEnvFile(file); } catch (err) { console.warn(`[config] não foi possível ler ${file}: ${err.message}`); }
+    break;
+  }
+}
+
 const env = process.env;
 
 const int = (v, fallback) => {

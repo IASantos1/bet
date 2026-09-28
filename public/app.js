@@ -325,6 +325,12 @@ function casinoPage() {
       <section class="section"><div class="section-head"><h2>Catálogo</h2><span>${GAMES.length} jogos</span></div><div class="game-grid grid">${GAMES.map(gameCard).join('')}</div></section>
       ${footer()}`;
   }
+  if (!c.games.length) {
+    return `<div class="page-title"><h1>Casino</h1></div>
+      <div class="notice"><strong>Casino sem jogos de momento.</strong> ${esc(c.error || '')}
+      ${state.user?.role === 'admin' ? '<br><br><a class="mini-btn" href="#/admin">Diagnosticar em Administração → Casino</a>' : ''}</div>
+      ${footer()}`;
+  }
   if (state.user && state.casinoBalance === null) setTimeout(loadCasinoBalance);
   const f = state.casinoFilter;
   const list = c.games.map((g, i) => [g, i]).filter(([g]) => (!f.provider || String(g.providerId) === f.provider) && (!f.category || g.category === f.category));
@@ -603,8 +609,12 @@ function liveSocketPanel(ws) {
 }
 
 function adminCasino(c) {
+  const test = '<br><button class="primary-btn" data-action="casino-test">Testar ligação</button><div id="casinoTest"></div>';
   if (!c.enabled) {
-    return '<div class="panel"><div class="notice">Defina <strong>CASINO_API_URL</strong> e <strong>CASINO_API_TOKEN</strong> no servidor e reinicie para ligar o casino.</div></div>';
+    return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
+      <strong>CASINO_API_URL</strong> ${c.urlSet ? '✔ definido' : '✘ em falta'} ·
+      <strong>CASINO_API_TOKEN</strong> ${c.tokenSet ? '✔ definido' : '✘ em falta'}.<br>
+      Defina-as no servidor (ou no ficheiro <code>.env</code> na pasta do projeto) e reinicie o servidor.</div>${test}</div>`;
   }
   return `<div class="panel">
     <div class="section-head"><h2>Casino — agente ${esc(c.agent?.name || '')}</h2><span class="pill ${c.error ? 'lost' : 'won'}">${c.error ? 'Erro' : 'Ligado'}</span></div>
@@ -612,6 +622,7 @@ function adminCasino(c) {
     <div class="stat-grid"><div class="stat"><small>Pontos do agente</small><strong>${c.agent ? esc(Number(c.agent.balance).toLocaleString('pt-PT')) : '—'}</strong></div>
       <div class="stat"><small>Enviado para o casino</small><strong>${money(c.sentToCasino)}</strong></div>
       <div class="stat"><small>Devolvido do casino</small><strong>${money(c.returnedFromCasino)}</strong></div></div>
+    ${test}
     <p class="muted">Cada depósito de um jogador no casino consome pontos do agente. Mantenha pontos suficientes, ou os jogadores não conseguem entrar nos jogos. Os jogos correm sempre com o RTP por omissão do fornecedor.</p>
   </div>`;
 }
@@ -1065,6 +1076,17 @@ document.addEventListener('click', async (e) => {
     updateHeader(); renderSlip();
     location.hash = '#/';
     toast('Sessão terminada');
+  } else if (action === 'casino-test') {
+    actionEl.disabled = true;
+    actionEl.textContent = 'A testar…';
+    try {
+      const { steps } = await api('/api/admin/casino/test', { method: 'POST', body: {} });
+      $('#casinoTest').innerHTML = `<br><div class="table-wrap"><table><tbody>${steps.map((s) =>
+        `<tr><td>${s.ok ? '✅' : '❌'}</td><td><strong>${esc(s.name)}</strong></td><td>${esc(s.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+      loadCasino();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    actionEl.textContent = 'Testar ligação';
   } else if (action === 'feed-sync') {
     actionEl.disabled = true;
     actionEl.textContent = 'A sincronizar…';

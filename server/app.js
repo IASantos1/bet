@@ -357,9 +357,12 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     try { await fn(req, res); } catch (err) { next(casinoError(err)); }
   };
 
-  app.get('/api/casino/games', wrap(async (_req, res) => {
+  app.get('/api/casino/games', wrap(async (req, res) => {
     if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [] });
-    res.json(await casino.games());
+    const data = await casino.games();
+    // Players get a generic message; the operator sees the provider's reason.
+    if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
+    res.json(data);
   }));
 
   app.get('/api/casino/wallet', requireUser, wrap(async (req, res) => {
@@ -562,8 +565,15 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
     res.json({ bets: withLegs(bets).map((b) => ({ ...b, email: emails.get(b.id) })) });
   });
 
+  admin.post('/casino/test', wrap(async (_req, res) => {
+    if (!casino) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Casino não inicializado.' }] });
+    res.json({ steps: await casino.diagnose() });
+  }));
+
   admin.get('/casino', wrap(async (_req, res) => {
-    if (!casinoOn()) return res.json({ enabled: false });
+    if (!casinoOn()) {
+      return res.json({ enabled: false, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token });
+    }
     let agent = null;
     let error = null;
     try { agent = await casino.agentInfo(); } catch (err) { error = err.message; }
