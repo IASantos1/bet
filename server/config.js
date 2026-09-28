@@ -61,6 +61,13 @@ export const config = {
     enabled: env.TENNIS !== '0',
     baseUrl: (env.BZZOIRO_TENNIS_URL || 'https://sports.bzzoiro.com/tennis/api/v2').replace(/\/+$/, ''),
     days: int(env.TENNIS_DAYS, 3),
+    liveWsUrl: env.BZZOIRO_MULTI_WS_URL || 'wss://sports.bzzoiro.com/ws/live/',
+  },
+  // Sports Addon: basketball, ice hockey, darts and CS2 (same token). SPORTS_ADDON lists the ones
+  // to import; empty string turns them all off.
+  sportsAddon: {
+    sports: (env.SPORTS_ADDON ?? 'basquetebol,hoquei,dardos,esports').split(',').map((s) => s.trim()).filter(Boolean),
+    days: int(env.SPORTS_DAYS, 3),
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),

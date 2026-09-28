@@ -5,6 +5,8 @@ const SPORT_META = {
   basquetebol: { name: 'Basquetebol', icon: '🏀' },
   tenis: { name: 'Ténis', icon: '🎾' },
   hoquei: { name: 'Hóquei no Gelo', icon: '🏒' },
+  dardos: { name: 'Dardos', icon: '🎯' },
+  esports: { name: 'CS2 (eSports)', icon: '🎮' },
   voleibol: { name: 'Voleibol', icon: '🏐' },
   andebol: { name: 'Andebol', icon: '🤾' },
 };
@@ -208,7 +210,30 @@ function matchCard(e) {
   </article>`;
 }
 
+/** Tennis in play: "S2" and the point (15 / 30 / 40 / AD) under it. */
+function tennisLiveCell(e) {
+  const t = e.tennis || {};
+  const pts = tennisPoints(t.point);
+  return `<span class="tn-set">S${t.set || 1}</span><span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
+}
+
+/** Per-player tennis line: sets won, games in the current set and the point, with the server marked. */
+function tennisSide(e, side) {
+  const t = e.tennis || {};
+  const i = side === 'home' ? 0 : 1;
+  const cur = (t.sets || [])[(t.sets || []).length - 1];
+  const pts = tennisPoints(t.point);
+  return `<span class="tn-line">${t.server === side ? '<i class="tn-serve" title="Ao serviço"></i>' : ''}<b>${side === 'home' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>${cur ? `<em>${cur[i]}</em>` : ''}${pts ? `<strong>${esc(pts[i])}</strong>` : ''}</span>`;
+}
+
 function liveCard(e) {
+  if (e.sport === 'tenis') {
+    return `<article class="live-card clickable" data-open="${e.id}">
+    <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)}</span><span class="tn-cell">${tennisLiveCell(e)}</span></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisSide(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisSide(e, 'away')}</div></div>
+    ${oddsButtons(e, { labels: 'name' })}
+  </article>`;
+  }
   return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
     <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
@@ -217,10 +242,12 @@ function liveCard(e) {
 }
 
 function eventRow(e) {
+  const tennisLive = e.status === 'live' && e.sport === 'tenis';
   const when = e.status === 'live'
-    ? `<span class="live-label">● AO VIVO</span><br>${esc(e.clock || '')}`
+    ? `<span class="live-label">● AO VIVO</span><br>${tennisLive ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : esc(e.clock || '')}`
     : esc(fmtWhen(e.startTime)).replace(' ', '<br>');
-  const score = (side) => (e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
+  const score = (side) => (tennisLive ? tennisSide(e, side === 'h' ? 'home' : 'away')
+    : e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
@@ -233,7 +260,8 @@ function eventRow(e) {
 
 function groupByCompetition(events) {
   const groups = new Map();
-  for (const e of events) {
+  const ordered = [...events].sort((a, b) => (sportRank(a.sport) - sportRank(b.sport)) || byPriority(a, b));
+  for (const e of ordered) {
     const key = `${e.sport}|${e.competition}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(e);
@@ -260,19 +288,53 @@ function footer() {
 
 // ---------- pages ----------
 
+// Sports in the order the site shows them: football always first.
+const SPORT_ORDER = ['futebol', 'tenis', 'basquetebol', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
+const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
+
+/** Featured by the operator first, then big leagues (tier), then the earliest. */
+const byPriority = (a, b) => (b.featured - a.featured) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
+
+/**
+ * Home page highlights: big-league football first (all of it, up to the limit), then the best
+ * event of each other sport, big leagues first. Without big-league football, the best football
+ * matches still lead. Only events with odds are listed.
+ */
+function pickHighlights(events, limit = 12) {
+  const out = [];
+  const add = (e) => { if (e && out.length < limit && !out.includes(e)) out.push(e); };
+  const pool = [...events].sort(byPriority);
+  pool.filter((e) => e.featured).forEach(add);
+  const football = pool.filter((e) => e.sport === 'futebol');
+  const bigFootball = football.filter((e) => e.tier <= 2);
+  (bigFootball.length ? bigFootball : football.slice(0, 3)).forEach(add);
+  const others = [...new Set(pool.map((e) => e.sport))].filter((sp) => sp !== 'futebol').sort((a, b) => sportRank(a) - sportRank(b));
+  for (const sp of others) add(pool.find((e) => e.sport === sp));
+  // Room left and big leagues elsewhere: more of them.
+  pool.filter((e) => e.tier <= 2).forEach(add);
+  return out;
+}
+
+function carousel(id, cards) {
+  return `<div class="carousel" id="${id}">
+    <button class="car-btn prev" data-action="car-prev" data-target="${id}" aria-label="Anterior">‹</button>
+    <div class="car-track">${cards.join('')}</div>
+    <button class="car-btn next" data-action="car-next" data-target="${id}" aria-label="Seguinte">›</button>
+  </div>`;
+}
+
 function homePage() {
-  const live = state.events.filter((e) => e.status === 'live');
-  const upcoming = state.events.filter((e) => e.status === 'scheduled');
-  const featured = [...upcoming.filter((e) => e.featured), ...upcoming.filter((e) => !e.featured)].slice(0, 6);
+  const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
+  const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
   const hero = state.user
     ? `<div class="eyebrow">BEM-VINDO DE VOLTA</div><h1>Olá, ${esc(state.user.name.split(' ')[0])}.</h1><p>O seu saldo é <strong>${money(state.user.balance)}</strong>. Escolha um jogo e faça a sua aposta.</p>
        <div class="hero-actions"><a class="primary-btn" href="#/desporto">Explorar desporto</a><a class="outline-btn" href="#/perfil/carteira">Carteira</a></div>`
     : `<div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
   return `<section class="hero"><div class="hero-copy">${hero}</div></section>
-    ${live.length ? `<section class="section"><div class="section-head"><h2>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div><div class="live-grid grid">${live.slice(0, 4).map(liveCard).join('')}</div></section>` : ''}
+    ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
-      ${featured.length ? `<div class="match-grid grid">${featured.map(matchCard).join('')}</div>` : emptyEvents()}</section>
+      ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
     <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div><div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div></section>
     ${footer()}`;
 }
@@ -281,7 +343,7 @@ const emptyEvents = () => `<div class="panel empty">${state.eventsLoaded ? 'Sem 
 
 function sportsPage(sub) {
   if (sub === 'resultados') return resultsPage();
-  const sports = [...new Set(state.events.map((e) => e.sport))];
+  const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
     <div class="sport-strip">
@@ -314,8 +376,15 @@ function resultsPage() {
 
 function livePage() {
   const live = state.events.filter((e) => e.status === 'live');
+  // Football first, then the other sports; big leagues first inside each sport.
+  const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
+  const blocks = sports.map((sp) => {
+    const list = live.filter((e) => e.sport === sp).sort(byPriority);
+    return `<section class="section"><div class="section-head"><h2>${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
+      <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
+  }).join('');
   return `<div class="page-title"><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
-    ${live.length ? `<div class="live-grid grid">${live.map(liveCard).join('')}</div>` : `<div class="panel empty">${state.eventsLoaded ? 'Não há eventos ao vivo neste momento.' : 'A carregar…'}</div>`}
+    ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? 'Não há eventos ao vivo neste momento.' : 'A carregar…'}</div>`}
     ${footer()}`;
 }
 
@@ -688,15 +757,30 @@ function adminCasino(c) {
   </div>`;
 }
 
-function tennisPanel(t) {
-  if (!t?.enabled) return '<p class="muted">Ténis: desligado (TENNIS=0).</p><br>';
+function addonPanel(title, t, what) {
+  if (!t?.enabled) return `<p class="muted">${esc(title)}: desligado.</p>`;
   const counts = Object.entries(t.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
-  const last = t.last?.fixtures ? `última importação ${esc(fmtDateTime(t.last.fixtures.at))} (${t.last.fixtures.matches ?? 0} encontros, ${t.last.fixtures.priced ?? 0} com odds)` : 'ainda não executado';
+  const f = t.last?.fixtures;
+  const last = f ? `última importação ${esc(fmtDateTime(f.at))} (${f.matches ?? f.games ?? 0} jogos, ${f.priced ?? 0} com odds)` : 'ainda não executado';
   const badge = t.addonMissing ? '<span class="pill lost">Sem Sports Addon</span>' : t.lastError ? '<span class="pill lost">Erro</span>' : '<span class="pill won">Ligado</span>';
-  return `<h3>Ténis ATP/WTA ${badge}</h3>
-    <p class="muted">Encontros e odds de vencedor (pré-jogo), resultados por sets, confrontos diretos, previsões e ranking. ${last}.</p>
-    <p>Eventos de ténis: <strong>${esc(counts)}</strong></p>
-    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para a API de ténis.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}<br>`;
+  const ws = t.liveSocket?.enabled
+    ? ` · ao vivo por WebSocket: ${t.liveSocket.fatal ? `parado (${esc(t.liveSocket.fatal)})` : `${t.liveSocket.following} encontro(s) seguidos`}` : '';
+  return `<h3>${esc(title)} ${badge}</h3>
+    <p class="muted">${esc(what)} ${last}${ws}.</p>
+    <p>Eventos: <strong>${esc(counts)}</strong></p>
+    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para este desporto.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}`;
+}
+
+function sportsAddonPanels(f) {
+  const panels = [addonPanel('Ténis ATP/WTA', f.tennis, 'Odds de vencedor (pré-jogo), sets ao vivo, H2H, previsões e ranking.')];
+  const what = {
+    basquetebol: 'Vencedor com prolongamento, estatísticas por equipa e box score, previsões e classificação.',
+    hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',
+    dardos: 'Vencedor do encontro, legs por set, H2H com médias, previsões e ranking PDC.',
+    esports: 'Vencedor do encontro, mapas, comparação das equipas, H2H e previsões.',
+  };
+  for (const s of f.sports || []) panels.push(addonPanel(SPORT_META[s.sport]?.name || s.name, s, what[s.sport] || ''));
+  return `<h3>Sports Addon</h3>${panels.map((p) => `<div class="addon-block">${p}</div>`).join('')}<br>`;
 }
 
 function adminFeed(f) {
@@ -717,7 +801,7 @@ function adminFeed(f) {
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
          </tbody></table></div><br>
          ${liveSocketPanel(f.liveSocket)}
-         ${tennisPanel(f.tennis)}
+         ${sportsAddonPanels(f)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
@@ -979,7 +1063,10 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 10_000);
   }
   document.body.classList.toggle('immersive', immersive);
+  // Carousels keep their position when the page refreshes itself (odds, live scores).
+  const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
   $('#content').innerHTML = immersive ? casinoPlayPage() : (pages[page] || homePage)();
+  for (const [id, left] of carScroll) { const t = $(`#${id} .car-track`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
@@ -1203,7 +1290,10 @@ document.addEventListener('click', async (e) => {
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
   else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação ao fornecedor de casino.');
-  else if (action === 'casino-more') {
+  else if (action === 'car-prev' || action === 'car-next') {
+    const track = $(`#${actionEl.dataset.target} .car-track`);
+    if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
+  } else if (action === 'casino-more') {
     loadCasino();
   } else if (action === 'casino-test') {
     actionEl.disabled = true;
@@ -1307,6 +1397,12 @@ function bindChrome() {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); } });
   window.addEventListener('hashchange', () => render());
+  // The live widget sits above the slip on wide screens and inside the match page on narrow ones.
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (currentRoute().page === 'jogo') mountLiveWidget(); }, 150);
+  });
 }
 
 // ---------- match page (#/jogo/<id>): markets, statistics, 2D tracker, live stream ----------
@@ -1330,7 +1426,8 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
+  $('#sideTracker')?.replaceChildren();
 }
 
 async function loadMatch(id, { quiet = false } = {}) {
@@ -1381,8 +1478,10 @@ function startMatchStream(id) {
     m.streaming = !!s.following;
     if (s.event) applyLiveEvent(s.event);
     for (const d of s.livedata || []) pushBall(d);
+    m.prevBall = null;
     m.actions = (s.actions || []).slice(-15);
     updateTracker();
+    updateActionsList();
   });
   on('event', applyLiveEvent);
   on('livedata', (d) => { pushBall(d); updateTracker(); });
@@ -1399,27 +1498,62 @@ function applyLiveEvent(e) {
   d.homeScore = e.homeScore;
   d.awayScore = e.awayScore;
   d.clock = e.clock || d.clock;
+  if (e.server) d.server = e.server;
   state.match.live = e.stats || state.match.live;
   const score = $('#matchScore');
   if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
   const clock = $('#matchClock');
   if (clock) clock.textContent = d.clock || '';
-  if (scored) {
+  const w = state.match.widget;
+  if (w && state.match.widgetKind === 'football') {
+    $('#trkHomeScore', w).textContent = d.homeScore ?? 0;
+    $('#trkAwayScore', w).textContent = d.awayScore ?? 0;
+    $('#trkClock', w).textContent = d.clock || '';
+  }
+  if (scored && d.sport === 'futebol') {
     toast('Golo!', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
     loadMatch(d.id, { quiet: true }); // markets were suspended; fetch their new state
+  } else if (scored && d.sport === 'tenis') toast('Set', `${d.home} ${d.homeScore} - ${d.awayScore} ${d.away}`);
+  if (d.sport === 'tenis') {
+    if (e.point !== undefined || e.sets) d.tennis = { set: e.sets?.length || d.tennis?.set || 1, point: e.point ?? null, server: e.server ?? null, sets: e.sets || d.tennis?.sets || [] };
+    updateServe(d);
+    updateTennisCourt();
+    const cell = $('#matchTennis');
+    if (cell) cell.innerHTML = tennisLiveCell(d);
   }
 }
 
+/** Tennis: who is serving, from the live frames. */
+function updateServe(e) {
+  $$('[data-serve]').forEach((el) => el.classList.toggle('serving', el.dataset.serve === e.server));
+}
+
+/**
+ * Ball fixes arrive "attacking left→right" for the side in possession (provider docs), so on our
+ * fixed pitch — home attacking left→right — an away fix is mirrored on both axes.
+ */
+function toPitch(p, side) {
+  if (p?.x === null || p?.x === undefined || p?.y === null || p?.y === undefined) return null;
+  const clamp = (v) => Math.max(1, Math.min(99, Number(v)));
+  return side === 'away' ? { x: clamp(100 - p.x), y: clamp(100 - p.y) } : { x: clamp(p.x), y: clamp(p.y) };
+}
+
 function pushBall(d) {
-  if (d.x === null || d.y === null) {
-    state.match.ball = { ...(state.match.ball || {}), situation: d.situation, side: d.side, commentary: d.commentary };
+  const m = state.match;
+  const spot = toPitch(d, d.side);
+  if (!spot) {
+    m.ball = { ...(m.ball || {}), situation: d.situation, side: d.side, commentary: d.commentary };
     return;
   }
-  const m = state.match;
-  if (m.ball && m.ball.x !== null) m.trail.push({ x: m.ball.x, y: m.ball.y });
-  m.trail = m.trail.slice(-8);
-  m.ball = d;
+  m.prevBall = m.ball?.x !== undefined && m.ball?.x !== null ? { x: m.ball.x, y: m.ball.y } : null;
+  m.ball = { ...d, ...spot };
 }
+
+// Last tab of the match page: league table or players' ranking, where the sport has one.
+const TABLE_TAB = {
+  futebol: ['classificacao', 'Classificação'], basquetebol: ['classificacao', 'Classificação'], hoquei: ['classificacao', 'Classificação'],
+  tenis: ['ranking', 'Ranking'], dardos: ['ranking', 'Ranking'],
+};
 
 function matchPage(sub) {
   const id = Number(sub);
@@ -1442,35 +1576,36 @@ function matchPage(sub) {
 
   const live = e.status === 'live';
   const center = live
-    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>`
+    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div><div class="live-label" id="matchClock">● ${esc(e.clock || 'AO VIVO')}</div>
+       ${e.sport === 'tenis' ? `<div class="tn-cell tn-hero" id="matchTennis">${tennisLiveCell(e)}</div>` : ''}`
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
       : `<div class="match-kickoff">${esc(fmtWhen(e.startTime))}</div><div class="muted">${esc(new Date(e.startTime).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>`;
-  const tennis = e.sport === 'tenis';
-  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão'],
-    tennis ? ['ranking', 'Ranking'] : ['classificacao', 'Classificação']];
-  if (e.liveTracker) tabs.push(['tracker', 'Tracker']);
+  const football = e.sport === 'futebol';
+  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão']];
+  const table = TABLE_TAB[e.sport];
+  if (table && e.source !== 'manual') tabs.push(table);
   if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
 
   let body = '';
-  if (m.tab === 'estatisticas') body = tennis ? tennisStatsView(e) : matchStatsView(e);
+  if (m.tab === 'estatisticas') body = football ? matchStatsView(e) : sportStatsView(e);
   else if (m.tab === 'h2h') body = insightView(e, h2hView);
   else if (m.tab === 'previsao') body = insightView(e, predictionView);
   else if (m.tab === 'classificacao') body = insightView(e, standingsView);
   else if (m.tab === 'ranking') body = insightView(e, rankingView);
-  else if (m.tab === 'tracker') body = trackerView(e);
   else body = marketsView(e);
 
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero">
       <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : SPORT_META[e.sport]?.icon || '⚽'} ${esc(e.competition)}</div>
       <div class="match-teams">
-        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
-        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
     </section>
-    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}${k === 'tracker' ? ' <i class="live-dot"></i>' : ''}</button>`).join('')}</div>
+    <div id="trackerInline" class="tracker-inline"></div>
+    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
     <div class="match-body">${body}</div>
     ${footer()}`;
 }
@@ -1557,27 +1692,25 @@ function formChips(list) {
 function h2hView(e, x) {
   const h = x.h2h;
   if (!h) return '<div class="panel empty">Sem confrontos diretos registados entre estes adversários.</div>';
-  const tennis = e.sport === 'tenis';
+  const draws = h.draws !== null && h.draws !== undefined;
   const summary = `<div class="panel">
     <h3>${h.total} confronto${h.total === 1 ? '' : 's'} direto${h.total === 1 ? '' : 's'}</h3>
     <div class="h2h-summary">
       <div><strong>${h.homeWins}</strong><small>Vitórias ${esc(e.home)}</small></div>
-      ${tennis ? '' : `<div><strong>${h.draws}</strong><small>Empates</small></div>`}
+      ${draws ? `<div><strong>${h.draws}</strong><small>Empates</small></div>` : ''}
       <div><strong>${h.awayWins}</strong><small>Vitórias ${esc(e.away)}</small></div>
     </div>
-    ${splitBar([{ value: h.homeWins, cls: 'home' }, ...(tennis ? [] : [{ value: h.draws, cls: 'draw' }]), { value: h.awayWins, cls: 'away' }])}
-    ${!tennis && h.homeGoals !== null ? `<p class="muted">Golos: ${esc(e.home)} ${h.homeGoals} · ${esc(e.away)} ${h.awayGoals}${h.avgGoals !== null ? ` · média ${String(h.avgGoals).replace('.', ',')} por jogo` : ''}</p>` : ''}
+    ${h.total ? splitBar([{ value: h.homeWins, cls: 'home' }, ...(draws ? [{ value: h.draws, cls: 'draw' }] : []), { value: h.awayWins, cls: 'away' }]) : ''}
+    ${h.homeGoals !== null && h.homeGoals !== undefined ? `<p class="muted">${e.sport === 'futebol' || e.sport === 'hoquei' ? 'Golos' : 'Pontos'}: ${esc(e.home)} ${h.homeGoals} · ${esc(e.away)} ${h.awayGoals}${h.avgGoals !== null && h.avgGoals !== undefined ? ` · média ${String(h.avgGoals).replace('.', ',')} por jogo` : ''}</p>` : ''}
   </div>`;
-  let list;
-  if (tennis) {
-    const row = (m) => `<tr><td>${esc(fmtShortDate(m.date))}</td><td>${esc(m.home)} vs ${esc(m.away)}<br><small class="muted">${esc(m.competition || '')}</small></td><td class="num">${esc(m.score || '—')}</td></tr>`;
-    const form = (rows) => formChips(rows.map((r) => (r.won === null ? '?' : r.won ? 'V' : 'D')));
-    list = `${h.meetings.length ? `<div class="panel"><h3>Últimos confrontos</h3><div class="table-wrap"><table><tbody>${h.meetings.map(row).join('')}</tbody></table></div></div>` : ''}
-      <div class="panel"><h3>Forma recente</h3>
-        <div class="form-line"><span>${esc(e.home)}</span><span>${form(h.homeForm)}</span></div>
-        <div class="form-line"><span>${esc(e.away)}</span><span>${form(h.awayForm)}</span></div></div>`;
-  } else {
-    // Sides by team id: names get rewritten upstream, ids do not.
+  let list = '';
+  if (h.meetings) {
+    // Meetings already oriented: `won` is from the home side's point of view.
+    const row = (m) => `<tr><td>${esc(fmtShortDate(m.date))}</td><td>${esc(m.home)} vs ${esc(m.away)}${m.competition ? `<br><small class="muted">${esc(m.competition)}</small>` : ''}</td>
+      <td class="num">${esc(m.score || '—')}</td><td>${m.won === null || m.won === undefined ? '' : formChips([m.won ? 'V' : 'D'])}</td></tr>`;
+    if (h.meetings.length) list += `<div class="panel"><h3>Últimos confrontos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p><div class="table-wrap"><table><tbody>${h.meetings.map(row).join('')}</tbody></table></div></div>`;
+  } else if (h.recent?.length) {
+    // Football: sides by team id, since names get rewritten upstream.
     const row = (m) => {
       const ours = m.homeTeamId === x.homeTeamId ? 'h' : m.awayTeamId === x.homeTeamId ? 'a' : null;
       let res = '';
@@ -1589,8 +1722,22 @@ function h2hView(e, x) {
         <td class="num"><b>${m.homeScore === null ? '—' : `${m.homeScore}-${m.awayScore}`}</b></td><td>${esc(m.away)}</td>
         <td>${res ? formChips([res]) : ''}</td></tr>`;
     };
-    list = h.recent.length ? `<div class="panel"><h3>Últimos jogos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p>
-      <div class="table-wrap"><table><tbody>${h.recent.map(row).join('')}</tbody></table></div></div>` : '';
+    list += `<div class="panel"><h3>Últimos jogos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p>
+      <div class="table-wrap"><table><tbody>${h.recent.map(row).join('')}</tbody></table></div></div>`;
+  }
+  const formOf = (rows, letters) => (letters?.length ? formChips(letters) : rows?.length ? formChips(rows.map((r) => (r.won === null ? '?' : r.won ? 'V' : 'D'))) : null);
+  const hf = formOf(h.homeForm, h.homeFormLetters);
+  const af = formOf(h.awayForm, h.awayFormLetters);
+  if (hf || af) {
+    list += `<div class="panel"><h3>Forma recente</h3>
+      <div class="form-line"><span>${esc(e.home)}</span><span>${hf || '<span class="muted">—</span>'}</span></div>
+      <div class="form-line"><span>${esc(e.away)}</span><span>${af || '<span class="muted">—</span>'}</span></div></div>`;
+  }
+  if (h.compare?.length) {
+    const fmt = (v) => (typeof v === 'number' ? v.toLocaleString('pt-PT', { maximumFractionDigits: 2 }) : v);
+    list += `<div class="panel"><h3>Comparação</h3><div class="table-wrap"><table class="compare"><thead><tr><th class="num">${esc(e.home)}</th><th></th><th>${esc(e.away)}</th></tr></thead><tbody>
+      ${h.compare.map(([label, a, b]) => `<tr><td class="num"><b>${esc(fmt(a))}</b></td><td class="muted center">${esc(label)}</td><td><b>${esc(fmt(b))}</b></td></tr>`).join('')}
+    </tbody></table></div></div>`;
   }
   return `<div class="insight-stack">${summary}${list}</div>`;
 }
@@ -1598,7 +1745,7 @@ function h2hView(e, x) {
 function predictionView(e, x) {
   const p = x.prediction;
   if (!p) return '<div class="panel empty">Ainda não há previsão para este jogo.</div>';
-  const tennis = e.sport === 'tenis';
+  const twoWay = p.draw === null || p.draw === undefined;
   const pick = { home: e.home, draw: 'Empate', away: e.away }[p.predicted];
   const outcome = (label, v, cls) => `<div class="prob ${cls}${p.predicted === cls ? ' picked' : ''}"><small>${esc(label)}</small><strong>${pctText(v)}</strong></div>`;
   const extra = [];
@@ -1609,11 +1756,11 @@ function predictionView(e, x) {
   }
   return `<div class="insight-stack"><div class="panel">
       <h3>Probabilidades do modelo</h3>
-      <div class="prob-grid${tennis || p.draw === null ? ' two' : ''}">${outcome(e.home, p.home, 'home')}${tennis || p.draw === null ? '' : outcome('Empate', p.draw, 'draw')}${outcome(e.away, p.away, 'away')}</div>
-      ${splitBar([{ value: p.home, cls: 'home' }, ...(tennis || p.draw === null ? [] : [{ value: p.draw, cls: 'draw' }]), { value: p.away, cls: 'away' }])}
+      <div class="prob-grid${twoWay ? ' two' : ''}">${outcome(e.home, p.home, 'home')}${twoWay ? '' : outcome('Empate', p.draw, 'draw')}${outcome(e.away, p.away, 'away')}</div>
+      ${splitBar([{ value: p.home, cls: 'home' }, ...(twoWay ? [] : [{ value: p.draw, cls: 'draw' }]), { value: p.away, cls: 'away' }])}
       <p class="muted">${pick ? `Favorito do modelo: <strong>${esc(pick)}</strong>` : ''}${p.confidence !== null && p.confidence !== undefined ? ` · confiança ${pctText(p.confidence)}` : ''}</p>
     </div>
-    ${extra.length ? `<div class="panel"><h3>Golos</h3><div class="stat-grid">${extra.map(([l, v]) => `<div class="stat"><small>${esc(l)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>` : ''}
+    ${extra.length ? `<div class="panel"><h3>Mercados de golos</h3><div class="stat-grid">${extra.map(([l, v]) => `<div class="stat"><small>${esc(l)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>` : ''}
     <p class="muted small-note">Previsão estatística do fornecedor de dados. Não é garantia de resultado.</p></div>`;
 }
 
@@ -1622,13 +1769,17 @@ function standingsView(e, x) {
   if (!t?.rows?.length) return '<div class="panel empty">Classificação indisponível para esta competição.</div>';
   const ours = [x.homeTeamId, x.awayTeamId];
   const zones = (t.zones || []).filter((z) => z.label);
+  // Football columns by default; other sports send their own (wins/losses, overtime, % wins…).
+  const cols = t.columns || [{ key: 'played', label: 'J' }, { key: 'won', label: 'V' }, { key: 'drawn', label: 'E' }, { key: 'lost', label: 'D' },
+    { key: 'goals', label: 'Golos' }, { key: 'points', label: 'Pts' }];
+  const cell = (r, k) => (k === 'goals' && r.goals === undefined ? `${r.goalsFor ?? ''}:${r.goalsAgainst ?? ''}` : r[k] ?? '');
+  const formOf = (f) => (!f ? '' : formChips([...f.toUpperCase()].map((c) => ({ W: 'V', D: 'E', L: 'D' }[c] || c))));
   const row = (r) => `<tr class="${ours.includes(r.teamId) ? 'highlight' : ''}${r.zone ? ` zone-${esc(r.zone.type)}` : ''}">
-    <td class="pos">${r.position ?? ''}</td><td>${esc(r.team)}</td><td class="num">${r.played ?? ''}</td><td class="num">${r.won ?? ''}</td>
-    <td class="num">${r.drawn ?? ''}</td><td class="num">${r.lost ?? ''}</td>
-    <td class="num">${r.goalsFor ?? ''}:${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td>
-    <td class="form-cell">${r.form ? formChips([...r.form.toUpperCase()].map((c) => ({ W: 'V', D: 'E', L: 'D' }[c] || c))) : ''}</td></tr>`;
+    <td class="pos">${r.position ?? ''}</td><td>${esc(r.team)}</td>
+    ${cols.map((c) => `<td class="num">${c.key === 'points' ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join('')}
+    <td class="form-cell">${formOf(r.form)}</td></tr>`;
   return `<div class="panel"><h3>${esc(e.competition)}${t.name ? ` — ${esc(t.name)}` : ''}</h3>
-    <div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num">V</th><th class="num">E</th><th class="num">D</th><th class="num">Golos</th><th class="num">Pts</th><th class="form-cell">Forma</th></tr></thead>
+    <div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Equipa</th>${cols.map((c) => `<th class="num">${esc(c.label)}</th>`).join('')}<th class="form-cell">Forma</th></tr></thead>
     <tbody>${t.rows.map(row).join('')}</tbody></table></div>
     ${zones.length ? `<div class="zone-legend">${zones.map((z) => `<span class="zone-${esc(z.type)}"><i></i>${esc(z.label)}${z.from ? ` (${z.from}${z.to && z.to !== z.from ? `–${z.to}` : ''})` : ''}</span>`).join('')}</div>` : ''}
   </div>`;
@@ -1639,109 +1790,243 @@ function rankingView(e, x) {
   if (!r) return '<div class="panel empty">Ranking indisponível neste momento.</div>';
   const card = (side) => {
     const k = r[side];
-    return `<div class="stat"><small>${sideBadge(e, side, 'mini')}${esc(e[side])}</small><strong>${k?.position ? `${k.position}.º` : 'Sem ranking'}</strong>${k?.points ? `<small>${k.points.toLocaleString('pt-PT')} pontos</small>` : ''}</div>`;
+    return `<div class="stat"><small>${sideBadge(e, side, 'mini')}${esc(e[side])}</small><strong>${k?.position ? `${k.position}.º` : 'Sem ranking'}</strong>${k?.points ? `<small>${k.points.toLocaleString('pt-PT')} ${r.valueLabel ? esc(r.valueLabel.toLowerCase()) : 'pontos'}</small>` : ''}</div>`;
   };
   const ours = [x.homeTeamId, x.awayTeamId];
   return `<div class="insight-stack"><div class="stat-grid two-col">${card('home')}${card('away')}</div>
-    ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">Pontos</th></tr></thead><tbody>
+    ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">${esc(r.valueLabel || 'Pontos')}</th></tr></thead><tbody>
       ${r.rows.map((p) => `<tr class="${ours.includes(p.playerId) ? 'highlight' : ''}"><td class="pos">${p.position ?? ''}</td><td>${p.country ? `${flagEmoji(p.country)} ` : ''}${esc(p.player)}</td><td class="num">${(p.points ?? 0).toLocaleString('pt-PT')}</td></tr>`).join('')}
     </tbody></table></div></div>` : ''}</div>`;
 }
 
-function tennisStatsView(e) {
+function sportStatsView(e) {
   const x = state.match.extras;
-  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas por set aparecem quando o encontro começar. Veja os confrontos diretos, a previsão e o ranking nos outros separadores.</div>';
+  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas aparecem quando o jogo começar. Veja os confrontos diretos, a previsão e a tabela nos outros separadores.</div>';
+  if (e.source === 'manual') return '<div class="panel empty">Sem estatísticas para este evento.</div>';
   if (!x) return '<div class="loading">A carregar estatísticas…</div>';
-  const sets = x.sets || [];
-  const detail = x.setsDetail || e.clock;
-  const block = (s) => `<div class="panel"><h3>${esc(s.set)}</h3>${s.stats.map((st) => {
+  const bars = (stats) => stats.map((st) => {
     const total = st.home + st.away;
     const hp = total ? (st.home / total) * 100 : 50;
-    return `<div class="stat-row"><div class="stat-vals"><b>${esc(`${st.home}${st.unit}`)}</b><span>${esc(st.label)}</span><b>${esc(`${st.away}${st.unit}`)}</b></div>
+    return `<div class="stat-row"><div class="stat-vals"><b>${esc(`${st.home}${st.unit || ''}`)}</b><span>${esc(st.label)}</span><b>${esc(`${st.away}${st.unit || ''}`)}</b></div>
       <div class="stat-bar"><i data-w="${hp}"></i></div></div>`;
-  }).join('')}</div>`;
-  return `<div class="insight-stack">${detail ? `<div class="panel"><h3>Parciais</h3><p class="sets-detail">${esc(detail)}</p></div>` : ''}
-    ${sets.length ? sets.map(block).join('') : '<div class="panel empty">Sem estatísticas por set para este encontro.</div>'}</div>`;
+  }).join('');
+  const groups = [...(x.sets || [])];
+  // Serve statistics streamed during a tennis match.
+  const live = state.match.live;
+  if (e.sport === 'tenis' && live?.home && live?.away) {
+    const liveStats = Object.keys(live.home).filter((k) => Number.isFinite(Number(live.home[k])) && Number.isFinite(Number(live.away[k])))
+      .map((k) => ({ label: TENNIS_STAT[k] || k.replace(/_/g, ' '), home: Number(live.home[k]), away: Number(live.away[k]), unit: /pct/.test(k) ? '%' : '' }));
+    if (liveStats.length) groups.unshift({ set: 'Ao vivo', stats: liveStats });
+  }
+  const sideName = (k) => (k === 'home' ? e.home : k === 'away' ? e.away : '');
+  const tables = (x.tables || []).map((t) => `<div class="panel"><h3>${esc(t.title || sideName(t.side))}</h3><div class="table-wrap"><table>
+    <thead><tr>${t.columns.map(([, l], i) => `<th${i ? ' class="num"' : ''}>${esc(l === 'Casa' ? e.home : l === 'Fora' ? e.away : l)}</th>`).join('')}</tr></thead>
+    <tbody>${t.rows.map((r) => `<tr>${t.columns.map(([k], i) => `<td${i ? ' class="num"' : ''}>${esc(r[k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`).join('');
+  const detail = x.setsDetail || e.clock;
+  const title = e.sport === 'tenis' ? 'Parciais' : 'Resultado';
+  const body = groups.map((g) => `<div class="panel"><h3>${esc(g.set)}</h3>${bars(g.stats)}</div>`).join('') + tables;
+  return `<div class="insight-stack">${detail ? `<div class="panel"><h3>${title}</h3><p class="sets-detail">${esc(detail)}</p></div>` : ''}
+    ${body || '<div class="panel empty">Sem estatísticas detalhadas para este jogo.</div>'}</div>`;
 }
 
-function trackerView(e) {
-  const m = state.match;
-  const note = m.es ? (m.streaming ? '' : '<p class="muted">A aguardar dados de posição deste jogo…</p>')
-    : '<p class="muted">Tracker indisponível para este jogo (sem cobertura ao vivo do fornecedor).</p>';
-  const lines = `
-    <rect x="0" y="0" width="105" height="68" class="pitch-grass"/>
-    <rect x="0.5" y="0.5" width="104" height="67" class="pitch-line"/>
-    <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" class="pitch-line"/>
-    <circle cx="52.5" cy="34" r="9.15" class="pitch-line"/><circle cx="52.5" cy="34" r="0.5" class="pitch-spot"/>
-    <rect x="0.5" y="13.85" width="16.5" height="40.3" class="pitch-line"/><rect x="88" y="13.85" width="16.5" height="40.3" class="pitch-line"/>
-    <rect x="0.5" y="24.85" width="5.5" height="18.3" class="pitch-line"/><rect x="99" y="24.85" width="5.5" height="18.3" class="pitch-line"/>
-    <circle cx="11" cy="34" r="0.5" class="pitch-spot"/><circle cx="94" cy="34" r="0.5" class="pitch-spot"/>`;
-  return `<div class="panel tracker">
-    <div class="tracker-head"><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><span id="trackerSituation" class="tracker-situation">—</span><span>${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
-    <svg class="pitch" viewBox="0 0 105 68" role="img" aria-label="Campo com a posição da bola">
-      ${lines}
-      <rect id="zoneHome" x="52.5" y="0.5" width="52" height="67" class="zone zone-home"/>
-      <rect id="zoneAway" x="0.5" y="0.5" width="52" height="67" class="zone zone-away"/>
-      <g id="ballTrail"></g>
-      <circle id="ball" cx="52.5" cy="34" r="1.6" class="ball"/>
-    </svg>
-    <p id="trackerCommentary" class="tracker-commentary"></p>
-    ${note}
-    <h3>Ações recentes</h3><div id="trackerActions" class="tracker-actions"></div>
+const TENNIS_STAT = {
+  aces: 'Ases', double_faults: 'Duplas faltas', first_serve_pct: '1.º serviço (%)', first_serve_won_pct: 'Pontos ganhos no 1.º serviço (%)',
+  second_serve_won_pct: 'Pontos ganhos no 2.º serviço (%)', break_points_saved_pct: 'Break points salvos (%)',
+};
+
+// ---------- live widget: football mini-pitch / tennis court ----------
+// Lives above the bet slip on wide screens (between the top menu and the slip) and above the
+// tabs of the match page on narrow ones. One node per match, moved between the two slots, so
+// the ball keeps animating across re-renders.
+
+const BALL_SVG = `<svg viewBox="0 0 64 64" class="trk-ball-svg" aria-hidden="true">
+  <defs><radialGradient id="trkBallShade" cx="38%" cy="32%" r="70%"><stop offset="0" stop-color="#ffffff"/><stop offset="0.7" stop-color="#eceff3"/><stop offset="1" stop-color="#aab1bb"/></radialGradient></defs>
+  <circle cx="32" cy="32" r="30" fill="url(#trkBallShade)" stroke="#1b1f24" stroke-width="2"/>
+  <polygon points="32,21 42.5,28.6 38.5,41 25.5,41 21.5,28.6" fill="#15181c"/>
+  <polygon points="32,3 40,8.5 37,17 27,17 24,8.5" fill="#15181c"/>
+  <polygon points="58,24 60.5,33.5 54,40 47.5,33 50,24.5" fill="#15181c"/>
+  <polygon points="47,55 38,60.5 32,57 35,49 44.5,48" fill="#15181c"/>
+  <polygon points="17,55 26,60.5 32,57 29,49 19.5,48" fill="#15181c"/>
+  <polygon points="6,24 3.5,33.5 10,40 16.5,33 14,24.5" fill="#15181c"/>
+  <path d="M32 21V17M42.5 28.6L50 24.5M38.5 41L44.5 48M25.5 41L19.5 48M21.5 28.6L14 24.5" stroke="#1b1f24" stroke-width="1.6"/>
+</svg>`;
+
+function footballWidget(e) {
+  const flags = ['tl', 'tr', 'bl', 'br'].map((c) => `<i class="trk-corner c-${c}"></i><i class="trk-flag f-${c}"></i>`).join('');
+  return `<div class="trk" data-kind="football">
+    <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(e.home)}</span>
+      <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
+      <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
+    <div class="trk-turf"><div class="trk-pitch" id="trkPitch">
+      <div class="trk-arrow" id="trkArrow"></div>
+      <i class="trk-half"></i><i class="trk-circle"></i><i class="trk-spot"></i>
+      <i class="trk-box l"></i><i class="trk-box r"></i><i class="trk-six l"></i><i class="trk-six r"></i>
+      <i class="trk-pen l"></i><i class="trk-pen r"></i><i class="trk-arc l"></i><i class="trk-arc r"></i>
+      ${flags}
+      <div class="trk-goal l"><i></i></div><div class="trk-goal r"><i></i></div>
+      <div class="trk-trails" id="trkTrails"></div>
+      <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
+      <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
+    </div></div>
+    <p class="trk-note" id="trkNote"></p>
+    <div class="trk-actions" id="trackerActions"></div>
   </div>`;
+}
+
+function tennisWidget(e) {
+  return `<div class="trk" data-kind="tennis">
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>
+      <span class="trk-score"><b id="trkSetLabel">S1</b><small id="trkPoint">—</small></span>
+      <span class="trk-team away">${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
+    <div class="court-wrap"><div class="court" id="trkCourt">
+      <i class="court-alley top"></i><i class="court-alley bottom"></i><i class="court-service l"></i><i class="court-service r"></i>
+      <i class="court-center l"></i><i class="court-center r"></i><i class="court-net"></i>
+      <div class="court-ball" id="trkTennisBall"></div>
+    </div></div>
+    <div class="court-sets" id="trkSets"></div>
+    <p class="trk-note">A bola marca quem serve e de que lado do campo (pares/ímpares de pontos).</p>
+  </div>`;
+}
+
+/** Mounts / moves the widget for the current match into the right slot. */
+function mountLiveWidget() {
+  const m = state.match;
+  const e = m.data;
+  const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
+  if (!kind) {
+    m.widget?.remove();
+    m.widget = null;
+    return;
+  }
+  if (!m.widget || m.widgetKind !== kind) {
+    m.widget?.remove();
+    const holder = document.createElement('div');
+    holder.innerHTML = kind === 'football' ? footballWidget(e) : tennisWidget(e);
+    m.widget = holder.firstElementChild;
+    m.widgetKind = kind;
+  }
+  const wide = window.matchMedia('(min-width: 1001px)').matches;
+  const slot = wide ? $('#sideTracker') : $('#trackerInline');
+  if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
+  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); } else updateTennisCourt();
 }
 
 function afterMatchRender() {
   // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
+  if (state.match.data?.sport === 'tenis') updateServe(state.match.data);
   $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
-  if (state.match.tab === 'tracker') {
-    updateTracker();
-    updateActionsList();
-  }
+  mountLiveWidget();
 }
 
-function updateTracker() {
-  const ball = $('#ball');
-  if (!ball) return;
-  const b = state.match.ball;
-  const svgNS = 'http://www.w3.org/2000/svg';
-  if (b && b.x !== null && b.x !== undefined) {
-    ball.setAttribute('cx', String((b.x / 100) * 105));
-    ball.setAttribute('cy', String((b.y / 100) * 68));
+const DANGER = new Set(['dangerous_attack', 'corner', 'goal', 'freekick', 'shotoffwoodwork', 'goalkeeper_saved']);
+
+function updateTracker({ instant = false } = {}) {
+  const m = state.match;
+  const w = m.widget;
+  if (!w || m.widgetKind !== 'football') return;
+  const e = m.data;
+  $('#trkHomeScore', w).textContent = e.homeScore ?? 0;
+  $('#trkAwayScore', w).textContent = e.awayScore ?? 0;
+  $('#trkClock', w).textContent = e.clock || '';
+  const b = m.ball;
+  const note = $('#trkNote', w);
+  note.textContent = m.es ? (m.streaming ? (b?.commentary || '') : 'A aguardar dados de posição deste jogo…')
+    : 'Posição da bola indisponível (jogo sem cobertura ao vivo do fornecedor).';
+  const ball = $('#trkBall', w);
+  const arrow = $('#trkArrow', w);
+  const badge = $('#trkBadge', w);
+  if (!b || b.x === undefined || b.x === null) {
+    ball.classList.add('idle');
+    arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+    badge.classList.remove('on');
+    return;
   }
-  const trail = $('#ballTrail');
-  if (trail) {
-    trail.replaceChildren(...state.match.trail.map((p, i, arr) => {
-      const c = document.createElementNS(svgNS, 'circle');
-      c.setAttribute('cx', String((p.x / 100) * 105));
-      c.setAttribute('cy', String((p.y / 100) * 68));
-      c.setAttribute('r', '0.9');
-      c.setAttribute('class', 'trail');
-      c.setAttribute('opacity', String(((i + 1) / arr.length) * 0.5));
-      return c;
-    }));
+  ball.classList.remove('idle');
+  ball.classList.toggle('instant', instant);
+  ball.style.left = `${b.x}%`;
+  ball.style.top = `${b.y}%`;
+
+  // Momentum arrow: from the attacking side's own goal line to the ball, stronger when dangerous.
+  const side = b.side === 'away' ? 'away' : 'home';
+  const danger = DANGER.has(b.situation);
+  const depth = side === 'home' ? b.x : 100 - b.x;
+  const tier = danger ? 'danger' : depth > 60 ? 'attacking' : 'neutral';
+  const near = side === 'home' ? 0 : 100;
+  const dir = b.x >= near ? 1 : -1;
+  const body = dir === 1 ? Math.max(near, b.x - 6) : Math.min(near, b.x + 6);
+  arrow.style.clipPath = `polygon(${near}% 0%, ${body}% 0%, ${b.x}% 50%, ${body}% 100%, ${near}% 100%)`;
+  arrow.className = `trk-arrow ${side} ${tier}`;
+
+  // Situation badge floating near the ball.
+  badge.classList.add('on');
+  badge.classList.toggle('away', side === 'away');
+  badge.classList.toggle('hot', danger);
+  $('#trkBadgeTeam', w).textContent = side === 'away' ? e.away : e.home;
+  $('#trkBadgeText', w).textContent = SITUATION_LABEL[b.situation] || (b.situation ? String(b.situation).replaceAll('_', ' ') : 'Em jogo');
+  badge.style.left = `${Math.min(78, Math.max(22, b.x))}%`;
+  badge.style.top = `${b.y > 55 ? Math.max(14, b.y - 22) : Math.min(86, b.y + 22)}%`;
+
+  // Fading trail behind the ball, from where it was to where it is (a comet that dissolves).
+  const from = m.prevBall;
+  if (!instant && from) {
+    const pitch = $('#trkPitch', w).getBoundingClientRect();
+    const dx = ((b.x - from.x) / 100) * pitch.width;
+    const dy = ((b.y - from.y) / 100) * pitch.height;
+    const len = Math.hypot(dx, dy);
+    if (len > 6) {
+      const trail = document.createElement('i');
+      trail.className = `trk-trail ${danger ? 'hot' : ''}`;
+      trail.style.left = `${from.x}%`;
+      trail.style.top = `${from.y}%`;
+      trail.style.width = `${len}px`;
+      trail.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      const box = $('#trkTrails', w);
+      box.append(trail);
+      while (box.children.length > 4) box.firstElementChild.remove();
+      trail.addEventListener('animationend', () => trail.remove());
+    }
   }
-  const side = b?.side;
-  $('#zoneHome')?.classList.toggle('on', side === 'home');
-  $('#zoneAway')?.classList.toggle('on', side === 'away');
-  const sit = $('#trackerSituation');
-  if (sit) {
-    sit.textContent = b?.situation ? (SITUATION_LABEL[b.situation] || b.situation) : '—';
-    sit.className = `tracker-situation ${b?.situation === 'dangerous_attack' || b?.situation === 'goal' ? 'hot' : ''}`;
-  }
-  const com = $('#trackerCommentary');
-  if (com) com.textContent = b?.commentary || '';
+  m.prevBall = null;
 }
 
 function updateActionsList() {
-  const box = $('#trackerActions');
+  const box = state.match.widget && $('#trackerActions', state.match.widget);
   if (!box) return;
   const e = state.match.data;
-  const items = [...state.match.actions].reverse().slice(0, 10);
-  box.innerHTML = items.length
-    ? items.map((a) => `<div class="incident ${a.team || ''}"><span class="inc-min">${a.minute ?? ''}'</span><span>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</span>
-      <span class="muted">${esc(a.player || '')}${a.team ? ` · ${esc(a.team === 'home' ? e?.home : e?.away)}` : ''}</span></div>`).join('')
-    : '<p class="muted">Sem ações detalhadas para este jogo.</p>';
+  const items = [...state.match.actions].reverse().slice(0, 4);
+  box.innerHTML = items.map((a) => `<div class="trk-action ${a.team || ''}"><span>${a.minute ?? ''}'</span><b>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</b>
+    <small>${esc(a.player || (a.team === 'home' ? e?.home : a.team === 'away' ? e?.away : ''))}</small></div>`).join('');
+}
+
+const POINT_VALUE = { 0: 0, 15: 1, 30: 2, 40: 3, A: 4, AD: 4 };
+/** Tennis point as shown to the user: 15 / 30 / 40 / AD. */
+const fmtPoint = (p) => (String(p).toUpperCase() === 'A' ? 'AD' : String(p));
+
+function tennisPoints(point) {
+  const [h, a] = String(point || '').split('-').map((x) => x.trim());
+  return h === undefined || a === undefined || h === '' ? null : [fmtPoint(h), fmtPoint(a)];
+}
+
+function updateTennisCourt() {
+  const m = state.match;
+  const w = m.widget;
+  if (!w || m.widgetKind !== 'tennis') return;
+  const t = m.data.tennis || {};
+  const pts = tennisPoints(t.point);
+  $('#trkSetLabel', w).textContent = `S${t.set || 1}`;
+  $('#trkPoint', w).textContent = pts ? `${pts[0]} - ${pts[1]}` : '—';
+  $('#trkSets', w).innerHTML = (t.sets || []).map(([h, a], i) => `<span class="${i === (t.sets.length - 1) ? 'cur' : ''}"><small>S${i + 1}</small>${h}-${a}</span>`).join('');
+  const ball = $('#trkTennisBall', w);
+  if (!t.server) { ball.classList.add('idle'); return; }
+  // Server at their baseline; deuce court after an even number of points, ad court after odd.
+  const raw = String(t.point || '0-0').split('-').map((x) => x.trim().toUpperCase());
+  const played = raw.reduce((n, p) => n + (POINT_VALUE[p] ?? (Number(p) || 0)), 0);
+  const deuce = played % 2 === 0;
+  const home = t.server === 'home';
+  ball.classList.remove('idle');
+  ball.style.left = home ? '3%' : '97%';
+  // Facing the net from the left, the right-hand (deuce) court is the bottom half; from the right, the top.
+  ball.style.top = home ? (deuce ? '70%' : '30%') : (deuce ? '30%' : '70%');
 }
 
 async function init() {

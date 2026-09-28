@@ -150,7 +150,7 @@ export function normalizeTennisPrediction(data, homeId) {
 
 export function createTennisFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40,
-  fetchImpl = globalThis.fetch, log = () => {},
+  fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
 
@@ -285,14 +285,22 @@ export function createTennisFeed(db, {
         const row = upsert({ ...m, status: m.status === 'scheduled' ? 'live' : m.status });
         if (!row || row.closed) return null;
         if (!['live', 'scheduled'].includes(m.status)) return row;
-        db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
-          .run(m.homeSets ?? 0, m.awaySets ?? 0, m.setsDetail, nowIso(), row.id);
+        // A match followed on the WebSocket has a point-by-point score; the REST poll only opens it.
+        if (!liveSocket?.isFollowing(m.externalId)) {
+          // Without the point-by-point feed the set in play comes from the set scores.
+          const sets = String(m.setsDetail || '').split(',').map((x) => x.trim().match(/^(\d+)\s*-\s*(\d+)/)).filter(Boolean).map((x) => [Number(x[1]), Number(x[2])]);
+          const detail = JSON.stringify({ set: sets.length || 1, point: null, server: null, sets });
+          db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, live_detail = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
+            .run(m.homeSets ?? 0, m.awaySets ?? 0, m.setsDetail, detail, nowIso(), row.id);
+        } else db.prepare("UPDATE events SET status = 'live', postponed_at = NULL WHERE id = ?").run(row.id);
         suspend(row.id); // pre-match price only
         updated += 1;
         return null;
       });
       if (terminal) applyTerminal(terminal, m);
     }
+    // Point-by-point scoreboard for the matches in play (WebSocket addon).
+    liveSocket?.track(live.filter((m) => m.status === 'live' || m.status === 'scheduled').map((m) => m.externalId));
     return { live: live.length, updated };
   }
 

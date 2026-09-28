@@ -70,8 +70,29 @@ API (`/tennis/api/v2/`):
   1.º set anula; desistência depois disso dá a vitória a quem passa.
 - Na página do encontro: estatísticas por set (ases, duplas faltas, serviço…), confrontos diretos e
   forma recente, previsão do modelo e ranking ATP/WTA (top 20 com os dois jogadores).
+- Ao vivo, com o addon WebSocket, o marcador é atualizado ponto a ponto pelo canal multi-desporto
+  (`wss://sports.bzzoiro.com/ws/live/`, `"sport": "tennis"`): sets, jogos, pontos, quem serve e as
+  estatísticas de serviço. Sem cobertura, o marcador vem da API a cada 30 s.
 - Sem o addon a API responde 402: o painel *Administração → Dados ao vivo* mostra "Sem Sports Addon".
   `TENNIS=0` desliga o ténis.
+
+## Basquetebol, hóquei no gelo, dardos e CS2
+
+Também com o Sports Addon (`server/sports.js`, um motor comum com uma configuração por desporto):
+
+| Desporto | Mercados | Liquidação | Página do jogo |
+|---|---|---|---|
+| Basquetebol | Vencedor (incl. prolongamento) | resultado final | estatísticas por equipa, box score, previsão, classificação |
+| Hóquei no gelo | Resultado 1X2 **em tempo regulamentar** e empate anula; ou vencedor incl. prolongamento quando as casas só dão 2 odds | 1X2 pelos 3 períodos; vencedor pelo final | golos por período, H2H e forma, previsão, classificação (com VP/DP) |
+| Dardos | Vencedor do encontro | por sets/legs; walkover anula | legs por set, H2H com médias de 3 dardos, previsão, ranking PDC |
+| CS2 | Vencedor do encontro | por mapas; empate num BO2 anula | mapas, comparação das equipas (mapas, rondas T/CT, K/D), H2H, previsão |
+
+- As odds são a média das casas de apostas (`/{id}/odds/`), atualizadas a cada 10 min (3 min na
+  última hora). Os mercados fecham ao início do jogo (as odds são só pré-jogo).
+- `SPORTS_ADDON=basquetebol,hoquei,dardos,esports` escolhe os desportos (vazio desliga todos) e
+  `SPORTS_DAYS` quantos dias importar.
+- Padel não tem odds na API (não dá para apostar) e as corridas de cavalos precisam de um modelo de
+  corrida com vários participantes — ficaram de fora nesta versão.
 
 ## Casino (slots e casino ao vivo)
 
@@ -104,6 +125,19 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
   "bonus calls": os jogos correm sempre com o RTP por omissão do fornecedor. Confirme com o agregador
   que os jogos são originais e licenciados para o seu mercado.
 
+## Destaques e Ao Vivo
+
+- **Ordem**: futebol primeiro, depois ténis, basquetebol, hóquei, dardos e CS2; dentro de cada
+  desporto, as ligas grandes primeiro (`server/leagues.js`: Liga dos Campeões, Premier League, LaLiga,
+  Serie A, Bundesliga, Ligue 1, Liga Portugal…; Grand Slams e Masters; NBA/EuroLeague; NHL; majors
+  de dardos e de CS2).
+- **Destaques** (página inicial): "Ao Vivo agora" e "Eventos em destaque" são carrosséis na
+  horizontal. Entram primeiro os eventos destacados no painel, depois todo o futebol de ligas grandes
+  e um evento de cada um dos outros desportos (o de liga maior). Sem futebol de liga grande, entram
+  os melhores jogos de futebol que houver.
+- **Ténis ao vivo**: em vez do minuto aparece o set (S1, S2, S3…) e, por baixo, o ponto (15, 30,
+  40, AD); em cada jogador, sets ganhos, jogos no set e ponto, com quem serve assinalado.
+
 ## Página do jogo e mercados
 
 Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma página só desse jogo:
@@ -116,8 +150,13 @@ Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma
   seleção por jogo.
 - **Estatísticas**: posse, xG, remates, cantos, faltas, cartões e a cronologia (golos, cartões,
   substituições, VAR), de `/events/{id}/stats/` e `/incidents/`.
-- **Tracker**: campo 2D com a posição da bola, a situação de jogo (ataque, ataque perigoso, canto…) e
-  as ações recentes, a partir das mensagens `livedata` e `action` do WebSocket.
+- **Minicampo 2D** (por cima do boletim; no telemóvel, por cima dos separadores): relvado com linhas,
+  meias-luas, arcos e bandeirolas de canto e balizas com rede; bola oficial com rasto que se desvanece;
+  seta de pressão desde a baliza da equipa que ataca até à bola (mais forte em ataque perigoso/canto);
+  etiqueta com a equipa e a situação; últimas ações. As coordenadas vêm do WebSocket "a atacar da
+  esquerda para a direita" para a equipa com a bola, por isso as da equipa visitante são espelhadas.
+- **Ténis**: campo com a bola do lado de quem serve (lado dos pares/ímpares conforme os pontos do
+  jogo) e os sets. A API de ténis não envia posição da bola, só pontos e serviço.
 
 - **Confrontos (H2H)**: vitórias, empates e golos entre as duas equipas e os últimos jogos (com o
   resultado do ponto de vista da equipa da casa), de `/events/{id}/h2h/`.
@@ -160,6 +199,7 @@ server/
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
   tennis.js     importação de ténis ATP/WTA (encontros, odds, resultados, H2H, previsões, ranking)
+  sports.js     basquetebol, hóquei no gelo, dardos e CS2 (Sports Addon)
   casino.js     casino (agregador Agent API v4, modo Transfer)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite

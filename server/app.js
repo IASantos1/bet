@@ -11,10 +11,12 @@ import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
+import { SPORT_SPECS, sportTeamImage } from './sports.js';
+import { leagueTier } from './leagues.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE = 'cb_session';
-const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'voleibol', 'andebol'];
+const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // ---------- helpers ----------
@@ -44,7 +46,8 @@ function ageOn(birthdate, today = new Date()) {
 
 // Club badges from the data provider's public image proxy (no token needed).
 const providerImg = (type) => (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${type}/${id}/?bg=transparent` : null);
-const teamLogo = providerImg('team');
+const footballLogo = providerImg('team');
+const teamLogo = (source, id) => footballLogo(source, id) || sportTeamImage(source, id);
 // League badge; for national-team competitions this is the flag/emblem the provider publishes.
 const leagueLogo = providerImg('league');
 
@@ -69,10 +72,12 @@ function scoreInput(v, label) {
   return n;
 }
 
+const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -162,35 +167,44 @@ export function createApp(db, {
    * Events with their match-result (1X2) selections — what lists and cards show. With
    * `allMarkets`, also every market grouped for the match page.
    */
+  // Market titles per sport ("Vencedor do encontro" in tennis, regulation time in ice hockey…).
+  const marketName = (sport, m) => {
+    if (sport === 'tenis' && m === '1x2') return 'Vencedor do encontro';
+    return SPORT_SPECS[sport]?.marketName?.[m] || MARKETS[m].name;
+  };
+
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
     const events = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
       `SELECT id, event_id, market, code, odds_x100, active FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})
-       ${allMarkets ? '' : "AND (market = '1x2' OR active = 1)"}`
+       ${allMarkets ? '' : "AND (market IN ('1x2', 'ml') OR active = 1)"}`
     ).all(...ids);
     const byEvent = new Map(ids.map((id) => [id, []]));
     for (const s of sels) byEvent.get(s.event_id).push(s);
     return events.map((e) => {
       const rows = byEvent.get(e.id);
+      // Main market on the cards: 1X2, or the match winner in sports without a draw.
+      const main = rows.some((s) => s.market === '1x2') || !rows.some((s) => s.market === 'ml') ? '1x2' : 'ml';
       const pub = (s) => ({ id: s.id, market: s.market, code: s.code, label: selectionLabel(s.market, s.code, e.home, e.away), odds: s.odds_x100 / 100, active: !!s.active });
       const out = {
         id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         clock: e.clock, result: e.result, featured: !!e.featured, source: e.source,
-        selections: rows.filter((s) => s.market === '1x2').sort((a, b) => codeRank('1x2', a.code) - codeRank('1x2', b.code)).map(pub),
-        // How many more markets the match page offers (drives the "+N" on cards).
-        marketCount: new Set(rows.filter((s) => s.active && s.market !== '1x2').map((s) => s.market)).size,
+        selections: rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub),
+        marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => s.market)).size,
         homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
+        tier: leagueTier(e.sport, e.competition),
+        tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
         liveTracker: e.source === 'bzzoiro' && e.status === 'live',
       };
       if (allMarkets) {
         out.markets = MARKET_ORDER
           .map((m) => ({
-            market: m, name: e.sport === 'tenis' && m === '1x2' ? 'Vencedor do encontro' : MARKETS[m].name,
+            market: m, name: marketName(e.sport, m),
             selections: rows.filter((s) => s.market === m).sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
           }))
           .filter((m) => m.selections.length);
@@ -244,7 +258,8 @@ export function createApp(db, {
   const providerFor = (ev) => {
     if (ev.source === 'bzzoiro' && feed?.status().enabled) return feed;
     if (ev.source === TENNIS_SOURCE && tennis?.status().enabled) return tennis;
-    return null;
+    const other = Object.values(sports).find((f) => f.source === ev.source);
+    return other?.status().enabled ? other : null;
   };
 
   // Statistics and timeline for the match page (feed matches only).
@@ -272,17 +287,18 @@ export function createApp(db, {
   // Server-sent events for a live match: score/clock/stats, ball position, actions and odds changes.
   app.get('/api/events/:id/live', (req, res) => {
     const ev = eventRow(req.params.id);
-    if (!ev || ev.source !== 'bzzoiro' || ev.status !== 'live' || !liveSocket) return res.status(204).end();
+    const socket = ev?.source === 'bzzoiro' ? liveSocket : ev?.source === TENNIS_SOURCE ? tennisLive : null;
+    if (!ev || ev.status !== 'live' || !socket) return res.status(204).end();
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
     const send = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    send('snapshot', { ...liveSocket.snapshot(ev.id), following: liveSocket.isFollowing(ev.external_id) });
+    send('snapshot', { ...socket.snapshot(ev.id), following: socket.isFollowing(ev.external_id) });
     const onMessage = (m) => send(m.type, m.data);
-    liveSocket.bus.on(`e:${ev.id}`, onMessage);
+    socket.bus.on(`e:${ev.id}`, onMessage);
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
     req.on('close', () => {
       clearInterval(heartbeat);
-      liveSocket.bus.off(`e:${ev.id}`, onMessage);
+      socket.bus.off(`e:${ev.id}`, onMessage);
     });
   });
 
@@ -692,7 +708,8 @@ export function createApp(db, {
   admin.get('/feed', (_req, res) => {
     res.json({
       ...(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' }),
-      tennis: tennis ? tennis.status() : { enabled: false },
+      tennis: tennis ? { ...tennis.status(), liveSocket: tennisLive ? tennisLive.status() : { enabled: false } } : { enabled: false },
+      sports: Object.values(sports).map((f) => f.status()),
     });
   });
 
@@ -701,6 +718,7 @@ export function createApp(db, {
       if (!feed || !feed.status().enabled) throw new HttpError(409, 'Feed desativado: defina BZZOIRO_API_TOKEN no servidor.');
       const result = await feed.syncAll();
       if (tennis?.status().enabled) result.tennis = await tennis.syncAll();
+      for (const [key, f] of Object.entries(sports)) if (f.status().enabled) result[key] = await f.syncAll();
       res.json({ result, status: feed.status() });
     } catch (err) { next(err); }
   });
