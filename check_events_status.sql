@@ -1,1 +1,0 @@
-SELECT count(*) as total, status, is_live, market_status FROM events GROUP BY status, is_live, market_status;

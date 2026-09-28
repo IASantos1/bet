@@ -1,0 +1,10 @@
+{
+  "name": "ClassicBet",
+  "short_name": "ClassicBet",
+  "start_url": "./#/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#d71920",
+  "description": "Apostas desportivas, ao vivo e casino.",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

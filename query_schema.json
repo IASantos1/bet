@@ -1,3 +1,0 @@
-{
-    "query": "PRAGMA table_info(events)"
-}
