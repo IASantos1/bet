@@ -182,7 +182,7 @@ async function loadTab() {
       main.innerHTML = events.length ? events.map(adminEventCard).join('') : '<div class="panel empty">Sem eventos. Crie um em "Novo evento".</div>';
     }
   } catch (err) {
-    if (err.status === 401 || err.status === 403) { state.user = null; render(); return; }
+    if (err.status === 401 || err.status === 403) { state.user = null; $('#app').innerHTML = loginView(err.message); return; }
     toast('Erro', err.message, 'error');
   }
 }
@@ -392,6 +392,9 @@ const handlers = {
         await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
         throw new Error('Esta conta não é de administrador.');
       }
+      // The session lives in a cookie: if the browser did not keep it, say so instead of looping.
+      const me = await api('/api/me').catch(() => ({ user: null }));
+      if (!me.user) throw new Error('Palavra-passe correta, mas o navegador não guardou a sessão. Ative os cookies para este site (ou saia do modo privado) e tente de novo.');
       state.user = user;
       go(location.hash.slice(1) || 'painel');
     } catch (err) {

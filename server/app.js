@@ -130,7 +130,9 @@ export function createApp(db, {
     if (origin) {
       let host = '';
       try { host = new URL(origin).host; } catch { /* invalid origin */ }
-      if (host !== req.get('host')) return next(new HttpError(403, 'Origem não permitida.'));
+      // Behind a proxy (Railway, Render…) the public host can arrive as X-Forwarded-Host.
+      const own = [req.get('host'), ...String(req.get('x-forwarded-host') || '').split(',')].map((h) => h?.trim()).filter(Boolean);
+      if (!own.includes(host)) return next(new HttpError(403, 'Origem não permitida.'));
     }
     next();
   });
@@ -354,7 +356,9 @@ export function createApp(db, {
     if (!loginLimiter(`${req.ip}|${email}`)) throw new HttpError(429, 'Demasiadas tentativas. Tente mais tarde.');
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user || !verifyPassword(password, user.password_hash)) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
+    // The administrator's password is stored trimmed; a phone keyboard may add a trailing space.
+    const ok = user && (verifyPassword(password, user.password_hash) || (password.trim() !== password && verifyPassword(password.trim(), user.password_hash)));
+    if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
     startSession(res, user.id);
     res.json({ user: publicUser(user) });
   });

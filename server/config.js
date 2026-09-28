@@ -22,6 +22,9 @@ for (const file of [path.join(path.dirname(fileURLToPath(import.meta.url)), '..'
 }
 
 const env = process.env;
+// Hosting dashboards (Railway, Render…) keep quotes typed in a variable's value: ADMIN_PASSWORD="x"
+// would otherwise need the quotes typed at login too.
+const unquote = (v) => String(v || '').trim().replace(/^(["'`])(.*)\1$/s, '$2').trim();
 
 const int = (v, fallback) => {
   const n = Number.parseInt(v ?? '', 10);
@@ -35,9 +38,9 @@ export const config = {
   dbPath: env.DB_PATH || 'data/classicbet.db',
 
   // Initial administrator. In production both must be set explicitly.
-  adminEmail: (env.ADMIN_EMAIL || '').trim().toLowerCase(),
+  adminEmail: unquote(env.ADMIN_EMAIL).toLowerCase(),
   // Surrounding spaces and line breaks (common when pasting into a hosting panel) are dropped.
-  adminPassword: (env.ADMIN_PASSWORD || '').trim(),
+  adminPassword: unquote(env.ADMIN_PASSWORD),
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.
