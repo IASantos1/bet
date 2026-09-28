@@ -32,7 +32,9 @@ export function createLiveSocket(db, {
   const state = {
     enabled: !!token && typeof WebSocketImpl === 'function',
     wanted: new Set(), untracked: new Set(), sockets: [], fatal: null, lastError: null, frames: 0, lastFrameAt: null,
+    types: {}, bookDropped: null,
   };
+  let book = bookmaker;
   let stopped = false;
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
@@ -194,6 +196,7 @@ export function createLiveSocket(db, {
     let f;
     try { f = JSON.parse(typeof raw === 'string' ? raw : String(raw)); } catch { return; }
     state.frames += 1;
+    if (f && typeof f.type === 'string') state.types[f.type] = (state.types[f.type] || 0) + 1;
     state.lastFrameAt = nowIso();
     try {
       if (sport === 'tennis' && f.type === 'event') applyTennis(f, 'event');
@@ -212,6 +215,15 @@ export function createLiveSocket(db, {
       else if (f.type === 'action') applyAction(f);
       else if (f.type === 'error') {
         state.lastError = `${f.code}: ${f.message || ''}`.trim();
+        // The bookmaker's own prices may need a plan we do not have: never let that cost the
+        // consensus feed. Drop bookmaker_slug and subscribe again to everything.
+        if (book && (/bookmaker|odds_book/i.test(state.lastError) || f.code === 'subscription_required' || f.code === 'bad_request')) {
+          state.bookDropped = state.lastError;
+          book = null;
+          log(`ws: odds da casa indisponíveis (${state.lastError}); a usar só o consenso`);
+          for (const so of state.sockets) for (const id of so.subs) send(so, subscribeMsg(id));
+          return;
+        }
         if (f.event_id !== undefined && f.event_id !== null && ['not_tracked', 'bad_event_id'].includes(f.code)) {
           const id = String(f.event_id);
           state.untracked.add(id);
@@ -227,7 +239,7 @@ export function createLiveSocket(db, {
 
   // ---------- sockets ----------
 
-  const subscribeMsg = (id) => ({ action: 'subscribe', event_id: Number(id), ...(sport ? { sport } : {}), ...(bookmaker ? { bookmaker_slug: bookmaker } : {}) });
+  const subscribeMsg = (id) => ({ action: 'subscribe', event_id: Number(id), ...(sport ? { sport } : {}), ...(book ? { bookmaker_slug: book } : {}) });
 
   function send(sock, msg) {
     if (sock.open) sock.ws.send(JSON.stringify(msg));
@@ -314,7 +326,7 @@ export function createLiveSocket(db, {
       enabled: state.enabled, fatal: state.fatal, lastError: state.lastError,
       sockets: state.sockets.length, connected: state.sockets.filter((s) => s.open).length,
       following: state.sockets.reduce((n, s) => n + s.subs.size, 0), notCovered: state.untracked.size,
-      bookmaker, oddsLog: oddsLog.slice(0, 15),
+      bookmaker: book, bookDropped: state.bookDropped || null, frameTypes: { ...state.types }, oddsLog: oddsLog.slice(0, 15),
       frames: state.frames, lastFrameAt: state.lastFrameAt,
     }),
   };

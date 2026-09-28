@@ -219,3 +219,22 @@ test('bookmaker prices (odds_book) are subscribed and preferred; a consensus pri
   live.stop();
   db.close();
 });
+
+test('a subscription refused because of the bookmaker falls back to the consensus', async () => {
+  FakeSocket.all = [];
+  const db = openDb(':memory:');
+  liveEvent(db, 43);
+  const live = createLiveSocket(db, { token: 'tok', WebSocketImpl: FakeSocket, bookmaker: 'bet365' });
+  live.track(['43']);
+  await tick();
+  const sock = FakeSocket.all[0];
+  sock.push({ type: 'error', code: 'subscription_required', message: 'odds_book requires the Pro plan', event_id: 43 });
+  assert.deepEqual(sock.sent.at(-1), { action: 'subscribe', event_id: 43 });
+  const st = live.status();
+  assert.equal(st.bookmaker, null);
+  assert.equal(st.fatal, null);
+  assert.match(st.bookDropped, /odds_book/);
+  assert.equal(st.frameTypes.error, 1);
+  live.stop();
+  db.close();
+});
