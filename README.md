@@ -27,7 +27,7 @@ administrador de desenvolvimento: **admin@classicbet.local / admin12345**. Em pr
 | --- | --- |
 | Conta | Registo com verificação de idade (18+), login/logout, sessões seguras (cookie httpOnly), dados pessoais, alteração de palavra-passe |
 | Carteira | Saldo, depósitos, pedidos de levantamento por IBAN, extrato de movimentos com saldo após cada operação |
-| Desporto | Eventos pré-jogo e ao vivo por desporto e competição, pesquisa, resultados, odds atualizadas a cada 10 s |
+| Desporto | Eventos pré-jogo e ao vivo por desporto e competição, pesquisa, resultados, odds atualizadas a cada 5 s |
 | Boletim | Simples (uma aposta por seleção) e múltipla, valores rápidos, retorno potencial, aviso e confirmação quando as odds mudam |
 | Apostas | Validação no servidor (odds atuais, mercado aberto, limites, saldo), histórico com estado de cada seleção |
 | Liquidação | Ao lançar o resultado final, as apostas são decididas e os prémios creditados; eventos cancelados anulam e reembolsam |
@@ -172,7 +172,7 @@ Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma
 Estes dados aparecem antes e durante o jogo e ficam em cache 10 minutos.
 
 O servidor reencaminha o WebSocket para o navegador em tempo real por Server-Sent Events
-(`/api/events/<id>/live`); sem WebSocket, a página atualiza a cada 15 s.
+(`/api/events/<id>/live`); sem WebSocket, a página atualiza a cada 5 s.
 
 ## Liquidação de mercados
 
@@ -251,3 +251,14 @@ com login próprio; o site de apostas não o mostra.
   essa palavra-passe. Uma conta que não seja de administrador é recusada no login do painel.
 - Secções: Painel (resumo do dia, levantamentos pendentes), Eventos, Liquidação, Apostas,
   Levantamentos, Utilizadores, Novo evento, Dados ao vivo e Casino.
+
+## Frequência de atualização
+
+| O quê | Intervalo | Variável |
+|---|---|---|
+| Placar e odds ao vivo (servidor ⇄ fornecedor) | 5 s (futebol e ténis com WebSocket: instantâneo) | `LIVE_POLL_SECONDS` |
+| Odds pré-jogo de cada jogo | 60 s (30 s na última hora) | `PREMATCH_ODDS_SECONDS` |
+| Importação de jogos / resultados | 10 min / 2 min | — |
+| Páginas no navegador (listas, jogo, saldo no casino) | 5 s | — |
+
+Cada ciclo tem o seu próprio bloqueio, por isso uma importação demorada não atrasa o placar ao vivo.

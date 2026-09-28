@@ -866,7 +866,7 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = null;
     if (state.user?.casinoActive) closeCasino();
   } else if (!state.casinoTimer) {
-    state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 10_000);
+    state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 5_000);
   }
   document.body.classList.toggle('immersive', immersive);
   // Carousels keep their position when the page refreshes itself (odds, live scores).
@@ -1282,7 +1282,7 @@ function matchPage(sub) {
       const live = state.match.data?.status === 'live';
       loadMatch(id, { quiet: true });
       if (live) loadMatchExtras(id);
-    }, 15_000);
+    }, 5_000);
   }
   const e = m.data;
   if (!e) return '<div class="loading">A carregar o jogo…</div>';
@@ -1762,7 +1762,7 @@ async function init() {
   loadCasino({ reset: true });
   await refreshEvents();
   // Live events refresh every 10s; the rest of the board rides along.
-  setInterval(() => { if (!document.hidden) refreshEvents(); }, 10_000);
+  setInterval(() => { if (!document.hidden) refreshEvents(); }, 5_000);
   // Keep the balance fresh (settlements happen server-side).
   setInterval(() => { if (!document.hidden && state.user) refreshMe(); }, 60_000);
 }

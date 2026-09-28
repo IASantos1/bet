@@ -16,7 +16,8 @@ const liveSocket = config.feed.token && config.feed.liveWs
   : null;
 const feed = createFeed(db, { ...config.feed, log, liveSocket });
 seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });
-const stopFeed = feed.start();
+const loops = { liveMs: config.livePollSeconds * 1000, oddsMs: config.prematchOddsSeconds * 1000 };
+const stopFeed = feed.start(loops);
 const tennisToken = config.tennis.enabled ? config.feed.token : '';
 const tennisLive = tennisToken && config.feed.liveWs
   ? createLiveSocket(db, {
@@ -26,15 +27,15 @@ const tennisLive = tennisToken && config.feed.liveWs
   : null;
 const tennis = createTennisFeed(db, {
   token: tennisToken, baseUrl: config.tennis.baseUrl, days: config.tennis.days, liveSocket: tennisLive,
-  liveOddsMaxAge: config.liveOddsMaxAgeSeconds,
+  liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds,
   log: (msg) => console.warn(`[ténis] ${msg}`),
 });
-const stopTennis = tennis.start();
+const stopTennis = tennis.start({ liveMs: loops.liveMs });
 
 const sports = Object.fromEntries(config.sportsAddon.sports.filter((k) => SPORT_SPECS[k]).map((k) => [k, createSportFeed(db, k, {
-  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, log: (msg) => console.warn(`[${k}] ${msg}`),
+  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, log: (msg) => console.warn(`[${k}] ${msg}`),
 })]));
-const stopSports = Object.values(sports).map((f) => f.start());
+const stopSports = Object.values(sports).map((f) => f.start({ liveMs: loops.liveMs }));
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 

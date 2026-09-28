@@ -538,16 +538,20 @@ export function createFeed(db, {
   }
 
   /** Starts the polling loops; returns a stop function. */
-  function start({ liveMs = 30_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000 } = {}) {
+  function start({ liveMs = 5_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000, oddsMs = 60_000 } = {}) {
     if (!state.enabled) return () => {};
+    // One lock per loop: a slow fixtures import never holds back the live score (every few seconds).
+    const busy = new Set();
     const guard = (kind, fn) => async () => {
-      if (state.running) return;
-      state.running = true;
-      try { await run(kind, fn); } finally { state.running = false; }
+      if (busy.has(kind)) return;
+      busy.add(kind);
+      try { await run(kind, fn); } finally { busy.delete(kind); }
     };
     const timers = [
       setInterval(guard('live', syncLive), liveMs),
       setInterval(guard('fixtures', syncFixtures), fixturesMs),
+      // Pre-match prices between fixture imports: the bulk feed only returns lines changed since last time.
+      setInterval(guard('odds', syncOdds), oddsMs),
       setInterval(guard('results', syncResults), resultsMs),
     ];
     syncAll();

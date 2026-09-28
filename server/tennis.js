@@ -151,7 +151,7 @@ export function normalizeTennisPrediction(data, homeId) {
 
 export function createTennisFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40, maxOddsCalls = 40,
-  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
+  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, prematchOddsSeconds = 60, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
 
@@ -220,7 +220,7 @@ export function createTennisFeed(db, {
     if (!m.odds1 || !m.odds2) return false;
     upsertSel.run(row.id, '1', m.odds1);
     upsertSel.run(row.id, '2', m.odds2);
-    db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(Date.now() + 10 * 60_000).toISOString(), row.id);
+    db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(Date.now() + prematchOddsSeconds * 1000).toISOString(), row.id);
     return true;
   }
 
@@ -240,16 +240,16 @@ export function createTennisFeed(db, {
     ).all(TENNIS_SOURCE, new Date(now).toISOString(), new Date(now).toISOString(), maxOddsCalls);
     let priced = 0;
     for (const row of rows) {
-      let next = 10;
+      let next = prematchOddsSeconds;
       try {
         const prices = oddsPrices(await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`));
-        if (new Date(row.start_time).getTime() - now < 3_600_000) next = 3;
+        if (new Date(row.start_time).getTime() - now < 3_600_000) next = prematchOddsSeconds / 2;
         tx(db, () => applyPrices(row.id, prices));
         if (Object.keys(prices).length) priced += 1;
       } catch (err) {
         log(`ténis odds ${row.external_id}: ${err.message}`);
       }
-      db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + next * 60_000).toISOString(), row.id);
+      db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(new Date(now + next * 1000).toISOString(), row.id);
     }
     return { oddsChecked: rows.length, oddsPriced: priced };
   }
@@ -426,17 +426,19 @@ export function createTennisFeed(db, {
     }
   }
 
-  function start({ liveMs = 30_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000 } = {}) {
+  function start({ liveMs = 5_000, fixturesMs = 10 * 60_000, resultsMs = 2 * 60_000, oddsMs = 15_000 } = {}) {
     if (!state.enabled) return () => {};
+    // One lock per loop: a slow fixtures import never holds back the live score (every few seconds).
+    const busy = new Set();
     const guard = (kind, fn) => async () => {
-      // Without the addon every call is refused; retry only with the (slow) fixtures loop.
-      if (state.running || (state.addonMissing && kind !== 'fixtures')) return;
-      state.running = true;
-      try { await run(kind, fn); } finally { state.running = false; }
+      if (busy.has(kind) || (state.addonMissing && kind !== 'fixtures')) return;
+      busy.add(kind);
+      try { await run(kind, fn); } finally { busy.delete(kind); }
     };
     const timers = [
       setInterval(guard('live', syncLive), liveMs),
       setInterval(guard('fixtures', syncFixtures), fixturesMs),
+      setInterval(guard('odds', syncOdds), oddsMs),
       setInterval(guard('results', syncResults), resultsMs),
     ];
     syncAll();
