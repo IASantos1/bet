@@ -32,7 +32,7 @@ const state = {
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
   casinoSession: null,
-  match: { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  match: { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(),
   mode: 'single',
   sport: '',
@@ -187,13 +187,22 @@ function teamBadge(logo, name, size = '') {
   return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
 }
 
+const flagEmoji = (cc) => String(cc || '').toUpperCase().replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1a5 + c.charCodeAt(0)));
+
+/** Club badge, or the player's flag in tennis. */
+function sideBadge(e, side, size = '') {
+  const country = e[`${side}Country`];
+  if (!e[`${side}Logo`] && country) return `<div class="team-icon flag${size ? ` ${size}` : ''}" title="${esc(country)}">${flagEmoji(country)}</div>`;
+  return teamBadge(e[`${side}Logo`], e[side], size);
+}
+
 function matchCard(e) {
   return `<article class="match-card clickable" data-open="${e.id}">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? `<span class="live-label">● AO VIVO ${esc(e.clock || '')}</span>` : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
-      <div class="team">${teamBadge(e.homeLogo, e.home)}${esc(e.home)}</div>
+      <div class="team">${sideBadge(e, 'home')}${esc(e.home)}</div>
       <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
-      <div class="team">${teamBadge(e.awayLogo, e.away)}${esc(e.away)}</div>
+      <div class="team">${sideBadge(e, 'away')}${esc(e.away)}</div>
     </div>
     ${oddsButtons(e)}
   </article>`;
@@ -202,7 +211,7 @@ function matchCard(e) {
 function liveCard(e) {
   return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top"><span class="live-label">● AO VIVO</span><span>${esc(e.competition)} · ${esc(e.clock || '')}</span></div>
-    <div class="live-teams"><div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
 }
@@ -215,8 +224,8 @@ function eventRow(e) {
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
-      <div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span>${score('h')}</div>
-      <div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span>${score('a')}</div>
+      <div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${score('h')}</div>
+      <div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${score('a')}</div>
     </div>
     ${oddsButtons(e)}
   </div>`;
@@ -679,6 +688,17 @@ function adminCasino(c) {
   </div>`;
 }
 
+function tennisPanel(t) {
+  if (!t?.enabled) return '<p class="muted">Ténis: desligado (TENNIS=0).</p><br>';
+  const counts = Object.entries(t.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
+  const last = t.last?.fixtures ? `última importação ${esc(fmtDateTime(t.last.fixtures.at))} (${t.last.fixtures.matches ?? 0} encontros, ${t.last.fixtures.priced ?? 0} com odds)` : 'ainda não executado';
+  const badge = t.addonMissing ? '<span class="pill lost">Sem Sports Addon</span>' : t.lastError ? '<span class="pill lost">Erro</span>' : '<span class="pill won">Ligado</span>';
+  return `<h3>Ténis ATP/WTA ${badge}</h3>
+    <p class="muted">Encontros e odds de vencedor (pré-jogo), resultados por sets, confrontos diretos, previsões e ranking. ${last}.</p>
+    <p>Eventos de ténis: <strong>${esc(counts)}</strong></p>
+    ${t.addonMissing ? '<div class="form-error">O token não tem o Sports Addon, necessário para a API de ténis.</div>' : t.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(t.lastErrorAt))}): ${esc(t.lastError)}</div>` : ''}<br>`;
+}
+
 function adminFeed(f) {
   const last = (k, label) => {
     const r = f.last?.[k];
@@ -697,6 +717,7 @@ function adminFeed(f) {
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}
          </tbody></table></div><br>
          ${liveSocketPanel(f.liveSocket)}
+         ${tennisPanel(f.tennis)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
@@ -1309,7 +1330,7 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false });
 }
 
 async function loadMatch(id, { quiet = false } = {}) {
@@ -1319,6 +1340,7 @@ async function loadMatch(id, { quiet = false } = {}) {
     const wasLive = state.match.data?.status === 'live';
     state.match.data = event;
     if (event.status !== 'scheduled') loadMatchExtras(id);
+    if (!state.match.insights) loadMatchInsights(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
     if (currentRoute().page === 'jogo') render({ keepScroll: true });
@@ -1334,6 +1356,18 @@ async function loadMatchExtras(id) {
     state.match.extras = extras;
     if (currentRoute().page === 'jogo' && state.match.tab !== 'tracker') render({ keepScroll: true });
   } catch { /* extras are optional */ }
+}
+
+async function loadMatchInsights(id) {
+  state.match.insights = { loading: true };
+  try {
+    const insights = await api(`/api/events/${id}/insights`);
+    if (state.match.id !== id) return;
+    state.match.insights = insights;
+  } catch {
+    if (state.match.id === id) state.match.insights = { error: true };
+  }
+  if (currentRoute().page === 'jogo' && state.match.tab !== 'tracker' && state.match.tab !== 'mercados') render({ keepScroll: true });
 }
 
 function startMatchStream(id) {
@@ -1412,22 +1446,28 @@ function matchPage(sub) {
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
       : `<div class="match-kickoff">${esc(fmtWhen(e.startTime))}</div><div class="muted">${esc(new Date(e.startTime).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>`;
-  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas']];
+  const tennis = e.sport === 'tenis';
+  const tabs = [['mercados', 'Mercados'], ['estatisticas', 'Estatísticas'], ['h2h', 'Confrontos (H2H)'], ['previsao', 'Previsão'],
+    tennis ? ['ranking', 'Ranking'] : ['classificacao', 'Classificação']];
   if (e.liveTracker) tabs.push(['tracker', 'Tracker']);
   if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
 
   let body = '';
-  if (m.tab === 'estatisticas') body = matchStatsView(e);
+  if (m.tab === 'estatisticas') body = tennis ? tennisStatsView(e) : matchStatsView(e);
+  else if (m.tab === 'h2h') body = insightView(e, h2hView);
+  else if (m.tab === 'previsao') body = insightView(e, predictionView);
+  else if (m.tab === 'classificacao') body = insightView(e, standingsView);
+  else if (m.tab === 'ranking') body = insightView(e, rankingView);
   else if (m.tab === 'tracker') body = trackerView(e);
   else body = marketsView(e);
 
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero">
-      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : '⚽'} ${esc(e.competition)}</div>
+      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : SPORT_META[e.sport]?.icon || '⚽'} ${esc(e.competition)}</div>
       <div class="match-teams">
-        <div class="match-team">${teamBadge(e.homeLogo, e.home, 'big')}<strong>${esc(e.home)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}</strong></div>
         <div class="match-center">${center}</div>
-        <div class="match-team">${teamBadge(e.awayLogo, e.away, 'big')}<strong>${esc(e.away)}</strong></div>
+        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}</strong></div>
       </div>
     </section>
     <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}${k === 'tracker' ? ' <i class="live-dot"></i>' : ''}</button>`).join('')}</div>
@@ -1491,6 +1531,139 @@ function liveStatsFallback() {
     .map(([k, label, unit]) => ({ key: k === 'possession' ? 'ball_possession' : k, label, unit, home: Number(l.home[k]), away: Number(l.away[k]) }));
 }
 
+// ---------- match insights: H2H, prediction, table / rankings ----------
+
+function insightView(e, view) {
+  const x = state.match.insights;
+  if (!x || x.loading) return '<div class="loading">A carregar…</div>';
+  if (x.error) return '<div class="panel empty">Não foi possível carregar estes dados. Tente novamente dentro de momentos.</div>';
+  return view(e, x);
+}
+
+const fmtShortDate = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '');
+const pctText = (v) => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('pt-PT', { maximumFractionDigits: 1 })}%`);
+
+/** Three-way (or two-way) split bar: home / draw / away. */
+function splitBar(parts) {
+  const total = parts.reduce((a, p) => a + (Number(p.value) || 0), 0) || 1;
+  return `<div class="split-bar">${parts.map((p) => `<i class="${p.cls}" data-w="${((Number(p.value) || 0) / total) * 100}"></i>`).join('')}</div>`;
+}
+
+function formChips(list) {
+  if (!list?.length) return '<span class="muted">—</span>';
+  return list.map((r) => `<span class="form-chip ${r === 'V' ? 'win' : r === 'D' ? 'loss' : 'draw'}">${r}</span>`).join('');
+}
+
+function h2hView(e, x) {
+  const h = x.h2h;
+  if (!h) return '<div class="panel empty">Sem confrontos diretos registados entre estes adversários.</div>';
+  const tennis = e.sport === 'tenis';
+  const summary = `<div class="panel">
+    <h3>${h.total} confronto${h.total === 1 ? '' : 's'} direto${h.total === 1 ? '' : 's'}</h3>
+    <div class="h2h-summary">
+      <div><strong>${h.homeWins}</strong><small>Vitórias ${esc(e.home)}</small></div>
+      ${tennis ? '' : `<div><strong>${h.draws}</strong><small>Empates</small></div>`}
+      <div><strong>${h.awayWins}</strong><small>Vitórias ${esc(e.away)}</small></div>
+    </div>
+    ${splitBar([{ value: h.homeWins, cls: 'home' }, ...(tennis ? [] : [{ value: h.draws, cls: 'draw' }]), { value: h.awayWins, cls: 'away' }])}
+    ${!tennis && h.homeGoals !== null ? `<p class="muted">Golos: ${esc(e.home)} ${h.homeGoals} · ${esc(e.away)} ${h.awayGoals}${h.avgGoals !== null ? ` · média ${String(h.avgGoals).replace('.', ',')} por jogo` : ''}</p>` : ''}
+  </div>`;
+  let list;
+  if (tennis) {
+    const row = (m) => `<tr><td>${esc(fmtShortDate(m.date))}</td><td>${esc(m.home)} vs ${esc(m.away)}<br><small class="muted">${esc(m.competition || '')}</small></td><td class="num">${esc(m.score || '—')}</td></tr>`;
+    const form = (rows) => formChips(rows.map((r) => (r.won === null ? '?' : r.won ? 'V' : 'D')));
+    list = `${h.meetings.length ? `<div class="panel"><h3>Últimos confrontos</h3><div class="table-wrap"><table><tbody>${h.meetings.map(row).join('')}</tbody></table></div></div>` : ''}
+      <div class="panel"><h3>Forma recente</h3>
+        <div class="form-line"><span>${esc(e.home)}</span><span>${form(h.homeForm)}</span></div>
+        <div class="form-line"><span>${esc(e.away)}</span><span>${form(h.awayForm)}</span></div></div>`;
+  } else {
+    // Sides by team id: names get rewritten upstream, ids do not.
+    const row = (m) => {
+      const ours = m.homeTeamId === x.homeTeamId ? 'h' : m.awayTeamId === x.homeTeamId ? 'a' : null;
+      let res = '';
+      if (ours && m.homeScore !== null && m.awayScore !== null) {
+        const [f, a] = ours === 'h' ? [m.homeScore, m.awayScore] : [m.awayScore, m.homeScore];
+        res = f > a ? 'V' : f < a ? 'D' : 'E';
+      }
+      return `<tr><td>${esc(fmtShortDate(m.date))}</td><td class="h2h-teams">${esc(m.home)}</td>
+        <td class="num"><b>${m.homeScore === null ? '—' : `${m.homeScore}-${m.awayScore}`}</b></td><td>${esc(m.away)}</td>
+        <td>${res ? formChips([res]) : ''}</td></tr>`;
+    };
+    list = h.recent.length ? `<div class="panel"><h3>Últimos jogos</h3><p class="muted">Resultado do ponto de vista de ${esc(e.home)}.</p>
+      <div class="table-wrap"><table><tbody>${h.recent.map(row).join('')}</tbody></table></div></div>` : '';
+  }
+  return `<div class="insight-stack">${summary}${list}</div>`;
+}
+
+function predictionView(e, x) {
+  const p = x.prediction;
+  if (!p) return '<div class="panel empty">Ainda não há previsão para este jogo.</div>';
+  const tennis = e.sport === 'tenis';
+  const pick = { home: e.home, draw: 'Empate', away: e.away }[p.predicted];
+  const outcome = (label, v, cls) => `<div class="prob ${cls}${p.predicted === cls ? ' picked' : ''}"><small>${esc(label)}</small><strong>${pctText(v)}</strong></div>`;
+  const extra = [];
+  if (p.xgHome !== null && p.xgHome !== undefined) extra.push(['Golos esperados', `${String(p.xgHome).replace('.', ',')} - ${String(p.xgAway).replace('.', ',')}`]);
+  if (p.mostLikely) extra.push(['Resultado mais provável', p.mostLikely]);
+  for (const [k, l] of [['over15', 'Mais de 1.5 golos'], ['over25', 'Mais de 2.5 golos'], ['over35', 'Mais de 3.5 golos'], ['bttsYes', 'Ambas marcam']]) {
+    if (p[k] !== null && p[k] !== undefined) extra.push([l, pctText(p[k])]);
+  }
+  return `<div class="insight-stack"><div class="panel">
+      <h3>Probabilidades do modelo</h3>
+      <div class="prob-grid${tennis || p.draw === null ? ' two' : ''}">${outcome(e.home, p.home, 'home')}${tennis || p.draw === null ? '' : outcome('Empate', p.draw, 'draw')}${outcome(e.away, p.away, 'away')}</div>
+      ${splitBar([{ value: p.home, cls: 'home' }, ...(tennis || p.draw === null ? [] : [{ value: p.draw, cls: 'draw' }]), { value: p.away, cls: 'away' }])}
+      <p class="muted">${pick ? `Favorito do modelo: <strong>${esc(pick)}</strong>` : ''}${p.confidence !== null && p.confidence !== undefined ? ` · confiança ${pctText(p.confidence)}` : ''}</p>
+    </div>
+    ${extra.length ? `<div class="panel"><h3>Golos</h3><div class="stat-grid">${extra.map(([l, v]) => `<div class="stat"><small>${esc(l)}</small><strong>${esc(v)}</strong></div>`).join('')}</div></div>` : ''}
+    <p class="muted small-note">Previsão estatística do fornecedor de dados. Não é garantia de resultado.</p></div>`;
+}
+
+function standingsView(e, x) {
+  const t = x.standings;
+  if (!t?.rows?.length) return '<div class="panel empty">Classificação indisponível para esta competição.</div>';
+  const ours = [x.homeTeamId, x.awayTeamId];
+  const zones = (t.zones || []).filter((z) => z.label);
+  const row = (r) => `<tr class="${ours.includes(r.teamId) ? 'highlight' : ''}${r.zone ? ` zone-${esc(r.zone.type)}` : ''}">
+    <td class="pos">${r.position ?? ''}</td><td>${esc(r.team)}</td><td class="num">${r.played ?? ''}</td><td class="num">${r.won ?? ''}</td>
+    <td class="num">${r.drawn ?? ''}</td><td class="num">${r.lost ?? ''}</td>
+    <td class="num">${r.goalsFor ?? ''}:${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td>
+    <td class="form-cell">${r.form ? formChips([...r.form.toUpperCase()].map((c) => ({ W: 'V', D: 'E', L: 'D' }[c] || c))) : ''}</td></tr>`;
+  return `<div class="panel"><h3>${esc(e.competition)}${t.name ? ` — ${esc(t.name)}` : ''}</h3>
+    <div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num">V</th><th class="num">E</th><th class="num">D</th><th class="num">Golos</th><th class="num">Pts</th><th class="form-cell">Forma</th></tr></thead>
+    <tbody>${t.rows.map(row).join('')}</tbody></table></div>
+    ${zones.length ? `<div class="zone-legend">${zones.map((z) => `<span class="zone-${esc(z.type)}"><i></i>${esc(z.label)}${z.from ? ` (${z.from}${z.to && z.to !== z.from ? `–${z.to}` : ''})` : ''}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function rankingView(e, x) {
+  const r = x.rankings;
+  if (!r) return '<div class="panel empty">Ranking indisponível neste momento.</div>';
+  const card = (side) => {
+    const k = r[side];
+    return `<div class="stat"><small>${sideBadge(e, side, 'mini')}${esc(e[side])}</small><strong>${k?.position ? `${k.position}.º` : 'Sem ranking'}</strong>${k?.points ? `<small>${k.points.toLocaleString('pt-PT')} pontos</small>` : ''}</div>`;
+  };
+  const ours = [x.homeTeamId, x.awayTeamId];
+  return `<div class="insight-stack"><div class="stat-grid two-col">${card('home')}${card('away')}</div>
+    ${r.rows?.length ? `<div class="panel"><h3>Ranking ${esc(r.type)} — top ${r.rows.length}</h3><div class="table-wrap"><table class="standings"><thead><tr><th>#</th><th>Jogador</th><th class="num">Pontos</th></tr></thead><tbody>
+      ${r.rows.map((p) => `<tr class="${ours.includes(p.playerId) ? 'highlight' : ''}"><td class="pos">${p.position ?? ''}</td><td>${p.country ? `${flagEmoji(p.country)} ` : ''}${esc(p.player)}</td><td class="num">${(p.points ?? 0).toLocaleString('pt-PT')}</td></tr>`).join('')}
+    </tbody></table></div></div>` : ''}</div>`;
+}
+
+function tennisStatsView(e) {
+  const x = state.match.extras;
+  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas por set aparecem quando o encontro começar. Veja os confrontos diretos, a previsão e o ranking nos outros separadores.</div>';
+  if (!x) return '<div class="loading">A carregar estatísticas…</div>';
+  const sets = x.sets || [];
+  const detail = x.setsDetail || e.clock;
+  const block = (s) => `<div class="panel"><h3>${esc(s.set)}</h3>${s.stats.map((st) => {
+    const total = st.home + st.away;
+    const hp = total ? (st.home / total) * 100 : 50;
+    return `<div class="stat-row"><div class="stat-vals"><b>${esc(`${st.home}${st.unit}`)}</b><span>${esc(st.label)}</span><b>${esc(`${st.away}${st.unit}`)}</b></div>
+      <div class="stat-bar"><i data-w="${hp}"></i></div></div>`;
+  }).join('')}</div>`;
+  return `<div class="insight-stack">${detail ? `<div class="panel"><h3>Parciais</h3><p class="sets-detail">${esc(detail)}</p></div>` : ''}
+    ${sets.length ? sets.map(block).join('') : '<div class="panel empty">Sem estatísticas por set para este encontro.</div>'}</div>`;
+}
+
 function trackerView(e) {
   const m = state.match;
   const note = m.es ? (m.streaming ? '' : '<p class="muted">A aguardar dados de posição deste jogo…</p>')
@@ -1504,7 +1677,7 @@ function trackerView(e) {
     <rect x="0.5" y="24.85" width="5.5" height="18.3" class="pitch-line"/><rect x="99" y="24.85" width="5.5" height="18.3" class="pitch-line"/>
     <circle cx="11" cy="34" r="0.5" class="pitch-spot"/><circle cx="94" cy="34" r="0.5" class="pitch-spot"/>`;
   return `<div class="panel tracker">
-    <div class="tracker-head"><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span><span id="trackerSituation" class="tracker-situation">—</span><span>${esc(e.away)}${teamBadge(e.awayLogo, e.away, 'mini')}</span></div>
+    <div class="tracker-head"><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><span id="trackerSituation" class="tracker-situation">—</span><span>${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
     <svg class="pitch" viewBox="0 0 105 68" role="img" aria-label="Campo com a posição da bola">
       ${lines}
       <rect id="zoneHome" x="52.5" y="0.5" width="52" height="67" class="zone zone-home"/>
@@ -1519,6 +1692,8 @@ function trackerView(e) {
 }
 
 function afterMatchRender() {
+  // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
+  $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
   if (state.match.tab === 'tracker') {
     updateTracker();
     updateActionsList();

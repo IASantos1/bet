@@ -56,6 +56,12 @@ export const config = {
   },
 
   // Settlement engine: postponed matches without a new date are voided after this many hours.
+  // Tennis (ATP/WTA) with the same token; needs the Sports Addon. TENNIS=0 turns it off.
+  tennis: {
+    enabled: env.TENNIS !== '0',
+    baseUrl: (env.BZZOIRO_TENNIS_URL || 'https://sports.bzzoiro.com/tennis/api/v2').replace(/\/+$/, ''),
+    days: int(env.TENNIS_DAYS, 3),
+  },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
   },

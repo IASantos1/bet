@@ -59,6 +59,20 @@ Jogos importados só aparecem aos jogadores depois de terem odds. Os escudos dos
 erros, eventos importados) e um botão **Sincronizar agora** estão em *Administração → Dados ao vivo*.
 Os eventos criados manualmente no painel continuam a funcionar em paralelo.
 
+## Ténis (ATP/WTA)
+
+Com o mesmo `BZZOIRO_API_TOKEN` e o **Sports Addon** ativo na conta, o ténis é importado da Tennis
+API (`/tennis/api/v2/`):
+
+- Encontros dos próximos `TENNIS_DAYS` dias (3) com a odd de vencedor (pré-jogo), bandeiras dos
+  jogadores e torneio/ronda. Em jogo mostra os sets e os parciais; o mercado fecha no início.
+- Liquidação pelo vencedor: walkover e cancelamentos anulam as apostas; desistência antes do fim do
+  1.º set anula; desistência depois disso dá a vitória a quem passa.
+- Na página do encontro: estatísticas por set (ases, duplas faltas, serviço…), confrontos diretos e
+  forma recente, previsão do modelo e ranking ATP/WTA (top 20 com os dois jogadores).
+- Sem o addon a API responde 402: o painel *Administração → Dados ao vivo* mostra "Sem Sports Addon".
+  `TENNIS=0` desliga o ténis.
+
 ## Casino (slots e casino ao vivo)
 
 O casino liga-se à Agent API v4 de um agregador de jogos (Pragmatic Play, PG, Evolution, Hacksaw…), em
@@ -105,6 +119,15 @@ Clicar num jogo (cartão, linha de pré-jogo ou ao vivo) abre `#/jogo/<id>`, uma
 - **Tracker**: campo 2D com a posição da bola, a situação de jogo (ataque, ataque perigoso, canto…) e
   as ações recentes, a partir das mensagens `livedata` e `action` do WebSocket.
 
+- **Confrontos (H2H)**: vitórias, empates e golos entre as duas equipas e os últimos jogos (com o
+  resultado do ponto de vista da equipa da casa), de `/events/{id}/h2h/`.
+- **Previsão**: probabilidades do modelo do fornecedor (1X2, golos esperados, mais/menos, ambas
+  marcam, resultado mais provável), de `/events/{id}/prediction/`.
+- **Classificação**: tabela da época atual (`/leagues/{id}/season/` → `/standings/`), com as duas
+  equipas destacadas e as zonas de apuramento/descida; em competições por grupos mostra o grupo delas.
+
+Estes dados aparecem antes e durante o jogo e ficam em cache 10 minutos.
+
 O servidor reencaminha o WebSocket para o navegador em tempo real por Server-Sent Events
 (`/api/events/<id>/live`); sem WebSocket, a página atualiza a cada 15 s.
 
@@ -136,6 +159,7 @@ server/
   markets.js    mercados disponíveis e regras de liquidação
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
+  tennis.js     importação de ténis ATP/WTA (encontros, odds, resultados, H2H, previsões, ranking)
   casino.js     casino (agregador Agent API v4, modo Transfer)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite

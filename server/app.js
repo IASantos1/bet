@@ -10,6 +10,7 @@ import { placeBets, resultCode, settleEvent } from './betting.js';
 import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
+import { TENNIS_SOURCE } from './tennis.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const COOKIE = 'cb_session';
@@ -71,7 +72,7 @@ function scoreInput(v, label) {
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -183,12 +184,13 @@ export function createApp(db, {
         marketCount: new Set(rows.filter((s) => s.active && s.market !== '1x2').map((s) => s.market)).size,
         homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
         leagueLogo: leagueLogo(e.source, e.league_ext),
+        homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         liveTracker: e.source === 'bzzoiro' && e.status === 'live',
       };
       if (allMarkets) {
         out.markets = MARKET_ORDER
           .map((m) => ({
-            market: m, name: MARKETS[m].name,
+            market: m, name: e.sport === 'tenis' && m === '1x2' ? 'Vencedor do encontro' : MARKETS[m].name,
             selections: rows.filter((s) => s.market === m).sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
           }))
           .filter((m) => m.selections.length);
@@ -238,13 +240,32 @@ export function createApp(db, {
 
   const eventRow = (id) => db.prepare('SELECT * FROM events WHERE id = ?').get(Number(id));
 
+  // The data provider behind an imported event (football or tennis), if it is switched on.
+  const providerFor = (ev) => {
+    if (ev.source === 'bzzoiro' && feed?.status().enabled) return feed;
+    if (ev.source === TENNIS_SOURCE && tennis?.status().enabled) return tennis;
+    return null;
+  };
+
   // Statistics and timeline for the match page (feed matches only).
   app.get('/api/events/:id/stats', async (req, res, next) => {
     try {
       const ev = eventRow(req.params.id);
       if (!ev) throw new HttpError(404, 'Evento não encontrado.');
-      if (ev.source !== 'bzzoiro' || !feed?.status().enabled || ev.status === 'scheduled') return res.json({ stats: [], incidents: [] });
-      res.json(await feed.matchExtras(ev.external_id, { live: ev.status === 'live' }));
+      const provider = providerFor(ev);
+      if (!provider || ev.status === 'scheduled') return res.json({ stats: [], incidents: [] });
+      res.json(await provider.matchExtras(ev.external_id, { live: ev.status === 'live' }));
+    } catch (err) { next(err); }
+  });
+
+  // Head-to-head, model prediction and league table / rankings (before and during the match).
+  app.get('/api/events/:id/insights', async (req, res, next) => {
+    try {
+      const ev = eventRow(req.params.id);
+      if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      const provider = providerFor(ev);
+      if (!provider) return res.json({ h2h: null, prediction: null, standings: null, rankings: null });
+      res.json(await provider.matchInsights(ev));
     } catch (err) { next(err); }
   });
 
@@ -669,13 +690,18 @@ export function createApp(db, {
   }));
 
   admin.get('/feed', (_req, res) => {
-    res.json(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' });
+    res.json({
+      ...(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' }),
+      tennis: tennis ? tennis.status() : { enabled: false },
+    });
   });
 
   admin.post('/feed/sync', async (_req, res, next) => {
     try {
       if (!feed || !feed.status().enabled) throw new HttpError(409, 'Feed desativado: defina BZZOIRO_API_TOKEN no servidor.');
-      res.json({ result: await feed.syncAll(), status: feed.status() });
+      const result = await feed.syncAll();
+      if (tennis?.status().enabled) result.tennis = await tennis.syncAll();
+      res.json({ result, status: feed.status() });
     } catch (err) { next(err); }
   });
 

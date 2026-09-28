@@ -143,6 +143,8 @@ function migrate(db) {
   if (!cols.has('live_odds_at')) db.exec('ALTER TABLE events ADD COLUMN live_odds_at TEXT');
   // When the provider first reported the match postponed (voided after 48 h without a new date).
   if (!cols.has('postponed_at')) db.exec('ALTER TABLE events ADD COLUMN postponed_at TEXT');
+  if (!cols.has('home_country')) db.exec('ALTER TABLE events ADD COLUMN home_country TEXT');
+  if (!cols.has('away_country')) db.exec('ALTER TABLE events ADD COLUMN away_country TEXT');
 
   // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
   // bet legs stay linked) and bet legs record the market they were placed on.
