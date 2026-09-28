@@ -40,7 +40,10 @@ function ageOn(birthdate, today = new Date()) {
 }
 
 // Club badges from the data provider's public image proxy (no token needed).
-const teamLogo = (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/team/${id}/?bg=transparent` : null);
+const providerImg = (type) => (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${type}/${id}/?bg=transparent` : null);
+const teamLogo = providerImg('team');
+// League badge; for national-team competitions this is the flag/emblem the provider publishes.
+const leagueLogo = providerImg('league');
 
 function publicUser(u) {
   return {
@@ -150,6 +153,7 @@ export function createApp(db, { loginAttempts = 10, registrations = 10, feed = n
       startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
       clock: e.clock, result: e.result, featured: !!e.featured, source: e.source, selections: byEvent.get(e.id),
       homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
+      leagueLogo: leagueLogo(e.source, e.league_ext),
     }));
   }
 

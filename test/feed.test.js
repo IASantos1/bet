@@ -56,7 +56,7 @@ test('normalizers accept the documented shapes', () => {
   });
   assert.deepEqual(ev, {
     externalId: '212581', home: 'Netherlands', away: 'Germany', startTime: '2026-09-24T20:45:00.000Z',
-    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'", homeTeamId: '1', awayTeamId: null, liveWs: false,
+    competition: 'Friendlies', status: 'live', homeScore: 1, awayScore: 0, clock: "57'", leagueId: '64', homeTeamId: '1', awayTeamId: null, liveWs: false,
   });
   assert.equal(normalizeEvent({ id: 1, home_team: 'A' }), null);
 
@@ -191,7 +191,7 @@ test('bulk odds feed prices many matches in one call and only sends deltas after
   const oddsQueries = [];
   const routes = {
     '/events/': { results: [
-      { id: 11, home_team: { id: 35, name: 'Benfica' }, away_team: { id: 36, name: 'Porto' }, event_date: iso(4 * H), status: 'notstarted' },
+      { id: 11, home_team: { id: 35, name: 'Benfica' }, away_team: { id: 36, name: 'Porto' }, league: { id: 238, name: 'Liga Portugal' }, event_date: iso(4 * H), status: 'notstarted' },
       { id: 12, home_team: { id: 40, name: 'Braga' }, away_team: { id: 41, name: 'Sporting' }, event_date: iso(6 * H), status: 'notstarted' },
     ] },
     '/odds/': (u) => {
@@ -230,6 +230,7 @@ test('bulk odds feed prices many matches in one call and only sends deltas after
   const benfica = events.find((e) => e.home === 'Benfica');
   assert.equal(benfica.homeLogo, 'https://sports.bzzoiro.com/img/team/35/?bg=transparent');
   assert.equal(benfica.awayLogo, 'https://sports.bzzoiro.com/img/team/36/?bg=transparent');
+  assert.equal(benfica.leagueLogo, 'https://sports.bzzoiro.com/img/league/238/?bg=transparent');
   db.close();
 });
 

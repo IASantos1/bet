@@ -182,7 +182,7 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
 function teamBadge(logo, name, size = '') {
   const cls = `team-icon${size ? ` ${size}` : ''}`;
-  if (!logo) return size ? '' : `<div class="${cls}">${esc(initials(name))}</div>`;
+  if (!logo) return `<div class="${cls}">${esc(size ? initials(name).slice(0, 1) : initials(name))}</div>`;
   return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"></div>`;
 }
 
@@ -213,7 +213,10 @@ function eventRow(e) {
   const score = (side) => (e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
   return `<div class="event-row">
     <div class="event-time">${when}</div>
-    <div class="event-teams"><div><span>${esc(e.home)}</span>${score('h')}</div><div><span>${esc(e.away)}</span>${score('a')}</div></div>
+    <div class="event-teams">
+      <div><span>${teamBadge(e.homeLogo, e.home, 'mini')}${esc(e.home)}</span>${score('h')}</div>
+      <div><span>${teamBadge(e.awayLogo, e.away, 'mini')}${esc(e.away)}</span>${score('a')}</div>
+    </div>
     ${oddsButtons(e)}
   </div>`;
 }
@@ -227,7 +230,11 @@ function groupByCompetition(events) {
   }
   return [...groups.entries()].map(([key, list]) => {
     const [sport, comp] = key.split('|');
-    return `<div class="comp-block"><div class="comp-head"><span>${SPORT_META[sport]?.icon || '🏆'} ${esc(comp)}</span><span>${list.length}</span></div>${list.map(eventRow).join('')}</div>`;
+    const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
+    const icon = logo
+      ? `<span class="league-logo" data-icon="${SPORT_META[sport]?.icon || '🏆'}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
+      : `<span class="league-logo">${SPORT_META[sport]?.icon || '🏆'}</span>`;
+    return `<div class="comp-block"><div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${list.length}</span></div>${list.map(eventRow).join('')}</div>`;
   }).join('');
 }
 
@@ -1089,13 +1096,17 @@ document.addEventListener('error', (e) => {
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
   const box = img.parentElement;
   box.classList.remove('has-logo');
-  box.textContent = box.classList.contains('mini') ? '' : box.dataset.initials;
-  if (box.classList.contains('mini')) box.remove();
+  box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
+}, true);
+// A league badge that fails to load falls back to the sport icon.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (img instanceof HTMLImageElement && img.classList.contains('league-img')) img.parentElement.textContent = img.parentElement.dataset.icon;
 }, true);
 // A 204 response is a "successful" empty image: treat zero-size loads the same way.
 document.addEventListener('load', (e) => {
   const img = e.target;
-  if (img instanceof HTMLImageElement && img.classList.contains('team-logo') && !img.naturalWidth) img.dispatchEvent(new Event('error'));
+  if (img instanceof HTMLImageElement && (img.classList.contains('team-logo') || img.classList.contains('league-img')) && !img.naturalWidth) img.dispatchEvent(new Event('error'));
 }, true);
 
 document.addEventListener('input', (e) => {
