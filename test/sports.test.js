@@ -318,3 +318,84 @@ test('tennis in play: the live list price opens the market once it moves', async
   assert.ok(ev.live_odds_at);
   assert.deepEqual(db.prepare('SELECT code, odds_x100 FROM selections WHERE event_id = ? AND active = 1 ORDER BY code').all(ev.id).map((x) => `${x.code}=${x.odds_x100}`), ['1=160', '2=230']);
 });
+
+test('in play: a consensus row with a fresh timestamp but pre-match prices never opens the market', async () => {
+  const now = Date.now();
+  const game = { id: 18233, league: { id: 7, name: 'KHL' }, home_team: team(1, 'Dinamo Minsk'), away_team: team(2, 'Lada Togliatti'), match_date: new Date(now - 2 * H).toISOString(), status: 'inprogress', home_score: 1, away_score: 1 };
+  const old = new Date(now - 14 * H).toISOString();
+  const t = setup('hoquei', '/hockey/api/v2', {
+    '/matches/': { results: [] },
+    '/matches/live/': { results: [game] },
+    '/matches/18233/odds/': {
+      bookmakers: [
+        { bookmaker_slug: '1xbet', odds_home: 1.48, odds_draw: 5, odds_away: 6.43, updated_at: old },
+        { bookmaker_slug: 'oddssafari-consensus', odds_home: 1.501, odds_draw: 5.25, odds_away: 5.92, updated_at: new Date(now - 20_000).toISOString() },
+      ],
+    },
+  });
+  const r = await t.feed.syncLive();
+  assert.equal(t.row(18233).status, 'live');
+  assert.equal(r.liveMarketsOpen, 0);
+  assert.deepEqual(t.prices(18233), []);
+});
+
+const ahBook = (slug, home, away) => ({ bookmaker_slug: slug, prices: { HOME: { price: home }, AWAY: { price: away } }, updated_at: '2026-09-28T01:45:00Z' });
+const ouBook = (slug, over, under) => ({ bookmaker_slug: slug, prices: { OVER: { price: over }, UNDER: { price: under } }, updated_at: '2026-09-28T01:45:00Z' });
+
+test('basketball: handicap ladder keeps the most balanced lines and settles with overtime', async () => {
+  let game = { id: 5, league: { id: 30, name: 'Euroleague' }, home_team: team(1, 'Anadolu Efes'), away_team: team(2, 'Real Madrid'), event_date: iso(5 * H), status: 'scheduled' };
+  const ladder = [[-13.5, 5.6, 1.11], [-7.5, 2.9, 1.4], [-3.5, 2.2, 1.65], [-2.5, 2.05, 1.75], [-1.5, 1.95, 1.85], [1.5, 1.8, 2.0], [2.5, 1.7, 2.1], [8.5, 1.3, 3.4]];
+  const t = setup('basquetebol', '/basketball/api/v2', {
+    '/events/': () => ({ results: [game] }),
+    '/events/5/odds/': {
+      bookmakers: [{ bookmaker_slug: 'bet365', odds_home: 1.85, odds_away: 1.95 }, { bookmaker_slug: 'oddssafari-consensus', odds_home: 9, odds_away: 9 }],
+      markets: [
+        ...ladder.map(([line, h, a]) => ({ market_kind: 'AH', market_line: line, market_period: 'FT', bookmakers: [ahBook('betano', h, a), ahBook('oddssafari-consensus', 9, 9)] })),
+        { market_kind: 'OU', market_line: 162.5, market_period: 'FT', bookmakers: [ouBook('betano', 1.9, 1.9)] },
+        { market_kind: 'AH', market_line: -1.5, market_period: '1H', bookmakers: [ahBook('betano', 1.9, 1.9)] },
+      ],
+    },
+    '/events/5/': () => game,
+  });
+  await t.feed.syncFixtures();
+  const p = t.prices(5);
+  assert.ok(p.includes('ml|1=185') && p.includes('ml|2=195'), 'consensus row left out of the winner average');
+  const hcp = p.filter((x) => x.startsWith('hcp|1'));
+  assert.deepEqual(hcp.sort(), ['hcp|1+1.5=180', 'hcp|1+2.5=170', 'hcp|1-1.5=195', 'hcp|1-2.5=205', 'hcp|1-3.5=220']);
+  assert.ok(p.includes('ou|O162.5=190') && p.includes('ou|U162.5=190'));
+  const onSpread = t.bet(5, 'hcp', '2+1.5');
+  const onOver = t.bet(5, 'ou', 'O162.5');
+  t.kickoff(5);
+  // 85-84 after overtime: Real Madrid +1.5 covers; 169 points go over.
+  game = { ...game, status: 'finished', home_score: 85, away_score: 84 };
+  await t.feed.syncResults();
+  assert.equal(t.betStatus(onSpread), 'won');
+  assert.equal(t.betStatus(onOver), 'won');
+});
+
+test('ice hockey: handicap and total settle on regulation time; whole lines push', async () => {
+  let match = { id: 6, league: { id: 7, name: 'KHL' }, home_team: team(1, 'Dinamo Minsk'), away_team: team(2, 'Lada Togliatti'), match_date: iso(5 * H), status: 'scheduled' };
+  const t = setup('hoquei', '/hockey/api/v2', {
+    '/matches/': () => ({ results: [match] }),
+    '/matches/6/odds/': {
+      bookmakers: [{ bookmaker_slug: '1xbet', odds_home: 1.48, odds_draw: 5, odds_away: 6.43 }],
+      markets: [
+        { market_kind: 'AH', market_line: -1, market_period: 'FT', bookmakers: [ahBook('1xbet', 1.6, 2.2)] },
+        { market_kind: 'AH', market_line: -1.5, market_period: 'FT', bookmakers: [ahBook('1xbet', 1.83, 2.07)] },
+        { market_kind: 'OU', market_line: 5.5, market_period: 'FT', bookmakers: [ouBook('1xbet', 1.9, 1.9)] },
+      ],
+    },
+    '/matches/6/': () => match,
+  });
+  await t.feed.syncFixtures();
+  const push = t.bet(6, 'hcp', '1-1');
+  const minus = t.bet(6, 'hcp', '1-1.5');
+  const under = t.bet(6, 'ou', 'U5.5');
+  t.kickoff(6);
+  // 3-2 in regulation (5 goals), no overtime.
+  match = { ...match, status: 'finished', home_score: 3, away_score: 2, periods_score: '1-0, 1-1, 1-1', winner_id: 1 };
+  await t.feed.syncResults();
+  assert.equal(t.betStatus(push), 'void');
+  assert.equal(t.betStatus(minus), 'lost');
+  assert.equal(t.betStatus(under), 'won');
+});

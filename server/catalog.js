@@ -15,8 +15,8 @@ const isPrice = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim
 export const WIRED = {
   futebol: ['1x2', 'match_winner', 'home_win', 'draw', 'away_win', 'over_under', 'btts', 'double_chance', 'draw_no_bet'],
   tenis: ['WINNER', 'odds_player1', 'OU_SETS', 'SET_HCP', 'OU_GAMES', 'GAMES_HCP', 'OE_GAMES'],
-  basquetebol: ['WINNER', 'odds_home'],
-  hoquei: ['1X2', 'DNB', 'odds_home'],
+  basquetebol: ['WINNER', 'odds_home', 'AH', 'OU'],
+  hoquei: ['1X2', 'DNB', 'odds_home', 'AH', 'OU'],
   dardos: ['WINNER', 'odds_player1'],
   esports: ['WINNER', 'odds_home'],
 };

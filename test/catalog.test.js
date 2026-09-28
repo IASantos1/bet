@@ -36,7 +36,7 @@ test('catalogue samples real games per sport and marks what Bet62 already offers
   }
   const provider = {
     sport: 'basquetebol', source: 'bzzoiro-basketball', enabled: () => true,
-    rawOdds: async (ext) => ({ markets: [{ market_kind: 'WINNER', selections: ['HOME', 'AWAY'] }, ...(ext === '1' ? [{ market_kind: 'OU', market_line: 220.5, selections: ['OVER', 'UNDER'] }] : [])] }),
+    rawOdds: async (ext) => ({ markets: [{ market_kind: 'WINNER', selections: ['HOME', 'AWAY'] }, ...(ext === '1' ? [{ market_kind: 'BTTS_X', market_line: 220.5, selections: ['OVER', 'UNDER'] }] : [])] }),
   };
   const c = createMarketCatalog(db, [provider, { sport: 'dardos', source: 'x', enabled: () => false, rawOdds: async () => ({}) }]);
   const r = await c.run({ sample: 5 });
@@ -44,7 +44,7 @@ test('catalogue samples real games per sport and marks what Bet62 already offers
   const bk = r.sports[0];
   assert.equal(bk.sampled, 2);
   const winner = bk.markets.find((m) => m.kind === 'WINNER');
-  const ou = bk.markets.find((m) => m.kind === 'OU');
-  assert.deepEqual([winner.events, winner.wired, ou.events, ou.wired], [2, true, 1, false]);
+  const other = bk.markets.find((m) => m.kind === 'BTTS_X');
+  assert.deepEqual([winner.events, winner.wired, other.events, other.wired], [2, true, 1, false]);
   assert.equal(r.sports[1].disabled, true);
 });

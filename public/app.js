@@ -1336,7 +1336,7 @@ function marketsView(e) {
   return e.markets.map((mk) => {
     let grid;
     if (mk.market === 'ou' || mk.market === 'gou') {
-      const unit = mk.market === 'gou' ? 'jogos' : e.sport === 'tenis' ? 'sets' : 'golos';
+      const unit = mk.market === 'gou' ? 'jogos' : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
       const lines = [...new Set(mk.selections.map((s) => s.code.slice(1)))].sort((a, b) => a - b);
       grid = lines.map((line) => {
         const over = mk.selections.find((s) => s.code === `O${line}`);
