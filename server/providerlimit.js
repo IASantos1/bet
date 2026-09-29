@@ -24,3 +24,40 @@ export const pausedUntil = (key) => {
   const until = paused.get(key);
   return until && until > Date.now() ? new Date(until).toISOString() : null;
 };
+
+// Requests per minute per account, shared by every feed. Scores and results come first: pre-match
+// odds may use at most half of the minute, in-play odds 70 %, everything else all of it. A feed
+// that finds no room simply stops its pass and continues on the next one.
+const windows = new Map(); // account key -> timestamps of the last minute's requests
+let perMinute = Infinity; // set at start-up from BZZOIRO_MAX_RPM (no limit when unset, e.g. tests)
+export const setRequestsPerMinute = (n) => { if (n === Infinity || (Number.isFinite(n) && n > 0)) perMinute = n; };
+const SHARE = { odds: 0.5, liveOdds: 0.7, other: 1 };
+
+function recent(key) {
+  const cut = Date.now() - 60_000;
+  const list = (windows.get(key) || []).filter((t) => t > cut);
+  windows.set(key, list);
+  return list;
+}
+
+/** True when a request of this kind fits in the minute (does not reserve it). */
+export const hasRoom = (key, kind = 'other') => recent(key).length < Math.floor(perMinute * (SHARE[kind] ?? 1));
+
+/** Records one request, or throws when the minute's share for this kind is used up. */
+export function spend(key, kind = 'other') {
+  if (!hasRoom(key, kind)) {
+    const err = new Error(`limite de ${perMinute} pedidos/min ao fornecedor — adiado para a próxima volta`);
+    err.budget = true;
+    throw err;
+  }
+  recent(key).push(Date.now());
+}
+
+export const requestsLastMinute = (key) => recent(key).length;
+
+/** Admin view, without the keys (they contain the token): requests in the last minute and pauses. */
+export function summary() {
+  return [...new Set([...windows.keys(), ...paused.keys()])].map((key) => ({
+    requestsLastMinute: recent(key).length, perMinute: Number.isFinite(perMinute) ? perMinute : null, pausedUntil: pausedUntil(key),
+  }));
+}

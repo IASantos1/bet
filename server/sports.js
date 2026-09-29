@@ -12,7 +12,7 @@
 // The match page gets per-sport statistics, head-to-head/form, predictions and the table.
 
 import { nowIso, tx } from './db.js';
-import { checkPause, notePause } from './providerlimit.js';
+import { checkPause, notePause, spend, hasRoom } from './providerlimit.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
 import { hcpCode, periodNumber } from './markets.js';
@@ -523,7 +523,7 @@ function statGroups(data) {
 // ---------- feed engine ----------
 
 export function createSportFeed(db, sport, {
-  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25,
+  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25, liveOddsEveryMs = 0,
   liveOddsMaxAge = 180, prematchOddsSeconds = 60, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const spec = SPORT_SPECS[sport];
@@ -532,10 +532,11 @@ export function createSportFeed(db, sport, {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
   const root = `${baseUrl.replace(/\/+$/, '')}${spec.path}`;
 
-  async function get(p, params = {}) {
+  async function get(p, params = {}, kind = p.includes('/odds') ? 'odds' : 'other') {
     const url = new URL(`${root}${p}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     checkPause(`bzzoiro:${token}`);
+    spend(`bzzoiro:${token}`, kind);
     const res = await fetchImpl(url, { headers: { Authorization: `Token ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
     if (res.status === 402) {
       state.addonMissing = true;
@@ -671,10 +672,11 @@ export function createSportFeed(db, sport, {
     const now = Date.now();
     const rows = db.prepare(
       `SELECT * FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND postponed_at IS NULL
-         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY start_time LIMIT ?`
+         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY odds_next_at IS NOT NULL, odds_next_at, start_time LIMIT ?`
     ).all(SOURCE, new Date(now).toISOString(), new Date(now).toISOString(), maxOddsCalls);
     let priced = 0;
     for (const row of rows) {
+      if (!hasRoom(`bzzoiro:${token}`, 'odds')) break; // the rest waits for the next pass (oldest first)
       try {
         const data = await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`);
         // Line markets (handicap, totals) before the start only: in play they stay closed.
@@ -694,6 +696,7 @@ export function createSportFeed(db, sport, {
     return { oddsChecked: rows.length, priced };
   }
 
+  let lastLiveOdds = 0;
   // With no game in play the live list is asked every 30 s instead of every few seconds.
   let idleUntil = 0;
   const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(SOURCE).n;
@@ -725,7 +728,8 @@ export function createSportFeed(db, sport, {
       });
       if (terminal) applyTerminal(terminal, m);
     }
-    const inPlay = await syncLiveOdds(listPrices);
+    // In-play odds over REST at most every liveOddsEveryMs (scores keep the fast cadence).
+    const inPlay = Date.now() - lastLiveOdds >= liveOddsEveryMs ? (lastLiveOdds = Date.now(), await syncLiveOdds(listPrices)) : { liveOddsChecked: 0, liveMarketsOpen: null };
     return { live: live.length, updated, ...inPlay };
   }
 
@@ -743,9 +747,10 @@ export function createSportFeed(db, sport, {
     const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(SOURCE, maxLiveOddsCalls);
     let open = 0;
     for (const row of rows) {
+      if (!hasRoom(`bzzoiro:${token}`, 'liveOdds')) break;
       let data = null;
       try {
-        data = await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`);
+        data = await get(`${spec.list}${encodeURIComponent(row.external_id)}/odds/`, {}, 'liveOdds');
       } catch (err) {
         log(`${spec.name} odds ao vivo ${row.external_id}: ${err.message}`);
       }

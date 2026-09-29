@@ -322,6 +322,7 @@ function adminFeed(f) {
     ${f.enabled
       ? `<p class="muted">Jogos, odds (média das casas de apostas), marcadores ao vivo e resultados são importados automaticamente. As apostas são liquidadas quando o jogo termina.</p>
          <p>Eventos importados: <strong>${esc(counts)}</strong></p>
+         ${f.requestBudget ? `<p class="muted">Pedidos ao Bzzoiro no último minuto: <strong>${f.requestBudget.requestsLastMinute}</strong>${f.requestBudget.perMinute ? ` de ${f.requestBudget.perMinute}/min (BZZOIRO_MAX_RPM)` : ''}${f.requestBudget.pausedUntil ? ` · <span class="pill lost">em pausa até ${esc(fmtDateTime(f.requestBudget.pausedUntil))} (429)</span>` : ''}</p>` : ''}
          ${f.lastError ? `<div class="form-error">Último erro (${esc(fmtDateTime(f.lastErrorAt))}): ${esc(f.lastError)}</div>` : ''}
          <div class="table-wrap"><table><thead><tr><th>Sincronização</th><th>Última execução</th><th>Resultado</th></tr></thead><tbody>
            ${last('fixtures', 'Jogos e odds')}${last('live', 'Ao vivo')}${last('results', 'Resultados')}

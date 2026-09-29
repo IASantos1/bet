@@ -9,8 +9,10 @@ import { createSettlementEngine } from './settlement.js';
 import { createTennisFeed, TENNIS_SOURCE } from './tennis.js';
 import { createSportFeed, SPORT_SPECS } from './sports.js';
 import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
+import { setRequestsPerMinute } from './providerlimit.js';
 
 const db = openDb(config.dbPath);
+setRequestsPerMinute(config.feed.maxRequestsPerMinute);
 const log = (msg) => console.warn(`[feed] ${msg}`);
 const liveSocket = config.feed.token && config.feed.liveWs
   ? createLiveSocket(db, { token: config.feed.token, url: config.feed.liveWsUrl, maxSockets: config.feed.liveMaxSockets, liveOddsStale: config.feed.liveOddsStaleSeconds, bookmaker: config.feed.liveOddsBookmaker, log })
@@ -28,13 +30,13 @@ const tennisLive = tennisToken && config.feed.liveWs
   : null;
 const tennis = createTennisFeed(db, {
   token: tennisToken, baseUrl: config.tennis.baseUrl, days: config.tennis.days, liveSocket: tennisLive,
-  liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds,
+  liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, liveOddsEveryMs: 20_000,
   log: (msg) => console.warn(`[ténis] ${msg}`),
 });
 const stopTennis = tennis.start({ liveMs: loops.liveMs });
 
 const sports = Object.fromEntries(config.sportsAddon.sports.filter((k) => SPORT_SPECS[k]).map((k) => [k, createSportFeed(db, k, {
-  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, log: (msg) => console.warn(`[${k}] ${msg}`),
+  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, liveOddsEveryMs: 20_000, log: (msg) => console.warn(`[${k}] ${msg}`),
 })]));
 const stopSports = Object.values(sports).map((f) => f.start({ liveMs: loops.liveMs }));
 

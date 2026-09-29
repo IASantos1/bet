@@ -11,7 +11,7 @@
 // lists) so a small upstream change does not stop the platform; anything unusable is skipped.
 
 import { nowIso, tx } from './db.js';
-import { checkPause, notePause } from './providerlimit.js';
+import { checkPause, notePause, spend, hasRoom } from './providerlimit.js';
 import { resultCode, settleEvent } from './betting.js';
 import { periodNumber } from './markets.js';
 
@@ -278,10 +278,11 @@ export function createFeed(db, {
     books: new Map(),
   };
 
-  async function get(path, params = {}) {
+  async function get(path, params = {}, kind = path.includes('/odds') ? 'odds' : 'other') {
     const url = new URL(`${baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     checkPause(`bzzoiro:${token}`);
+    spend(`bzzoiro:${token}`, kind);
     const res = await fetchImpl(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20_000),
@@ -416,6 +417,7 @@ export function createFeed(db, {
     ).all(SOURCE, now, now, maxOddsCalls);
     let priced = bulk ? bulk.events : 0;
     for (const row of due) {
+      if (!hasRoom(`bzzoiro:${token}`, 'odds')) break; // the rest waits for the next pass
       try {
         const { prices, nextUpdateAt } = normalizeOdds(await get(`/events/${encodeURIComponent(row.external_id)}/odds/`));
         const next = nextUpdateAt && new Date(nextUpdateAt) > new Date() ? nextUpdateAt : new Date(Date.now() + 30 * 60_000).toISOString();
