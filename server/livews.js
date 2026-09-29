@@ -39,6 +39,7 @@ export function createLiveSocket(db, {
 
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const suspend = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(id);
+  const suspendOwn = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(id);
   // Odds frames carry no timestamp, and the consensus frame (re-read every ~30 s) can still be the
   // pre-match book well into the game. A frame opens the market only once its match-result prices
   // differ from the ones held (pre-match, or before the last goal); it then stays open while
@@ -118,7 +119,7 @@ export function createLiveSocket(db, {
         // A goal invalidates every price; wait for an odds frame that has moved since to reopen.
         suspend(row.id);
         gate.forget(row.id);
-        db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+        db.prepare('UPDATE events SET live_odds_at = NULL, pl_live_at = NULL, score_at = ? WHERE id = ?').run(nowIso(), row.id);
       }
     });
     const data = { homeScore: home, awayScore: away, clock, period: f.time?.period ?? null, stats: f.stats ?? null };
@@ -134,7 +135,7 @@ export function createLiveSocket(db, {
     else if (Date.now() - (lastBook.get(row.id) || 0) < 120_000) return; // the bookmaker's own prices are in use
     const close = (why) => {
       wsOpen.delete(row.external_id);
-      suspend(row.id);
+      suspendOwn(row.id);
       db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
       note(row, kind, prices, why);
     };
@@ -151,10 +152,10 @@ export function createLiveSocket(db, {
       wsOpen.set(row.external_id, Date.now());
       const upsert = db.prepare(
         `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
-         ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+         ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
       );
-      // The frame is the full in-play book: anything not in it is closed.
-      db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+      // The frame is the full in-play book: anything of ours not in it is closed.
+      db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(row.id);
       for (const [key, x100] of Object.entries(prices)) {
         const [market, code] = key.split('|');
         upsert.run(row.id, market, code, x100);

@@ -226,7 +226,8 @@ function adminEventCard(e) {
   return `<form class="admin-event" data-form="admin-event" data-id="${e.id}" data-featured="${e.featured ? 1 : 0}">
     <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(SPORT_META[e.sport]?.name || e.sport)} · ${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
       <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
-    ${e.source && e.source !== 'manual' && e.source !== 'bzzoiro' ? `<div class="admin-actions"><button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button></div><pre class="raw-odds hidden" id="rawOdds${e.id}"></pre>` : ''}
+    ${e.source && e.source !== 'manual' ? `<div class="admin-actions">${e.source !== 'bzzoiro' ? `<button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button>` : ''}
+      <button type="button" class="ghost-btn btn-sm" data-action="propline-odds" data-id="${e.id}">Ver odds PropLine</button></div><pre class="raw-odds hidden" id="rawOdds${e.id}"></pre>` : ''}
     <div class="admin-grid">
       <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}" ${closed ? 'disabled' : ''}></div>
       <div class="field"><span>Fora</span><input name="awayScore" type="number" min="0" value="${e.awayScore ?? ''}" ${closed ? 'disabled' : ''}></div>
@@ -327,9 +328,32 @@ function adminFeed(f) {
          </tbody></table></div><br>
          ${liveSocketPanel(f.liveSocket)}
          ${sportsAddonPanels(f)}
+         ${proplinePanel(f.propline)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
+}
+
+function proplinePanel(p) {
+  if (!p?.enabled) {
+    return `<h3>PropLine — 2.ª fonte de odds <span class="pill">Desligado</span></h3>
+      <p class="muted">Defina <strong>PROPLINE_API_KEY</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.
+      Só traz odds para os mercados que o Bzzoiro não tem; jogos, placares, estatísticas e liquidação continuam no Bzzoiro.</p><br>`;
+  }
+  const badge = p.stopped ? `<span class="pill lost">Parado — ${esc(p.stopped)}</span>`
+    : p.pausedUntil ? `<span class="pill lost">Em pausa até ${esc(fmtDateTime(p.pausedUntil))}</span>` : '<span class="pill won">Ligado</span>';
+  const q = p.quota ? `${p.quota.remaining} de ${p.quota.limit} pedidos restantes hoje (fornecedor)` : `${p.usedToday} de ${p.dailyBudget} pedidos usados hoje`;
+  return `<h3>PropLine — 2.ª fonte de odds ${badge}</h3>
+    <p class="muted">Só preenche mercados que o Bzzoiro não tem. Pré-jogo de ${Math.round(p.prematchEverySeconds / 60)} em ${Math.round(p.prematchEverySeconds / 60)} min;
+      ao vivo ${p.liveEverySeconds ? `a cada ${p.liveEverySeconds} s, só com casas que cotam em jogo e depois do último golo` : 'desligado'}.</p>
+    <p>${esc(q)} · jogos associados: <strong>${p.linked}</strong> · odds ativas da PropLine: <strong>${p.selections}</strong>
+      ${p.live ? ` · ao vivo: ${p.live.open}/${p.live.checked} com preço (${esc(fmtDateTime(p.live.at))})` : ''}</p>
+    ${p.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(p.lastErrorAt))}): ${esc(p.lastError)}</p>` : ''}
+    <div class="table-wrap"><table><thead><tr><th>Competição</th><th>Última leitura</th><th>Jogos</th><th>Associados</th><th>Com odds</th></tr></thead><tbody>
+      ${p.sports.map((x) => `<tr><td>${esc(x.key)}</td><td>${x.at ? esc(fmtDateTime(x.at)) : '—'}</td><td>${x.games ?? '—'}</td><td>${x.matched ?? '—'}</td>
+        <td>${x.error ? `<span class="pill lost">${esc(x.error)}</span>` : x.priced ?? '—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="propline-sync">Ler PropLine agora</button></div><br>`;
 }
 
 function adminSettlement({ summary: s, queue, history }) {
@@ -539,6 +563,20 @@ document.addEventListener('click', async (e) => {
       box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'propline-odds') {
+    const box = $(`#rawOdds${actionEl.dataset.id}`);
+    try {
+      const r = await api(`/api/admin/events/${actionEl.dataset.id}/propline-odds`);
+      box.textContent = r.raw;
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'propline-sync') {
+    actionEl.disabled = true;
+    try {
+      await api('/api/admin/propline/sync', { method: 'POST', body: {} });
+      toast('PropLine lido');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
   } else if (action === 'feed-sync') {
     actionEl.disabled = true;
     actionEl.textContent = 'A sincronizar…';

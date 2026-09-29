@@ -76,6 +76,33 @@ API (`/tennis/api/v2/`):
 - Sem o addon a API responde 402: o painel *Administração → Dados ao vivo* mostra "Sem Sports Addon".
   `TENNIS=0` desliga o ténis.
 
+## PropLine — segunda fonte de odds
+
+O Bzzoiro continua a ser a fonte principal: cria os jogos e dá placares, estatísticas, o campo ao vivo
+e os resultados com que tudo é liquidado. A PropLine (`api.prop-line.com/v1`, cabeçalho `X-API-Key`)
+só traz **odds**, e só para mercados que o Bzzoiro não tem nesse jogo:
+
+- Os jogos da PropLine são associados aos nossos por desporto, hora de início (±20 min; ténis ±4 h) e
+  nomes (acentos, "FC", "Man Utd"/"Manchester United", "B. Shick"/"Bernard Shick", casa/fora trocados).
+- Cada odd é guardada com `selections.src = 'pl'`. Um mercado com odds do Bzzoiro nunca é sobreposto,
+  e o Bzzoiro ao fechar as suas odds não fecha as da PropLine (e vice-versa).
+- Pré-jogo: mediana das casas (DFS e mercados de previsão excluídos), preço americano → decimal, só
+  mercados completos, linhas .5 nos totais, .5/inteiras nos handicaps, sem totais por equipa.
+  Futebol (EPL, LaLiga, Serie A, Bundesliga, Ligue 1, MLS): 1X2, golos, handicap, ambas marcam.
+  Ténis: vencedor, jogos, handicap de jogos, sets. NBA: vencedor, pontos, handicap. NHL: vencedor.
+- Ao vivo: só casas que cotam em jogo (`pregame_only` falso), mercados não suspensos, odds vistas nos
+  últimos `PROPLINE_LIVE_MAX_AGE` s e alteradas depois do último golo. O início do jogo e cada golo
+  fecham as odds da PropLine; as apostas são recusadas se a confirmação ao vivo tiver mais de
+  `LIVE_ODDS_MAX_AGE_SECONDS`.
+- Pedidos: um por competição no pré-jogo (cadência calculada a partir de `PROPLINE_DAILY_REQUESTS`) e
+  um por jogo associado ao vivo. Segue os cabeçalhos `X-Daily-*`; um 429 põe em pausa até ao reset, uma
+  chave recusada (401/403) desliga a fonte e mostra o motivo no admin. Erros nunca afetam o Bzzoiro.
+- Planos: com o grátis (1 000/dia) o pré-jogo é lido ~a cada 20 min e o ao vivo esgota a quota depressa.
+  Com o Streaming (1 000 000/dia): `PROPLINE_DAILY_REQUESTS=800000`, `PROPLINE_LIVE_SECONDS=10`,
+  `PROPLINE_MAX_LIVE_EVENTS=50` (pré-jogo a cada minuto, ao vivo a cada 10 s: até ~450 000 pedidos/dia com 50 jogos ao vivo).
+- Admin → Feed mostra o estado, a quota, jogos associados e odds ativas, com "Ler PropLine agora", e cada
+  evento tem "Ver odds PropLine".
+
 ## Basquetebol, hóquei no gelo, dardos e CS2
 
 Também com o Sports Addon (`server/sports.js`, um motor comum com uma configuração por desporto):

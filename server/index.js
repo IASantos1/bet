@@ -8,6 +8,7 @@ import { createCasino } from './casino.js';
 import { createSettlementEngine } from './settlement.js';
 import { createTennisFeed, TENNIS_SOURCE } from './tennis.js';
 import { createSportFeed, SPORT_SPECS } from './sports.js';
+import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
 
 const db = openDb(config.dbPath);
 const log = (msg) => console.warn(`[feed] ${msg}`);
@@ -37,6 +38,14 @@ const sports = Object.fromEntries(config.sportsAddon.sports.filter((k) => SPORT_
 })]));
 const stopSports = Object.values(sports).map((f) => f.start({ liveMs: loops.liveMs }));
 
+// Second odds source: prices only, for markets the main provider leaves empty.
+const propline = createPropLineFeed(db, {
+  ...config.propline, sportKeys: config.propline.sportKeys.length ? config.propline.sportKeys : DEFAULT_SPORT_KEYS,
+  log: (msg) => console.warn(`[propline] ${msg}`),
+});
+const stopPropline = propline.start();
+if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports.length} competições, ${config.propline.dailyRequests} pedidos/dia`);
+
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
 const settlement = createSettlementEngine(db, {
@@ -45,7 +54,7 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
@@ -55,6 +64,7 @@ const shutdown = () => {
   stopSports.forEach((stop) => stop());
   tennisLive?.stop();
   stopSettlement();
+  stopPropline();
   liveSocket?.stop();
   server.close(() => {
     db.close();

@@ -573,7 +573,7 @@ export function createSportFeed(db, sport, {
   const suspend = (id) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(id);
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
   );
 
   function upsert(m) {
@@ -599,7 +599,7 @@ export function createSportFeed(db, sport, {
 
   /** Writes a full price set: markets missing from it are closed. */
   function writePrices(eventId, prices) {
-    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(eventId);
     for (const [key, v] of Object.entries(prices)) {
       const [market, code] = key.split('|');
       upsertSel.run(eventId, market, code, v);
@@ -700,6 +700,13 @@ export function createSportFeed(db, sport, {
         const row = upsert({ ...m, status: m.status === 'scheduled' ? 'live' : m.status });
         if (!row || row.closed) return null;
         if (!['live', 'scheduled'].includes(m.status)) return row;
+        // Kick-off closes the second source's pre-match prices; in ice hockey a goal does too.
+        const goal = sport === 'hoquei' && row.status === 'live' && (row.home_score !== (m.homeScore ?? 0) || row.away_score !== (m.awayScore ?? 0));
+        if (row.status !== 'live' || goal) {
+          db.prepare("UPDATE selections SET active = 0 WHERE event_id = ? AND src = 'pl'").run(row.id);
+          db.prepare('UPDATE events SET pl_live_at = NULL WHERE id = ?').run(row.id);
+          if (goal) db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(nowIso(), row.id);
+        }
         db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")
           .run(m.homeScore ?? 0, m.awayScore ?? 0, m.clock, nowIso(), row.id);
         updated += 1;
@@ -738,7 +745,7 @@ export function createSportFeed(db, sport, {
       tx(db, () => {
         const verdict = gate(row.id, { fresh, any, previous: currentPrices(row.id) });
         if (!verdict) {
-          suspend(row.id);
+          db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(row.id);
           db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
           return;
         }

@@ -95,7 +95,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -203,13 +203,15 @@ export function createApp(db, {
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
-      `SELECT id, event_id, market, code, odds_x100, active FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})
+      `SELECT id, event_id, market, code, odds_x100, active, src FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})
        ${allMarkets ? '' : "AND (market IN ('1x2', 'ml') OR active = 1)"}`
     ).all(...ids);
     const byEvent = new Map(ids.map((id) => [id, []]));
     for (const s of sels) byEvent.get(s.event_id).push(s);
+    const plFresh = (e) => e.pl_live_at && Date.now() - new Date(e.pl_live_at).getTime() <= config.liveOddsMaxAgeSeconds * 1000;
     return events.map((e) => {
-      const rows = byEvent.get(e.id);
+      // In play a PropLine price shows only while its live confirmation is recent.
+      const rows = byEvent.get(e.id).map((s) => (s.src === 'pl' && e.status === 'live' && !plFresh(e) ? { ...s, active: 0 } : s));
       // Main market on the cards: 1X2, or the match winner in sports without a draw.
       const main = rows.some((s) => s.market === '1x2') || !rows.some((s) => s.market === 'ml') ? '1x2' : 'ml';
       const pub = (s) => ({ id: s.id, market: s.market, code: s.code, label: selectionLabel(s.market, s.code, e.home, e.away), odds: s.odds_x100 / 100, active: !!s.active });
@@ -598,7 +600,7 @@ export function createApp(db, {
     if (!odds || typeof odds !== 'object') return;
     const upsert = db.prepare(
       `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', ?, ?, 1)
-       ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+       ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
     );
     for (const code of ['1', 'X', '2']) {
       if (!(code in odds)) continue;
@@ -771,7 +773,27 @@ export function createApp(db, {
       ...(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' }),
       tennis: tennis ? { ...tennis.status(), liveSocket: tennisLive ? tennisLive.status() : { enabled: false } } : { enabled: false },
       sports: Object.values(sports).map((f) => f.status()),
+      propline: propline ? propline.status() : { enabled: false, keySet: false },
     });
+  });
+
+  // Second odds source: sync now, and its raw odds for one event.
+  admin.post('/propline/sync', async (_req, res, next) => {
+    try {
+      if (!propline?.enabled) throw new HttpError(409, 'PropLine desligado: defina PROPLINE_API_KEY no servidor.');
+      await propline.tick();
+      res.json({ status: propline.status() });
+    } catch (err) { next(err); }
+  });
+  admin.get('/events/:id/propline-odds', async (req, res, next) => {
+    try {
+      if (!propline?.enabled) throw new HttpError(409, 'PropLine desligado: defina PROPLINE_API_KEY no servidor.');
+      let data;
+      try { data = await propline.rawOdds(Number(req.params.id)); } catch (err) { data = { erro: err.message }; }
+      if (data === null) data = { erro: 'Jogo ainda não associado a nenhum jogo da PropLine.' };
+      const text = JSON.stringify(data, null, 2);
+      res.json({ raw: text.length > 20_000 ? `${text.slice(0, 20_000)}\n…` : text });
+    } catch (err) { next(err); }
   });
 
   admin.post('/feed/sync', async (_req, res, next) => {

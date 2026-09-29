@@ -207,7 +207,7 @@ export function createTennisFeed(db, {
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
   );
   const suspend = (eventId) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
 
@@ -247,7 +247,7 @@ export function createTennisFeed(db, {
   const oddsPrices = (data, since = null) => twoWayPrices(data, ['odds_player1', 'odds_home'], ['odds_player2', 'odds_away'], { market: '1x2', since });
 
   function applyPrices(eventId, prices) {
-    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(eventId);
     for (const [key, v] of Object.entries(prices)) upsertSel.run(eventId, ...key.split('|'), v);
   }
 
@@ -304,7 +304,7 @@ export function createTennisFeed(db, {
       tx(db, () => {
         const verdict = gate(row.id, { fresh, any, previous: currentPrices(row.id) });
         if (!verdict) {
-          suspend(row.id);
+          db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(row.id);
           db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
           return;
         }
@@ -386,6 +386,10 @@ export function createTennisFeed(db, {
         const row = upsert({ ...m, status: m.status === 'scheduled' ? 'live' : m.status });
         if (!row || row.closed) return null;
         if (!['live', 'scheduled'].includes(m.status)) return row;
+        if (row.status !== 'live') { // the second source's pre-match prices close at the start
+          db.prepare("UPDATE selections SET active = 0 WHERE event_id = ? AND src = 'pl'").run(row.id);
+          db.prepare('UPDATE events SET pl_live_at = NULL WHERE id = ?').run(row.id);
+        }
         // A match followed on the WebSocket has a point-by-point score; the REST poll only opens it.
         if (!liveSocket?.isFollowing(m.externalId)) {
           // Without the point-by-point feed the set in play comes from the set scores.
