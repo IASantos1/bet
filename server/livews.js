@@ -359,7 +359,7 @@ export function implausible(prices, { home_score: h, away_score: a }) {
 
 export function liveOddsPrices(odds) {
   const o = odds || {};
-  const px = (v) => { const n = Number(v); return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null; };
+  const px = (v) => { const n = Number(v); const x = Number.isFinite(n) && n < 1000 ? Math.round(n * 100) : null; return x !== null && x > 100 ? x : null; };
   const out = {};
   const put = (key, v) => { const x = px(v); if (x) out[key] = x; };
   // Football sends home/draw/away; tennis and other two-way sports name the sides player1/player2.
