@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
+import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx } from './db.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
@@ -774,6 +775,7 @@ export function createApp(db, {
       tennis: tennis ? { ...tennis.status(), liveSocket: tennisLive ? tennisLive.status() : { enabled: false } } : { enabled: false },
       sports: Object.values(sports).map((f) => f.status()),
       propline: propline ? propline.status() : { enabled: false, keySet: false },
+      requestBudget: providerSummary()[0] || null,
     });
   });
 

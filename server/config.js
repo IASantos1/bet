@@ -53,6 +53,8 @@ export const config = {
     days: int(env.BZZOIRO_DAYS, 3), // how many days of fixtures to import
     maxOddsCalls: int(env.BZZOIRO_MAX_ODDS_CALLS, 60), // odds requests per fixtures sync
     maxResultCalls: int(env.BZZOIRO_MAX_RESULT_CALLS, 40), // detail requests per results sync
+    // Requests per minute the whole account may send (every sport together); 429s mean it is too high.
+    maxRequestsPerMinute: int(env.BZZOIRO_MAX_RPM, 60),
     // Live WebSocket (paid addon): in-play scores and odds. Set BZZOIRO_LIVE_WS=0 to turn off.
     liveWs: env.BZZOIRO_LIVE_WS !== '0',
     liveWsUrl: env.BZZOIRO_LIVE_WS_URL || 'wss://sports.bzzoiro.com/live/football/',

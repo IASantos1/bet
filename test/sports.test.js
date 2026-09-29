@@ -466,3 +466,21 @@ test('a 429 pauses every feed on the same account; an idle live list is asked ev
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ?").get(TENNIS_SOURCE).n, 2);
   db.close();
 });
+
+test('the per-minute budget keeps pre-match odds to half of it, oldest first', async () => {
+  const { setRequestsPerMinute } = await import('../server/providerlimit.js');
+  const db = openDb(':memory:');
+  const games = Array.from({ length: 10 }, (_, i) => ({ id: 900 + i, league: { id: 1, name: 'NBA' }, home_team: team(1, `H${i}`), away_team: team(2, `A${i}`), event_date: iso((i + 2) * H), status: 'scheduled' }));
+  let oddsCalls = 0;
+  const routes = { '/basketball/api/v2/events/': { results: games } };
+  for (const g of games) routes[`/basketball/api/v2/events/${g.id}/odds/`] = () => { oddsCalls += 1; return { bookmakers: [{ odds_home: 1.9, odds_away: 1.9 }] }; };
+  const feed = createSportFeed(db, 'basquetebol', { token: 'acct-budget', fetchImpl: fakeApi('', routes) });
+  setRequestsPerMinute(10);
+  try {
+    await feed.syncFixtures(); // 1 list request + odds for at most half of the minute
+    assert.equal(oddsCalls, 4);
+  } finally {
+    setRequestsPerMinute(Infinity);
+  }
+  db.close();
+});

@@ -11,7 +11,7 @@
 // Players' countries are kept for flags; the player ids let the match page show rankings.
 
 import { nowIso, tx } from './db.js';
-import { checkPause, notePause } from './providerlimit.js';
+import { checkPause, notePause, spend, hasRoom } from './providerlimit.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
 import { twoWayPrices, createLivePriceGate, lineMarketPrices, parsePeriods } from './sports.js';
@@ -171,14 +171,15 @@ export function normalizeTennisPrediction(data, homeId) {
 
 export function createTennisFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40, maxOddsCalls = 40,
-  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, prematchOddsSeconds = 60, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
+  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, prematchOddsSeconds = 60, liveOddsEveryMs = 0, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
 
-  async function get(path, params = {}) {
+  async function get(path, params = {}, kind = path.includes('/odds') ? 'odds' : 'other') {
     const url = new URL(`${baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     checkPause(`bzzoiro:${token}`);
+    spend(`bzzoiro:${token}`, kind);
     const res = await fetchImpl(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20_000),
@@ -260,10 +261,11 @@ export function createTennisFeed(db, {
     const now = Date.now();
     const rows = db.prepare(
       `SELECT * FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND postponed_at IS NULL
-         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY start_time LIMIT ?`
+         AND (odds_next_at IS NULL OR odds_next_at <= ?) ORDER BY odds_next_at IS NOT NULL, odds_next_at, start_time LIMIT ?`
     ).all(TENNIS_SOURCE, new Date(now).toISOString(), new Date(now).toISOString(), maxOddsCalls);
     let priced = 0;
     for (const row of rows) {
+      if (!hasRoom(`bzzoiro:${token}`, 'odds')) break; // the rest waits for the next pass (oldest first)
       let next = prematchOddsSeconds;
       try {
         const data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);
@@ -293,11 +295,12 @@ export function createTennisFeed(db, {
     const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' ORDER BY start_time LIMIT ?`).all(TENNIS_SOURCE, maxLiveOddsCalls);
     let open = 0;
     for (const row of rows) {
+      if (!hasRoom(`bzzoiro:${token}`, 'liveOdds')) break;
       // The live socket's own price is newer than anything REST has: leave the market to it.
       if (liveSocket?.hasFreshOdds?.(row.external_id)) { open += 1; continue; }
       let data = null;
       try {
-        data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`);
+        data = await get(`/matches/${encodeURIComponent(row.external_id)}/odds/`, {}, 'liveOdds');
       } catch (err) {
         log(`ténis odds ao vivo ${row.external_id}: ${err.message}`);
       }
@@ -385,6 +388,7 @@ export function createTennisFeed(db, {
     return { matches: matches.length, created, priced: priced + odds.oddsPriced, oddsChecked: odds.oddsChecked };
   }
 
+  let lastLiveOdds = 0;
   // With no match in play the live list is asked every 30 s instead of every few seconds.
   let idleUntil = 0;
   const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(TENNIS_SOURCE).n;
@@ -419,7 +423,8 @@ export function createTennisFeed(db, {
     // Point-by-point scoreboard for the matches in play (WebSocket addon).
     liveSocket?.track(live.filter((m) => m.status === 'live' || m.status === 'scheduled').map((m) => m.externalId));
     const listPrices = new Map(live.filter((m) => m.odds1 && m.odds2).map((m) => [m.externalId, { '1x2|1': m.odds1, '1x2|2': m.odds2 }]));
-    const inPlay = await syncLiveOdds(listPrices);
+    // In-play odds over REST at most every liveOddsEveryMs (scores keep the fast cadence).
+    const inPlay = Date.now() - lastLiveOdds >= liveOddsEveryMs ? (lastLiveOdds = Date.now(), await syncLiveOdds(listPrices)) : { liveOddsChecked: 0, liveMarketsOpen: null };
     return { live: live.length, updated, ...inPlay };
   }
 
