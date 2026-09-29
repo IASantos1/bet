@@ -331,9 +331,9 @@ export function createFeed(db, {
 
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1`
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
   );
-  const offSel = db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND market = ? AND code = ?');
+  const offSel = db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND market = ? AND code = ? AND src IS NULL');
 
   /** Writes { 'market|code': x100 }; keys in `covered` but absent from `prices` are closed. */
   function writeOdds(eventId, prices, covered = []) {
@@ -349,6 +349,8 @@ export function createFeed(db, {
   }
 
   const suspendMarkets = (eventId) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+  // Only this provider's own prices (a second source may still be pricing the match).
+  const suspendOwn = (eventId) => db.prepare('UPDATE selections SET active = 0 WHERE event_id = ? AND src IS NULL').run(eventId);
 
   function finish(eventId, home, away, ht = {}) {
     if (Number.isInteger(ht.htHome)) db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ?').run(ht.htHome, ht.htAway, eventId);
@@ -414,7 +416,7 @@ export function createFeed(db, {
         const { prices, nextUpdateAt } = normalizeOdds(await get(`/events/${encodeURIComponent(row.external_id)}/odds/`));
         const next = nextUpdateAt && new Date(nextUpdateAt) > new Date() ? nextUpdateAt : new Date(Date.now() + 30 * 60_000).toISOString();
         tx(db, () => {
-          if (prices['1x2|1'] && prices['1x2|2']) { writeOdds(row.id, prices, EVENT_ODDS_COVERED); priced += 1; } else suspendMarkets(row.id);
+          if (prices['1x2|1'] && prices['1x2|2']) { writeOdds(row.id, prices, EVENT_ODDS_COVERED); priced += 1; } else suspendOwn(row.id);
           db.prepare('UPDATE events SET odds_next_at = ? WHERE id = ?').run(next, row.id);
         });
       } catch (err) {
@@ -503,9 +505,14 @@ export function createFeed(db, {
         else if (ev.clock === 'Intervalo') db.prepare('UPDATE events SET ht_home = ?, ht_away = ? WHERE id = ? AND ht_home IS NULL').run(home, away, row.id);
         // Pre-match prices never carry into play. Only an in-play price from the live socket
         // (live_odds_at) keeps the market open, and a goal voids that too.
-        if (row.status !== 'live' || scoreChanged || !row.live_odds_at) {
+        // Kick-off and goals close every price, whatever its source; without a live price of our
+        // own only ours close (a second source may be pricing the match in play).
+        if (row.status !== 'live' || scoreChanged) {
           suspendMarkets(row.id);
-          db.prepare('UPDATE events SET live_odds_at = NULL WHERE id = ?').run(row.id);
+          db.prepare('UPDATE events SET live_odds_at = NULL, pl_live_at = NULL WHERE id = ?').run(row.id);
+          if (scoreChanged) db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(nowIso(), row.id);
+        } else if (!row.live_odds_at) {
+          suspendOwn(row.id);
         }
         return { id: row.id };
       });

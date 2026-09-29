@@ -158,6 +158,10 @@ function migrate(db) {
   if (!cols.has('period_scores')) db.exec('ALTER TABLE events ADD COLUMN period_scores TEXT');
   if (!cols.has('ht_home')) db.exec('ALTER TABLE events ADD COLUMN ht_home INTEGER');
   if (!cols.has('ht_away')) db.exec('ALTER TABLE events ADD COLUMN ht_away INTEGER');
+  // Second odds source (PropLine): when its in-play price was last confirmed, and when the score
+  // last changed (a price must be newer than the last goal to be offered in play).
+  if (!cols.has('pl_live_at')) db.exec('ALTER TABLE events ADD COLUMN pl_live_at TEXT');
+  if (!cols.has('score_at')) db.exec('ALTER TABLE events ADD COLUMN score_at TEXT');
 
   // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
   // bet legs stay linked) and bet legs record the market they were placed on.
@@ -173,6 +177,18 @@ function migrate(db) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)
       SELECT id, event_id, market, code, odds_x100, active FROM selections_old`);
   }
+  // Which source priced a selection: NULL = the main provider (Bzzoiro), 'pl' = PropLine. Each
+  // source only closes its own prices; a goal or the kick-off closes everything.
+  if (!new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name)).has('src')) {
+    db.exec('ALTER TABLE selections ADD COLUMN src TEXT');
+  }
+  // Provider event ids matched to our events (PropLine has its own ids and team spellings).
+  db.exec(`CREATE TABLE IF NOT EXISTS provider_links (
+    provider TEXT NOT NULL, provider_event_id TEXT NOT NULL, event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    sport_key TEXT NOT NULL, swapped INTEGER NOT NULL DEFAULT 0, matched_at TEXT NOT NULL,
+    PRIMARY KEY (provider, provider_event_id)
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_provider_links_event ON provider_links(event_id)');
   const legCols = new Set(db.prepare('PRAGMA table_info(bet_legs)').all().map((c) => c.name));
   if (!legCols.has('market')) db.exec("ALTER TABLE bet_legs ADD COLUMN market TEXT NOT NULL DEFAULT '1x2'");
 

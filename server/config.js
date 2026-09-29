@@ -85,6 +85,18 @@ export const config = {
     sports: (env.SPORTS_ADDON ?? 'basquetebol,hoquei,dardos,esports').split(',').map((s) => s.trim()).filter(Boolean),
     days: int(env.SPORTS_DAYS, 3),
   },
+  // PropLine (api.prop-line.com): second odds source, only for markets the main provider does not
+  // price. Off until PROPLINE_API_KEY is set (in the server's environment, never in the code).
+  propline: {
+    apiKey: unquote(env.PROPLINE_API_KEY),
+    baseUrl: (env.PROPLINE_BASE_URL || 'https://api.prop-line.com/v1').replace(/\/+$/, ''),
+    sportKeys: (env.PROPLINE_SPORTS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    dailyRequests: int(env.PROPLINE_DAILY_REQUESTS, 900), // free plan: 1,000/day
+    prematchSeconds: int(env.PROPLINE_PREMATCH_SECONDS, 0), // 0 = from the daily budget
+    liveSeconds: int(env.PROPLINE_LIVE_SECONDS, 60), // 0 = no in-play prices from PropLine
+    liveMaxAge: int(env.PROPLINE_LIVE_MAX_AGE, 90),
+    maxLiveEvents: int(env.PROPLINE_MAX_LIVE_EVENTS, 20),
+  },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
   },
