@@ -523,7 +523,7 @@ function statGroups(data) {
 // ---------- feed engine ----------
 
 export function createSportFeed(db, sport, {
-  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25, liveOddsEveryMs = 0,
+  token, baseUrl = 'https://sports.bzzoiro.com', days = 3, maxOddsCalls = 40, maxResultCalls = 40, maxLiveOddsCalls = 25, liveOddsEveryMs = 0, liveListEveryMs = 0,
   liveOddsMaxAge = 180, prematchOddsSeconds = 60, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const spec = SPORT_SPECS[sport];
@@ -697,12 +697,16 @@ export function createSportFeed(db, sport, {
   }
 
   let lastLiveOdds = 0;
+  let lastList = 0;
   // With no game in play the live list is asked every 30 s instead of every few seconds.
   let idleUntil = 0;
   const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(SOURCE).n;
 
   async function syncLive() {
     if (Date.now() < idleUntil && !liveRows()) return { live: 0, updated: 0, idle: true };
+    // The live list itself at most every liveListEveryMs (scores also arrive by WebSocket where there is one).
+    if (Date.now() - lastList < liveListEveryMs) return { live: liveRows(), updated: 0, skipped: true };
+    lastList = Date.now();
     const raw = listOf(await get(`${spec.list}live/`));
     idleUntil = raw.length ? 0 : Date.now() + 30_000;
     const live = raw.map((g) => spec.normalize(g)).filter(Boolean);
@@ -717,8 +721,9 @@ export function createSportFeed(db, sport, {
         // Kick-off closes the second source's pre-match prices; in ice hockey a goal does too.
         const goal = sport === 'hoquei' && row.status === 'live' && (row.home_score !== (m.homeScore ?? 0) || row.away_score !== (m.awayScore ?? 0));
         if (row.status !== 'live' || goal) {
-          db.prepare("UPDATE selections SET active = 0 WHERE event_id = ? AND src = 'pl'").run(row.id);
-          db.prepare('UPDATE events SET pl_live_at = NULL WHERE id = ?').run(row.id);
+          // Kick-off / goal: pre-match prices (ours and PropLine's) close; in-play ones must reopen them.
+          db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+          db.prepare('UPDATE events SET pl_live_at = NULL, live_odds_at = NULL WHERE id = ?').run(row.id);
           if (goal) db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(nowIso(), row.id);
         }
         db.prepare("UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, postponed_at = NULL, updated_at = ? WHERE id = ?")

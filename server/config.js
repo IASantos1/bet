@@ -55,6 +55,12 @@ export const config = {
     maxResultCalls: int(env.BZZOIRO_MAX_RESULT_CALLS, 40), // detail requests per results sync
     // Requests per minute the whole account may send (every sport together); 429s mean it is too high.
     maxRequestsPerMinute: int(env.BZZOIRO_MAX_RPM, 60),
+    // In-play odds over REST for tennis and the Sports Addon (the provider rarely has any; PropLine
+    // covers them). Off by default to save requests; BZZOIRO_REST_LIVE_ODDS=1 turns it on.
+    restLiveOdds: env.BZZOIRO_REST_LIVE_ODDS === '1',
+    // How often the live lists of tennis / the Sports Addon are asked (the scores of followed
+    // tennis matches also come by WebSocket).
+    sportsLivePollSeconds: Math.max(5, int(env.SPORTS_LIVE_POLL_SECONDS, 15)),
     // Live WebSocket (paid addon): in-play scores and odds. Set BZZOIRO_LIVE_WS=0 to turn off.
     liveWs: env.BZZOIRO_LIVE_WS !== '0',
     liveWsUrl: env.BZZOIRO_LIVE_WS_URL || 'wss://sports.bzzoiro.com/live/football/',
