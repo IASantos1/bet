@@ -429,3 +429,40 @@ test('tennis live socket: odds frames with player1/player2 open the market and t
   assert.equal(live.status().oddsLog[0].decision, 'aberto');
   live.stop();
 });
+
+test('a 429 pauses every feed on the same account; an idle live list is asked every 30 s; a 1.00 price is ignored', async () => {
+  const db = openDb(':memory:');
+  let calls = 0;
+  let status = 429;
+  const fetchImpl = async (url) => {
+    calls += 1;
+    if (status === 429) return new Response('{"detail":"Too many requests"}', { status: 429, headers: { 'Retry-After': '120' } });
+    const u = new URL(url);
+    if (u.pathname.endsWith('/live/')) return new Response('{"results":[]}', { status: 200 });
+    return new Response('{"results":[]}', { status: 200 });
+  };
+  const basket = createSportFeed(db, 'basquetebol', { token: 'acct-429', fetchImpl });
+  const hockey = createSportFeed(db, 'hoquei', { token: 'acct-429', fetchImpl });
+  await assert.rejects(basket.syncLive(), /HTTP 429/);
+  // Same account: the next request of any sport is not sent while paused.
+  await assert.rejects(hockey.syncLive(), /em pausa/);
+  assert.equal(calls, 1);
+
+  status = 200;
+  const other = createSportFeed(db, 'basquetebol', { token: 'acct-idle', fetchImpl });
+  await other.syncLive();
+  const r = await other.syncLive();
+  assert.equal(r.idle, true);
+  assert.equal(calls, 2);
+
+  // Tennis: a price of 1.00 is dropped instead of failing the whole import.
+  const tennisFetch = fakeApi('/tennis/api/v2', { '/matches/': { results: [
+    { id: 1, tournament: { id: 1, name: 'ATP' }, player1: { id: 1, name: 'A B' }, player2: { id: 2, name: 'C D' }, match_date: iso(2 * H), status: 'scheduled', odds_player1: 1.004, odds_player2: 30 },
+    { id: 2, tournament: { id: 1, name: 'ATP' }, player1: { id: 3, name: 'E F' }, player2: { id: 4, name: 'G H' }, match_date: iso(2 * H), status: 'scheduled', odds_player1: 1.8, odds_player2: 2 },
+  ] } });
+  const tennis = createTennisFeed(db, { token: 'acct-tennis', fetchImpl: tennisFetch });
+  const res = await tennis.syncFixtures();
+  assert.equal(res.matches, 2);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ?").get(TENNIS_SOURCE).n, 2);
+  db.close();
+});

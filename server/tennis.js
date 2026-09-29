@@ -11,6 +11,7 @@
 // Players' countries are kept for flags; the player ids let the match page show rankings.
 
 import { nowIso, tx } from './db.js';
+import { checkPause, notePause } from './providerlimit.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
 import { twoWayPrices, createLivePriceGate, lineMarketPrices, parsePeriods } from './sports.js';
@@ -39,7 +40,8 @@ const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !
 const toInt = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.trunc(Number(v)));
 const odds100 = (v) => {
   const n = Number(v);
-  return Number.isFinite(n) && n > 1 && n < 1000 ? Math.round(n * 100) : null;
+  const x = Number.isFinite(n) && n < 1000 ? Math.round(n * 100) : null;
+  return x !== null && x > 100 ? x : null; // 1.00 (or 1.004) is no price
 };
 const countryCode = (v) => (typeof v === 'string' && /^[A-Za-z]{2}$/.test(v) ? v.toUpperCase() : null);
 
@@ -176,6 +178,7 @@ export function createTennisFeed(db, {
   async function get(path, params = {}) {
     const url = new URL(`${baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    checkPause(`bzzoiro:${token}`);
     const res = await fetchImpl(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20_000),
@@ -184,6 +187,7 @@ export function createTennisFeed(db, {
       state.addonMissing = true;
       throw new Error('A conta não tem o Sports Addon (necessário para o ténis).');
     }
+    if (res.status === 429) notePause(`bzzoiro:${token}`, res);
     if (!res.ok) {
       let detail = '';
       try { detail = JSON.stringify(await res.json()).slice(0, 200); } catch { /* not JSON */ }
@@ -367,19 +371,28 @@ export function createTennisFeed(db, {
     let created = 0;
     let priced = 0;
     for (const m of matches) {
-      tx(db, () => {
-        const row = upsert(m);
-        if (!row || row.closed) return;
-        if (row.created) created += 1;
-        if (writePrices(row, m)) priced += 1;
-      });
+      // One bad row (a price the database refuses, a malformed match) skips that match only.
+      try {
+        tx(db, () => {
+          const row = upsert(m);
+          if (!row || row.closed) return;
+          if (row.created) created += 1;
+          if (writePrices(row, m)) priced += 1;
+        });
+      } catch (err) { log(`ténis ${m.externalId}: ${err.message}`); }
     }
     const odds = await syncOdds();
     return { matches: matches.length, created, priced: priced + odds.oddsPriced, oddsChecked: odds.oddsChecked };
   }
 
+  // With no match in play the live list is asked every 30 s instead of every few seconds.
+  let idleUntil = 0;
+  const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(TENNIS_SOURCE).n;
+
   async function syncLive() {
+    if (Date.now() < idleUntil && !liveRows()) return { live: 0, updated: 0, idle: true };
     const live = listOf(await get('/matches/live/')).map(normalizeTennisMatch).filter(Boolean);
+    idleUntil = live.length ? 0 : Date.now() + 30_000;
     let updated = 0;
     for (const m of live) {
       const terminal = tx(db, () => {

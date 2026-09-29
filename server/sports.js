@@ -12,6 +12,7 @@
 // The match page gets per-sport statistics, head-to-head/form, predictions and the table.
 
 import { nowIso, tx } from './db.js';
+import { checkPause, notePause } from './providerlimit.js';
 import { settleEvent } from './betting.js';
 import { listOf } from './feed.js';
 import { hcpCode, periodNumber } from './markets.js';
@@ -534,11 +535,13 @@ export function createSportFeed(db, sport, {
   async function get(p, params = {}) {
     const url = new URL(`${root}${p}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    checkPause(`bzzoiro:${token}`);
     const res = await fetchImpl(url, { headers: { Authorization: `Token ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
     if (res.status === 402) {
       state.addonMissing = true;
       throw new Error(`A conta não tem o Sports Addon (necessário para ${spec.name}).`);
     }
+    if (res.status === 429) notePause(`bzzoiro:${token}`, res);
     if (!res.ok) {
       let detail = '';
       try { detail = JSON.stringify(await res.json()).slice(0, 200); } catch { /* not JSON */ }
@@ -652,10 +655,12 @@ export function createSportFeed(db, sport, {
       .map((g) => spec.normalize(g)).filter(Boolean);
     let created = 0;
     for (const m of games) {
-      tx(db, () => {
-        const row = upsert(m);
-        if (row?.created) created += 1;
-      });
+      try {
+        tx(db, () => {
+          const row = upsert(m);
+          if (row?.created) created += 1;
+        });
+      } catch (err) { log(`${spec.name} ${m.externalId}: ${err.message}`); }
     }
     const odds = await syncOdds();
     return { games: games.length, created, ...odds };
@@ -689,8 +694,14 @@ export function createSportFeed(db, sport, {
     return { oddsChecked: rows.length, priced };
   }
 
+  // With no game in play the live list is asked every 30 s instead of every few seconds.
+  let idleUntil = 0;
+  const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(SOURCE).n;
+
   async function syncLive() {
+    if (Date.now() < idleUntil && !liveRows()) return { live: 0, updated: 0, idle: true };
     const raw = listOf(await get(`${spec.list}live/`));
+    idleUntil = raw.length ? 0 : Date.now() + 30_000;
     const live = raw.map((g) => spec.normalize(g)).filter(Boolean);
     // Prices carried by the live list itself (cached ~30 s upstream), a second in-play source.
     const listPrices = new Map(raw.filter((g) => g && g.id !== undefined).map((g) => [String(g.id), spec.prices(g)]));

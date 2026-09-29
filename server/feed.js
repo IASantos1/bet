@@ -11,6 +11,7 @@
 // lists) so a small upstream change does not stop the platform; anything unusable is skipped.
 
 import { nowIso, tx } from './db.js';
+import { checkPause, notePause } from './providerlimit.js';
 import { resultCode, settleEvent } from './betting.js';
 import { periodNumber } from './markets.js';
 
@@ -80,7 +81,8 @@ export function normalizeEvent(ev) {
 
 const toX100 = (v) => {
   const n = Number(v);
-  return Number.isFinite(n) && n > 1 ? Math.round(n * 100) : null;
+  const x = Number.isFinite(n) && n < 1000 ? Math.round(n * 100) : null;
+  return x !== null && x > 100 ? x : null; // 1.00 (or 1.004) is no price
 };
 
 // The consensus keys of /events/{id}/odds/ → our market|code (0.5 and 4.5 goal lines when present).
@@ -279,10 +281,12 @@ export function createFeed(db, {
   async function get(path, params = {}) {
     const url = new URL(`${baseUrl}${path}`);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    checkPause(`bzzoiro:${token}`);
     const res = await fetchImpl(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20_000),
     });
+    if (res.status === 429) notePause(`bzzoiro:${token}`, res);
     if (!res.ok) {
       let detail = '';
       try { detail = JSON.stringify(await res.json()).slice(0, 200); } catch { /* not JSON */ }
