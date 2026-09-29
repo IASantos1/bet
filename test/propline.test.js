@@ -197,6 +197,10 @@ test('a refused key stops the source; the daily limit pauses it; errors never th
   await pl3.tick();
   await pl3.syncSport('soccer_epl').catch(() => {});
   assert.equal(api.calls.length, 1);
+  // Cadence from the budget: free plan ~20 min per competition, Streaming plan every minute.
+  assert.equal(createPropLineFeed(db, { apiKey: 'k', sportKeys: ['soccer_epl', 'tennis'], dailyRequests: 900 }).status().prematchEverySeconds, 320);
+  assert.equal(createPropLineFeed(db, { apiKey: 'k', dailyRequests: 1_000_000 }).status().prematchEverySeconds, 60);
+  assert.equal(createPropLineFeed(db, { apiKey: 'k', prematchSeconds: 10 }).status().prematchEverySeconds, 30);
   // Without a key it is off and does nothing.
   assert.equal(createPropLineFeed(db, { apiKey: '' }).enabled, false);
   db.close();

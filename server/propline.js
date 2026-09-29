@@ -241,7 +241,10 @@ export function createPropLineFeed(db, {
     quota: null, usedToday: 0, day: new Date().toISOString().slice(0, 10), bySport: {}, live: null,
   };
   // Pre-match cadence from the daily budget: 60 % of it for pre-match, the rest for live.
-  const prematchEvery = Math.max(300, prematchSeconds || Math.ceil((86_400 * keys.length) / Math.max(1, dailyRequests * 0.6)));
+  // (never below 60 s when derived, 30 s when set explicitly)
+  const prematchEvery = prematchSeconds
+    ? Math.max(30, prematchSeconds)
+    : Math.max(60, Math.ceil((86_400 * keys.length) / Math.max(1, dailyRequests * 0.6)));
   const lastRun = new Map();
 
   function budgetLeft() {
@@ -410,7 +413,8 @@ export function createPropLineFeed(db, {
     }
   }
 
-  function start({ tickMs = 15_000 } = {}) {
+  // The loop ticks as often as the in-play cadence needs (5 s at the fastest, 15 s at most).
+  function start({ tickMs = Math.min(15_000, Math.max(5_000, (liveSeconds || 15) * 1000)) } = {}) {
     if (!state.enabled) return () => {};
     const first = setTimeout(tick, 5_000);
     const timer = setInterval(tick, tickMs);

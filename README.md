@@ -97,6 +97,9 @@ só traz **odds**, e só para mercados que o Bzzoiro não tem nesse jogo:
 - Pedidos: um por competição no pré-jogo (cadência calculada a partir de `PROPLINE_DAILY_REQUESTS`) e
   um por jogo associado ao vivo. Segue os cabeçalhos `X-Daily-*`; um 429 põe em pausa até ao reset, uma
   chave recusada (401/403) desliga a fonte e mostra o motivo no admin. Erros nunca afetam o Bzzoiro.
+- Planos: com o grátis (1 000/dia) o pré-jogo é lido ~a cada 20 min e o ao vivo esgota a quota depressa.
+  Com o Streaming (1 000 000/dia): `PROPLINE_DAILY_REQUESTS=800000`, `PROPLINE_LIVE_SECONDS=10`,
+  `PROPLINE_MAX_LIVE_EVENTS=50` (pré-jogo a cada minuto, ao vivo a cada 10 s: até ~450 000 pedidos/dia com 50 jogos ao vivo).
 - Admin → Feed mostra o estado, a quota, jogos associados e odds ativas, com "Ler PropLine agora", e cada
   evento tem "Ver odds PropLine".
 
