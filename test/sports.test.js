@@ -484,3 +484,26 @@ test('the per-minute budget keeps pre-match odds to half of it, oldest first', a
   }
   db.close();
 });
+
+test('live list asked at most every liveListEveryMs; REST in-play odds off; kick-off closes every pre-match price', async () => {
+  const db = openDb(':memory:');
+  let listCalls = 0;
+  let oddsCalls = 0;
+  const game = { id: 77, league: { id: 1, name: 'NHL' }, home_team: team(1, 'A'), away_team: team(2, 'B'), match_date: iso(-10 * 60_000), status: 'inprogress', home_score: 0, away_score: 0 };
+  const routes = {
+    '/hockey/api/v2/matches/live/': () => { listCalls += 1; return { results: [game] }; },
+    '/hockey/api/v2/matches/77/odds/': () => { oddsCalls += 1; return { bookmakers: [] }; },
+  };
+  const feed = createSportFeed(db, 'hoquei', { token: 'acct-list', fetchImpl: fakeApi('', routes), liveListEveryMs: 15_000, liveOddsEveryMs: Infinity });
+  // The game was imported before the start with a pre-match price of each source.
+  const ts = nowIso();
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+    VALUES ('hoquei', 'NHL', 'A', 'B', ?, 'scheduled', 'bzzoiro-hockey', '77', ?, ?)`).run(iso(-10 * 60_000), ts, ts).lastInsertRowid);
+  db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, src) VALUES (?, 'ml', '1', 190, NULL), (?, 'ml', '2', 190, NULL), (?, 'ou', 'O5.5', 190, 'pl')").run(id, id, id);
+  await feed.syncLive();
+  await feed.syncLive();
+  assert.equal(listCalls, 1);
+  assert.equal(oddsCalls, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM selections WHERE event_id = ? AND active = 1').get(id).n, 0);
+  db.close();
+});

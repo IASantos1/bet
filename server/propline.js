@@ -232,7 +232,7 @@ export function pricesFrom(game, sport, { swapped = false, live = false, maxAgeM
 
 export function createPropLineFeed(db, {
   apiKey = '', baseUrl = 'https://api.prop-line.com/v1', sportKeys = DEFAULT_SPORT_KEYS, dailyRequests = 900,
-  prematchSeconds = 0, liveSeconds = 60, liveMaxAge = 90, maxLiveEvents = 20, timeoutMs = 15_000,
+  prematchSeconds = 0, liveSeconds = 60, liveMaxAge = 90, maxLiveEvents = 20, timeoutMs = 30_000,
   fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const keys = sportKeys.filter((k) => sportFor(k));

@@ -171,7 +171,7 @@ export function normalizeTennisPrediction(data, homeId) {
 
 export function createTennisFeed(db, {
   token, baseUrl = 'https://sports.bzzoiro.com/tennis/api/v2', days = 3, maxResultCalls = 40, maxOddsCalls = 40,
-  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, prematchOddsSeconds = 60, liveOddsEveryMs = 0, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
+  maxLiveOddsCalls = 25, liveOddsMaxAge = 180, prematchOddsSeconds = 60, liveOddsEveryMs = 0, liveListEveryMs = 0, fetchImpl = globalThis.fetch, log = () => {}, liveSocket = null,
 } = {}) {
   const state = { enabled: !!token, running: false, last: {}, lastError: null, lastErrorAt: null, addonMissing: false };
 
@@ -389,12 +389,16 @@ export function createTennisFeed(db, {
   }
 
   let lastLiveOdds = 0;
+  let lastList = 0;
   // With no match in play the live list is asked every 30 s instead of every few seconds.
   let idleUntil = 0;
   const liveRows = () => db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = ? AND status = 'live'").get(TENNIS_SOURCE).n;
 
   async function syncLive() {
     if (Date.now() < idleUntil && !liveRows()) return { live: 0, updated: 0, idle: true };
+    // The live list itself at most every liveListEveryMs (scores also arrive by WebSocket where there is one).
+    if (Date.now() - lastList < liveListEveryMs) return { live: liveRows(), updated: 0, skipped: true };
+    lastList = Date.now();
     const live = listOf(await get('/matches/live/')).map(normalizeTennisMatch).filter(Boolean);
     idleUntil = live.length ? 0 : Date.now() + 30_000;
     let updated = 0;
@@ -403,9 +407,9 @@ export function createTennisFeed(db, {
         const row = upsert({ ...m, status: m.status === 'scheduled' ? 'live' : m.status });
         if (!row || row.closed) return null;
         if (!['live', 'scheduled'].includes(m.status)) return row;
-        if (row.status !== 'live') { // the second source's pre-match prices close at the start
-          db.prepare("UPDATE selections SET active = 0 WHERE event_id = ? AND src = 'pl'").run(row.id);
-          db.prepare('UPDATE events SET pl_live_at = NULL WHERE id = ?').run(row.id);
+        if (row.status !== 'live') { // pre-match prices (ours and PropLine's) close at the start
+          db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+          db.prepare('UPDATE events SET pl_live_at = NULL, live_odds_at = NULL WHERE id = ?').run(row.id);
         }
         // A match followed on the WebSocket has a point-by-point score; the REST poll only opens it.
         if (!liveSocket?.isFollowing(m.externalId)) {
