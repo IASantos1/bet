@@ -88,6 +88,13 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   basquetebol vencedor com prolongamento e pontos (.5); hóquei 1X2 e resultado exato do tempo
   regulamentar; ténis vencedor; ténis de mesa e badminton vencedor (+ resultado exato em sets no
   ténis de mesa); voleibol vencedor.
+- **Todos os mercados**: a página de cada jogo (`prematchgame/{id}`) das próximas
+  `WINHOUSE_DETAIL_HOURS` horas é lida aos poucos (`WINHOUSE_DETAIL_PER_CYCLE` por minuto, cada uma
+  de novo após `WINHOUSE_DETAIL_REFRESH_MINUTES`). Os mercados que o resultado final decide
+  (golos em todas as linhas, ambas marcam, par/ímpar, handicap asiático, resultado exato, totais
+  por equipa) liquidam-se sozinhos; todos os outros (cantos, combinados, partes, tempos de golo…)
+  são importados também e ficam em Admin → Liquidação, onde o operador marca cada seleção como
+  ganha, perdida ou anulada depois do jogo.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos); os já importados são
   removidos enquanto não tiverem apostas.

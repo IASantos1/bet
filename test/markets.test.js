@@ -145,3 +145,45 @@ test('handicap, games total and odd/even settlement', () => {
   assert.equal(selectionLabel('ghcp', '1+3.5', 'Alcaraz', 'Sinner'), 'Alcaraz +3.5');
   assert.equal(selectionLabel('goe', 'EVEN'), 'Par');
 });
+
+test('other provider markets: shown on the match page, bet like the rest, settled by the operator', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const { server, call } = await start(db);
+  const ev = (await call('GET', '/api/events')).body.events.find((e) => e.status === 'scheduled' && e.sport === 'futebol');
+  const add = db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, 'x', ?, ?, 1)");
+  add.run(ev.id, '1300017~Cantos · Total~Mais de (8.5)', 185);
+  add.run(ev.id, '1300017~Cantos · Total~Menos de (8.5)', 190);
+  add.run(ev.id, '1012~1st Half / Fulltime~1/1', 300);
+  const detail = (await call('GET', `/api/events/${ev.id}`)).body.event;
+  const corners = detail.markets.find((m) => m.name === 'Cantos · Total');
+  assert.deepEqual(corners.selections.map((s) => s.label), ['Mais de (8.5)', 'Menos de (8.5)']);
+  assert.ok(detail.markets.some((m) => m.name === '1st Half / Fulltime'));
+
+  await call('POST', '/api/auth/register', { name: 'Ana', email: 'ana@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/wallet/deposit', { amount: 100 });
+  const over = corners.selections[0];
+  let r = await call('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: over.id, odds: over.odds }] });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await call('GET', '/api/bets')).body.bets[0].legs[0].marketName, 'Cantos · Total');
+
+  // The final score does not settle it: it waits in Liquidação.
+  const admin = await start(db);
+  await admin.call('POST', '/api/auth/login', { email: 'admin@classicbet.local', password: 'admin12345' });
+  await admin.call('POST', `/api/admin/events/${ev.id}/result`, { homeScore: 2, awayScore: 1 });
+  assert.equal((await call('GET', '/api/bets')).body.bets[0].status, 'open');
+  const desk = (await admin.call('GET', '/api/admin/settlement')).body;
+  const item = desk.queue.find((q) => q.id === ev.id);
+  assert.deepEqual(item.specials.map((x) => [x.group, x.label, x.bets]), [['Cantos · Total', 'Mais de (8.5)', 1]]);
+  await admin.call('POST', '/api/admin/settlement/run', {});
+  assert.equal((await call('GET', '/api/bets')).body.bets[0].status, 'open', 'the safety net leaves it to the operator');
+
+  r = await admin.call('POST', `/api/admin/events/${ev.id}/special`, { code: item.specials[0].code, result: 'won' });
+  assert.equal(r.body.settledBets, 1);
+  assert.equal((await call('GET', '/api/bets')).body.bets[0].status, 'won');
+  assert.equal((await call('GET', '/api/wallet')).body.balance, 90 + 18.5);
+  assert.ok(!(await admin.call('GET', '/api/admin/settlement')).body.queue.some((q) => q.id === ev.id));
+  server.close();
+  admin.server.close();
+  db.close();
+});

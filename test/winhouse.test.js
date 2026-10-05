@@ -98,6 +98,7 @@ function setupFeed(lists) {
     prematchMain: async () => ({ ok: true, status: 200, body: lists.pre || [] }),
     prematchTop: async () => ({ ok: true, status: 200, body: [] }),
     prematch24h: async () => ({ ok: false, status: 500 }),
+    prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
   };
   const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
   const { lastInsertRowid } = db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p@x.pt', 'P', '1990-01-01', 'x', ?)").run(nowIso());
@@ -255,4 +256,64 @@ test('market catalog: every market a game page offers (groups of odd objects)', 
   assert.equal(r.markets.length, 2);
   assert.equal(r.sample, undefined);
   assert.ok(calls[1].includes('/ajax/prematchgame/77'));
+});
+
+test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd/even, scores, team totals)', async () => {
+  const o = (odd, mid, opt, special = null) => ({ id: 1, odd, market_id: String(mid), market: 'm', market_option: `${opt} `, special_value: special });
+  const page = [
+    [o('1.89', 1001, '1'), o('3.16', 1001, 'x'), o('3.91', 1001, '2')],
+    [o('1.92', 1007, 'yes'), o('1.76', 1007, 'no')],
+    [o('1.84', 1019, 'odd'), o('1.80', 1019, 'even')],
+    [o('7.9', 1011, '1', '-2.5'), o('1.02', 1011, '2', '-2.5'), o('2.78', 1011, '1', '-1.0'), o('1.34', 1011, '2', '-1.0'), o('3.2', 1011, '1', '-1.25'), o('1.26', 1011, '2', '-1.25')],
+    [o('1.06', 1018, 'over', '0.5'), o('7.38', 1018, 'under', '0.5'), o('2.15', 1018, 'over', '2.5'), o('1.60', 1018, 'under', '2.5')],
+    [o('7.5', 1708, '0:0'), o('5.5', 1708, '1:0'), o('9', 1708, 'other')],
+    [o('1.2', 1725, 'over', '0.5'), o('3.75', 1725, 'under', '0.5'), o('3.38', 1714, 'over', '1.5'), o('1.2', 1714, 'under', '1.5')],
+    [o('3.0', 1012, '1/1')], // half time / full time: needs the half-time score, not offered
+  ];
+  const { detailOdds } = await import('../server/winhouse.js');
+  assert.deepEqual(pricesFor(detailOdds(page), 'futebol'), {
+    '1x2|1': 189, '1x2|X': 316, '1x2|2': 391, 'btts|Y': 192, 'btts|N': 176, 'oe|ODD': 184, 'oe|EVEN': 180,
+    'hcp|1-2.5': 790, 'hcp|2+2.5': 102, 'hcp|1-1': 278, 'hcp|2+1': 134,
+    'ou|O0.5': 106, 'ou|U0.5': 738, 'ou|O2.5': 215, 'ou|U2.5': 160, 'cs|0:0': 750, 'cs|1:0': 550,
+    'tou|1O0.5': 120, 'tou|1U0.5': 375, 'tou|2O1.5': 338, 'tou|2U1.5': 120,
+  });
+  assert.equal(legOutcome('tou', '1O0.5', 1, 3), 'won');
+  assert.equal(legOutcome('tou', '2U1.5', 1, 3), 'lost');
+  assert.equal(legOutcome('hcp', '1-1', 2, 1), 'void');
+  assert.equal(legOutcome('hcp', '2+1', 1, 1), 'won');
+
+  // The feed reads the pages of games starting soon and keeps the lists' prices on top.
+  const future = (id, hours) => ({ ...football(id, 0, '', ODD), id, ...when(-hours * 3_600_000), current_minute: '' });
+  const lists = { live: [], pre: [future(10, 3), future(11, 30)], pages: { 10: page } };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  const d = await t.feed.syncDetails();
+  assert.deepEqual([d.window, d.due, d.read, d.failed], [1, 1, 1, 0]); // game 11 starts in 30 h: outside the window
+  const active = (ext) => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(t.row(ext).id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
+  const a = active(10);
+  assert.equal(a['btts|Y'], 192);
+  assert.equal(a['x|1012~m~1/1'], 300); // half time / full time: imported, settled by the operator
+  assert.equal(a['hcp|1-2.5'], 790);
+  assert.equal(a['1x2|1'], pricesFor(parseOdds(ODD), 'futebol')['1x2|1']); // list price wins
+  // The next list sync keeps the page markets.
+  await t.feed.syncPrematch();
+  assert.equal(active(10)['tou|2O1.5'], 338);
+  // Not read again before the refresh time.
+  assert.equal((await t.feed.syncDetails()).due, 0);
+});
+
+test('every other market of a page becomes an operator-settled selection', async () => {
+  const { extraPrices, detailOdds } = await import('../server/winhouse.js');
+  const o = (odd, mid, market, opt, special = null) => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });
+  const page = [
+    [o('1.89', 1001, '1x2 [1x2]', '1')],
+    [o('1.17', 1300017, 'Corners · Total [Corners_·_Total]', 'Over', '6.5'), o('3.87', 1300017, 'Corners · Total [Corners_·_Total]', 'Under', '6.5')],
+    [o('2.6', 2412, '1x2 & Total Goals - Over / Under 1.5', '1&over', '1.5')],
+    [o('1.0', 1000032, 'Goal In Both Halves', 'Yes'), o('1.74', 1000032, 'Goal In Both Halves', 'No')],
+  ];
+  assert.deepEqual(extraPrices(detailOdds(page), { sport: 'futebol' }), {
+    'x|1300017~Corners · Total~Mais de (6.5)': 117, 'x|1300017~Corners · Total~Menos de (6.5)': 387,
+    'x|2412~1x2 & Total Goals - Over / Under 1.5~1&Mais de (1.5)': 260,
+    'x|1000032~Goal In Both Halves~Não': 174,
+  });
 });

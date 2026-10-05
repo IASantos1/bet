@@ -68,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, start_time);
 CREATE TABLE IF NOT EXISTS selections (
   id        INTEGER PRIMARY KEY,
   event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  market    TEXT    NOT NULL DEFAULT '1x2' CHECK (market IN ('1x2', 'dc', 'dnb', 'ou', 'btts', 'ml', 'hcp', 'gou', 'ghcp', 'goe', 'pw', 'pou', 'phcp', 'poe', 'pbtts', 'cs', 'oe')),
+  market    TEXT    NOT NULL DEFAULT '1x2' CHECK (market IN ('1x2', 'dc', 'dnb', 'ou', 'btts', 'ml', 'hcp', 'gou', 'ghcp', 'goe', 'pw', 'pou', 'phcp', 'poe', 'pbtts', 'cs', 'oe', 'tou', 'x')),
   code      TEXT    NOT NULL,
   odds_x100 INTEGER NOT NULL CHECK (odds_x100 > 100),
   active    INTEGER NOT NULL DEFAULT 1,
@@ -178,7 +178,7 @@ function migrate(db) {
   // Match-winner market for other sports ('ml') and tennis handicaps / games totals: the market
   // CHECK is widened by a rebuild.
   const selSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'selections'").get()?.sql || '';
-  if (!selSql.includes("'oe'")) {
+  if (!selSql.includes("'x'")) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)
       SELECT id, event_id, market, code, odds_x100, active FROM selections_old`);
   }

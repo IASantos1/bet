@@ -125,6 +125,12 @@ export const config = {
     // Women's and youth (U19, Sub-20, Junior…) games are left out unless set to 0.
     blockWomen: env.WINHOUSE_BLOCK_WOMEN !== '0',
     blockYouth: env.WINHOUSE_BLOCK_YOUTH !== '0',
+    // Every market of a game is read from its own page: games starting in the next
+    // WINHOUSE_DETAIL_HOURS, up to WINHOUSE_DETAIL_PER_CYCLE pages a minute, each again after
+    // WINHOUSE_DETAIL_REFRESH_MINUTES. WINHOUSE_DETAIL_PER_CYCLE=0 turns it off.
+    detailHours: Math.max(1, int(env.WINHOUSE_DETAIL_HOURS, 12)),
+    detailPerCycle: Math.max(0, int(env.WINHOUSE_DETAIL_PER_CYCLE, 20)),
+    detailRefreshMinutes: Math.max(5, int(env.WINHOUSE_DETAIL_REFRESH_MINUTES, 30)),
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),

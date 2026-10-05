@@ -342,9 +342,11 @@ function winhouseFeedInfo(fd) {
   const ev = Object.entries(fd.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
   const lv = fd.last?.live;
   const pm = fd.last?.prematch;
+  const dt = fd.last?.details;
   return `<p>Eventos: <strong>${esc(ev)}</strong>${fd.review ? ` · <span class="pill lost">${fd.review} para decidir em Liquidação</span>` : ''}</p>
     <p class="muted">Ao vivo: ${lv ? `${lv.live} jogos, ${lv.withOdds} com odds, ${lv.finished} terminados, ${lv.review} para rever (${esc(fmtDateTime(lv.at))})` : 'ainda não lido'} ·
       Pré-jogo: ${pm ? `${pm.games} jogos, ${pm.created} novos, ${pm.priced} com odds${pm.listsFailed ? `, ${pm.listsFailed} lista(s) com erro` : ''} (${esc(fmtDateTime(pm.at))})` : 'ainda não lido'} ·
+      Páginas dos jogos (todos os mercados): ${dt ? `${dt.read} lidas agora${dt.failed ? `, ${dt.failed} com erro` : ''}, ${dt.cached} de ${dt.window} jogos nas próximas horas (${esc(fmtDateTime(dt.at))})` : 'ainda não lidas'} ·
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }
@@ -390,7 +392,16 @@ function adminSettlement({ summary: s, queue, history }) {
     ['Liquidadas hoje', `${s.settledToday} · ${money(s.stakesSettledToday)}`], ['Pago hoje', money(s.paidToday)],
     ['Margem hoje', money(s.marginToday)],
   ].map(([l, v]) => `<div class="stat"><small>${l}</small><strong>${esc(v)}</strong></div>`).join('');
-  const queueHtml = queue.length ? queue.map((e) => `<form class="admin-event" data-form="settle-queue" data-id="${e.id}">
+  const specialHtml = (e) => `<div class="admin-event">
+      <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
+        <div><span class="pill ${e.status}">${STATUS_LABEL[e.status] || e.status}</span></div></div>
+      <p class="muted">${esc(e.reason)}. Os outros mercados (cantos, combinados, tempos de golo…) não se liquidam sozinhos: decida cada seleção.</p>
+      <div class="table-wrap"><table><thead><tr><th>Mercado</th><th>Seleção</th><th class="num">Apostas</th><th class="num">Apostado</th><th></th></tr></thead><tbody>
+      ${e.specials.map((x) => `<tr><td>${esc(x.group)}</td><td>${esc(x.label)}</td><td class="num">${x.bets}</td><td class="num">${money(x.stake)}</td>
+        <td class="admin-actions">${[['won', 'Ganha', 'primary-btn'], ['lost', 'Perdida', 'ghost-btn'], ['void', 'Anulada', 'ghost-btn']].map(([r, l, c]) =>
+          `<button class="${c} btn-sm" data-action="special-settle" data-id="${e.id}" data-code="${esc(x.code)}" data-result="${r}" data-label="${esc(`${x.group}: ${x.label}`)}">${l}</button>`).join(' ')}</td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  const queueHtml = queue.length ? queue.map((e) => e.specials?.length ? specialHtml(e) : `<form class="admin-event" data-form="settle-queue" data-id="${e.id}">
       <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
         <div><span class="pill ${e.status}">${STATUS_LABEL[e.status] || e.status}</span></div></div>
       <p class="muted">${esc(e.reason)} · ${e.openBets} aposta(s) em aberto · ${money(e.openStake)} apostado · até ${money(e.openPotential)} a pagar</p>
@@ -610,6 +621,15 @@ document.addEventListener('click', async (e) => {
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
+  } else if (action === 'special-settle') {
+    const word = { won: 'GANHA', lost: 'PERDIDA', void: 'ANULADA' }[actionEl.dataset.result];
+    if (!confirm(`Marcar "${actionEl.dataset.label}" como ${word} e liquidar as apostas nessa seleção?`)) return;
+    actionEl.disabled = true;
+    try {
+      const r = await api(`/api/admin/events/${actionEl.dataset.id}/special`, { method: 'POST', body: { code: actionEl.dataset.code, result: actionEl.dataset.result } });
+      toast('Seleção liquidada', `${r.settledBets} aposta(s) processada(s).`);
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; }
   } else if (action === 'winhouse-copy') {
     try { await navigator.clipboard.writeText($('#whOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'propline-odds') {
