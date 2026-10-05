@@ -56,7 +56,7 @@ if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports
 const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => console.log(`[winhouse] ${msg}`) });
 // WinHouse as the data source: events, scores, odds and results (Bzzoiro stays off without its token).
 const winhouseFeed = winhouse.enabled && config.winhouse.feed
-  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, detailHours: config.winhouse.detailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 const stopWinhouse = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
 

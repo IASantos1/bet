@@ -342,9 +342,11 @@ function winhouseFeedInfo(fd) {
   const ev = Object.entries(fd.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
   const lv = fd.last?.live;
   const pm = fd.last?.prematch;
+  const dt = fd.last?.details;
   return `<p>Eventos: <strong>${esc(ev)}</strong>${fd.review ? ` · <span class="pill lost">${fd.review} para decidir em Liquidação</span>` : ''}</p>
     <p class="muted">Ao vivo: ${lv ? `${lv.live} jogos, ${lv.withOdds} com odds, ${lv.finished} terminados, ${lv.review} para rever (${esc(fmtDateTime(lv.at))})` : 'ainda não lido'} ·
       Pré-jogo: ${pm ? `${pm.games} jogos, ${pm.created} novos, ${pm.priced} com odds${pm.listsFailed ? `, ${pm.listsFailed} lista(s) com erro` : ''} (${esc(fmtDateTime(pm.at))})` : 'ainda não lido'} ·
+      Páginas dos jogos (todos os mercados): ${dt ? `${dt.read} lidas agora${dt.failed ? `, ${dt.failed} com erro` : ''}, ${dt.cached} de ${dt.window} jogos nas próximas horas (${esc(fmtDateTime(dt.at))})` : 'ainda não lidas'} ·
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }

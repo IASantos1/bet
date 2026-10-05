@@ -83,7 +83,7 @@ const shape = (v, depth = 0) => {
 };
 
 /** Market ids we already turn into bets (per sport); the rest are listed as "not mapped yet". */
-export const MAPPED_MARKETS = new Set([1001, 1005, 1018, 1022, 1672, 1045, 1161, 1160, 1168, 1870, 1016, 1044, 1992]);
+export const MAPPED_MARKETS = new Set([1001, 1005, 1007, 1011, 1018, 1019, 1022, 1672, 1708, 1714, 1725, 1045, 1161, 1160, 1168, 1870, 1016, 1044, 1992]);
 
 /**
  * A game page (`prematchgame/{id}`): groups of odd objects, one group per market —
@@ -243,6 +243,19 @@ const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFin
 // Half or whole line (a whole line voids on a push); quarter lines (2.25) would split the stake: not offered.
 const plainLine = (v) => Number.isFinite(v) && v > 0 && Number.isInteger(v * 2);
 
+const ODD_EVEN = { odd: 'ODD', even: 'EVEN', 'ímpar': 'ODD', impar: 'ODD', par: 'EVEN' };
+
+/**
+ * Asian handicap from a game page: the line is the home side's ("1 [-1.5]" and "2 [-1.5]" are
+ * home −1.5 / away +1.5). Whole and half lines only (quarter lines split the stake). → "1-1.5".
+ */
+function asianHandicap(side, special) {
+  const line = Number(String(special ?? '').replace(',', '.'));
+  if ((side !== '1' && side !== '2') || special === null || special === undefined || !Number.isFinite(line) || !Number.isInteger(line * 2) || Math.abs(line) > 50) return null;
+  const own = side === '1' ? line : -line;
+  return `${side}${own >= 0 ? '+' : ''}${own === 0 ? 0 : own}`;
+}
+
 /** "3:1" → "3:1" (a correct score), or null. */
 const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(String(sel).trim()); return m ? `${Number(m[1])}:${Number(m[2])}` : null; };
 
@@ -265,22 +278,30 @@ function overUnder(sel) {
 export function pricesFor(odds, sport) {
   const out = {};
   for (const o of odds) {
-    const sel = String(o.selection).toLowerCase().trim();
+    const raw = String(o.selection).toLowerCase().trim();
+    // Game pages carry the line apart (special_value): "over" + "2.5" → "over 2.5".
+    const sel = o.special && !/\d/.test(raw) ? `${raw} ${o.special}` : raw;
     const v = x100(o.price);
     if (!v) continue;
     if (sport === 'futebol' || sport === 'andebol' || sport === 'futsal') {
       if (o.marketId === 1001) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
       else if (o.marketId === 1005) { const c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]; if (c) out[`dc|${c}`] = v; }
       else if (o.marketId === 1018) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
+      else if (o.marketId === 1007) { const c = { yes: 'Y', no: 'N', sim: 'Y', 'não': 'N', nao: 'N' }[raw]; if (c) out[`btts|${c}`] = v; }
+      else if (o.marketId === 1019) { const c = ODD_EVEN[raw]; if (c) out[`oe|${c}`] = v; }
+      else if (o.marketId === 1011) { const h = asianHandicap(raw, o.special); if (h) out[`hcp|${h}`] = v; }
+      else if (o.marketId === 1708) { const cs = exactScore(raw); if (cs) out[`cs|${cs}`] = v; }
+      else if (o.marketId === 1725 || o.marketId === 1714) { const ou = overUnder(sel); if (ou) out[`tou|${o.marketId === 1725 ? 1 : 2}${ou[0]}${ou[1]}`] = v; }
     } else if (sport === 'basquetebol') {
       if (o.marketId === 1022) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`ml|${c}`] = v; }
       else if (o.marketId === 1672) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
+      else if (o.marketId === 1011) { const h = asianHandicap(raw, o.special); if (h) out[`hcp|${h}`] = v; }
     } else if (sport === 'hoquei') {
       if (o.marketId === 1045) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
       else if (o.marketId === 1161) { const cs = exactScore(sel); if (cs) out[`cs|${cs}`] = v; } // regulation correct score
       else if (o.marketId === 1168) { const c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]; if (c) out[`dc|${c}`] = v; }
       else if (o.marketId === 1870) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
-      else if (o.marketId === 1160) { const c = { odd: 'ODD', even: 'EVEN', 'ímpar': 'ODD', impar: 'ODD', par: 'EVEN' }[sel]; if (c) out[`oe|${c}`] = v; }
+      else if (o.marketId === 1160) { const c = ODD_EVEN[raw]; if (c) out[`oe|${c}`] = v; }
     } else if (sport === 'tenis') {
       if (o.marketId === 1016) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
     } else if (sport === 'tenismesa' || sport === 'badminton') {
@@ -301,6 +322,12 @@ export function pricesFor(odds, sport) {
     else if (market === 'dc') ok = has('dc|1X') && has('dc|12') && has('dc|X2');
     else if (market === 'ml') ok = has('ml|1') && has('ml|2');
     else if (market === 'oe') ok = has('oe|ODD') && has('oe|EVEN');
+    else if (market === 'btts') ok = has('btts|Y') && has('btts|N');
+    else if (market === 'tou') ok = has(`tou|${code[0]}O${code.slice(2)}`) && has(`tou|${code[0]}U${code.slice(2)}`);
+    else if (market === 'hcp') { // its other side: 1-1.5 ↔ 2+1.5
+      const line = Number(code.slice(1));
+      ok = has(`hcp|${code[0] === '1' ? '2' : '1'}${-line >= 0 ? '+' : ''}${-line}`);
+    }
     else if (market === 'ou') ok = has(`ou|O${code.slice(1)}`) && has(`ou|U${code.slice(1)}`);
     if (!ok) delete out[k];
   }
@@ -408,7 +435,8 @@ export function finishVerdict(row) {
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, log = () => {},
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true,
+  detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, log = () => {},
 } = {}) {
   const block = { women: blockWomen, youth: blockYouth };
   const state = {
@@ -416,6 +444,11 @@ export function createWinHouseFeed(db, {
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
   };
   const offset = () => state.offset ?? 0;
+  // Every market of a game comes from its own page (prematchgame/{id}); the lists carry 2–3.
+  // Page prices are kept here and merged under the lists' (fresher) ones when prices are written.
+  const listPrices = new Map(); // externalId → prices from the last pre-match lists
+  const pagePrices = new Map(); // externalId → { at, prices }
+  const pageFresh = (ext) => { const p = pagePrices.get(ext); return p && Date.now() - p.at < detailRefreshMinutes * 2 * 60_000 ? p.prices : {}; };
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
@@ -537,7 +570,8 @@ export function createWinHouseFeed(db, {
           db.prepare(`UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
               away_team_ext = COALESCE(?, away_team_ext), wh_seen_at = ?, updated_at = ? WHERE id = ?`)
             .run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeLogo, ev.awayLogo, nowIso(), nowIso(), row.id);
-          if (writePrices(row.id, ev.prices)) priced += 1;
+          listPrices.set(ev.externalId, ev.prices);
+          if (writePrices(row.id, { ...pageFresh(ev.externalId), ...ev.prices })) priced += 1;
         });
       } catch (err) { log(`WinHouse pré-jogo ${ev.externalId}: ${err.message}`); }
     }
@@ -548,6 +582,46 @@ export function createWinHouseFeed(db, {
     const removed = purgeBlocked();
     state.last.prematch = { at: nowIso(), games: byId.size, created, priced, listsFailed: failed.length, removed };
     return state.last.prematch;
+  }
+
+  /**
+   * Each game's own page, for every market it offers: games starting within `detailHours`, never
+   * read (or read longest ago) first, at most `detailPerCycle` per run, each again after
+   * `detailRefreshMinutes`.
+   */
+  async function syncDetails() {
+    const until = new Date(Date.now() + detailHours * 3600_000).toISOString();
+    const now = Date.now();
+    const rows = db.prepare(`SELECT id, sport, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND start_time <= ?
+      ORDER BY start_time`).all(SOURCE, nowIso(), until);
+    for (const ext of [...pagePrices.keys()]) if (!rows.some((r) => r.external_id === ext)) { pagePrices.delete(ext); listPrices.delete(ext); }
+    const due = rows.filter((r) => { const p = pagePrices.get(r.external_id); return !p || now - p.at >= detailRefreshMinutes * 60_000; })
+      .sort((a, b) => (pagePrices.get(a.external_id)?.at ?? 0) - (pagePrices.get(b.external_id)?.at ?? 0))
+      .slice(0, detailPerCycle);
+    let read = 0;
+    let markets = 0;
+    let failed = 0;
+    for (const r of due) {
+      try {
+        const res = await client.prematchEvent(r.external_id);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const prices = pricesFor(detailOdds(res.body), r.sport);
+        pagePrices.set(r.external_id, { at: Date.now(), prices });
+        read += 1;
+        markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
+        tx(db, () => {
+          const row = db.prepare('SELECT status FROM events WHERE id = ?').get(r.id);
+          if (row?.status !== 'scheduled') return; // started meanwhile: the live list owns it
+          writePrices(r.id, { ...prices, ...(listPrices.get(r.external_id) || {}) });
+        });
+      } catch (err) {
+        failed += 1;
+        pagePrices.set(r.external_id, { at: Date.now() - detailRefreshMinutes * 30_000, prices: pagePrices.get(r.external_id)?.prices || {} }); // retry in half the time
+        log(`WinHouse página ${r.external_id}: ${err.message}`);
+      }
+    }
+    state.last.details = { at: nowIso(), due: due.length, read, failed, markets, cached: pagePrices.size, window: rows.length };
+    return state.last.details;
   }
 
   /** Games imported before a block was set: removed while nobody has a bet on them. */
@@ -572,7 +646,7 @@ export function createWinHouseFeed(db, {
     }
   };
 
-  function start({ liveMs = 15_000, prematchMs = 60_000 } = {}) {
+  function start({ liveMs = 15_000, prematchMs = 60_000, detailMs = 60_000 } = {}) {
     if (!state.enabled) return () => {};
     const busy = new Set();
     const guard = (kind, fn) => async () => {
@@ -583,8 +657,9 @@ export function createWinHouseFeed(db, {
     const live = guard('ao vivo', syncLive);
     const pre = guard('pré-jogo', syncPrematch);
     // Live first: it also finds WinHouse's clock zone before pre-match start times are read.
-    live().then(pre);
-    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs)];
+    const details = guard('páginas dos jogos', syncDetails);
+    live().then(pre).then(details);
+    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -595,5 +670,5 @@ export function createWinHouseFeed(db, {
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, finishMissing, start, status, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, finishMissing, start, status, source: SOURCE };
 }
