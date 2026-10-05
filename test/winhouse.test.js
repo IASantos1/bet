@@ -292,6 +292,7 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
   const active = (ext) => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(t.row(ext).id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
   const a = active(10);
   assert.equal(a['btts|Y'], 192);
+  assert.equal(a['x|1012~m~1/1'], 300); // half time / full time: imported, settled by the operator
   assert.equal(a['hcp|1-2.5'], 790);
   assert.equal(a['1x2|1'], pricesFor(parseOdds(ODD), 'futebol')['1x2|1']); // list price wins
   // The next list sync keeps the page markets.
@@ -299,4 +300,20 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
   assert.equal(active(10)['tou|2O1.5'], 338);
   // Not read again before the refresh time.
   assert.equal((await t.feed.syncDetails()).due, 0);
+});
+
+test('every other market of a page becomes an operator-settled selection', async () => {
+  const { extraPrices, detailOdds } = await import('../server/winhouse.js');
+  const o = (odd, mid, market, opt, special = null) => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });
+  const page = [
+    [o('1.89', 1001, '1x2 [1x2]', '1')],
+    [o('1.17', 1300017, 'Corners · Total [Corners_·_Total]', 'Over', '6.5'), o('3.87', 1300017, 'Corners · Total [Corners_·_Total]', 'Under', '6.5')],
+    [o('2.6', 2412, '1x2 & Total Goals - Over / Under 1.5', '1&over', '1.5')],
+    [o('1.0', 1000032, 'Goal In Both Halves', 'Yes'), o('1.74', 1000032, 'Goal In Both Halves', 'No')],
+  ];
+  assert.deepEqual(extraPrices(detailOdds(page), { sport: 'futebol' }), {
+    'x|1300017~Corners · Total~Mais de (6.5)': 117, 'x|1300017~Corners · Total~Menos de (6.5)': 387,
+    'x|2412~1x2 & Total Goals - Over / Under 1.5~1&Mais de (1.5)': 260,
+    'x|1000032~Goal In Both Halves~Não': 174,
+  });
 });

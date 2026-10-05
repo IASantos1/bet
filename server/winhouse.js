@@ -83,7 +83,14 @@ const shape = (v, depth = 0) => {
 };
 
 /** Market ids we already turn into bets (per sport); the rest are listed as "not mapped yet". */
-export const MAPPED_MARKETS = new Set([1001, 1005, 1007, 1011, 1018, 1019, 1022, 1672, 1708, 1714, 1725, 1045, 1161, 1160, 1168, 1870, 1016, 1044, 1992]);
+const FOOTBALL_MARKETS = [1001, 1005, 1007, 1011, 1018, 1019, 1708, 1714, 1725];
+/** Market ids we settle ourselves, per sport; every other market goes to the operator ('x'). */
+export const SPORT_MARKETS = {
+  futebol: FOOTBALL_MARKETS, andebol: FOOTBALL_MARKETS, futsal: FOOTBALL_MARKETS,
+  basquetebol: [1022, 1672, 1011], hoquei: [1045, 1161, 1160, 1168, 1870], tenis: [1016],
+  tenismesa: [1044, 1992], badminton: [1044, 1992], voleibol: [1001],
+};
+export const MAPPED_MARKETS = new Set(Object.values(SPORT_MARKETS).flat());
 
 /**
  * A game page (`prematchgame/{id}`): groups of odd objects, one group per market —
@@ -111,6 +118,35 @@ export function detailOdds(body) {
     for (const x of Object.values(v)) walk(x, depth + 1);
   };
   walk(body, 0);
+  return out;
+}
+
+const WORDS = { over: 'Mais de', under: 'Menos de', yes: 'Sim', no: 'Não', odd: 'Ímpar', even: 'Par', exactly: 'Exatamente', exact: 'Exatamente', draw: 'Empate', neither: 'Nenhum' };
+const clean = (v, max) => String(v ?? '').replace(/[~|\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const ptWords = (t) => t.replace(/\b(over|under|yes|no|odd|even|exactly|exact|draw|neither)\b/gi, (w) => WORDS[w.toLowerCase()]);
+
+/**
+ * Every market of a game page we do not settle ourselves (for that sport) → operator-settled 'x' selections,
+ * "x|<marketId>~<market>~<selection>". The market title is the first one the page gives for that
+ * id, without the "[CODE]" tag; a line goes next to the selection: "Mais de (8.5)".
+ */
+export function extraPrices(odds, { sport = null, limit = 600 } = {}) {
+  const own = new Set(SPORT_MARKETS[sport] || []);
+  const out = {};
+  const titles = new Map();
+  let n = 0;
+  for (const o of odds) {
+    if (own.has(o.marketId) || n >= limit) continue;
+    const v = x100(o.price);
+    if (!v) continue;
+    if (!titles.has(o.marketId)) titles.set(o.marketId, clean(String(o.marketName || '').replace(/\s*\[[^\]]*\]/g, ' '), 70) || `Mercado ${o.marketId}`);
+    const label = clean(`${ptWords(String(o.selection))}${o.special ? ` (${o.special})` : ''}`, 70);
+    if (!label) continue;
+    const key = `x|${o.marketId}~${titles.get(o.marketId)}~${label}`;
+    if (out[key] !== undefined) continue;
+    out[key] = v;
+    n += 1;
+  }
   return out;
 }
 
@@ -605,7 +641,8 @@ export function createWinHouseFeed(db, {
       try {
         const res = await client.prematchEvent(r.external_id);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const prices = pricesFor(detailOdds(res.body), r.sport);
+        const odds = detailOdds(res.body);
+        const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
         pagePrices.set(r.external_id, { at: Date.now(), prices });
         read += 1;
         markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;

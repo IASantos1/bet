@@ -1355,7 +1355,7 @@ function marketsView(e) {
       const rows = [...new Set(mk.selections.filter((s) => bare(s)[0] === '1').map((s) => bare(s).slice(1)))];
       grid = rows.map((line) => {
         const one = mk.selections.find((s) => bare(s) === `1${line}`);
-        const two = mk.selections.find((s) => bare(s) === `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`);
+        const two = mk.selections.find((s) => bare(s) === (/^[+-]0$/.test(line) ? '2+0' : `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`));
         return `<div class="odds two">${one ? btn(one) : '<span></span>'}${two ? btn(two) : '<span></span>'}</div>`;
       }).join('');
     } else {

@@ -15,6 +15,7 @@
 
 import { nowIso, tx } from './db.js';
 import { settleEvent } from './betting.js';
+import { splitSpecial } from './markets.js';
 
 const H = 3_600_000;
 
@@ -30,7 +31,7 @@ export function createSettlementEngine(db, {
 
     const pending = db.prepare(
       `SELECT DISTINCT e.id FROM events e JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
-        WHERE e.status IN ('finished', 'cancelled')`
+        WHERE e.status = 'cancelled' OR (e.status = 'finished' AND l.market <> 'x')` // 'x' legs wait for the operator
     ).all();
     for (const { id } of pending) {
       settled += tx(db, () => settleEvent(db, id, { source: 'engine', note: 'Liquidação de segurança (apostas em aberto)' })) > 0 ? 1 : 0;
@@ -66,12 +67,22 @@ export function createSettlementEngine(db, {
            OR (e.status = 'live' AND e.start_time <= ?)
            OR (e.status = 'scheduled' AND e.postponed_at IS NOT NULL)
            OR (e.status = 'scheduled' AND e.start_time <= ?)
+           OR (e.status = 'finished' AND EXISTS (SELECT 1 FROM bet_legs x WHERE x.event_id = e.id AND x.market = 'x' AND x.status = 'open'))
         GROUP BY e.id
         ORDER BY e.start_time`
     ).all(new Date(now - stuckLiveHours * H).toISOString(), new Date(now - overdueHours * H).toISOString());
+    const specials = db.prepare(
+      `SELECT l.code, COUNT(DISTINCT l.bet_id) AS bets, SUM(b.stake_cents) AS stake FROM bet_legs l JOIN bets b ON b.id = l.bet_id
+        WHERE l.event_id = ? AND l.market = 'x' AND l.status = 'open' GROUP BY l.code ORDER BY l.code`
+    );
     return rows.map((e) => {
       let reason;
-      if (e.review_reason) reason = e.review_reason;
+      const pending = e.status === 'finished' ? specials.all(e.id).map((x) => {
+        const sp = splitSpecial(x.code);
+        return { code: x.code, group: sp?.group || '', label: sp?.label || x.code, bets: x.bets, stake: x.stake / 100 };
+      }) : [];
+      if (e.status === 'finished') reason = `Terminado ${e.home_score ?? '?'}-${e.away_score ?? '?'} — ${pending.length} seleção(ões) de outros mercados por decidir`;
+      else if (e.review_reason) reason = e.review_reason;
       else if (e.postponed_at) {
         const left = Math.max(0, new Date(e.postponed_at).getTime() + postponedVoidHours * H - now);
         reason = `Adiado — anulação automática em ${Math.ceil(left / H)} h se não tiver nova data`;
@@ -80,7 +91,7 @@ export function createSettlementEngine(db, {
       return {
         id: e.id, home: e.home, away: e.away, competition: e.competition, startTime: e.start_time, status: e.status,
         source: e.source, homeScore: e.home_score, awayScore: e.away_score, reason,
-        openBets: e.open_bets, openStake: e.open_stake / 100, openPotential: e.open_potential / 100,
+        openBets: e.open_bets, openStake: e.open_stake / 100, openPotential: e.open_potential / 100, specials: pending,
       };
     });
   }

@@ -9,9 +9,9 @@ import { nowIso, tx } from './db.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
 } from './security.js';
-import { placeBets, resultCode, settleEvent } from './betting.js';
+import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import { postTransaction } from './wallet.js';
-import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod } from './markets.js';
+import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
@@ -223,7 +223,7 @@ export function createApp(db, {
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         clock: e.clock, result: e.result, featured: !!e.featured, source: e.source,
         selections: rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub),
-        marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => s.market)).size,
+        marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
         homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
@@ -236,13 +236,21 @@ export function createApp(db, {
           market: m, name: marketName(e.sport, m) + suffix,
           selections: list.sort((a, b) => codeRank(m, a.code) - codeRank(m, b.code)).map(pub),
         });
-        const full = MARKET_ORDER.filter((m) => !PERIOD_MARKETS.has(m))
+        const full = MARKET_ORDER.filter((m) => !PERIOD_MARKETS.has(m) && m !== 'x')
           .map((m) => block(m, rows.filter((s) => s.market === m)));
+        // Every other provider market: one block each, in the provider's order (settled by the operator).
+        const specials = new Map();
+        for (const s of rows.filter((r) => r.market === 'x').sort((a, b) => a.id - b.id)) {
+          const sp = splitSpecial(s.code);
+          if (!sp) continue;
+          if (!specials.has(sp.id)) specials.set(sp.id, { market: 'x', name: sp.group, selections: [] });
+          specials.get(sp.id).selections.push(pub(s));
+        }
         // Period markets: one block per set / half, after the full-match ones.
         const periods = [...new Set(rows.filter((s) => PERIOD_MARKETS.has(s.market)).map((s) => splitPeriod(s.code)?.period).filter(Boolean))].sort();
         const perPeriod = periods.flatMap((n) => MARKET_ORDER.filter((m) => PERIOD_MARKETS.has(m))
           .map((m) => block(m, rows.filter((s) => s.market === m && splitPeriod(s.code)?.period === n), ` — ${periodLabel(e.sport, n)}`)));
-        out.markets = [...full, ...perPeriod].filter((m) => m.selections.length);
+        out.markets = [...full, ...perPeriod, ...specials.values()].filter((m) => m.selections.length);
       }
       return out;
     });
@@ -493,7 +501,7 @@ export function createApp(db, {
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
         match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
-        marketName: MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
+        marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
       })),
@@ -697,6 +705,30 @@ export function createApp(db, {
       return settleEvent(db, ev.id, { source: 'admin', userId: req.user.id, note: str(req.body.reason, 200) || 'Anulado pelo operador' });
     });
     res.json({ event: loadEvents('e.id = ?', [ev.id])[0], settledBets: settled });
+  });
+
+  // Operator-settled markets ('x'): one selection of a finished event won, lost or void.
+  admin.post('/events/:id/special', (req, res) => {
+    const ev = db.prepare('SELECT * FROM events WHERE id = ?').get(Number(req.params.id));
+    if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+    if (ev.status !== 'finished') throw new HttpError(409, 'Só depois de o evento terminar.');
+    const code = String(req.body?.code || '');
+    const result = String(req.body?.result || '');
+    if (!['won', 'lost', 'void'].includes(result)) throw new HttpError(400, 'Resultado inválido.');
+    const settled = tx(db, () => {
+      const legs = db.prepare("SELECT id, bet_id FROM bet_legs WHERE event_id = ? AND market = 'x' AND code = ? AND status = 'open'").all(ev.id, code);
+      if (!legs.length) throw new HttpError(404, 'Nenhuma aposta em aberto nessa seleção.');
+      for (const l of legs) db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?').run(result, l.id);
+      const betIds = [...new Set(legs.map((l) => l.bet_id))];
+      let paid = 0;
+      for (const id of betIds) paid += settleBet(db, id);
+      const sp = splitSpecial(code);
+      db.prepare(`INSERT INTO settlements (event_id, action, home_score, away_score, bets_settled, payout_cents, source, user_id, note, created_at)
+        VALUES (?, 'result', ?, ?, ?, ?, 'admin', ?, ?, ?)`).run(ev.id, ev.home_score, ev.away_score, betIds.length, paid, req.user.id,
+        `${sp?.group || 'Mercado'}: ${sp?.label || code} → ${{ won: 'ganha', lost: 'perdida', void: 'anulada' }[result]}`.slice(0, 200), nowIso());
+      return betIds.length;
+    });
+    res.json({ settledBets: settled });
   });
 
   // Settlement desk: what is at stake, what needs a decision, and everything already settled.

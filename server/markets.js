@@ -14,6 +14,8 @@
 //   goe     ODD / EVEN      total games odd / even (tennis)
 //   oe      ODD / EVEN      total goals / points odd / even (main score)
 //   tou     1O0.5 / 2U1.5 … one team's goals over / under a line (whole lines void on a push)
+//   x       "<id>~<market>~<selection>"  any other market the provider offers (corners, combos,
+//           goal times…): shown and bet like the rest, settled by the operator in Liquidação.
 //
 // Period markets (a set in tennis, a half in football): the code starts with the period number,
 // "<n>:<code>", and settles on events.period_scores ([[home, away], …], games per set / goals per
@@ -49,6 +51,7 @@ export const MARKETS = {
   goe: { name: 'Total de jogos par / ímpar', codes: ['ODD', 'EVEN'] },
   oe: { name: 'Total par / ímpar', codes: ['ODD', 'EVEN'] },
   tou: { name: 'Total da equipa', valid: /^[12][OU]\d{1,3}(\.5)?$/ },
+  x: { name: 'Mais mercados', valid: /^\d{1,12}~[^~|\n]{1,80}~[^~|\n]{1,80}$/ },
   cs: { name: 'Resultado exato', valid: /^\d{1,2}:\d{1,2}$/ },
   pw: { name: 'Vencedor', period: true, valid: /^\d:[1X2]$/ },
   pou: { name: 'Total', period: true, valid: /^\d:[OU]\d{1,3}\.5$/ },
@@ -60,7 +63,7 @@ export const PERIOD_MARKETS = new Set(['pw', 'pou', 'phcp', 'poe', 'pbtts']);
 /** "2:O8.5" → { period: 2, code: 'O8.5' } */
 export const splitPeriod = (code) => { const m = /^(\d):(.+)$/.exec(code); return m ? { period: Number(m[1]), code: m[2] } : null; };
 
-export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'oe', 'tou', 'cs', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
+export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'oe', 'tou', 'cs', 'x', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
 /** Markets settled on games rather than on the main score. */
 export const GAMES_MARKETS = new Set(['gou', 'ghcp', 'goe']);
 
@@ -80,6 +83,7 @@ export function codeRank(market, code) {
     return p.period * 1000 + inner;
   }
   if (m?.codes) return m.codes.indexOf(code);
+  if (market === 'x') return 0; // provider order
   if (market === 'cs') { const [h, a] = code.split(':').map(Number); return (h + a) * 100 + h; }
   if (market === 'tou') return (code[0] === '1' ? 0 : 100_000) + Number(code.slice(2)) * 10 + (code[1] === 'O' ? 0 : 1);
   const line = Math.abs(Number(code.slice(1))) || 0;
@@ -128,6 +132,7 @@ export function legOutcome(market, code, home, away, { homeGames = null, awayGam
     case 'cs': return code === `${home}:${away}` ? 'won' : 'lost';
     case 'oe': return (code === 'ODD') === ((home + away) % 2 === 1) ? 'won' : 'lost';
     case 'tou': return overUnder(code.slice(1), code[0] === '1' ? home : away);
+    case 'x': return 'open'; // settled by the operator
     case 'hcp': return handicap(code, home, away);
     case 'gou': return overUnder(code, homeGames + awayGames);
     case 'ghcp': return handicap(code, homeGames, awayGames);
@@ -159,6 +164,7 @@ export function selectionLabel(market, code, home = 'Casa', away = 'Fora') {
     case 'goe': case 'oe': return code === 'ODD' ? 'Ímpar' : 'Par';
     case 'cs': return code.replace(':', ' - ');
     case 'tou': return `${code[0] === '1' ? home : away}: ${code[1] === 'O' ? 'Mais' : 'Menos'} de ${code.slice(2)}`;
+    case 'x': return splitSpecial(code)?.label ?? code;
     default: return code;
   }
 }
@@ -171,4 +177,10 @@ export function periodNumber(v) {
   for (const [w, n] of Object.entries(words)) if (s.startsWith(w)) return n;
   const m = /^(?:SET|S|H|P|Q)?(\d)(?:ST|ND|RD|TH)?(?:SET|S|H|HALF|P|Q)?$/.exec(s);
   return m ? Number(m[1]) : null;
+}
+
+/** "1300017~Cantos · Total~Mais de (8.5)" → { id: 1300017, group: "Cantos · Total", label: "Mais de (8.5)" }. */
+export function splitSpecial(code) {
+  const m = /^(\d{1,12})~([^~]+)~([^~]+)$/.exec(String(code || ''));
+  return m ? { id: Number(m[1]), group: m[2], label: m[3] } : null;
 }
