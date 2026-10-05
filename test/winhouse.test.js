@@ -235,19 +235,24 @@ test('whole-line totals (push voids) and more ice hockey markets; quarter lines 
   assert.equal(legOutcome('oe', 'EVEN', 3, 2), 'lost');
 });
 
-test('market catalog: every market a game page offers, whatever the wrapping', async () => {
-  const { marketCatalog } = await import('../server/winhouse.js');
-  const body = { game: { id: 5, odd: '1|1.5|1|1001|1x2 [1x2],2|4|x|1001|1x2 [1x2],3|6|2|1001|1x2 [1x2]' },
-    groups: [{ market_id: 1234, market_name: 'Handicap', odds: [{ id: 9, price: 1.9, selection: '1 (-1.5)', market_id: 1234, market_name: 'Handicap' }] }] };
+test('market catalog: every market a game page offers (groups of odd objects)', async () => {
+  const { marketCatalog, detailOdds } = await import('../server/winhouse.js');
+  const o = (id, odd, mid, market, opt, special = null) => ({ id, game_id: 5, odd, market_id: mid, market, market_option: `${opt} `, special_value: special, mainCategory: 'Main' });
+  const body = [
+    [o(1, '1.89', '1001', '1x2 [1x2]', '1'), o(2, '3.16', '1001', '1x2 [1x2]', 'x'), o(3, '3.91', '1001', '1x2 [1x2]', '2')],
+    [o(4, '1.90', '1234', 'Handicap [AH]', '1', '-1.5'), o(5, '1.00', '1234', 'Handicap [AH]', '2', '+1.5')],
+  ];
+  assert.equal(detailOdds(body).length, 4); // the 1.00 (suspended) one is left out
   const c = marketCatalog(body);
   assert.equal(c.totalOdds, 4);
-  assert.deepEqual(c.markets.map((m) => [m.marketId, m.count, m.mapped]), [[1001, 3, true], [1234, 1, false]]);
-  assert.deepEqual(c.markets[1].selections, ['1 (-1.5) @ 1.9']);
+  assert.deepEqual(c.markets.map((m) => [m.marketId, m.count, m.mapped, m.code]), [[1001, 3, true, '1x2'], [1234, 1, false, 'AH']]);
+  assert.deepEqual(c.markets[1].selections, ['1 [-1.5] @ 1.9']);
   const calls = [];
   const fetchImpl = async (u) => { calls.push(u); const text = u.includes('/prematchgame/') ? JSON.stringify(body) : JSON.stringify([{ id: 77 }]); return { status: 200, ok: true, text: async () => text, headers: { get: () => 'application/json' } }; };
   const client = createWinHouseClient({ baseUrl: 'https://wh.test', fetchImpl });
   const r = await client.markets();
   assert.equal(r.gameId, '77');
   assert.equal(r.markets.length, 2);
+  assert.equal(r.sample, undefined);
   assert.ok(calls[1].includes('/ajax/prematchgame/77'));
 });
