@@ -55,6 +55,12 @@ export const config = {
     maxResultCalls: int(env.BZZOIRO_MAX_RESULT_CALLS, 40), // detail requests per results sync
     // Requests per minute the whole account may send (every sport together); 429s mean it is too high.
     maxRequestsPerMinute: int(env.BZZOIRO_MAX_RPM, 60),
+    // In-play odds over REST for tennis and the Sports Addon (the provider rarely has any; PropLine
+    // covers them). Off by default to save requests; BZZOIRO_REST_LIVE_ODDS=1 turns it on.
+    restLiveOdds: env.BZZOIRO_REST_LIVE_ODDS === '1',
+    // How often the live lists of tennis / the Sports Addon are asked (the scores of followed
+    // tennis matches also come by WebSocket).
+    sportsLivePollSeconds: Math.max(5, int(env.SPORTS_LIVE_POLL_SECONDS, 15)),
     // Live WebSocket (paid addon): in-play scores and odds. Set BZZOIRO_LIVE_WS=0 to turn off.
     liveWs: env.BZZOIRO_LIVE_WS !== '0',
     liveWsUrl: env.BZZOIRO_LIVE_WS_URL || 'wss://sports.bzzoiro.com/live/football/',
@@ -98,6 +104,16 @@ export const config = {
     liveSeconds: int(env.PROPLINE_LIVE_SECONDS, 60), // 0 = no in-play prices from PropLine
     liveMaxAge: int(env.PROPLINE_LIVE_MAX_AGE, 90),
     maxLiveEvents: int(env.PROPLINE_MAX_LIVE_EVENTS, 20),
+  },
+  // WinHouse (evaluation): base URL and routes only from the environment. Off until
+  // WINHOUSE_BASE_URL is set. Admin → Feed → "Testar WinHouse" calls every route from the server.
+  winhouse: {
+    baseUrl: unquote(env.WINHOUSE_BASE_URL),
+    lang: unquote(env.WINHOUSE_LANG) || 'pt',
+    routes: {
+      live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
+      prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
+    },
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),

@@ -10,6 +10,7 @@ import { createTennisFeed, TENNIS_SOURCE } from './tennis.js';
 import { createSportFeed, SPORT_SPECS } from './sports.js';
 import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
 import { setRequestsPerMinute } from './providerlimit.js';
+import { createWinHouseClient } from './winhouse.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -30,13 +31,17 @@ const tennisLive = tennisToken && config.feed.liveWs
   : null;
 const tennis = createTennisFeed(db, {
   token: tennisToken, baseUrl: config.tennis.baseUrl, days: config.tennis.days, liveSocket: tennisLive,
-  liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, liveOddsEveryMs: 20_000,
+  liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds,
+  liveOddsEveryMs: config.feed.restLiveOdds ? 20_000 : Infinity,
+  liveListEveryMs: (tennisLive ? 2 : 1) * config.feed.sportsLivePollSeconds * 1000,
   log: (msg) => console.warn(`[ténis] ${msg}`),
 });
 const stopTennis = tennis.start({ liveMs: loops.liveMs });
 
 const sports = Object.fromEntries(config.sportsAddon.sports.filter((k) => SPORT_SPECS[k]).map((k) => [k, createSportFeed(db, k, {
-  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds, liveOddsEveryMs: 20_000, log: (msg) => console.warn(`[${k}] ${msg}`),
+  token: config.feed.token, days: config.sportsAddon.days, liveOddsMaxAge: config.liveOddsMaxAgeSeconds, prematchOddsSeconds: config.prematchOddsSeconds,
+  liveOddsEveryMs: config.feed.restLiveOdds ? 20_000 : Infinity, liveListEveryMs: config.feed.sportsLivePollSeconds * 1000,
+  log: (msg) => console.warn(`[${k}] ${msg}`),
 })]));
 const stopSports = Object.values(sports).map((f) => f.start({ liveMs: loops.liveMs }));
 
@@ -48,6 +53,8 @@ const propline = createPropLineFeed(db, {
 const stopPropline = propline.start();
 if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports.length} competições, ${config.propline.dailyRequests} pedidos/dia`);
 
+const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => console.log(`[winhouse] ${msg}`) });
+
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
 const settlement = createSettlementEngine(db, {
@@ -56,7 +63,7 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
