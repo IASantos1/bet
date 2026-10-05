@@ -82,6 +82,46 @@ const shape = (v, depth = 0) => {
   return v;
 };
 
+/** Market ids we already turn into bets (per sport); the rest are listed as "not mapped yet". */
+export const MAPPED_MARKETS = new Set([1001, 1005, 1018, 1022, 1672, 1045, 1161, 1160, 1168, 1870, 1016, 1044, 1992]);
+
+/**
+ * Every odd found anywhere in a payload (odd strings, arrays of them, or objects with price /
+ * selection / market fields), grouped by market: what one game page offers.
+ */
+export function marketCatalog(body) {
+  const odds = [];
+  const seen = new Set();
+  const pick = (o, keys) => { for (const k of keys) if (o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return undefined; };
+  const walk = (v, depth) => {
+    if (depth > 8 || v === null || v === undefined) return;
+    if (typeof v === 'string') { if (v.includes('|')) for (const o of parseOdds(v)) odds.push(o); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+    if (typeof v !== 'object') return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    const price = pick(v, ['price', 'coef', 'coefficient', 'value', 'k', 'odd_value']);
+    const sel = pick(v, ['selection', 'outcome', 'type', 'name', 'title']);
+    const mid = pick(v, ['market_id', 'marketId', 'group_id', 'groupId', 'market']);
+    if (price !== undefined && sel !== undefined && /^\d+$/.test(String(mid ?? ''))) {
+      const id = pick(v, ['id', 'odd_id', 'oddId']) ?? 0;
+      const label = pick(v, ['market_name', 'marketName', 'group_name', 'groupName']) ?? '';
+      const o = parseOdd(`${String(id).replace(/\D/g, '') || 0}|${price}|${sel}|${mid}|${label}`);
+      if (o) odds.push(o);
+    }
+    for (const x of Object.values(v)) walk(x, depth + 1);
+  };
+  walk(body, 0);
+  const byMarket = new Map();
+  for (const o of odds) {
+    const m = byMarket.get(o.marketId) || { marketId: o.marketId, name: o.marketName, code: o.marketCode, mapped: MAPPED_MARKETS.has(o.marketId), count: 0, selections: [] };
+    m.count += 1;
+    if (m.selections.length < 12) m.selections.push(`${o.selection} @ ${o.price}`);
+    byMarket.set(o.marketId, m);
+  }
+  return { totalOdds: odds.length, markets: [...byMarket.values()].sort((a, b) => a.marketId - b.marketId) };
+}
+
 export function createWinHouseClient({
   baseUrl = '', lang = 'pt', routes = {}, timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
@@ -116,6 +156,26 @@ export function createWinHouseClient({
    * it is JSON, how many events, the shape of the first one and how many of its odds we can read.
    * The event route uses the first game id found in the pre-match lists (or `gameId`).
    */
+  /**
+   * One game's page (`prematchgame/{id}`; without an id, the first game of the main pre-match
+   * list): every market it offers, grouped, so new markets can be mapped. Read-only.
+   */
+  async function markets({ gameId = null } = {}) {
+    let id = gameId;
+    if (!id) {
+      const list = await request('prematchMain', {});
+      id = eventsOf(list.body).find((e) => e?.id)?.id ?? null;
+      if (!id) throw new Error('Nenhum jogo na lista pré-jogo para abrir.');
+    }
+    const r = await request('prematchEvent', { gameId: id });
+    const cat = marketCatalog(r.body);
+    return {
+      at: new Date().toISOString(), gameId: String(id), status: r.status, bytes: r.bytes, json: r.body !== null,
+      ...cat, shape: r.body === null ? null : shape(r.body),
+      bodyStart: cat.totalOdds ? undefined : r.text.slice(0, 2000),
+    };
+  }
+
   async function health({ gameId = null } = {}) {
     const out = [];
     let firstId = gameId;
@@ -149,6 +209,7 @@ export function createWinHouseClient({
     prematchTop: () => request('prematchTop'),
     prematch24h: () => request('prematch24h'),
     prematchEvent: (gameId) => request('prematchEvent', { gameId }),
+    markets,
   };
 }
 

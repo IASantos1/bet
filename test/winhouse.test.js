@@ -234,3 +234,20 @@ test('whole-line totals (push voids) and more ice hockey markets; quarter lines 
   assert.equal(legOutcome('oe', 'ODD', 3, 2), 'won');
   assert.equal(legOutcome('oe', 'EVEN', 3, 2), 'lost');
 });
+
+test('market catalog: every market a game page offers, whatever the wrapping', async () => {
+  const { marketCatalog } = await import('../server/winhouse.js');
+  const body = { game: { id: 5, odd: '1|1.5|1|1001|1x2 [1x2],2|4|x|1001|1x2 [1x2],3|6|2|1001|1x2 [1x2]' },
+    groups: [{ market_id: 1234, market_name: 'Handicap', odds: [{ id: 9, price: 1.9, selection: '1 (-1.5)', market_id: 1234, market_name: 'Handicap' }] }] };
+  const c = marketCatalog(body);
+  assert.equal(c.totalOdds, 4);
+  assert.deepEqual(c.markets.map((m) => [m.marketId, m.count, m.mapped]), [[1001, 3, true], [1234, 1, false]]);
+  assert.deepEqual(c.markets[1].selections, ['1 (-1.5) @ 1.9']);
+  const calls = [];
+  const fetchImpl = async (u) => { calls.push(u); const text = u.includes('/prematchgame/') ? JSON.stringify(body) : JSON.stringify([{ id: 77 }]); return { status: 200, ok: true, text: async () => text, headers: { get: () => 'application/json' } }; };
+  const client = createWinHouseClient({ baseUrl: 'https://wh.test', fetchImpl });
+  const r = await client.markets();
+  assert.equal(r.gameId, '77');
+  assert.equal(r.markets.length, 2);
+  assert.ok(calls[1].includes('/ajax/prematchgame/77'));
+});
