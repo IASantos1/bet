@@ -352,10 +352,11 @@ function winhouseFeedInfo(fd) {
 function winhousePanel(w) {
   return `<h3>WinHouse ${w?.feed?.enabled ? '<span class="pill won">A importar</span>' : w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
     ${winhouseFeedInfo(w?.feed)}
-    <p class="muted">${w?.enabled ? 'Chama as 5 rotas a partir deste servidor e mostra o que respondem (estado, tempo, tamanho, eventos, odds lidas e a forma do 1.º item). Ainda não grava nada.'
+    <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 5 rotas e mostra o que respondem. Ver mercados do jogo: abre a página de um jogo (gameId, ou o 1.º da lista) e lista todos os mercados que oferece — copie e envie para os ligarmos.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
     ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-health">Testar WinHouse</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-markets">Ver mercados do jogo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
       <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
 }
@@ -600,6 +601,15 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     actionEl.textContent = 'Testar WinHouse';
+  } else if (action === 'winhouse-markets') {
+    const box = $('#whOut');
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/winhouse/markets', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      box.textContent = JSON.stringify(r, null, 2);
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
   } else if (action === 'winhouse-copy') {
     try { await navigator.clipboard.writeText($('#whOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'propline-odds') {

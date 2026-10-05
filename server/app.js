@@ -791,6 +791,15 @@ export function createApp(db, {
     } catch (err) { next(err); }
   });
 
+  // WinHouse: every market one game page offers (to map new ones).
+  admin.post('/winhouse/markets', async (req, res, next) => {
+    try {
+      if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
+      const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      res.json(await winhouse.markets({ gameId }));
+    } catch (err) { next(err); }
+  });
+
   // Second odds source: sync now, and its raw odds for one event.
   admin.post('/propline/sync', async (_req, res, next) => {
     try {
