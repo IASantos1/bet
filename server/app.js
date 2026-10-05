@@ -32,7 +32,7 @@ const INDEX_HTML = readPublic('index.html')
 // The administration is a separate page at /admin, with its own login.
 const ADMIN_HTML = readPublic('admin/index.html').replace(/(\/(?:admin\/admin|styles)\.(?:js|css))"/g, `$1?v=${APP_VERSION}"`);
 const COOKIE = 'cb_session';
-const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
+const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // ---------- helpers ----------

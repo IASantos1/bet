@@ -44,6 +44,7 @@ export const MARKETS = {
   gou: { name: 'Total de jogos', valid: LINE },
   ghcp: { name: 'Handicap de jogos', valid: HCP },
   goe: { name: 'Total de jogos par / ímpar', codes: ['ODD', 'EVEN'] },
+  cs: { name: 'Resultado exato', valid: /^\d{1,2}:\d{1,2}$/ },
   pw: { name: 'Vencedor', period: true, valid: /^\d:[1X2]$/ },
   pou: { name: 'Total', period: true, valid: /^\d:[OU]\d{1,3}\.5$/ },
   phcp: { name: 'Handicap', period: true, valid: /^\d:[12][+-]\d{1,3}(\.5)?$/ },
@@ -54,7 +55,7 @@ export const PERIOD_MARKETS = new Set(['pw', 'pou', 'phcp', 'poe', 'pbtts']);
 /** "2:O8.5" → { period: 2, code: 'O8.5' } */
 export const splitPeriod = (code) => { const m = /^(\d):(.+)$/.exec(code); return m ? { period: Number(m[1]), code: m[2] } : null; };
 
-export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
+export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'cs', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
 /** Markets settled on games rather than on the main score. */
 export const GAMES_MARKETS = new Set(['gou', 'ghcp', 'goe']);
 
@@ -74,6 +75,7 @@ export function codeRank(market, code) {
     return p.period * 1000 + inner;
   }
   if (m?.codes) return m.codes.indexOf(code);
+  if (market === 'cs') { const [h, a] = code.split(':').map(Number); return (h + a) * 100 + h; }
   const line = Math.abs(Number(code.slice(1))) || 0;
   return line * 10 + (code[0] === 'O' || code[0] === '1' ? 0 : 1);
 }
@@ -116,6 +118,7 @@ export function legOutcome(market, code, home, away, { homeGames = null, awayGam
       if (result === 'X') return 'void';
       return code === result ? 'won' : 'lost';
     case 'ou': return overUnder(code, home + away);
+    case 'cs': return code === `${home}:${away}` ? 'won' : 'lost';
     case 'hcp': return handicap(code, home, away);
     case 'gou': return overUnder(code, homeGames + awayGames);
     case 'ghcp': return handicap(code, homeGames, awayGames);
@@ -145,6 +148,7 @@ export function selectionLabel(market, code, home = 'Casa', away = 'Fora') {
     case 'hcp': case 'ghcp': return `${code[0] === '1' ? home : away} ${code.slice(1)}`;
     case 'gou': return `${code[0] === 'O' ? 'Mais' : 'Menos'} de ${code.slice(1)}`;
     case 'goe': return code === 'ODD' ? 'Ímpar' : 'Par';
+    case 'cs': return code.replace(':', ' - ');
     default: return code;
   }
 }
