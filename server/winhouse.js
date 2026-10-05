@@ -172,7 +172,8 @@ export function createWinHouseClient({
     return {
       at: new Date().toISOString(), gameId: String(id), status: r.status, bytes: r.bytes, json: r.body !== null,
       ...cat, shape: r.body === null ? null : shape(r.body),
-      bodyStart: cat.totalOdds ? undefined : r.text.slice(0, 2000),
+      // The first entries in full (field names and values), so unknown layouts can be mapped.
+      sample: r.body === null ? r.text.slice(0, 2000) : JSON.stringify(Array.isArray(r.body) ? r.body.slice(0, 4) : r.body).slice(0, 8000),
     };
   }
 
