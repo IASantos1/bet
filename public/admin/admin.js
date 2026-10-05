@@ -330,9 +330,20 @@ function adminFeed(f) {
          ${liveSocketPanel(f.liveSocket)}
          ${sportsAddonPanels(f)}
          ${proplinePanel(f.propline)}
+         ${winhousePanel(f.winhouse)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
   </div>`;
+}
+
+function winhousePanel(w) {
+  return `<h3>WinHouse — teste das rotas ${w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
+    <p class="muted">${w?.enabled ? 'Chama as 5 rotas a partir deste servidor e mostra o que respondem (estado, tempo, tamanho, eventos, odds lidas e a forma do 1.º item). Ainda não grava nada.'
+      : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
+    ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
+      <button class="ghost-btn btn-sm" data-action="winhouse-health">Testar WinHouse</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
+      <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
 }
 
 function proplinePanel(p) {
@@ -564,6 +575,19 @@ document.addEventListener('click', async (e) => {
       box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'winhouse-health') {
+    const box = $('#whOut');
+    actionEl.disabled = true;
+    actionEl.textContent = 'A testar…';
+    try {
+      const r = await api('/api/admin/winhouse/health', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      box.textContent = JSON.stringify(r, null, 2);
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    actionEl.textContent = 'Testar WinHouse';
+  } else if (action === 'winhouse-copy') {
+    try { await navigator.clipboard.writeText($('#whOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'propline-odds') {
     const box = $(`#rawOdds${actionEl.dataset.id}`);
     try {

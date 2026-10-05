@@ -105,6 +105,16 @@ export const config = {
     liveMaxAge: int(env.PROPLINE_LIVE_MAX_AGE, 90),
     maxLiveEvents: int(env.PROPLINE_MAX_LIVE_EVENTS, 20),
   },
+  // WinHouse (evaluation): base URL and routes only from the environment. Off until
+  // WINHOUSE_BASE_URL is set. Admin → Feed → "Testar WinHouse" calls every route from the server.
+  winhouse: {
+    baseUrl: unquote(env.WINHOUSE_BASE_URL),
+    lang: unquote(env.WINHOUSE_LANG) || 'pt',
+    routes: {
+      live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
+      prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
+    },
+  },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
   },

@@ -96,7 +96,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -776,7 +776,17 @@ export function createApp(db, {
       sports: Object.values(sports).map((f) => f.status()),
       propline: propline ? propline.status() : { enabled: false, keySet: false },
       requestBudget: providerSummary()[0] || null,
+      winhouse: { enabled: !!winhouse?.enabled },
     });
+  });
+
+  // WinHouse (evaluation): call every route from this server and report what comes back.
+  admin.post('/winhouse/health', async (req, res, next) => {
+    try {
+      if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
+      const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      res.json(await winhouse.health({ gameId }));
+    } catch (err) { next(err); }
   });
 
   // Second odds source: sync now, and its raw odds for one event.
