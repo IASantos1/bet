@@ -5,13 +5,14 @@
 //   1x2     1 / X / 2       home win / draw / away win
 //   dc      1X / 12 / X2    double chance
 //   dnb     1 / 2           draw no bet (a draw voids the stake)
-//   ou      O2.5 / U2.5 …   total goals over / under a line (0.5 … 4.5)
+//   ou      O2.5 / U2.5 …   total goals over / under a line; a whole line (O3) voids on a push
 //   btts    Y / N           both teams to score
 //   ml      1 / 2           match winner including overtime / extra sets (a tie voids the stake)
 //   hcp     1-1.5 / 2+1.5 … handicap on the main score (sets in tennis); the line is that side's
 //   gou     O20.5 / U20.5 … total games (tennis)
 //   ghcp    1+3.5 / 2-3.5 … games handicap (tennis)
 //   goe     ODD / EVEN      total games odd / even (tennis)
+//   oe      ODD / EVEN      total goals / points odd / even (main score)
 //
 // Period markets (a set in tennis, a half in football): the code starts with the period number,
 // "<n>:<code>", and settles on events.period_scores ([[home, away], …], games per set / goals per
@@ -31,19 +32,21 @@
 export const OU_LINES = ['0.5', '1.5', '2.5', '3.5', '4.5'];
 
 const LINE = /^[OU]\d{1,3}\.5$/; // over / under a half line (no push)
+const OU_LINE = /^[OU]\d{1,3}(\.5)?$/; // main totals also take whole lines (a push voids)
 const HCP = /^[12][+-]\d{1,3}(\.5)?$/;
 
 export const MARKETS = {
   '1x2': { name: 'Resultado final', codes: ['1', 'X', '2'] },
   dc: { name: 'Dupla hipótese', codes: ['1X', '12', 'X2'] },
   dnb: { name: 'Empate anula aposta', codes: ['1', '2'] },
-  ou: { name: 'Total de golos', valid: LINE },
+  ou: { name: 'Total de golos', valid: OU_LINE },
   btts: { name: 'Ambas as equipas marcam', codes: ['Y', 'N'] },
   ml: { name: 'Vencedor', codes: ['1', '2'] },
   hcp: { name: 'Handicap', valid: HCP },
   gou: { name: 'Total de jogos', valid: LINE },
   ghcp: { name: 'Handicap de jogos', valid: HCP },
   goe: { name: 'Total de jogos par / ímpar', codes: ['ODD', 'EVEN'] },
+  oe: { name: 'Total par / ímpar', codes: ['ODD', 'EVEN'] },
   cs: { name: 'Resultado exato', valid: /^\d{1,2}:\d{1,2}$/ },
   pw: { name: 'Vencedor', period: true, valid: /^\d:[1X2]$/ },
   pou: { name: 'Total', period: true, valid: /^\d:[OU]\d{1,3}\.5$/ },
@@ -55,7 +58,7 @@ export const PERIOD_MARKETS = new Set(['pw', 'pou', 'phcp', 'poe', 'pbtts']);
 /** "2:O8.5" → { period: 2, code: 'O8.5' } */
 export const splitPeriod = (code) => { const m = /^(\d):(.+)$/.exec(code); return m ? { period: Number(m[1]), code: m[2] } : null; };
 
-export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'cs', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
+export const MARKET_ORDER = ['ml', '1x2', 'dc', 'dnb', 'ou', 'btts', 'hcp', 'gou', 'ghcp', 'goe', 'oe', 'cs', 'pw', 'pou', 'phcp', 'poe', 'pbtts'];
 /** Markets settled on games rather than on the main score. */
 export const GAMES_MARKETS = new Set(['gou', 'ghcp', 'goe']);
 
@@ -84,8 +87,9 @@ export function codeRank(market, code) {
 export const hcpCode = (sideCode, line) => `${sideCode}${line >= 0 ? '+' : ''}${line}`;
 
 const overUnder = (code, total) => {
-  const over = total > Number(code.slice(1));
-  return (code[0] === 'O') === over ? 'won' : 'lost';
+  const line = Number(code.slice(1));
+  if (total === line) return 'void'; // whole line hit exactly
+  return (code[0] === 'O') === (total > line) ? 'won' : 'lost';
 };
 const handicap = (code, home, away) => {
   const margin = (code[0] === '1' ? home - away : away - home) + Number(code.slice(1));
@@ -119,6 +123,7 @@ export function legOutcome(market, code, home, away, { homeGames = null, awayGam
       return code === result ? 'won' : 'lost';
     case 'ou': return overUnder(code, home + away);
     case 'cs': return code === `${home}:${away}` ? 'won' : 'lost';
+    case 'oe': return (code === 'ODD') === ((home + away) % 2 === 1) ? 'won' : 'lost';
     case 'hcp': return handicap(code, home, away);
     case 'gou': return overUnder(code, homeGames + awayGames);
     case 'ghcp': return handicap(code, homeGames, awayGames);
@@ -147,7 +152,7 @@ export function selectionLabel(market, code, home = 'Casa', away = 'Fora') {
     case 'btts': return code === 'Y' ? 'Sim' : 'Não';
     case 'hcp': case 'ghcp': return `${code[0] === '1' ? home : away} ${code.slice(1)}`;
     case 'gou': return `${code[0] === 'O' ? 'Mais' : 'Menos'} de ${code.slice(1)}`;
-    case 'goe': return code === 'ODD' ? 'Ímpar' : 'Par';
+    case 'goe': case 'oe': return code === 'ODD' ? 'Ímpar' : 'Par';
     case 'cs': return code.replace(':', ' - ');
     default: return code;
   }
