@@ -47,7 +47,8 @@ test('health check calls the five routes from the server and reports what came b
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, finishVerdict } from '../server/winhouse.js';
+import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
 import { createSettlementEngine } from '../server/settlement.js';
@@ -77,8 +78,8 @@ test('items: teams, start time from WinHouse local time, logos only from its CDN
   assert.deepEqual(ev.prices, { '1x2|1': 124, '1x2|X': 506, '1x2|2': 1990, 'dc|12': 118, 'dc|X2': 398, 'ou|O2.5': 160, 'ou|U2.5': 225, 'dc|1X': 101 });
   // A suspended (1.00) selection closes its whole market.
   assert.deepEqual(pricesFor([{ marketId: 1001, selection: '1', price: 1.5 }, { marketId: 1001, selection: 'x', price: 1 }, { marketId: 1001, selection: '2', price: 3 }], 'futebol'), {});
-  // Unsupported sports (table tennis 20) are skipped.
-  assert.equal(normalizeItem({ id: 1, sport_id: 20, name: 'A - B', game_date: '2026-10-05', game_time: '21:00:00' }), null);
+  // Unsupported sports (cricket 21) are skipped.
+  assert.equal(normalizeItem({ id: 1, sport_id: 21, name: 'A - B', game_date: '2026-10-05', game_time: '21:00:00' }), null);
   assert.deepEqual(pricesFor([{ marketId: 1022, selection: '1', price: 4.01 }, { marketId: 1022, selection: '2', price: 1.25 }, { marketId: 1672, selection: 'over 159.5', price: 1.87 }, { marketId: 1672, selection: 'under 159.5', price: 1.87 }], 'basquetebol'),
     { 'ml|1': 401, 'ml|2': 125, 'ou|O159.5': 187, 'ou|U159.5': 187 });
 });
@@ -172,4 +173,48 @@ test('pre-match: upcoming matches with prices; started ones and failing lists do
   await t.feed.syncLive();
   assert.equal(t.row(10).status, 'live');
   assert.equal(t.feed.status().events.live, 1);
+});
+
+test('women and youth games are blocked; more sports and correct score', () => {
+  const base = { id: 9, sport_id: 1, ...when(-3_600_000), name: 'A - B', home_team: 'A', away_team: 'B', odd: ODD };
+  const block = { women: true, youth: true };
+  assert.equal(blockedGame({ ...base, league: 'Campeonato Boliviano Sub-19' }, block), true);
+  assert.equal(blockedGame({ ...base, league: 'Iceland Championship U19' }, block), true);
+  assert.equal(blockedGame({ ...base, league: 'Masters. Rússia. Feminino' }, block), true);
+  assert.equal(blockedGame({ ...base, home_team: 'Sovy-Pro (Women)' }, block), true);
+  assert.equal(blockedGame({ ...base, league: 'World Tennis. Lexington. Women. Qualification' }, block), true);
+  assert.equal(blockedGame({ ...base, league: 'UEFA Nations League' }, block), false);
+  assert.equal(blockedGame({ ...base, league: 'Iceland Championship U19' }, { women: true, youth: false }), false);
+  assert.equal(normalizeItem({ ...base, league: 'Brazil. Copa Goiânia Sub-20' }, { block }), null);
+  assert.ok(normalizeItem({ ...base, league: 'Brazil. Serie A' }, { block }));
+
+  // Table tennis: winner and correct score in sets; volleyball: winner only (no draw).
+  const tt = pricesFor([
+    { marketId: 1044, selection: '1', price: 3.5 }, { marketId: 1044, selection: '2', price: 1.29 },
+    { marketId: 1992, selection: '3:1', price: 7.9 }, { marketId: 1992, selection: '3:2', price: 5.5 }, { marketId: 1992, selection: '1:3', price: 1 },
+  ], 'tenismesa');
+  assert.deepEqual(tt, { 'ml|1': 350, 'ml|2': 129, 'cs|3:1': 790, 'cs|3:2': 550 });
+  assert.deepEqual(pricesFor([{ marketId: 1001, selection: '1', price: 1.41 }, { marketId: 1001, selection: 'x', price: 10 }, { marketId: 1001, selection: '2', price: 2.71 }], 'voleibol'), { 'ml|1': 141, 'ml|2': 271 });
+  assert.equal(legOutcome('cs', '3:1', 3, 1), 'won');
+  assert.equal(legOutcome('cs', '3:1', 3, 2), 'lost');
+
+  assert.deepEqual(finishVerdict({ sport: 'tenismesa', home_score: 3, away_score: 1 }), { home: 3, away: 1 });
+  assert.match(finishVerdict({ sport: 'tenismesa', home_score: 2, away_score: 1 }).review, /incompleto/);
+  assert.deepEqual(finishVerdict({ sport: 'voleibol', competition: 'Belarus. Liga Pro 4x4', home: 'A', away: 'B', home_score: 2, away_score: 0 }), { home: 2, away: 0 });
+  assert.match(finishVerdict({ sport: 'voleibol', competition: 'VCA League', home: 'A', away: 'B', home_score: 2, away_score: 1 }).review, /incompleto/);
+  assert.deepEqual(finishVerdict({ sport: 'futsal', wh_minute: 39.5, home_score: 7, away_score: 5 }), { home: 7, away: 5 });
+});
+
+test('games imported before the block are removed unless someone has bet on them', async () => {
+  const youth = { ...football(31, 10, '0-0', ODD), league: 'Iceland Championship U19' };
+  const lists = { live: [youth], pre: [] };
+  const db = openDb(':memory:');
+  const client = { enabled: true, live: async () => ({ ok: true, status: 200, body: lists.live }), prematchMain: async () => ({ ok: true, status: 200, body: [] }), prematchTop: async () => ({ ok: true, status: 200, body: [] }), prematch24h: async () => ({ ok: true, status: 200, body: [] }) };
+  // Imported while the block was off…
+  await createWinHouseFeed(db, { client, tzOffsetMinutes: 60, blockYouth: false }).syncLive();
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = 'winhouse'").get().n, 1);
+  // …and removed once it is on.
+  const r = await createWinHouseFeed(db, { client, tzOffsetMinutes: 60 }).syncPrematch();
+  assert.equal(r.removed, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = 'winhouse'").get().n, 0);
 });

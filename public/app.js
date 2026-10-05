@@ -9,6 +9,9 @@ const SPORT_META = {
   esports: { name: 'CS2 (eSports)', icon: '🎮' },
   voleibol: { name: 'Voleibol', icon: '🏐' },
   andebol: { name: 'Andebol', icon: '🤾' },
+  futsal: { name: 'Futsal', icon: '⚽' },
+  tenismesa: { name: 'Ténis de mesa', icon: '🏓' },
+  badminton: { name: 'Badminton', icon: '🏸' },
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const GAMES = [
@@ -306,7 +309,7 @@ function footer() {
 // ---------- pages ----------
 
 // Sports in the order the site shows them: football always first.
-const SPORT_ORDER = ['futebol', 'tenis', 'basquetebol', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol'];
+const SPORT_ORDER = ['futebol', 'tenis', 'basquetebol', 'hoquei', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton', 'dardos', 'esports'];
 const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
 
 /** Featured by the operator first, then big leagues (tier), then the earliest. */

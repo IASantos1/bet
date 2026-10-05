@@ -4,6 +4,7 @@ const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' }, basquetebol: { name: 'Basquetebol', icon: '🏀' }, tenis: { name: 'Ténis', icon: '🎾' },
   hoquei: { name: 'Hóquei no Gelo', icon: '🏒' }, dardos: { name: 'Dardos', icon: '🎯' }, esports: { name: 'CS2 (eSports)', icon: '🎮' },
   voleibol: { name: 'Voleibol', icon: '🏐' }, andebol: { name: 'Andebol', icon: '🤾' },
+  futsal: { name: 'Futsal', icon: '⚽' }, tenismesa: { name: 'Ténis de mesa', icon: '🏓' }, badminton: { name: 'Badminton', icon: '🏸' },
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const STATUS_LABEL = {

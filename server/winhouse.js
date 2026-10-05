@@ -158,10 +158,24 @@ export function createWinHouseClient({
 export const SOURCE = 'winhouse';
 
 /** WinHouse sport_id → our sport (only the sports Bet62 shows and can settle). */
-export const SPORTS = { 1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis' };
+export const SPORTS = {
+  1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
+};
+
+// Women's and youth competitions can be left out (WINHOUSE_BLOCK_WOMEN / WINHOUSE_BLOCK_YOUTH).
+const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
+const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|junior|juniors|júnior|juniores|juvenil|juvenis|youth|jugend|primavera|academy|academia)\b/i;
+/** True when the competition or a team marks the game as women's / youth (as configured). */
+export function blockedGame(ev, { women = true, youth = true } = {}) {
+  const text = [ev?.league, ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ');
+  return (women && WOMEN.test(text)) || (youth && YOUTH.test(text));
+}
 
 const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFinite(n) && n > 100 && n < 100_000 ? n : null; };
 const halfLine = (v) => Number.isFinite(v) && v > 0 && Math.round(v * 2) % 2 === 1;
+
+/** "3:1" → "3:1" (a correct score), or null. */
+const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(String(sel).trim()); return m ? `${Number(m[1])}:${Number(m[2])}` : null; };
 
 /** "over 2.5" / "under 2.5" (also translated wordings) → ['O', 2.5]. */
 function overUnder(sel) {
@@ -184,7 +198,7 @@ export function pricesFor(odds, sport) {
     const sel = String(o.selection).toLowerCase().trim();
     const v = x100(o.price);
     if (!v) continue;
-    if (sport === 'futebol') {
+    if (sport === 'futebol' || sport === 'andebol' || sport === 'futsal') {
       if (o.marketId === 1001) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
       else if (o.marketId === 1005) { const c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]; if (c) out[`dc|${c}`] = v; }
       else if (o.marketId === 1018) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
@@ -193,8 +207,15 @@ export function pricesFor(odds, sport) {
       else if (o.marketId === 1672) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
     } else if (sport === 'hoquei') {
       if (o.marketId === 1045) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
+      else if (o.marketId === 1161) { const cs = exactScore(sel); if (cs) out[`cs|${cs}`] = v; } // regulation correct score
     } else if (sport === 'tenis') {
       if (o.marketId === 1016) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
+    } else if (sport === 'tenismesa' || sport === 'badminton') {
+      if (o.marketId === 1044) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`ml|${c}`] = v; }
+      else if (o.marketId === 1992) { const cs = exactScore(sel); if (cs) out[`cs|${cs}`] = v; } // sets
+    } else if (sport === 'voleibol') {
+      // Volleyball has no draw: only the two winners of its "1x2" are offered.
+      if (o.marketId === 1001) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`ml|${c}`] = v; }
     }
   }
   // Complete markets only.
@@ -203,6 +224,7 @@ export function pricesFor(odds, sport) {
     const [market, code] = k.split('|');
     let ok = true;
     if (market === '1x2') ok = has('1x2|1') && has('1x2|2') && (sport === 'tenis' || has('1x2|X'));
+    else if (market === 'cs') ok = Object.keys(out).filter((x) => x.startsWith('cs|')).length >= 2;
     else if (market === 'dc') ok = has('dc|1X') && has('dc|12') && has('dc|X2');
     else if (market === 'ml') ok = has('ml|1') && has('ml|2');
     else if (market === 'ou') ok = has(`ou|O${code.slice(1)}`) && has(`ou|U${code.slice(1)}`);
@@ -218,10 +240,11 @@ export const minutesOf = (v) => {
 };
 
 /** A list item (live or pre-match) → our event, or null for an unsupported sport / bad item. */
-export function normalizeItem(ev, { tzOffsetMinutes = 0 } = {}) {
+export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
   if (!ev || typeof ev !== 'object' || ev.id === undefined) return null;
   const sport = SPORTS[Number(ev.sport_id)];
   if (!sport) return null;
+  if (block && blockedGame(ev, block)) return null;
   const [n1, n2] = String(ev.name || '').split(/\s+-\s+/);
   const home = String(ev.home_team || n1 || '').trim().slice(0, 80);
   const away = String(ev.away_team || n2 || '').trim().slice(0, 80);
@@ -265,7 +288,7 @@ export function estimateOffset(items, now = Date.now()) {
 
 const clockText = (sport, minutes, raw) => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
-  if (sport === 'futebol' || sport === 'hoquei') return `${Math.floor(minutes)}'`;
+  if (['futebol', 'hoquei', 'andebol', 'futsal'].includes(sport)) return `${Math.floor(minutes)}'`;
   return null; // basketball / tennis: the score says more than an elapsed-time clock
 };
 
@@ -291,15 +314,29 @@ export function finishVerdict(row) {
       if (row.wh_overtime) return { home: h, away: a, regHome: row.reg_home_score, regAway: row.reg_away_score };
       return m >= 59 ? { home: h, away: a, regHome: h, regAway: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'tenis':
+    case 'badminton':
       return Math.max(h, a) >= 2 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: possível desistência` };
+    case 'tenismesa':
+      // Best of five: three sets won.
+      return Math.max(h, a) >= 3 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: jogo incompleto` };
+    case 'voleibol': {
+      // Best of five, or of three in beach / 4x4 / duo formats.
+      const need = /beach|praia|4x4|duo/i.test(`${row.competition} ${row.home} ${row.away}`) ? 2 : 3;
+      return Math.max(h, a) >= need && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: jogo incompleto` };
+    }
+    case 'andebol':
+      return m >= 58 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'futsal':
+      return m >= 38 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     default:
       return { review: 'desporto sem regra de fim' };
   }
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, log = () => {},
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, log = () => {},
 } = {}) {
+  const block = { women: blockWomen, youth: blockYouth };
   const state = {
     enabled: !!client?.enabled, last: {}, lastError: null, lastErrorAt: null,
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
@@ -340,7 +377,7 @@ export function createWinHouseFeed(db, {
     const seen = new Set();
     let open = 0;
     for (const raw of items) {
-      const ev = normalizeItem(raw, { tzOffsetMinutes: offset() });
+      const ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
       if (!ev) continue;
       seen.add(ev.externalId);
       try {
@@ -416,7 +453,7 @@ export function createWinHouseFeed(db, {
     let created = 0;
     let priced = 0;
     for (const raw of byId.values()) {
-      const ev = normalizeItem(raw, { tzOffsetMinutes: offset() });
+      const ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
       if (!ev || new Date(ev.startTime).getTime() <= now) continue;
       try {
         tx(db, () => {
@@ -434,8 +471,22 @@ export function createWinHouseFeed(db, {
     const stale = new Date(now - prematchStaleSeconds * 1000).toISOString();
     db.prepare(`UPDATE selections SET active = 0 WHERE event_id IN (SELECT id FROM events WHERE source = ? AND status = 'scheduled' AND (wh_seen_at IS NULL OR wh_seen_at < ?))`)
       .run(SOURCE, stale);
-    state.last.prematch = { at: nowIso(), games: byId.size, created, priced, listsFailed: failed.length };
+    const removed = purgeBlocked();
+    state.last.prematch = { at: nowIso(), games: byId.size, created, priced, listsFailed: failed.length, removed };
     return state.last.prematch;
+  }
+
+  /** Games imported before a block was set: removed while nobody has a bet on them. */
+  function purgeBlocked() {
+    if (!block.women && !block.youth) return 0;
+    let n = 0;
+    for (const e of db.prepare("SELECT id, competition, home, away FROM events WHERE source = ? AND status IN ('scheduled', 'live')").all(SOURCE)) {
+      if (!blockedGame({ league: e.competition, home_team: e.home, away_team: e.away }, block)) continue;
+      if (db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(e.id)) continue;
+      db.prepare('DELETE FROM events WHERE id = ?').run(e.id);
+      n += 1;
+    }
+    return n;
   }
 
   const run = (kind, fn) => async () => {
@@ -465,7 +516,7 @@ export function createWinHouseFeed(db, {
 
   const status = () => ({
     enabled: state.enabled, last: state.last, lastError: state.lastError, lastErrorAt: state.lastErrorAt,
-    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource,
+    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block,
     events: Object.fromEntries(db.prepare('SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status').all(SOURCE).map((r) => [r.status, r.n])),
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
   });

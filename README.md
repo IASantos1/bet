@@ -84,8 +84,13 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   `/ajax/prematchgames24hour` → jogos futuros e odds. Odds que nenhuma lista confirma há 15 min fecham.
 - **Ao vivo** (a cada 15 s): `/ajax/livegames` → placar, minuto e odds em jogo da própria casa
   (um preço 1.00 é seleção suspensa e fecha o mercado).
-- **Mercados**: futebol 1X2, Dupla hipótese e golos (linhas .5); basquetebol vencedor com
-  prolongamento e pontos (.5); hóquei 1X2 do tempo regulamentar; ténis vencedor.
+- **Desportos e mercados**: futebol, andebol e futsal 1X2, Dupla hipótese e golos (linhas .5);
+  basquetebol vencedor com prolongamento e pontos (.5); hóquei 1X2 e resultado exato do tempo
+  regulamentar; ténis vencedor; ténis de mesa e badminton vencedor (+ resultado exato em sets no
+  ténis de mesa); voleibol vencedor.
+- **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
+  (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos); os já importados são
+  removidos enquanto não tiverem apostas.
 - **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` é
   liquidado pelo último placar só se estava claramente no fim (futebol ≥ 88'; basquetebol ≥ 39'
   ou 47' na NBA e sem empate; hóquei ≥ 59' ou prolongamento = empate no regulamentar; ténis com 2
