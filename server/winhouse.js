@@ -172,7 +172,8 @@ export function blockedGame(ev, { women = true, youth = true } = {}) {
 }
 
 const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFinite(n) && n > 100 && n < 100_000 ? n : null; };
-const halfLine = (v) => Number.isFinite(v) && v > 0 && Math.round(v * 2) % 2 === 1;
+// Half or whole line (a whole line voids on a push); quarter lines (2.25) would split the stake: not offered.
+const plainLine = (v) => Number.isFinite(v) && v > 0 && Number.isInteger(v * 2);
 
 /** "3:1" → "3:1" (a correct score), or null. */
 const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(String(sel).trim()); return m ? `${Number(m[1])}:${Number(m[2])}` : null; };
@@ -183,13 +184,14 @@ function overUnder(sel) {
   if (!m) return null;
   const side = /^(over|mais|acima|o)/i.test(m[1]) ? 'O' : 'U';
   const line = Number(m[2].replace(',', '.'));
-  return halfLine(line) ? [side, line] : null; // whole / quarter lines would push or split: not offered
+  return plainLine(line) ? [side, line] : null;
 }
 
 /**
  * One event's odds → { 'market|code': x100 } in our markets. Only full markets the settlement
  * understands: 1X2 / double chance / goal totals (football), winner incl. overtime and point
- * totals (basketball), regulation 1X2 (ice hockey), match winner (tennis). A price of 1.00 is a
+ * totals (basketball), regulation 1X2 / double chance / totals / odd-even (ice hockey), match winner
+ * (tennis). Whole-line totals void on a push; quarter lines are skipped. A price of 1.00 is a
  * suspended selection and closes its market.
  */
 export function pricesFor(odds, sport) {
@@ -208,6 +210,9 @@ export function pricesFor(odds, sport) {
     } else if (sport === 'hoquei') {
       if (o.marketId === 1045) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
       else if (o.marketId === 1161) { const cs = exactScore(sel); if (cs) out[`cs|${cs}`] = v; } // regulation correct score
+      else if (o.marketId === 1168) { const c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]; if (c) out[`dc|${c}`] = v; }
+      else if (o.marketId === 1870) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
+      else if (o.marketId === 1160) { const c = { odd: 'ODD', even: 'EVEN', 'ímpar': 'ODD', impar: 'ODD', par: 'EVEN' }[sel]; if (c) out[`oe|${c}`] = v; }
     } else if (sport === 'tenis') {
       if (o.marketId === 1016) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
     } else if (sport === 'tenismesa' || sport === 'badminton') {
@@ -227,6 +232,7 @@ export function pricesFor(odds, sport) {
     else if (market === 'cs') ok = Object.keys(out).filter((x) => x.startsWith('cs|')).length >= 2;
     else if (market === 'dc') ok = has('dc|1X') && has('dc|12') && has('dc|X2');
     else if (market === 'ml') ok = has('ml|1') && has('ml|2');
+    else if (market === 'oe') ok = has('oe|ODD') && has('oe|EVEN');
     else if (market === 'ou') ok = has(`ou|O${code.slice(1)}`) && has(`ou|U${code.slice(1)}`);
     if (!ok) delete out[k];
   }

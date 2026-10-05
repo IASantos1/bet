@@ -74,8 +74,8 @@ test('items: teams, start time from WinHouse local time, logos only from its CDN
   assert.ok(Math.abs(new Date(ev.startTime).getTime() - (Date.now() - 81 * 60_000)) < 2 * 60_000);
   assert.equal(ev.homeLogo, 'https://cdn.sportapi.net/opp/v1/color/abc.png');
   assert.equal(ev.awayLogo, null);
-  // 1X2 + DC complete; the 4.0 total (a whole line pushes) left out, 2.5 kept.
-  assert.deepEqual(ev.prices, { '1x2|1': 124, '1x2|X': 506, '1x2|2': 1990, 'dc|12': 118, 'dc|X2': 398, 'ou|O2.5': 160, 'ou|U2.5': 225, 'dc|1X': 101 });
+  // 1X2 + DC complete; the 2.5 and the 4.0 totals (a whole line voids on a push).
+  assert.deepEqual(ev.prices, { '1x2|1': 124, '1x2|X': 506, '1x2|2': 1990, 'dc|12': 118, 'dc|X2': 398, 'ou|O2.5': 160, 'ou|U2.5': 225, 'ou|O4': 222, 'ou|U4': 168, 'dc|1X': 101 });
   // A suspended (1.00) selection closes its whole market.
   assert.deepEqual(pricesFor([{ marketId: 1001, selection: '1', price: 1.5 }, { marketId: 1001, selection: 'x', price: 1 }, { marketId: 1001, selection: '2', price: 3 }], 'futebol'), {});
   // Unsupported sports (cricket 21) are skipped.
@@ -167,7 +167,7 @@ test('pre-match: upcoming matches with prices; started ones and failing lists do
   assert.equal(t.row(10).status, 'scheduled');
   assert.equal(t.row(12), undefined);
   const s = t.db.prepare("SELECT COUNT(*) AS n FROM selections WHERE event_id = ? AND active = 1").get(t.row(10).id).n;
-  assert.equal(s, 8);
+  assert.equal(s, 10);
   // When it starts, the live list takes it over.
   lists.live = [football(10, 3, '0-0', ODD)];
   await t.feed.syncLive();
@@ -217,4 +217,20 @@ test('games imported before the block are removed unless someone has bet on them
   const r = await createWinHouseFeed(db, { client, tzOffsetMinutes: 60 }).syncPrematch();
   assert.equal(r.removed, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = 'winhouse'").get().n, 0);
+});
+
+test('whole-line totals (push voids) and more ice hockey markets; quarter lines skipped', () => {
+  assert.deepEqual(pricesFor(parseOdds('1|2.11|over 3.0|1018|T [TG_O/U],2|1.70|under 3.0|1018|T [TG_O/U],3|1.9|over 156.25|1018|T [TG_O/U],4|1.84|under 156.25|1018|T [TG_O/U]'), 'futebol'),
+    { 'ou|O3': 211, 'ou|U3': 170 });
+  assert.equal(legOutcome('ou', 'O3', 2, 1), 'void');
+  assert.equal(legOutcome('ou', 'U3', 1, 1), 'won');
+  assert.equal(legOutcome('ou', 'O3', 3, 1), 'won');
+  const hockey = 'a|1.87|odd|1160|Golos par/impar [TGT/C],b|1.87|even|1160|Golos par/impar [TGT/C],'
+    + 'c|1.57|1x|1168|DC [DSh],d|1.12|12|1168|DC [DSh],e|1.46|x2|1168|DC [DSh],'
+    + 'f|1.98|over 11.5|1870|Totais [Totals],g|1.69|under 11.5|1870|Totais [Totals]';
+  assert.deepEqual(pricesFor(parseOdds(hockey.replace(/\b[a-g]\|/g, (m) => `${m.charCodeAt(0)}|`)), 'hoquei'), {
+    'oe|ODD': 187, 'oe|EVEN': 187, 'dc|1X': 157, 'dc|12': 112, 'dc|X2': 146, 'ou|O11.5': 198, 'ou|U11.5': 169,
+  });
+  assert.equal(legOutcome('oe', 'ODD', 3, 2), 'won');
+  assert.equal(legOutcome('oe', 'EVEN', 3, 2), 'lost');
 });

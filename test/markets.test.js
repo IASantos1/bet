@@ -16,7 +16,8 @@ test('settlement rules per market', () => {
   ];
   for (const [m, c, h, a, want] of cases) assert.equal(legOutcome(m, c, h, a), want, `${m} ${c} ${h}-${a}`);
   assert.ok(isValidSelection('ou', 'O3.5'));
-  assert.ok(!isValidSelection('ou', 'O2'));
+  assert.ok(isValidSelection('ou', 'O2')); // whole line: a push voids
+  assert.ok(!isValidSelection('ou', 'O2.25'));
   assert.equal(selectionLabel('dc', '1X', 'Benfica', 'Porto'), 'Benfica ou empate');
   assert.equal(selectionLabel('ou', 'U1.5'), 'Menos de 1.5');
 });
