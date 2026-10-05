@@ -86,37 +86,43 @@ const shape = (v, depth = 0) => {
 export const MAPPED_MARKETS = new Set([1001, 1005, 1018, 1022, 1672, 1045, 1161, 1160, 1168, 1870, 1016, 1044, 1992]);
 
 /**
- * Every odd found anywhere in a payload (odd strings, arrays of them, or objects with price /
- * selection / market fields), grouped by market: what one game page offers.
+ * A game page (`prematchgame/{id}`): groups of odd objects, one group per market —
+ * { id, odd: "1.89", market_id: "1001", market: "1x2 [1x2]", market_option: "1 ",
+ *   special_value: null | "2.5" | …, mainCategory: "Main", … } → our odd objects.
  */
-export function marketCatalog(body) {
-  const odds = [];
-  const seen = new Set();
-  const pick = (o, keys) => { for (const k of keys) if (o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return undefined; };
+export function detailOdds(body) {
+  const out = [];
   const walk = (v, depth) => {
-    if (depth > 8 || v === null || v === undefined) return;
-    if (typeof v === 'string') { if (v.includes('|')) for (const o of parseOdds(v)) odds.push(o); return; }
+    if (depth > 6 || v === null || typeof v !== 'object') return;
     if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
-    if (typeof v !== 'object') return;
-    if (seen.has(v)) return;
-    seen.add(v);
-    const price = pick(v, ['price', 'coef', 'coefficient', 'value', 'k', 'odd_value']);
-    const sel = pick(v, ['selection', 'outcome', 'type', 'name', 'title']);
-    const mid = pick(v, ['market_id', 'marketId', 'group_id', 'groupId', 'market']);
-    if (price !== undefined && sel !== undefined && /^\d+$/.test(String(mid ?? ''))) {
-      const id = pick(v, ['id', 'odd_id', 'oddId']) ?? 0;
-      const label = pick(v, ['market_name', 'marketName', 'group_name', 'groupName']) ?? '';
-      const o = parseOdd(`${String(id).replace(/\D/g, '') || 0}|${price}|${sel}|${mid}|${label}`);
-      if (o) odds.push(o);
+    const price = Number(v.odd);
+    const marketId = Number(v.market_id);
+    const selection = String(v.market_option ?? '').trim();
+    if (Number.isFinite(price) && price > 1 && Number.isInteger(marketId) && marketId > 0 && selection) {
+      const m = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(String(v.market || ''));
+      const special = v.special_value === null || v.special_value === undefined || v.special_value === '' ? null : String(v.special_value).trim();
+      out.push({
+        oddId: Number(v.id) || 0, price, selection, marketId,
+        marketName: (m ? m[1] : String(v.market || '')).trim(), marketCode: m ? m[2].trim() : null,
+        special, category: v.mainCategory ?? null,
+      });
+      return;
     }
     for (const x of Object.values(v)) walk(x, depth + 1);
   };
   walk(body, 0);
+  return out;
+}
+
+/** Every market one game page offers, grouped: name, code, category, a few selections (line, price). */
+export function marketCatalog(body) {
+  const odds = Array.isArray(body) ? detailOdds(body) : [];
+  if (!odds.length) for (const ev of eventsOf(body)) odds.push(...parseOdds(ev?.odd));
   const byMarket = new Map();
   for (const o of odds) {
-    const m = byMarket.get(o.marketId) || { marketId: o.marketId, name: o.marketName, code: o.marketCode, mapped: MAPPED_MARKETS.has(o.marketId), count: 0, selections: [] };
+    const m = byMarket.get(o.marketId) || { marketId: o.marketId, name: o.marketName, code: o.marketCode, category: o.category ?? null, mapped: MAPPED_MARKETS.has(o.marketId), count: 0, selections: [] };
     m.count += 1;
-    if (m.selections.length < 12) m.selections.push(`${o.selection} @ ${o.price}`);
+    if (m.selections.length < 10) m.selections.push(`${o.selection}${o.special ? ` [${o.special}]` : ''} @ ${o.price}`);
     byMarket.set(o.marketId, m);
   }
   return { totalOdds: odds.length, markets: [...byMarket.values()].sort((a, b) => a.marketId - b.marketId) };
@@ -171,9 +177,9 @@ export function createWinHouseClient({
     const cat = marketCatalog(r.body);
     return {
       at: new Date().toISOString(), gameId: String(id), status: r.status, bytes: r.bytes, json: r.body !== null,
-      ...cat, shape: r.body === null ? null : shape(r.body),
+      ...cat,
       // The first entries in full (field names and values), so unknown layouts can be mapped.
-      sample: r.body === null ? r.text.slice(0, 2000) : JSON.stringify(Array.isArray(r.body) ? r.body.slice(0, 4) : r.body).slice(0, 8000),
+      sample: cat.totalOdds ? undefined : r.body === null ? r.text.slice(0, 2000) : JSON.stringify(Array.isArray(r.body) ? r.body.slice(0, 4) : r.body).slice(0, 8000),
     };
   }
 
