@@ -1,9 +1,11 @@
+import { nowIso, tx } from './db.js';
+import { settleEvent, resultCode } from './betting.js';
+
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
-// Step 1 (this module): the HTTP client, the parsers for what we already know of its payloads, and
-// a health check that calls each route FROM THE SERVER and reports status, time, size and the shape
-// of the first item. The collector that writes events / odds is built on top once the real shapes
-// have been seen in production. Nothing here writes to the database yet.
+// The HTTP client, the parsers of its payloads, a health check that calls each route from the
+// server, and the collector (createWinHouseFeed) that keeps events, scores, odds and results in
+// the database: pre-match lists every minute, the live list every 15 s.
 //
 // Every URL lives in the environment (WINHOUSE_*), so a route change on WinHouse's side is a
 // variable change, not a code change. Use of these data outside the iframe is under the operator's
@@ -148,4 +150,325 @@ export function createWinHouseClient({
     prematch24h: () => request('prematch24h'),
     prematchEvent: (gameId) => request('prematchEvent', { gameId }),
   };
+}
+
+// ---------- collector (events, odds, live, settlement) ----------
+
+
+export const SOURCE = 'winhouse';
+
+/** WinHouse sport_id → our sport (only the sports Bet62 shows and can settle). */
+export const SPORTS = { 1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis' };
+
+const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFinite(n) && n > 100 && n < 100_000 ? n : null; };
+const halfLine = (v) => Number.isFinite(v) && v > 0 && Math.round(v * 2) % 2 === 1;
+
+/** "over 2.5" / "under 2.5" (also translated wordings) → ['O', 2.5]. */
+function overUnder(sel) {
+  const m = /^(over|under|mais de|menos de|acima de|abaixo de|o|u)\s*([\d.,]+)$/i.exec(String(sel).trim());
+  if (!m) return null;
+  const side = /^(over|mais|acima|o)/i.test(m[1]) ? 'O' : 'U';
+  const line = Number(m[2].replace(',', '.'));
+  return halfLine(line) ? [side, line] : null; // whole / quarter lines would push or split: not offered
+}
+
+/**
+ * One event's odds → { 'market|code': x100 } in our markets. Only full markets the settlement
+ * understands: 1X2 / double chance / goal totals (football), winner incl. overtime and point
+ * totals (basketball), regulation 1X2 (ice hockey), match winner (tennis). A price of 1.00 is a
+ * suspended selection and closes its market.
+ */
+export function pricesFor(odds, sport) {
+  const out = {};
+  for (const o of odds) {
+    const sel = String(o.selection).toLowerCase().trim();
+    const v = x100(o.price);
+    if (!v) continue;
+    if (sport === 'futebol') {
+      if (o.marketId === 1001) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
+      else if (o.marketId === 1005) { const c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]; if (c) out[`dc|${c}`] = v; }
+      else if (o.marketId === 1018) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
+    } else if (sport === 'basquetebol') {
+      if (o.marketId === 1022) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`ml|${c}`] = v; }
+      else if (o.marketId === 1672) { const ou = overUnder(sel); if (ou) out[`ou|${ou[0]}${ou[1]}`] = v; }
+    } else if (sport === 'hoquei') {
+      if (o.marketId === 1045) { const c = { 1: '1', x: 'X', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
+    } else if (sport === 'tenis') {
+      if (o.marketId === 1016) { const c = { 1: '1', 2: '2' }[sel]; if (c) out[`1x2|${c}`] = v; }
+    }
+  }
+  // Complete markets only.
+  const has = (k) => out[k] !== undefined;
+  for (const k of Object.keys(out)) {
+    const [market, code] = k.split('|');
+    let ok = true;
+    if (market === '1x2') ok = has('1x2|1') && has('1x2|2') && (sport === 'tenis' || has('1x2|X'));
+    else if (market === 'dc') ok = has('dc|1X') && has('dc|12') && has('dc|X2');
+    else if (market === 'ml') ok = has('ml|1') && has('ml|2');
+    else if (market === 'ou') ok = has(`ou|O${code.slice(1)}`) && has(`ou|U${code.slice(1)}`);
+    if (!ok) delete out[k];
+  }
+  return out;
+}
+
+/** "56:21" → 56.35 (minutes elapsed). */
+export const minutesOf = (v) => {
+  const m = /^(\d{1,3}):(\d{2})$/.exec(String(v || '').trim());
+  return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+};
+
+/** A list item (live or pre-match) → our event, or null for an unsupported sport / bad item. */
+export function normalizeItem(ev, { tzOffsetMinutes = 0 } = {}) {
+  if (!ev || typeof ev !== 'object' || ev.id === undefined) return null;
+  const sport = SPORTS[Number(ev.sport_id)];
+  if (!sport) return null;
+  const [n1, n2] = String(ev.name || '').split(/\s+-\s+/);
+  const home = String(ev.home_team || n1 || '').trim().slice(0, 80);
+  const away = String(ev.away_team || n2 || '').trim().slice(0, 80);
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ev.game_date || ''));
+  const t = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(ev.game_time || ''));
+  if (!home || !away || !d || !t) return null;
+  // game_date / game_time are WinHouse's local wall time; tzOffsetMinutes is that zone's offset from UTC.
+  const start = Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2], +(t[3] || 0)) - tzOffsetMinutes * 60_000;
+  const score = /^(\d+)\s*-\s*(\d+)$/.exec(String(ev.result || '').trim());
+  const minutes = minutesOf(ev.current_minute);
+  const safeLogo = (u) => (typeof u === 'string' && /^https:\/\/cdn\.sportapi\.net\/[\w./-]+$/.test(u) ? u : null);
+  return {
+    externalId: String(ev.id), sport, competition: String(ev.league || 'WinHouse').slice(0, 80), home, away,
+    startTime: new Date(start).toISOString(), localStart: `${d[0]}T${t[1]}:${t[2]}`,
+    homeScore: score ? Number(score[1]) : null, awayScore: score ? Number(score[2]) : null,
+    minutes, clockRaw: ev.current_minute || null,
+    homeLogo: safeLogo(ev.home_logo), awayLogo: safeLogo(ev.away_logo),
+    prices: pricesFor(parseOdds(ev.odd), sport),
+  };
+}
+
+/**
+ * WinHouse's clock zone, from the live list: a match started (now − minutes played) ago, and its
+ * game_time read as UTC is ahead of that by the zone's offset. Median of the early-stage matches,
+ * rounded to 30 min; null with fewer than 3 samples.
+ */
+export function estimateOffset(items, now = Date.now()) {
+  const samples = [];
+  for (const ev of items) {
+    const mins = minutesOf(ev?.current_minute);
+    const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ev?.game_date || ''));
+    const t = /^(\d{2}):(\d{2})/.exec(String(ev?.game_time || ''));
+    if (mins === null || mins > 30 || !d || !t) continue;
+    const asUtc = Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+    samples.push((asUtc - (now - mins * 60_000)) / 60_000);
+  }
+  if (samples.length < 3) return null;
+  samples.sort((a, b) => a - b);
+  return Math.round(samples[Math.floor(samples.length / 2)] / 30) * 30;
+}
+
+const clockText = (sport, minutes, raw) => {
+  if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
+  if (sport === 'futebol' || sport === 'hoquei') return `${Math.floor(minutes)}'`;
+  return null; // basketball / tennis: the score says more than an elapsed-time clock
+};
+
+/**
+ * End of a match that left the live list (and stayed out for the confirmation time). Settles from
+ * the last score seen only when it is clearly over; anything else goes to the operator.
+ */
+export function finishVerdict(row) {
+  const m = row.wh_minute;
+  const h = row.home_score;
+  const a = row.away_score;
+  if (!Number.isInteger(h) || !Number.isInteger(a)) return { review: 'sem placar' };
+  switch (row.sport) {
+    case 'futebol':
+      return m >= 88 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'basquetebol': {
+      const full = /\bNBA\b/i.test(row.competition) ? 47 : 39;
+      if (h === a) return { review: 'empate no último placar visto' };
+      return m >= full ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    }
+    case 'hoquei':
+      // Overtime is only played after a regulation draw: the regulation result is that draw.
+      if (row.wh_overtime) return { home: h, away: a, regHome: row.reg_home_score, regAway: row.reg_away_score };
+      return m >= 59 ? { home: h, away: a, regHome: h, regAway: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'tenis':
+      return Math.max(h, a) >= 2 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: possível desistência` };
+    default:
+      return { review: 'desporto sem regra de fim' };
+  }
+}
+
+export function createWinHouseFeed(db, {
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, log = () => {},
+} = {}) {
+  const state = {
+    enabled: !!client?.enabled, last: {}, lastError: null, lastErrorAt: null,
+    offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
+  };
+  const offset = () => state.offset ?? 0;
+  const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
+  const upsertSel = db.prepare(
+    `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
+  );
+
+  function writePrices(eventId, prices) {
+    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+    for (const [k, v] of Object.entries(prices)) upsertSel.run(eventId, ...k.split('|'), v);
+    return Object.keys(prices).length;
+  }
+
+  function insert(ev, status) {
+    const ts = nowIso();
+    const { lastInsertRowid } = db.prepare(
+      `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id,
+                           home_team_ext, away_team_ext, wh_seen_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(ev.sport, ev.competition, ev.home, ev.away, ev.startTime, status, status === 'live' ? ev.homeScore ?? 0 : null,
+      status === 'live' ? ev.awayScore ?? 0 : null, SOURCE, ev.externalId, ev.homeLogo, ev.awayLogo, ts, ts, ts);
+    return db.prepare('SELECT * FROM events WHERE id = ?').get(Number(lastInsertRowid));
+  }
+
+  /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
+  async function syncLive() {
+    const r = await client.live();
+    if (!r.ok) throw new Error(`livegames HTTP ${r.status}`);
+    const items = eventsOf(r.body);
+    if (!Number.isFinite(tzOffsetMinutes)) {
+      const est = estimateOffset(items);
+      if (est !== null) { state.offset = est; state.offsetSource = 'estimado pelo ao vivo'; }
+    }
+    const seen = new Set();
+    let open = 0;
+    for (const raw of items) {
+      const ev = normalizeItem(raw, { tzOffsetMinutes: offset() });
+      if (!ev) continue;
+      seen.add(ev.externalId);
+      try {
+        tx(db, () => {
+          let row = findEvent.get(SOURCE, ev.externalId);
+          if (row && (row.status === 'finished' || row.status === 'cancelled')) return;
+          if (!row) row = insert(ev, 'live');
+          const home = ev.homeScore ?? row.home_score ?? 0;
+          const away = ev.awayScore ?? row.away_score ?? 0;
+          const scoreChanged = row.status === 'live' && (row.home_score !== home || row.away_score !== away);
+          // Ice hockey: once past 60 minutes it is overtime, which follows a regulation draw.
+          const overtime = row.sport === 'hoquei' && ev.minutes !== null && ev.minutes >= 60 && !row.wh_overtime;
+          db.prepare(`UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = COALESCE(?, wh_minute),
+              wh_seen_at = ?, wh_missing_since = NULL, review_reason = NULL, postponed_at = NULL, updated_at = ? WHERE id = ?`)
+            .run(home, away, clockText(row.sport, ev.minutes, ev.clockRaw), ev.minutes, nowIso(), nowIso(), row.id);
+          if (overtime) {
+            const tie = Math.min(home, away);
+            db.prepare('UPDATE events SET wh_overtime = 1, reg_home_score = ?, reg_away_score = ? WHERE id = ?').run(tie, tie, row.id);
+          }
+          if (scoreChanged) db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(nowIso(), row.id);
+          // The live list carries the book's in-play prices; a suspended market comes as 1.00.
+          const n = writePrices(row.id, ev.prices);
+          db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(n ? nowIso() : null, row.id);
+          if (n) open += 1;
+        });
+      } catch (err) { log(`WinHouse ao vivo ${ev.externalId}: ${err.message}`); }
+    }
+    const ended = finishMissing(seen);
+    state.last.live = { at: nowIso(), live: seen.size, withOdds: open, ...ended };
+    return state.last.live;
+  }
+
+  /** Matches no longer in the live list: wait finishConfirmSeconds, then settle or flag. */
+  function finishMissing(seen) {
+    const now = Date.now();
+    let finished = 0;
+    let review = 0;
+    for (const row of db.prepare("SELECT * FROM events WHERE source = ? AND status = 'live'").all(SOURCE)) {
+      if (seen.has(row.external_id)) continue;
+      if (!row.wh_missing_since) {
+        tx(db, () => {
+          db.prepare('UPDATE events SET wh_missing_since = ?, live_odds_at = NULL WHERE id = ?').run(nowIso(), row.id);
+          db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+        });
+        continue;
+      }
+      if (now - new Date(row.wh_missing_since).getTime() < finishConfirmSeconds * 1000 || row.review_reason) continue;
+      const v = finishVerdict(row);
+      tx(db, () => {
+        if (v.review) {
+          db.prepare('UPDATE events SET review_reason = ? WHERE id = ?').run(`WinHouse: ${v.review} (placar ${row.home_score}-${row.away_score})`, row.id);
+          review += 1;
+          return;
+        }
+        db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, reg_home_score = ?, reg_away_score = ?, result = ?,
+            clock = 'Final', updated_at = ? WHERE id = ?`)
+          .run(v.home, v.away, v.regHome ?? null, v.regAway ?? null, resultCode(v.home, v.away), nowIso(), row.id);
+        settleEvent(db, row.id, { source: 'feed', note: 'WinHouse: último placar ao vivo' });
+        finished += 1;
+      });
+    }
+    return { finished, review };
+  }
+
+  /** Every minute: the three pre-match lists → upcoming matches and their prices. */
+  async function syncPrematch() {
+    const lists = await Promise.all([client.prematchMain(), client.prematchTop(), client.prematch24h()].map((p) => p.catch((err) => ({ ok: false, error: err.message }))));
+    const failed = lists.filter((r) => !r.ok);
+    if (failed.length === lists.length) throw new Error(`pré-jogo: ${failed.map((r) => r.error || `HTTP ${r.status}`).join(' · ')}`);
+    const byId = new Map();
+    for (const r of lists) if (r.ok) for (const raw of eventsOf(r.body)) if (raw?.id !== undefined) byId.set(String(raw.id), raw);
+    const now = Date.now();
+    let created = 0;
+    let priced = 0;
+    for (const raw of byId.values()) {
+      const ev = normalizeItem(raw, { tzOffsetMinutes: offset() });
+      if (!ev || new Date(ev.startTime).getTime() <= now) continue;
+      try {
+        tx(db, () => {
+          let row = findEvent.get(SOURCE, ev.externalId);
+          if (row && row.status !== 'scheduled') return; // started: the live list owns it
+          if (!row) { row = insert(ev, 'scheduled'); created += 1; }
+          db.prepare(`UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
+              away_team_ext = COALESCE(?, away_team_ext), wh_seen_at = ?, updated_at = ? WHERE id = ?`)
+            .run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeLogo, ev.awayLogo, nowIso(), nowIso(), row.id);
+          if (writePrices(row.id, ev.prices)) priced += 1;
+        });
+      } catch (err) { log(`WinHouse pré-jogo ${ev.externalId}: ${err.message}`); }
+    }
+    // Pre-match prices not confirmed by any list for a while are closed (the match left the lists).
+    const stale = new Date(now - prematchStaleSeconds * 1000).toISOString();
+    db.prepare(`UPDATE selections SET active = 0 WHERE event_id IN (SELECT id FROM events WHERE source = ? AND status = 'scheduled' AND (wh_seen_at IS NULL OR wh_seen_at < ?))`)
+      .run(SOURCE, stale);
+    state.last.prematch = { at: nowIso(), games: byId.size, created, priced, listsFailed: failed.length };
+    return state.last.prematch;
+  }
+
+  const run = (kind, fn) => async () => {
+    try { return await fn(); } catch (err) {
+      state.lastError = `${kind}: ${err.message}`;
+      state.lastErrorAt = nowIso();
+      log(`WinHouse ${state.lastError}`);
+      return null;
+    }
+  };
+
+  function start({ liveMs = 15_000, prematchMs = 60_000 } = {}) {
+    if (!state.enabled) return () => {};
+    const busy = new Set();
+    const guard = (kind, fn) => async () => {
+      if (busy.has(kind)) return;
+      busy.add(kind);
+      try { await run(kind, fn)(); } finally { busy.delete(kind); }
+    };
+    const live = guard('ao vivo', syncLive);
+    const pre = guard('pré-jogo', syncPrematch);
+    // Live first: it also finds WinHouse's clock zone before pre-match start times are read.
+    live().then(pre);
+    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs)];
+    return () => timers.forEach(clearInterval);
+  }
+
+  const status = () => ({
+    enabled: state.enabled, last: state.last, lastError: state.lastError, lastErrorAt: state.lastErrorAt,
+    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource,
+    events: Object.fromEntries(db.prepare('SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status').all(SOURCE).map((r) => [r.status, r.n])),
+    review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
+  });
+
+  return { enabled: state.enabled, syncLive, syncPrematch, finishMissing, start, status, source: SOURCE };
 }

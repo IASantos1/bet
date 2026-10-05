@@ -76,6 +76,26 @@ API (`/tennis/api/v2/`):
 - Sem o addon a API responde 402: o painel *Administração → Dados ao vivo* mostra "Sem Sports Addon".
   `TENNIS=0` desliga o ténis.
 
+## WinHouse — fonte de jogos, odds e resultados
+
+Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquetebol, hóquei e ténis:
+
+- **Pré-jogo** (a cada minuto): `/ajax/prematchgamesmainleague`, `/ajax/toptenprematchgames` e
+  `/ajax/prematchgames24hour` → jogos futuros e odds. Odds que nenhuma lista confirma há 15 min fecham.
+- **Ao vivo** (a cada 15 s): `/ajax/livegames` → placar, minuto e odds em jogo da própria casa
+  (um preço 1.00 é seleção suspensa e fecha o mercado).
+- **Mercados**: futebol 1X2, Dupla hipótese e golos (linhas .5); basquetebol vencedor com
+  prolongamento e pontos (.5); hóquei 1X2 do tempo regulamentar; ténis vencedor.
+- **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` é
+  liquidado pelo último placar só se estava claramente no fim (futebol ≥ 88'; basquetebol ≥ 39'
+  ou 47' na NBA e sem empate; hóquei ≥ 59' ou prolongamento = empate no regulamentar; ténis com 2
+  sets ganhos). O resto vai para Admin → Liquidação para o operador decidir.
+- **Fuso**: `game_date`/`game_time` estão na hora local da WinHouse; o desvio é estimado pelos jogos
+  ao vivo (ou fixado com `WINHOUSE_TZ_OFFSET_MINUTES`). Um jogo que aparece no ao vivo fecha o pré-jogo.
+
+Para usar só a WinHouse, apague `BZZOIRO_API_TOKEN` (o campo ao vivo, estatísticas, H2H e
+classificação vinham do Bzzoiro e deixam de aparecer).
+
 ## PropLine — segunda fonte de odds
 
 O Bzzoiro continua a ser a fonte principal: cria os jogos e dá placares, estatísticas, o campo ao vivo

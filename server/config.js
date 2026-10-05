@@ -114,6 +114,14 @@ export const config = {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
     },
+    // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
+    // unset = estimated from the live list) and how long a match must stay out of the live list
+    // before it is settled from its last score.
+    feed: env.WINHOUSE_FEED !== '0',
+    liveMs: Math.max(5_000, int(env.WINHOUSE_LIVE_INTERVAL_MS, 15_000)),
+    prematchMs: Math.max(20_000, int(env.WINHOUSE_PREMATCH_INTERVAL_MS, 60_000)),
+    tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,
+    finishConfirmSeconds: int(env.WINHOUSE_FINISH_CONFIRM_SECONDS, 600),
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),

@@ -10,7 +10,7 @@ import { createTennisFeed, TENNIS_SOURCE } from './tennis.js';
 import { createSportFeed, SPORT_SPECS } from './sports.js';
 import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
 import { setRequestsPerMinute } from './providerlimit.js';
-import { createWinHouseClient } from './winhouse.js';
+import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -19,7 +19,7 @@ const liveSocket = config.feed.token && config.feed.liveWs
   ? createLiveSocket(db, { token: config.feed.token, url: config.feed.liveWsUrl, maxSockets: config.feed.liveMaxSockets, liveOddsStale: config.feed.liveOddsStaleSeconds, bookmaker: config.feed.liveOddsBookmaker, log })
   : null;
 const feed = createFeed(db, { ...config.feed, log, liveSocket });
-seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token });
+seed(db, (msg) => console.log(`[seed] ${msg}`), { sampleEvents: !config.feed.token && !config.winhouse.baseUrl });
 const loops = { liveMs: config.livePollSeconds * 1000, oddsMs: config.prematchOddsSeconds * 1000 };
 const stopFeed = feed.start(loops);
 const tennisToken = config.tennis.enabled ? config.feed.token : '';
@@ -54,6 +54,11 @@ const stopPropline = propline.start();
 if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports.length} competições, ${config.propline.dailyRequests} pedidos/dia`);
 
 const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => console.log(`[winhouse] ${msg}`) });
+// WinHouse as the data source: events, scores, odds and results (Bzzoiro stays off without its token).
+const winhouseFeed = winhouse.enabled && config.winhouse.feed
+  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  : null;
+const stopWinhouse = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
@@ -63,7 +68,7 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
@@ -74,6 +79,7 @@ const shutdown = () => {
   tennisLive?.stop();
   stopSettlement();
   stopPropline();
+  stopWinhouse();
   liveSocket?.stop();
   server.close(() => {
     db.close();

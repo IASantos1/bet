@@ -62,7 +62,8 @@ export function createSettlementEngine(db, {
          FROM events e
          LEFT JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
          LEFT JOIN bets b ON b.id = l.bet_id
-        WHERE (e.status = 'live' AND e.start_time <= ?)
+        WHERE (e.status IN ('scheduled', 'live') AND e.review_reason IS NOT NULL)
+           OR (e.status = 'live' AND e.start_time <= ?)
            OR (e.status = 'scheduled' AND e.postponed_at IS NOT NULL)
            OR (e.status = 'scheduled' AND e.start_time <= ?)
         GROUP BY e.id
@@ -70,7 +71,8 @@ export function createSettlementEngine(db, {
     ).all(new Date(now - stuckLiveHours * H).toISOString(), new Date(now - overdueHours * H).toISOString());
     return rows.map((e) => {
       let reason;
-      if (e.postponed_at) {
+      if (e.review_reason) reason = e.review_reason;
+      else if (e.postponed_at) {
         const left = Math.max(0, new Date(e.postponed_at).getTime() + postponedVoidHours * H - now);
         reason = `Adiado — anulação automática em ${Math.ceil(left / H)} h se não tiver nova data`;
       } else if (e.status === 'live') reason = `Ao vivo há mais de ${stuckLiveHours} h sem resultado`;

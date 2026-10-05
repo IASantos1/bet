@@ -43,3 +43,133 @@ test('health check calls the five routes from the server and reports what came b
   assert.equal(createWinHouseClient({ baseUrl: '' }).enabled, false);
   assert.equal(createWinHouseClient({ baseUrl: 'http://insecure' }).enabled, false);
 });
+
+// ---------- collector ----------
+
+import { openDb, nowIso, tx } from '../server/db.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed } from '../server/winhouse.js';
+import { placeBets } from '../server/betting.js';
+import { postTransaction } from '../server/wallet.js';
+import { createSettlementEngine } from '../server/settlement.js';
+
+const pad = (n) => String(n).padStart(2, '0');
+/** game_date / game_time as WinHouse writes them, for a start `msAgo` ago, in a zone `tz` minutes from UTC. */
+const when = (msAgo, tz = 60) => {
+  const d = new Date(Date.now() - msAgo + tz * 60_000);
+  return { game_date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`, game_time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00` };
+};
+const clock = (min) => `${pad(Math.floor(min))}:${pad(Math.round((min % 1) * 60))}`;
+const football = (id, min, result, odd, extra = {}) => ({
+  id, league: 'Spain. Segunda Division', country: 'Spain', sport_id: 1, ...when((min + (min > 45 ? 15 : 0)) * 60_000),
+  name: 'Cordoba - Tenerife', home_team: 'Cordoba', away_team: 'Tenerife', odd, result, current_minute: clock(min),
+  home_logo: 'https://cdn.sportapi.net/opp/v1/color/abc.png', away_logo: 'javascript:alert(1)', ...extra,
+});
+const ODD = '1223894688|1.24|1|1001|1x2 [1x2],1223895777|5.06|x|1001|1x2 [1x2],1223896866|19.90|2|1001|1x2 [1x2],2046601063|1.01|1x|1005|Dupla Hipótese [DC],2046602152|1.18|12|1005|Dupla Hipótese [DC],2046603241|3.98|x2|1005|Dupla Hipótese [DC],1536179746|2.22|over 4.0|1018|Total de Golos - Mais / Menos [TG_O/U],1575315139|1.68|under 4.0|1018|Total de Golos - Mais / Menos [TG_O/U],1|1.60|over 2.5|1018|Total [TG_O/U],2|2.25|under 2.5|1018|Total [TG_O/U]';
+
+test('items: teams, start time from WinHouse local time, logos only from its CDN, settleable markets only', () => {
+  const ev = normalizeItem(football(950967002, 65.95, '2-1', ODD), { tzOffsetMinutes: 60 });
+  assert.equal(ev.sport, 'futebol');
+  assert.deepEqual([ev.home, ev.away, ev.homeScore, ev.awayScore], ['Cordoba', 'Tenerife', 2, 1]);
+  assert.ok(Math.abs(new Date(ev.startTime).getTime() - (Date.now() - 81 * 60_000)) < 2 * 60_000);
+  assert.equal(ev.homeLogo, 'https://cdn.sportapi.net/opp/v1/color/abc.png');
+  assert.equal(ev.awayLogo, null);
+  // 1X2 + DC complete; the 4.0 total (a whole line pushes) left out, 2.5 kept.
+  assert.deepEqual(ev.prices, { '1x2|1': 124, '1x2|X': 506, '1x2|2': 1990, 'dc|12': 118, 'dc|X2': 398, 'ou|O2.5': 160, 'ou|U2.5': 225, 'dc|1X': 101 });
+  // A suspended (1.00) selection closes its whole market.
+  assert.deepEqual(pricesFor([{ marketId: 1001, selection: '1', price: 1.5 }, { marketId: 1001, selection: 'x', price: 1 }, { marketId: 1001, selection: '2', price: 3 }], 'futebol'), {});
+  // Unsupported sports (table tennis 20) are skipped.
+  assert.equal(normalizeItem({ id: 1, sport_id: 20, name: 'A - B', game_date: '2026-10-05', game_time: '21:00:00' }), null);
+  assert.deepEqual(pricesFor([{ marketId: 1022, selection: '1', price: 4.01 }, { marketId: 1022, selection: '2', price: 1.25 }, { marketId: 1672, selection: 'over 159.5', price: 1.87 }, { marketId: 1672, selection: 'under 159.5', price: 1.87 }], 'basquetebol'),
+    { 'ml|1': 401, 'ml|2': 125, 'ou|O159.5': 187, 'ou|U159.5': 187 });
+});
+
+test('clock zone estimated from early live matches', () => {
+  const items = [5, 10, 20, 25].map((m, i) => ({ id: i, ...when(m * 60_000, 120), current_minute: clock(m) }));
+  assert.equal(estimateOffset(items), 120);
+  assert.equal(estimateOffset(items.slice(0, 2)), null);
+});
+
+function setupFeed(lists) {
+  const db = openDb(':memory:');
+  const client = {
+    enabled: true,
+    live: async () => ({ ok: true, status: 200, body: lists.live }),
+    prematchMain: async () => ({ ok: true, status: 200, body: lists.pre || [] }),
+    prematchTop: async () => ({ ok: true, status: 200, body: [] }),
+    prematch24h: async () => ({ ok: false, status: 500 }),
+  };
+  const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
+  const { lastInsertRowid } = db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p@x.pt', 'P', '1990-01-01', 'x', ?)").run(nowIso());
+  tx(db, () => postTransaction(db, Number(lastInsertRowid), 10_000, 'deposit', 't'));
+  const user = () => db.prepare('SELECT * FROM users').get();
+  const row = (ext) => db.prepare("SELECT * FROM events WHERE source = 'winhouse' AND external_id = ?").get(String(ext));
+  const bet = (ext, market, code) => {
+    const s = db.prepare('SELECT * FROM selections WHERE event_id = ? AND market = ? AND code = ?').get(row(ext).id, market, code);
+    return tx(db, () => placeBets(db, user(), { mode: 'single', stakeCents: 500, picks: [{ selectionId: s.id, odds: s.odds_x100 / 100 }] }))[0];
+  };
+  const betStatus = (id) => db.prepare('SELECT status FROM bets WHERE id = ?').get(id).status;
+  return { db, feed, row, bet, betStatus };
+}
+
+test('live: in-play prices from the list; a match that leaves it at full time is settled, earlier goes to the operator', async () => {
+  const lists = { live: [football(1, 80, '2-1', ODD), football(2, 61, '0-1', ODD, { name: 'Romania - Sweden', home_team: 'Romania', away_team: 'Sweden' })] };
+  const t = setupFeed(lists);
+  const r = await t.feed.syncLive();
+  assert.deepEqual([r.live, r.withOdds], [2, 2]);
+  assert.equal(t.row(1).status, 'live');
+  assert.equal(t.row(1).clock, "80'");
+  assert.ok(t.row(1).live_odds_at);
+  const onHome = t.bet(1, '1x2', '1');
+  const onAway = t.bet(2, '1x2', '2');
+  // Last minutes of match 1, then both leave the list.
+  lists.live = [football(1, 90.5, '2-1', ODD)];
+  await t.feed.syncLive();
+  lists.live = [];
+  await t.feed.syncLive(); // first miss: markets closed, waiting
+  assert.equal(t.row(1).status, 'live');
+  await t.feed.syncLive(); // confirmed
+  assert.equal(t.row(1).status, 'finished');
+  assert.equal(t.betStatus(onHome), 'won');
+  // Match 2 left at 61': not settled, flagged for the operator.
+  assert.equal(t.row(2).status, 'live');
+  assert.match(t.row(2).review_reason, /minuto 61/);
+  assert.equal(t.betStatus(onAway), 'open');
+  const queue = createSettlementEngine(t.db).queue();
+  assert.ok(queue.some((q) => q.id === t.row(2).id && /WinHouse/.test(q.reason)));
+});
+
+test('ice hockey: overtime means a regulation draw — 1X2 settles on it', async () => {
+  const hockey = (min, result, odd) => ({ id: 77, sport_id: 4, league: 'RHL', ...when((min + 30) * 60_000), name: 'Akuly - Medvedi', home_team: 'Akuly', away_team: 'Medvedi', result, current_minute: clock(min), odd });
+  const HOD = '1|3.05|1|1045|1x2 [1X2],2|6.35|x|1045|1x2 [1X2],3|1.63|2|1045|1x2 [1X2]';
+  const lists = { live: [hockey(50, '2-2', HOD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onDraw = t.bet(77, '1x2', 'X');
+  lists.live = [hockey(62, '2-2', HOD)];
+  await t.feed.syncLive();
+  lists.live = [hockey(63, '3-2', HOD)];
+  await t.feed.syncLive();
+  lists.live = [];
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  const ev = t.row(77);
+  assert.deepEqual([ev.status, ev.home_score, ev.away_score, ev.reg_home_score, ev.reg_away_score], ['finished', 3, 2, 2, 2]);
+  assert.equal(t.betStatus(onDraw), 'won');
+});
+
+test('pre-match: upcoming matches with prices; started ones and failing lists do not break it', async () => {
+  const future = (id, hours) => ({ ...football(id, 0, '', ODD), id, ...when(-hours * 3_600_000), current_minute: '' });
+  const lists = { live: [], pre: [future(10, 3), future(11, 26), { ...future(12, 3), ...when(10 * 60_000) }] };
+  const t = setupFeed(lists);
+  const r = await t.feed.syncPrematch();
+  assert.deepEqual([r.games, r.created, r.priced, r.listsFailed], [3, 2, 2, 1]);
+  assert.equal(t.row(10).status, 'scheduled');
+  assert.equal(t.row(12), undefined);
+  const s = t.db.prepare("SELECT COUNT(*) AS n FROM selections WHERE event_id = ? AND active = 1").get(t.row(10).id).n;
+  assert.equal(s, 8);
+  // When it starts, the live list takes it over.
+  lists.live = [football(10, 3, '0-0', ODD)];
+  await t.feed.syncLive();
+  assert.equal(t.row(10).status, 'live');
+  assert.equal(t.feed.status().events.live, 1);
+});

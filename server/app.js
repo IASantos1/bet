@@ -66,7 +66,9 @@ const footballLogo = providerImg('team');
 // Player photos for tennis and darts from the same image proxy (the page falls back to the flag).
 const PLAYER_IMG = { 'bzzoiro-tennis': 'tennis/player', 'bzzoiro-darts': 'darts/player' };
 const playerPhoto = (source, id) => (PLAYER_IMG[source] && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${PLAYER_IMG[source]}/${id}/?bg=transparent` : null);
-const teamLogo = (source, id) => footballLogo(source, id) || sportTeamImage(source, id) || playerPhoto(source, id);
+// WinHouse sends the badge URL itself (its image CDN, checked when stored).
+const winhouseLogo = (source, v) => (source === 'winhouse' && typeof v === 'string' && v.startsWith('https://cdn.sportapi.net/') ? v : null);
+const teamLogo = (source, id) => winhouseLogo(source, id) || footballLogo(source, id) || sportTeamImage(source, id) || playerPhoto(source, id);
 // League badge; for national-team competitions this is the flag/emblem the provider publishes.
 const leagueLogo = providerImg('league');
 
@@ -96,7 +98,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -776,7 +778,7 @@ export function createApp(db, {
       sports: Object.values(sports).map((f) => f.status()),
       propline: propline ? propline.status() : { enabled: false, keySet: false },
       requestBudget: providerSummary()[0] || null,
-      winhouse: { enabled: !!winhouse?.enabled },
+      winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null },
     });
   });
 

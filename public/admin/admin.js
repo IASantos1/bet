@@ -330,14 +330,27 @@ function adminFeed(f) {
          ${liveSocketPanel(f.liveSocket)}
          ${sportsAddonPanels(f)}
          ${proplinePanel(f.propline)}
-         ${winhousePanel(f.winhouse)}
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
-      : '<div class="notice">Defina a variável <strong>BZZOIRO_API_TOKEN</strong> no servidor (token gratuito em sports.bzzoiro.com) e reinicie para importar jogos reais.</div>'}
-  </div>`;
+      : `<p class="muted">Bzzoiro desligado (sem <strong>BZZOIRO_API_TOKEN</strong>).</p>`}
+  </div>
+  <div class="panel">${winhousePanel(f.winhouse)}</div>`;
+}
+
+function winhouseFeedInfo(fd) {
+  if (!fd) return '';
+  const ev = Object.entries(fd.events || {}).map(([k, v]) => `${STATUS_LABEL[k] || k}: ${v}`).join(' · ') || '—';
+  const lv = fd.last?.live;
+  const pm = fd.last?.prematch;
+  return `<p>Eventos: <strong>${esc(ev)}</strong>${fd.review ? ` · <span class="pill lost">${fd.review} para decidir em Liquidação</span>` : ''}</p>
+    <p class="muted">Ao vivo: ${lv ? `${lv.live} jogos, ${lv.withOdds} com odds, ${lv.finished} terminados, ${lv.review} para rever (${esc(fmtDateTime(lv.at))})` : 'ainda não lido'} ·
+      Pré-jogo: ${pm ? `${pm.games} jogos, ${pm.created} novos, ${pm.priced} com odds${pm.listsFailed ? `, ${pm.listsFailed} lista(s) com erro` : ''} (${esc(fmtDateTime(pm.at))})` : 'ainda não lido'} ·
+      Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
+    ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }
 
 function winhousePanel(w) {
-  return `<h3>WinHouse — teste das rotas ${w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
+  return `<h3>WinHouse ${w?.feed?.enabled ? '<span class="pill won">A importar</span>' : w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
+    ${winhouseFeedInfo(w?.feed)}
     <p class="muted">${w?.enabled ? 'Chama as 5 rotas a partir deste servidor e mostra o que respondem (estado, tempo, tamanho, eventos, odds lidas e a forma do 1.º item). Ainda não grava nada.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
     ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
