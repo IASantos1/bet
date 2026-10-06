@@ -16,7 +16,9 @@ const C = {
 const INTL = /^(international|internacional|world|mundo|europe|europa|uefa|fifa|conmebol|south america|america do sul)$/;
 
 const FOOTBALL = [
-  [1, /\b(uefa )?champions league\b/, [INTL], /\b(afc|caf|concacaf|ofc|asian|africa)/],
+  // Every UEFA competition (Champions, Europa, Conference, Nations League, Super Cup, Euro…) is top.
+  [1, /\buefa\b/],
+  [1, /\bchampions league\b|europa league|conference league/, [INTL], /\b(afc|caf|concacaf|ofc|asian|africa)/],
   [1, /premier league/, [C.eng]],
   [1, /\bla ?liga\b|primera divisi[oó]n/, [C.esp]],
   [1, /\bs[eé]rie a\b/, [C.ita, C.bra]],
@@ -26,7 +28,6 @@ const FOOTBALL = [
   [1, /brasileir/],
   [1, /world cup|copa do mundo|mundial|\beuro(pean championship)?\b|copa am[eé]rica|nations league|libertadores/, [INTL], /qualif|eliminat/],
   [2, /world cup|copa do mundo|\beuro(pean championship)?\b/],
-  [2, /europa league|conference league/, [INTL]],
   [2, /eredivisie/, [C.ned]],
   [2, /ta[çc]a de portugal|ta[çc]a da liga/, [C.por]],
   [2, /fa cup|efl cup|carabao|\bchampionship\b/, [C.eng]],
