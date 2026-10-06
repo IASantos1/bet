@@ -370,3 +370,22 @@ test('a live page route that answers 404 to a whole run is paused', async () => 
   assert.deepEqual([d.failed, !!d.pausedUntil], [1, true]);
   assert.equal(await t.feed.syncLiveDetails(), d); // paused: nothing read
 });
+
+test('live list: markets we do not settle are imported too (operator-settled)', () => {
+  const odd = '975315002|1.31|1|1016|Vencedor do jogo [Match_Winner],975316091|3.44|2|1016|Vencedor do jogo [Match_Winner],'
+    + '1282603220|1.11|1|1081|1.º set - Vencedor [1st_Set_Winner],1282604309|6.50|2|1081|1.º set - Vencedor [1st_Set_Winner]';
+  const ev = normalizeItem({ id: 5, sport_id: 5, league: 'ATP. Tokyo', name: 'A - B', home_team: 'A', away_team: 'B', ...when(-3_600_000), odd });
+  assert.equal(ev.prices['ml|1'] ?? ev.prices['1x2|1'], 131);
+  assert.equal(ev.prices['x|1081~1.º set - Vencedor~1'], 111);
+  assert.equal(ev.prices['x|1081~1.º set - Vencedor~2'], 650);
+});
+
+test('live pages: without a live route (404) the pre-match page of the game is used', async () => {
+  const o = (odd, mid, opt) => ({ id: 1, odd, market_id: String(mid), market: 'm', market_option: `${opt} `, special_value: null });
+  const t = setupFeed({ live: [football(22, 30, '0-0', ODD)], pages: { 22: [[o('1.92', 1007, 'yes'), o('1.76', 1007, 'no')]] } });
+  await t.feed.syncLive();
+  const d = await t.feed.syncLiveDetails();
+  assert.deepEqual([d.read, d.failed, d.route, d.pausedUntil], [1, 0, 'prematchgame', null]);
+  const s = t.db.prepare("SELECT odds_x100 FROM selections WHERE event_id = ? AND market = 'btts' AND code = 'Y' AND active = 1").get(t.row(22).id);
+  assert.equal(s.odds_x100, 192);
+});
