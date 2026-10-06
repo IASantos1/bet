@@ -103,6 +103,12 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   minutos (Admin → Feed mostra a rota em uso; "Ver mercados ao vivo" testa a página). Os mercados
   da própria lista ao vivo que não liquidamos sozinhos (1.º set, apostas por sets…) também entram,
   para o operador decidir.
+- **Tracker ao vivo (futebol)**: a página do jogo mostra o campo com a bola e a situação
+  (ataque, ataque perigoso, canto…), as estatísticas (posse, ataques, ataques perigosos, remates,
+  cantos, cartões) e a cronologia, a partir do tracker da WinHouse: `/ajax/widget` dá o `EID` e a
+  chave, `/widget-data` o estado do jogo. Só é lido para os jogos que alguém tem abertos (a cada
+  `WINHOUSE_TRACKER_POLL_MS`); `WINHOUSE_TRACKER=0` desliga. Admin → Feed → "Ver tracker" mostra o
+  que a WinHouse devolve para um jogo.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
