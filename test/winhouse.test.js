@@ -47,7 +47,7 @@ test('health check calls the five routes from the server and reports what came b
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, finishVerdict } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -188,6 +188,15 @@ test('women and youth games are blocked; more sports and correct score', () => {
   assert.equal(blockedGame({ ...base, league: 'Iceland Championship U19' }, { women: true, youth: false }), false);
   assert.equal(normalizeItem({ ...base, league: 'Brazil. Copa Goiânia Sub-20' }, { block }), null);
   assert.ok(normalizeItem({ ...base, league: 'Brazil. Serie A' }, { block }));
+  // Virtual football, small table tennis circuits and UTR tennis.
+  for (const league of ['FIFA. 4x4. Superleague', 'Esoccer Battle - 8 mins play', 'Subsoccer. Liga', 'Cyber Live Arena', 'ATT. Moscow', 'ATT. Togliatti', 'UTR Pro Tennis Series. San Diego', 'Setka Cup'])
+    assert.equal(blockedGame({ ...base, league }, block), true, league);
+  assert.equal(blockedGame({ ...base, league: 'FIFA World Cup' }, block), false);
+  assert.equal(blockedGame({ ...base, league: 'Brazil. Serie B', home_team: 'Volta Redonda' }, block), false);
+  assert.equal(blockedGame({ ...base, league: 'Ecuador. Liga Pro' }, block), false);
+  assert.equal(blockedGame({ ...base, sport_id: 20, league: 'Czech. Liga Pro' }, block), true);
+  assert.equal(blockedGame({ ...base, league: 'ATT. Moscow' }, { minor: false }), false);
+  assert.equal(blockedGame({ ...base, league: 'Some Cup' }, { minor: false, extra: leagueTerms('Liga X, Some Cup') }), true);
 
   // Table tennis: winner and correct score in sets; volleyball: winner only (no draw).
   const tt = pricesFor([

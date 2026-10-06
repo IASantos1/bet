@@ -125,6 +125,10 @@ export const config = {
     // Women's and youth (U19, Sub-20, Junior…) games are left out unless set to 0.
     blockWomen: env.WINHOUSE_BLOCK_WOMEN !== '0',
     blockYouth: env.WINHOUSE_BLOCK_YOUTH !== '0',
+    // Virtual football (FIFA 4x4/5x5, subsoccer, cyber…), small table tennis circuits (ATT, Setka
+    // Cup…) and UTR tennis are left out unless set to 0; WINHOUSE_BLOCK_LEAGUES adds more terms.
+    blockMinor: env.WINHOUSE_BLOCK_MINOR !== '0',
+    blockLeagues: env.WINHOUSE_BLOCK_LEAGUES || '',
     // Every market of a game is read from its own page: games starting in the next
     // WINHOUSE_DETAIL_HOURS, up to WINHOUSE_DETAIL_PER_CYCLE pages a minute, each again after
     // WINHOUSE_DETAIL_REFRESH_MINUTES. WINHOUSE_DETAIL_PER_CYCLE=0 turns it off.

@@ -96,8 +96,10 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   são importados também e ficam em Admin → Liquidação, onde o operador marca cada seleção como
   ganha, perdida ou anulada depois do jogo.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
-  (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos); os já importados são
-  removidos enquanto não tiverem apostas.
+  (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
+  4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
+  (`WINHOUSE_BLOCK_MINOR=0` mostra-os). `WINHOUSE_BLOCK_LEAGUES` junta mais termos, separados por
+  vírgulas (ex.: `Liga Pro, Czech`). Os já importados são removidos enquanto não tiverem apostas.
 - **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` é
   liquidado pelo último placar só se estava claramente no fim (futebol ≥ 88'; basquetebol ≥ 39'
   ou 47' na NBA e sem empate; hóquei ≥ 59' ou prolongamento = empate no regulamentar; ténis com 2
