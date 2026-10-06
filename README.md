@@ -99,7 +99,10 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   omissão `livegame/{id}`) é lida a cada `WINHOUSE_LIVE_DETAIL_SECONDS` (até
   `WINHOUSE_LIVE_DETAIL_PER_CYCLE` páginas a cada 10 s). Essas odds valem no máximo 2× esse tempo,
   caem a cada golo e só aparecem enquanto a lista ao vivo tiver o jogo aberto. Se a rota responder
-  404, pára 10 minutos (Admin → Feed mostra-o; "Ver mercados ao vivo" testa a página).
+  404, usa a página pré-jogo do mesmo jogo (`prematchgame/{id}`); se também essa falhar, pára 10
+  minutos (Admin → Feed mostra a rota em uso; "Ver mercados ao vivo" testa a página). Os mercados
+  da própria lista ao vivo que não liquidamos sozinhos (1.º set, apostas por sets…) também entram,
+  para o operador decidir.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
