@@ -15,3 +15,18 @@ test('big leagues come first in every sport', () => {
   assert.equal(leagueTier('esports', 'IEM Cologne 2026 · Semifinal · BO3'), 1);
   assert.equal(leagueTier('hoquei', 'NHL'), 1);
 });
+
+test('football leagues with the same name elsewhere do not jump the queue', () => {
+  assert.equal(leagueTier('futebol', 'England. Premier League'), 1);
+  assert.equal(leagueTier('futebol', 'Inglaterra. Premier League'), 1);
+  assert.equal(leagueTier('futebol', 'Egypt. Premier League'), 9);
+  assert.equal(leagueTier('futebol', 'Brazil. Serie A'), 1);
+  assert.equal(leagueTier('futebol', 'Ecuador. Serie A'), 9);
+  assert.equal(leagueTier('futebol', 'Austria. Bundesliga'), 9);
+  assert.equal(leagueTier('futebol', 'França. Ligue 1'), 1);
+  assert.equal(leagueTier('futebol', 'AFC Champions League'), 9);
+  assert.equal(leagueTier('futebol', 'UEFA Champions League'), 1);
+  assert.equal(leagueTier('futebol', 'World Cup. Qualification. Europe'), 2);
+  assert.equal(leagueTier('futebol', 'Spain. Segunda Division'), 2);
+  assert.equal(leagueTier('futebol', 'Saudi Arabia. Pro League'), 2);
+});

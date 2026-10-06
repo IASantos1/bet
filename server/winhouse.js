@@ -266,13 +266,31 @@ export const SPORTS = {
   1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
 };
 
-// Women's and youth competitions can be left out (WINHOUSE_BLOCK_WOMEN / WINHOUSE_BLOCK_YOUTH).
+// Women's, youth and minor competitions can be left out (WINHOUSE_BLOCK_WOMEN / _YOUTH / _MINOR).
 const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
 const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|junior|juniors|júnior|juniores|juvenil|juvenis|youth|jugend|primavera|academy|academia)\b/i;
-/** True when the competition or a team marks the game as women's / youth (as configured). */
-export function blockedGame(ev, { women = true, youth = true } = {}) {
+// Virtual / e-football (FIFA 4x4, 5x5, subsoccer, cyber…), the small table tennis circuits
+// (ATT, Setka Cup, TT Cup…) and UTR tennis: played around the clock, of little interest.
+const MINOR = new RegExp([
+  String.raw`\b(e-?soccer|e-?football|e-?sports? battle|cyber|subsoccer|sub soccer|h2h gg|gt leagues|esoccer)\b`,
+  String.raw`\b\d\s?x\s?\d\b`,
+  String.raw`\bfifa\b(?!\s*(world cup|club world cup|intercontinental|series|copa do mundo|mundial))`,
+  String.raw`\b(att|setka cup|tt cup|win cup|tt elite series|tt star series|pro tennis series|utr)\b`,
+].join('|'), 'i');
+const MINOR_TT = /\bliga pro\b/i; // table tennis only ("LigaPro" is also Ecuador's football league)
+/** Extra terms from WINHOUSE_BLOCK_LEAGUES ("ATT, Setka") → one case-insensitive pattern, or null. */
+export function leagueTerms(list) {
+  const terms = String(list || '').split(/[,;\n]/).map((t) => t.trim()).filter(Boolean)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return terms.length ? new RegExp(terms.join('|'), 'i') : null;
+}
+/** True when the competition or a team marks the game as women's / youth / minor (as configured). */
+export function blockedGame(ev, { women = true, youth = true, minor = true, extra = null } = {}) {
   const text = [ev?.league, ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ');
-  return (women && WOMEN.test(text)) || (youth && YOUTH.test(text));
+  const sport = ev?.sport || SPORTS[Number(ev?.sport_id)];
+  return (women && WOMEN.test(text)) || (youth && YOUTH.test(text))
+    || (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text))))
+    || (!!extra && extra.test(text));
 }
 
 const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFinite(n) && n > 100 && n < 100_000 ? n : null; };
@@ -471,10 +489,10 @@ export function finishVerdict(row) {
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true,
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '',
   detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, log = () => {},
 } = {}) {
-  const block = { women: blockWomen, youth: blockYouth };
+  const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues) };
   const state = {
     enabled: !!client?.enabled, last: {}, lastError: null, lastErrorAt: null,
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
@@ -663,10 +681,10 @@ export function createWinHouseFeed(db, {
 
   /** Games imported before a block was set: removed while nobody has a bet on them. */
   function purgeBlocked() {
-    if (!block.women && !block.youth) return 0;
+    if (!block.women && !block.youth && !block.minor && !block.extra) return 0;
     let n = 0;
-    for (const e of db.prepare("SELECT id, competition, home, away FROM events WHERE source = ? AND status IN ('scheduled', 'live')").all(SOURCE)) {
-      if (!blockedGame({ league: e.competition, home_team: e.home, away_team: e.away }, block)) continue;
+    for (const e of db.prepare("SELECT id, sport, competition, home, away FROM events WHERE source = ? AND status IN ('scheduled', 'live')").all(SOURCE)) {
+      if (!blockedGame({ sport: e.sport, league: e.competition, home_team: e.home, away_team: e.away }, block)) continue;
       if (db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(e.id)) continue;
       db.prepare('DELETE FROM events WHERE id = ?').run(e.id);
       n += 1;
@@ -702,7 +720,7 @@ export function createWinHouseFeed(db, {
 
   const status = () => ({
     enabled: state.enabled, last: state.last, lastError: state.lastError, lastErrorAt: state.lastErrorAt,
-    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block,
+    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block: { ...block, extra: block.extra ? block.extra.source : null },
     events: Object.fromEntries(db.prepare('SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status').all(SOURCE).map((r) => [r.status, r.n])),
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
   });
