@@ -5,7 +5,7 @@ import { leagueTier } from '../server/leagues.js';
 test('big leagues come first in every sport', () => {
   assert.equal(leagueTier('futebol', 'Premier League'), 1);
   assert.equal(leagueTier('futebol', 'Liga Portugal'), 1);
-  assert.equal(leagueTier('futebol', 'UEFA Europa League'), 2);
+  assert.equal(leagueTier('futebol', 'UEFA Europa League'), 1);
   assert.equal(leagueTier('futebol', 'Segunda Liga'), 9);
   assert.equal(leagueTier('tenis', 'ATP · Wimbledon · Final'), 1);
   assert.equal(leagueTier('tenis', 'ATP · Rome Masters · Final'), 2);
@@ -26,6 +26,9 @@ test('football leagues with the same name elsewhere do not jump the queue', () =
   assert.equal(leagueTier('futebol', 'França. Ligue 1'), 1);
   assert.equal(leagueTier('futebol', 'AFC Champions League'), 9);
   assert.equal(leagueTier('futebol', 'UEFA Champions League'), 1);
+  // Every UEFA competition is top, qualifiers included.
+  for (const n of ['UEFA Nations League', 'UEFA Conference League', 'UEFA Super Cup', 'UEFA Europa League. Qualification', 'International. UEFA Nations League', 'Europe. Conference League'])
+    assert.equal(leagueTier('futebol', n), 1, n);
   assert.equal(leagueTier('futebol', 'World Cup. Qualification. Europe'), 2);
   assert.equal(leagueTier('futebol', 'Spain. Segunda Division'), 2);
   assert.equal(leagueTier('futebol', 'Saudi Arabia. Pro League'), 2);
