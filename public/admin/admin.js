@@ -609,7 +609,7 @@ document.addEventListener('click', async (e) => {
     actionEl.disabled = true;
     actionEl.textContent = 'A testar…';
     try {
-      const r = await api('/api/admin/winhouse/health', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null, live: actionEl.dataset.live === '1' } });
+      const r = await api('/api/admin/winhouse/health', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
       box.textContent = JSON.stringify(r, null, 2);
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
@@ -619,7 +619,7 @@ document.addEventListener('click', async (e) => {
     const box = $('#whOut');
     actionEl.disabled = true;
     try {
-      const r = await api('/api/admin/winhouse/markets', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      const r = await api('/api/admin/winhouse/markets', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null, live: actionEl.dataset.live === '1' } });
       box.textContent = JSON.stringify(r, null, 2);
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
