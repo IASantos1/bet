@@ -828,7 +828,7 @@ export function createApp(db, {
     try {
       if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
       const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
-      res.json(await winhouse.markets({ gameId }));
+      res.json(await winhouse.markets({ gameId, live: req.body?.live === true }));
     } catch (err) { next(err); }
   });
 

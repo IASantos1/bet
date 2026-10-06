@@ -17,6 +17,8 @@ const ROUTES = {
   prematchTop: '/ajax/toptenprematchgames?lang={lang}',
   prematch24h: '/ajax/prematchgames24hour?lang={lang}',
   prematchEvent: '/ajax/prematchgame/{gameId}?lang={lang}',
+  // A live game's page (every in-play market). WINHOUSE_LIVE_EVENT changes it if WinHouse uses another path.
+  liveEvent: '/ajax/livegame/{gameId}?lang={lang}',
 };
 
 /**
@@ -194,25 +196,25 @@ export function createWinHouseClient({
   }
 
   /**
-   * Calls the five routes from this server and reports, for each: HTTP status, time, size, whether
+   * Calls the six routes from this server and reports, for each: HTTP status, time, size, whether
    * it is JSON, how many events, the shape of the first one and how many of its odds we can read.
-   * The event route uses the first game id found in the pre-match lists (or `gameId`).
+   * The pre-match page uses the first game id of the pre-match lists (or `gameId`); the live page, the first live game.
    */
   /**
    * One game's page (`prematchgame/{id}`; without an id, the first game of the main pre-match
    * list): every market it offers, grouped, so new markets can be mapped. Read-only.
    */
-  async function markets({ gameId = null } = {}) {
+  async function markets({ gameId = null, live = false } = {}) {
     let id = gameId;
     if (!id) {
-      const list = await request('prematchMain', {});
+      const list = await request(live ? 'live' : 'prematchMain', {});
       id = eventsOf(list.body).find((e) => e?.id)?.id ?? null;
-      if (!id) throw new Error('Nenhum jogo na lista pré-jogo para abrir.');
+      if (!id) throw new Error(live ? 'Nenhum jogo na lista ao vivo para abrir.' : 'Nenhum jogo na lista pré-jogo para abrir.');
     }
-    const r = await request('prematchEvent', { gameId: id });
+    const r = await request(live ? 'liveEvent' : 'prematchEvent', { gameId: id });
     const cat = marketCatalog(r.body);
     return {
-      at: new Date().toISOString(), gameId: String(id), status: r.status, bytes: r.bytes, json: r.body !== null,
+      at: new Date().toISOString(), gameId: String(id), live, route: paths[live ? 'liveEvent' : 'prematchEvent'].replace('{lang}', lang).replace('{gameId}', id), status: r.status, bytes: r.bytes, json: r.body !== null,
       ...cat,
       // The first entries in full (field names and values), so unknown layouts can be mapped.
       sample: cat.totalOdds ? undefined : r.body === null ? r.text.slice(0, 2000) : JSON.stringify(Array.isArray(r.body) ? r.body.slice(0, 4) : r.body).slice(0, 8000),
@@ -222,19 +224,24 @@ export function createWinHouseClient({
   async function health({ gameId = null } = {}) {
     const out = [];
     let firstId = gameId;
-    for (const key of ['live', 'prematchMain', 'prematchTop', 'prematch24h', 'prematchEvent']) {
-      if (key === 'prematchEvent' && !firstId) { out.push({ route: key, skipped: 'nenhum gameId nas listas pré-jogo' }); continue; }
+    let liveId = null;
+    for (const key of ['live', 'liveEvent', 'prematchMain', 'prematchTop', 'prematch24h', 'prematchEvent']) {
+      const page = key === 'prematchEvent' || key === 'liveEvent';
+      const id = key === 'liveEvent' ? liveId : firstId;
+      if (page && !id) { out.push({ route: key, skipped: key === 'liveEvent' ? 'nenhum jogo na lista ao vivo' : 'nenhum gameId nas listas pré-jogo' }); continue; }
       try {
-        const r = await request(key, { gameId: firstId });
-        const events = eventsOf(r.body);
-        if (!firstId && key !== 'live') firstId = events.find((e) => e?.id)?.id ?? null;
-        const first = key === 'prematchEvent' ? r.body : events[0];
-        const odds = first ? parseOdds(first.odd ?? first.odds) : [];
+        const r = await request(key, { gameId: id });
+        const events = page ? [] : eventsOf(r.body);
+        if (key === 'live') liveId = events.find((e) => e?.id)?.id ?? null;
+        else if (!firstId && !page) firstId = events.find((e) => e?.id)?.id ?? null;
+        const first = page ? r.body : events[0];
+        const pageOdds = page ? detailOdds(r.body) : [];
+        const odds = pageOdds.length ? pageOdds : first ? parseOdds(first.odd ?? first.odds) : [];
         out.push({
-          route: key, path: paths[key].replace('{lang}', lang).replace('{gameId}', firstId ?? ''), status: r.status, ok: r.ok, ms: r.ms, bytes: r.bytes,
+          route: key, path: paths[key].replace('{lang}', lang).replace('{gameId}', id ?? ''), status: r.status, ok: r.ok, ms: r.ms, bytes: r.bytes,
           json: r.body !== null, contentType: r.contentType, events: events.length,
-          oddsParsed: odds.length, oddsMapped: odds.filter(marketKey).length,
-          firstItem: first ? shape(first) : null,
+          oddsParsed: odds.length, oddsMapped: odds.filter(marketKey).length, markets: page ? new Set(odds.map((o) => o.marketId)).size : undefined,
+          firstItem: first && !page ? shape(first) : null,
           bodyStart: r.body === null ? r.text.slice(0, 300) : undefined,
         });
       } catch (err) {
@@ -252,6 +259,7 @@ export function createWinHouseClient({
     prematchTop: () => request('prematchTop'),
     prematch24h: () => request('prematch24h'),
     prematchEvent: (gameId) => request('prematchEvent', { gameId }),
+    liveEvent: (gameId) => request('liveEvent', { gameId }),
     markets,
   };
 }
@@ -490,7 +498,7 @@ export function finishVerdict(row) {
 
 export function createWinHouseFeed(db, {
   client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '',
-  detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, log = () => {},
+  detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, log = () => {},
 } = {}) {
   const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues) };
   const state = {
@@ -503,6 +511,13 @@ export function createWinHouseFeed(db, {
   const listPrices = new Map(); // externalId → prices from the last pre-match lists
   const pagePrices = new Map(); // externalId → { at, prices }
   const pageFresh = (ext) => { const p = pagePrices.get(ext); return p && Date.now() - p.at < detailRefreshMinutes * 2 * 60_000 ? p.prices : {}; };
+  // In play the same: the live list carries 2–3 markets, the game's live page all of them. Page
+  // prices count only for 2 × liveDetailSeconds, are dropped on a goal, and only show while the
+  // list itself has open prices (a suspended list means a suspended game).
+  const liveListPrices = new Map(); // externalId → prices from the last live list
+  const livePages = new Map(); // externalId → { at, prices }
+  const liveFresh = (ext) => { const p = livePages.get(ext); return p && Date.now() - p.at < liveDetailSeconds * 2000 ? p.prices : {}; };
+  let liveDetailPausedUntil = 0;
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
@@ -560,7 +575,9 @@ export function createWinHouseFeed(db, {
           }
           if (scoreChanged) db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(nowIso(), row.id);
           // The live list carries the book's in-play prices; a suspended market comes as 1.00.
-          const n = writePrices(row.id, ev.prices);
+          if (scoreChanged) livePages.delete(ev.externalId);
+          liveListPrices.set(ev.externalId, ev.prices);
+          const n = writePrices(row.id, Object.keys(ev.prices).length ? { ...liveFresh(ev.externalId), ...ev.prices } : {});
           db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(n ? nowIso() : null, row.id);
           if (n) open += 1;
         });
@@ -692,6 +709,59 @@ export function createWinHouseFeed(db, {
     return n;
   }
 
+  /**
+   * Every in-play market: each live game's own page (WINHOUSE_LIVE_EVENT), games with open prices
+   * only, least recently read first, at most `liveDetailPerCycle` per run, each every
+   * `liveDetailSeconds`. A route that answers 404 to a whole run is paused for 10 minutes.
+   */
+  async function syncLiveDetails() {
+    if (!liveDetailPerCycle || !client.liveEvent) return null;
+    const now = Date.now();
+    if (now < liveDetailPausedUntil) return state.last.liveDetails;
+    const rows = db.prepare(`SELECT id, sport, external_id, home_score, away_score FROM events
+      WHERE source = ? AND status = 'live' AND live_odds_at IS NOT NULL AND wh_missing_since IS NULL`).all(SOURCE);
+    const ids = new Set(rows.map((r) => r.external_id));
+    for (const ext of [...livePages.keys()]) if (!ids.has(ext)) livePages.delete(ext);
+    for (const ext of [...liveListPrices.keys()]) if (!ids.has(ext)) liveListPrices.delete(ext);
+    const due = rows.filter((r) => { const p = livePages.get(r.external_id); return !p || now - p.at >= liveDetailSeconds * 1000; })
+      .sort((a, b) => (livePages.get(a.external_id)?.at ?? 0) - (livePages.get(b.external_id)?.at ?? 0))
+      .slice(0, liveDetailPerCycle);
+    let read = 0;
+    let markets = 0;
+    let failed = 0;
+    let notFound = 0;
+    for (const r of due) {
+      try {
+        const res = await client.liveEvent(r.external_id);
+        if (!res.ok) { if (res.status === 404) notFound += 1; throw new Error(`HTTP ${res.status}`); }
+        const odds = detailOdds(res.body);
+        const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
+        read += 1;
+        markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
+        tx(db, () => {
+          const row = db.prepare('SELECT status, home_score, away_score, live_odds_at, wh_missing_since FROM events WHERE id = ?').get(r.id);
+          // Ended, suspended or a goal while the page was being read: those prices are stale.
+          if (row?.status !== 'live' || !row.live_odds_at || row.wh_missing_since || row.home_score !== r.home_score || row.away_score !== r.away_score) return;
+          const list = liveListPrices.get(r.external_id) || {};
+          if (!Object.keys(list).length) return;
+          livePages.set(r.external_id, { at: Date.now(), prices });
+          writePrices(r.id, { ...prices, ...list });
+        });
+      } catch (err) {
+        failed += 1;
+        livePages.set(r.external_id, { at: Date.now(), prices: {} }); // retry after liveDetailSeconds
+        log(`WinHouse página ao vivo ${r.external_id}: ${err.message}`);
+      }
+    }
+    const paused = due.length > 0 && notFound === due.length;
+    if (paused) liveDetailPausedUntil = Date.now() + 10 * 60_000;
+    state.last.liveDetails = {
+      at: nowIso(), due: due.length, read, failed, markets, live: rows.length,
+      pausedUntil: paused ? new Date(liveDetailPausedUntil).toISOString() : null,
+    };
+    return state.last.liveDetails;
+  }
+
   const run = (kind, fn) => async () => {
     try { return await fn(); } catch (err) {
       state.lastError = `${kind}: ${err.message}`;
@@ -701,7 +771,7 @@ export function createWinHouseFeed(db, {
     }
   };
 
-  function start({ liveMs = 15_000, prematchMs = 60_000, detailMs = 60_000 } = {}) {
+  function start({ liveMs = 15_000, prematchMs = 60_000, detailMs = 60_000, liveDetailMs = 10_000 } = {}) {
     if (!state.enabled) return () => {};
     const busy = new Set();
     const guard = (kind, fn) => async () => {
@@ -713,8 +783,9 @@ export function createWinHouseFeed(db, {
     const pre = guard('pré-jogo', syncPrematch);
     // Live first: it also finds WinHouse's clock zone before pre-match start times are read.
     const details = guard('páginas dos jogos', syncDetails);
-    live().then(pre).then(details);
-    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs)];
+    const liveDetails = guard('páginas ao vivo', syncLiveDetails);
+    live().then(pre).then(details).then(liveDetails);
+    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -725,5 +796,5 @@ export function createWinHouseFeed(db, {
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, finishMissing, start, status, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, source: SOURCE };
 }
