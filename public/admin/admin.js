@@ -343,10 +343,12 @@ function winhouseFeedInfo(fd) {
   const lv = fd.last?.live;
   const pm = fd.last?.prematch;
   const dt = fd.last?.details;
+  const ld = fd.last?.liveDetails;
   return `<p>Eventos: <strong>${esc(ev)}</strong>${fd.review ? ` · <span class="pill lost">${fd.review} para decidir em Liquidação</span>` : ''}</p>
     <p class="muted">Ao vivo: ${lv ? `${lv.live} jogos, ${lv.withOdds} com odds, ${lv.finished} terminados, ${lv.review} para rever (${esc(fmtDateTime(lv.at))})` : 'ainda não lido'} ·
       Pré-jogo: ${pm ? `${pm.games} jogos, ${pm.created} novos, ${pm.priced} com odds${pm.listsFailed ? `, ${pm.listsFailed} lista(s) com erro` : ''} (${esc(fmtDateTime(pm.at))})` : 'ainda não lido'} ·
       Páginas dos jogos (todos os mercados): ${dt ? `${dt.read} lidas agora${dt.failed ? `, ${dt.failed} com erro` : ''}, ${dt.cached} de ${dt.window} jogos nas próximas horas (${esc(fmtDateTime(dt.at))})` : 'ainda não lidas'} ·
+      Páginas ao vivo (todos os mercados em jogo): ${ld ? (ld.pausedUntil ? `<span class="pill lost">rota não encontrada (404) — pausa até ${esc(fmtDateTime(ld.pausedUntil))}</span>` : `${ld.read} lidas agora${ld.failed ? `, ${ld.failed} com erro` : ''} de ${ld.live} jogos com odds (${esc(fmtDateTime(ld.at))})`) : 'ainda não lidas'} ·
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }
@@ -354,11 +356,12 @@ function winhouseFeedInfo(fd) {
 function winhousePanel(w) {
   return `<h3>WinHouse ${w?.feed?.enabled ? '<span class="pill won">A importar</span>' : w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
     ${winhouseFeedInfo(w?.feed)}
-    <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 5 rotas e mostra o que respondem. Ver mercados do jogo: abre a página de um jogo (gameId, ou o 1.º da lista) e lista todos os mercados que oferece — copie e envie para os ligarmos.'
+    <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 6 rotas e mostra o que respondem. Ver mercados do jogo / ao vivo: abre a página de um jogo (gameId, ou o 1.º da lista pré-jogo / ao vivo) e lista todos os mercados que oferece — copie e envie para os ligarmos.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
     ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-health">Testar WinHouse</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-markets">Ver mercados do jogo</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-markets" data-live="1">Ver mercados ao vivo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
       <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
 }
@@ -606,7 +609,7 @@ document.addEventListener('click', async (e) => {
     actionEl.disabled = true;
     actionEl.textContent = 'A testar…';
     try {
-      const r = await api('/api/admin/winhouse/health', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      const r = await api('/api/admin/winhouse/health', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null, live: actionEl.dataset.live === '1' } });
       box.textContent = JSON.stringify(r, null, 2);
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }

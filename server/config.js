@@ -113,6 +113,7 @@ export const config = {
     routes: {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
+      liveEvent: unquote(env.WINHOUSE_LIVE_EVENT),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
     // unset = estimated from the live list) and how long a match must stay out of the live list
@@ -135,6 +136,10 @@ export const config = {
     detailHours: Math.max(1, int(env.WINHOUSE_DETAIL_HOURS, 12)),
     detailPerCycle: Math.max(0, int(env.WINHOUSE_DETAIL_PER_CYCLE, 20)),
     detailRefreshMinutes: Math.max(5, int(env.WINHOUSE_DETAIL_REFRESH_MINUTES, 30)),
+    // In play the same from each live game's page: up to WINHOUSE_LIVE_DETAIL_PER_CYCLE pages every
+    // 10 s, each game every WINHOUSE_LIVE_DETAIL_SECONDS. WINHOUSE_LIVE_DETAIL_PER_CYCLE=0 turns it off.
+    liveDetailPerCycle: Math.max(0, int(env.WINHOUSE_LIVE_DETAIL_PER_CYCLE, 10)),
+    liveDetailSeconds: Math.max(15, int(env.WINHOUSE_LIVE_DETAIL_SECONDS, 30)),
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),

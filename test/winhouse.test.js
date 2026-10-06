@@ -18,7 +18,7 @@ test('a live event: teams, score and minute', () => {
   assert.deepEqual({ ...e, odds: e.odds.length }, { gameId: 950967002, sportId: 1, league: 'Spain. Segunda Division', home: 'Cordoba', away: 'Tenerife', homeScore: 2, awayScore: 1, minute: 56, clock: '56:21', odds: 1 });
 });
 
-test('health check calls the five routes from the server and reports what came back', async () => {
+test('health check calls the six routes from the server and reports what came back', async () => {
   const seen = [];
   const fetchImpl = async (url, opts) => {
     seen.push({ url: String(url), referer: opts.headers.Referer });
@@ -38,6 +38,7 @@ test('health check calls the five routes from the server and reports what came b
   assert.match(by.prematch24h.error, /rede: ECONNRESET/);
   assert.equal(by.prematchEvent.path, '/ajax/prematchgame/643637273?lang=pt');
   assert.equal(by.prematchEvent.oddsParsed, 1);
+  assert.equal(by.liveEvent.path, '/ajax/livegame/1?lang=pt'); // the first live game
   assert.equal(seen[0].url, 'https://iframe.example/ajax/livegames?lang=pt');
   assert.equal(seen[0].referer, 'https://iframe.example/');
   assert.equal(createWinHouseClient({ baseUrl: '' }).enabled, false);
@@ -99,6 +100,7 @@ function setupFeed(lists) {
     prematchTop: async () => ({ ok: true, status: 200, body: [] }),
     prematch24h: async () => ({ ok: false, status: 500 }),
     prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
+    liveEvent: async (id) => (lists.livePages?.[id] ? { ok: true, status: 200, body: lists.livePages[id] } : { ok: false, status: 404 }),
   };
   const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
   const { lastInsertRowid } = db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p@x.pt', 'P', '1990-01-01', 'x', ?)").run(nowIso());
@@ -325,4 +327,46 @@ test('every other market of a page becomes an operator-settled selection', async
     'x|2412~1x2 & Total Goals - Over / Under 1.5~1&Mais de (1.5)': 260,
     'x|1000032~Goal In Both Halves~Não': 174,
   });
+});
+
+test('live game pages: every in-play market, dropped on a goal or when the list suspends the game', async () => {
+  const o = (odd, mid, opt, special = null, market = 'm') => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });
+  const page = [
+    [o('9.9', 1001, '1')],
+    [o('1.92', 1007, 'yes'), o('1.76', 1007, 'no')],
+    [o('2.4', 1000050, 'Home', null, 'Next Goal [NG]'), o('1.0', 1000050, 'Away', null, 'Next Goal [NG]')],
+  ];
+  const lists = { live: [football(20, 30, '0-0', ODD)], livePages: { 20: page } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const d = await t.feed.syncLiveDetails();
+  assert.deepEqual([d.live, d.due, d.read, d.failed, d.pausedUntil], [1, 1, 1, 0, null]);
+  const active = () => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(t.row(20).id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
+  assert.equal(active()['btts|Y'], 192);
+  assert.equal(active()['x|1000050~Next Goal~Home'], 240);
+  assert.equal(active()['x|1000050~Next Goal~Away'], undefined); // suspended (1.00)
+  assert.equal(active()['1x2|1'], 124); // the list's price wins
+  // The next list keeps them; not read again before the refresh time.
+  await t.feed.syncLive();
+  assert.equal(active()['btts|Y'], 192);
+  assert.equal((await t.feed.syncLiveDetails()).due, 0);
+  // A goal: the page prices go until the page is read again.
+  lists.live = [football(20, 31, '1-0', ODD)];
+  await t.feed.syncLive();
+  assert.equal(active()['btts|Y'], undefined);
+  assert.equal(active()['1x2|1'], 124);
+  assert.equal((await t.feed.syncLiveDetails()).read, 1);
+  assert.equal(active()['btts|Y'], 192);
+  // The list suspends the game (every price 1.00): nothing is open, page markets included.
+  lists.live = [football(20, 32, '1-0', ODD.replace(/\|\d+\.\d+\|/g, '|1.00|'))];
+  await t.feed.syncLive();
+  assert.deepEqual(active(), {});
+});
+
+test('a live page route that answers 404 to a whole run is paused', async () => {
+  const t = setupFeed({ live: [football(21, 30, '0-0', ODD)] });
+  await t.feed.syncLive();
+  const d = await t.feed.syncLiveDetails();
+  assert.deepEqual([d.failed, !!d.pausedUntil], [1, true]);
+  assert.equal(await t.feed.syncLiveDetails(), d); // paused: nothing read
 });
