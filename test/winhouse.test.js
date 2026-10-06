@@ -389,3 +389,18 @@ test('live pages: without a live route (404) the pre-match page of the game is u
   const s = t.db.prepare("SELECT odds_x100 FROM selections WHERE event_id = ? AND market = 'btts' AND code = 'Y' AND active = 1").get(t.row(22).id);
   assert.equal(s.odds_x100, 192);
 });
+
+test('"ver mercados ao vivo": first live game, live page or else its pre-match page', async () => {
+  const page = [[{ id: 1, odd: '1.92', market_id: '1007', market: 'BTS', market_option: 'yes ', special_value: null }]];
+  const calls = [];
+  const fetchImpl = async (u) => {
+    calls.push(new URL(u).pathname);
+    const p = new URL(u).pathname;
+    if (p === '/ajax/livegames') return new Response(JSON.stringify([{ id: 55 }]), { status: 200 });
+    if (p === '/ajax/livegame/55') return new Response('not found', { status: 404 });
+    return new Response(JSON.stringify(page), { status: 200 });
+  };
+  const r = await createWinHouseClient({ baseUrl: 'https://iframe.example', fetchImpl }).markets({ live: true });
+  assert.deepEqual(calls, ['/ajax/livegames', '/ajax/livegame/55', '/ajax/prematchgame/55']);
+  assert.deepEqual([r.live, r.gameId, r.route, r.totalOdds], [true, '55', '/ajax/prematchgame/55?lang=pt', 1]);
+});
