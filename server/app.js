@@ -98,7 +98,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -229,7 +229,7 @@ export function createApp(db, {
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
         tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
-        liveTracker: e.source === 'bzzoiro' && e.status === 'live',
+        liveTracker: e.status === 'live' && (e.source === 'bzzoiro' || (e.source === 'winhouse' && e.sport === 'futebol' && !!winhouseTracker?.enabled)),
       };
       if (allMarkets) {
         const block = (m, list, suffix = '') => ({
@@ -310,6 +310,10 @@ export function createApp(db, {
     try {
       const ev = eventRow(req.params.id);
       if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      // WinHouse football: statistics and timeline from its match tracker.
+      if (ev.source === 'winhouse' && ev.sport === 'futebol' && winhouseTracker?.enabled && ev.status === 'live') {
+        return res.json(await winhouseTracker.matchExtras(ev.external_id));
+      }
       const provider = providerFor(ev);
       if (!provider || ev.status === 'scheduled') return res.json({ stats: [], incidents: [] });
       res.json(await provider.matchExtras(ev.external_id, { live: ev.status === 'live' }));
@@ -330,18 +334,22 @@ export function createApp(db, {
   // Server-sent events for a live match: score/clock/stats, ball position, actions and odds changes.
   app.get('/api/events/:id/live', (req, res) => {
     const ev = eventRow(req.params.id);
-    const socket = ev?.source === 'bzzoiro' ? liveSocket : ev?.source === TENNIS_SOURCE ? tennisLive : null;
+    const tracker = ev?.source === 'winhouse' && ev.sport === 'futebol' && winhouseTracker?.enabled ? winhouseTracker : null;
+    const socket = ev?.source === 'bzzoiro' ? liveSocket : ev?.source === TENNIS_SOURCE ? tennisLive : tracker;
     if (!ev || ev.status !== 'live' || !socket) return res.status(204).end();
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
     const send = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    send('snapshot', { ...socket.snapshot(ev.id), following: socket.isFollowing(ev.external_id) });
+    // WinHouse: its tracker is read only while someone watches the match.
+    const unfollow = tracker ? tracker.follow(ev.id, ev.external_id) : null;
+    send('snapshot', { ...socket.snapshot(ev.id), following: tracker ? true : socket.isFollowing(ev.external_id) });
     const onMessage = (m) => send(m.type, m.data);
     socket.bus.on(`e:${ev.id}`, onMessage);
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
     req.on('close', () => {
       clearInterval(heartbeat);
       socket.bus.off(`e:${ev.id}`, onMessage);
+      unfollow?.();
     });
   });
 
@@ -820,6 +828,19 @@ export function createApp(db, {
       if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
       const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
       res.json(await winhouse.health({ gameId }));
+    } catch (err) { next(err); }
+  });
+
+  // WinHouse: the match tracker's raw answers for one game (or the first live football match).
+  admin.post('/winhouse/tracker', async (req, res, next) => {
+    try {
+      if (!winhouseTracker?.enabled) throw new HttpError(409, 'Tracker WinHouse desligado: defina WINHOUSE_BASE_URL (e não WINHOUSE_TRACKER=0).');
+      let gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      if (!gameId) {
+        gameId = db.prepare("SELECT external_id FROM events WHERE source = 'winhouse' AND sport = 'futebol' AND status = 'live' ORDER BY start_time LIMIT 1").get()?.external_id ?? null;
+        if (!gameId) throw new HttpError(404, 'Nenhum jogo de futebol ao vivo da WinHouse agora.');
+      }
+      res.json(await winhouseTracker.inspect(gameId));
     } catch (err) { next(err); }
   });
 

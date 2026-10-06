@@ -1,0 +1,270 @@
+// WinHouse match tracker (football in play): statistics, ball position, situation and timeline.
+//
+//   /ajax/widget?event_id=<game id>   → the tracker's own event id (EID) and key (AKEY)
+//   /widget-data?event_id=EID&api_key=AKEY → the match state: score, clock, stats, situation,
+//                                           xy (ball, 0–1), timeline / sc, corners, yellow cards
+//
+// Only matches someone is watching are read (every `pollMs` while a browser follows them), and
+// everything is published on `bus` in the same shape as the main live socket, so the match page's
+// 2D tracker, actions list and statistics work unchanged: 'event', 'livedata', 'action'.
+
+import { EventEmitter } from 'node:events';
+
+const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
+const num = (v) => { const n = Number(String(v ?? '').replace('%', '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
+
+/** EID and AKEY from the widget route's answer (JSON or the widget's HTML / script). */
+export function widgetCredentials(body, text = '') {
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const o = body.data && typeof body.data === 'object' ? { ...body, ...body.data } : body;
+    const eid = first(o.eid, o.EID, o.event_id, o.eventId, o.tracker_id, o.match_id);
+    const akey = first(o.akey, o.AKEY, o.api_key, o.apiKey, o.key, o.token);
+    if (eid && akey) return { eid: String(eid), akey: String(akey) };
+  }
+  const t = String(text || '');
+  const url = /(?:widget-data|ws-widget)[^"'\s<>]*/.exec(t)?.[0] || '';
+  const pick = (src, names) => {
+    for (const n of names) {
+      const m = new RegExp(`[?&"'\\s{,]${n}["']?\\s*(?:=|:)\\s*["']?([A-Za-z0-9_.:-]{2,128})`, 'i').exec(` ${src}`);
+      if (m) return m[1];
+    }
+    return null;
+  };
+  const eid = pick(url, ['event_id']) || pick(t, ['EID', 'eid', 'eventId', 'event_id']);
+  const akey = pick(url, ['api_key']) || pick(t, ['AKEY', 'akey', 'apiKey', 'api_key']);
+  return eid && akey ? { eid, akey } : null;
+}
+
+const STAT_LABELS = [
+  [/possess|posse/i, 'ball_possession', 'Posse de bola', '%'],
+  [/dangerous/i, 'dangerous_attacks', 'Ataques perigosos', ''],
+  [/attack/i, 'attacks', 'Ataques', ''],
+  [/on.?target|no alvo|shots? on/i, 'shots_on_target', 'Remates à baliza', ''],
+  [/off.?target|fora/i, 'shots_off_target', 'Remates para fora', ''],
+  [/corner|canto/i, 'corners', 'Cantos', ''],
+  [/yellow|amarel/i, 'yellow_cards', 'Cartões amarelos', ''],
+  [/red|vermelh/i, 'red_cards', 'Cartões vermelhos', ''],
+  [/penalt/i, 'penalties', 'Penáltis', ''],
+  [/substitut/i, 'substitutions', 'Substituições', ''],
+];
+const statMeta = (name) => {
+  const hit = STAT_LABELS.find(([re]) => re.test(name));
+  return hit ? { key: hit[1], label: hit[2], unit: hit[3] } : { key: String(name).toLowerCase().replace(/\W+/g, '_'), label: String(name), unit: '' };
+};
+/** A home/away pair from [h, a], {home, away}, {1: h, 2: a} or "h:a". */
+const pair = (v) => {
+  if (Array.isArray(v) && v.length >= 2) return [num(v[0]), num(v[1])];
+  if (v && typeof v === 'object') return [num(first(v.home, v.h, v[1], v['1'], v.team1, v.t1)), num(first(v.away, v.a, v[2], v['2'], v.team2, v.t2))];
+  const m = /^\s*([\d.]+)\s*[:\-/|]\s*([\d.]+)\s*$/.exec(String(v ?? ''));
+  return m ? [num(m[1]), num(m[2])] : [null, null];
+};
+
+/** stats as object ({"On Target": [3, 1]}) or list ([{name, home, away}] / [{type, value: [h, a]}]). */
+export function normalizeStats(raw) {
+  const rows = [];
+  const add = (name, v) => {
+    const [home, away] = pair(v);
+    if (home === null || away === null || !name) return;
+    const meta = statMeta(name);
+    if (!rows.some((r) => r.key === meta.key)) rows.push({ ...meta, home, away });
+  };
+  if (Array.isArray(raw)) {
+    for (const s of raw) {
+      if (!s || typeof s !== 'object') continue;
+      const name = first(s.name, s.type, s.title, s.label, s.key);
+      add(name, s.home !== undefined || s.away !== undefined ? s : first(s.value, s.values, s.data, s));
+    }
+  } else if (raw && typeof raw === 'object') {
+    for (const [name, v] of Object.entries(raw)) add(name, v);
+  }
+  return rows;
+}
+
+const SITUATIONS = [
+  [/dangerous/i, 'dangerous_attack'], [/goal ?kick/i, 'goalkick'], [/\bgoal\b/i, 'goal'], [/corner/i, 'corner'],
+  [/free ?kick/i, 'freekick'], [/throw/i, 'throwin'], [/penalt/i, 'penalty'], [/offside/i, 'offside'],
+  [/shot|attempt/i, 'shot'], [/safe/i, 'safe'], [/attack/i, 'attack'], [/possession/i, 'possession'],
+];
+/** "Home Dangerous Attack" → { side: 'home', situation: 'dangerous_attack', text }. */
+export function normalizeSituation(raw) {
+  const text = String(typeof raw === 'object' && raw ? first(raw.text, raw.name, raw.type, raw.situation, '') : raw ?? '').trim();
+  if (!text) return null;
+  const sideRaw = typeof raw === 'object' && raw ? first(raw.team, raw.side) : null;
+  const side = /^(away|2|a)$/i.test(String(sideRaw ?? '')) || /\baway\b|visitante/i.test(text) ? 'away'
+    : /^(home|1|h)$/i.test(String(sideRaw ?? '')) || /\bhome\b|casa/i.test(text) ? 'home' : null;
+  const situation = SITUATIONS.find(([re]) => re.test(text))?.[1] || 'possession';
+  return { side, situation, text };
+}
+
+const EVENT_TYPES = [[/goal|golo/i, 'goal'], [/yellow|amarel/i, 'card'], [/red|vermelh/i, 'card'], [/corner|canto/i, 'corner_awarded'], [/sub/i, 'player_on']];
+/** timeline / sc entries → [{ minute, type, team, label }]. */
+export function normalizeTimeline(raw) {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object'
+    ? Object.entries(raw).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => (x && typeof x === 'object' ? { type: k, ...x } : { type: k, minute: x })) : []))
+    : [];
+  return list.map((x) => {
+    if (!x || typeof x !== 'object') return null;
+    const name = String(first(x.type, x.event, x.name, x.kind, '')).trim();
+    if (!name) return null;
+    const t = first(x.team, x.side, x.competitor, x.participant);
+    const team = /^(away|2|a)$/i.test(String(t ?? '')) ? 'away' : /^(home|1|h)$/i.test(String(t ?? '')) ? 'home' : null;
+    const minute = num(first(x.minute, x.min, x.time, x.timer, x.t));
+    const kind = EVENT_TYPES.find(([re]) => re.test(name))?.[1] || name.toLowerCase();
+    const cardColor = /red|vermelh/i.test(name) ? 'red' : /yellow|amarel/i.test(name) ? 'yellow' : null;
+    return { minute: minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute), type: kind, team, label: name, card: cardColor };
+  }).filter(Boolean);
+}
+
+/** widget-data → the match state the site uses. */
+export function normalizeWidgetData(body) {
+  const d = body && typeof body === 'object' ? (body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? { ...body, ...body.data } : body) : {};
+  const stats = normalizeStats(first(d.stats, d.statistics));
+  const [corH, corA] = pair(d.corner ?? d.corners);
+  const [yelH, yelA] = pair(d.yelc ?? d.yellow ?? d.yellow_cards);
+  if (corH !== null && !stats.some((s) => s.key === 'corners')) stats.push({ key: 'corners', label: 'Cantos', unit: '', home: corH, away: corA });
+  if (yelH !== null && !stats.some((s) => s.key === 'yellow_cards')) stats.push({ key: 'yellow_cards', label: 'Cartões amarelos', unit: '', home: yelH, away: yelA });
+  const xy = Array.isArray(d.xy) ? d.xy : d.xy && typeof d.xy === 'object' ? [d.xy.x, d.xy.y] : null;
+  let ball = null;
+  if (xy && num(xy[0]) !== null && num(xy[1]) !== null) {
+    const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
+    ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
+  }
+  const timeline = normalizeTimeline(first(d.timeline, d.sc));
+  return {
+    homeScore: num(first(d.home_score, d.homeScore, d.score?.home)),
+    awayScore: num(first(d.away_score, d.awayScore, d.score?.away)),
+    status: first(d.status, null), period: first(d.period, null), timer: first(d.timer, d.time, null),
+    matchLength: num(d.match_length), injuryTime: num(d.injury_time),
+    homeName: first(d.home_name, null), awayName: first(d.away_name, null),
+    stats, situation: normalizeSituation(d.situation), ball, timeline,
+  };
+}
+
+const PERIOD_LABEL = (p, status) => {
+  const s = `${status ?? ''} ${p ?? ''}`.toLowerCase();
+  if (/half.?time|interval|break|ht\b/.test(s)) return 'Intervalo';
+  if (/2|second/.test(String(p ?? ''))) return '2.ª parte';
+  if (/1|first/.test(String(p ?? ''))) return '1.ª parte';
+  return null;
+};
+
+export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_000, credentialMinutes = 30, log = () => {} } = {}) {
+  const bus = new EventEmitter();
+  bus.setMaxListeners(0);
+  const creds = new Map(); // gameId → { at, eid, akey } | { at, missing: true }
+  const watched = new Map(); // eventId → { gameId, timer, last, lastAt, seen:Set, actions:[], lastBall, watchers }
+  const enabled = !!client?.enabled && typeof client.widget === 'function';
+
+  async function credentials(gameId, { fresh = false } = {}) {
+    const hit = creds.get(gameId);
+    if (!fresh && hit && Date.now() - hit.at < (hit.missing ? 5 * 60_000 : credentialMinutes * 60_000)) return hit.missing ? null : hit;
+    const r = await client.widget(gameId);
+    const c = r.ok ? widgetCredentials(r.body, r.text) : null;
+    creds.set(gameId, c ? { at: Date.now(), ...c } : { at: Date.now(), missing: true });
+    if (creds.size > 2000) creds.delete(creds.keys().next().value);
+    return c;
+  }
+
+  /** The tracker state of one game (null when WinHouse has no tracker for it). */
+  async function state(gameId) {
+    let c = await credentials(gameId);
+    if (!c) return null;
+    let r = await client.widgetData(c.eid, c.akey);
+    if (!r.ok || !r.body) { // expired key: ask the widget again once
+      c = await credentials(gameId, { fresh: true });
+      if (!c) return null;
+      r = await client.widgetData(c.eid, c.akey);
+      if (!r.ok || !r.body) return null;
+    }
+    return normalizeWidgetData(r.body);
+  }
+
+  const publish = (id, type, data) => bus.emit(`e:${id}`, { type, data });
+
+  async function tick(eventId) {
+    const w = watched.get(eventId);
+    if (!w) return;
+    if (!w.watchers && Date.now() - w.lastAt > idleMs) { clearInterval(w.timer); watched.delete(eventId); return; }
+    if (w.busy) return;
+    w.busy = true;
+    try {
+      const s = await state(w.gameId);
+      if (!s) return;
+      w.last = s;
+      const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
+      const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
+      publish(eventId, 'event', { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: row?.clock || null, stats: live });
+      if (s.ball || s.situation) {
+        const side = s.situation?.side || 'home';
+        // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.
+        const spot = s.ball ? (side === 'away' ? { x: 100 - s.ball.x, y: 100 - s.ball.y } : s.ball) : { x: null, y: null };
+        const key = `${spot.x}|${spot.y}|${s.situation?.situation}|${side}`;
+        if (key !== w.lastBall) {
+          w.lastBall = key;
+          const d = { ...spot, side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
+          w.livedata = d;
+          publish(eventId, 'livedata', d);
+        }
+      }
+      for (const a of s.timeline) {
+        const id = `${a.minute}|${a.type}|${a.team}|${a.label}`;
+        if (w.seen.has(id)) continue;
+        w.seen.add(id);
+        w.actions.push(a);
+        w.actions = w.actions.slice(-15);
+        publish(eventId, 'action', a);
+      }
+    } catch (err) {
+      log(`tracker ${w.gameId}: ${err.message}`);
+    } finally {
+      w.busy = false;
+    }
+  }
+
+  /** A browser follows a live match: start (or keep) reading its tracker; returns a stop function. */
+  function follow(eventId, gameId) {
+    let w = watched.get(eventId);
+    if (!w) {
+      w = { gameId: String(gameId), watchers: 0, lastAt: Date.now(), seen: new Set(), actions: [], last: null, livedata: null, lastBall: null };
+      w.timer = setInterval(() => tick(eventId), pollMs);
+      w.timer.unref?.();
+      watched.set(eventId, w);
+      tick(eventId);
+    }
+    w.watchers += 1;
+    return () => { w.watchers = Math.max(0, w.watchers - 1); w.lastAt = Date.now(); };
+  }
+
+  const snapshot = (eventId) => {
+    const w = watched.get(eventId);
+    return { event: null, livedata: w?.livedata ? [w.livedata] : [], actions: w?.actions || [] };
+  };
+
+  /** Statistics and timeline for the match page (same shape as the other providers). */
+  async function matchExtras(gameId) {
+    const s = await state(String(gameId)).catch(() => null);
+    if (!s) return { stats: [], incidents: [] };
+    const incidents = s.timeline.filter((a) => a.type === 'goal' || a.type === 'card')
+      .map((a) => ({ minute: a.minute, type: a.type === 'goal' ? 'goal' : a.card || 'yellow', side: a.team, player: '' }));
+    return { stats: s.stats, incidents, period: PERIOD_LABEL(s.period, s.status) };
+  }
+
+  /** Admin: the raw answers of both routes for one game, to map new fields. */
+  async function inspect(gameId) {
+    const w = await client.widget(gameId);
+    const c = w.ok ? widgetCredentials(w.body, w.text) : null;
+    const out = {
+      at: new Date().toISOString(), gameId: String(gameId),
+      widget: { status: w.status, bytes: w.bytes, json: w.body !== null, found: !!c, eid: c?.eid ?? null, key: c ? `${c.akey.slice(0, 4)}…` : null,
+        sample: c ? undefined : (w.body !== null ? JSON.stringify(w.body) : w.text || '').slice(0, 3000) },
+    };
+    if (c) {
+      const r = await client.widgetData(c.eid, c.akey);
+      out.data = { status: r.status, bytes: r.bytes, json: r.body !== null, keys: r.body && typeof r.body === 'object' ? Object.keys(r.body) : null,
+        normalized: r.body ? normalizeWidgetData(r.body) : null, sample: (r.body !== null ? JSON.stringify(r.body) : r.text || '').slice(0, 6000) };
+    }
+    return out;
+  }
+
+  return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect };
+}

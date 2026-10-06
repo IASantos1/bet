@@ -11,6 +11,7 @@ import { createSportFeed, SPORT_SPECS } from './sports.js';
 import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
 import { setRequestsPerMinute } from './providerlimit.js';
 import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
+import { createWinHouseTracker } from './whtracker.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -58,6 +59,10 @@ const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => consol
 const winhouseFeed = winhouse.enabled && config.winhouse.feed
   ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, blockMinor: config.winhouse.blockMinor, blockLeagues: config.winhouse.blockLeagues, detailHours: config.winhouse.detailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, liveDetailPerCycle: config.winhouse.liveDetailPerCycle, liveDetailSeconds: config.winhouse.liveDetailSeconds, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
+// WinHouse match tracker (football in play): stats, ball and timeline, read only for watched matches.
+const winhouseTracker = winhouse.enabled && config.winhouse.tracker
+  ? createWinHouseTracker(db, { client: winhouse, pollMs: config.winhouse.trackerPollMs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  : null;
 const stopWinhouse = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
@@ -68,7 +73,7 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 

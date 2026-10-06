@@ -19,6 +19,9 @@ const ROUTES = {
   prematchEvent: '/ajax/prematchgame/{gameId}?lang={lang}',
   // A live game's page (every in-play market). WINHOUSE_LIVE_EVENT changes it if WinHouse uses another path.
   liveEvent: '/ajax/livegame/{gameId}?lang={lang}',
+  // Match tracker: the widget page gives the tracker's event id and key, widget-data the state.
+  widget: '/ajax/widget?event_id={gameId}&bg=transparent',
+  widgetData: '/widget-data?event_id={eid}&api_key={akey}',
 };
 
 /**
@@ -172,7 +175,8 @@ export function createWinHouseClient({
   const base = String(baseUrl || '').replace(/\/+$/, '');
   const paths = { ...ROUTES, ...Object.fromEntries(Object.entries(routes).filter(([, v]) => v)) };
   const enabled = /^https:\/\//.test(base);
-  const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''));
+  const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''))
+    .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? ''));
 
   async function request(key, vars) {
     if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
@@ -267,6 +271,8 @@ export function createWinHouseClient({
     prematch24h: () => request('prematch24h'),
     prematchEvent: (gameId) => request('prematchEvent', { gameId }),
     liveEvent: (gameId) => request('liveEvent', { gameId }),
+    widget: (gameId) => request('widget', { gameId }),
+    widgetData: (eid, akey) => request('widgetData', { eid, akey }),
     markets,
   };
 }
