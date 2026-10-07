@@ -272,7 +272,12 @@ export function createWinHouseClient({
       }
     };
     // Crawl the iframe: same-origin pages (links, iframes) and scripts (script src, preloads, imports).
-    const pagesQ = ['/', '/pt', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean).map((p) => origin + p);
+    // The iframe's own documentation first (llms.txt, docs/agent.md, docs): it lists the API routes.
+    const DOCS = ['/llms.txt', '/docs/agent.md', '/docs'];
+    const pagesQ = [...DOCS, '/', '/portal', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean).map((p) => origin + p);
+    const docs = {};
+    const docRoutes = new Set();
+    const LOCALE = /^\/[a-z]{2}\/?$/; // /de/, /pt … the same portal in other languages
     const scriptsQ = [];
     const seen = new Set();
     const visited = [];
@@ -291,13 +296,22 @@ export function createWinHouseClient({
       if (isPage) pagesRead += 1; else scriptsRead += 1;
       if (!r.text) continue;
       scan(r.text, name);
+      if (DOCS.includes(new URL(u).pathname)) {
+        // Documentation: its text (tags removed) and every route it names.
+        const text = r.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n');
+        docs[new URL(u).pathname] = text.slice(0, 30_000);
+        for (const m of text.matchAll(/(?:https?:\/\/[^\s"'<>)]+)?\/(?:ajax|api|widget-data|ws-widget|ws)[^\s"'<>)`,]*/g)) docRoutes.add(m[0]);
+      }
       if (isPage) {
         for (const m of r.text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) { const l = local(m[1], u); if (l) scriptsQ.push(l); }
         for (const m of r.text.matchAll(/<link[^>]+href=["']([^"']+\.m?js[^"']*)["']/gi)) { const l = local(m[1], u); if (l) scriptsQ.push(l); }
         for (const m of r.text.matchAll(/<(?:iframe|frame)[^>]+src=["']([^"']+)["']/gi)) { const l = local(m[1], u); if (l) { links.add(new URL(l).pathname); pagesQ.push(l); } }
         for (const m of r.text.matchAll(/<a[^>]+href=["']([^"'#?]+)[^"']*["']/gi)) {
           const l = local(m[1], u);
-          if (l && !/\.(png|jpe?g|svg|webp|gif|ico|css|pdf|zip)$/i.test(l)) { links.add(new URL(l).pathname); pagesQ.push(l); }
+          if (l && !/\.(png|jpe?g|svg|webp|gif|ico|css|pdf|zip)$/i.test(l)) {
+            links.add(new URL(l).pathname);
+            if (!LOCALE.test(new URL(l).pathname) && !/\/(terms|privacy)$/.test(new URL(l).pathname)) pagesQ.push(l);
+          }
         }
       } else {
         // Chunks loaded by the script: import("./x.js"), from "./x.js", "/assets/x.js".
@@ -310,7 +324,9 @@ export function createWinHouseClient({
       .sort((a, b) => (/live/i.test(b.path) - /live/i.test(a.path)) || a.path.localeCompare(b.path));
     return {
       at: new Date().toISOString(), baseUrl: base, visited, links: [...links].slice(0, 60), scriptsFound: seen.size - pagesRead,
+      docRoutes: [...docRoutes].slice(0, 200),
       routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
+      docs,
     };
   }
 
