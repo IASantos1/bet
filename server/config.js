@@ -113,7 +113,9 @@ export const config = {
     routes: {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
-      liveEvent: unquote(env.WINHOUSE_LIVE_EVENT),
+      // The live book is livegame/{id} (the sportsbook's own api.js). An older setting pointing
+      // this at prematchgame (which answers [] once a game starts) is ignored.
+      liveEvent: /prematchgame/i.test(unquote(env.WINHOUSE_LIVE_EVENT) || '') ? '' : unquote(env.WINHOUSE_LIVE_EVENT),
       widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA), wsWidget: unquote(env.WINHOUSE_WS_WIDGET), tracker: unquote(env.WINHOUSE_TRACKER_ROUTE),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;

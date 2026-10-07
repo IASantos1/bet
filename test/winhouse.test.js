@@ -471,3 +471,13 @@ test('"Ver mercados ao vivo" shows what the live page answered, even when it fal
   assert.equal(r.liveAttempt.status, 400);
   assert.match(r.liveAttempt.sample, /tenant required/);
 });
+
+test('live book: suspended picks (game_status "0" or 1.00) are skipped; WINHOUSE_LIVE_EVENT=prematchgame is ignored', async () => {
+  const { detailOdds } = await import('../server/winhouse.js');
+  const o = (odd, opt, status) => ({ id: 1, odd, market_id: '1001', market: '1x2 [1x2]', market_option: opt, special_value: null, game_status: status });
+  assert.deepEqual(detailOdds([[o('1.27', '1', '1'), o('5.05', 'x', '0'), o('1.00', '2', '1')]]).map((x) => x.selection), ['1']);
+  const { loadConfig } = await import('../server/config.js').catch(() => ({}));
+  if (loadConfig) {
+    assert.equal(loadConfig({ WINHOUSE_LIVE_EVENT: '/ajax/prematchgame/{gameId}?lang={lang}' }).winhouse.routes.liveEvent, '');
+  }
+});
