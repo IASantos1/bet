@@ -152,8 +152,8 @@ test('without xy the situation places the ball; real timeline kinds get Portugue
   assert.equal(t[3].card, 'yellow');
 });
 
-test('/ajax/tracker (flat pairs) is read too; xy [1, 1] with "Ball Safe" is a placeholder', () => {
-  const s = normalizeWidgetData({ period: 'Second Half', xy: [1, 1], situation: 'Home Ball Safe', timer: 4465, goals: [3, 2], h1: [2, 2],
+test('/ajax/tracker (flat pairs) is read too', () => {
+  const s = normalizeWidgetData({ period: 'Second Half', xy: null, situation: 'Home Ball Safe', timer: 4465, goals: [3, 2], h1: [2, 2],
     yellow: [2, 6], red: [0, 1], corners: [0, 3], subs: [2, 3], offsides: null, penalties: [1, 0], on_target: [3, 2], off_target: [0, 0],
     attacks: [0, 0], dangerous: [0, 0], possession: [52, 48], timeline: [{ type: 'red_card', min: 40, text: 'Red card - (Mons)', team: 'away' }] });
   assert.deepEqual([s.homeScore, s.awayScore], [3, 2]);
@@ -166,7 +166,7 @@ test('/ajax/tracker (flat pairs) is read too; xy [1, 1] with "Ball Safe" is a pl
   assert.deepEqual(by.substitutions, [2, 3]);
   assert.deepEqual(by.corners, [0, 3]);
   assert.deepEqual(by.yellow_cards, [2, 6]);
-  assert.deepEqual(s.ball, { x: 30, y: 50, estimated: true }); // not the pitch corner
+  assert.deepEqual(s.ball, { x: 30, y: 50, estimated: true }); // no xy: placed by the situation
   assert.deepEqual(s.timeline[0], { minute: 40, type: 'card', team: 'away', label: 'Red card - (Mons)', card: 'red' });
   assert.equal(s.clock, "74'");
 });
@@ -182,4 +182,10 @@ test('without a widget for the game, the plain /ajax/tracker route feeds the tra
   const s = await createWinHouseTracker(db, { client }).state('77');
   assert.equal(s.homeScore, 1);
   assert.deepEqual(s.ball, { x: 30, y: 60 });
+});
+
+test('xy [1, 1] on a home corner is the bottom-right corner flag, as WinHouse draws it', () => {
+  // Real frame (Standard Liege II – Mons, 81'): situation "Home Corner", xy [1, 1].
+  assert.deepEqual(normalizeWidgetData({ situation: 'Home Corner', xy: [1, 1] }).ball, { x: 100, y: 100 });
+  assert.deepEqual(normalizeWidgetData({ situation: 'Away Corner', xy: [0, 0] }).ball, { x: 0, y: 0 });
 });
