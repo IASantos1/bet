@@ -363,13 +363,14 @@ function winhouseFeedInfo(fd) {
 function winhousePanel(w) {
   return `<h3>WinHouse ${w?.feed?.enabled ? '<span class="pill won">A importar</span>' : w?.enabled ? '<span class="pill won">Configurado</span>' : '<span class="pill">Desligado</span>'}</h3>
     ${winhouseFeedInfo(w?.feed)}
-    <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 6 rotas e mostra o que respondem. Ver mercados do jogo / ao vivo: abre a página de um jogo (gameId, ou o 1.º da lista pré-jogo / ao vivo) e lista todos os mercados que oferece. Ver tracker: mostra o que o tracker do jogo devolve (gameId, ou o 1.º jogo de futebol ao vivo) — copie e envie para os ligarmos.'
+    <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 6 rotas e mostra o que respondem. Ver mercados do jogo / ao vivo: abre a página de um jogo (gameId, ou o 1.º da lista pré-jogo / ao vivo) e lista todos os mercados que oferece. Ver tracker: mostra o que o tracker do jogo devolve (gameId, ou o 1.º jogo de futebol ao vivo) — copie e envie para os ligarmos. Ver vídeo (HLS): o que a WinHouse responde ao pedido do vídeo (gameId, ou o 1.º jogo ao vivo com transmissão) e o endereço .m3u8 montado.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
     ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-health">Testar WinHouse</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-markets">Ver mercados do jogo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-markets" data-live="1">Ver mercados ao vivo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-tracker">Ver tracker</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-video">Ver vídeo (HLS)</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-discover">Descobrir rotas</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
       <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
@@ -644,6 +645,15 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     actionEl.textContent = 'Descobrir rotas';
+  } else if (action === 'winhouse-video') {
+    const box = $('#whOut');
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/winhouse/video', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      box.textContent = JSON.stringify(r, null, 2);
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
   } else if (action === 'winhouse-tracker') {
     const box = $('#whOut');
     actionEl.disabled = true;

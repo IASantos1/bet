@@ -590,7 +590,7 @@ table.compare td.center { text-align: center; }
    commentary and incidents under it are left out: the header already shows them). */
 .match-hero .tracker-inline { margin: 16px -20px -22px; }
 .match-hero .trk { border: 0; border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; box-shadow: none; }
-.match-hero .trk-head, .match-hero .trk-note, .match-hero .trk-actions { display: none; }
+.match-hero .trk-head { display: none; }
 /* Expand (tracker / video) to the whole screen. */
 .expand-btn { position: absolute; top: 8px; right: 8px; z-index: 5; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; border: 1px solid #ffffff33; background: #0b0e12b3; color: #fff; }
 .expand-btn svg { width: 16px; height: 16px; }
@@ -661,6 +661,9 @@ body.no-scroll { overflow: hidden; }
 .trk-ball.idle { opacity: .55; }
 .trk-ball-svg { width: 100%; height: 100%; display: block; animation: trkSpin 2.4s linear infinite; }
 .trk-ball.idle .trk-ball-svg { animation: none; }
+.trk-ball.resting .trk-ball-svg { animation: none; }
+/* Commentary and incident list under the pitch: not shown (the header and the Estatísticas tab carry them). */
+.trk-note, .trk-actions { display: none; }
 .trk-badge { position: absolute; z-index: 6; display: none; align-items: stretch; gap: 7px; padding: 5px 9px 5px 6px; max-width: 70%; border: 1px solid #ffffff1f; border-radius: var(--radius); background: #0a0a0c8c; backdrop-filter: blur(6px); transform: translate(-50%, -50%); transition: left 900ms cubic-bezier(.22, 1, .36, 1), top 900ms cubic-bezier(.22, 1, .36, 1); pointer-events: none; }
 .trk-badge.on { display: flex; }
 .trk-badge div { display: flex; flex-direction: column; min-width: 0; }

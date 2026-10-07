@@ -59,7 +59,7 @@ test('a watched match streams the tracker: ball, situation and new timeline item
   await t.state('900').then(() => {});
   stop();
   const extras = await t.matchExtras('900');
-  assert.deepEqual(extras.incidents, [{ minute: 23, type: 'goal', side: 'home', player: '' }]);
+  assert.deepEqual(extras.incidents, [{ minute: 23, minuteLabel: "23'", type: 'goal', side: 'home', player: '' }]);
   assert.equal(extras.stats[0].key, 'shots_on_target');
   assert.equal(calls.filter((c) => c.startsWith('w')).length, 1); // the key is cached
 });
@@ -167,7 +167,7 @@ test('/ajax/tracker (flat pairs) is read too', () => {
   assert.deepEqual(by.corners, [0, 3]);
   assert.deepEqual(by.yellow_cards, [2, 6]);
   assert.deepEqual(s.ball, { x: 30, y: 50, estimated: true }); // no xy: placed by the situation
-  assert.deepEqual(s.timeline[0], { minute: 40, type: 'card', team: 'away', label: 'Red card - (Mons)', card: 'red' });
+  assert.deepEqual(s.timeline[0], { minute: 40, minuteLabel: "40'", type: 'card', team: 'away', label: 'Red card - (Mons)', card: 'red' });
   assert.equal(s.clock, "74'");
 });
 
@@ -188,4 +188,19 @@ test('xy [1, 1] on a home corner is the bottom-right corner flag, as WinHouse dr
   // Real frame (Standard Liege II – Mons, 81'): situation "Home Corner", xy [1, 1].
   assert.deepEqual(normalizeWidgetData({ situation: 'Home Corner', xy: [1, 1] }).ball, { x: 100, y: 100 });
   assert.deepEqual(normalizeWidgetData({ situation: 'Away Corner', xy: [0, 0] }).ball, { x: 0, y: 0 });
+});
+
+test('half time: ball on the centre spot, "Intervalo"; added time of the first half as 45+N', async () => {
+  const { normalizeWidgetData } = await import('../server/whtracker.js');
+  const s = normalizeWidgetData({
+    period: 'Half Time', situation: 'Home Ball Safe', xy: [0.8, 0.2], timer: 2880,
+    timeline: [{ type: 'shot_on_target', min: 46, team: 'home' }, { type: 'goal', min: 48, team: 'away' }],
+  });
+  assert.equal(s.clock, 'Intervalo');
+  assert.deepEqual(s.ball, { x: 50, y: 50 });
+  assert.equal(s.situation.situation, 'halftime');
+  assert.deepEqual(s.timeline.map((a) => a.minuteLabel), ["45+1'", "45+3'"]);
+  // In the second half: 46' after 48' starts the half; 92' is 90+2.
+  const t = normalizeWidgetData({ period: 'Second Half', timer: 5520, timeline: [{ type: 'goal', min: 48 }, { type: 'goal', min: 46 }, { type: 'goal', min: 92 }] });
+  assert.deepEqual(t.timeline.map((a) => a.minuteLabel), ["45+3'", "46'", "90+2'"]);
 });

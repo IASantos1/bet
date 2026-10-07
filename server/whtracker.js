@@ -122,6 +122,9 @@ export function normalizeTimeline(raw) {
   const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object'
     ? Object.entries(raw).flatMap(([k, v]) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object').map((x) => ({ type: k, ...x })) : []))
     : [];
+  // Added time: the list is in match order, so a minute that drops after one past 45 starts the second half.
+  let half = 1;
+  let prev = 0;
   return list.map((x) => {
     if (!x || typeof x !== 'object') return null;
     const name = String(first(x.type, x.event, x.name, x.kind, '')).trim();
@@ -132,7 +135,14 @@ export function normalizeTimeline(raw) {
     const kind = EVENT_TYPES.find(([re]) => re.test(name))?.[1] || name.toLowerCase();
     const cardColor = /red|vermelh/i.test(name) ? 'red' : /yellow|amarel/i.test(name) ? 'yellow' : null;
     const label = String(first(x.text, x.description, name)).trim().slice(0, 80);
-    return { minute: minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute), type: kind, team, label, card: cardColor };
+    const min = minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute);
+    if (min !== null) {
+      if (half === 1 && prev > 45 && min < prev) half = 2;
+      prev = min;
+    }
+    const end = half === 1 ? 45 : 90;
+    const minuteLabel = min === null ? null : min > end ? `${end}+${min - end}'` : `${min}'`;
+    return { minute: min, minuteLabel, type: kind, team, label, card: cardColor };
   }).filter(Boolean);
 }
 
@@ -160,8 +170,13 @@ export function normalizeWidgetData(body) {
     const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
     ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
   }
-  const situation = normalizeSituation(d.situation);
+  let situation = normalizeSituation(d.situation);
   if (!ball) ball = estimatedBall(situation);
+  // Half time: no play, the ball waits on the centre spot.
+  if (HALF_TIME.test(`${d.status ?? ''} ${d.period ?? ''}`)) {
+    situation = { side: null, situation: 'halftime', text: 'Intervalo' };
+    ball = { x: 50, y: 50 };
+  }
   // sc: per-kind counts as [home, away] ({ GOAL: [3, 3], CORNER: [5, 2], H1: [1, 0] }); H1 is the half-time score.
   let halfTime = null;
   { const [h, a] = pair(d.h1); if (h !== null && a !== null) halfTime = { home: h, away: a }; }
@@ -190,6 +205,8 @@ export function normalizeWidgetData(body) {
     stats, situation, ball, timeline,
   };
 }
+
+const HALF_TIME = /half.?time|interval|break|\bht\b/i;
 
 /**
  * The match clock from the tracker's timer (seconds played): "67'", or "45+2'" / "90+3'" in
@@ -277,6 +294,7 @@ export function createWinHouseTracker(db, {
   function process(eventId, w) {
     const s = normalizeWidgetData(w.raw);
     w.last = s;
+    w.lastStateAt = Date.now();
     const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
     const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
     const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live };
@@ -393,7 +411,7 @@ export function createWinHouseTracker(db, {
     const s = await state(String(gameId)).catch(() => null);
     if (!s) return { stats: [], incidents: [] };
     const incidents = s.timeline.filter((a) => a.type === 'goal' || a.type === 'card')
-      .map((a) => ({ minute: a.minute, type: a.type === 'goal' ? 'goal' : a.card || 'yellow', side: a.team, player: '' }));
+      .map((a) => ({ minute: a.minute, minuteLabel: a.minuteLabel, type: a.type === 'goal' ? 'goal' : a.card || 'yellow', side: a.team, player: '' }));
     return { stats: s.stats, incidents, period: PERIOD_LABEL(s.period, s.status), clock: s.clock, halfTime: s.halfTime };
   }
 
@@ -454,5 +472,11 @@ export function createWinHouseTracker(db, {
     return out;
   }
 
-  return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect };
+  /** The tracker's clock of a watched match ("Intervalo", "45+2'"…) while it is fresh; it knows the period, the live list does not. */
+  const clockOf = (eventId) => {
+    const w = watched.get(eventId);
+    return w?.last?.clock && Date.now() - (w.lastStateAt || 0) < 30_000 ? w.last.clock : null;
+  };
+
+  return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect, clockOf };
 }
