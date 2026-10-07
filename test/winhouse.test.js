@@ -458,3 +458,16 @@ test('"Descobrir rotas" reads the iframe documentation first and lists the route
   assert.ok(r.docs['/llms.txt'].includes('all live markets'));
   assert.ok(!seen.includes('/de/')); // other-language copies of the portal are skipped
 });
+
+test('"Ver mercados ao vivo" shows what the live page answered, even when it falls back', async () => {
+  const fetchImpl = async (u) => {
+    const p = new URL(u).pathname;
+    if (p === '/ajax/livegames') return new Response(JSON.stringify([{ id: 9 }]), { status: 200 });
+    if (p === '/ajax/livegame/9') return new Response(JSON.stringify({ error: 'tenant required' }), { status: 400 });
+    return new Response('[]', { status: 200 });
+  };
+  const r = await createWinHouseClient({ baseUrl: 'https://iframe.example', fetchImpl }).markets({ live: true });
+  assert.equal(r.liveAttempt.route, '/ajax/livegame/9?lang=pt');
+  assert.equal(r.liveAttempt.status, 400);
+  assert.match(r.liveAttempt.sample, /tenant required/);
+});
