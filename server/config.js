@@ -127,6 +127,9 @@ export const config = {
     trackerPollMs: Math.max(1_000, int(env.WINHOUSE_TRACKER_POLL_MS, 2_000)),
     // Ball position and situation over the tracker's WebSocket (ws-widget); 0 = widget-data only.
     trackerWs: env.WINHOUSE_TRACKER_WS !== '0',
+    // Real-time odds of the games in play over the sportsbook's socket.io (`new-coefs`); 0 = page reads only.
+    oddsPush: env.WINHOUSE_ODDS_PUSH !== '0',
+    oddsPushPath: unquote(env.WINHOUSE_ODDS_PUSH_PATH) || '/sio',
     liveMs: Math.max(5_000, int(env.WINHOUSE_LIVE_INTERVAL_MS, 15_000)),
     prematchMs: Math.max(20_000, int(env.WINHOUSE_PREMATCH_INTERVAL_MS, 60_000)),
     tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,

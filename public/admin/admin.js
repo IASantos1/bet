@@ -344,11 +344,17 @@ function winhouseFeedInfo(fd) {
   const pm = fd.last?.prematch;
   const dt = fd.last?.details;
   const ld = fd.last?.liveDetails;
+  const pu = fd.push;
+  const ps = pu?.socket;
+  const pushInfo = !pu ? '' : !ps ? 'desligadas (WINHOUSE_ODDS_PUSH=0)'
+    : `${ps.connected ? '<span class="pill won">ligado</span>' : `<span class="pill lost">desligado${ps.closeCode ? ` (código ${ps.closeCode})` : ''}</span>`}
+      ${ps.frames} pacotes, ${ps.coefs} mudanças recebidas · ${pu.matched} dos nossos jogos, ${pu.changed} aplicadas (${pu.suspended} suspensas) · ${pu.tracked} odds de ${pu.games} jogos seguidas${ps.lastFrameAt ? ` · último ${esc(fmtDateTime(ps.lastFrameAt))}` : ''}${ps.lastError ? ` · aviso: ${esc(ps.lastError)}` : ''}`;
   return `<p>Eventos: <strong>${esc(ev)}</strong>${fd.review ? ` · <span class="pill lost">${fd.review} para decidir em Liquidação</span>` : ''}</p>
     <p class="muted">Ao vivo: ${lv ? `${lv.live} jogos, ${lv.withOdds} com odds, ${lv.finished} terminados, ${lv.review} para rever (${esc(fmtDateTime(lv.at))})` : 'ainda não lido'} ·
       Pré-jogo: ${pm ? `${pm.games} jogos, ${pm.created} novos, ${pm.priced} com odds${pm.listsFailed ? `, ${pm.listsFailed} lista(s) com erro` : ''} (${esc(fmtDateTime(pm.at))})` : 'ainda não lido'} ·
       Páginas dos jogos (todos os mercados): ${dt ? `${dt.read} lidas agora${dt.failed ? `, ${dt.failed} com erro` : ''}, ${dt.cached} de ${dt.window} jogos nas próximas horas (${esc(fmtDateTime(dt.at))})` : 'ainda não lidas'} ·
       Páginas ao vivo (todos os mercados em jogo): ${ld ? (ld.pausedUntil ? `<span class="pill lost">rota não encontrada (404) — pausa até ${esc(fmtDateTime(ld.pausedUntil))}</span>` : `${ld.read} lidas agora${ld.failed ? `, ${ld.failed} com erro` : ''} de ${ld.live} jogos com odds${ld.route ? ` via ${esc(ld.route)}` : ''} (${esc(fmtDateTime(ld.at))})`) : 'ainda não lidas'} ·
+      ${pushInfo ? `Odds em tempo real: ${pushInfo} ·` : ''}
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }

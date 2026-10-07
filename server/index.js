@@ -12,6 +12,7 @@ import { createPropLineFeed, DEFAULT_SPORT_KEYS } from './propline.js';
 import { setRequestsPerMinute } from './providerlimit.js';
 import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
 import { createWinHouseTracker } from './whtracker.js';
+import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -57,13 +58,20 @@ if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports
 const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => console.log(`[winhouse] ${msg}`) });
 // WinHouse as the data source: events, scores, odds and results (Bzzoiro stays off without its token).
 const winhouseFeed = winhouse.enabled && config.winhouse.feed
-  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, blockMinor: config.winhouse.blockMinor, blockLeagues: config.winhouse.blockLeagues, detailHours: config.winhouse.detailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, liveDetailPerCycle: config.winhouse.liveDetailPerCycle, liveDetailSeconds: config.winhouse.liveDetailSeconds, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, blockMinor: config.winhouse.blockMinor, blockLeagues: config.winhouse.blockLeagues, detailHours: config.winhouse.detailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, liveDetailPerCycle: config.winhouse.liveDetailPerCycle, liveDetailSeconds: config.winhouse.liveDetailSeconds, onOdds: (id) => winhouseTracker?.bus.emit(`e:${id}`, { type: 'odds', data: { at: new Date().toISOString() } }), log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 // WinHouse match tracker (football in play): stats, ball and timeline, read only for watched matches.
 const winhouseTracker = winhouse.enabled && config.winhouse.tracker
   ? createWinHouseTracker(db, { client: winhouse, pollMs: config.winhouse.trackerPollMs, ws: config.winhouse.trackerWs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
-const stopWinhouse = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
+const stopWinhouseFeed = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
+// Real-time odds: every price change of the book, applied to the live games we carry.
+const winhouseOdds = winhouseFeed && config.winhouse.oddsPush
+  ? createWinHouseOddsPush({ url: sioUrl(config.winhouse.baseUrl, config.winhouse.oddsPushPath), onCoefs: winhouseFeed.applyCoefs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  : null;
+winhouseFeed?.setOddsPush(winhouseOdds);
+const stopWinhouseOdds = winhouseOdds ? winhouseOdds.start() : () => {};
+const stopWinhouse = () => { stopWinhouseFeed(); stopWinhouseOdds(); };
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 

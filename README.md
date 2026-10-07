@@ -111,6 +111,10 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   chegam pelo WebSocket do tracker (`ws-widget`, cerca de 1 por segundo); com ele ligado, o
   `widget-data` só é relido a cada 15 s (cronologia, contagens). `WINHOUSE_TRACKER_WS=0` desliga-o. Admin → Feed → "Ver tracker" mostra o
   que a WinHouse devolve para um jogo.
+- **Odds em tempo real**: as odds dos jogos ao vivo mudam assim que a WinHouse as muda, pelo
+  socket.io do próprio sportsbook (`/sio`, evento `new-coefs`; o `coef_id` é o id da odd das
+  páginas `/ajax`, e 1.00 é suspensa). As leituras das páginas continuam por baixo (a cada 30 s).
+  `WINHOUSE_ODDS_PUSH=0` desliga; Admin → Feed mostra "Odds em tempo real".
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
