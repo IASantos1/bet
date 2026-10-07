@@ -141,6 +141,8 @@ export const config = {
     // Cup…) and UTR tennis are left out unless set to 0; WINHOUSE_BLOCK_LEAGUES adds more terms.
     blockMinor: env.WINHOUSE_BLOCK_MINOR !== '0',
     blockLeagues: env.WINHOUSE_BLOCK_LEAGUES || '',
+    // Football competitions shown (names separated by ; or new lines); empty = the built-in list, * = all.
+    footballLeagues: env.WINHOUSE_FOOTBALL_LEAGUES || '',
     // Every market of a game is read from its own page: games starting in the next
     // WINHOUSE_DETAIL_HOURS, up to WINHOUSE_DETAIL_PER_CYCLE pages a minute, each again after
     // WINHOUSE_DETAIL_REFRESH_MINUTES. WINHOUSE_DETAIL_PER_CYCLE=0 turns it off.

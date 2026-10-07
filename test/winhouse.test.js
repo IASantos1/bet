@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, leagueKey } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -537,4 +537,28 @@ test('push (new-coefs): live prices move at once, 1.00 closes a pick, a later pa
   lists.live = [football(30, 31, '1-0', ODD)];
   await feed.syncLive();
   assert.equal(active()['1x2|1'], 124);
+});
+
+test('football league list: only the listed competitions (names compared loosely); a blocked live game with bets is kept, without prices', async () => {
+  const leagues = footballLeagues('');
+  assert.ok(leagues.has(leagueKey('England. Premier League')));
+  assert.ok(!blockedGame({ sport_id: 1, league: 'england premier league' }, { leagues }));
+  assert.ok(!blockedGame({ sport_id: 1, league: 'UEFA Champions League' }, { leagues }));
+  assert.ok(blockedGame({ sport_id: 1, league: 'Egypt. Second Division' }, { leagues }));
+  assert.ok(!blockedGame({ sport_id: 2, league: 'Egypt. Super League' }, { leagues })); // other sports untouched
+  assert.equal(footballLeagues('*'), null);
+  assert.deepEqual([...footballLeagues('Spain. La Liga; Italy. Serie A')], ['spainlaliga', 'italyseriea']);
+
+  const lists = { live: [football(40, 30, '0-0', ODD), football(41, 30, '0-0', ODD, { league: 'Spain. La Liga' })] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive(); // no list yet: both imported
+  t.bet(40, '1x2', '1');
+  const feed = createWinHouseFeed(t.db, { client: { enabled: true, live: async () => ({ ok: true, status: 200, body: lists.live }) }, tzOffsetMinutes: 60, finishConfirmSeconds: 0, footballLeagues: 'Spain. La Liga' });
+  lists.live = [football(40, 35, '1-0', ODD), football(41, 35, '0-0', ODD, { league: 'Spain. La Liga' })];
+  await feed.syncLive();
+  const open = (ext) => t.db.prepare('SELECT COUNT(*) AS n FROM selections WHERE event_id = ? AND active = 1').get(t.row(ext).id).n;
+  assert.equal(t.row(40).status, 'live');
+  assert.equal(t.row(40).home_score, 1); // still followed (it has a bet)
+  assert.equal(open(40), 0); // but closed to new bets
+  assert.ok(open(41) > 0);
 });
