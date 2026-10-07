@@ -114,7 +114,9 @@ export function detailOdds(body) {
     const price = Number(v.odd);
     const marketId = Number(v.market_id);
     const selection = String(v.market_option ?? '').trim();
-    if (Number.isFinite(price) && price > 1 && Number.isInteger(marketId) && marketId > 0 && selection) {
+    // A suspended pick comes as 1.00 or with game_status "0" (the sportsbook's own rule): skip it.
+    const suspended = v.game_status !== undefined && v.game_status !== null && String(v.game_status) === '0';
+    if (Number.isFinite(price) && price > 1.001 && !suspended && Number.isInteger(marketId) && marketId > 0 && selection) {
       const m = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(String(v.market || ''));
       const special = v.special_value === null || v.special_value === undefined || v.special_value === '' ? null : String(v.special_value).trim();
       out.push({
