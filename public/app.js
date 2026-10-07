@@ -1165,7 +1165,7 @@ const SITUATION_LABEL = {
   dangerous_attack: 'Ataque perigoso', attack: 'Ataque', possession: 'Posse de bola', safe: 'Posse segura',
   goal: 'GOLO!', corner: 'Canto', freekick: 'Livre', throwin: 'Lançamento lateral', offside: 'Fora de jogo',
   goalkeeper_saved: 'Defesa do guarda-redes', shotoffwoodwork: 'Bola no ferro',
-  goalkick: 'Pontapé de baliza', penalty: 'Penálti', shot: 'Remate',
+  goalkick: 'Pontapé de baliza', penalty: 'Penálti', shot: 'Remate', halftime: 'Intervalo',
 };
 const INCIDENT_ICON = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔁', var: '📺' };
 const ACTION_LABEL = {
@@ -1449,7 +1449,7 @@ function matchStatsView(e) {
     return `<div class="stat-row"><div class="stat-vals"><b>${esc(fmt(s.home))}</b><span>${esc(s.label)}</span><b>${esc(fmt(s.away))}</b></div>
       <div class="stat-bar"><i class="w${Math.round(hp / 5) * 5}"></i></div></div>`;
   }).join('');
-  const inc = (x.incidents || []).map((i) => `<div class="incident ${i.side || ''}"><span class="inc-min">${i.minute ?? ''}'</span>
+  const inc = (x.incidents || []).map((i) => `<div class="incident ${i.side || ''}"><span class="inc-min">${esc(i.minuteLabel || (i.minute !== null && i.minute !== undefined ? `${i.minute}'` : ''))}</span>
     <span class="inc-icon">${INCIDENT_ICON[i.type] || '•'}</span><span>${esc(i.player || '')}${i.side ? ` <small class="muted">(${esc(i.side === 'home' ? e.home : e.away)})</small>` : ''}</span></div>`).join('');
   return `<div class="grid match-stats-grid">
     <div class="panel"><h3>Estatísticas</h3>${bars || '<p class="muted">Sem estatísticas para este jogo.</p>'}</div>
@@ -1624,7 +1624,23 @@ function updateTracker({ instant = false } = {}) {
     badge.classList.remove('on');
     return;
   }
-  ball.classList.remove('idle');
+  // Half time: the ball rests on the centre spot, no arrow, no trail; the badge says "Intervalo".
+  if (b.situation === 'halftime') {
+    ball.classList.remove('idle');
+    ball.classList.add('instant', 'resting');
+    ball.style.left = '50%';
+    ball.style.top = '50%';
+    arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+    badge.classList.add('on');
+    badge.classList.remove('away', 'hot');
+    $('#trkBadgeTeam', w).textContent = '';
+    $('#trkBadgeText', w).textContent = 'Intervalo';
+    badge.style.left = '50%';
+    badge.style.top = '30%';
+    m.prevBall = null;
+    return;
+  }
+  ball.classList.remove('idle', 'resting');
   ball.classList.toggle('instant', instant);
   ball.style.left = `${b.x}%`;
   ball.style.top = `${b.y}%`;
@@ -1677,7 +1693,7 @@ function updateActionsList() {
   if (!box) return;
   const e = state.match.data;
   const items = [...state.match.actions].reverse().slice(0, 4);
-  box.innerHTML = items.map((a) => `<div class="trk-action ${a.team || ''}"><span>${a.minute ?? ''}'</span><b>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</b>
+  box.innerHTML = items.map((a) => `<div class="trk-action ${a.team || ''}"><span>${esc(a.minuteLabel || (a.minute !== null && a.minute !== undefined ? `${a.minute}'` : ''))}</span><b>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</b>
     <small>${esc(a.player || (a.team === 'home' ? e?.home : a.team === 'away' ? e?.away : ''))}</small></div>`).join('');
 }
 

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
+import { parseLivestream } from './whlive.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx } from './db.js';
 import {
@@ -221,7 +222,8 @@ export function createApp(db, {
       const out = {
         id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
-        clock: e.clock, result: e.result, featured: !!e.featured, source: e.source,
+        // A watched WinHouse match: the tracker knows the period ("Intervalo", "45+2'"), the live list does not.
+        clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
         selections: rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
         homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
@@ -886,6 +888,29 @@ export function createApp(db, {
         if (!gameId) throw new HttpError(404, 'Nenhum jogo de futebol ao vivo da WinHouse agora.');
       }
       res.json(await winhouseTracker.inspect(gameId));
+    } catch (err) { next(err); }
+  });
+
+  // WinHouse: what /ajax/livestream answers for a game and the HLS address made from it (works with
+  // WINHOUSE_HLS off, to check access first). Tokens are shortened: the result is meant to be shared.
+  admin.post('/winhouse/video', async (req, res, next) => {
+    try {
+      if (!winhouse?.enabled || !winhouse.livestream) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL.');
+      let gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      if (!gameId) {
+        const live = db.prepare("SELECT external_id FROM events WHERE source = 'winhouse' AND status = 'live' ORDER BY start_time").all();
+        gameId = (live.find((r) => winhouseFeed?.streamOf?.(r.external_id).has) || live[0])?.external_id ?? null;
+        if (!gameId) throw new HttpError(404, 'Nenhum jogo WinHouse ao vivo agora.');
+      }
+      const r = await winhouse.livestream(gameId);
+      const parsed = r.body ? parseLivestream(r.body, { hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl }) : { error: 'resposta não é JSON' };
+      const mask = (v) => JSON.parse(JSON.stringify(v ?? null).replace(/([?&]t=)([A-Za-z0-9._~%-]{12})[A-Za-z0-9._~%-]+/g, '$1$2…'));
+      res.json({
+        gameId, hlsEnabled: !!winhouseLive?.enabled, withStream: !!winhouseFeed?.streamOf?.(gameId).has,
+        tenant: !!config.winhouse.tenant, apiKey: !!config.winhouse.apiKey,
+        livestream: { status: r.status, ms: r.ms, contentType: r.contentType, body: mask(r.body), text: r.body ? undefined : String(r.text || '').slice(0, 1500) },
+        result: mask(parsed.error ? parsed : { streamId: parsed.streamId, hlsUrl: parsed.hlsUrl, expiresAt: parsed.expiresAt, expiresIn: parsed.expiresAt - Math.floor(Date.now() / 1000) }),
+      });
     } catch (err) { next(err); }
   });
 
