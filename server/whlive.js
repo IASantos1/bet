@@ -26,7 +26,10 @@ export function tokenPayload(token) {
 /** WinHouse's livestream answer → { streamId, token, hlsUrl, embedUrl, expiresAt } or an error message. */
 export function parseLivestream(body, { hlsPath = '/tv/p/{stream_id}.m3u8?t={token}', tvBase = '' } = {}) {
   if (!body || typeof body !== 'object') return { error: 'resposta inválida da WinHouse' };
-  if (body.success === false) return { error: String(body.error || body.message || 'sem transmissão para este jogo').slice(0, 200) };
+  // { success: false, error } or WinHouse's own { Error: true, Message: "error_not_logged_in" }.
+  if (body.success === false || body.Error === true) {
+    return { error: String(body.Message || body.message || (typeof body.error === 'string' ? body.error : '') || 'sem transmissão para este jogo').slice(0, 200) };
+  }
   let embed;
   try { embed = new URL(String(body.embed_url || '')); } catch { return { error: 'resposta sem embed_url' }; }
   if (embed.protocol !== 'https:') return { error: 'embed_url sem https' };
