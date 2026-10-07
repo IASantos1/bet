@@ -151,3 +151,35 @@ test('without xy the situation places the ball; real timeline kinds get Portugue
   assert.deepEqual(t.map((a) => a.type), ['shot_on_target', 'shot_off_target', 'corner_awarded', 'card', 'substitution']);
   assert.equal(t[3].card, 'yellow');
 });
+
+test('/ajax/tracker (flat pairs) is read too; xy [1, 1] with "Ball Safe" is a placeholder', () => {
+  const s = normalizeWidgetData({ period: 'Second Half', xy: [1, 1], situation: 'Home Ball Safe', timer: 4465, goals: [3, 2], h1: [2, 2],
+    yellow: [2, 6], red: [0, 1], corners: [0, 3], subs: [2, 3], offsides: null, penalties: [1, 0], on_target: [3, 2], off_target: [0, 0],
+    attacks: [0, 0], dangerous: [0, 0], possession: [52, 48], timeline: [{ type: 'red_card', min: 40, text: 'Red card - (Mons)', team: 'away' }] });
+  assert.deepEqual([s.homeScore, s.awayScore], [3, 2]);
+  assert.deepEqual(s.halfTime, { home: 2, away: 2 });
+  const by = Object.fromEntries(s.stats.map((x) => [x.key, [x.home, x.away]]));
+  assert.deepEqual(by.shots_on_target, [3, 2]);
+  assert.deepEqual(by.ball_possession, [52, 48]);
+  assert.deepEqual(by.red_cards, [0, 1]);
+  assert.deepEqual(by.penalties, [1, 0]);
+  assert.deepEqual(by.substitutions, [2, 3]);
+  assert.deepEqual(by.corners, [0, 3]);
+  assert.deepEqual(by.yellow_cards, [2, 6]);
+  assert.deepEqual(s.ball, { x: 30, y: 50, estimated: true }); // not the pitch corner
+  assert.deepEqual(s.timeline[0], { minute: 40, type: 'card', team: 'away', label: 'Red card - (Mons)', card: 'red' });
+  assert.equal(s.clock, "74'");
+});
+
+test('without a widget for the game, the plain /ajax/tracker route feeds the tracker', async () => {
+  const db = openDb(':memory:');
+  const client = {
+    enabled: true,
+    widget: async () => ({ ok: false, status: 404, body: null, text: '' }),
+    widgetData: async () => ({ ok: false, status: 404 }),
+    tracker: async (id) => ({ ok: true, status: 200, body: { goals: [1, 0], on_target: [4, 1], situation: 'Away Attack', xy: [0.3, 0.6] } }),
+  };
+  const s = await createWinHouseTracker(db, { client }).state('77');
+  assert.equal(s.homeScore, 1);
+  assert.deepEqual(s.ball, { x: 30, y: 60 });
+});

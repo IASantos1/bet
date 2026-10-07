@@ -144,9 +144,20 @@ export function normalizeWidgetData(body) {
   const [yelH, yelA] = pair(d.yelc ?? d.yellow ?? d.yellow_cards);
   if (corH !== null && !stats.some((s) => s.key === 'corners')) stats.push({ key: 'corners', label: 'Cantos', unit: '', home: corH, away: corA });
   if (yelH !== null && !stats.some((s) => s.key === 'yellow_cards')) stats.push({ key: 'yellow_cards', label: 'Cartões amarelos', unit: '', home: yelH, away: yelA });
+  // /ajax/tracker/{id} sends flat pairs: on_target, off_target, attacks, dangerous, possession, red, subs, penalties, offsides.
+  const FLAT = [['on_target', 'shots_on_target', 'Remates à baliza', ''], ['off_target', 'shots_off_target', 'Remates para fora', ''],
+    ['attacks', 'attacks', 'Ataques', ''], ['dangerous', 'dangerous_attacks', 'Ataques perigosos', ''], ['possession', 'ball_possession', 'Posse de bola', '%'],
+    ['red', 'red_cards', 'Cartões vermelhos', ''], ['redc', 'red_cards', 'Cartões vermelhos', ''], ['penalties', 'penalties', 'Penáltis', ''],
+    ['offsides', 'offsides', 'Foras de jogo', ''], ['subs', 'substitutions', 'Substituições', '']];
+  for (const [k, key, label, unit] of FLAT) {
+    const [h, a] = pair(d[k]);
+    if (h !== null && a !== null && !stats.some((x) => x.key === key)) stats.push({ key, label, unit, home: h, away: a });
+  }
   const xy = Array.isArray(d.xy) ? d.xy : d.xy && typeof d.xy === 'object' ? [d.xy.x, d.xy.y] : null;
   let ball = null;
-  if (xy && num(xy[0]) !== null && num(xy[1]) !== null) {
+  // [1, 1] / [0, 0] come with "Ball Safe" and no play: a placeholder, not a position.
+  const placeholder = xy && ((num(xy[0]) === 1 && num(xy[1]) === 1) || (num(xy[0]) === 0 && num(xy[1]) === 0));
+  if (xy && !placeholder && num(xy[0]) !== null && num(xy[1]) !== null) {
     const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
     ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
   }
@@ -154,6 +165,7 @@ export function normalizeWidgetData(body) {
   if (!ball) ball = estimatedBall(situation);
   // sc: per-kind counts as [home, away] ({ GOAL: [3, 3], CORNER: [5, 2], H1: [1, 0] }); H1 is the half-time score.
   let halfTime = null;
+  { const [h, a] = pair(d.h1); if (h !== null && a !== null) halfTime = { home: h, away: a }; }
   if (d.sc && typeof d.sc === 'object' && !Array.isArray(d.sc)) {
     for (const [k, v] of Object.entries(d.sc)) {
       const [h, a] = pair(v);
@@ -171,8 +183,8 @@ export function normalizeWidgetData(body) {
   return {
     clock: clockFrom(timer, period, d.status, num(d.match_length) || 90),
     halfTime,
-    homeScore: num(first(d.home_score, d.homeScore, d.score?.home)),
-    awayScore: num(first(d.away_score, d.awayScore, d.score?.away)),
+    homeScore: num(first(d.home_score, d.homeScore, d.score?.home, Array.isArray(d.goals) ? d.goals[0] : null)),
+    awayScore: num(first(d.away_score, d.awayScore, d.score?.away, Array.isArray(d.goals) ? d.goals[1] : null)),
     status: first(d.status, null), period: first(d.period, null), timer: first(d.timer, d.time, null),
     matchLength: num(d.match_length), injuryTime: num(d.injury_time),
     homeName: first(d.home_name, null), awayName: first(d.away_name, null),
@@ -226,16 +238,23 @@ export function createWinHouseTracker(db, {
 
   /** widget-data as WinHouse sends it (null when there is no tracker for the game). */
   async function rawState(gameId) {
-    let c = await credentials(gameId);
-    if (!c) return null;
-    let r = await client.widgetData(c.eid, c.akey);
-    if (!r.ok || !r.body) { // expired key: ask the widget again once
-      c = await credentials(gameId, { fresh: true });
+    const viaWidget = async () => {
+      let c = await credentials(gameId);
       if (!c) return null;
-      r = await client.widgetData(c.eid, c.akey);
-      if (!r.ok || !r.body) return null;
-    }
-    return r.body;
+      let r = await client.widgetData(c.eid, c.akey);
+      if (!r.ok || !r.body) { // expired key: ask the widget again once
+        c = await credentials(gameId, { fresh: true });
+        if (!c) return null;
+        r = await client.widgetData(c.eid, c.akey);
+        if (!r.ok || !r.body) return null;
+      }
+      return r.body;
+    };
+    const body = await viaWidget().catch(() => null);
+    if (body || typeof client.tracker !== 'function') return body;
+    // No widget for this game (or it failed): the plain tracker route, no key needed.
+    const r = await client.tracker(gameId).catch(() => null);
+    return r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? r.body : null;
   }
 
   /** The tracker state of one game (null when WinHouse has no tracker for it). */
