@@ -23,6 +23,7 @@ test('livestream answer → HLS address on the player host', () => {
   });
   assert.equal(parseLivestream({ success: true, embed_url: `https://winhouse.bet/tv/play?t=${t}` }, { tvBase: 'https://cdn.example' }).hlsUrl.startsWith('https://cdn.example/tv/p/20571954.m3u8?t='), true);
   assert.match(parseLivestream({ success: false, error: 'no stream' }).error, /no stream/);
+  assert.equal(parseLivestream({ Error: true, Message: 'error_not_logged_in' }).error, 'error_not_logged_in');
   assert.match(parseLivestream({ success: true, embed_url: 'https://winhouse.bet/tv/play?t=abc' }).error, /vi/);
   assert.match(parseLivestream({ success: true, embed_url: 'http://winhouse.bet/tv/play?t=abc' }).error, /https/);
 });
