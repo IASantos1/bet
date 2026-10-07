@@ -83,3 +83,56 @@ test('real widget-data: sc counts are stats (not events), H1 is the half-time sc
   assert.equal(clockFrom(2820, 'First Half', 'live'), "45+2'");
   assert.equal(clockFrom(2700, 'Half Time', 'live'), 'Intervalo');
 });
+
+test('the tracker WebSocket moves the ball every frame; widget-data keeps the rest', async () => {
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const { lastInsertRowid } = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
+    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 0, 0, '10''', 'winhouse', '901', ?, ?)`).run(ts, ts, ts);
+  const id = Number(lastInsertRowid);
+  const sockets = [];
+  class FakeWS {
+    constructor(url, opts) { this.url = url; this.opts = opts; sockets.push(this); }
+    send() {}
+    close() { this.onclose?.({ code: 1000 }); }
+    frame(obj) { this.onmessage?.({ data: JSON.stringify(obj) }); }
+  }
+  const client = {
+    enabled: true, origin: 'https://iframe.example',
+    widget: async () => ({ ok: true, status: 200, body: null, text: 'ws-widget?api_key=AK&event_id=E1' }),
+    widgetData: async () => ({ ok: true, status: 200, body: { status: 'live', period: 'First Half', timer: 600, situation: 'Home Attack', timeline: [] } }),
+    wsUrl: (eid, akey) => `wss://iframe.example/ws-widget?api_key=${akey}&event_id=${eid}`,
+  };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000, WebSocketImpl: FakeWS });
+  const got = [];
+  t.bus.on(`e:${id}`, (m) => got.push(m));
+  const stop = t.follow(id, '901');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sockets.length, 1);
+  assert.equal(sockets[0].url, 'wss://iframe.example/ws-widget?api_key=AK&event_id=E1');
+  got.length = 0;
+  sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.7, 0.24], situation: 'Home Dangerous Attack' });
+  sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.75, 0.05] });
+  const balls = got.filter((m) => m.type === 'livedata').map((m) => [m.data.x, m.data.y, m.data.situation]);
+  assert.deepEqual(balls, [[70, 24, 'dangerous_attack'], [75, 5, 'dangerous_attack']]);
+  stop();
+});
+
+test('admin "Ver tracker" also listens to the WebSocket for a few seconds', async () => {
+  const db = openDb(':memory:');
+  class FakeWS {
+    constructor() { setTimeout(() => { this.onopen?.(); this.onmessage?.({ data: JSON.stringify({ type: 'tracker', xy: [0.94, 0.54], situation: 'Away Corner' }) }); }, 5); }
+    close() {}
+  }
+  const client = {
+    enabled: true, origin: 'https://x',
+    widget: async () => ({ ok: true, status: 200, body: { eid: 'E', akey: 'K123' } }),
+    widgetData: async () => ({ ok: true, status: 200, body: { status: 'live' } }),
+    wsUrl: () => 'wss://x/ws-widget',
+  };
+  const r = await createWinHouseTracker(db, { client, WebSocketImpl: FakeWS }).inspect('5', { listenMs: 50 });
+  assert.equal(r.ws.opened, true);
+  assert.equal(r.ws.frames, 1);
+  assert.deepEqual(r.ws.normalized.ball, { x: 94, y: 54 });
+  assert.equal(r.ws.normalized.situation.situation, 'corner');
+});

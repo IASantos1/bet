@@ -184,7 +184,9 @@ const PERIOD_LABEL = (p, status) => {
   return null;
 };
 
-export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_000, credentialMinutes = 30, log = () => {} } = {}) {
+export function createWinHouseTracker(db, {
+  client, pollMs = 2_000, idleMs = 60_000, credentialMinutes = 30, ws = true, WebSocketImpl = globalThis.WebSocket, log = () => {},
+} = {}) {
   const bus = new EventEmitter();
   bus.setMaxListeners(0);
   const creds = new Map(); // gameId → { at, eid, akey } | { at, missing: true }
@@ -201,8 +203,8 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
     return c;
   }
 
-  /** The tracker state of one game (null when WinHouse has no tracker for it). */
-  async function state(gameId) {
+  /** widget-data as WinHouse sends it (null when there is no tracker for the game). */
+  async function rawState(gameId) {
     let c = await credentials(gameId);
     if (!c) return null;
     let r = await client.widgetData(c.eid, c.akey);
@@ -212,44 +214,113 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
       r = await client.widgetData(c.eid, c.akey);
       if (!r.ok || !r.body) return null;
     }
-    return normalizeWidgetData(r.body);
+    return r.body;
   }
 
+  /** The tracker state of one game (null when WinHouse has no tracker for it). */
+  async function state(gameId) {
+    const raw = await rawState(gameId);
+    return raw ? normalizeWidgetData(raw) : null;
+  }
+
+  /** A ws-widget frame → the widget-data fields it carries ({ type: 'tracker', ... } or { data: {...} }). */
+  const frameFields = (msg) => {
+    if (!msg || typeof msg !== 'object') return null;
+    if (msg.type && !/tracker|update|data|state/i.test(String(msg.type))) return null;
+    const body = msg.data && typeof msg.data === 'object' && !Array.isArray(msg.data) ? msg.data : msg;
+    const { type, event_id: _e, ...fields } = body;
+    return fields;
+  };
+
   const publish = (id, type, data) => bus.emit(`e:${id}`, { type, data });
+
+  /** Publishes what changed in a watched match's tracker state (merged widget-data + ws frames). */
+  function process(eventId, w) {
+    const s = normalizeWidgetData(w.raw);
+    w.last = s;
+    const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
+    const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
+    const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live };
+    const evKey = JSON.stringify(ev);
+    if (evKey !== w.lastEvent) { w.lastEvent = evKey; publish(eventId, 'event', ev); }
+    if (s.ball || s.situation) {
+      const side = s.situation?.side || 'home';
+      // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.
+      const spot = s.ball ? (side === 'away' ? { x: 100 - s.ball.x, y: 100 - s.ball.y } : s.ball) : { x: null, y: null };
+      const key = `${spot.x}|${spot.y}|${s.situation?.situation}|${side}`;
+      if (key !== w.lastBall) {
+        w.lastBall = key;
+        const d = { ...spot, side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
+        w.livedata = d;
+        publish(eventId, 'livedata', d);
+      }
+    }
+    for (const a of s.timeline) {
+      const id = `${a.minute}|${a.type}|${a.team}|${a.label}`;
+      if (w.seen.has(id)) continue;
+      w.seen.add(id);
+      w.actions.push(a);
+      w.actions = w.actions.slice(-15);
+      publish(eventId, 'action', a);
+    }
+  }
+
+  const wsLive = (w) => w.ws && Date.now() - (w.lastFrameAt || 0) < 10_000;
+
+  /** Opens the tracker WebSocket of a watched match; reconnects while someone still watches it. */
+  async function connect(eventId, w, { fresh = false } = {}) {
+    if (!ws || typeof WebSocketImpl !== 'function' || typeof client.wsUrl !== 'function' || w.ws || w.closed) return;
+    try {
+      const c = await credentials(w.gameId, { fresh });
+      if (!c || w.closed) return;
+      const sock = new WebSocketImpl(client.wsUrl(c.eid, c.akey), { headers: { Origin: client.origin, 'User-Agent': 'BET62-Data-Service/1.0' } });
+      w.ws = sock;
+      const opened = Date.now();
+      sock.onmessage = (m) => {
+        let msg = null;
+        try { msg = JSON.parse(typeof m.data === 'string' ? m.data : String(m.data)); } catch { return; }
+        const fields = frameFields(msg);
+        if (!fields) return;
+        w.raw = { ...(w.raw || {}), ...fields };
+        w.lastFrameAt = Date.now();
+        w.frames = (w.frames || 0) + 1;
+        try { process(eventId, w); } catch (err) { log(`tracker ws ${w.gameId}: ${err.message}`); }
+      };
+      sock.onerror = () => {};
+      sock.onclose = () => {
+        if (w.ws === sock) w.ws = null;
+        if (w.closed || !watched.has(eventId)) return;
+        // Quick close (bad key?) → fresh key next time; back off up to a minute.
+        w.retry = Math.min(60_000, (w.retry || 2_500) * 2);
+        const t = setTimeout(() => connect(eventId, w, { fresh: Date.now() - opened < 5_000 }), w.retry);
+        t.unref?.();
+      };
+    } catch (err) {
+      log(`tracker ws ${w.gameId}: ${err.message}`);
+    }
+  }
 
   async function tick(eventId) {
     const w = watched.get(eventId);
     if (!w) return;
-    if (!w.watchers && Date.now() - w.lastAt > idleMs) { clearInterval(w.timer); watched.delete(eventId); return; }
+    if (!w.watchers && Date.now() - w.lastAt > idleMs) {
+      clearInterval(w.timer);
+      w.closed = true;
+      try { w.ws?.close(); } catch { /* already closed */ }
+      watched.delete(eventId);
+      return;
+    }
     if (w.busy) return;
+    // With live WebSocket frames, widget-data is only a periodic refresh (timeline, sc, scores).
+    if (wsLive(w) && Date.now() - (w.polledAt || 0) < 15_000) return;
     w.busy = true;
     try {
-      const s = await state(w.gameId);
-      if (!s) return;
-      w.last = s;
-      const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
-      const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
-      publish(eventId, 'event', { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live });
-      if (s.ball || s.situation) {
-        const side = s.situation?.side || 'home';
-        // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.
-        const spot = s.ball ? (side === 'away' ? { x: 100 - s.ball.x, y: 100 - s.ball.y } : s.ball) : { x: null, y: null };
-        const key = `${spot.x}|${spot.y}|${s.situation?.situation}|${side}`;
-        if (key !== w.lastBall) {
-          w.lastBall = key;
-          const d = { ...spot, side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
-          w.livedata = d;
-          publish(eventId, 'livedata', d);
-        }
-      }
-      for (const a of s.timeline) {
-        const id = `${a.minute}|${a.type}|${a.team}|${a.label}`;
-        if (w.seen.has(id)) continue;
-        w.seen.add(id);
-        w.actions.push(a);
-        w.actions = w.actions.slice(-15);
-        publish(eventId, 'action', a);
-      }
+      const raw = await rawState(w.gameId);
+      w.polledAt = Date.now();
+      if (!raw) return;
+      w.raw = { ...(w.raw || {}), ...raw };
+      process(eventId, w);
+      if (!w.ws) connect(eventId, w);
     } catch (err) {
       log(`tracker ${w.gameId}: ${err.message}`);
     } finally {
@@ -261,7 +332,7 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
   function follow(eventId, gameId) {
     let w = watched.get(eventId);
     if (!w) {
-      w = { gameId: String(gameId), watchers: 0, lastAt: Date.now(), seen: new Set(), actions: [], last: null, livedata: null, lastBall: null };
+      w = { gameId: String(gameId), watchers: 0, lastAt: Date.now(), seen: new Set(), actions: [], last: null, livedata: null, lastBall: null, raw: null, ws: null };
       w.timer = setInterval(() => tick(eventId), pollMs);
       w.timer.unref?.();
       watched.set(eventId, w);
@@ -286,7 +357,36 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
   }
 
   /** Admin: the raw answers of both routes for one game, to map new fields. */
-  async function inspect(gameId) {
+  /** Admin: a few seconds of the tracker WebSocket (first frames, raw and normalized). */
+  function listen(c, { ms = 6_000, max = 6 } = {}) {
+    if (!ws || typeof WebSocketImpl !== 'function' || typeof client.wsUrl !== 'function') return Promise.resolve({ enabled: false });
+    return new Promise((resolve) => {
+      const out = { enabled: true, opened: false, frames: 0, samples: [], error: null, closeCode: null };
+      let sock;
+      let merged = {};
+      const done = () => {
+        clearTimeout(timer);
+        try { sock?.close(); } catch { /* closed */ }
+        out.normalized = out.frames ? normalizeWidgetData(merged) : null;
+        resolve(out);
+      };
+      const timer = setTimeout(done, ms);
+      try {
+        sock = new WebSocketImpl(client.wsUrl(c.eid, c.akey), { headers: { Origin: client.origin, 'User-Agent': 'BET62-Data-Service/1.0' } });
+      } catch (err) { out.error = err.message; done(); return; }
+      sock.onopen = () => { out.opened = true; };
+      sock.onerror = (e) => { out.error = e?.message || 'erro na ligação'; };
+      sock.onclose = (e) => { out.closeCode = e?.code ?? null; done(); };
+      sock.onmessage = (m) => {
+        out.frames += 1;
+        const text = typeof m.data === 'string' ? m.data : String(m.data);
+        if (out.samples.length < max) out.samples.push(text.slice(0, 1500));
+        try { const f = frameFields(JSON.parse(text)); if (f) merged = { ...merged, ...f }; } catch { /* not JSON */ }
+      };
+    });
+  }
+
+  async function inspect(gameId, { listenMs = 6_000 } = {}) {
     const w = await client.widget(gameId);
     const c = w.ok ? widgetCredentials(w.body, w.text) : null;
     const out = {
@@ -298,6 +398,7 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
       const r = await client.widgetData(c.eid, c.akey);
       out.data = { status: r.status, bytes: r.bytes, json: r.body !== null, keys: r.body && typeof r.body === 'object' ? Object.keys(r.body) : null,
         normalized: r.body ? normalizeWidgetData(r.body) : null, sample: (r.body !== null ? JSON.stringify(r.body) : r.text || '').slice(0, 6000) };
+      out.ws = await listen(c, { ms: listenMs });
     }
     return out;
   }

@@ -114,7 +114,7 @@ export const config = {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
       liveEvent: unquote(env.WINHOUSE_LIVE_EVENT),
-      widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA),
+      widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA), wsWidget: unquote(env.WINHOUSE_WS_WIDGET),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
     // unset = estimated from the live list) and how long a match must stay out of the live list
@@ -123,6 +123,8 @@ export const config = {
     // Match tracker for live football (stats, ball, timeline): on unless WINHOUSE_TRACKER=0.
     tracker: env.WINHOUSE_TRACKER !== '0',
     trackerPollMs: Math.max(1_000, int(env.WINHOUSE_TRACKER_POLL_MS, 2_000)),
+    // Ball position and situation over the tracker's WebSocket (ws-widget); 0 = widget-data only.
+    trackerWs: env.WINHOUSE_TRACKER_WS !== '0',
     liveMs: Math.max(5_000, int(env.WINHOUSE_LIVE_INTERVAL_MS, 15_000)),
     prematchMs: Math.max(20_000, int(env.WINHOUSE_PREMATCH_INTERVAL_MS, 60_000)),
     tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,
