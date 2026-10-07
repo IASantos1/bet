@@ -31,6 +31,8 @@ const ROUTES = {
   streams: '/ajax/streams?tenant={tenant}',
   // A game's live video: { success, embed_url: ".../tv/play?t=TOKEN", expires_at } (whlive.js).
   livestream: '/ajax/livestream?event_id={gameId}',
+  // Seamless wallet (model B): a book session for a player, server-to-server with the wallet API key.
+  tenantSession: '/tenant/session',
 };
 
 /**
@@ -183,7 +185,7 @@ export function marketCatalog(body) {
 }
 
 export function createWinHouseClient({
-  baseUrl = '', lang = 'pt', routes = {}, tenant = '', apiKey = '', timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
+  baseUrl = '', lang = 'pt', routes = {}, tenant = '', apiKey = '', walletKey = '', timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const base = String(baseUrl || '').replace(/\/+$/, '');
   const paths = { ...ROUTES, ...Object.fromEntries(Object.entries(routes).filter(([, v]) => v)) };
@@ -191,14 +193,16 @@ export function createWinHouseClient({
   const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''))
     .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? '')).replace('{tenant}', encodeURIComponent(tenant));
 
-  async function request(key, vars, extraHeaders = {}) {
+  async function request(key, vars, extraHeaders = {}, { method = 'GET', body: payload } = {}) {
     if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     const started = Date.now();
     try {
       const res = await fetchImpl(url(key, vars), {
-        headers: { Accept: 'application/json', 'User-Agent': 'BET62-Data-Service/1.0', Referer: `${base}/`, ...extraHeaders },
+        method,
+        headers: { Accept: 'application/json', 'User-Agent': 'BET62-Data-Service/1.0', Referer: `${base}/`, ...(payload ? { 'Content-Type': 'application/json' } : {}), ...extraHeaders },
+        body: payload ? JSON.stringify(payload) : undefined,
         signal: ctl.signal,
       });
       const text = await res.text();
@@ -406,9 +410,15 @@ export function createWinHouseClient({
     tracker: (gameId) => request('tracker', { gameId }),
     streams: () => request('streams'),
     // The operator's credentials go only on this call (on the odds lists the tenant would change the margin).
-    livestream: (gameId) => request('livestream', { gameId }, {
+    // The book sends the player's session as x-access-token (betting.js); without one: error_not_logged_in.
+    livestream: (gameId, sessionToken = null) => request('livestream', { gameId }, {
       ...(tenant ? { 'X-WH-Tenant': tenant } : {}), ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      ...(sessionToken ? { 'x-access-token': sessionToken } : {}),
     }),
+    hasWallet: !!(walletKey && tenant),
+    /** POST /tenant/session → { ok, token, username, tenant }: a book session for one of our players. */
+    tenantSession: (playerId) => request('tenantSession', {}, { Authorization: `Bearer ${walletKey}` },
+      { method: 'POST', body: { customer_key: tenant, player_id: String(playerId) } }),
     hasTenant: !!tenant,
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,

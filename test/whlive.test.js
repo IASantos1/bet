@@ -63,7 +63,7 @@ test('GET /api/live/:eventId: only WinHouse games in play here; our id or the Wi
   await new Promise((r) => server.once('listening', r));
   const get = async (p) => { const r = await fetch(`http://127.0.0.1:${server.address().port}${p}`); return { status: r.status, body: await r.json() }; };
   try {
-    const want = { success: true, event_id: 2085793307, id: liveId, stream_id: 20571954, hls_url: `https://winhouse.bet/tv/p/20571954.m3u8?t=${token}`, expires_at: 1791413872 };
+    const want = { success: true, event_id: 2085793307, id: liveId, stream_id: 20571954, embed_url: `https://winhouse.bet/tv/play?t=${token}`, hls_url: `https://winhouse.bet/tv/p/20571954.m3u8?t=${token}`, expires_at: 1791413872 };
     assert.deepEqual(await get('/api/live/2085793307'), { status: 200, body: want });
     assert.deepEqual((await get(`/api/live/${liveId}`)).body, want);
     assert.equal((await get('/api/live/2085793308')).status, 404); // not in play
@@ -105,4 +105,29 @@ test('sidebar leagues: countries with open games per league; one league of the n
     server.close();
     db.close();
   }
+});
+
+test('live video with a wallet session: /tenant/session once, its token as x-access-token, a new session when the book drops it', async () => {
+  const calls = [];
+  let sessions = 0;
+  const token = jwt({ vi: '777' });
+  const client = {
+    hasWallet: true,
+    tenantSession: async (player) => { sessions += 1; calls.push(`session ${player}`); return { ok: true, status: 200, body: { ok: true, token: `tok${sessions}`, username: `bet62_${player}` } }; },
+    livestream: async (id, tok) => {
+      calls.push(`stream ${id} ${tok}`);
+      if (tok === 'tok1' && calls.filter((c) => c.startsWith('stream')).length > 1) return { ok: true, status: 200, body: { Error: true, Message: 'error_not_logged_in' } };
+      return { ok: true, status: 200, body: { success: true, embed_url: `https://winhouse.bet/tv/play?t=${token}`, expires_at: Date.now() / 1000 + 600 } };
+    },
+  };
+  const live = createWinHouseLive({ client, playerId: '5512' });
+  assert.equal((await live.getLiveStream(1)).streamId, '777');
+  assert.deepEqual(calls, ['session 5512', 'stream 1 tok1']);
+  assert.equal(live.session().username, 'bet62_5512');
+  // The book no longer accepts tok1: a fresh session, asked again.
+  assert.equal((await live.getLiveStream(2)).streamId, '777');
+  assert.deepEqual(calls.slice(2), ['stream 2 tok1', 'session 5512', 'stream 2 tok2']);
+  // Not configured (no wallet key / player): no session, the plain request.
+  const plain = createWinHouseLive({ client: { ...client, hasWallet: false }, playerId: '5512' });
+  assert.equal(await plain.sessionToken(), null);
 });

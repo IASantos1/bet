@@ -127,6 +127,11 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   `expires_at`; depois disso um novo pedido traz token novo. `GET /api/live` lista os jogos com vídeo.
   A chave (`WINHOUSE_TENANT`) e, se houver, `WINHOUSE_API_KEY` só vão nessa chamada ao servidor da
   WinHouse, nunca para o navegador.
+  A WinHouse só dá o vídeo a um jogador com sessão no livro (senão `error_not_logged_in`): com
+  `WINHOUSE_WALLET_KEY` (a wallet API key do portal, carteira integrada) e `WINHOUSE_STREAM_PLAYER` (o id
+  de um jogador dessa carteira com depósito) o servidor abre a sessão em `POST /tenant/session`, envia-a
+  como `x-access-token` (como o livro faz) e renova-a quando o livro a recusa. A página do jogo mostra o
+  leitor da WinHouse (`embed_url`) num iframe e pede um endereço novo um minuto antes de expirar.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR

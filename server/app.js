@@ -371,7 +371,8 @@ export function createApp(db, {
     return db.prepare(`SELECT id, external_id, status FROM events WHERE source = 'winhouse' AND (id = ? OR external_id = ?)
       ORDER BY (id = ?) DESC LIMIT 1`).get(Number(v), v, Number(v));
   };
-  const videoOut = (row, s) => ({ event_id: Number(row.external_id), id: row.id, stream_id: Number(s.streamId), hls_url: s.hlsUrl, expires_at: s.expiresAt });
+  // embed_url: WinHouse's own player page (what the book frames); hls_url: the raw stream.
+  const videoOut = (row, s) => ({ event_id: Number(row.external_id), id: row.id, stream_id: Number(s.streamId), embed_url: s.embedUrl, hls_url: s.hlsUrl, expires_at: s.expiresAt });
 
   app.get('/api/live/:eventId', async (req, res, next) => {
     try {
@@ -927,14 +928,17 @@ export function createApp(db, {
         gameId = (live.find((r) => winhouseFeed?.streamOf?.(r.external_id).has) || live[0])?.external_id ?? null;
         if (!gameId) throw new HttpError(404, 'Nenhum jogo WinHouse ao vivo agora.');
       }
-      const r = await winhouse.livestream(gameId);
+      // With the seamless-wallet session when configured (WINHOUSE_WALLET_KEY + WINHOUSE_STREAM_PLAYER).
+      const token = winhouseLive ? await winhouseLive.sessionToken() : null;
+      const r = await winhouse.livestream(gameId, token);
       const parsed = r.body ? parseLivestream(r.body, { hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl }) : { error: 'resposta não é JSON' };
       const mask = (v) => JSON.parse(JSON.stringify(v ?? null).replace(/([?&]t=)([A-Za-z0-9._~%-]{12})[A-Za-z0-9._~%-]+/g, '$1$2…'));
       res.json({
         gameId, hlsEnabled: !!winhouseLive?.enabled, withStream: !!winhouseFeed?.streamOf?.(gameId).has,
-        tenant: !!config.winhouse.tenant, apiKey: !!config.winhouse.apiKey,
+        tenant: !!config.winhouse.tenant, apiKey: !!config.winhouse.apiKey, walletKey: !!config.winhouse.walletKey, streamPlayer: config.winhouse.streamPlayer || null,
+        session: winhouseLive ? winhouseLive.session() : { configured: false, error: 'WINHOUSE_HLS=1 desligado' }, sentSession: !!token,
         livestream: { status: r.status, ms: r.ms, contentType: r.contentType, body: mask(r.body), text: r.body ? undefined : String(r.text || '').slice(0, 1500) },
-        result: mask(parsed.error ? parsed : { streamId: parsed.streamId, hlsUrl: parsed.hlsUrl, expiresAt: parsed.expiresAt, expiresIn: parsed.expiresAt - Math.floor(Date.now() / 1000) }),
+        result: mask(parsed.error ? parsed : { streamId: parsed.streamId, embedUrl: parsed.embedUrl, hlsUrl: parsed.hlsUrl, expiresAt: parsed.expiresAt, expiresIn: parsed.expiresAt - Math.floor(Date.now() / 1000) }),
       });
     } catch (err) { next(err); }
   });
