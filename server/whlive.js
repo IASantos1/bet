@@ -47,14 +47,55 @@ export function parseLivestream(body, { hlsPath = '/tv/p/{stream_id}.m3u8?t={tok
 }
 
 export function createWinHouseLive({
-  client, hlsPath, tvBase = '', marginSeconds = 45, log = () => {}, now = () => Date.now(),
+  client, hlsPath, tvBase = '', marginSeconds = 45, playerId = '', log = () => {}, now = () => Date.now(),
 } = {}) {
   const cache = new Map(); // WinHouse game id → { at, value } (value: stream or { error })
   const pending = new Map(); // game id → in-flight promise (one WinHouse call per game at a time)
   const enabled = !!client?.livestream;
 
+  // The video needs a signed-in player: one book session for WINHOUSE_STREAM_PLAYER (seamless
+  // wallet, /tenant/session with the wallet API key), kept until shortly before it expires.
+  let session = null; // { token, until, username }
+  let sessionPending = null;
+  const sessionInfo = { configured: !!(client?.hasWallet && playerId), ok: null, error: null, at: null, username: null };
+  async function sessionToken({ fresh = false } = {}) {
+    if (!sessionInfo.configured) return null;
+    if (!fresh && session && now() < session.until) return session.token;
+    if (sessionPending) return sessionPending;
+    sessionPending = (async () => {
+      try {
+        const r = await client.tenantSession(playerId);
+        const token = r.body?.token;
+        sessionInfo.at = new Date(now()).toISOString();
+        if (!r.ok || !r.body?.ok || !token) {
+          sessionInfo.ok = false;
+          sessionInfo.error = `HTTP ${r.status}${r.body?.error || r.body?.message ? ` ${r.body.error || r.body.message}` : ''}${r.body?.ip ? ` (IP ${r.body.ip})` : ''}`;
+          session = null;
+          return null;
+        }
+        const exp = Number(tokenPayload(token)?.exp);
+        const until = Number.isFinite(exp) && exp > 0 ? Math.min((exp > 1e12 ? exp : exp * 1000) - 60_000, now() + 6 * 3600_000) : now() + 30 * 60_000;
+        session = { token, until: Math.max(until, now() + 60_000), username: r.body.username || null };
+        Object.assign(sessionInfo, { ok: true, error: null, username: session.username });
+        return token;
+      } catch (err) {
+        Object.assign(sessionInfo, { ok: false, error: err.message, at: new Date(now()).toISOString() });
+        return null;
+      } finally {
+        sessionPending = null;
+      }
+    })();
+    return sessionPending;
+  }
+
   async function fetchStream(gameId) {
-    const r = await client.livestream(gameId);
+    let token = await sessionToken();
+    let r = await client.livestream(gameId, token);
+    // A session the book no longer accepts: open a new one and ask once more.
+    if (token && r.body && (r.body.Error === true || r.body.success === false) && /log/i.test(String(r.body.Message || r.body.reason || ''))) {
+      token = await sessionToken({ fresh: true });
+      if (token) r = await client.livestream(gameId, token);
+    }
     if (!r.ok) return { error: `WinHouse HTTP ${r.status}`, retryAfter: 15 };
     const s = parseLivestream(r.body, { hlsPath, tvBase });
     return s.error ? { ...s, retryAfter: 30 } : s;
@@ -84,5 +125,5 @@ export function createWinHouseLive({
     return p;
   }
 
-  return { enabled, getLiveStream, cacheSize: () => cache.size };
+  return { enabled, getLiveStream, sessionToken, session: () => ({ ...sessionInfo }), cacheSize: () => cache.size };
 }

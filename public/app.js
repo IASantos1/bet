@@ -1247,6 +1247,7 @@ function leaveMatch() {
   m.es?.close();
   clearInterval(m.timer);
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
 
@@ -1448,7 +1449,30 @@ function streamBox(e) {
   if (e.streamUrl) {
     return `<div class="stream-box">${expandBtn()}<iframe src="${esc(e.streamUrl)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
   }
-  return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'Este jogo tem transmissão ao vivo. O vídeo aparece aqui quando a transmissão estiver configurada.' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
+  return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'A abrir a transmissão…' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
+}
+
+const streamFrame = (url) => `${expandBtn()}<iframe src="${esc(url)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
+
+/**
+ * The live video of a game with TV: /api/live/:id gives WinHouse's player address (it expires);
+ * asked again a minute before it does, as the book itself does.
+ */
+async function loadStream(e, el) {
+  const m = state.match;
+  clearTimeout(m.streamTimer);
+  try {
+    const r = await api(`/api/live/${e.id}`);
+    if (m.streamEl !== el || !r.embed_url) return;
+    const frame = el.querySelector('iframe');
+    if (frame) { if (frame.src !== r.embed_url) frame.src = r.embed_url; } else { el.classList.remove('empty'); el.innerHTML = streamFrame(r.embed_url); }
+    const wait = Math.max(30, Number(r.expires_at) - Date.now() / 1000 - 60) * 1000;
+    m.streamTimer = setTimeout(() => { if (m.streamEl === el && el.isConnected) loadStream(e, el); }, Math.min(wait, 30 * 60_000));
+  } catch (err) {
+    if (m.streamEl !== el || el.querySelector('iframe')) return;
+    const p = el.querySelector('p');
+    if (p) p.textContent = 'Transmissão indisponível de momento. Tente daqui a pouco.';
+  }
 }
 
 function marketsView(e) {
@@ -1633,6 +1657,7 @@ function mountLiveWidget() {
       holder.innerHTML = streamBox(e);
       m.streamEl = holder.firstElementChild;
       m.streamKey = key;
+      if (e.stream && !e.streamUrl) loadStream(e, m.streamEl);
     }
     if (slot && m.streamEl.parentElement !== slot) slot.replaceChildren(m.streamEl);
     return;

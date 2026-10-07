@@ -114,6 +114,10 @@ export const config = {
     tenant: unquote(env.WINHOUSE_TENANT),
     // Server-to-server credential WinHouse gives for the live video, if any (never sent to browsers).
     apiKey: unquote(env.WINHOUSE_API_KEY),
+    // Seamless wallet: the wallet API key (Bearer on /tenant/session; never leaves the server) and the
+    // player whose book session asks for the live video (an account of the wallet's site, with a deposit).
+    walletKey: unquote(env.WINHOUSE_WALLET_KEY || env.WINHOUSE_WALLET_API_KEY),
+    streamPlayer: unquote(env.WINHOUSE_STREAM_PLAYER),
     // Live video as HLS for our own player (/api/live). Off until the WinHouse agreement allows it.
     hls: env.WINHOUSE_HLS === '1',
     hlsPath: unquote(env.WINHOUSE_HLS_PATH) || '/tv/p/{stream_id}.m3u8?t={token}',

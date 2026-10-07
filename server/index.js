@@ -76,7 +76,7 @@ const stopWinhouse = () => { stopWinhouseFeed(); stopWinhouseOdds(); };
 
 // Live video as HLS (/api/live): only when WINHOUSE_HLS=1 (the WinHouse agreement must allow it).
 const winhouseLive = winhouse.enabled && config.winhouse.hls
-  ? createWinHouseLive({ client: winhouse, hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  ? createWinHouseLive({ client: winhouse, hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl, playerId: config.winhouse.streamPlayer, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
