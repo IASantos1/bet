@@ -845,6 +845,15 @@ export function createApp(db, {
   });
 
   // WinHouse: every market one game page offers (to map new ones).
+  // WinHouse: the routes its own iframe uses (pages + scripts), to find the live game page.
+  admin.post('/winhouse/discover', async (req, res, next) => {
+    try {
+      if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
+      const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      res.json(await winhouse.discover({ gameId }));
+    } catch (err) { next(err); }
+  });
+
   admin.post('/winhouse/markets', async (req, res, next) => {
     try {
       if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');

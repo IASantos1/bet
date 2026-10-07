@@ -234,6 +234,60 @@ export function createWinHouseClient({
     };
   }
 
+  /**
+   * Admin: the routes WinHouse's own iframe uses. Reads its pages and their same-origin scripts
+   * and lists every "/ajax/…" (and widget / ws) path found, so the live game page can be set in
+   * WINHOUSE_LIVE_EVENT without guessing. Read-only; at most `maxScripts` scripts.
+   */
+  async function discover({ gameId = null, maxScripts = 25, maxBytes = 4_000_000 } = {}) {
+    if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
+    const get = async (u) => {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), timeoutMs);
+      try {
+        const res = await fetchImpl(u, { headers: { 'User-Agent': 'BET62-Data-Service/1.0', Referer: `${base}/` }, signal: ctl.signal });
+        const text = (await res.text()).slice(0, maxBytes);
+        return { status: res.status, text };
+      } catch (err) { return { status: null, text: '', error: err.message }; } finally { clearTimeout(timer); }
+    };
+    const pages = ['/', '/live', '/sports', '/pt', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean);
+    const routes = new Map(); // path → [where]
+    const add = (path, where) => {
+      const p = path.replace(/["'`\\]+$/, '');
+      if (!routes.has(p)) routes.set(p, []);
+      if (routes.get(p).length < 3 && !routes.get(p).includes(where)) routes.get(p).push(where);
+    };
+    const scan = (text, where) => {
+      for (const m of text.matchAll(/["'`](\/?(?:ajax|api|ws-|widget|socket)[A-Za-z0-9_\-./{}$:?=&+]*)["'`]/g)) add(m[1], where);
+      for (const m of text.matchAll(/\/ajax\/[A-Za-z0-9_\-/]+/g)) add(m[0], where);
+      for (const m of text.matchAll(/wss?:\/\/[A-Za-z0-9_\-./]+(?:\/[A-Za-z0-9_\-./?=&{}$]*)?/g)) add(m[0], where);
+    };
+    const scripts = new Set();
+    const visited = [];
+    for (const p of pages) {
+      const r = await get(base + p);
+      visited.push({ page: p, status: r.status, bytes: r.text.length, error: r.error });
+      if (!r.text) continue;
+      scan(r.text, p);
+      for (const m of r.text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) {
+        try {
+          const u = new URL(m[1], `${base}/`);
+          if (u.origin === new URL(base).origin) scripts.add(u.href);
+        } catch { /* bad URL */ }
+      }
+    }
+    const read = [...scripts].slice(0, maxScripts);
+    for (const u of read) {
+      const r = await get(u);
+      const name = new URL(u).pathname;
+      visited.push({ script: name, status: r.status, bytes: r.text.length, error: r.error });
+      if (r.text) scan(r.text, name);
+    }
+    const list = [...routes.entries()].map(([path, where]) => ({ path, where }))
+      .sort((a, b) => (/live/i.test(b.path) - /live/i.test(a.path)) || a.path.localeCompare(b.path));
+    return { at: new Date().toISOString(), baseUrl: base, visited, scriptsFound: scripts.size, routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60) };
+  }
+
   async function health({ gameId = null } = {}) {
     const out = [];
     let firstId = gameId;
@@ -278,6 +332,7 @@ export function createWinHouseClient({
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,
     markets,
+    discover,
   };
 }
 
