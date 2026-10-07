@@ -72,6 +72,16 @@ h1, h2, h3 { margin-top: 0; }
 .side-link > span:first-child { width: 22px; text-align: center; }
 .side-link b { margin-left: auto; color: var(--text-4); font-size: 11px; }
 .side-link:hover, .side-link.active { background: var(--row-hover); color: #fff; }
+.side-link .caret, .side-country .caret { font-style: normal; font-size: 10px; color: var(--text-4); }
+.side-link .caret { margin-left: 6px; }
+.side-tree { margin: 0 0 6px 14px; padding-left: 8px; border-left: 1px solid var(--nav-sep); }
+.side-country { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 8px; border: 0; border-radius: 6px; background: none; color: var(--nav-sub); font-size: 12px; font-weight: 700; text-align: left; }
+.side-country b, .side-league b { margin-left: auto; color: var(--text-4); font-size: 10px; }
+.side-country:hover, .side-league:hover { background: var(--row-hover); color: #fff; }
+.side-country.none, .side-league.none { opacity: .5; }
+.side-league { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 25px; border-radius: 6px; color: var(--text-3); font-size: 12px; font-weight: 600; }
+.side-league.active { background: var(--brand); color: #fff; }
+.side-league.active b { color: #ffffffb3; }
 .red-icon { color: var(--live) !important; font-size: 10px; }
 .side-divider { height: 1px; background: var(--line); margin: 15px 5px; }
 .mini-promo { padding: 15px; border-radius: var(--radius); background: linear-gradient(145deg, var(--odd-cell), var(--panels)); border: 1px solid var(--border); margin: 10px 3px; }
