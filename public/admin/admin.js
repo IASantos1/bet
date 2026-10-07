@@ -26,7 +26,7 @@ const TABS = [
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
 
-const state = { user: null, config: null, tab: 'painel', stats: null };
+const state = { user: null, config: null, tab: 'painel', stats: null, userDetail: null };
 
 // ---------- utilities ----------
 
@@ -65,6 +65,65 @@ function toast(title, msg = '', type = 'ok') {
   el.innerHTML = `<strong>${esc(title)}</strong>${msg ? `<span>${esc(msg)}</span>` : ''}`;
   $('#toastWrap').append(el);
   setTimeout(() => el.remove(), 4200);
+}
+
+// ---------- players ----------
+const KYC_LABEL = { not_submitted: 'Não enviado', pending: 'Pendente', approved: 'Validado', rejected: 'Rejeitado' };
+const ICON = {
+  wallet: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="7.5" width="18" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16.5" cy="13.5" r="1.4" fill="currentColor"/></svg>',
+  gift: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="9" width="17" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 9h19M12 9v11M12 9c-1.5-3.5-5.5-4-5.5-1.5S10 9 12 9zm0 0c1.5-3.5 5.5-4 5.5-1.5S14 9 12 9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  ban: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5 1.3 0 2.5.3 3.5.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 14l5 5M21 14l-5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+};
+
+function usersTable(users) {
+  return `<div class="table-wrap"><table class="users-table"><thead><tr><th>#</th><th>Nome</th><th>Email</th><th class="num">Saldo</th><th class="num">FreeBets</th><th>KYC</th><th class="num">Apostas</th><th>Registo</th><th></th></tr></thead><tbody>
+    ${users.map((u) => `<tr class="${u.banned ? 'is-banned' : ''}"><td>${u.id}</td><td>${esc(u.name)}${u.role === 'admin' ? ' <span class="pill">Admin</span>' : ''}${u.banned ? ' <span class="pill lost">Banido</span>' : ''}</td><td>${esc(u.email)}</td>
+      <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
+      <td class="num">${u.bets}</td><td>${esc(fmtDateTime(u.createdAt))}</td>
+      <td><div class="user-acts">
+        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" title="Saldo da carteira">${ICON.wallet}</button>
+        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" title="FreeBets">${ICON.gift}</button>
+        ${u.role === 'admin' ? '' : `<button class="ua ban${u.banned ? ' on' : ''}" data-action="user-ban" data-id="${u.id}" data-name="${esc(u.name)}" data-banned="${u.banned ? 1 : 0}" title="${u.banned ? 'Desbanir' : 'Banir'}">${ICON.ban}</button>`}
+        <button class="ua notes" data-action="user-detail" data-id="${u.id}" title="Ver detalhe">${ICON.notes}</button>
+      </div></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+const TX_LABEL = {
+  deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido', bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
+  casino_out: 'Casino (saída)', casino_in: 'Casino (entrada)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
+};
+
+function userDetailView(d) {
+  const u = d.user;
+  const deposits = d.transactions.filter((t) => t.type === 'deposit');
+  const docs = d.documents.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Documento</th><th>Ficheiro</th><th>Enviado</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${d.documents.map((x) => `<tr><td>${esc(x.kind)}</td><td><a href="/api/admin/kyc/${x.id}/file" target="_blank" rel="noopener">${esc(x.fileName)}</a> <small class="muted">${Math.round(x.size / 1024)} KB</small></td>
+        <td>${esc(fmtDateTime(x.createdAt))}</td><td><span class="pill ${x.status}">${KYC_LABEL[x.status] || x.status}</span></td>
+        <td><div class="form-actions"><button class="primary-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="approved">Validar</button><button class="danger-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="rejected">Rejeitar</button></div></td></tr>`).join('')}
+      </tbody></table></div>`
+    : '<p class="muted">O jogador ainda não enviou documentos.</p>';
+  return `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="user-back">‹ Utilizadores</button></div>
+    <div class="panel"><h3>${esc(u.name)} ${u.banned ? '<span class="pill lost">Banido</span>' : ''}</h3>
+      <p>${esc(u.email)}${u.phone ? ` · ${esc(u.phone)}` : ''} · nascido em ${esc(u.birthdate || '—')} · registo ${esc(fmtDateTime(u.createdAt))}</p>
+      <div class="user-sums">
+        <div><small>Saldo</small><strong>${money(u.balance)}</strong></div><div><small>FreeBets</small><strong>${money(u.freebet)}</strong></div>
+        <div><small>Depósitos</small><strong>${money(d.totals.deposits)}</strong></div><div><small>Levantamentos</small><strong>${money(d.totals.withdrawals)}</strong></div>
+        <div><small>Apostado</small><strong>${money(d.totals.staked)}</strong></div><div><small>Prémios</small><strong>${money(d.totals.payouts)}</strong></div>
+      </div>
+      <div class="user-acts big">
+        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" title="Saldo da carteira">${ICON.wallet}</button>
+        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" title="FreeBets">${ICON.gift}</button>
+        ${u.role === 'admin' ? '' : `<button class="ua ban${u.banned ? ' on' : ''}" data-action="user-ban" data-id="${u.id}" data-name="${esc(u.name)}" data-banned="${u.banned ? 1 : 0}" title="${u.banned ? 'Desbanir' : 'Banir'}">${ICON.ban}</button>`}
+      </div>
+    </div>
+    <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}</div>
+    <div class="panel"><h3>Apostas <small class="muted">${d.bets.length}</small></h3>${d.bets.length ? d.bets.map((b) => betCard(b)).join('') : '<p class="muted">Sem apostas.</p>'}</div>
+    <div class="panel"><h3>Depósitos <small class="muted">${deposits.length}</small></h3>${deposits.length ? `<div class="table-wrap"><table><tbody>${deposits.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem depósitos.</p>'}</div>
+    <div class="panel"><h3>Levantamentos <small class="muted">${d.withdrawals.length}</small></h3>${d.withdrawals.length ? `<div class="table-wrap"><table><tbody>${d.withdrawals.map((w) => `<tr><td>${esc(fmtDateTime(w.createdAt))}</td><td>${esc(w.iban)}</td><td><span class="pill ${w.status}">${STATUS_LABEL[w.status] || w.status}</span></td><td class="num">${money(w.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem levantamentos.</p>'}</div>
+    <div class="panel"><h3>Movimentos da carteira</h3>${d.transactions.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th class="num">Valor</th><th class="num">Saldo</th></tr></thead><tbody>${d.transactions.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${TX_LABEL[t.type] || t.type}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td><td class="num">${money(t.balanceAfter)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem movimentos.</p>'}</div>`;
 }
 
 function betCard(b, { showUser = false } = {}) {
@@ -120,6 +179,7 @@ function render() {
 
 function go(tab) {
   state.tab = TABS.some((t) => t.id === tab) ? tab : 'painel';
+  state.userDetail = null;
   if (location.hash !== `#${state.tab}`) history.replaceState(null, '', `#${state.tab}`);
   render();
 }
@@ -174,10 +234,12 @@ async function loadTab() {
       const { bets } = await api('/api/admin/bets');
       main.innerHTML = bets.length ? bets.map((b) => betCard(b, { showUser: true })).join('') : '<div class="panel empty">Sem apostas.</div>';
     } else if (tab === 'utilizadores') {
-      const { users } = await api('/api/admin/users');
-      main.innerHTML = `<div class="table-wrap"><table><thead><tr><th>#</th><th>Nome</th><th>Email</th><th>Perfil</th><th class="num">Apostas</th><th class="num">Saldo</th><th>Registo</th></tr></thead><tbody>
-        ${users.map((u) => `<tr><td>${u.id}</td><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role === 'admin' ? 'Admin' : 'Jogador'}</td><td class="num">${u.bets}</td><td class="num">${money(u.balance)}</td><td>${esc(fmtDateTime(u.createdAt))}</td></tr>`).join('')}
-      </tbody></table></div>`;
+      if (state.userDetail) {
+        main.innerHTML = userDetailView(await api(`/api/admin/users/${state.userDetail}`));
+      } else {
+        const { users } = await api('/api/admin/users');
+        main.innerHTML = usersTable(users);
+      }
     } else {
       const { events } = await api('/api/admin/events');
       main.innerHTML = events.length ? events.map(adminEventCard).join('') : '<div class="panel empty">Sem eventos. Crie um em "Novo evento".</div>';
@@ -567,6 +629,37 @@ document.addEventListener('click', async (e) => {
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
   if (action === 'close-menu') { $('.adm')?.classList.remove('menu-open'); return; }
   if (action === 'refresh') { loadTab(); return; }
+  if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
+  if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
+  if (action === 'user-balance' || action === 'user-freebet') {
+    const what = action === 'user-balance' ? 'saldo da carteira' : 'saldo de FreeBets';
+    const v = prompt(`${actionEl.dataset.name}: valor a juntar ao ${what} em € (ex.: 50). Para retirar, use o sinal menos (ex.: -20).`);
+    if (v === null || !v.trim()) return;
+    try {
+      await api(`/api/admin/users/${actionEl.dataset.id}/${action === 'user-balance' ? 'balance' : 'freebet'}`, { method: 'POST', body: { amount: v.trim() } });
+      toast('Feito', `${what[0].toUpperCase()}${what.slice(1)} atualizado.`);
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'user-ban') {
+    const banned = actionEl.dataset.banned !== '1';
+    if (!confirm(banned ? `Banir ${actionEl.dataset.name}? A conta deixa de entrar no site.` : `Desbanir ${actionEl.dataset.name}?`)) return;
+    try {
+      await api(`/api/admin/users/${actionEl.dataset.id}/ban`, { method: 'POST', body: { banned } });
+      toast('Feito', banned ? 'Conta banida.' : 'Conta desbanida.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'kyc-doc') {
+    try {
+      await api(`/api/admin/kyc/${actionEl.dataset.doc}`, { method: 'POST', body: { status: actionEl.dataset.status } });
+      toast('Feito', actionEl.dataset.status === 'approved' ? 'Documento validado.' : 'Documento rejeitado.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'logout') {
     await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
     state.user = null;

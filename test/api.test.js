@@ -277,3 +277,30 @@ test('admin can take an event live and update score', async () => {
   const live = (await client()('GET', '/api/events?status=live')).body.events;
   assert.ok(live.some((e) => e.id === ev.id && e.homeScore === 1 && e.clock === "12'"));
 });
+
+test('admin players: wallet credit/debit, free bets, ban and the detail page', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer();
+  const me = (await p('GET', '/api/me')).body.user;
+  // Credit, then take some back; never below zero.
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/balance`, { amount: '50' })).body.balance, 50);
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/balance`, { amount: '-20' })).body.balance, 30);
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/balance`, { amount: '-100' })).status, 400);
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/balance`, { amount: 'abc' })).status, 400);
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/freebet`, { amount: '10,5' })).body.freebet, 10.5);
+  assert.equal((await p('POST', `/api/admin/users/${me.id}/balance`, { amount: '50' })).status, 403); // players cannot
+  const d = (await adm('GET', `/api/admin/users/${me.id}`)).body;
+  assert.equal(d.user.balance, 30);
+  assert.equal(d.user.freebet, 10.5);
+  assert.deepEqual(d.transactions.map((t) => t.type), ['admin_debit', 'admin_credit']);
+  assert.equal(d.user.kycStatus, 'not_submitted');
+  // Ban: signed out at once, cannot sign in again; unban restores it.
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/ban`, { banned: true })).status, 200);
+  assert.equal((await p('GET', '/api/me')).body.user, null);
+  const again = client();
+  assert.equal((await again('POST', '/api/auth/login', { email: me.email, password: adult.password })).status, 403);
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/ban`, { banned: false })).status, 200);
+  assert.equal((await again('POST', '/api/auth/login', { email: me.email, password: adult.password })).status, 200);
+  const admMe = (await adm('GET', '/api/me')).body.user;
+  assert.equal((await adm('POST', `/api/admin/users/${admMe.id}/ban`, { banned: true })).status, 400);
+});
