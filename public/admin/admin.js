@@ -355,6 +355,7 @@ function winhouseFeedInfo(fd) {
       Páginas dos jogos (todos os mercados): ${dt ? `${dt.read} lidas agora${dt.failed ? `, ${dt.failed} com erro` : ''}, ${dt.cached} de ${dt.window} jogos nas próximas horas (${esc(fmtDateTime(dt.at))})` : 'ainda não lidas'} ·
       Páginas ao vivo (todos os mercados em jogo): ${ld ? (ld.pausedUntil ? `<span class="pill lost">rota não encontrada (404) — pausa até ${esc(fmtDateTime(ld.pausedUntil))}</span>` : `${ld.read} lidas agora${ld.failed ? `, ${ld.failed} com erro` : ''} de ${ld.live} jogos com odds${ld.route ? ` via ${esc(ld.route)}` : ''} (${esc(fmtDateTime(ld.at))})`) : 'ainda não lidas'} ·
       ${pushInfo ? `Odds em tempo real: ${pushInfo} ·` : ''}
+      Transmissões: ${fd.streams === false ? 'defina WINHOUSE_TENANT (a chave ifr_… do iframe) nas Variables' : fd.streams ? `${fd.streams.ids} jogos com vídeo, ${fd.streams.live} dos nossos ao vivo (${esc(fmtDateTime(fd.streams.at))})` : 'ainda não lidas'} ·
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }

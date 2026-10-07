@@ -388,6 +388,25 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .match-tabs button.active { color: #fff; border-bottom-color: var(--red); }
 .match-tabs .live-dot { margin: 0; }
 /* Market menu (Todos, Principais, Golos…): one scrolling row of chips. */
+/* Match page: video / tracker switch between the header and the tabs. */
+.match-views { display: flex; justify-content: center; gap: 8px; margin: 10px 0 0; }
+.match-views button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text-2); font-size: 12px; font-weight: 800; }
+.match-views button svg { width: 18px; height: 18px; }
+.match-views button.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.match-views button.none { opacity: .55; }
+.tracker-inline.off { display: none; }
+.stream-box { margin: 16px -20px -22px; aspect-ratio: 16 / 9; background: #000; border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; overflow: hidden; }
+.stream-box iframe { width: 100%; height: 100%; border: 0; display: block; }
+.stream-box.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--dim); }
+.stream-box.empty svg { width: 34px; height: 34px; color: var(--text-4); }
+/* Live page: TV switch (games with video only) on the title line, sports under it. */
+.live-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tv-toggle { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text-2); }
+.tv-toggle svg { width: 22px; height: 22px; }
+.tv-toggle small { font-size: 11px; font-weight: 800; }
+.tv-toggle.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.live-sports { margin: 0 0 14px; }
+.sport-pill small { opacity: .7; margin-left: 3px; }
 .market-cats { position: relative; display: flex; gap: 6px; margin: 0 0 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
 .market-cats::-webkit-scrollbar { display: none; }
 .market-cats button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
@@ -449,7 +468,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .casino-player { height: calc(100vh - 60px - 62px); }
   /* Compact match header: the markets start higher up the screen. */
   .match-hero { padding: 12px 14px 14px; }
-  section.match-hero .tracker-inline { margin: 12px -14px -14px; }
+  section.match-hero .tracker-inline, section.match-hero .stream-box { margin: 12px -14px -14px; }
   .match-comp { font-size: 11px; }
   .match-teams { gap: 6px; margin-top: 8px; }
   .match-team { font-size: 11px; gap: 5px; }

@@ -115,6 +115,10 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   socket.io do próprio sportsbook (`/sio`, evento `new-coefs`; o `coef_id` é o id da odd das
   páginas `/ajax`, e 1.00 é suspensa). As leituras das páginas continuam por baixo (a cada 30 s).
   `WINHOUSE_ODDS_PUSH=0` desliga; Admin → Feed mostra "Odds em tempo real".
+- **Transmissões**: com `WINHOUSE_TENANT` (a chave `ifr_…` do iframe) o servidor lê a cada minuto
+  `/ajax/streams` e marca os jogos com vídeo: o botão da TV na página Ao Vivo mostra só esses, e a
+  página do jogo tem o botão Live ao lado do Tracker. O vídeo aparece quando a lista ao vivo der o
+  endereço (`stream_url`).
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR

@@ -27,6 +27,8 @@ const ROUTES = {
   wsWidget: '/ws-widget?api_key={akey}&event_id={eid}',
   // A simpler tracker (no key): score, stats, situation, xy, timeline for a game id.
   tracker: '/ajax/tracker/{gameId}?lang={lang}',
+  // Games with live video: { success, ids: [gameId…] } for the operator's embed key (WINHOUSE_TENANT).
+  streams: '/ajax/streams?tenant={tenant}',
 };
 
 /**
@@ -179,13 +181,13 @@ export function marketCatalog(body) {
 }
 
 export function createWinHouseClient({
-  baseUrl = '', lang = 'pt', routes = {}, timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
+  baseUrl = '', lang = 'pt', routes = {}, tenant = '', timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const base = String(baseUrl || '').replace(/\/+$/, '');
   const paths = { ...ROUTES, ...Object.fromEntries(Object.entries(routes).filter(([, v]) => v)) };
   const enabled = /^https:\/\//.test(base);
   const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''))
-    .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? ''));
+    .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? '')).replace('{tenant}', encodeURIComponent(tenant));
 
   async function request(key, vars) {
     if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
@@ -390,6 +392,8 @@ export function createWinHouseClient({
     widget: (gameId) => request('widget', { gameId }),
     widgetData: (eid, akey) => request('widgetData', { eid, akey }),
     tracker: (gameId) => request('tracker', { gameId }),
+    streams: () => request('streams'),
+    hasTenant: !!tenant,
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,
     markets,
@@ -902,6 +906,8 @@ export function createWinHouseFeed(db, {
           // A goal makes every earlier price stale, pushed ones too.
           if (scoreChanged) { livePages.delete(ev.externalId); pushed.delete(row.id); }
           liveListPrices.set(ev.externalId, ev.prices);
+          const video = String(raw.stream_url || '').trim();
+          if (/^https:\/\//.test(video)) streamUrls.set(ev.externalId, video); else streamUrls.delete(ev.externalId);
           indexCoefs(ev.externalId, row.id, ev.coefs);
           const n = writePrices(row.id, Object.keys(ev.prices).length ? { ...liveFresh(ev.externalId), ...ev.prices } : {});
           db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(n ? nowIso() : null, row.id);
@@ -909,6 +915,7 @@ export function createWinHouseFeed(db, {
         });
       } catch (err) { log(`WinHouse ao vivo ${ev.externalId}: ${err.message}`); }
     }
+    for (const ext of [...streamUrls.keys()]) if (!seen.has(ext)) streamUrls.delete(ext);
     const ended = finishMissing(seen);
     state.last.live = { at: nowIso(), live: seen.size, withOdds: open, ...ended };
     return state.last.live;
@@ -1035,6 +1042,26 @@ export function createWinHouseFeed(db, {
     return n;
   }
 
+  // ---------- live video ----------
+  const streamIds = new Set(); // WinHouse game ids with live video right now (/ajax/streams)
+  const streamUrls = new Map(); // game id → video address the live list gives (stream_url), if any
+  /** Every minute: which games have video (needs WINHOUSE_TENANT, the operator's embed key). */
+  async function syncStreams() {
+    if (!client.streams || !client.hasTenant) return null;
+    const r = await client.streams();
+    if (!r.ok || !Array.isArray(r.body?.ids)) throw new Error(`streams HTTP ${r.status}`);
+    streamIds.clear();
+    for (const id of r.body.ids) streamIds.add(String(id).replace(/\s+/g, ''));
+    const live = db.prepare("SELECT external_id FROM events WHERE source = ? AND status = 'live'").all(SOURCE);
+    state.last.streams = { at: nowIso(), ids: streamIds.size, live: live.filter((e) => streamIds.has(e.external_id)).length };
+    return state.last.streams;
+  }
+  const streamOf = (ext) => {
+    const id = String(ext);
+    const url = streamUrls.get(id) || null;
+    return { has: streamIds.has(id) || !!url, url };
+  };
+
   /**
    * Every in-play market: each live game's own page (WINHOUSE_LIVE_EVENT), games with open prices
    * only, least recently read first, at most `liveDetailPerCycle` per run, each every
@@ -1113,8 +1140,9 @@ export function createWinHouseFeed(db, {
     // Live first: it also finds WinHouse's clock zone before pre-match start times are read.
     const details = guard('páginas dos jogos', syncDetails);
     const liveDetails = guard('páginas ao vivo', syncLiveDetails);
-    live().then(pre).then(details).then(liveDetails);
-    const timers = [setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const streams = guard('streams', syncStreams);
+    live().then(pre).then(details).then(liveDetails).then(streams);
+    const timers = [setInterval(streams, 60_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1123,8 +1151,9 @@ export function createWinHouseFeed(db, {
     tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block: { ...block, extra: block.extra ? block.extra.source : null, leagues: block.leagues ? block.leagues.size : null },
     events: Object.fromEntries(db.prepare('SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status').all(SOURCE).map((r) => [r.status, r.n])),
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
+    streams: client.hasTenant ? (state.last.streams || null) : false,
     push: { socket: oddsPush?.status() ?? null, ...pushStats, tracked: coefIndex.size, games: eventCoefs.size },
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }
