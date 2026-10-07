@@ -155,9 +155,8 @@ export function normalizeWidgetData(body) {
   }
   const xy = Array.isArray(d.xy) ? d.xy : d.xy && typeof d.xy === 'object' ? [d.xy.x, d.xy.y] : null;
   let ball = null;
-  // [1, 1] / [0, 0] come with "Ball Safe" and no play: a placeholder, not a position.
-  const placeholder = xy && ((num(xy[0]) === 1 && num(xy[1]) === 1) || (num(xy[0]) === 0 && num(xy[1]) === 0));
-  if (xy && !placeholder && num(xy[0]) !== null && num(xy[1]) !== null) {
+  // xy is the real position, corners included: [1, 1] is the bottom-right corner flag (home corner).
+  if (xy && num(xy[0]) !== null && num(xy[1]) !== null) {
     const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
     ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
   }
