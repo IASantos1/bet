@@ -1,5 +1,6 @@
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
+import { leagueTier } from './leagues.js';
 
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
@@ -218,7 +219,10 @@ export function createWinHouseClient({
     let id = gameId;
     if (!id) {
       const list = await request(live ? 'live' : 'prematchMain', {});
-      id = eventsOf(list.body).find((e) => e?.id)?.id ?? null;
+      const evs = eventsOf(list.body).filter((e) => e?.id);
+      // Live: the best game we would show (football first, then the biggest league), not just the first.
+      const pick = live ? bestLiveGame(evs) : evs[0];
+      id = pick?.id ?? null;
       if (!id) throw new Error(live ? 'Nenhum jogo na lista ao vivo para abrir.' : 'Nenhum jogo na lista pré-jogo para abrir.');
     }
     let key = live ? 'liveEvent' : 'prematchEvent';
@@ -418,6 +422,15 @@ export function leagueTerms(list) {
   const terms = String(list || '').split(/[,;\n]/).map((t) => t.trim()).filter(Boolean)
     .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return terms.length ? new RegExp(terms.join('|'), 'i') : null;
+}
+/** Admin sample: a shown sport, not blocked, football first, then the highest league tier. */
+export function bestLiveGame(evs) {
+  const rank = (e) => {
+    const sport = SPORTS[Number(e.sport_id)];
+    if (!sport || blockedGame(e)) return 1e6;
+    return (sport === 'futebol' ? 0 : 100) + leagueTier(sport, e.league || e.league_name || '');
+  };
+  return [...evs].sort((a, b) => rank(a) - rank(b))[0] || null;
 }
 /** True when the competition or a team marks the game as women's / youth / minor (as configured). */
 export function blockedGame(ev, { women = true, youth = true, minor = true, extra = null } = {}) {

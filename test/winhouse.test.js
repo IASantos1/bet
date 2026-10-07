@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOdd, parseOdds, marketKey, parseLiveEvent, createWinHouseClient } from '../server/winhouse.js';
+import { parseOdd, parseOdds, marketKey, parseLiveEvent, createWinHouseClient, bestLiveGame } from '../server/winhouse.js';
 
 test('odds strings parse into id, price, selection and market; known markets map to ours', () => {
   assert.deepEqual(parseOdd('1223894688|1.28|1|1001|1x2 [1x2]'), { oddId: 1223894688, price: 1.28, selection: '1', marketId: 1001, marketName: '1x2', marketCode: '1x2' });
@@ -480,4 +480,15 @@ test('live book: suspended picks (game_status "0" or 1.00) are skipped; WINHOUSE
   if (loadConfig) {
     assert.equal(loadConfig({ WINHOUSE_LIVE_EVENT: '/ajax/prematchgame/{gameId}?lang={lang}' }).winhouse.routes.liveEvent, '');
   }
+});
+
+test('bestLiveGame: football of a big league before cricket or virtual games', () => {
+  const pick = bestLiveGame([
+    { id: 1, sport_id: 21, league: 'India. Cricket League' },
+    { id: 2, sport_id: 1, league: 'Esoccer Battle - 8 mins' },
+    { id: 3, sport_id: 1, league: 'Egypt. Second Division' },
+    { id: 4, sport_id: 1, league: 'England. Premier League' },
+    { id: 5, sport_id: 2, league: 'NBA' },
+  ]);
+  assert.equal(pick.id, 4);
 });
