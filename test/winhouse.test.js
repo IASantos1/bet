@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, leagueKey } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, leagueKey, detailOdds } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -248,7 +248,7 @@ test('whole-line totals (push voids) and more ice hockey markets; quarter lines 
 });
 
 test('market catalog: every market a game page offers (groups of odd objects)', async () => {
-  const { marketCatalog, detailOdds } = await import('../server/winhouse.js');
+  const { marketCatalog } = await import('../server/winhouse.js');
   const o = (id, odd, mid, market, opt, special = null) => ({ id, game_id: 5, odd, market_id: mid, market, market_option: `${opt} `, special_value: special, mainCategory: 'Main' });
   const body = [
     [o(1, '1.89', '1001', '1x2 [1x2]', '1'), o(2, '3.16', '1001', '1x2 [1x2]', 'x'), o(3, '3.91', '1001', '1x2 [1x2]', '2')],
@@ -281,7 +281,7 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
     [o('1.2', 1725, 'over', '0.5'), o('3.75', 1725, 'under', '0.5'), o('3.38', 1714, 'over', '1.5'), o('1.2', 1714, 'under', '1.5')],
     [o('3.0', 1012, '1/1')], // half time / full time: needs the half-time score, not offered
   ];
-  const { detailOdds } = await import('../server/winhouse.js');
+
   assert.deepEqual(pricesFor(detailOdds(page), 'futebol'), {
     '1x2|1': 189, '1x2|X': 316, '1x2|2': 391, 'btts|Y': 192, 'btts|N': 176, 'oe|ODD': 184, 'oe|EVEN': 180,
     'hcp|1-2.5': 790, 'hcp|2+2.5': 102, 'hcp|1-1': 278, 'hcp|2+1': 134,
@@ -561,4 +561,23 @@ test('football league list: only the listed competitions (names compared loosely
   assert.equal(t.row(40).home_score, 1); // still followed (it has a bet)
   assert.equal(open(40), 0); // but closed to new bets
   assert.ok(open(41) > 0);
+});
+
+test('game pages: the line after the [CODE] tag is not part of the market name; lines gone from the book are removed, not left locked', async () => {
+  const o = (id, odd, opt, special) => ({ id, odd, market_id: '1000300', market: 'European Handicap Including Overtime [EH_Incl_OT] 0:8', market_option: `${opt} `, special_value: special });
+  assert.equal(detailOdds([[o(1, '2.94', '1', '0:6')]])[0].marketName, 'European Handicap Including Overtime');
+  const lists = { live: [football(50, 30, '0-0', ODD)], livePages: { 50: [[o(1, '2.94', '1', '0:8'), o(2, '1.5', '2', '0:8')], [o(3, '1.88', '1', '0:6')]] } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  await t.feed.syncLiveDetails();
+  const codes = () => t.db.prepare("SELECT code, active FROM selections WHERE event_id = ? AND market = 'x' ORDER BY code").all(t.row(50).id).map((r) => `${r.code}=${r.active}`);
+  assert.deepEqual(codes(), [
+    '1000300~European Handicap Including Overtime~1 (0:6)=1', '1000300~European Handicap Including Overtime~1 (0:8)=1', '1000300~European Handicap Including Overtime~2 (0:8)=1',
+  ]);
+  // The 0:8 line leaves the book: gone, not shown locked.
+  lists.livePages[50] = [[o(3, '1.9', '1', '0:6')]];
+  lists.live = [football(50, 31, '1-0', ODD)]; // a goal: the page is read again at once
+  await t.feed.syncLive();
+  await t.feed.syncLiveDetails();
+  assert.deepEqual(codes(), ['1000300~European Handicap Including Overtime~1 (0:6)=1']);
 });
