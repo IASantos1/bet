@@ -61,7 +61,7 @@ const winhouseFeed = winhouse.enabled && config.winhouse.feed
   : null;
 // WinHouse match tracker (football in play): stats, ball and timeline, read only for watched matches.
 const winhouseTracker = winhouse.enabled && config.winhouse.tracker
-  ? createWinHouseTracker(db, { client: winhouse, pollMs: config.winhouse.trackerPollMs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  ? createWinHouseTracker(db, { client: winhouse, pollMs: config.winhouse.trackerPollMs, ws: config.winhouse.trackerWs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 const stopWinhouse = winhouseFeed ? winhouseFeed.start({ liveMs: config.winhouse.liveMs, prematchMs: config.winhouse.prematchMs }) : () => {};
 

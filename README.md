@@ -107,7 +107,9 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   (ataque, ataque perigoso, canto…), as estatísticas (posse, ataques, ataques perigosos, remates,
   cantos, cartões) e a cronologia, a partir do tracker da WinHouse: `/ajax/widget` dá o `EID` e a
   chave, `/widget-data` o estado do jogo. Só é lido para os jogos que alguém tem abertos (a cada
-  `WINHOUSE_TRACKER_POLL_MS`); `WINHOUSE_TRACKER=0` desliga. Admin → Feed → "Ver tracker" mostra o
+  `WINHOUSE_TRACKER_POLL_MS`); `WINHOUSE_TRACKER=0` desliga. A posição da bola (`xy`) e a situação
+  chegam pelo WebSocket do tracker (`ws-widget`, cerca de 1 por segundo); com ele ligado, o
+  `widget-data` só é relido a cada 15 s (cronologia, contagens). `WINHOUSE_TRACKER_WS=0` desliga-o. Admin → Feed → "Ver tracker" mostra o
   que a WinHouse devolve para um jogo.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA

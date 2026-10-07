@@ -22,6 +22,8 @@ const ROUTES = {
   // Match tracker: the widget page gives the tracker's event id and key, widget-data the state.
   widget: '/ajax/widget?event_id={gameId}&bg=transparent',
   widgetData: '/widget-data?event_id={eid}&api_key={akey}',
+  // Live tracker frames (ball position, situation…) about every second, same host over wss://.
+  wsWidget: '/ws-widget?api_key={akey}&event_id={eid}',
 };
 
 /**
@@ -273,6 +275,8 @@ export function createWinHouseClient({
     liveEvent: (gameId) => request('liveEvent', { gameId }),
     widget: (gameId) => request('widget', { gameId }),
     widgetData: (eid, akey) => request('widgetData', { eid, akey }),
+    wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
+    origin: base,
     markets,
   };
 }
