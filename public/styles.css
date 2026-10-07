@@ -387,6 +387,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .match-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; color: var(--text-2); padding: 11px 16px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .match-tabs button.active { color: #fff; border-bottom-color: var(--red); }
 .match-tabs .live-dot { margin: 0; }
+/* Market menu (Todos, Principais, Golos…): one scrolling row of chips. */
+.market-cats { position: relative; display: flex; gap: 6px; margin: 0 0 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.market-cats::-webkit-scrollbar { display: none; }
+.market-cats button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.market-cats button small { font-size: 10px; color: var(--text-4); font-weight: 700; }
+.market-cats button.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.market-cats button.active small { color: #ffffffb3; }
 .market-block { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
 .market-head { font-size: 12px; font-weight: 800; color: var(--text-2); margin-bottom: 10px; }
 .market-odd { display: flex; justify-content: space-between; align-items: center; padding: 11px 12px; gap: 8px; font-size: 14px; }
@@ -440,11 +447,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 @media (max-width: 700px) {
   .casino-player { height: calc(100vh - 60px - 62px); }
-  .match-teams { gap: 6px; }
-  .match-team { font-size: 12px; }
-  .team-icon.big { width: 48px; height: 48px; font-size: 16px; }
-  .team-icon.big img { width: 44px; height: 44px; }
-  .match-score { font-size: 28px; }
+  /* Compact match header: the markets start higher up the screen. */
+  .match-hero { padding: 12px 14px 14px; }
+  section.match-hero .tracker-inline { margin: 12px -14px -14px; }
+  .match-comp { font-size: 11px; }
+  .match-teams { gap: 6px; margin-top: 8px; }
+  .match-team { font-size: 11px; gap: 5px; }
+  .team-icon.big { width: 36px; height: 36px; font-size: 13px; }
+  .team-icon.big img { width: 32px; height: 32px; }
+  .match-score { font-size: 22px; letter-spacing: 1px; }
+  .match-kickoff { font-size: 17px; }
+  .match-hero .live-clock.big { font-size: 12px; }
+  .match-tabs { margin: 10px 0 10px; }
+  .match-tabs button { padding: 9px 14px; }
   .match-center { min-width: 80px; }
   .match-stats-grid { grid-template-columns: 1fr; }
   .market-line { grid-template-columns: 70px 1fr; }

@@ -37,7 +37,7 @@ const state = {
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
   casinoSession: null,
-  match: { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(),
   mode: 'single',
   sport: '',
@@ -1013,6 +1013,8 @@ document.addEventListener('click', async (e) => {
   if (opener && !e.target.closest('a, button')) { location.hash = `#/jogo/${opener.dataset.open}`; return; }
   const matchTab = e.target.closest('[data-match-tab]');
   if (matchTab) { state.match.tab = matchTab.dataset.matchTab; render({ keepScroll: true }); return; }
+  const marketCatBtn = e.target.closest('[data-market-cat]');
+  if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
 
   const remove = e.target.closest('[data-remove]');
   if (remove) {
@@ -1152,7 +1154,7 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
+  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
   $('#sideTracker')?.replaceChildren();
 }
 
@@ -1308,17 +1310,56 @@ function matchPage(sub) {
     ${footer()}`;
 }
 
+// Market menu of the match page, in this order. Our own markets by type; the provider's ('x') by name.
+const MARKET_CATS = [
+  ['todos', 'Todos'], ['principais', 'Principais'], ['golos', 'Golos'], ['handicap', 'Handicap'], ['equipa', 'Equipa'],
+  ['combinadas', 'Combinadas'], ['resultados', 'Resultados'], ['periodos', 'Períodos'], ['especiais', 'Especiais'],
+  ['marcadores', 'Marcadores'], ['cantos', 'Cantos e cartões'],
+];
+const CAT_BY_MARKET = {
+  '1x2': 'principais', dc: 'principais', dnb: 'principais', ml: 'principais',
+  ou: 'golos', btts: 'golos', oe: 'golos', gou: 'golos', goe: 'golos',
+  hcp: 'handicap', ghcp: 'handicap', tou: 'equipa', cs: 'resultados',
+  pw: 'periodos', pou: 'periodos', phcp: 'periodos', poe: 'periodos', pbtts: 'periodos',
+};
+const CAT_BY_NAME = [
+  ['cantos', /corner|card|booking|canto|cart[aã]o/],
+  ['marcadores', /scorer|player|marcador|jogador/],
+  ['periodos', /\b(half|halves|quarter|period|set|innings?)\b|intervalo|parte\b|tempo\b/],
+  ['combinadas', /&|\+|\band\b|combo|\be\b.*\b(total|golos)/],
+  ['handicap', /handicap/],
+  ['equipa', /\bteam [12]\b|home team|away team|individual|equipa/],
+  ['golos', /goal|total|both|btts|golo|odd|even|multi|will score|exact number/],
+  ['resultados', /result|score|exact|margin|winner|draw|1x2|double chance|\bwin/],
+];
+function marketCat(mk) {
+  if (mk.market !== 'x') return CAT_BY_MARKET[mk.market] || 'especiais';
+  const name = String(mk.name || '').toLowerCase();
+  return CAT_BY_NAME.find(([, re]) => re.test(name))?.[0] || 'especiais';
+}
+
 function marketsView(e) {
   if (!e.markets?.length) {
     return `<div class="panel empty">${e.status === 'live' ? '<span class="odds-state suspended">Suspenso</span>' : 'Ainda não há mercados para este jogo.'}</div>`;
   }
+  const m = state.match;
+  const counts = new Map();
+  for (const mk of e.markets) counts.set(marketCat(mk), (counts.get(marketCat(mk)) || 0) + 1);
+  if (m.cat !== 'todos' && !counts.has(m.cat)) m.cat = 'todos';
+  const chips = MARKET_CATS.filter(([k]) => k === 'todos' || counts.has(k))
+    .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
+  const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk) === m.cat);
+  return `<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
+}
+
+function marketBlocks(e, markets) {
   const locked = !isOpen(e);
   const btn = (s, label = s.label) => {
     const off = locked || !s.active;
     return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${off ? ' locked' : ''}" data-sel="${s.id}" ${off ? 'disabled' : ''}>
       <small>${esc(label)}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
   };
-  return e.markets.map((mk) => {
+  return markets.map((mk) => {
     let grid;
     // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
     const bare = (s) => s.code.replace(/^\d:/, '');
@@ -1492,6 +1533,9 @@ function afterMatchRender() {
   // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
   if (state.match.data?.sport === 'tenis') updateServe(state.match.data);
   $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
+  // The chosen market menu entry stays in view (the row scrolls sideways on phones).
+  const cat = $('.market-cats .active');
+  if (cat) cat.parentElement.scrollLeft = cat.offsetLeft - (cat.parentElement.clientWidth - cat.offsetWidth) / 2;
   mountLiveWidget();
 }
 
