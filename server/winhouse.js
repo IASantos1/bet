@@ -39,7 +39,7 @@ export function parseOdd(raw) {
   if (parts.length < 5) return null;
   const [oddId, price, selection, marketId, ...rest] = parts;
   const label = rest.join('|');
-  const m = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(label);
+  const m = /^(.*?)\s*\[([^\]]+)\]/.exec(label);
   const p = Number(price);
   if (!/^\d+$/.test(oddId) || !Number.isFinite(p) || p <= 1 || !/^\d+$/.test(marketId) || !selection) return null;
   return {
@@ -118,7 +118,8 @@ export function detailOdds(body) {
     // A suspended pick comes as 1.00 or with game_status "0" (the sportsbook's own rule): skip it.
     const suspended = v.game_status !== undefined && v.game_status !== null && String(v.game_status) === '0';
     if (Number.isFinite(price) && price > 1.001 && !suspended && Number.isInteger(marketId) && marketId > 0 && selection) {
-      const m = /^(.*?)\s*\[([^\]]+)\]\s*$/.exec(String(v.market || ''));
+      // "Handicap [Handicap] 0:1": the name, the code; the line after the tag is the first line's, not the market's.
+      const m = /^(.*?)\s*\[([^\]]+)\]/.exec(String(v.market || ''));
       const special = v.special_value === null || v.special_value === undefined || v.special_value === '' ? null : String(v.special_value).trim();
       out.push({
         oddId: Number(v.id) || 0, price, selection, marketId,
@@ -734,10 +735,22 @@ export function createWinHouseFeed(db, {
      ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
   );
 
+  const closedSel = db.prepare(`SELECT s.id, s.market, s.code FROM selections s WHERE s.event_id = ? AND s.active = 0 AND s.src IS NULL
+    AND s.market NOT IN ('1x2', 'ml') AND NOT EXISTS (SELECT 1 FROM bet_legs l WHERE l.selection_id = s.id)`);
+  const dropSel = db.prepare('DELETE FROM selections WHERE id = ?');
+
   function writePrices(eventId, prices) {
     prices = withPushed(eventId, prices);
     db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
     for (const [k, v] of Object.entries(prices)) upsertSel.run(eventId, ...k.split('|'), v);
+    // Lines the book no longer offers go (they would pile up as locked picks); a pick suspended by
+    // the push a moment ago stays, locked, and so does anything with bets on it.
+    const held = pushed.get(eventId);
+    for (const r of closedSel.all(eventId)) {
+      const p = held?.get(`${r.market}|${r.code}`);
+      if (p && p.v === 0 && Date.now() - p.at < PUSH_FRESH_MS) continue;
+      dropSel.run(r.id);
+    }
     return Object.keys(prices).length;
   }
 
