@@ -171,11 +171,20 @@ function renderSearch(q) {
 const isOpen = (e) => e.status === 'live' || (e.status === 'scheduled' && new Date(e.startTime) > new Date());
 const inSlip = (selId) => state.slip.some((s) => s.selectionId === selId);
 
+// In play, a favourite this short means the main market is as good as gone: the other markets are the bet.
+const SHORT_FAVOURITE = 1.05;
+
 function oddsButtons(e, { labels = 'code' } = {}) {
   const sels = e.selections;
-  if (!sels.length || (e.status === 'live' && sels.every((s) => !s.active))) {
-    return `<div class="odds-off">${e.status === 'live' ? 'Mercado ao vivo suspenso — à espera de odds' : 'Apostas indisponíveis neste jogo'}</div>`;
+  if (e.status === 'live') {
+    const open = sels.filter((s) => s.active);
+    const mainGone = !open.length || open.length < sels.length || open.some((s) => s.odds <= SHORT_FAVOURITE);
+    // Main market closed or not worth it (a big lead), other markets open: straight to them.
+    if (mainGone && e.marketCount > 0) return `<a class="odds-state bet-now" href="#/jogo/${e.id}">Aposte já</a>`;
+    // Nothing open (goal, penalty, card, VAR…): suspended until the book reopens.
+    if (!open.length) return '<div class="odds-state suspended" aria-disabled="true">Suspenso</div>';
   }
+  if (!sels.length) return '<div class="odds-off">Apostas indisponíveis neste jogo</div>';
   return `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => {
     const prev = state.previousOdds.get(s.id);
     const move = prev && prev !== s.odds ? (s.odds > prev ? ' up' : ' down') : '';
@@ -1330,7 +1339,7 @@ function matchPage(sub) {
 
 function marketsView(e) {
   if (!e.markets?.length) {
-    return `<div class="panel empty">${e.status === 'live' ? 'Mercados suspensos neste momento. Voltam a abrir quando chegar a próxima odd.' : 'Ainda não há mercados para este jogo.'}</div>`;
+    return `<div class="panel empty">${e.status === 'live' ? '<span class="odds-state suspended">Suspenso</span>' : 'Ainda não há mercados para este jogo.'}</div>`;
   }
   const locked = !isOpen(e);
   const btn = (s, label = s.label) => {

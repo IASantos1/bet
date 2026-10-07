@@ -12,6 +12,7 @@
   --text: #e8eaed; --text-2: #b0b7bf; --text-3: #868e98; --text-4: #676f79;
   /* Estado */
   --live: #e95a74; --up: #51c580; --down: #e95a74; --win: #38e0a0; --highlight: #ff6890;
+  --suspended: #c0453f; --bet-now: #e2b33c;
   /* Layout */
   --radius: 6px; --row-h: 55px; --odd-w: 82px; --sidebar-w: 280px; --slip-w: 320px;
   /* Older names, kept for the rest of the stylesheet */
@@ -154,6 +155,11 @@ h1, h2, h3 { margin-top: 0; }
 .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .odds.two { grid-template-columns: repeat(2, 1fr); }
 .odds-off { color: var(--text-4); font-size: 11px; padding: 10px 0; text-align: center; border: 1px dashed var(--border); border-radius: 5px; }
+.odds-state { display: block; width: 100%; padding: 9px 0; border-radius: var(--radius); text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.odds-state.suspended { background: var(--suspended); color: #fff; cursor: not-allowed; user-select: none; }
+.odds-state.bet-now { background: var(--bet-now); color: #1f1a08; text-decoration: none; }
+.odds-state.bet-now:hover { filter: brightness(1.08); }
+.panel.empty .odds-state { display: inline-block; width: auto; padding: 8px 22px; }
 .odd-btn { border: 1px solid transparent; background: var(--odd-cell); color: var(--odd-price); border-radius: var(--radius); padding: 9px 4px; font-weight: 800; font-size: 12px; min-width: 0; transition: border-color .15s, background .15s; }
 .odd-btn:hover:not(:disabled) { background: var(--odd-hover); }
 .odd-btn.selected, .odd-btn.selected:hover:not(:disabled) { background: var(--odd-selected); color: var(--odd-selected-price); }
@@ -307,7 +313,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .game-grid { grid-template-columns: repeat(4, 1fr); }
   .topnav a { padding: 0 9px; }
   .event-row { grid-template-columns: 60px minmax(0, 1fr); }
-  .event-row .odds, .event-row .odds-off { grid-column: 1 / -1; }
+  .event-row .odds, .event-row .odds-off, .event-row .odds-state { grid-column: 1 / -1; }
   .admin-grid { grid-template-columns: repeat(3, 1fr); }
   .admin-grid .field:nth-child(n+4) { grid-column: auto; }
 }
