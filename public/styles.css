@@ -1,13 +1,13 @@
 :root {
   /* Palette (WinHouse theme). Marca */
   --brand: #67788c; --on-brand: #ffffff; --logo: #67788c; --register: #42946b; --login: #67788c;
-  /* Superfícies (página #181C20 a 60% e cartões #333A42 a 67%, já compostos sobre o fundo) */
-  --page: #0e1113; --card: #272c32; --panels: #282d34; --dim: #20262c; --row-hover: #48515b;
+  /* Superfícies (página e barras laterais suavizadas: menos preto que o tema original) */
+  --page: #1a1f24; --card: #272c32; --panels: #282d34; --dim: #20262c; --row-hover: #48515b;
   --border: #3e444b; --scrollbar: #1c2126; --disabled: #303336;
   /* Odds */
   --odd-cell: #374555; --odd-price: #e8eaed; --odd-hover: #4a5a6d; --odd-selected: #67788c; --odd-selected-price: #ffffff;
   /* Estrutura */
-  --nav: #16191d; --nav-sep: #1c2126; --nav-label: #ffffff; --nav-sub: #8b939c;
+  --nav: #1e2329; --nav-sep: #2a3037; --nav-label: #ffffff; --nav-sub: #8b939c;
   /* Texto */
   --text: #e8eaed; --text-2: #b0b7bf; --text-3: #868e98; --text-4: #676f79;
   /* Estado */
@@ -274,7 +274,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 /* ---------- modal / toast ---------- */
 .modal-backdrop { position: fixed; inset: 0; background: #000b; z-index: 100; display: grid; place-items: center; padding: 20px; }
-.modal { width: min(460px, 100%); max-height: calc(100vh - 40px); overflow: auto; background: var(--dim); border: 1px solid #343a43; border-radius: 10px; box-shadow: 0 25px 80px #000; }
+.modal { width: min(460px, 100%); max-height: calc(100vh - 40px); overflow: auto; background: var(--dim); border: 1px solid #343a43; border-radius: 10px; box-shadow: 0 20px 50px #0007; }
 .modal.wide { width: min(640px, 100%); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .modal-head h2 { margin: 0; font-size: 18px; }
@@ -313,7 +313,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 200px minmax(0, 1fr); }
-  .betslip { position: fixed; right: 0; top: 68px; bottom: 62px; height: auto; width: 330px; z-index: 45; transform: translateX(100%); transition: transform .25s; box-shadow: -20px 0 50px #000; }
+  .betslip { position: fixed; right: 0; top: 68px; bottom: 62px; height: auto; width: 330px; z-index: 45; transform: translateX(100%); transition: transform .25s; box-shadow: -12px 0 30px #0005; }
   .betslip.open { transform: none; }
   .slip-fab { display: flex; position: fixed; right: 16px; bottom: 76px; z-index: 55; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--red); color: #fff; align-items: center; justify-content: center; box-shadow: 0 8px 24px #67788c70; font-size: 20px; }
   .slip-open .slip-fab { display: none; }
@@ -338,7 +338,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .top-actions .deposit-btn, #searchBtn { display: none; }
   .outline-btn, .primary-btn { height: 34px; padding: 0 11px; font-size: 12px; }
   .layout { display: block; min-height: calc(100vh - 60px); }
-  .left-sidebar { position: fixed; z-index: 90; top: 0; bottom: 0; left: 0; width: 270px; transform: translateX(-100%); transition: transform .25s; box-shadow: 20px 0 50px #000; overflow: auto; }
+  .left-sidebar { position: fixed; z-index: 90; top: 0; bottom: 0; left: 0; width: 270px; transform: translateX(-100%); transition: transform .25s; box-shadow: 12px 0 30px #0005; overflow: auto; }
   .left-sidebar.open { transform: none; }
   .close-mobile { display: block; border: 0; background: none; color: #aaa; font-size: 20px; }
   .content { padding: 14px 14px 90px; }
@@ -520,7 +520,7 @@ table.compare td.center { text-align: center; }
 .car-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(270px, 1fr); gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; padding-bottom: 6px; scrollbar-width: thin; }
 .car-track > * { scroll-snap-align: start; min-width: 0; }
 @media (min-width: 1300px) { .car-track { grid-auto-columns: calc((100% - 20px) / 3); } }
-.car-btn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: #12151aee; color: #fff; font-size: 20px; line-height: 1; display: grid; place-items: center; box-shadow: 0 6px 18px #000a; }
+.car-btn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: #12151aee; color: #fff; font-size: 20px; line-height: 1; display: grid; place-items: center; box-shadow: 0 4px 12px #0006; }
 .car-btn.prev { left: -10px; }
 .car-btn.next { right: -10px; }
 .car-btn:hover { background: var(--red); border-color: var(--red); }
