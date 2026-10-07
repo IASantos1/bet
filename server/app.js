@@ -98,7 +98,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -331,6 +331,48 @@ export function createApp(db, {
       const provider = providerFor(ev);
       if (!provider) return res.json({ h2h: null, prediction: null, standings: null, rankings: null });
       res.json(await provider.matchInsights(ev));
+    } catch (err) { next(err); }
+  });
+
+  // ---------- live video (HLS, see whlive.js) ----------
+  // Only for WinHouse games in play here: the endpoint never mints a token for an arbitrary id.
+  const liveVideoLimiter = createRateLimiter({ windowMs: 60_000, max: 60 });
+  const liveGameRow = (param) => {
+    const v = String(param || '');
+    if (!/^\d{1,12}$/.test(v)) return null;
+    // Our event id or the WinHouse game id.
+    return db.prepare(`SELECT id, external_id, status FROM events WHERE source = 'winhouse' AND (id = ? OR external_id = ?)
+      ORDER BY (id = ?) DESC LIMIT 1`).get(Number(v), v, Number(v));
+  };
+  const videoOut = (row, s) => ({ event_id: Number(row.external_id), id: row.id, stream_id: Number(s.streamId), hls_url: s.hlsUrl, expires_at: s.expiresAt });
+
+  app.get('/api/live/:eventId', async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      if (!liveVideoLimiter(req.ip)) throw new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.');
+      if (!winhouseLive?.enabled) return res.status(404).json({ success: false, error: 'Transmissões desligadas.' });
+      const row = liveGameRow(req.params.eventId);
+      if (!row || row.status !== 'live') return res.status(404).json({ success: false, error: 'Jogo não está ao vivo.' });
+      const s = await winhouseLive.getLiveStream(row.external_id);
+      if (s.error) return res.status(404).json({ success: false, event_id: Number(row.external_id), error: s.error });
+      res.json({ success: true, ...videoOut(row, s) });
+    } catch (err) { next(err); }
+  });
+
+  // Every game in play here with video right now (the /ajax/streams list), with its HLS address.
+  app.get('/api/live', async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      if (!liveVideoLimiter(req.ip)) throw new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.');
+      if (!winhouseLive?.enabled || !winhouseFeed?.streamOf) return res.json({ success: true, streams: [] });
+      const rows = db.prepare("SELECT id, external_id, status FROM events WHERE source = 'winhouse' AND status = 'live'").all()
+        .filter((r) => winhouseFeed.streamOf(r.external_id).has).slice(0, 40);
+      const streams = [];
+      for (let i = 0; i < rows.length; i += 4) {
+        const got = await Promise.all(rows.slice(i, i + 4).map((r) => winhouseLive.getLiveStream(r.external_id)));
+        got.forEach((s, j) => { if (!s.error) streams.push(videoOut(rows[i + j], s)); });
+      }
+      res.json({ success: true, streams });
     } catch (err) { next(err); }
   });
 

@@ -405,6 +405,8 @@ function resultsPage() {
 
 const ICON_TV = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 2.5l4 3.5 4-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 10v5l4.5-2.5z" fill="currentColor"/></svg>';
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8v8l6-4z" fill="currentColor"/></svg>';
+const ICON_EXPAND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const expandBtn = () => `<button class="expand-btn" data-expand title="Expandir" aria-label="Expandir">${ICON_EXPAND}</button>`;
 const ICON_PITCH = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5v14M2 9.5h3v5H2M22 9.5h-3v5h3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 
 function livePage() {
@@ -1037,6 +1039,8 @@ document.addEventListener('click', async (e) => {
   if (liveSport) { state.liveSport = liveSport.dataset.liveSport; render({ keepScroll: true }); return; }
   const matchView = e.target.closest('[data-match-view]');
   if (matchView) { state.match.view = matchView.dataset.matchView; render({ keepScroll: true }); return; }
+  const expand = e.target.closest('[data-expand]');
+  if (expand) { toggleExpand(expand.closest('.trk, .stream-box')); return; }
   const marketCatBtn = e.target.closest('[data-market-cat]');
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
 
@@ -1145,7 +1149,7 @@ function bindChrome() {
   }));
   $$('.quick-stakes button').forEach((b) => b.addEventListener('click', () => { $('#stake').value = b.dataset.stake; renderSlip(); }));
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => render());
   // The live widget sits above the slip on wide screens and inside the match page on narrow ones.
   let resizeTimer;
@@ -1178,7 +1182,7 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
+  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   $('#sideTracker')?.replaceChildren();
 }
 
@@ -1327,8 +1331,7 @@ function matchPage(sub) {
         <div class="match-center">${center}</div>
         <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
-      ${live && m.view === 'stream' ? streamBox(e) : ''}
-      <div id="trackerInline" class="tracker-inline${live && m.view === 'stream' ? ' off' : ''}"></div>
+      <div id="trackerInline" class="tracker-inline"></div>
     </section>
     ${live ? `<div class="match-views">
       <button class="${m.view === 'stream' ? 'active' : ''}${e.stream ? '' : ' none'}" data-match-view="stream" title="${e.stream ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
@@ -1367,10 +1370,19 @@ function marketCat(mk) {
   return CAT_BY_NAME.find(([, re]) => re.test(name))?.[0] || 'especiais';
 }
 
+/** Tracker / video full screen: the browser's full screen where it has one for elements, else a page overlay. */
+function toggleExpand(box) {
+  if (!box) return;
+  if (document.fullscreenElement) { document.exitFullscreen?.(); return; }
+  if (box.classList.contains('expanded')) { box.classList.remove('expanded'); document.body.classList.remove('no-scroll'); return; }
+  const overlay = () => { box.classList.add('expanded'); document.body.classList.add('no-scroll'); };
+  if (box.requestFullscreen) box.requestFullscreen().catch(overlay); else overlay();
+}
+
 /** The match's live video, where WinHouse gives an address; otherwise why there is none. */
 function streamBox(e) {
   if (e.streamUrl) {
-    return `<div class="stream-box"><iframe src="${esc(e.streamUrl)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
+    return `<div class="stream-box">${expandBtn()}<iframe src="${esc(e.streamUrl)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
   }
   return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'Este jogo tem transmissão ao vivo. O vídeo aparece aqui quando a transmissão estiver configurada.' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
 }
@@ -1508,7 +1520,7 @@ const BALL_SVG = `<svg viewBox="0 0 64 64" class="trk-ball-svg" aria-hidden="tru
 
 function footballWidget(e) {
   const flags = ['tl', 'tr', 'bl', 'br'].map((c) => `<i class="trk-corner c-${c}"></i><i class="trk-flag f-${c}"></i>`).join('');
-  return `<div class="trk" data-kind="football">
+  return `<div class="trk" data-kind="football">${expandBtn()}
     <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(e.home)}</span>
       <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
       <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
@@ -1529,7 +1541,7 @@ function footballWidget(e) {
 }
 
 function tennisWidget(e) {
-  return `<div class="trk" data-kind="tennis">
+  return `<div class="trk" data-kind="tennis">${expandBtn()}
     <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>
       <span class="trk-score"><b id="trkSetLabel">S1</b><small id="trkPoint">—</small></span>
       <span class="trk-team away">${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
@@ -1547,10 +1559,25 @@ function tennisWidget(e) {
 function mountLiveWidget() {
   const m = state.match;
   const e = m.data;
+  const wide = window.matchMedia('(min-width: 1001px)').matches;
+  const slot = wide ? $('#sideTracker') : $('#trackerInline');
+  // Live video chosen: it takes the tracker's place (beside the slip on wide screens, in the header on phones).
+  if (e?.status === 'live' && m.view === 'stream') {
+    const key = `${e.id}|${e.stream}|${e.streamUrl || ''}`;
+    if (!m.streamEl || m.streamKey !== key) {
+      const holder = document.createElement('div');
+      holder.innerHTML = streamBox(e);
+      m.streamEl = holder.firstElementChild;
+      m.streamKey = key;
+    }
+    if (slot && m.streamEl.parentElement !== slot) slot.replaceChildren(m.streamEl);
+    return;
+  }
   const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
   if (!kind) {
     m.widget?.remove();
     m.widget = null;
+    if (m.streamEl?.parentElement) m.streamEl.remove();
     return;
   }
   if (!m.widget || m.widgetKind !== kind) {
@@ -1560,8 +1587,6 @@ function mountLiveWidget() {
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
   }
-  const wide = window.matchMedia('(min-width: 1001px)').matches;
-  const slot = wide ? $('#sideTracker') : $('#trackerInline');
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
   if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); } else updateTennisCourt();
 }

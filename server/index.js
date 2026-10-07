@@ -13,6 +13,7 @@ import { setRequestsPerMinute } from './providerlimit.js';
 import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
 import { createWinHouseTracker } from './whtracker.js';
 import { createWinHouseOddsPush, sioUrl } from './whpush.js';
+import { createWinHouseLive } from './whlive.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -73,6 +74,11 @@ winhouseFeed?.setOddsPush(winhouseOdds);
 const stopWinhouseOdds = winhouseOdds ? winhouseOdds.start() : () => {};
 const stopWinhouse = () => { stopWinhouseFeed(); stopWinhouseOdds(); };
 
+// Live video as HLS (/api/live): only when WINHOUSE_HLS=1 (the WinHouse agreement must allow it).
+const winhouseLive = winhouse.enabled && config.winhouse.hls
+  ? createWinHouseLive({ client: winhouse, hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl, log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  : null;
+
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
 const settlement = createSettlementEngine(db, {
@@ -81,7 +87,7 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 

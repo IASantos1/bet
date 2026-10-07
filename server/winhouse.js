@@ -29,6 +29,8 @@ const ROUTES = {
   tracker: '/ajax/tracker/{gameId}?lang={lang}',
   // Games with live video: { success, ids: [gameId…] } for the operator's embed key (WINHOUSE_TENANT).
   streams: '/ajax/streams?tenant={tenant}',
+  // A game's live video: { success, embed_url: ".../tv/play?t=TOKEN", expires_at } (whlive.js).
+  livestream: '/ajax/livestream?event_id={gameId}',
 };
 
 /**
@@ -181,7 +183,7 @@ export function marketCatalog(body) {
 }
 
 export function createWinHouseClient({
-  baseUrl = '', lang = 'pt', routes = {}, tenant = '', timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
+  baseUrl = '', lang = 'pt', routes = {}, tenant = '', apiKey = '', timeoutMs = 20_000, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const base = String(baseUrl || '').replace(/\/+$/, '');
   const paths = { ...ROUTES, ...Object.fromEntries(Object.entries(routes).filter(([, v]) => v)) };
@@ -189,14 +191,14 @@ export function createWinHouseClient({
   const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''))
     .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? '')).replace('{tenant}', encodeURIComponent(tenant));
 
-  async function request(key, vars) {
+  async function request(key, vars, extraHeaders = {}) {
     if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
     const started = Date.now();
     try {
       const res = await fetchImpl(url(key, vars), {
-        headers: { Accept: 'application/json', 'User-Agent': 'BET62-Data-Service/1.0', Referer: `${base}/` },
+        headers: { Accept: 'application/json', 'User-Agent': 'BET62-Data-Service/1.0', Referer: `${base}/`, ...extraHeaders },
         signal: ctl.signal,
       });
       const text = await res.text();
@@ -393,6 +395,10 @@ export function createWinHouseClient({
     widgetData: (eid, akey) => request('widgetData', { eid, akey }),
     tracker: (gameId) => request('tracker', { gameId }),
     streams: () => request('streams'),
+    // The operator's credentials go only on this call (on the odds lists the tenant would change the margin).
+    livestream: (gameId) => request('livestream', { gameId }, {
+      ...(tenant ? { 'X-WH-Tenant': tenant } : {}), ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    }),
     hasTenant: !!tenant,
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,

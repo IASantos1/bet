@@ -119,6 +119,14 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   `/ajax/streams` e marca os jogos com vídeo: o botão da TV na página Ao Vivo mostra só esses, e a
   página do jogo tem o botão Live ao lado do Tracker. O vídeo aparece quando a lista ao vivo der o
   endereço (`stream_url`).
+- **Vídeo em HLS** (`WINHOUSE_HLS=1`, só com o acordo da WinHouse para usar o stream fora do iframe):
+  `GET /api/live/:eventId` (o nosso id ou o id WinHouse de um jogo ao vivo aqui) pede a
+  `/ajax/livestream?event_id=…`, tira do token o id do stream (`vi`) e devolve
+  `{ success, event_id, stream_id, hls_url, expires_at }` com
+  `https://winhouse.bet/tv/p/{stream_id}.m3u8?t={token}`. A resposta fica em cache até 45 s antes de
+  `expires_at`; depois disso um novo pedido traz token novo. `GET /api/live` lista os jogos com vídeo.
+  A chave (`WINHOUSE_TENANT`) e, se houver, `WINHOUSE_API_KEY` só vão nessa chamada ao servidor da
+  WinHouse, nunca para o navegador.
 - **Bloqueios**: jogos femininos e de escalões jovens (U19, Sub-20, Junior…) não são importados
   (`WINHOUSE_BLOCK_WOMEN=0` / `WINHOUSE_BLOCK_YOUTH=0` mostram-nos), nem futebol virtual (FIFA
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
