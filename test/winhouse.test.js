@@ -404,3 +404,24 @@ test('"ver mercados ao vivo": first live game, live page or else its pre-match p
   assert.deepEqual(calls, ['/ajax/livegames', '/ajax/livegame/55', '/ajax/prematchgame/55']);
   assert.deepEqual([r.live, r.gameId, r.route, r.totalOdds], [true, '55', '/ajax/prematchgame/55?lang=pt', 1]);
 });
+
+test('admin "Descobrir rotas": the ajax / ws routes in the iframe pages and its scripts', async () => {
+  const pages = {
+    '/': '<html><script src="/assets/app.123.js"></script><script src="https://cdn.other.com/x.js"></script></html>',
+    '/assets/app.123.js': 'fetch("/ajax/livegames?lang="+l);get(`/ajax/liveevent/${id}?lang=pt`);x="/ajax/prematchgame/"+id;new WebSocket("wss://iframe.example/ws-live?x=1")',
+  };
+  const seen = [];
+  const fetchImpl = async (u) => {
+    const p = new URL(u).pathname;
+    seen.push(u);
+    return { status: pages[p] ? 200 : 404, text: async () => pages[p] || '' };
+  };
+  const r = await createWinHouseClient({ baseUrl: 'https://iframe.example', fetchImpl }).discover();
+  const paths = r.routes.map((x) => x.path);
+  assert.ok(paths.includes('/ajax/livegames'), paths.join(' '));
+  assert.ok(paths.some((p) => p.startsWith('/ajax/liveevent/')), paths.join(' '));
+  assert.ok(paths.some((p) => p.startsWith('/ajax/prematchgame/')));
+  assert.ok(paths.some((p) => p.startsWith('wss://iframe.example/ws-live')));
+  assert.ok(!seen.some((u) => u.includes('cdn.other.com'))); // other origins are not read
+  assert.equal(r.scriptsFound, 1);
+});

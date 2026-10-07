@@ -363,6 +363,7 @@ function winhousePanel(w) {
       <button class="ghost-btn btn-sm" data-action="winhouse-markets">Ver mercados do jogo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-markets" data-live="1">Ver mercados ao vivo</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-tracker">Ver tracker</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-discover">Descobrir rotas</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
       <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
 }
@@ -625,6 +626,17 @@ document.addEventListener('click', async (e) => {
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
+  } else if (action === 'winhouse-discover') {
+    const box = $('#whOut');
+    actionEl.disabled = true;
+    actionEl.textContent = 'A procurar…';
+    try {
+      const r = await api('/api/admin/winhouse/discover', { method: 'POST', body: { gameId: $('#whGame')?.value.trim() || null } });
+      box.textContent = JSON.stringify(r, null, 2);
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    actionEl.textContent = 'Descobrir rotas';
   } else if (action === 'winhouse-tracker') {
     const box = $('#whOut');
     actionEl.disabled = true;
