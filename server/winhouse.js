@@ -250,42 +250,66 @@ export function createWinHouseClient({
         return { status: res.status, text };
       } catch (err) { return { status: null, text: '', error: err.message }; } finally { clearTimeout(timer); }
     };
-    const pages = ['/', '/live', '/sports', '/pt', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean);
+    const origin = new URL(base).origin;
     const routes = new Map(); // path → [where]
     const add = (path, where) => {
       const p = path.replace(/["'`\\]+$/, '');
       if (!routes.has(p)) routes.set(p, []);
       if (routes.get(p).length < 3 && !routes.get(p).includes(where)) routes.get(p).push(where);
     };
+    // Where the known routes are mentioned, with the text around them (how the iframe builds its URLs).
+    const hits = [];
+    const KEYWORDS = /livegames|prematchgame|livegame|liveevent|live_game|liveodds|live-odds|gameodds|getgame|event_odds|ws-widget|widget-data|socket\.io|sockjs|signalr/gi;
     const scan = (text, where) => {
-      for (const m of text.matchAll(/["'`](\/?(?:ajax|api|ws-|widget|socket)[A-Za-z0-9_\-./{}$:?=&+]*)["'`]/g)) add(m[1], where);
+      for (const m of text.matchAll(/["'`](\/?(?:ajax|api|ws-|widget|socket|live|game|event|odds|sport)[A-Za-z0-9_\-./{}$:?=&+]*)["'`]/gi)) add(m[1], where);
       for (const m of text.matchAll(/\/ajax\/[A-Za-z0-9_\-/]+/g)) add(m[0], where);
       for (const m of text.matchAll(/wss?:\/\/[A-Za-z0-9_\-./]+(?:\/[A-Za-z0-9_\-./?=&{}$]*)?/g)) add(m[0], where);
-    };
-    const scripts = new Set();
-    const visited = [];
-    for (const p of pages) {
-      const r = await get(base + p);
-      visited.push({ page: p, status: r.status, bytes: r.text.length, error: r.error });
-      if (!r.text) continue;
-      scan(r.text, p);
-      for (const m of r.text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) {
-        try {
-          const u = new URL(m[1], `${base}/`);
-          if (u.origin === new URL(base).origin) scripts.add(u.href);
-        } catch { /* bad URL */ }
+      for (const m of text.matchAll(KEYWORDS)) {
+        if (hits.length >= 40) break;
+        hits.push({ where, around: text.slice(Math.max(0, m.index - 120), m.index + 160).replace(/\s+/g, ' ') });
       }
-    }
-    const read = [...scripts].slice(0, maxScripts);
-    for (const u of read) {
+    };
+    // Crawl the iframe: same-origin pages (links, iframes) and scripts (script src, preloads, imports).
+    const pagesQ = ['/', '/pt', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean).map((p) => origin + p);
+    const scriptsQ = [];
+    const seen = new Set();
+    const visited = [];
+    const links = new Set();
+    const local = (ref, from) => { try { const u = new URL(ref, from); return u.origin === origin ? u.href.split('#')[0] : null; } catch { return null; } };
+    let pagesRead = 0;
+    let scriptsRead = 0;
+    while ((pagesQ.length && pagesRead < 15) || (scriptsQ.length && scriptsRead < maxScripts)) {
+      const isPage = pagesQ.length && pagesRead < 15;
+      const u = isPage ? pagesQ.shift() : scriptsQ.shift();
+      if (seen.has(u)) continue;
+      seen.add(u);
       const r = await get(u);
-      const name = new URL(u).pathname;
-      visited.push({ script: name, status: r.status, bytes: r.text.length, error: r.error });
-      if (r.text) scan(r.text, name);
+      const name = new URL(u).pathname + new URL(u).search;
+      visited.push({ [isPage ? 'page' : 'script']: name, status: r.status, bytes: r.text.length, error: r.error });
+      if (isPage) pagesRead += 1; else scriptsRead += 1;
+      if (!r.text) continue;
+      scan(r.text, name);
+      if (isPage) {
+        for (const m of r.text.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)) { const l = local(m[1], u); if (l) scriptsQ.push(l); }
+        for (const m of r.text.matchAll(/<link[^>]+href=["']([^"']+\.m?js[^"']*)["']/gi)) { const l = local(m[1], u); if (l) scriptsQ.push(l); }
+        for (const m of r.text.matchAll(/<(?:iframe|frame)[^>]+src=["']([^"']+)["']/gi)) { const l = local(m[1], u); if (l) { links.add(new URL(l).pathname); pagesQ.push(l); } }
+        for (const m of r.text.matchAll(/<a[^>]+href=["']([^"'#?]+)[^"']*["']/gi)) {
+          const l = local(m[1], u);
+          if (l && !/\.(png|jpe?g|svg|webp|gif|ico|css|pdf|zip)$/i.test(l)) { links.add(new URL(l).pathname); pagesQ.push(l); }
+        }
+      } else {
+        // Chunks loaded by the script: import("./x.js"), from "./x.js", "/assets/x.js".
+        for (const m of r.text.matchAll(/["'`]((?:\.{0,2}\/)?[A-Za-z0-9_\-./]+\.m?js)["'`]/g)) { const l = local(m[1], u); if (l) scriptsQ.push(l); }
+        // Pages the script navigates to (location / href = "/sport…").
+        for (const m of r.text.matchAll(/["'`](\/(?:sport|sports|esporte|desporto|live|inplay|in-play|prematch|betting|bet|game|event|match)[A-Za-z0-9_\-./]*)["'`]/gi)) { const l = local(m[1], u); if (l) { links.add(m[1]); pagesQ.push(l); } }
+      }
     }
     const list = [...routes.entries()].map(([path, where]) => ({ path, where }))
       .sort((a, b) => (/live/i.test(b.path) - /live/i.test(a.path)) || a.path.localeCompare(b.path));
-    return { at: new Date().toISOString(), baseUrl: base, visited, scriptsFound: scripts.size, routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60) };
+    return {
+      at: new Date().toISOString(), baseUrl: base, visited, links: [...links].slice(0, 60), scriptsFound: seen.size - pagesRead,
+      routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
+    };
   }
 
   async function health({ gameId = null } = {}) {

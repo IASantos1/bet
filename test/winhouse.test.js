@@ -425,3 +425,19 @@ test('admin "Descobrir rotas": the ajax / ws routes in the iframe pages and its 
   assert.ok(!seen.some((u) => u.includes('cdn.other.com'))); // other origins are not read
   assert.equal(r.scriptsFound, 1);
 });
+
+test('"Descobrir rotas" follows the portal to the sportsbook page and its chunks, with context', async () => {
+  const pages = {
+    '/': '<html><a href="/sportsbook">Desporto</a><a href="/logo.png">x</a><script src="/assets/portal.js"></script></html>',
+    '/assets/portal.js': 'window.go=()=>{}',
+    '/sportsbook': '<html><script type="module" src="/sb/main.js"></script></html>',
+    '/sb/main.js': 'import("./chunk-live.js");',
+    '/sb/chunk-live.js': 'const u = base + "/ajax/livegameodds/" + id + "?lang=" + lang; fetch("/ajax/livegames?lang=pt")',
+  };
+  const fetchImpl = async (u) => { const p = new URL(u).pathname; return { status: pages[p] ? 200 : 404, text: async () => pages[p] || '' }; };
+  const r = await createWinHouseClient({ baseUrl: 'https://iframe.example', fetchImpl }).discover();
+  assert.ok(r.links.includes('/sportsbook'));
+  assert.ok(r.routes.some((x) => x.path.startsWith('/ajax/livegameodds/')), JSON.stringify(r.routes));
+  assert.ok(r.hits.some((h) => h.where === '/sb/chunk-live.js' && h.around.includes('livegameodds')));
+  assert.ok(!r.visited.some((v) => v.page === '/logo.png'));
+});
