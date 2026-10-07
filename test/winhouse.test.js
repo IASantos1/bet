@@ -492,3 +492,49 @@ test('bestLiveGame: football of a big league before cricket or virtual games', (
   ]);
   assert.equal(pick.id, 4);
 });
+
+test('push (new-coefs): live prices move at once, 1.00 closes a pick, a later page read keeps the push', async () => {
+  const o = (id, odd, mid, opt, market = 'm') => ({ id, odd, market_id: String(mid), market, market_option: `${opt} ` });
+  const page = [
+    [o(501, '1.92', 1007, 'yes'), o(502, '1.76', 1007, 'no')],
+    [o(503, '2.4', 1000050, 'Home', 'Next Goal [NG]'), o(504, '1.6', 1000050, 'Away', 'Next Goal [NG]')],
+  ];
+  const lists = { live: [football(30, 30, '0-0', ODD)], livePages: { 30: page } };
+  const notified = [];
+  const t = setupFeed(lists);
+  const client = {
+    enabled: true,
+    live: async () => ({ ok: true, status: 200, body: lists.live }),
+    liveEvent: async (id) => ({ ok: true, status: 200, body: lists.livePages[id] }),
+  };
+  const feed = createWinHouseFeed(t.db, { client, tzOffsetMinutes: 60, onOdds: (id) => notified.push(id) });
+  await feed.syncLive();
+  await feed.syncLiveDetails();
+  const id = t.row(30).id;
+  const active = () => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
+  assert.equal(active()['1x2|1'], 124);
+  // From the list (1x2 home) and the page (BTTS yes, an operator market); unknown ids are ignored.
+  const touched = feed.applyCoefs([
+    { coef_id: 1223894688, odd: '1.30' }, { coef_id: 501, odd: '2.05' }, { coef_id: 504, odd: '1.00' }, { coef_id: 999, odd: '3.3' },
+  ]);
+  assert.deepEqual(touched, [id]);
+  assert.deepEqual(notified, [id]);
+  assert.equal(active()['1x2|1'], 130);
+  assert.equal(active()['btts|Y'], 205);
+  assert.equal(active()['x|1000050~Next Goal~Away'], undefined); // suspended
+  assert.equal(active()['x|1000050~Next Goal~Home'], 240);
+  // The /ajax answers are cached: a read right after does not undo the push.
+  await feed.syncLive();
+  assert.equal(active()['1x2|1'], 130);
+  assert.equal(active()['x|1000050~Next Goal~Away'], undefined);
+  // Reopened.
+  feed.applyCoefs([{ coef_id: 504, odd: '1.55' }]);
+  assert.equal(active()['x|1000050~Next Goal~Away'], 155);
+  const s = feed.status().push;
+  assert.equal(s.games, 1);
+  assert.ok(s.tracked >= 10);
+  // A goal: earlier pushes no longer count.
+  lists.live = [football(30, 31, '1-0', ODD)];
+  await feed.syncLive();
+  assert.equal(active()['1x2|1'], 124);
+});
