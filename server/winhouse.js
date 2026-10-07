@@ -296,6 +296,7 @@ export function createWinHouseClient({
     const DOCS = ['/llms.txt', '/docs/agent.md', '/docs'];
     const pagesQ = [...DOCS, '/', '/portal', gameId ? `/ajax/widget?event_id=${encodeURIComponent(gameId)}&bg=transparent` : null].filter(Boolean).map((p) => origin + p);
     const docs = {};
+    const session = []; // code around the book's sign-in and session handling
     const docRoutes = new Set();
     const LOCALE = /^\/[a-z]{2}\/?$/; // /de/, /pt … the same portal in other languages
     const scriptsQ = [];
@@ -318,6 +319,14 @@ export function createWinHouseClient({
       scan(r.text, name);
       // The sportsbook's own API client and push feed: how it calls /ajax and subscribes to odds.
       if (/^\/sb\/assets\/js\/(api|push)\.js$/.test(new URL(u).pathname)) docs[new URL(u).pathname] = r.text.slice(0, 40_000);
+      // How the book signs a player in and sends that session (live video needs one): the code around it.
+      if (/\/sb\/assets\/js\//.test(new URL(u).pathname)) {
+        for (const m of r.text.matchAll(/livestream|tenant\/sso|tenant\/session|ajaxauth|setLaunch|launch=|Authorization|X-WH-[A-Za-z]+|document\.cookie|sessionToken|authToken/g)) {
+          if (session.length >= 30) break;
+          const around = r.text.slice(Math.max(0, m.index - 300), m.index + 400).replace(/\s+/g, ' ');
+          if (!session.some((x) => x.around === around)) session.push({ where: name, match: m[0], around });
+        }
+      }
       if (DOCS.includes(new URL(u).pathname)) {
         // Documentation: its text (tags removed) and every route it names.
         const text = r.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n');
@@ -349,6 +358,7 @@ export function createWinHouseClient({
       docRoutes: [...docRoutes].slice(0, 200),
       routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
       docs,
+      session,
     };
   }
 
