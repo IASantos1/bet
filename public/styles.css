@@ -374,7 +374,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 /* ---------- match page ---------- */
 .back-link { display: inline-block; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 .back-link:hover { color: #fff; }
-.match-hero { border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px 22px; background: radial-gradient(circle at 50% 0%, #4a1216 0, #1c1013 40%, var(--dim) 80%); }
+.match-hero { border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px 22px; background: radial-gradient(circle at 50% 0%, #2f3a47 0, #1e2329 45%, var(--dim) 80%); }
 .match-comp { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 700; }
 .match-teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 16px; }
 .match-team { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; font-size: 15px; }
@@ -387,6 +387,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .match-tabs button { background: none; border: 0; border-bottom: 3px solid transparent; color: var(--text-2); padding: 11px 16px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .match-tabs button.active { color: #fff; border-bottom-color: var(--red); }
 .match-tabs .live-dot { margin: 0; }
+/* Market menu (Todos, Principais, Golos…): one scrolling row of chips. */
+.market-cats { position: relative; display: flex; gap: 6px; margin: 0 0 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.market-cats::-webkit-scrollbar { display: none; }
+.market-cats button { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.market-cats button small { font-size: 10px; color: var(--text-4); font-weight: 700; }
+.market-cats button.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.market-cats button.active small { color: #ffffffb3; }
 .market-block { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
 .market-head { font-size: 12px; font-weight: 800; color: var(--text-2); margin-bottom: 10px; }
 .market-odd { display: flex; justify-content: space-between; align-items: center; padding: 11px 12px; gap: 8px; font-size: 14px; }
@@ -440,11 +447,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 }
 @media (max-width: 700px) {
   .casino-player { height: calc(100vh - 60px - 62px); }
-  .match-teams { gap: 6px; }
-  .match-team { font-size: 12px; }
-  .team-icon.big { width: 48px; height: 48px; font-size: 16px; }
-  .team-icon.big img { width: 44px; height: 44px; }
-  .match-score { font-size: 28px; }
+  /* Compact match header: the markets start higher up the screen. */
+  .match-hero { padding: 12px 14px 14px; }
+  section.match-hero .tracker-inline { margin: 12px -14px -14px; }
+  .match-comp { font-size: 11px; }
+  .match-teams { gap: 6px; margin-top: 8px; }
+  .match-team { font-size: 11px; gap: 5px; }
+  .team-icon.big { width: 36px; height: 36px; font-size: 13px; }
+  .team-icon.big img { width: 32px; height: 32px; }
+  .match-score { font-size: 22px; letter-spacing: 1px; }
+  .match-kickoff { font-size: 17px; }
+  .match-hero .live-clock.big { font-size: 12px; }
+  .match-tabs { margin: 10px 0 10px; }
+  .match-tabs button { padding: 9px 14px; }
   .match-center { min-width: 80px; }
   .match-stats-grid { grid-template-columns: 1fr; }
   .market-line { grid-template-columns: 70px 1fr; }
@@ -552,6 +567,11 @@ table.compare td.center { text-align: center; }
 .tracker-inline:empty { display: none; }
 .tracker-inline { margin: 14px 0 0; }
 @media (min-width: 1001px) { .tracker-inline { display: none; } }
+/* Narrow screens: the pitch is part of the match header (its own teams/score/clock line and the
+   commentary and incidents under it are left out: the header already shows them). */
+.match-hero .tracker-inline { margin: 16px -20px -22px; }
+.match-hero .trk { border: 0; border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; box-shadow: none; }
+.match-hero .trk-head, .match-hero .trk-note, .match-hero .trk-actions { display: none; }
 .trk { border: 1px solid #252a31; border-radius: 12px; background: var(--page); overflow: hidden; box-shadow: 0 12px 34px #0008; }
 .trk-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 9px 11px; background: #111419; border-bottom: 1px solid #222730; font-size: 11px; font-weight: 800; }
 .trk-team { display: flex; align-items: center; gap: 6px; min-width: 0; line-height: 1.2; overflow-wrap: anywhere; }
