@@ -99,8 +99,9 @@ export function normalizeSituation(raw) {
 const EVENT_TYPES = [[/goal|golo/i, 'goal'], [/yellow|amarel/i, 'card'], [/red|vermelh/i, 'card'], [/corner|canto/i, 'corner_awarded'], [/sub/i, 'player_on']];
 /** timeline / sc entries → [{ minute, type, team, label }]. */
 export function normalizeTimeline(raw) {
+  // An object is events grouped by kind ({ GOAL: [{ min, team }] }); plain counts ({ GOAL: [3, 3] }) are not events.
   const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object'
-    ? Object.entries(raw).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => (x && typeof x === 'object' ? { type: k, ...x } : { type: k, minute: x })) : []))
+    ? Object.entries(raw).flatMap(([k, v]) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object').map((x) => ({ type: k, ...x })) : []))
     : [];
   return list.map((x) => {
     if (!x || typeof x !== 'object') return null;
@@ -111,7 +112,8 @@ export function normalizeTimeline(raw) {
     const minute = num(first(x.minute, x.min, x.time, x.timer, x.t));
     const kind = EVENT_TYPES.find(([re]) => re.test(name))?.[1] || name.toLowerCase();
     const cardColor = /red|vermelh/i.test(name) ? 'red' : /yellow|amarel/i.test(name) ? 'yellow' : null;
-    return { minute: minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute), type: kind, team, label: name, card: cardColor };
+    const label = String(first(x.text, x.description, name)).trim().slice(0, 80);
+    return { minute: minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute), type: kind, team, label, card: cardColor };
   }).filter(Boolean);
 }
 
@@ -129,8 +131,25 @@ export function normalizeWidgetData(body) {
     const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
     ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
   }
-  const timeline = normalizeTimeline(first(d.timeline, d.sc));
+  // sc: per-kind counts as [home, away] ({ GOAL: [3, 3], CORNER: [5, 2], H1: [1, 0] }); H1 is the half-time score.
+  let halfTime = null;
+  if (d.sc && typeof d.sc === 'object' && !Array.isArray(d.sc)) {
+    for (const [k, v] of Object.entries(d.sc)) {
+      const [h, a] = pair(v);
+      if (h === null || a === null) continue;
+      if (/^h(alf)?1$|^ht$/i.test(k)) { halfTime = { home: h, away: a }; continue; }
+      if (/^h(alf)?2$|^goals?$|^score$/i.test(k)) continue;
+      const meta = /yellow/i.test(k) ? { key: 'yellow_cards', label: 'Cartões amarelos', unit: '' } : /red/i.test(k) ? { key: 'red_cards', label: 'Cartões vermelhos', unit: '' }
+        : statMeta(k.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()));
+      if (!stats.some((x) => x.key === meta.key)) stats.push({ ...meta, home: h, away: a });
+    }
+  }
+  const timeline = normalizeTimeline(Array.isArray(d.timeline) && d.timeline.length ? d.timeline : d.sc);
+  const timer = num(first(d.timer, d.time));
+  const period = first(d.period, null);
   return {
+    clock: clockFrom(timer, period, d.status, num(d.match_length) || 90),
+    halfTime,
     homeScore: num(first(d.home_score, d.homeScore, d.score?.home)),
     awayScore: num(first(d.away_score, d.awayScore, d.score?.away)),
     status: first(d.status, null), period: first(d.period, null), timer: first(d.timer, d.time, null),
@@ -140,11 +159,28 @@ export function normalizeWidgetData(body) {
   };
 }
 
+/**
+ * The match clock from the tracker's timer (seconds played): "67'", or "45+2'" / "90+3'" in
+ * added time; "Intervalo" at half time. null when there is no timer.
+ */
+export function clockFrom(timer, period, status, length = 90) {
+  // timer = seconds played (5469 → 91 minutes → "90+1'").
+  const s = `${status ?? ''} ${period ?? ''}`.toLowerCase();
+  if (/half.?time|interval|break|\bht\b/.test(s)) return 'Intervalo';
+  if (timer === null || timer === undefined || !Number.isFinite(Number(timer)) || Number(timer) < 0) return null;
+  const min = Math.floor(Number(timer) / 60);
+  const half = length / 2;
+  const second = /2|second/i.test(String(period ?? ''));
+  const end = second ? length : half;
+  if (!second && !/1|first/i.test(String(period ?? ''))) return `${min}'`;
+  return min > end ? `${end}+${min - end}'` : `${min}'`;
+}
+
 const PERIOD_LABEL = (p, status) => {
   const s = `${status ?? ''} ${p ?? ''}`.toLowerCase();
   if (/half.?time|interval|break|ht\b/.test(s)) return 'Intervalo';
-  if (/2|second/.test(String(p ?? ''))) return '2.ª parte';
-  if (/1|first/.test(String(p ?? ''))) return '1.ª parte';
+  if (/2|second/i.test(String(p ?? ''))) return '2.ª parte';
+  if (/1|first/i.test(String(p ?? ''))) return '1.ª parte';
   return null;
 };
 
@@ -193,7 +229,7 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
       w.last = s;
       const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
       const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
-      publish(eventId, 'event', { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: row?.clock || null, stats: live });
+      publish(eventId, 'event', { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live });
       if (s.ball || s.situation) {
         const side = s.situation?.side || 'home';
         // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.
@@ -246,7 +282,7 @@ export function createWinHouseTracker(db, { client, pollMs = 2_000, idleMs = 60_
     if (!s) return { stats: [], incidents: [] };
     const incidents = s.timeline.filter((a) => a.type === 'goal' || a.type === 'card')
       .map((a) => ({ minute: a.minute, type: a.type === 'goal' ? 'goal' : a.card || 'yellow', side: a.team, player: '' }));
-    return { stats: s.stats, incidents, period: PERIOD_LABEL(s.period, s.status) };
+    return { stats: s.stats, incidents, period: PERIOD_LABEL(s.period, s.status), clock: s.clock, halfTime: s.halfTime };
   }
 
   /** Admin: the raw answers of both routes for one game, to map new fields. */
