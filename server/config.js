@@ -112,6 +112,12 @@ export const config = {
     lang: unquote(env.WINHOUSE_LANG) || 'pt',
     // The operator's embed key (ifr_…): which games have live video (/ajax/streams).
     tenant: unquote(env.WINHOUSE_TENANT),
+    // Server-to-server credential WinHouse gives for the live video, if any (never sent to browsers).
+    apiKey: unquote(env.WINHOUSE_API_KEY),
+    // Live video as HLS for our own player (/api/live). Off until the WinHouse agreement allows it.
+    hls: env.WINHOUSE_HLS === '1',
+    hlsPath: unquote(env.WINHOUSE_HLS_PATH) || '/tv/p/{stream_id}.m3u8?t={token}',
+    tvUrl: unquote(env.WINHOUSE_TV_URL).replace(/\/+$/, ''),
     routes: {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
@@ -119,7 +125,7 @@ export const config = {
       // this at prematchgame (which answers [] once a game starts) is ignored.
       liveEvent: /prematchgame/i.test(unquote(env.WINHOUSE_LIVE_EVENT) || '') ? '' : unquote(env.WINHOUSE_LIVE_EVENT),
       widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA), wsWidget: unquote(env.WINHOUSE_WS_WIDGET), tracker: unquote(env.WINHOUSE_TRACKER_ROUTE),
-      streams: unquote(env.WINHOUSE_STREAMS),
+      streams: unquote(env.WINHOUSE_STREAMS), livestream: unquote(env.WINHOUSE_LIVESTREAM),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
     // unset = estimated from the live list) and how long a match must stay out of the live list
