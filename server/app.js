@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream } from './whlive.js';
+import { FOOTBALL_TREE, leagueKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx } from './db.js';
 import {
@@ -275,8 +276,32 @@ export function createApp(db, {
     });
   });
 
+  // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
+  const LEAGUE_TREES = { futebol: FOOTBALL_TREE };
+  const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
+    AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
+    AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))`)
+    .all(sport, nowIso(), new Date(Date.now() + 31 * 86_400_000).toISOString());
+  app.get('/api/leagues', (_req, res) => {
+    const out = {};
+    for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {
+      const counts = new Map();
+      for (const e of openFixtures(sport)) counts.set(leagueKey(e.competition), (counts.get(leagueKey(e.competition)) || 0) + 1);
+      out[sport] = tree.map(([country, leagues]) => ({ country, leagues: leagues.map((name) => ({ name, count: counts.get(leagueKey(name)) || 0 })) }));
+    }
+    res.json({ leagues: out });
+  });
+
   app.get('/api/events', (req, res) => {
     const now = nowIso();
+    // One league (sidebar): all its games of the next month, names compared loosely.
+    const competition = str(req.query.competition, 120);
+    if (competition) {
+      const sport = str(req.query.sport, 30) || 'futebol';
+      const ids = openFixtures(sport).filter((e) => leagueKey(e.competition) === leagueKey(competition)).map((e) => e.id).slice(0, 400);
+      const events = ids.length ? loadEvents(`e.id IN (${ids.map(() => '?').join(',')})`, ids, 'e.start_time ASC', 400) : [];
+      return res.json({ events, serverTime: now });
+    }
     const until = new Date(Date.now() + 14 * 86_400_000).toISOString();
     const sport = str(req.query.sport, 30);
     const status = str(req.query.status, 20);

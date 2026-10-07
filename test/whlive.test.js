@@ -76,3 +76,32 @@ test('GET /api/live/:eventId: only WinHouse games in play here; our id or the Wi
     db.close();
   }
 });
+
+test('sidebar leagues: countries with open games per league; one league of the next month', async () => {
+  const db = openDb(':memory:');
+  const add = (competition, status, days = 1) => {
+    const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+      VALUES ('futebol', ?, 'A', 'B', ?, ?, 'winhouse', ?, ?, ?)`).run(competition, new Date(Date.now() + days * 86_400_000).toISOString(), status, String(Math.random()), nowIso(), nowIso()).lastInsertRowid);
+    db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', '1', 150, 1)").run(id);
+    return id;
+  };
+  add('England. Premier League', 'live');
+  const later = add('england premier league', 'scheduled', 20); // 20 days away: outside the board, inside the league page
+  add('England. Premier League', 'scheduled', 40); // beyond a month
+  add('Spain. La Liga', 'scheduled', 2);
+  const server = createApp(db).listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const get = async (p) => (await fetch(`http://127.0.0.1:${server.address().port}${p}`)).json();
+  try {
+    const { leagues } = await get('/api/leagues');
+    const england = leagues.futebol.find((c) => c.country === 'England');
+    assert.equal(england.leagues.find((l) => l.name === 'England. Premier League').count, 2);
+    assert.equal(leagues.futebol.find((c) => c.country === 'Spain').leagues.find((l) => l.name === 'Spain. La Liga').count, 1);
+    const { events } = await get(`/api/events?competition=${encodeURIComponent('England. Premier League')}`);
+    assert.equal(events.length, 2);
+    assert.ok(events.some((e) => e.id === later));
+  } finally {
+    server.close();
+    db.close();
+  }
+});

@@ -38,6 +38,7 @@ const state = {
   casinoFilter: { provider: '', category: '', q: '' },
   casinoSession: null,
   liveTv: false, liveSport: '',
+  leagueTree: null, sideOpen: {}, leagueView: null,
   match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(),
   mode: 'single',
@@ -370,8 +371,33 @@ function homePage() {
 
 const emptyEvents = () => `<div class="panel empty">${state.eventsLoaded ? 'Sem eventos disponíveis de momento.' : 'A carregar eventos…'}</div>`;
 
-function sportsPage(sub) {
+/** One league (from the sidebar): all its games of the next month, live first. */
+function leaguePage(name) {
+  const v = state.leagueView;
+  if (!v || v.name !== name || Date.now() - v.at > 30_000) {
+    const keep = v?.name === name ? v.events : null;
+    state.leagueView = { name, events: keep, at: Date.now() };
+    api(`/api/events?sport=futebol&competition=${encodeURIComponent(name)}`).then(({ events }) => {
+      if (state.leagueView?.name !== name) return;
+      state.leagueView.events = events;
+      if (currentRoute().sub === 'liga') render({ keepScroll: true });
+    }).catch(() => { if (state.leagueView?.name === name && !state.leagueView.events) state.leagueView.events = []; });
+  }
+  const events = state.leagueView.events;
+  const country = state.leagueTree?.futebol?.find((c) => c.leagues.some((l) => l.name === name))?.country;
+  const live = (events || []).filter((e) => e.status === 'live');
+  const next = (events || []).filter((e) => e.status !== 'live');
+  return `<div class="page-title"><h1>${esc(leagueShort(name))}</h1><p>${esc(country || 'Futebol')} · jogos ao vivo e do próximo mês.</p></div>
+    <div class="sport-strip"><a class="sport-pill" href="#/desporto">‹ Todo o desporto</a></div>
+    ${events === null ? '<div class="loading">A carregar…</div>' : !events.length ? '<div class="panel empty">Sem jogos desta liga com odds de momento.</div>'
+      : `${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao vivo</h2></div>${groupByCompetition(live)}</section>` : ''}
+         ${next.length ? `<section class="section"><div class="section-head"><h2>Próximos jogos</h2><span>${next.length}</span></div>${groupByCompetition(next)}</section>` : ''}`}
+    ${footer()}`;
+}
+
+function sportsPage(sub, rest = '') {
   if (sub === 'resultados') return resultsPage();
+  if (sub === 'liga' && rest) return leaguePage(decodeURIComponent(rest));
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
@@ -868,24 +894,46 @@ function updateHeader() {
   }
 }
 
+// "England. Premier League" → "Premier League" under the England heading.
+const leagueShort = (name) => String(name).replace(/^[^.]+\.\s+(?=\S)/, '');
+
+/** A sport's countries and leagues in the sidebar (opened by clicking the sport). */
+function sideTree(sport) {
+  const tree = state.leagueTree?.[sport];
+  if (!tree || !state.sideOpen[sport]) return '';
+  const { page, sub, rest } = currentRoute();
+  const current = page === 'desporto' && sub === 'liga' ? decodeURIComponent(rest) : null;
+  return `<div class="side-tree">${tree.map(({ country, leagues }) => {
+    const total = leagues.reduce((n, l) => n + l.count, 0);
+    const open = state.sideOpen[`${sport}|${country}`] || leagues.some((l) => l.name === current);
+    return `<button class="side-country${open ? ' open' : ''}${total ? '' : ' none'}" data-side-country="${esc(`${sport}|${country}`)}">
+        <i class="caret">${open ? '▾' : '▸'}</i>${esc(country)}<b>${total || ''}</b></button>
+      ${open ? leagues.map((l) => `<a class="side-league${l.name === current ? ' active' : ''}${l.count ? '' : ' none'}" href="#/desporto/liga/${encodeURIComponent(l.name)}">
+        ${esc(leagueShort(l.name))}<b>${l.count || ''}</b></a>`).join('') : ''}`;
+  }).join('')}</div>`;
+}
+
 function renderSidebar() {
   const counts = {};
   for (const e of state.events) counts[e.sport] = (counts[e.sport] || 0) + 1;
   $('#sportLinks').innerHTML = Object.entries(SPORT_META)
-    .map(([k, v]) => `<a class="side-link" href="#/desporto" data-sport-link="${k}"><span>${v.icon}</span> ${v.name} <b>${counts[k] || ''}</b></a>`).join('');
+    .map(([k, v]) => {
+      const tree = !!state.leagueTree?.[k];
+      return `<a class="side-link" href="#/desporto" data-sport-link="${k}"${tree ? ` data-side-open="${k}"` : ''}><span>${v.icon}</span> ${v.name} <b>${counts[k] || ''}</b>${tree ? `<i class="caret">${state.sideOpen[k] ? '▾' : '▸'}</i>` : ''}</a>${sideTree(k)}`;
+    }).join('');
   const live = state.events.filter((e) => e.status === 'live').length;
   $('#liveCount').textContent = live || '';
 }
 
 function currentRoute() {
-  const [page = '', sub = ''] = location.hash.replace(/^#\/?/, '').split('/');
-  return { page: page || 'home', sub };
+  const [page = '', sub = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
+  return { page: page || 'home', sub, rest: rest.join('/') };
 }
 
 function render({ keepScroll = false } = {}) {
-  const { page, sub } = currentRoute();
+  const { page, sub, rest } = currentRoute();
   const pages = {
-    home: homePage, desporto: () => sportsPage(sub), 'ao-vivo': livePage, casino: casinoPage,
+    home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: casinoPage,
     promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub),
   };
   if (page !== 'jogo') leaveMatch();
@@ -917,6 +965,14 @@ function refreshView() {
   if (document.activeElement && $('#content').contains(document.activeElement) && document.activeElement.matches('input, select')) return;
   render({ keepScroll: true });
   if (!$('#modalBackdrop').classList.contains('hidden') && $('#searchInput')) renderSearch($('#searchInput').value);
+}
+
+async function loadLeagues() {
+  try {
+    const { leagues } = await api('/api/leagues');
+    state.leagueTree = leagues;
+    renderSidebar();
+  } catch { /* the sidebar works without it */ }
 }
 
 async function refreshEvents() {
@@ -1054,7 +1110,15 @@ document.addEventListener('click', async (e) => {
   const sport = e.target.closest('[data-sport]');
   if (sport) { state.sport = sport.dataset.sport; render({ keepScroll: true }); return; }
   const sportLink = e.target.closest('[data-sport-link]');
-  if (sportLink) { state.sport = sportLink.dataset.sportLink; if (location.hash === '#/desporto') render(); return; }
+  if (sportLink) {
+    // A sport with a league tree opens / closes its countries as well.
+    if (sportLink.dataset.sideOpen) { state.sideOpen[sportLink.dataset.sideOpen] = !state.sideOpen[sportLink.dataset.sideOpen]; renderSidebar(); }
+    state.sport = sportLink.dataset.sportLink;
+    if (location.hash === '#/desporto') render();
+    return;
+  }
+  const sideCountry = e.target.closest('[data-side-country]');
+  if (sideCountry) { const k = sideCountry.dataset.sideCountry; state.sideOpen[k] = !state.sideOpen[k]; renderSidebar(); return; }
 
   const game = e.target.closest('[data-game]');
   if (game && !game.matches('form')) { openGame(Number(game.dataset.game)); return; }
@@ -1747,6 +1811,8 @@ async function init() {
   render();
   loadCasino({ reset: true });
   await refreshEvents();
+  loadLeagues();
+  setInterval(() => { if (!document.hidden) loadLeagues(); }, 60_000);
   // Live events refresh every 10s; the rest of the board rides along.
   setInterval(() => { if (!document.hidden) refreshEvents(); }, 5_000);
   // Keep the balance fresh (settlements happen server-side).
