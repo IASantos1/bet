@@ -441,3 +441,20 @@ test('"Descobrir rotas" follows the portal to the sportsbook page and its chunks
   assert.ok(r.hits.some((h) => h.where === '/sb/chunk-live.js' && h.around.includes('livegameodds')));
   assert.ok(!r.visited.some((v) => v.page === '/logo.png'));
 });
+
+test('"Descobrir rotas" reads the iframe documentation first and lists the routes it names', async () => {
+  const pages = {
+    '/llms.txt': '# WinHouse API\n- GET /ajax/livegames?lang=pt\n- GET /ajax/livegame-odds/{id}?lang=pt — all live markets\n',
+    '/docs/agent.md': 'Use `/ajax/tracker/{id}` and wss://iframe.example/ws-odds?game={id}',
+    '/docs': '<html><body><h1>Docs</h1><code>/ajax/prematchgame/{id}</code></body></html>',
+    '/': '<html><a href="/de/">de</a><a href="/docs">docs</a></html>',
+  };
+  const seen = [];
+  const fetchImpl = async (u) => { const p = new URL(u).pathname; seen.push(p); return { status: pages[p] ? 200 : 404, text: async () => pages[p] || '' }; };
+  const r = await createWinHouseClient({ baseUrl: 'https://iframe.example', fetchImpl }).discover();
+  assert.deepEqual(seen.slice(0, 3), ['/llms.txt', '/docs/agent.md', '/docs']);
+  assert.ok(r.docRoutes.includes('/ajax/livegame-odds/{id}?lang=pt'), r.docRoutes.join(' '));
+  assert.ok(r.docRoutes.includes('/ajax/prematchgame/{id}'));
+  assert.ok(r.docs['/llms.txt'].includes('all live markets'));
+  assert.ok(!seen.includes('/de/')); // other-language copies of the portal are skipped
+});
