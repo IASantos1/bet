@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at          TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id, id);
+
+-- Identity documents a player sends for verification (KYC); the administrator approves or rejects them.
+CREATE TABLE IF NOT EXISTS kyc_documents (
+  id          INTEGER PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT    NOT NULL,
+  file_name   TEXT    NOT NULL,
+  mime_type   TEXT    NOT NULL,
+  file_size   INTEGER NOT NULL,
+  data        BLOB    NOT NULL,
+  status      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at  TEXT    NOT NULL,
+  reviewed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_kyc_user ON kyc_documents(user_id, id);
 
 CREATE TABLE IF NOT EXISTS withdrawals (
   id           INTEGER PRIMARY KEY,
@@ -202,11 +217,15 @@ function migrate(db) {
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
   // Single wallet: 1 while the player's balance is in the casino (a game is open).
   if (!userCols.has('casino_active')) db.exec('ALTER TABLE users ADD COLUMN casino_active INTEGER NOT NULL DEFAULT 0');
+  // Admin panel: free-bet wallet, ban, identity verification (KYC) state.
+  if (!userCols.has('freebet_cents')) db.exec('ALTER TABLE users ADD COLUMN freebet_cents INTEGER NOT NULL DEFAULT 0');
+  if (!userCols.has('banned_at')) db.exec('ALTER TABLE users ADD COLUMN banned_at TEXT');
+  if (!userCols.has('kyc_status')) db.exec("ALTER TABLE users ADD COLUMN kyc_status TEXT NOT NULL DEFAULT 'not_submitted'");
 
-  // Ledger types for casino transfers. SQLite cannot alter a CHECK, so older databases get the
+  // Ledger types for casino transfers and admin adjustments. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
-  if (!txSql.includes('casino_out')) {
+  if (!txSql.includes('admin_credit')) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }

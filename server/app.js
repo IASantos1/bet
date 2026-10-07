@@ -79,6 +79,7 @@ function publicUser(u) {
     id: u.id, email: u.email, name: u.name, phone: u.phone, birthdate: u.birthdate, role: u.role,
     balance: cents(u.balance_cents), excludedUntil: u.excluded_until, createdAt: u.created_at,
     casinoActive: !!u.casino_active,
+    freebet: cents(u.freebet_cents || 0), kycStatus: u.kyc_status || 'not_submitted', banned: !!u.banned_at,
   };
 }
 
@@ -149,6 +150,8 @@ export function createApp(db, {
   app.use('/api', (req, _res, next) => {
     const token = parseCookies(req.headers.cookie)[COOKIE];
     req.user = token ? getSession.get(hashToken(token), nowIso()) || null : null;
+    // A banned account is signed out everywhere (its sessions are deleted on the ban too).
+    if (req.user?.banned_at) req.user = null;
     next();
   });
 
@@ -463,6 +466,7 @@ export function createApp(db, {
     // The administrator's password is stored trimmed; a phone keyboard may add a trailing space.
     const ok = user && (verifyPassword(password, user.password_hash) || (password.trim() !== password && verifyPassword(password.trim(), user.password_hash)));
     if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
+    if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
     startSession(res, user.id);
     res.json({ user: publicUser(user) });
   });
@@ -856,6 +860,102 @@ export function createApp(db, {
          FROM users u ORDER BY u.id DESC LIMIT 200`
     ).all();
     res.json({ users: rows.map((u) => ({ ...publicUser(u), bets: u.bets })) });
+  });
+
+  // ---------- one player: wallet, free bets, ban, details and identity documents ----------
+  const playerRow = (id) => {
+    const u = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
+    if (!u) throw new HttpError(404, 'Utilizador não encontrado.');
+    return u;
+  };
+  // "+10" / "10" adds, "-10" takes away (never below zero).
+  const signedCents = (v) => {
+    const raw = String(v ?? '').trim().replace(',', '.');
+    const negative = raw.startsWith('-');
+    return (negative ? -1 : 1) * parseEuros(raw.replace(/^[+-]/, ''), 'Valor');
+  };
+
+  admin.post('/users/:id/balance', (req, res) => {
+    const u = playerRow(req.params.id);
+    const amount = signedCents(req.body?.amount);
+    const note = str(req.body?.note, 120);
+    const balance = tx(db, () => postTransaction(db, u.id, amount, amount > 0 ? 'admin_credit' : 'admin_debit',
+      `${amount > 0 ? 'Crédito' : 'Débito'} do administrador${note ? ` — ${note}` : ''}`, `admin:${req.user.id}`));
+    res.json({ ok: true, balance: cents(balance) });
+  });
+
+  admin.post('/users/:id/freebet', (req, res) => {
+    const u = playerRow(req.params.id);
+    const amount = signedCents(req.body?.amount);
+    const next = (u.freebet_cents || 0) + amount;
+    if (next < 0) throw new HttpError(400, 'O saldo de freebets não pode ficar negativo.');
+    db.prepare('UPDATE users SET freebet_cents = ? WHERE id = ?').run(next, u.id);
+    res.json({ ok: true, freebet: cents(next) });
+  });
+
+  admin.post('/users/:id/ban', (req, res) => {
+    const u = playerRow(req.params.id);
+    const banned = req.body?.banned !== false;
+    if (banned && (u.role === 'admin' || u.id === req.user.id)) throw new HttpError(400, 'Não é possível banir um administrador.');
+    tx(db, () => {
+      db.prepare('UPDATE users SET banned_at = ? WHERE id = ?').run(banned ? nowIso() : null, u.id);
+      if (banned) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+    });
+    res.json({ ok: true, banned });
+  });
+
+  admin.get('/users/:id', (req, res) => {
+    const u = playerRow(req.params.id);
+    const bets = withLegs(db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id DESC LIMIT 50').all(u.id));
+    const txs = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(u.id)
+      .map((t) => ({ id: t.id, type: t.type, amount: cents(t.amount_cents), balanceAfter: cents(t.balance_after_cents), description: t.description, createdAt: t.created_at }));
+    const withdrawals = db.prepare('SELECT * FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 50').all(u.id)
+      .map((w) => ({ id: w.id, amount: cents(w.amount_cents), iban: w.iban, status: w.status, createdAt: w.created_at, decidedAt: w.decided_at }));
+    const documents = db.prepare('SELECT id, kind, file_name, mime_type, file_size, status, created_at, reviewed_at FROM kyc_documents WHERE user_id = ? ORDER BY id DESC').all(u.id)
+      .map((d) => ({ id: d.id, kind: d.kind, fileName: d.file_name, mimeType: d.mime_type, size: d.file_size, status: d.status, createdAt: d.created_at, reviewedAt: d.reviewed_at }));
+    const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = ?').get(u.id, type).s);
+    res.json({
+      user: { ...publicUser(u), bets: bets.length }, bets, transactions: txs, withdrawals, documents,
+      totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout') },
+    });
+  });
+
+  const KYC = ['not_submitted', 'pending', 'approved', 'rejected'];
+  admin.post('/users/:id/kyc', (req, res) => {
+    const u = playerRow(req.params.id);
+    const status = str(req.body?.status, 20);
+    if (!KYC.includes(status)) throw new HttpError(400, 'Estado de verificação inválido.');
+    db.prepare('UPDATE users SET kyc_status = ? WHERE id = ?').run(status, u.id);
+    res.json({ ok: true, kycStatus: status });
+  });
+
+  // One document: approve / reject it (the account follows: approved when one is approved).
+  admin.post('/kyc/:docId', (req, res) => {
+    const d = db.prepare('SELECT id, user_id FROM kyc_documents WHERE id = ?').get(Number(req.params.docId));
+    if (!d) throw new HttpError(404, 'Documento não encontrado.');
+    const status = str(req.body?.status, 20);
+    if (!['approved', 'rejected'].includes(status)) throw new HttpError(400, 'Decisão inválida.');
+    tx(db, () => {
+      db.prepare('UPDATE kyc_documents SET status = ?, reviewed_at = ? WHERE id = ?').run(status, nowIso(), d.id);
+      const left = db.prepare("SELECT status FROM kyc_documents WHERE user_id = ?").all(d.user_id).map((r) => r.status);
+      const account = left.includes('approved') ? 'approved' : left.includes('pending') ? 'pending' : 'rejected';
+      db.prepare('UPDATE users SET kyc_status = ? WHERE id = ?').run(account, d.user_id);
+    });
+    res.json({ ok: true });
+  });
+
+  // The file itself, for the administrator to look at (never cached).
+  admin.get('/kyc/:docId/file', (req, res) => {
+    const d = db.prepare('SELECT mime_type, file_name, data FROM kyc_documents WHERE id = ?').get(Number(req.params.docId));
+    if (!d) throw new HttpError(404, 'Documento não encontrado.');
+    // Only images and PDF are shown in the browser; anything else downloads (a sent file must never run as a page).
+    const viewable = /^(image\/(png|jpeg|webp)|application\/pdf)$/.test(d.mime_type);
+    res.set({
+      'Content-Type': viewable ? d.mime_type : 'application/octet-stream',
+      'Content-Disposition': `${viewable ? 'inline' : 'attachment'}; filename="${String(d.file_name).replace(/[^\w.\- ]/g, '_')}"`,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; sandbox",
+    });
+    res.send(Buffer.from(d.data));
   });
 
   admin.get('/bets', (_req, res) => {

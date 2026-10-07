@@ -56,3 +56,20 @@
 }
 .adm-inline { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 .adm-inline input { width: 80px; }
+
+/* Players: actions per row (wallet, free bets, ban, details) and the detail sums. */
+.user-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.user-acts.big { justify-content: flex-start; margin-top: 12px; }
+.ua { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 8px; border: 1px solid var(--border, #2a3037); background: #20262d; cursor: pointer; }
+.ua svg { width: 18px; height: 18px; }
+.ua.wallet { color: #9aa4b1; }
+.ua.gift { color: #a970ff; }
+.ua.ban { color: #e5575d; }
+.ua.ban.on { background: #3a1d20; }
+.ua.notes { color: #9aa4b1; background: #183528; border-color: #24563d; }
+.ua:hover { filter: brightness(1.2); }
+.users-table tr.is-banned td { opacity: .6; }
+.user-sums { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px; }
+.user-sums div { background: #1b2026; border: 1px solid #2a3037; border-radius: 8px; padding: 10px 12px; }
+.user-sums small { display: block; color: #8b95a1; font-size: 11px; }
+.user-sums strong { font-size: 16px; }
