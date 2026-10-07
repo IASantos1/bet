@@ -76,7 +76,8 @@ test('real widget-data: sc counts are stats (not events), H1 is the half-time sc
   assert.deepEqual(Object.fromEntries(s.stats.map((x) => [x.key, [x.home, x.away]])), { corners: [6, 4], yellow_cards: [2, 1] });
   assert.deepEqual(s.timeline.map((a) => [a.minute, a.type, a.team, a.label]), [[28, 'goal', 'home', 'Goal - (Civilizations)'], [68, 'goal', 'away', 'Goal - (El Jazera Egypt)']]);
   assert.deepEqual(s.situation, { side: 'away', situation: 'goal', text: 'Away Goal' });
-  assert.equal(s.ball, null); // no xy in this frame
+  // No xy in this frame: the ball is placed by the situation (away goal → at the home goal).
+  assert.deepEqual(s.ball, { x: 4, y: 50, estimated: true });
   // Without a timeline, sc counts are not turned into fake events.
   assert.deepEqual(normalizeWidgetData({ sc: { GOAL: [3, 3] } }).timeline, []);
   assert.equal(clockFrom(1500, 'First Half', 'live'), "25'");
@@ -135,4 +136,18 @@ test('admin "Ver tracker" also listens to the WebSocket for a few seconds', asyn
   assert.equal(r.ws.frames, 1);
   assert.deepEqual(r.ws.normalized.ball, { x: 94, y: 54 });
   assert.equal(r.ws.normalized.situation.situation, 'corner');
+});
+
+test('without xy the situation places the ball; real timeline kinds get Portuguese-ready types', async () => {
+  const { estimatedBall } = await import('../server/whtracker.js');
+  assert.deepEqual(normalizeWidgetData({ situation: 'Home Ball Safe' }).ball, { x: 30, y: 50, estimated: true });
+  assert.deepEqual(normalizeWidgetData({ situation: 'Away Dangerous Attack' }).ball, { x: 17, y: 50, estimated: true });
+  assert.deepEqual(normalizeWidgetData({ situation: 'Home Corner', xy: [0.97, 0.03] }).ball, { x: 97, y: 3 }); // real xy wins
+  assert.equal(estimatedBall({ side: null, situation: 'attack' }), null);
+  const t = normalizeWidgetData({ timeline: [
+    { type: 'shot_on_target', min: 10, team: 'home' }, { type: 'shot_off_target', min: 12, team: 'away' },
+    { type: 'corner', min: 11, team: 'home' }, { type: 'yellow_card', min: 29, team: 'away' }, { type: 'substitution', min: 53, team: 'away' },
+  ] }).timeline;
+  assert.deepEqual(t.map((a) => a.type), ['shot_on_target', 'shot_off_target', 'corner_awarded', 'card', 'substitution']);
+  assert.equal(t[3].card, 'yellow');
 });

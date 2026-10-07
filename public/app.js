@@ -1127,6 +1127,7 @@ const SITUATION_LABEL = {
   dangerous_attack: 'Ataque perigoso', attack: 'Ataque', possession: 'Posse de bola', safe: 'Posse segura',
   goal: 'GOLO!', corner: 'Canto', freekick: 'Livre', throwin: 'Lançamento lateral', offside: 'Fora de jogo',
   goalkeeper_saved: 'Defesa do guarda-redes', shotoffwoodwork: 'Bola no ferro',
+  goalkick: 'Pontapé de baliza', penalty: 'Penálti', shot: 'Remate',
 };
 const INCIDENT_ICON = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔁', var: '📺' };
 const ACTION_LABEL = {
@@ -1136,6 +1137,7 @@ const ACTION_LABEL = {
   player_off: 'Substituição (sai)', player_on: 'Substituição (entra)', ball_recovery: 'Recuperação', dispossessed: 'Perda de bola',
   aerial: 'Duelo aéreo', challenge: 'Disputa', keeper_pickup: 'Guarda-redes agarra', penalty_faced: 'Penálti', period_start: 'Início do período',
   period_end: 'Fim do período', deleted_event: 'Lance anulado', rescinded_card: 'Cartão anulado',
+  shot_on_target: 'Remate à baliza', shot_off_target: 'Remate para fora', substitution: 'Substituição',
 };
 
 function leaveMatch() {

@@ -96,7 +96,26 @@ export function normalizeSituation(raw) {
   return { side, situation, text };
 }
 
-const EVENT_TYPES = [[/goal|golo/i, 'goal'], [/yellow|amarel/i, 'card'], [/red|vermelh/i, 'card'], [/corner|canto/i, 'corner_awarded'], [/sub/i, 'player_on']];
+const EVENT_TYPES = [
+  [/goal|golo/i, 'goal'], [/yellow|amarel/i, 'card'], [/red|vermelh/i, 'card'], [/corner|canto/i, 'corner_awarded'], [/sub/i, 'substitution'],
+  [/on.?target/i, 'shot_on_target'], [/off.?target/i, 'shot_off_target'], [/penalt/i, 'penalty_faced'],
+];
+
+/**
+ * Where the ball usually is for a situation, on the home team's left-to-right pitch (x, y in %):
+ * the tracker sends xy only during play near the box, so "Ball Safe", attacks, corners and goal
+ * kicks without it still move the ball to the right area.
+ */
+const SITUATION_SPOT = {
+  safe: [30, 50], possession: [42, 50], attack: [66, 45], dangerous_attack: [83, 50], shot: [86, 48], goal: [96, 50],
+  corner: [98, 4], goalkick: [7, 50], freekick: [60, 40], throwin: [50, 2], penalty: [89, 50], offside: [72, 50],
+};
+export function estimatedBall(situation) {
+  const spot = situation?.side && SITUATION_SPOT[situation.situation];
+  if (!spot) return null;
+  const [x, y] = situation.side === 'away' ? [100 - spot[0], 100 - spot[1]] : spot;
+  return { x, y, estimated: true };
+}
 /** timeline / sc entries → [{ minute, type, team, label }]. */
 export function normalizeTimeline(raw) {
   // An object is events grouped by kind ({ GOAL: [{ min, team }] }); plain counts ({ GOAL: [3, 3] }) are not events.
@@ -131,6 +150,8 @@ export function normalizeWidgetData(body) {
     const scale = (v) => { const n = num(v); return n <= 1 ? n * 100 : n; };
     ball = { x: Math.max(0, Math.min(100, scale(xy[0]))), y: Math.max(0, Math.min(100, scale(xy[1]))) };
   }
+  const situation = normalizeSituation(d.situation);
+  if (!ball) ball = estimatedBall(situation);
   // sc: per-kind counts as [home, away] ({ GOAL: [3, 3], CORNER: [5, 2], H1: [1, 0] }); H1 is the half-time score.
   let halfTime = null;
   if (d.sc && typeof d.sc === 'object' && !Array.isArray(d.sc)) {
@@ -155,7 +176,7 @@ export function normalizeWidgetData(body) {
     status: first(d.status, null), period: first(d.period, null), timer: first(d.timer, d.time, null),
     matchLength: num(d.match_length), injuryTime: num(d.injury_time),
     homeName: first(d.home_name, null), awayName: first(d.away_name, null),
-    stats, situation: normalizeSituation(d.situation), ball, timeline,
+    stats, situation, ball, timeline,
   };
 }
 
@@ -281,7 +302,9 @@ export function createWinHouseTracker(db, {
         try { msg = JSON.parse(typeof m.data === 'string' ? m.data : String(m.data)); } catch { return; }
         const fields = frameFields(msg);
         if (!fields) return;
+        // A frame without xy has no live ball position: drop the previous one (the situation places it).
         w.raw = { ...(w.raw || {}), ...fields };
+        if (!('xy' in fields)) delete w.raw.xy;
         w.lastFrameAt = Date.now();
         w.frames = (w.frames || 0) + 1;
         try { process(eventId, w); } catch (err) { log(`tracker ws ${w.gameId}: ${err.message}`); }
@@ -380,7 +403,17 @@ export function createWinHouseTracker(db, {
       sock.onmessage = (m) => {
         out.frames += 1;
         const text = typeof m.data === 'string' ? m.data : String(m.data);
-        if (out.samples.length < max) out.samples.push(text.slice(0, 1500));
+        let frame = null;
+        try { frame = JSON.parse(text); } catch { /* not JSON */ }
+        if (frame && typeof frame === 'object') {
+          if (frame.xy !== undefined) out.withXy = (out.withXy || 0) + 1;
+          if (frame.situation) out.situations = [...new Set([...(out.situations || []), String(frame.situation)])].slice(0, 20);
+        }
+        // Samples without the long timeline, so the moving parts (xy, situation, timer) show.
+        if (out.samples.length < max) {
+          const short = frame && typeof frame === 'object' ? JSON.stringify({ ...frame, timeline: Array.isArray(frame.timeline) ? `[${frame.timeline.length} lances]` : frame.timeline }) : text;
+          out.samples.push(short.slice(0, 1500));
+        }
         try { const f = frameFields(JSON.parse(text)); if (f) merged = { ...merged, ...f }; } catch { /* not JSON */ }
       };
     });
