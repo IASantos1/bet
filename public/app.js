@@ -37,7 +37,8 @@ const state = {
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
   casinoSession: null,
-  match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  liveTv: false, liveSport: '',
+  match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(),
   mode: 'single',
   sport: '',
@@ -402,8 +403,22 @@ function resultsPage() {
     <section class="section" id="resultsBox"><div class="loading">A carregar…</div></section>${footer()}`;
 }
 
+const ICON_TV = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 2.5l4 3.5 4-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 10v5l4.5-2.5z" fill="currentColor"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8v8l6-4z" fill="currentColor"/></svg>';
+const ICON_PITCH = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5v14M2 9.5h3v5H2M22 9.5h-3v5h3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+
 function livePage() {
-  const live = state.events.filter((e) => e.status === 'live');
+  const all = state.events.filter((e) => e.status === 'live');
+  // TV on: only games with live video. Then the sport chosen in the strip.
+  const withTv = state.liveTv ? all.filter((e) => e.stream) : all;
+  const present = [...new Set(withTv.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
+  if (state.liveSport && !present.includes(state.liveSport)) state.liveSport = '';
+  const live = state.liveSport ? withTv.filter((e) => e.sport === state.liveSport) : withTv;
+  const tvCount = all.filter((e) => e.stream).length;
+  const strip = `<div class="sport-strip live-sports">
+      <button class="sport-pill${!state.liveSport ? ' active' : ''}" data-live-sport="">Todos <small>${withTv.length}</small></button>
+      ${present.map((sp) => `<button class="sport-pill${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small>${withTv.filter((e) => e.sport === sp).length}</small></button>`).join('')}
+    </div>`;
   // Football first, then the other sports; big leagues first inside each sport.
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const blocks = sports.map((sp) => {
@@ -411,8 +426,11 @@ function livePage() {
     return `<section class="section"><div class="section-head"><h2>${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
       <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
   }).join('');
-  return `<div class="page-title"><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
-    ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? 'Não há eventos ao vivo neste momento.' : 'A carregar…'}</div>`}
+  const empty = state.liveTv ? 'Nenhum jogo com transmissão ao vivo neste momento.' : 'Não há eventos ao vivo neste momento.';
+  return `<div class="page-title live-title"><div><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
+      <button class="tv-toggle${state.liveTv ? ' active' : ''}" data-live-tv title="Só jogos com transmissão" aria-pressed="${state.liveTv}">${ICON_TV}<small>${tvCount}</small></button></div>
+    ${all.length ? strip : ''}
+    ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? empty : 'A carregar…'}</div>`}
     ${footer()}`;
 }
 
@@ -1013,6 +1031,12 @@ document.addEventListener('click', async (e) => {
   if (opener && !e.target.closest('a, button')) { location.hash = `#/jogo/${opener.dataset.open}`; return; }
   const matchTab = e.target.closest('[data-match-tab]');
   if (matchTab) { state.match.tab = matchTab.dataset.matchTab; render({ keepScroll: true }); return; }
+  const liveTv = e.target.closest('[data-live-tv]');
+  if (liveTv) { state.liveTv = !state.liveTv; render({ keepScroll: true }); return; }
+  const liveSport = e.target.closest('[data-live-sport]');
+  if (liveSport) { state.liveSport = liveSport.dataset.liveSport; render({ keepScroll: true }); return; }
+  const matchView = e.target.closest('[data-match-view]');
+  if (matchView) { state.match.view = matchView.dataset.matchView; render({ keepScroll: true }); return; }
   const marketCatBtn = e.target.closest('[data-market-cat]');
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
 
@@ -1154,7 +1178,7 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
-  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
+  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null });
   $('#sideTracker')?.replaceChildren();
 }
 
@@ -1303,8 +1327,13 @@ function matchPage(sub) {
         <div class="match-center">${center}</div>
         <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
-      <div id="trackerInline" class="tracker-inline"></div>
+      ${live && m.view === 'stream' ? streamBox(e) : ''}
+      <div id="trackerInline" class="tracker-inline${live && m.view === 'stream' ? ' off' : ''}"></div>
     </section>
+    ${live ? `<div class="match-views">
+      <button class="${m.view === 'stream' ? 'active' : ''}${e.stream ? '' : ' none'}" data-match-view="stream" title="${e.stream ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
+      ${e.liveTracker || e.sport === 'tenis' ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
+    </div>` : ''}
     <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
     <div class="match-body">${body}</div>
     ${footer()}`;
@@ -1336,6 +1365,14 @@ function marketCat(mk) {
   if (mk.market !== 'x') return CAT_BY_MARKET[mk.market] || 'especiais';
   const name = String(mk.name || '').toLowerCase();
   return CAT_BY_NAME.find(([, re]) => re.test(name))?.[0] || 'especiais';
+}
+
+/** The match's live video, where WinHouse gives an address; otherwise why there is none. */
+function streamBox(e) {
+  if (e.streamUrl) {
+    return `<div class="stream-box"><iframe src="${esc(e.streamUrl)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
+  }
+  return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'Este jogo tem transmissão ao vivo. O vídeo aparece aqui quando a transmissão estiver configurada.' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
 }
 
 function marketsView(e) {

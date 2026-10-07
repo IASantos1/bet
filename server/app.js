@@ -230,7 +230,10 @@ export function createApp(db, {
         tier: leagueTier(e.sport, e.competition),
         tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
         liveTracker: e.status === 'live' && (e.source === 'bzzoiro' || (e.source === 'winhouse' && e.sport === 'futebol' && !!winhouseTracker?.enabled)),
+        // Live video on WinHouse for this game (the TV filter and the play button).
+        stream: e.status === 'live' && e.source === 'winhouse' && !!winhouseFeed?.streamOf?.(e.external_id).has,
       };
+      if (allMarkets && out.stream) out.streamUrl = winhouseFeed.streamOf(e.external_id).url;
       if (allMarkets) {
         const block = (m, list, suffix = '') => ({
           market: m, name: marketName(e.sport, m) + suffix,

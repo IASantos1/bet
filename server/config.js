@@ -110,6 +110,8 @@ export const config = {
   winhouse: {
     baseUrl: unquote(env.WINHOUSE_BASE_URL),
     lang: unquote(env.WINHOUSE_LANG) || 'pt',
+    // The operator's embed key (ifr_…): which games have live video (/ajax/streams).
+    tenant: unquote(env.WINHOUSE_TENANT),
     routes: {
       live: unquote(env.WINHOUSE_LIVE), prematchMain: unquote(env.WINHOUSE_PREMATCH_MAIN), prematchTop: unquote(env.WINHOUSE_PREMATCH_TOP),
       prematch24h: unquote(env.WINHOUSE_PREMATCH_24H), prematchEvent: unquote(env.WINHOUSE_PREMATCH_EVENT),
@@ -117,6 +119,7 @@ export const config = {
       // this at prematchgame (which answers [] once a game starts) is ignored.
       liveEvent: /prematchgame/i.test(unquote(env.WINHOUSE_LIVE_EVENT) || '') ? '' : unquote(env.WINHOUSE_LIVE_EVENT),
       widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA), wsWidget: unquote(env.WINHOUSE_WS_WIDGET), tracker: unquote(env.WINHOUSE_TRACKER_ROUTE),
+      streams: unquote(env.WINHOUSE_STREAMS),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
     // unset = estimated from the live list) and how long a match must stay out of the live list

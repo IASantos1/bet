@@ -581,3 +581,20 @@ test('game pages: the line after the [CODE] tag is not part of the market name; 
   await t.feed.syncLiveDetails();
   assert.deepEqual(codes(), ['1000300~European Handicap Including Overtime~1 (0:6)=1']);
 });
+
+test('streams: games with live video from /ajax/streams (needs the tenant key)', async () => {
+  const lists = { live: [football(60, 30, '0-0', ODD), football(61, 30, '0-0', ODD, { league: 'Spain. La Liga', stream_url: 'https://tv.example/embed/61' })] };
+  const t = setupFeed(lists);
+  const client = {
+    enabled: true, hasTenant: true,
+    live: async () => ({ ok: true, status: 200, body: lists.live }),
+    streams: async () => ({ ok: true, status: 200, body: { success: true, ids: [60, 999] } }),
+  };
+  const feed = createWinHouseFeed(t.db, { client, tzOffsetMinutes: 60 });
+  await feed.syncLive();
+  assert.deepEqual(await feed.syncStreams().then((r) => [r.ids, r.live]), [2, 1]);
+  assert.deepEqual(feed.streamOf(60), { has: true, url: null });
+  assert.deepEqual(feed.streamOf(61), { has: true, url: 'https://tv.example/embed/61' });
+  assert.deepEqual(feed.streamOf(62), { has: false, url: null });
+  assert.equal(await createWinHouseFeed(t.db, { client: { ...client, hasTenant: false } }).syncStreams(), null);
+});
