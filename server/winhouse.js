@@ -222,6 +222,13 @@ export function createWinHouseClient({
     let key = live ? 'liveEvent' : 'prematchEvent';
     let r = await request(key, { gameId: id });
     let cat = marketCatalog(r.body);
+    // What the live page itself answered, even when the pre-match page is used instead.
+    const liveAttempt = live ? {
+      route: paths.liveEvent.replace('{lang}', lang).replace('{gameId}', id), status: r.status, bytes: r.bytes, contentType: r.contentType,
+      json: r.body !== null, totalOdds: cat.totalOdds,
+      keys: r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? Object.keys(r.body).slice(0, 40) : null,
+      sample: (r.body !== null ? JSON.stringify(r.body) : r.text || '').slice(0, 6000),
+    } : undefined;
     // No live page (or an empty one): the pre-match page of the same game.
     if (live && (!r.ok || !cat.totalOdds)) {
       const alt = await request('prematchEvent', { gameId: id });
@@ -231,6 +238,7 @@ export function createWinHouseClient({
     return {
       at: new Date().toISOString(), gameId: String(id), live, route: paths[key].replace('{lang}', lang).replace('{gameId}', id), status: r.status, bytes: r.bytes, json: r.body !== null,
       ...cat,
+      liveAttempt,
       // The first entries in full (field names and values), so unknown layouts can be mapped.
       sample: cat.totalOdds ? undefined : r.body === null ? r.text.slice(0, 2000) : JSON.stringify(Array.isArray(r.body) ? r.body.slice(0, 4) : r.body).slice(0, 8000),
     };
@@ -296,6 +304,8 @@ export function createWinHouseClient({
       if (isPage) pagesRead += 1; else scriptsRead += 1;
       if (!r.text) continue;
       scan(r.text, name);
+      // The sportsbook's own API client and push feed: how it calls /ajax and subscribes to odds.
+      if (/^\/sb\/assets\/js\/(api|push)\.js$/.test(new URL(u).pathname)) docs[new URL(u).pathname] = r.text.slice(0, 40_000);
       if (DOCS.includes(new URL(u).pathname)) {
         // Documentation: its text (tags removed) and every route it names.
         const text = r.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n');
