@@ -63,3 +63,23 @@ test('a watched match streams the tracker: ball, situation and new timeline item
   assert.equal(extras.stats[0].key, 'shots_on_target');
   assert.equal(calls.filter((c) => c.startsWith('w')).length, 1); // the key is cached
 });
+
+test('real widget-data: sc counts are stats (not events), H1 is the half-time score, timer gives the clock', async () => {
+  const { clockFrom } = await import('../server/whtracker.js');
+  const real = { success: true, event_id: 's9-99.759416090', ts: 1791387297618, sc: { GOAL: [3, 3], H1: [1, 0], CORNER: [6, 4], YELLOW_CARD: [2, 1] },
+    home_score: 3, away_score: 3, status: 'live', period: 'Second Half', timer: 5469, situation: 'Away Goal', match_length: 90, injury_time: 0,
+    timeline: [{ type: 'goal', min: 28, text: 'Goal - (Civilizations)', team: 'home' }, { type: 'goal', min: 68, text: 'Goal - (El Jazera Egypt)', team: 'away' }],
+    home_name: 'Civilizations', away_name: 'El Jazera Egypt', plus: null, pitch: 'v1' };
+  const s = normalizeWidgetData(real);
+  assert.equal(s.clock, "90+1'");
+  assert.deepEqual(s.halfTime, { home: 1, away: 0 });
+  assert.deepEqual(Object.fromEntries(s.stats.map((x) => [x.key, [x.home, x.away]])), { corners: [6, 4], yellow_cards: [2, 1] });
+  assert.deepEqual(s.timeline.map((a) => [a.minute, a.type, a.team, a.label]), [[28, 'goal', 'home', 'Goal - (Civilizations)'], [68, 'goal', 'away', 'Goal - (El Jazera Egypt)']]);
+  assert.deepEqual(s.situation, { side: 'away', situation: 'goal', text: 'Away Goal' });
+  assert.equal(s.ball, null); // no xy in this frame
+  // Without a timeline, sc counts are not turned into fake events.
+  assert.deepEqual(normalizeWidgetData({ sc: { GOAL: [3, 3] } }).timeline, []);
+  assert.equal(clockFrom(1500, 'First Half', 'live'), "25'");
+  assert.equal(clockFrom(2820, 'First Half', 'live'), "45+2'");
+  assert.equal(clockFrom(2700, 'Half Time', 'live'), 'Intervalo');
+});
