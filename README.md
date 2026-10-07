@@ -120,6 +120,11 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   4x4/5x5, subsoccer, cyber…), ténis de mesa ATT / Setka Cup / TT Cup e ténis UTR
   (`WINHOUSE_BLOCK_MINOR=0` mostra-os). `WINHOUSE_BLOCK_LEAGUES` junta mais termos, separados por
   vírgulas (ex.: `Liga Pro, Czech`). Os já importados são removidos enquanto não tiverem apostas.
+- **Ligas de futebol**: só entram as competições da lista interna (`FOOTBALL_LEAGUES` em
+  `server/winhouse.js`: Premier League, La Liga, Serie A, Bundesliga, Brasileirão, UEFA, Libertadores…).
+  `WINHOUSE_FOOTBALL_LEAGUES` troca a lista (nomes como a WinHouse os escreve, separados por `;`) e
+  `*` mostra todas. Jogos já importados de outras ligas saem; os que já têm apostas seguem até ao fim
+  (sem odds) para serem liquidados.
 - **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` é
   liquidado pelo último placar só se estava claramente no fim (futebol ≥ 88'; basquetebol ≥ 39'
   ou 47' na NBA e sem empate; hóquei ≥ 59' ou prolongamento = empate no regulamentar; ténis com 2
