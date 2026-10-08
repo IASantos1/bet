@@ -418,8 +418,15 @@ function winhouseFeedInfo(fd) {
       Páginas ao vivo (todos os mercados em jogo): ${ld ? (ld.pausedUntil ? `<span class="pill lost">rota não encontrada (404) — pausa até ${esc(fmtDateTime(ld.pausedUntil))}</span>` : `${ld.read} lidas agora${ld.failed ? `, ${ld.failed} com erro` : ''} de ${ld.live} jogos com odds${ld.route ? ` via ${esc(ld.route)}` : ''} (${esc(fmtDateTime(ld.at))})`) : 'ainda não lidas'} ·
       ${pushInfo ? `Odds em tempo real: ${pushInfo} ·` : ''}
       Transmissões: ${fd.streams === false ? 'defina WINHOUSE_TENANT (a chave ifr_… do iframe) nas Variables' : fd.streams ? `${fd.streams.ids} jogos com vídeo, ${fd.streams.live} dos nossos ao vivo (${esc(fmtDateTime(fd.streams.at))})` : 'ainda não lidas'} ·
+      Jogos futuros: ${fd.last?.future?.off || !fd.futureDays ? 'desligado' : fd.last?.future?.at ? `${fd.last.future.games} jogos até ${fd.futureDays} dias${fd.last.future.failed ? `, ${fd.last.future.failed} desporto(s) com erro` : ''}${futureUntil(fd.last.future)} (${esc(fmtDateTime(fd.last.future.at))}, de ${fd.futureMinutes} em ${fd.futureMinutes} min)` : `${fd.futureDays} dias — ainda não lidos`} ·
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
+}
+
+/** The furthest game the future lists brought, per sport ("futebol até 30/10"). */
+function futureUntil(f) {
+  const parts = Object.entries(f.bySport || {}).filter(([, v]) => v.until).map(([k, v]) => `${k} até ${esc(new Date(v.until).toLocaleDateString('pt-PT'))}`);
+  return parts.length ? ` — ${parts.join(', ')}` : '';
 }
 
 function winhousePanel(w) {
@@ -427,6 +434,10 @@ function winhousePanel(w) {
     ${winhouseFeedInfo(w?.feed)}
     <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 6 rotas e mostra o que respondem. Ver mercados do jogo / ao vivo: abre a página de um jogo (gameId, ou o 1.º da lista pré-jogo / ao vivo) e lista todos os mercados que oferece. Ver tracker: mostra o que o tracker do jogo devolve (gameId, ou o 1.º jogo de futebol ao vivo) — copie e envie para os ligarmos. Ver vídeo (HLS): o que a WinHouse responde ao pedido do vídeo (gameId, ou o 1.º jogo ao vivo com transmissão) e o endereço .m3u8 montado.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
+    ${w?.feed?.enabled ? `<div class="form-actions"><label class="field adm-inline">Jogos futuros (dias, 0–90) <input id="whFutureDays" type="number" min="0" max="90" step="1" value="${Number(w.feed.futureDays) || 0}"></label>
+      <button class="ghost-btn btn-sm" data-action="winhouse-future">Guardar</button>
+      <button class="ghost-btn btn-sm" data-action="winhouse-future" data-now="1">Guardar e buscar agora</button></div>
+      <p class="muted">Lê a lista completa de cada desporto na WinHouse (como o próprio livro) e importa os jogos até esse número de dias; o site mostra-os no Desporto e nas ligas. 0 = só as listas curtas (próximas 24 h, ligas principais).</p>` : ''}
     ${w?.enabled ? `<div class="form-actions"><label class="field adm-inline">gameId (opcional) <input id="whGame" inputmode="numeric" maxlength="15"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-health">Testar WinHouse</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-markets">Ver mercados do jogo</button>
@@ -707,6 +718,15 @@ document.addEventListener('click', async (e) => {
       box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'winhouse-future') {
+    const days = Number($('#whFutureDays')?.value);
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/winhouse/future', { method: 'POST', body: { days, now: actionEl.dataset.now === '1' } });
+      const f = r.future;
+      toast(actionEl.dataset.now === '1' && f?.at ? `Jogos futuros: ${f.games} jogos até ${r.futureDays} dias` : `Guardado: ${r.futureDays} dias`);
+      render();
+    } catch (err) { toast('Erro', err.message, 'error'); } finally { actionEl.disabled = false; }
   } else if (action === 'winhouse-health') {
     const box = $('#whOut');
     actionEl.disabled = true;

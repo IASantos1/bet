@@ -304,3 +304,14 @@ test('admin players: wallet credit/debit, free bets, ban and the detail page', a
   const admMe = (await adm('GET', '/api/me')).body.user;
   assert.equal((await adm('POST', `/api/admin/users/${admMe.id}/ban`, { banned: true })).status, 400);
 });
+
+test('admin: future games setting (0–90 days) is saved', async () => {
+  const adm = await adminClient();
+  assert.equal((await adm('POST', '/api/admin/winhouse/future', { days: 120 })).status, 400);
+  const r = await adm('POST', '/api/admin/winhouse/future', { days: 45 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.futureDays, 45);
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'winhouse.futureDays'").get().value, '45');
+  assert.equal((await client()('POST', '/api/admin/winhouse/future', { days: 10 })).status, 401);
+  assert.equal((await client()('GET', '/api/events')).status, 200);
+});
