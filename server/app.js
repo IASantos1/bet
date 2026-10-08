@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
-import { LEAGUE_TREES, leagueKey } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createFeatured } from './featured.js';
@@ -1010,10 +1010,17 @@ export function createApp(db, {
 
   // Market catalogue: what the provider really returns, sampled on real games of each sport.
   const catalog = createMarketCatalog(db, [
+    // WinHouse: every sport it feeds (the sports with games of that source now).
+    winhouse?.enabled && winhouseFeed && {
+      source: WH_SOURCE, enabled: () => true,
+      sports: () => db.prepare("SELECT sport, COUNT(*) AS n FROM events WHERE source = ? AND status IN ('scheduled', 'live') GROUP BY sport ORDER BY n DESC").all(WH_SOURCE).map((r) => r.sport),
+      gameMarkets: (gameId, { live }) => winhouse.markets({ gameId, live }),
+      wired: (sport) => new Set(WH_SPORT_MARKETS[sport] || []),
+    },
     feed && { sport: 'futebol', source: 'bzzoiro', enabled: () => feed.status().enabled, rawOdds: feed.rawOdds, extra: feed.rawOddsExtra },
     tennis && { sport: 'tenis', source: TENNIS_SOURCE, enabled: () => tennis.status().enabled, rawOdds: tennis.rawOdds },
     ...Object.entries(sports).map(([sport, f]) => ({ sport, source: f.source, enabled: () => f.status().enabled, rawOdds: f.rawOdds })),
-  ].filter((p) => p && p.rawOdds));
+  ].filter((p) => p && (p.rawOdds || p.gameMarkets)));
   admin.get('/market-catalog', (_req, res) => res.json({ catalog: catalog.last(), running: catalog.running() }));
   admin.post('/market-catalog/run', async (req, res, next) => {
     try {

@@ -365,24 +365,27 @@ function marketCatalog({ catalog, running }) {
   lastCatalog = catalog;
   const intro = `<div class="panel"><h3>Catálogo de mercados do fornecedor</h3>
     <p class="muted">Consulta jogos reais de cada desporto (pré-jogo e ao vivo) e lista os mercados que a API devolve de facto:
-    tipo, família, período, linhas, seleções, número de casas e em quantos jogos da amostra aparece. "Na Bet62" marca os já ligados.
-    Cada jogo consultado gasta 1 a 3 pedidos à API.</p>
+    nome, código, linhas, seleções e em quantos jogos da amostra aparece. Na WinHouse todos os mercados vão para o site;
+    "Liquidação" diz quais o sistema liquida sozinho pelo resultado e quais ficam para decidir em Liquidação. Cada jogo consultado gasta 1 pedido.</p>
     <div class="form-actions"><label class="field adm-inline">Jogos por desporto <input id="catSample" type="number" min="3" max="30" value="12"></label>
       <button class="primary-btn" data-action="catalog-run" ${running ? 'disabled' : ''}>${running ? 'A consultar…' : 'Consultar a API agora'}</button>
       ${catalog ? '<button class="ghost-btn" data-action="catalog-copy">Copiar resultado (JSON)</button>' : ''}</div>
     ${catalog ? `<p class="muted">Última consulta: ${esc(fmtDateTime(catalog.at))} · ${catalog.calls} pedidos.</p>` : ''}</div>`;
   if (!catalog) return `${intro}<div class="panel empty">Ainda não foi feita nenhuma consulta.</div>`;
-  return intro + catalog.sports.map((sp) => {
+  const sports = catalog.sports.filter((sp) => !sp.disabled);
+  if (!sports.length) return `${intro}<div class="panel empty">Nenhuma fonte de odds ligada com jogos para consultar.</div>`;
+  return intro + sports.map((sp) => {
     const name = `${SPORT_META[sp.sport]?.icon || ''} ${SPORT_META[sp.sport]?.name || sp.sport}`;
     if (sp.disabled) return `<div class="panel"><h3>${esc(name)}</h3><p class="muted">Desligado (sem token ou sem Sports Addon).</p></div>`;
     const rows = sp.markets.map((m) => `<tr><td><b>${esc(m.kind)}</b>${m.family !== m.kind ? `<br><small class="muted">${esc(m.family)}</small>` : ''}</td>
       <td>${esc(m.period)}</td><td>${esc(m.lines.join(', ') || '—')}</td><td><small>${esc(m.selections.join(', '))}</small></td>
-      <td class="num">${m.bookmakers || '—'}</td><td class="num">${m.events}/${sp.sampled}</td><td class="num">${m.pre} / ${m.live}</td>
-      <td>${m.wired ? '<span class="pill won">Sim</span>' : '<span class="pill">Não</span>'}</td></tr>`).join('');
-    return `<div class="panel"><h3>${esc(name)} <small class="muted">· ${sp.sampled} jogos (${sp.sampledLive} ao vivo)</small></h3>
+      ${sp.source === 'winhouse' ? '' : `<td class="num">${m.bookmakers || '—'}</td>`}<td class="num">${m.events}/${sp.sampled}</td><td class="num">${m.pre} / ${m.live}</td>
+      <td>${sp.source === 'winhouse' ? (m.wired ? '<span class="pill won">Automática</span>' : '<span class="pill">Manual (admin)</span>')
+        : m.wired ? '<span class="pill won">Sim</span>' : '<span class="pill">Não</span>'}</td></tr>`).join('');
+    return `<div class="panel"><h3>${esc(name)} <small class="muted">· ${sp.source === 'winhouse' ? 'WinHouse · ' : ''}${sp.sampled} jogos (${sp.sampledLive} ao vivo)</small></h3>
       ${sp.leagues.length ? `<p class="muted"><small>${esc(sp.leagues.join(' · '))}</small></p>` : ''}
       ${sp.errors.length ? `<div class="form-error">${esc(sp.errors.join(' | '))}</div>` : ''}
-      ${sp.markets.length ? `<div class="table-wrap"><table><thead><tr><th>Mercado</th><th>Período</th><th>Linhas</th><th>Seleções</th><th class="num">Casas</th><th class="num">Jogos</th><th class="num">Pré / Vivo</th><th>Na Bet62</th></tr></thead>
+      ${sp.markets.length ? `<div class="table-wrap"><table><thead><tr><th>Mercado</th><th>${sp.source === 'winhouse' ? 'Categoria' : 'Período'}</th><th>Linhas</th><th>Seleções</th>${sp.source === 'winhouse' ? '' : '<th class="num">Casas</th>'}<th class="num">Jogos</th><th class="num">Pré / Vivo</th><th>${sp.source === 'winhouse' ? 'Liquidação' : 'Na Bet62'}</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : '<p class="muted">A API não devolveu mercados para estes jogos.</p>'}</div>`;
   }).join('');
 }
