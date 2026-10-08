@@ -328,9 +328,12 @@ export function createWinHouseClient({
       if (/^\/sb\/assets\/js\/(api|push)\.js$/.test(new URL(u).pathname)) docs[new URL(u).pathname] = r.text.slice(0, 40_000);
       // How the book signs a player in and sends that session (live video needs one): the code around it.
       if (/\/sb\/assets\/js\//.test(new URL(u).pathname)) {
-        for (const m of r.text.matchAll(/livestream|tenant\/sso|tenant\/session|ajaxauth|setLaunch|launch=|Authorization|X-WH-[A-Za-z]+|document\.cookie|sessionToken|authToken/g)) {
-          if (session.length >= 30) break;
-          const around = r.text.slice(Math.max(0, m.index - 300), m.index + 400).replace(/\s+/g, ' ');
+        // The live video uses a short read-scope token (lToken), swapped for the sign-in one (rToken):
+        // its definitions get a longer window, to see which route makes that swap.
+        for (const m of r.text.matchAll(/function [lr]Token\b|read-scope|livestream|tenant\/sso|tenant\/session|ajaxauth|setLaunch|launch=|Authorization|X-WH-[A-Za-z]+|document\.cookie|sessionToken|authToken/g)) {
+          if (session.length >= 40) break;
+          const wide = /Token\b|read-scope/.test(m[0]);
+          const around = r.text.slice(Math.max(0, m.index - (wide ? 200 : 300)), m.index + (wide ? 1600 : 400)).replace(/\s+/g, ' ');
           if (!session.some((x) => x.around === around)) session.push({ where: name, match: m[0], around });
         }
       }
@@ -365,7 +368,8 @@ export function createWinHouseClient({
       docRoutes: [...docRoutes].slice(0, 200),
       routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
       docs,
-      session,
+      // The token swap first (it is what the live video is missing).
+      session: [...session.filter((x) => /Token|read-scope/.test(x.match)), ...session.filter((x) => !/Token|read-scope/.test(x.match))],
     };
   }
 
