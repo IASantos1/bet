@@ -84,6 +84,13 @@ export const config = {
     liveOddsStaleSeconds: int(env.LIVE_ODDS_STALE_SECONDS, 600),
   },
 
+  // Casino through BigBang (seamless wallet). Live key or sandbox key (ek_test_…); when set it
+  // replaces the older aggregator below.
+  bigbang: {
+    apiKey: (env.BIGBANG_API_KEY || '').trim(),
+    baseUrl: (env.BIGBANG_API_URL || 'https://api.bigbangcasino.bet/api/v1').trim(),
+  },
+
   // Casino games (aggregator Agent API v4, Transfer mode). Disabled until both are set.
   casino: {
     baseUrl: (env.CASINO_API_URL || '').trim(),

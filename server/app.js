@@ -16,7 +16,9 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
+  casinoOffer, claimSpins, spinsRow, spinsView,
 } from './promotions.js';
+import { playerToken } from './bigbang.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
@@ -116,7 +118,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, stripe = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, stripe = null, bigbang = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -722,21 +724,22 @@ export function createApp(db, {
       }
       // The player's own deposit limits (responsible gaming).
       checkDeposit(db, req.user, amount);
-      // The player may decline the deposit bonus; whether one is given, and how much, is decided here.
-      const bonus = req.body.bonus !== false;
+      // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
+      // whether it is given, and how much, is decided here.
+      const promo = ['sport', 'casino', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
       if (stripeMode) {
         // Inside the site: MB WAY / Multibanco confirmed here, the card through Stripe's form on our page.
         const method = String(req.body.method || '');
         if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'Pagamento por cartão indisponível: falta STRIPE_PUBLISHABLE_KEY.');
         let r;
         try {
-          r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone, bonus });
+          r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone, promo });
         } catch (err) {
           throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
         }
         return res.status(201).json({ payment: depositOut(r), clientSecret: r.clientSecret, publishableKey: r.publishableKey, balance: cents(userById(req.user.id).balance_cents) });
       }
-      demoDeposit(req, res, amount, bonus);
+      demoDeposit(req, res, amount, promo);
     } catch (err) { next(err); }
   });
 
@@ -755,29 +758,42 @@ export function createApp(db, {
     entity: r.entity, reference: r.reference, expiresAt: r.expiresAt, voucherUrl: r.voucherUrl,
   });
 
-  function demoDeposit(req, res, amount, bonus) {
+  function demoDeposit(req, res, amount, promo) {
     const method = ['mbway', 'multibanco', 'cartao'].includes(req.body.method) ? req.body.method : 'cartao';
     const label = { mbway: 'MB WAY', multibanco: 'Multibanco', cartao: 'Cartão' }[method];
     const granted = tx(db, () => {
       postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`);
       const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
-      return onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', optIn: bonus });
+      return onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', choice: promo });
     });
     const u = userById(req.user.id);
-    res.status(201).json({ balance: cents(u.balance_cents), bonus: granted ? bonusView(granted) : null, user: userOut(u) });
+    const bonus = !granted ? null : granted.kind === 'casinoFs' ? { name: CAMPAIGN_NAMES.casinoFs, amount: granted.value_cents / 100, spins: granted.spins } : bonusView(granted);
+    res.status(201).json({ balance: cents(u.balance_cents), bonus, user: userOut(u) });
   }
 
   // ---------- promotions ----------
 
   // The campaigns (public) and the player's own: bonuses with their rollover, free bets, ledger.
+  const gameName = (id) => bigbang?.enabled ? bigbang.gameNameSync(id) : null;
   app.get('/api/promotions', (req, res) => {
-    res.json({ campaigns: publicCampaigns(db), mine: req.user ? playerPromos(db, req.user.id) : null });
+    res.json({ campaigns: publicCampaigns(db), mine: req.user ? playerPromos(db, req.user.id, { gameName }) : null });
   });
   // What a deposit of this amount would earn now (the deposit form shows it; the server decides again on payment).
   app.get('/api/promotions/offer', requireUser, (req, res) => {
     const amount = Math.round(Number(String(req.query.amount || '0').replace(',', '.')) * 100);
-    const o = depositOffer(db, req.user.id, Number.isFinite(amount) ? amount : 0, { method: str(req.query.method, 20) || null });
+    const value = Number.isFinite(amount) ? amount : 0;
+    const method = str(req.query.method, 20) || null;
+    if (req.query.promo === 'casino') {
+      const o = casinoOffer(db, req.user.id, value, { method });
+      return res.json({ campaign: o.campaign, name: o.name, spins: o.spins || 0, spinValue: o.spinValue, bonus: o.valueCents ? cents(o.valueCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+    }
+    const o = depositOffer(db, req.user.id, value, { method });
     res.json({ campaign: o.campaign, name: o.name, bonus: o.bonusCents ? cents(o.bonusCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+  });
+  // The player ends the free spins now: winnings above the value given are paid as real money.
+  app.post('/api/me/free-spins/:id/claim', requireUser, (req, res) => {
+    const paid = tx(db, () => claimSpins(db, req.user.id, req.params.id));
+    res.json({ paid: cents(paid), user: userOut(userById(req.user.id)) });
   });
 
   // Responsible-gaming limits (stricter at once, looser after 24 h).
@@ -846,7 +862,24 @@ export function createApp(db, {
 
   // ---------- casino ----------
 
-  const casinoOn = () => casino && casino.enabled;
+  // BigBang seamless wallet: the provider reads the balance and sends each bet / win (server to
+  // server, signed with our API key; checked in bigbang.js). Configure both URLs on the key in
+  // BigBang's dashboard: <site>/api/casino/bb/user and <site>/api/casino/bb/balance.
+  app.get('/api/casino/bb/user', (req, res) => {
+    if (!bigbang?.enabled) return res.status(503).json({ error: 'casino disabled' });
+    const r = bigbang.walletUser(str(req.query.username, 80));
+    res.status(r.status).json(r.body);
+  });
+  app.post('/api/casino/bb/balance', (req, res) => {
+    if (!bigbang?.enabled) return res.status(503).json({ error: 'casino disabled' });
+    const r = bigbang.walletChange(req.body);
+    if (r.status !== 200) console.warn(`bigbang balance_change ${req.body?.transaction_id}: ${r.body.error}`);
+    res.status(r.status).json(r.body);
+  });
+
+  // BigBang (seamless wallet) when its key is set; otherwise the older transfer-mode aggregator.
+  const bb = bigbang?.enabled ? bigbang : null;
+  const casinoOn = () => !!bb || (casino && casino.enabled);
   const casinoError = (err) => {
     if (err instanceof HttpError) return err;
     return new HttpError(502, err.message || 'Erro no servidor de jogos.');
@@ -858,27 +891,63 @@ export function createApp(db, {
   app.get('/api/casino/games', wrap(async (req, res) => {
     if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [], total: 0 });
     const q = req.query;
-    const data = await casino.gamesPage({ offset: q.offset, limit: q.limit, provider: str(q.provider, 20), category: str(q.category, 20), q: str(q.q, 60) });
+    const data = await (bb || casino).gamesPage({ offset: q.offset, limit: q.limit, provider: str(q.provider, 20), category: str(q.category, 20), q: str(q.q, 60) });
     // Players get a generic message; the operator sees the provider's reason.
     if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
     res.json(data);
   }));
 
+  // One game: its card, games of the same provider and whether the player's free spins work in it.
+  app.get('/api/casino/game/:id', wrap(async (req, res) => {
+    if (!bb) throw new HttpError(404, 'Jogo não encontrado.');
+    const g = await bb.game(req.params.id);
+    if (!g) throw new HttpError(404, 'Jogo não encontrado.');
+    const s = req.user ? db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' AND expires_at > ? ORDER BY id LIMIT 1").get(req.user.id, nowIso()) : null;
+    const eligible = !!s && JSON.parse(s.games || '[]').includes(g.id);
+    res.json({ game: g, related: await bb.related(g), freeSpins: s ? { id: s.id, eligible, balance: cents(s.balance_cents), spins: s.spins, spinValue: cents(s.spin_value_cents) } : null });
+  }));
+
   // One wallet: the balance shown while playing is the casino balance (the ClassicBet part is 0).
   app.get('/api/casino/wallet', requireUser, wrap(async (req, res) => {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    if (bb) {
+      // Seamless: the money never leaves Bet62. A free-spins game shows the free-spins balance.
+      const s = req.query.fs ? spinsRow(db, Number(req.query.fs), req.user.id) : null;
+      return res.json({ balance: cents(userById(req.user.id).balance_cents), freeSpins: s ? cents(s.status === 'active' ? s.balance_cents : 0) : null, inCasino: false });
+    }
     const u = userById(req.user.id);
     const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
     res.json({ balance: cents(u.balance_cents + casinoCents), inCasino: !!u.casino_active });
   }));
 
-  // Opens a game: the whole balance goes with the player into the casino.
-  app.post('/api/casino/launch', requireUser, wrap(async (req, res) => {
+  // Opens a game: "Testar" (demo, virtual money, no account needed), "Jogar" (the player's
+  // balance) or the free spins (their own balance, only in the eligible games).
+  app.post('/api/casino/launch', wrap(async (req, res) => {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
+    const origin = `${req.protocol}://${req.get('host')}`;
+    if (bb) {
+      const g = await bb.game(req.body.gameId);
+      if (!g) throw new HttpError(404, 'Jogo não encontrado.');
+      const returnUrl = `${origin}/casino-return.html`;
+      if (req.body.demo) return res.json({ url: await bb.launch({ gameId: g.id, demo: true, returnUrl }), demo: true });
+      if (!req.user) throw new HttpError(401, 'Inicie sessão para jogar com dinheiro real.');
+      const u = userById(req.user.id);
+      if (u.excluded_until && u.excluded_until > nowIso()) throw new HttpError(403, 'A sua conta está em autoexclusão. O casino está bloqueado.');
+      if (req.body.freeSpins) {
+        const s = spinsRow(db, Number(req.body.freeSpins), u.id);
+        if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
+        if (!JSON.parse(s.games || '[]').includes(g.id)) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
+        const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), username: `${u.name} (FS)`, returnUrl });
+        return res.json({ url, freeSpins: { id: s.id, balance: cents(s.balance_cents) }, balance: cents(u.balance_cents) });
+      }
+      if (u.balance_cents <= 0) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
+      const url = await bb.launch({ gameId: g.id, token: playerToken(u.id), username: u.name, returnUrl });
+      return res.json({ url, balance: cents(u.balance_cents) });
+    }
+    if (!req.user) throw new HttpError(401, 'Inicie sessão para continuar.');
     const providerId = Number(req.body.providerId);
     const gameCode = str(req.body.gameCode, 80);
     if (!Number.isInteger(providerId) || !gameCode) throw new HttpError(400, 'Jogo inválido.');
-    const origin = `${req.protocol}://${req.get('host')}`;
     // The game runs in an iframe; its "home" button lands on a page that sends the tab back to the casino.
     const { url, casinoCents } = await casino.enterGame(req.user, { providerId, gameCode, returnUrl: `${origin}/casino-return.html` });
     res.json({ url, balance: cents(casinoCents) });
@@ -886,7 +955,7 @@ export function createApp(db, {
 
   // Leaving the game: the balance comes back to the ClassicBet wallet.
   app.post('/api/casino/close', requireUser, wrap(async (req, res) => {
-    if (!casinoOn()) return res.json({ amount: 0, balance: cents(req.user.balance_cents) });
+    if (!casinoOn() || bb) return res.json({ amount: 0, balance: cents(userById(req.user.id).balance_cents) });
     const amountCents = await casino.leaveGame(req.user);
     res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents) });
   }));
@@ -1163,6 +1232,8 @@ export function createApp(db, {
         .map((b) => ({ ...bonusView(b), ...who(b) })),
       freebets: db.prepare('SELECT f.*, u.name, u.email FROM freebets f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100').all()
         .map((f) => ({ ...freebetView(f), ...who(f) })),
+      spins: db.prepare('SELECT s.*, u.name, u.email FROM casino_spins s JOIN users u ON u.id = s.user_id ORDER BY s.id DESC LIMIT 100').all()
+        .map((x) => ({ ...spinsView(x), ...who(x) })),
       log: db.prepare('SELECT l.*, u.name, u.email FROM promo_log l JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT 200').all()
         .map((l) => ({ campaign: l.campaign, ref: l.ref, outcome: l.outcome, reason: l.reason, createdAt: l.created_at, ...who(l) })),
       totals: db.prepare("SELECT kind, COUNT(*) AS n, SUM(amount_cents) AS granted, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed FROM bonuses GROUP BY kind").all()
@@ -1263,11 +1334,22 @@ export function createApp(db, {
   });
 
   admin.post('/casino/test', wrap(async (_req, res) => {
+    if (bb) return res.json({ steps: (await bb.diagnose()).steps });
     if (!casino) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Casino não inicializado.' }] });
     res.json({ steps: await casino.diagnose() });
   }));
 
-  admin.get('/casino', wrap(async (_req, res) => {
+  admin.get('/casino', wrap(async (req, res) => {
+    if (bb) {
+      const all = await bb.games();
+      const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE type = ?').get(type).s);
+      const origin = `${req.protocol}://${req.get('host')}`;
+      return res.json({
+        bigbang: true, enabled: true, sandbox: bb.sandbox, games: all.games.length, providers: all.providers.length, error: all.error,
+        bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
+        callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` },
+      });
+    }
     if (!casinoOn()) {
       return res.json({ enabled: false, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token });
     }

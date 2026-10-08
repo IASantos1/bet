@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback', 'casino_bet', 'casino_win', 'free_spin_win')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -209,6 +209,45 @@ CREATE TABLE IF NOT EXISTS promo_log (
 );
 CREATE INDEX IF NOT EXISTS idx_promo_log_user ON promo_log(user_id, id);
 
+-- Casino (BigBang, seamless wallet): every balance move the provider sends, once per transaction_id.
+CREATE TABLE IF NOT EXISTS casino_moves (
+  id                  INTEGER PRIMARY KEY,
+  transaction_id      TEXT    NOT NULL UNIQUE,
+  user_id             INTEGER NOT NULL REFERENCES users(id),
+  spins_id            INTEGER,
+  amount_cents        INTEGER NOT NULL,
+  balance_after_cents INTEGER NOT NULL,
+  round_id            TEXT,
+  type                TEXT,
+  round_end           INTEGER,
+  game                TEXT,
+  game_id             INTEGER,
+  provider            TEXT,
+  created_at          TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_casino_moves_user ON casino_moves(user_id, id);
+
+-- Casino free spins: a separate balance (spins × spin value) played only in the eligible games;
+-- what it holds above the value granted is paid as real money when it closes.
+CREATE TABLE IF NOT EXISTS casino_spins (
+  id              INTEGER PRIMARY KEY,
+  user_id         INTEGER NOT NULL REFERENCES users(id),
+  ref             TEXT    NOT NULL UNIQUE,
+  status          TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'expired', 'cancelled')),
+  spins           INTEGER NOT NULL,
+  spin_value_cents INTEGER NOT NULL,
+  value_cents     INTEGER NOT NULL,
+  balance_cents   INTEGER NOT NULL CHECK (balance_cents >= 0),
+  games           TEXT    NOT NULL,
+  deposit_cents   INTEGER NOT NULL DEFAULT 0,
+  paid_cents      INTEGER NOT NULL DEFAULT 0,
+  expires_at      TEXT    NOT NULL,
+  created_at      TEXT    NOT NULL,
+  ended_at        TEXT,
+  cancel_reason   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_casino_spins_user ON casino_spins(user_id, status);
+
 -- Settlement audit log: every result or void applied to an event, by whom and with what effect.
 CREATE TABLE IF NOT EXISTS settlements (
   id           INTEGER PRIMARY KEY,
@@ -348,7 +387,7 @@ function migrate(db) {
       SELECT id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at FROM bets_old`);
   }
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
-  if (!txSql.includes('chargeback')) {
+  if (!txSql.includes('free_spin_win')) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }

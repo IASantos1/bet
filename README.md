@@ -294,6 +294,27 @@ resultado, adiados). Pode liquidar com um resultado, anular com motivo ou execut
 Cada liquidação fica registada (tabela `settlements`) com a origem — dados ao vivo, automático ou o
 administrador que a fez.
 
+## Casino BigBang (carteira integrada)
+
+Defina `BIGBANG_API_KEY` no Railway (chave de teste `ek_test_…` ou a real; `BIGBANG_API_URL` opcional). Com ela
+definida, o casino passa a usar o BigBang em vez do agregador antigo. Na chave, no Painel BigBang, configure a
+**carteira integrada** com os dois URLs que aparecem em **Admin → Casino**:
+
+- `user_data` (GET): `https://<site>/api/casino/bb/user`
+- `balance_change` (POST): `https://<site>/api/casino/bb/balance`
+
+O dinheiro nunca sai da Bet62: o BigBang pede o saldo e envia cada aposta/ganho assinado (HMAC-SHA256 com a
+chave), aplicado uma única vez por `transaction_id` (`casino_moves`; razão: `casino_bet` / `casino_win`).
+Chamadas da chave de teste (`"sandbox": true`) nunca mexem em dinheiro real. Cada jogo tem a sua página
+(`#/casino/jogo/<id>`) com **Jogar** (saldo real, precisa de sessão e saldo) e **Testar** (demonstração, sem conta).
+
+**Free Spins** (campanha `CASINO_FREE_SPINS`, em Admin → Promoções): no depósito o jogador escolhe "Free Spins
+casino" (em vez do bónus de desporto). Escalões iniciais €10→5, €20→10, €50→25, €100→50 rodadas de €0,20,
+válidas 7 dias, só nos jogos com os IDs configurados. A API não tem rodadas grátis nativas, por isso as rodadas
+são um saldo próprio (rodadas × valor) jogado numa sessão à parte (jogador `bet62_<id>_fs<n>`), aceite só nos
+jogos elegíveis; o custo máximo é o valor oferecido. Ao terminar (pelo jogador, saldo esgotado ou fim do
+prazo), o que o saldo tiver acima do valor oferecido é pago em saldo real (`free_spin_win`); o resto expira.
+
 ## Promoções de desporto
 
 Configuradas em **Admin → Promoções** (sem alterar código): estado ACTIVE/INACTIVE, período, percentagens,

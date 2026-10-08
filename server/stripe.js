@@ -52,6 +52,10 @@ export function ptPhone(raw) {
   return /^3519\d{8}$/.test(d) ? `+${d}` : '';
 }
 
+// The promotion the player chose for a deposit (stripe_payments.promo_opt).
+const PROMO_CODE = { none: 0, sport: 1, casino: 2 };
+const PROMO_CHOICE = { 0: 'none', 1: 'sport', 2: 'casino' };
+
 const FINAL = ['paid', 'failed', 'expired', 'mismatch', 'reversed'];
 
 export function createStripe(db, {
@@ -93,7 +97,7 @@ export function createStripe(db, {
    * A deposit: the PaymentIntent and our pending row. MB WAY and Multibanco are confirmed here;
    * the card gets a client secret for the Payment Element.
    */
-  async function createDeposit(user, amountCents, { method, phone, bonus = true } = {}) {
+  async function createDeposit(user, amountCents, { method, phone, promo = 'sport' } = {}) {
     const m = METHODS[method];
     if (!m) throw Object.assign(new Error('Método de pagamento inválido.'), { status: 400, ours: true });
     const tel = method === 'mbway' ? ptPhone(phone) : '';
@@ -116,7 +120,7 @@ export function createStripe(db, {
     db.prepare(
       `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, entity, reference, expires_at, created_at, promo_opt)
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
-    ).run(intent.id, user.id, amountCents, currency, method, mb?.entity || null, mb?.reference || null, expires, nowIso(), bonus ? 1 : 0);
+    ).run(intent.id, user.id, amountCents, currency, method, mb?.entity || null, mb?.reference || null, expires, nowIso(), PROMO_CODE[promo] ?? 1);
     if (method === 'multibanco' && !(mb?.entity && mb?.reference)) log(`stripe ${intent.id}: Multibanco sem entidade/referência (${intent.status})`);
     const r = applyIntent(intent);
     return {
@@ -149,7 +153,7 @@ export function createStripe(db, {
         const label = METHODS[row.method]?.label || 'Stripe';
         postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, `stripe:${row.session_id}`);
         // The deposit bonus it earns, if any (once per deposit, decided by the server).
-        const bonus = onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, method: row.method, optIn: row.promo_opt !== 0 });
+        const bonus = onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, method: row.method, choice: PROMO_CHOICE[row.promo_opt] || 'sport' });
         const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(row.user_id).balance_cents;
         return { status: 'paid', credited: true, balance, bonus, row };
       });

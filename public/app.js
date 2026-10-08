@@ -36,7 +36,7 @@ const state = {
   eventsLoaded: false,
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
-  casinoSession: null,
+  casinoSession: null, casinoGame: null,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
   match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
@@ -688,15 +688,90 @@ async function closeCasino({ keepalive = false } = {}) {
   } catch { state.user && (state.user.casinoActive = true); }
 }
 
-/** While a game is open, the header shows the live casino balance. */
+/** While a game is open, the header shows the live casino balance (and the free-spins balance in its bar). */
 async function refreshCasinoBalance() {
+  const sess = state.casinoSession;
+  if (!state.user || sess?.demo) return;
   try {
-    const w = await api('/api/casino/wallet');
+    const w = await api(`/api/casino/wallet${sess?.fs ? `?fs=${sess.fs}` : ''}`);
     if (state.user) {
       state.user.balance = w.balance;
       updateHeader();
     }
+    if (sess?.fs && w.freeSpins !== null && w.freeSpins !== undefined) {
+      sess.fsBalance = w.freeSpins;
+      const el = $('#fsBal');
+      if (el) el.textContent = money(w.freeSpins);
+    }
   } catch { /* next tick retries */ }
+}
+
+// ---------- one game's page (BigBang): Jogar, Testar, Free Spins ----------
+
+function casinoGamePage(id) {
+  if (state.casinoGame?.id !== id) {
+    state.casinoGame = { id, data: null };
+    api(`/api/casino/game/${id}`).then((d) => {
+      if (state.casinoGame?.id !== id) return;
+      state.casinoGame.data = d;
+      render({ keepScroll: true });
+    }).catch((err) => {
+      if (state.casinoGame?.id !== id) return;
+      state.casinoGame.data = { error: err.message };
+      render({ keepScroll: true });
+    });
+  }
+  const d = state.casinoGame.data;
+  if (!d) return '<div class="loading">A carregar…</div>';
+  if (d.error) return `<div class="panel empty">${esc(d.error)}<div class="hero-actions"><a class="outline-btn" href="#/casino">Voltar ao casino</a></div></div>${footer()}`;
+  const g = d.game;
+  const fs = d.freeSpins;
+  const art = g.image ? `<img src="${esc(g.image)}" alt="" class="game-img">` : '<span class="cg-emoji">🎰</span>';
+  const tags = [g.category, g.premium ? 'Premium' : null, g.provider].filter(Boolean);
+  const rel = (x) => `<a class="cg-rel" href="#/casino/jogo/${x.id}"><span class="cg-rel-art">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" class="game-img">` : '🎰'}</span><strong>${esc(x.name)}</strong></a>`;
+  return `<div class="cg">
+      <div class="cg-hero">
+        ${g.image ? `<img class="cg-bg" src="${esc(g.image)}" alt="">` : ''}
+        <a class="cg-close" href="#/casino" aria-label="Fechar">×</a>
+        <div class="cg-art">${art}</div>
+      </div>
+      <div class="cg-body">
+        <h1>${esc(g.name)}</h1>
+        <div class="cg-provider">${esc(g.provider)}</div>
+        <p class="cg-tags">${tags.map(esc).join(', ')}</p>
+        <div class="cg-actions">
+          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${money(fs.balance)} disponível</small></button>` : ''}
+          <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
+          <button class="cg-btn demo" data-cg-play="demo">Testar</button>
+        </div>
+        ${fs && !fs.eligible ? '<p class="cg-note">As suas Free Spins são válidas noutros jogos — veja-os em <a href="#/promocoes">Promoções</a>.</p>' : ''}
+        <p class="cg-note">Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.</p>
+      </div>
+      ${d.related.length ? `<section class="section"><div class="section-head"><h2>Do mesmo estilo</h2></div>${carousel('cgRelated', d.related.map(rel))}</section>` : ''}
+    </div>${footer()}`;
+}
+
+/** Opens the game shown: 'real' (the player's balance), 'demo' (virtual money) or 'fs' (free spins). */
+async function playCasino(mode) {
+  const d = state.casinoGame?.data;
+  const g = d?.game;
+  if (!g) return;
+  if (mode !== 'demo' && !state.user) return openAuth('login');
+  state.casinoSession = { name: g.name, provider: g.provider, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null, fsBalance: null };
+  location.hash = '#/casino/jogar';
+  try {
+    const r = await api('/api/casino/launch', { method: 'POST', body: { gameId: g.id, demo: mode === 'demo', freeSpins: mode === 'fs' ? d.freeSpins?.id : undefined } });
+    if (!state.casinoSession) return;
+    state.casinoSession.url = r.url;
+    if (r.freeSpins) state.casinoSession.fsBalance = r.freeSpins.balance;
+    if (currentRoute().sub === 'jogar') render({ keepScroll: true });
+  } catch (err) {
+    state.casinoSession = null;
+    if (err.status === 401) { location.hash = `#/casino/jogo/${g.id}`; openAuth('login'); return; }
+    if (err.data?.needsDeposit) { toast('Saldo insuficiente', 'Faça um depósito para jogar com dinheiro real, ou use Testar.', 'error'); location.hash = '#/perfil/carteira'; return; }
+    toast('Casino', err.message, 'error');
+    location.hash = `#/casino/jogo/${g.id}`;
+  }
 }
 
 // ---------- casino player (the game runs inside the page) ----------
@@ -708,7 +783,10 @@ function casinoPlayPage() {
     return '<div class="loading">A voltar ao casino…</div>';
   }
   if (!g.url) return `<div class="casino-player"><div class="casino-loading"><div class="spinner"></div><strong>${esc(g.name)}</strong><span class="muted">A abrir o jogo…</span></div></div>`;
+  const mode = g.demo ? '<span class="cbar-tag">DEMO · saldo virtual</span>'
+    : g.fs ? `<span class="cbar-tag fs">FREE SPINS · <b id="fsBal">${money(g.fsBalance ?? 0)}</b></span>` : '';
   return `<div class="casino-player">
+    ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
     <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
       allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>
   </div>`;
@@ -746,6 +824,8 @@ function campaignCard(c) {
       [`Rollover ${c.rolloverMult}× (${base})`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Não acumula com o bónus de boas-vindas']],
     cashback: ['SEMANAL', `Cashback ${c.percent}% até ${money(c.max)}`, `Sobre as perdas líquidas da semana (mín. ${money(c.minLoss)}), creditado à segunda-feira.`,
       [`Rollover ${c.rolloverMult}×`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Free bets, bónus e apostas anuladas não contam']],
+    casinoFs: ['CASINO', 'Free Spins no depósito', `Escolha "Free Spins casino" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${n} rodadas`).join(' · ')}.`,
+      [`${money(c.spinValue)} por rodada`, `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Os ganhos acima do valor das rodadas passam a saldo real', 'Não acumula com o bónus de desporto no mesmo depósito']],
   }[c.id];
   if (!info) return '';
   const [eyebrow, title, text, terms] = info;
@@ -764,6 +844,16 @@ function bonusCard(b) {
   </div>`;
 }
 
+/** Active casino free spins: their balance, the games they work in, and ending them (winnings paid). */
+function spinsCard(f) {
+  return `<div class="bonus-card">
+    <div class="bonus-head"><strong>🎰 Free Spins casino · ${f.spins} × ${money(f.spinValue)}</strong><span class="pf-badge verified">Ativas</span></div>
+    <div class="bonus-nums"><div><small>Saldo de Free Spins</small><b>${money(f.balance)}</b></div><div><small>Valor oferecido</small><b>${money(f.value)}</b></div><div><small>Ganhos</small><b class="green">${money(f.winnings)}</b></div></div>
+    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))}</small>
+    <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar e receber ganhos (${money(f.winnings)})</button></div>
+  </div>`;
+}
+
 const BONUS_STATUS = { active: 'Ativo', completed: 'Cumprido', expired: 'Expirado', cancelled: 'Cancelado', used: 'Usada' };
 function myPromosView() {
   const m = state.promos;
@@ -772,7 +862,8 @@ function myPromosView() {
   const past = m.bonuses.filter((b) => b.status !== 'active');
   return `<div class="pf-stats"><div><small>Saldo de bónus</small><strong>${money(m.bonusBalance)}</strong></div><div><small>Free bets</small><strong>${money(m.freebetBalance)}</strong></div>
       <div><small>Primeira aposta protegida</small><strong>${m.firstBetUsed ? 'Utilizada' : 'Disponível'}</strong></div></div>
-    ${m.active.length ? m.active.map(bonusCard).join('') : '<p class="muted">Sem bónus ativos. Veja as campanhas em <a href="#/promocoes">Promoções</a>.</p>'}
+    ${m.activeSpins ? spinsCard(m.activeSpins) : ''}
+    ${m.active.length ? m.active.map(bonusCard).join('') : m.activeSpins ? '' : '<p class="muted">Sem bónus ativos. Veja as campanhas em <a href="#/promocoes">Promoções</a>.</p>'}
     ${free.length ? `<h4>Free bets</h4><div class="pf-list">${free.map((f) => `<div class="pf-row"><div><b>${money(f.amount)}</b><small>Válida até ${esc(fmtDateTime(f.expiresAt))}${f.minOdds > 1 ? ` · odd mínima ${fmtOdds(f.minOdds)}` : ''} · escolha-a no boletim</small></div><span class="pf-badge verified">Disponível</span></div>`).join('')}</div>` : ''}
     ${past.length ? `<h4>Histórico</h4><div class="pf-list">${past.map((b) => `<div class="pf-row"><div><b>${esc(b.name)} · ${money(b.amount)}</b><small>${esc(dateShort(b.createdAt))}${b.cancelReason ? ` · ${esc(b.cancelReason)}` : ''}</small></div><span class="pf-badge">${BONUS_STATUS[b.status]}</span></div>`).join('')}</div>` : ''}
     ${m.ledger.length ? `<h4>Movimentos promocionais</h4><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>
@@ -1061,7 +1152,10 @@ function walletView() {
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
       </div>
-      <label class="check-row"><input type="checkbox" name="bonus" checked> <span>Quero receber o bónus de depósito, se for elegível</span></label>
+      <div class="promo-pick"><span>Promoção deste depósito</span>
+        <label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>
+        <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
+        <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>
@@ -1513,7 +1607,7 @@ function currentRoute() {
 function render({ keepScroll = false } = {}) {
   const { page, sub, rest } = currentRoute();
   const pages = {
-    home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: casinoPage,
+    home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: () => (sub === 'jogo' && rest ? casinoGamePage(Number(rest)) : casinoPage()),
     promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub),
   };
   if (page !== 'jogo') leaveMatch();
@@ -1688,7 +1782,7 @@ const formHandlers = {
   },
   async deposit(form) {
     const d = formData(form);
-    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone, bonus: !!form.bonus?.checked } });
+    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone, promo: d.promo || 'none' } });
     if (res.payment) {
       const p = res.payment;
       state.depositWatch = null;
@@ -1705,7 +1799,7 @@ const formHandlers = {
       return watchDeposit(p.id, { every: 4000, forMs: 6 * 60_000 });
     }
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
-    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${money(res.bonus.amount)}` : ''}`);
+    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${res.bonus.spins ? `${res.bonus.spins} rodadas (${money(res.bonus.amount)})` : money(res.bonus.amount)}` : ''}`);
     updateHeader(); loadWallet(); loadPromos();
   },
   async withdraw(form) {
@@ -1792,7 +1886,14 @@ document.addEventListener('click', async (e) => {
   if (e.target.closest('#leftSidebar a[href]:not([data-sport-link])')) setSideMenu(false);
 
   const game = e.target.closest('[data-game]');
-  if (game && !game.matches('form')) { openGame(Number(game.dataset.game)); return; }
+  if (game && !game.matches('form')) {
+    // BigBang: the game's own page first (Jogar / Testar); the older aggregator opens it straight away.
+    const g = state.casino.games[Number(game.dataset.game)];
+    if (state.casino.bigbang && g) location.hash = `#/casino/jogo/${g.id}`; else openGame(Number(game.dataset.game));
+    return;
+  }
+  const cgPlay = e.target.closest('[data-cg-play]');
+  if (cgPlay) { playCasino(cgPlay.dataset.cgPlay); return; }
   const cat = e.target.closest('[data-casino-cat]');
   if (cat) { state.casinoFilter.category = cat.dataset.casinoCat; loadCasino({ reset: true }); return; }
   const prov = e.target.closest('[data-casino-prov]');
@@ -1857,6 +1958,14 @@ document.addEventListener('click', async (e) => {
     updateHeader(); renderSlip();
     location.hash = '#/';
     render();
+  } else if (action === 'fs-claim') {
+    if (!confirm('Terminar as Free Spins? Os ganhos acima do valor oferecido passam a saldo real; o resto das rodadas deixa de estar disponível.')) return;
+    try {
+      const r = await api(`/api/me/free-spins/${actionEl.dataset.id}/claim`, { method: 'POST', body: {} });
+      state.user = r.user;
+      toast('Free Spins terminadas', r.paid > 0 ? `${money(r.paid)} de ganhos creditados no saldo.` : 'Sem ganhos a pagar.');
+      updateHeader(); loadPromos();
+    } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'end-sessions') {
     try {
       const { ended } = await api('/api/me/sessions/end-others', { method: 'POST', body: {} });
@@ -1932,12 +2041,15 @@ function depositOffer() {
     const form = $('form[data-form="deposit"]');
     const box = $('#depositOffer');
     if (!form || !box) return;
-    if (!form.bonus.checked) { box.innerHTML = '<small class="muted">Sem bónus neste depósito.</small>'; return; }
+    const promo = form.promo?.value || 'none';
+    if (promo === 'none') { box.innerHTML = '<small class="muted">Sem promoção neste depósito.</small>'; return; }
     try {
-      const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}`);
-      box.innerHTML = o.bonus > 0
-        ? `<div class="offer ok">🎁 ${esc(o.name)}: <b>+${money(o.bonus)}</b> em saldo de bónus após a confirmação do pagamento.</div>`
-        : `<small class="muted">${esc(o.name)}: ${esc(o.reason || 'não aplicável')}.</small>`;
+      const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}&promo=${promo}`);
+      box.innerHTML = o.spins > 0
+        ? `<div class="offer ok">🎰 ${esc(o.name)}: <b>${o.spins} rodadas de ${money(o.spinValue)}</b> (${money(o.bonus)}) após a confirmação do pagamento.</div>`
+        : o.bonus > 0
+          ? `<div class="offer ok">🎁 ${esc(o.name)}: <b>+${money(o.bonus)}</b> em saldo de bónus após a confirmação do pagamento.</div>`
+          : `<small class="muted">${esc(o.name)}: ${esc(o.reason || 'não aplicável')}.</small>`;
     } catch { box.innerHTML = ''; }
   }, 300);
 }

@@ -81,3 +81,4 @@
 .adm-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
 .adm-switch input { width: 17px; height: 17px; accent-color: var(--up); }
 .promo-camp h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.adm-grid .field.wide { grid-column: 1 / -1; }
