@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS selections (
 CREATE TABLE IF NOT EXISTS bets (
   id              INTEGER PRIMARY KEY,
   user_id         INTEGER NOT NULL REFERENCES users(id),
-  type            TEXT    NOT NULL CHECK (type IN ('single', 'multiple')),
+  type            TEXT    NOT NULL CHECK (type IN ('single', 'multiple', 'builder')),
   stake_cents     INTEGER NOT NULL CHECK (stake_cents > 0),
   total_odds      REAL    NOT NULL,
   potential_cents INTEGER NOT NULL,
@@ -251,6 +251,12 @@ function migrate(db) {
 
   // Ledger types for casino transfers and admin adjustments. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.
+  // Bet builder bets (several legs on one match).
+  const betsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bets'").get()?.sql || '';
+  if (betsSql && !betsSql.includes("'builder'")) {
+    rebuild(db, 'bets', `INSERT INTO bets (id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at)
+      SELECT id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at FROM bets_old`);
+  }
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
   if (!txSql.includes('admin_credit')) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)

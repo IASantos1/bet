@@ -8,6 +8,7 @@ import { parseLivestream, sessionRefused } from './whlive.js';
 import { FOOTBALL_TREE, leagueKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
+import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
 } from './security.js';
@@ -299,7 +300,7 @@ export function createApp(db, {
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents),
-      liveOddsMaxAge: config.liveOddsMaxAgeSeconds,
+      liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
       sports: SPORTS, version: APP_VERSION,
     });
   });
@@ -312,6 +313,10 @@ export function createApp(db, {
   // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
   const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
   const horizonMs = (min) => Math.max(min, futureDays()) * 86_400_000;
+
+  // Ready-made bets for the sports page: bet builders and four-leg multiples (featured.js).
+  const featured = createFeatured(db);
+  app.get('/api/featured', (_req, res) => res.json(featured.get()));
 
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
   const LEAGUE_TREES = { futebol: FOOTBALL_TREE };
