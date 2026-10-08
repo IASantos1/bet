@@ -134,3 +134,22 @@ test('Stripe deposits inside the site: MB WAY, Multibanco, card; credited once b
     db.close();
   }
 });
+
+test('Stripe: a paid deposit gets its bonus once; a chargeback takes the money back and cancels it', () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const uid = Number(db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('cb@ex.com', 'Cb', '1990-01-01', 'x', ?)").run(new Date().toISOString()).lastInsertRowid);
+  db.prepare("INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, created_at) VALUES ('pi_cb', ?, 3000, 'eur', 'pending', 'mbway', ?)").run(uid, new Date().toISOString());
+  const stripe = createStripe(db, { secretKey: 'sk_test_abc', fetchImpl: async () => { throw new Error('no network'); } });
+  const pi = { id: 'pi_cb', object: 'payment_intent', status: 'succeeded', amount: 3000, amount_received: 3000, currency: 'eur' };
+  assert.equal(stripe.handleEvent({ type: 'payment_intent.succeeded', data: { object: pi } }).bonus.amount_cents, 3000);
+  stripe.handleEvent({ type: 'payment_intent.succeeded', data: { object: pi } }); // again: nothing more
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM bonuses').get().n, 1);
+  assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 3000);
+  const r = stripe.handleEvent({ type: 'charge.dispute.created', data: { object: { object: 'dispute', payment_intent: 'pi_cb' } } });
+  assert.equal(r.reversed, true);
+  assert.equal(stripe.handleEvent({ type: 'charge.dispute.created', data: { object: { object: 'dispute', payment_intent: 'pi_cb' } } }).reversed, undefined);
+  assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 0);
+  assert.equal(db.prepare('SELECT status FROM bonuses').get().status, 'cancelled');
+  assert.ok(db.prepare("SELECT 1 FROM transactions WHERE type = 'chargeback'").get());
+});

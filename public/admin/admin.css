@@ -73,3 +73,11 @@
 .user-sums div { background: #1b2026; border: 1px solid #2a3037; border-radius: 8px; padding: 10px 12px; }
 .user-sums small { display: block; color: #8b95a1; font-size: 11px; }
 .user-sums strong { font-size: 16px; }
+
+/* Promotions */
+.adm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.adm-grid .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); margin: 0; }
+.adm-grid .field input, .adm-grid .field select { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--dim); color: var(--text); font-size: 14px; }
+.adm-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.adm-switch input { width: 17px; height: 17px; accent-color: var(--up); }
+.promo-camp h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

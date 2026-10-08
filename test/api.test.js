@@ -42,7 +42,7 @@ async function newPlayer(deposit = 0) {
   const c = client();
   const r = await c('POST', '/api/auth/register', { ...adult, email: `ana${++emailSeq}@example.com` });
   assert.equal(r.status, 201, JSON.stringify(r.body));
-  if (deposit) assert.equal((await c('POST', '/api/wallet/deposit', { amount: deposit, method: 'mbway' })).status, 201);
+  if (deposit) assert.equal((await c('POST', '/api/wallet/deposit', { amount: deposit, method: 'mbway', bonus: false })).status, 201);
   return c;
 }
 async function adminClient() {

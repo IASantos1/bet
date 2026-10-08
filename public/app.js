@@ -22,7 +22,7 @@ const GAMES = [
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
   casino_out: 'Para o casino', casino_in: 'Do casino',
-  bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
+  bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso', bonus_convert: 'Bónus convertido', chargeback: 'Depósito revertido',
 };
 const STATUS_LABEL = {
   open: 'Em aberto', won: 'Ganha', lost: 'Perdida', void: 'Anulada', pending: 'Pendente', approved: 'Aprovado',
@@ -41,6 +41,7 @@ const state = {
   leagueTree: null, sideOpen: {}, leagueView: null,
   match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
+  promos: null, campaigns: null, freebetId: null,
   mode: 'single',
   sport: '',
   previousOdds: new Map(),
@@ -713,15 +714,80 @@ function casinoPlayPage() {
   </div>`;
 }
 
+// ---------- promotions (terms and amounts always come from the server) ----------
+
+let promosLoading = null;
+function loadPromos() {
+  promosLoading ||= api('/api/promotions').then(({ campaigns, mine }) => {
+    state.campaigns = campaigns;
+    state.promos = mine;
+    renderSlip();
+    const { page, sub } = currentRoute();
+    updateHeader();
+    // Only pages made of these numbers are redrawn (never a page with a form being filled in).
+    if (page === 'promocoes' || (page === 'perfil' && sub === 'promocoes')) render({ keepScroll: true });
+  }).catch(() => {}).finally(() => { promosLoading = null; });
+  return promosLoading;
+}
+
+const pct = (a, b) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
+const dateShort = (iso) => new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+/** One campaign's card: what it gives and its conditions, as configured in the admin. */
+function campaignCard(c) {
+  const base = c.rolloverBase === 'bonus' ? 'bónus' : 'depósito + bónus';
+  const cap = [c.maxCountStake !== null && c.maxCountStake !== undefined ? money(c.maxCountStake) : null, c.maxCountPct ? `${c.maxCountPct}% do bónus` : null].filter(Boolean);
+  const info = {
+    welcome: ['BOAS-VINDAS', `${c.percent}% até ${money(c.maxBonus)}`, `No primeiro depósito elegível, a partir de ${money(c.minDeposit)}.`,
+      [`Rollover ${c.rolloverMult}× (${base})`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, cap.length ? `Conta até ${cap.join(' ou ')} por aposta (o menor)` : null, 'Pré-jogo e ao vivo', 'Free bets e apostas anuladas não contam']],
+    firstBet: ['PRIMEIRA APOSTA', `Protegida até ${money(c.maxRefund)}`, `Se a primeira aposta (mín. ${money(c.minStake)}, odd ≥ ${fmtOdds(c.minOdds)}) perder, recebe o valor em free bet.`,
+      [`Free bet válida ${c.validityDays} dias`, 'Uma vez por jogador', 'O valor da free bet não é devolvido, só os ganhos']],
+    reload: ['SEMANAL', `Reload ${c.percent}% até ${money(c.maxBonus)}`, `Uma vez por semana, em depósitos a partir de ${money(c.minDeposit)}.`,
+      [`Rollover ${c.rolloverMult}× (${base})`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Não acumula com o bónus de boas-vindas']],
+    cashback: ['SEMANAL', `Cashback ${c.percent}% até ${money(c.max)}`, `Sobre as perdas líquidas da semana (mín. ${money(c.minLoss)}), creditado à segunda-feira.`,
+      [`Rollover ${c.rolloverMult}×`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Free bets, bónus e apostas anuladas não contam']],
+  }[c.id];
+  if (!info) return '';
+  const [eyebrow, title, text, terms] = info;
+  return `<div class="promo-card${c.open ? '' : ' off'}"><div class="eyebrow">${eyebrow}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>
+    <ul class="promo-terms">${terms.filter(Boolean).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
+    <span class="tag">${c.open ? 'ATIVA' : 'INDISPONÍVEL'}</span></div>`;
+}
+
+/** A running bonus: balance, rollover progress (as the server counts it), expiry. */
+function bonusCard(b) {
+  return `<div class="bonus-card">
+    <div class="bonus-head"><strong>${esc(b.name)}</strong><span class="pf-badge verified">Ativo</span></div>
+    <div class="bonus-nums"><div><small>Saldo de bónus</small><b>${money(b.balance)}</b></div><div><small>Rollover</small><b>${money(b.rolloverProgress)} / ${money(b.rolloverTarget)}</b></div><div><small>Falta</small><b>${money(b.remaining)}</b></div></div>
+    <div class="stat-bar bonus-bar"><i class="w${Math.floor(pct(b.rolloverProgress, b.rolloverTarget) / 5) * 5}"></i></div>
+    <small class="muted">Odd mínima ${fmtOdds(b.minOdds)}${b.maxCountStake !== null ? ` · conta até ${money(b.maxCountStake)} por aposta` : ''} · expira a ${esc(dateShort(b.expiresAt))}</small>
+  </div>`;
+}
+
+const BONUS_STATUS = { active: 'Ativo', completed: 'Cumprido', expired: 'Expirado', cancelled: 'Cancelado', used: 'Usada' };
+function myPromosView() {
+  const m = state.promos;
+  if (!m) { loadPromos(); return '<div class="loading">A carregar…</div>'; }
+  const free = usableFreebets();
+  const past = m.bonuses.filter((b) => b.status !== 'active');
+  return `<div class="pf-stats"><div><small>Saldo de bónus</small><strong>${money(m.bonusBalance)}</strong></div><div><small>Free bets</small><strong>${money(m.freebetBalance)}</strong></div>
+      <div><small>Primeira aposta protegida</small><strong>${m.firstBetUsed ? 'Utilizada' : 'Disponível'}</strong></div></div>
+    ${m.active.length ? m.active.map(bonusCard).join('') : '<p class="muted">Sem bónus ativos. Veja as campanhas em <a href="#/promocoes">Promoções</a>.</p>'}
+    ${free.length ? `<h4>Free bets</h4><div class="pf-list">${free.map((f) => `<div class="pf-row"><div><b>${money(f.amount)}</b><small>Válida até ${esc(fmtDateTime(f.expiresAt))}${f.minOdds > 1 ? ` · odd mínima ${fmtOdds(f.minOdds)}` : ''} · escolha-a no boletim</small></div><span class="pf-badge verified">Disponível</span></div>`).join('')}</div>` : ''}
+    ${past.length ? `<h4>Histórico</h4><div class="pf-list">${past.map((b) => `<div class="pf-row"><div><b>${esc(b.name)} · ${money(b.amount)}</b><small>${esc(dateShort(b.createdAt))}${b.cancelReason ? ` · ${esc(b.cancelReason)}` : ''}</small></div><span class="pf-badge">${BONUS_STATUS[b.status]}</span></div>`).join('')}</div>` : ''}
+    ${m.ledger.length ? `<h4>Movimentos promocionais</h4><div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>
+      ${m.ledger.slice(0, 15).map((l) => `<tr><td>${esc(fmtDateTime(l.createdAt))}</td><td>${esc(l.description)}</td><td class="num ${l.amount >= 0 ? 'green' : ''}">${l.type === 'rollover_progress' ? '' : `${l.amount >= 0 ? '+' : ''}${money(l.amount)}`}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}`;
+}
+
 function promosPage() {
-  const cards = [
-    ['BOAS-VINDAS', 'Bónus de boas-vindas', 'Oferta para novos clientes no primeiro depósito.'],
-    ['DESPORTO', 'Odds especiais', 'Seleções promocionais em eventos selecionados.'],
-    ['CASINO', 'Free Spins', 'Giros promocionais em jogos elegíveis.'],
-  ];
+  if (!state.campaigns) loadPromos();
+  const cards = (state.campaigns || []).map(campaignCard).join('');
   return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da Bet62.</p></div>
-    <div class="promo-grid grid">${cards.map(([eyebrow, title, text]) => `<div class="promo-card"><div class="eyebrow">${eyebrow}</div><h3>${title}</h3><p>${text}</p><span class="tag">EM BREVE</span></div>`).join('')}</div>
-    <section class="section notice">Cada campanha terá condições próprias (elegibilidade, período, limites e requisitos de aposta), publicadas antes de ficar ativa.</section>
+    ${state.user ? `<section class="section"><div class="section-head"><h2>As minhas promoções</h2></div><div class="panel pf-panel">${myPromosView()}</div></section>` : ''}
+    <section class="section"><div class="section-head"><h2>Campanhas</h2></div>
+      ${cards ? `<div class="promo-grid grid">${cards}</div>` : '<div class="loading">A carregar…</div>'}</section>
+    <section class="section notice">Só uma promoção de depósito ativa de cada vez. O saldo de bónus não pode ser levantado: passa a saldo real quando o rollover é cumprido; ao expirar ou ser cancelado, só o saldo de bónus é removido. Pedir um levantamento com um bónus de depósito ativo cancela esse bónus. Promoções sujeitas a verificação de elegibilidade (conta ativa, sem autoexclusão, sem contas duplicadas, depósito confirmado e não revertido).</section>
     ${footer()}`;
 }
 
@@ -732,10 +798,11 @@ const PROFILE_SECTIONS = [
   { id: 'pessoais', icon: '👤', label: 'Informações pessoais', title: 'Informações Pessoais', text: 'Gestão e atualização dos seus dados pessoais, garantindo a exatidão e conformidade com os requisitos legais aplicáveis.' },
   { id: 'carteira', icon: '💶', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
   { id: 'apostas', icon: '🎟️', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
+  { id: 'promocoes', icon: '🎁', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
   { id: 'verificacao', icon: '🛡️', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
   { id: 'seguranca', icon: '🔑', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
   { id: 'preferencias', icon: '⚙️', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
-  { id: 'limites', icon: '⚠️', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Opções de autoexclusão para uma experiência de jogo responsável.' },
+  { id: 'limites', icon: '⚠️', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Limites de depósito, aposta e perda, pausas e autoexclusão para uma experiência de jogo responsável.' },
   { id: 'atividade', icon: '📊', label: 'Histórico de atividade', title: 'Histórico de Atividade', text: 'Resumo da sua atividade na plataforma: apostas realizadas e resultados obtidos.' },
   { id: 'pagamento', icon: '🏦', label: 'Dados bancários', title: 'Dados Bancários para Levantamento', text: 'Guarde os seus dados bancários para facilitar os pedidos de levantamento.' },
   { id: 'notificacoes', icon: '🔔', label: 'Notificações', title: 'Notificações', text: 'Preferências de comunicação e alertas da sua conta.' },
@@ -781,6 +848,7 @@ function profileSection(id) {
   switch (id) {
     case 'carteira': return walletView();
     case 'apostas': return betsView();
+    case 'promocoes': return myPromosView();
     case 'verificacao': setTimeout(loadKyc); return '<div id="kycBox"><div class="loading">A carregar…</div></div>';
     case 'seguranca': return securityView();
     case 'preferencias': return preferencesView();
@@ -881,14 +949,30 @@ function preferencesView() {
 function responsibleView() {
   const u = state.user;
   const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
+  setTimeout(loadLimits);
   return `<p class="muted">Apostar deve ser uma forma de entretenimento. Faça pausas e nunca aposte dinheiro de que precise. Se sentir que perdeu o controlo, procure apoio especializado.</p>
-    <div class="pf-box"><h4>⚠️ Autoexclusão</h4>
+    <div class="pf-box"><h4>🔒 Limites pessoais</h4><div id="limitsBox"><div class="loading">A carregar…</div></div></div>
+    <div class="pf-box"><h4>⚠️ Pausa e autoexclusão</h4>
     ${excluded ? `<div class="pf-note warn"><strong>Autoexclusão ativa</strong> até ${esc(fmtDateTime(u.excludedUntil))}. Durante este período não é possível apostar nem depositar; os levantamentos continuam disponíveis.</div>` : `
       <p class="muted small">A autoexclusão é imediata e não pode ser anulada antes do fim. Os levantamentos continuam disponíveis.</p>
-      <div class="pf-excl">${[[1, '24 horas'], [7, '1 semana'], [30, '1 mês'], [90, '3 meses'], [180, '6 meses'], [365, '1 ano']]
+      <div class="pf-excl">${[[1, 'Pausa 24 horas'], [3, 'Pausa 72 horas'], [7, '1 semana'], [30, '1 mês'], [90, '3 meses'], [180, '6 meses'], [365, '1 ano']]
         .map(([d, l]) => `<button class="pf-excl-btn" data-exclude="${d}" data-label="${l}">${l}</button>`).join('')}</div>`}
     </div>
     <div class="pf-note">Ajuda com problemas de jogo: <strong>SICAD — Linha Vida 1414</strong> (chamada anónima e confidencial).</div>`;
+}
+
+const LIMIT_FIELDS = [['depositDay', 'Depósito diário'], ['depositWeek', 'Depósito semanal'], ['depositMonth', 'Depósito mensal'], ['betMax', 'Aposta máxima'], ['lossWeek', 'Perda semanal']];
+async function loadLimits() {
+  let r;
+  try { r = await api('/api/me/limits'); } catch (err) { toast('Erro', err.message, 'error'); return; }
+  const box = $('#limitsBox');
+  if (!box) return;
+  const l = r.limits;
+  box.innerHTML = `<form data-form="limits"><div class="form-grid">${LIMIT_FIELDS.map(([k, label]) => `<div class="field"><label>${label} (€)</label>
+      <input name="${k}" type="number" min="1" step="1" inputmode="decimal" placeholder="Sem limite" value="${l[k] ?? ''}">
+      ${l.pending[k] ? `<small class="muted">Passa a ${l.pending[k].value === null ? 'sem limite' : money(l.pending[k].value)} em ${esc(fmtDateTime(l.pending[k].at))}</small>` : ''}</div>`).join('')}
+    </div><div class="form-actions"><button class="primary-btn">Guardar limites</button></div></form>
+    <small class="muted">Baixar um limite aplica-se de imediato; subir ou retirar um limite só produz efeito 24 horas depois.</small>`;
 }
 
 async function loadStats() {
@@ -955,12 +1039,15 @@ function supportView() {
 
 function walletView() {
   setTimeout(loadWallet);
+  setTimeout(depositOffer);
   // Back from a bank check (3-D Secure) that left the page: follow that deposit.
   const back = currentRoute().query.get('deposito');
   if (back) setTimeout(() => { history.replaceState(null, '', '#/perfil/carteira'); watchDeposit(back); });
   const demo = state.config?.paymentsMode === 'demo';
   const c = state.config || {};
-  return `<div class="stat-grid"><div class="stat"><small>Saldo disponível</small><strong id="walletBalance">${money(state.user.balance)}</strong></div></div>
+  return `<div class="stat-grid"><div class="stat"><small>Saldo real (levantável)</small><strong id="walletBalance">${money(state.user.balance)}</strong></div>
+      <div class="stat"><small>Saldo de bónus</small><strong>${money(state.user.bonus || 0)}</strong></div>
+      <div class="stat"><small>Free bets</small><strong>${money(state.user.freebet || 0)}</strong></div></div>
     <h3>Depositar</h3>
     ${demo ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato. Ligue um fornecedor de pagamentos para operar com dinheiro real.</div><br>' : ''}
     ${c.paymentsMode === 'disabled' ? '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>' : `
@@ -974,6 +1061,8 @@ function walletView() {
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
       </div>
+      <label class="check-row"><input type="checkbox" name="bonus" checked> <span>Quero receber o bónus de depósito, se for elegível</span></label>
+      <div class="deposit-offer" id="depositOffer"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>
     <div id="depositPanel"></div>`}
@@ -998,7 +1087,7 @@ function depositDone(r) {
   state.user.balance = r.balance;
   depositPanel(`<div class="pay-box ok"><strong>Depósito confirmado</strong><span>${money(r.amount)} creditados na sua conta.</span></div>`);
   toast('Depósito confirmado', `Novo saldo: ${money(r.balance)}`);
-  updateHeader(); loadWallet();
+  updateHeader(); loadWallet(); refreshMe();
 }
 
 /** Asks for the deposit's state until it is final (or the player leaves the wallet). */
@@ -1100,6 +1189,7 @@ function betCard(b, { showUser = false } = {}) {
   return `<div class="bet-card">
     <div class="bet-card-head"><span>#${b.id} · ${b.type === 'multiple' ? `Múltipla (${b.legs.length})` : b.type === 'builder' ? `Criador de apostas (${b.legs.length})` : 'Simples'} · ${esc(fmtDateTime(b.createdAt))}${showUser ? ` · ${esc(b.email)}` : ''}</span><span class="pill ${b.status}">${STATUS_LABEL[b.status]}</span></div>
     ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${esc(l.marketName && l.market !== '1x2' ? `${l.marketName}: ` : '')}${esc(l.label || CODE_LABEL[l.code])}${l.score ? ` · ${esc(l.score)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span></div></div>`).join('')}
+    ${b.freebet || b.bonusStake || b.protected ? `<div class="bet-tags">${b.freebet ? '<span class="pill open">🎁 Free bet (só os ganhos são pagos)</span>' : ''}${b.bonusStake ? `<span class="pill open">${money(b.bonusStake)} com saldo de bónus</span>` : ''}${b.protected ? '<span class="pill open">🛡️ Primeira aposta protegida</span>' : ''}</div>` : ''}
     <div class="bet-card-foot"><span>Aposta <strong>${money(b.stake)}</strong></span><span>Cotação <strong>${fmtOdds(b.totalOdds)}</strong></span>
       <span>${b.status === 'open' ? 'Retorno potencial' : 'Pago'} <strong class="${b.status === 'won' ? 'green' : ''}">${money(b.status === 'open' ? b.potential : b.payout)}</strong></span></div>
   </div>`;
@@ -1180,17 +1270,46 @@ function reconcileSlip() {
   }
 }
 
+// ---------- free bets in the slip ----------
+
+/** The player's free bets that can be used now (the server re-checks everything when the bet is placed). */
+const usableFreebets = () => (state.promos?.freebets || []).filter((f) => f.status === 'active' && Date.parse(f.expiresAt) > Date.now());
+/** The free bet chosen in the slip, when the slip is one bet (a multiple, a builder or a single pick). */
+function chosenFreebet() {
+  if (!state.freebetId || !state.user) return null;
+  const oneBet = state.builder || state.mode === 'multiple' || state.slip.length === 1;
+  return oneBet ? usableFreebets().find((f) => f.id === state.freebetId) || null : null;
+}
+/** Shows the free-bet picker; a chosen free bet fixes the stake (its own amount). */
+function freebetUi() {
+  const list = usableFreebets();
+  const oneBet = state.builder || state.mode === 'multiple' || state.slip.length === 1;
+  const show = !!state.user && list.length > 0 && oneBet;
+  $('#freebetPick').classList.toggle('hidden', !show);
+  if (show) {
+    $('#freebetSel').innerHTML = `<option value="">Não usar</option>${list.map((f) => `<option value="${f.id}"${f.id === state.freebetId ? ' selected' : ''}>${money(f.amount)} · até ${esc(new Date(f.expiresAt).toLocaleDateString('pt-PT'))}${f.minOdds > 1 ? ` · odd mín. ${fmtOdds(f.minOdds)}` : ''}</option>`).join('')}`;
+  }
+  const fb = chosenFreebet();
+  $('#stake').disabled = !!fb;
+  $$('.quick-stakes button').forEach((b) => { b.disabled = !!fb; });
+  if (fb) $('#stake').value = fb.amount;
+}
+
 function slipTotals() {
-  const stake = Number(String($('#stake').value).replace(',', '.')) || 0;
+  const fb = chosenFreebet();
+  const stake = fb ? fb.amount : Number(String($('#stake').value).replace(',', '.')) || 0;
   const items = state.slip;
+  // A free bet pays only the winnings (its stake is not returned).
+  const net = (p) => (fb ? Math.max(0, p - stake) : p);
   if (state.builder) {
     const odds = builderTotal(state.builder);
-    return { stake, total: stake, odds, potential: Math.min(stake * odds, state.config?.maxPayout ?? Infinity) };
+    return { stake, total: stake, odds, potential: net(Math.min(stake * odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
   }
   if (state.mode === 'multiple') {
     const odds = items.reduce((a, s) => a * s.odds, 1);
-    return { stake, total: stake, odds, potential: Math.min(stake * odds, state.config?.maxPayout ?? Infinity) };
+    return { stake, total: stake, odds, potential: net(Math.min(stake * odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
   }
+  if (fb && items.length === 1) return { stake, total: stake, odds: null, potential: net(Math.min(stake * items[0].odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
   const potential = items.reduce((a, s) => a + Math.min(stake * s.odds, state.config?.maxPayout ?? Infinity), 0);
   return { stake, total: stake * items.length, odds: null, potential };
 }
@@ -1209,6 +1328,7 @@ function renderBuilderSlip() {
       ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small>${l.newOdds ? ` <small class="note">${fmtOdds(l.odds)} → ${fmtOdds(l.newOdds)}</small>` : ''}</div>`).join('')}
     </div>`;
   $('#betFooter').classList.remove('hidden');
+  freebetUi();
   const t = slipTotals();
   $('#oddsLabel').textContent = 'Cotação do criador';
   $('#totalOdds').textContent = fmtOdds(t.odds);
@@ -1240,6 +1360,7 @@ function renderSlip() {
   $('#betFooter').classList.toggle('hidden', n === 0);
   if (!n) return;
 
+  freebetUi();
   const t = slipTotals();
   $('#oddsLabel').textContent = state.mode === 'multiple' ? 'Cotação total' : 'Apostas simples';
   $('#totalOdds').textContent = state.mode === 'multiple' ? fmtOdds(t.odds) : `${n} × ${money(t.stake)}`;
@@ -1270,7 +1391,7 @@ async function placeBet() {
     return;
   }
   if (!state.user) return openAuth('login');
-  const { stake } = slipTotals();
+  const { stake, freebet } = slipTotals();
   btn.disabled = true;
   btn.textContent = 'A PROCESSAR…';
   try {
@@ -1278,10 +1399,11 @@ async function placeBet() {
     const res = await api('/api/bets', {
       method: 'POST',
       body: b
-        ? { mode: 'builder', stake, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
-        : { mode: state.mode, stake, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
+        ? { mode: 'builder', stake, freebetId: freebet?.id, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
+        : { mode: state.mode, stake, freebetId: freebet?.id, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
     });
-    state.user.balance = res.balance;
+    if (res.user) state.user = res.user; else state.user.balance = res.balance;
+    if (freebet) { state.freebetId = null; loadPromos(); }
     state.slip = [];
     state.builder = null;
     saveSlip();
@@ -1316,6 +1438,10 @@ function updateHeader() {
   $('#profileBtn').classList.toggle('hidden', !u);
   if (u) {
     $('#headerBalance').textContent = money(u.balance);
+    // Promotional money is shown apart: it is not the withdrawable balance.
+    const extra = (u.bonus || 0) + (u.freebet || 0);
+    $('#headerBonus').classList.toggle('hidden', !extra);
+    $('#headerBonus').textContent = extra ? `+ ${money(extra)} bónus` : '';
     $('#profileBtn').textContent = initials(u.name);
   }
 }
@@ -1459,6 +1585,7 @@ async function refreshMe() {
   try {
     const { user } = await api('/api/me');
     state.user = user;
+    if (user) loadPromos(); else state.promos = null;
   } catch (err) {
     // Only a real sign-out clears the account; a dropped connection keeps the last balance shown.
     if (err.status === 401) state.user = null;
@@ -1524,6 +1651,12 @@ const formHandlers = {
     updateHeader();
     toast('Dados atualizados');
   },
+  async limits(form) {
+    const d = formData(form);
+    await api('/api/me/limits', { method: 'PUT', body: Object.fromEntries(LIMIT_FIELDS.map(([k]) => [k, d[k] === '' ? null : d[k]])) });
+    toast('Limites guardados');
+    loadLimits();
+  },
   async bank(form) {
     const d = formData(form);
     const { user } = await api('/api/me', { method: 'PATCH', body: { iban: d.iban, ibanName: d.ibanName, nif: d.nif } });
@@ -1555,7 +1688,7 @@ const formHandlers = {
   },
   async deposit(form) {
     const d = formData(form);
-    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone } });
+    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone, bonus: !!form.bonus?.checked } });
     if (res.payment) {
       const p = res.payment;
       state.depositWatch = null;
@@ -1571,13 +1704,21 @@ const formHandlers = {
       depositPanel(`<div class="pay-box"><strong>Pedido MB WAY enviado</strong><span>Confirme o pagamento de ${money(p.amount)} na app MB WAY (tem cerca de 4 minutos).</span></div>`);
       return watchDeposit(p.id, { every: 4000, forMs: 6 * 60_000 });
     }
-    state.user.balance = res.balance;
-    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}`);
-    updateHeader(); loadWallet();
+    if (res.user) state.user = res.user; else state.user.balance = res.balance;
+    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${money(res.bonus.amount)}` : ''}`);
+    updateHeader(); loadWallet(); loadPromos();
   },
   async withdraw(form) {
     const d = formData(form);
-    const res = await api('/api/wallet/withdraw', { method: 'POST', body: { amount: d.amount, iban: d.iban } });
+    let res;
+    try {
+      res = await api('/api/wallet/withdraw', { method: 'POST', body: { amount: d.amount, iban: d.iban } });
+    } catch (err) {
+      // A deposit bonus is running: withdrawing cancels it, so the player confirms first.
+      if (!err.data?.bonusActive || !confirm(`${err.message}\n\nContinuar com o levantamento?`)) throw err;
+      res = await api('/api/wallet/withdraw', { method: 'POST', body: { amount: d.amount, iban: d.iban, forfeitBonus: true } });
+      loadPromos(); refreshMe();
+    }
     state.user.balance = res.balance;
     form.reset();
     toast('Levantamento pedido', 'O pedido será analisado pela equipa.');
@@ -1779,7 +1920,27 @@ document.addEventListener('input', (e) => {
   }
   if (e.target.id === 'searchInput') renderSearch(e.target.value);
   if (e.target.id === 'stake') renderSlip();
+  if (e.target.closest('form[data-form="deposit"]')) depositOffer();
 });
+document.addEventListener('change', (e) => { if (e.target.closest('form[data-form="deposit"]')) depositOffer(); });
+
+// What the deposit typed would earn (decided again by the server when the payment is confirmed).
+let offerTimer = null;
+function depositOffer() {
+  clearTimeout(offerTimer);
+  offerTimer = setTimeout(async () => {
+    const form = $('form[data-form="deposit"]');
+    const box = $('#depositOffer');
+    if (!form || !box) return;
+    if (!form.bonus.checked) { box.innerHTML = '<small class="muted">Sem bónus neste depósito.</small>'; return; }
+    try {
+      const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}`);
+      box.innerHTML = o.bonus > 0
+        ? `<div class="offer ok">🎁 ${esc(o.name)}: <b>+${money(o.bonus)}</b> em saldo de bónus após a confirmação do pagamento.</div>`
+        : `<small class="muted">${esc(o.name)}: ${esc(o.reason || 'não aplicável')}.</small>`;
+    } catch { box.innerHTML = ''; }
+  }, 300);
+}
 
 function setSlipOpen(open) {
   $('#betslip').classList.toggle('open', open);
@@ -1821,6 +1982,7 @@ function bindChrome() {
     renderSlip();
   }));
   $$('.quick-stakes button').forEach((b) => b.addEventListener('click', () => { $('#stake').value = b.dataset.stake; renderSlip(); }));
+  $('#freebetSel').addEventListener('change', (e) => { state.freebetId = Number(e.target.value) || null; renderSlip(); });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });

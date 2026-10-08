@@ -866,3 +866,25 @@ html.splash-on { overflow: hidden; }
   .pf-stats { grid-template-columns: 1fr 1fr; }
   .pf-excl { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---------- promotions ---------- */
+.promo-card.off { opacity: .55; }
+.promo-terms { margin: 4px 0 14px; padding-left: 18px; color: var(--text-2); font-size: 12.5px; line-height: 1.6; }
+.pf-panel { padding: 18px; }
+.bonus-card { padding: 16px; margin: 12px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+.bonus-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.bonus-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.bonus-nums small { display: block; color: var(--text-3); font-size: 12px; }
+.bonus-nums b { font-size: 16px; }
+.bonus-bar { height: 8px; margin-bottom: 8px; }
+.bonus-bar i { background: linear-gradient(90deg, var(--brand), var(--up)); }
+.header-bonus { display: block; font-size: 10.5px; color: var(--up); line-height: 1; margin-top: 1px; }
+.balance-btn { line-height: 1.2; }
+.check-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.deposit-offer { min-height: 20px; margin: 6px 0 10px; }
+.deposit-offer .offer.ok { padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(81, 197, 128, .45); background: rgba(81, 197, 128, .10); font-size: 13px; }
+.freebet-pick { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; font-size: 12px; color: var(--up); font-weight: 600; }
+.freebet-pick select { padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--dim); color: var(--text); }
+#stake:disabled { opacity: .8; }
+@media (max-width: 700px) { .bonus-nums { grid-template-columns: 1fr 1fr; } }
+.bet-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }

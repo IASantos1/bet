@@ -33,7 +33,7 @@
     </nav>
     <div class="top-actions">
       <button class="icon-btn" id="searchBtn" aria-label="Pesquisar">⌕</button>
-      <a class="balance-btn hidden" id="balanceBtn" href="#/perfil/carteira">Saldo <strong id="headerBalance">€0,00</strong></a>
+      <a class="balance-btn hidden" id="balanceBtn" href="#/perfil/carteira">Saldo <strong id="headerBalance">€0,00</strong><small class="header-bonus hidden" id="headerBonus"></small></a>
       <a class="primary-btn deposit-btn hidden" id="depositBtn" href="#/perfil/carteira">Depositar</a>
       <button class="outline-btn" id="loginBtn">Entrar</button>
       <button class="primary-btn" id="registerBtn">Registar</button>
@@ -65,6 +65,7 @@
       <div id="betItems" class="bet-items"></div>
       <div class="bet-footer hidden" id="betFooter">
         <div class="bet-summary"><span id="oddsLabel">Cotação total</span><strong id="totalOdds">0.00</strong></div>
+        <label class="freebet-pick hidden" id="freebetPick"><span>🎁 Usar free bet</span><select id="freebetSel"></select></label>
         <label class="stake-label"><span id="stakeLabel">Valor da aposta</span><span class="stake-input"><span>€</span><input id="stake" type="number" min="1" step="0.50" value="10" inputmode="decimal" /></span></label>
         <div class="quick-stakes"><button data-stake="5">5</button><button data-stake="10">10</button><button data-stake="25">25</button><button data-stake="50">50</button></div>
         <div class="bet-summary"><span>Total apostado</span><strong id="totalStake">€0,00</strong></div>

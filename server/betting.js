@@ -1,9 +1,10 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { postTransaction } from './wallet.js';
 import { legOutcome, resultCode, PERIOD_MARKETS } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
+import { fundBet, protects, settleFunds } from './promotions.js';
+import { checkBet } from './limits.js';
 
 export { resultCode };
 
@@ -22,10 +23,17 @@ export function payoutFor(stakeCents, oddsX100List, factor = 1) {
  * `picks` = [{ selectionId, odds }] where odds is the price the user saw; if any price moved the
  * whole slip is refused with 409 and the current prices, so the user can confirm them.
  */
-export function placeBets(db, user, { mode, stakeCents, picks }) {
+export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null }) {
   const { limits } = config;
   if (!['single', 'multiple', 'builder'].includes(mode)) throw new HttpError(400, 'Tipo de aposta inválido.');
   if (!Array.isArray(picks) || picks.length === 0) throw new HttpError(400, 'O boletim está vazio.');
+  if (freebetId) {
+    // A free bet: its own amount is the stake (whatever the page sent), on one bet only.
+    const f = db.prepare("SELECT amount_cents FROM freebets WHERE id = ? AND user_id = ? AND status = 'active'").get(Number(freebetId), user.id);
+    if (!f) throw new HttpError(400, 'Esta free bet já não está disponível.');
+    if (mode === 'single' && picks.length > 1) throw new HttpError(400, 'Uma free bet vale para uma só aposta.');
+    stakeCents = f.amount_cents;
+  }
   if (picks.length > limits.maxSelections) throw new HttpError(400, `Máximo de ${limits.maxSelections} seleções.`);
   if (stakeCents < limits.minStakeCents) throw new HttpError(400, `Aposta mínima: €${(limits.minStakeCents / 100).toFixed(2)}.`);
   if (stakeCents > limits.maxStakeCents) throw new HttpError(400, `Aposta máxima: €${(limits.maxStakeCents / 100).toFixed(2)}.`);
@@ -84,6 +92,8 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   const insertBet = db.prepare(
     `INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   );
+  const setFunding = db.prepare('UPDATE bets SET real_stake_cents = ?, bonus_stake_cents = ?, freebet_stake_cents = ?, bonus_id = ?, freebet_id = ?, protected = ? WHERE id = ?');
+  const label = mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? `Criador de apostas (${legs.length} seleções)` : 'Aposta simples';
   const insertLeg = db.prepare(
     `INSERT INTO bet_legs (bet_id, event_id, selection_id, market, code, odds_x100) VALUES (?, ?, ?, ?, ?, ?)`
   );
@@ -92,15 +102,20 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
     // A builder leg another leg makes certain (double chance covering the result) counts as 1.00.
     const prices = slipLegs.map((l) => (mode === 'builder' && impliedLeg(l, slipLegs) ? 100 : l.odds_x100));
     const { totalOdds, payoutCents } = payoutFor(stakeCents, prices, factor);
+    // The player's own limits (stake, weekly loss), on the real money this bet would spend.
+    if (!freebetId) {
+      const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(user.id).balance_cents;
+      checkBet(db, user, { stakeCents, realCents: Math.min(balance, stakeCents) });
+    }
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
     for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
+    // Paid with a free bet, or real money first and the bonus for the rest (a short balance rolls everything back).
+    const fund = fundBet(db, user, { betId, stakeCents, totalOdds, freebetId, label });
+    const isProtected = !freebetId && protects(db, user, { realCents: fund.real, stakeCents, totalOdds });
+    setFunding.run(fund.real, fund.bonus, fund.freebet, fund.bonusId, fund.freebetId, isProtected ? 1 : 0, betId);
     betIds.push(betId);
   }
-  // Debit last so the ledger entry can reference the bets; a short balance rolls everything back.
-  postTransaction(db, user.id, -stakeCents * slips.length, 'bet',
-    mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? `Criador de apostas (${legs.length} seleções)` : `Aposta simples ×${slips.length}`,
-    `bet:${betIds.join(',')}`);
   return betIds;
 }
 
@@ -120,8 +135,10 @@ export function settleBet(db, betId) {
   const legs = db.prepare('SELECT status, odds_x100 FROM bet_legs WHERE bet_id = ?').all(betId);
   const now = nowIso();
 
+  // Paid from (and back to) where the stake came from: real money, bonus or free bet (promotions.js).
   if (legs.some((l) => l.status === 'lost')) {
     db.prepare("UPDATE bets SET status = 'lost', settled_at = ? WHERE id = ?").run(now, betId);
+    settleFunds(db, { ...bet, status: 'lost', settled_at: now }, 'lost');
     return 0;
   }
   if (legs.some((l) => l.status === 'open')) return 0;
@@ -129,15 +146,16 @@ export function settleBet(db, betId) {
   const won = legs.filter((l) => l.status === 'won');
   if (won.length === 0) {
     db.prepare("UPDATE bets SET status = 'void', payout_cents = ?, settled_at = ? WHERE id = ?")
-      .run(bet.stake_cents, now, betId);
-    postTransaction(db, bet.user_id, bet.stake_cents, 'refund', `Aposta #${betId} anulada — reembolso`, `bet:${betId}`);
-    return bet.stake_cents;
+      .run(bet.stake_cents - (bet.freebet_stake_cents || 0), now, betId);
+    return settleFunds(db, bet, 'void');
   }
   // Void legs count as odds 1.00, so the payout uses only the winning legs (a builder keeps its margin).
   const { payoutCents } = payoutFor(bet.stake_cents, won.map((l) => l.odds_x100), bet.type === 'builder' ? builderFactorOf(bet, legs) : 1);
-  db.prepare("UPDATE bets SET status = 'won', payout_cents = ?, settled_at = ? WHERE id = ?").run(payoutCents, now, betId);
-  postTransaction(db, bet.user_id, payoutCents, 'payout', `Aposta #${betId} ganha`, `bet:${betId}`);
-  return payoutCents;
+  // A free bet pays only its winnings (the stake was not the player's).
+  const paid = bet.freebet_stake_cents ? Math.max(0, payoutCents - bet.freebet_stake_cents) : payoutCents;
+  db.prepare("UPDATE bets SET status = 'won', payout_cents = ?, settled_at = ? WHERE id = ?").run(paid, now, betId);
+  settleFunds(db, bet, 'won', payoutCents);
+  return paid;
 }
 
 /**

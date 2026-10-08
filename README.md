@@ -294,6 +294,32 @@ resultado, adiados). Pode liquidar com um resultado, anular com motivo ou execut
 Cada liquidação fica registada (tabela `settlements`) com a origem — dados ao vivo, automático ou o
 administrador que a fez.
 
+## Promoções de desporto
+
+Configuradas em **Admin → Promoções** (sem alterar código): estado ACTIVE/INACTIVE, período, percentagens,
+mínimos, máximos, rollover, odd mínima e validade de cada campanha. Tudo é decidido no servidor
+(`server/promotions.js`); a página só mostra o que ele calcula.
+
+- **Boas-vindas** — 100% do primeiro depósito elegível (mín. €10, bónus até €100), rollover 5× (depósito + bónus),
+  odd mínima 1.50, 30 dias; cada aposta conta no máximo €5 ou 10% do bónus (o menor).
+- **Primeira aposta protegida** — primeira aposta com dinheiro real ≥ €5 a odd ≥ 1.50; se perder, free bet até €10 (7 dias).
+- **Reload semanal** — 25% (mín. €20, até €25), uma vez por semana, rollover 5×, 14 dias.
+- **Cashback semanal** — 5% das perdas líquidas reais da semana anterior (mín. €20, até €25), creditado à segunda-feira, rollover 3×.
+
+Dinheiro: o bónus fica num **saldo de bónus** separado, nunca levantável; as apostas gastam primeiro o saldo real e
+depois o bónus, e os ganhos voltam nas mesmas proporções. Cumprido o rollover, o bónus passa a saldo real
+(`bonus_convert`); ao expirar ou ser cancelado só o saldo de bónus é removido. Uma free bet paga só os ganhos.
+Só uma promoção de depósito ativa por jogador; levantar com uma ativa cancela-a (o jogador confirma antes).
+Sem promoções para: autoexclusão, conta suspensa ou bloqueada pelo operador, contas duplicadas (mesmo telemóvel,
+NIF ou IBAN), métodos de pagamento não elegíveis e, se ativado, identidade por verificar. Um chargeback ou
+reembolso na Stripe (`charge.dispute.created`, `charge.refunded` — ative-os no webhook) retira o depósito,
+cancela as promoções e bloqueia novas. Cada atribuição tem referência única (depósito, semana, aposta): processar
+o mesmo evento duas vezes não paga duas vezes. Registos: `promo_ledger` (movimentos promocionais) e `promo_log`
+(decisões com o motivo).
+
+Jogo responsável (perfil → Limites): limites de depósito diário/semanal/mensal, aposta máxima e perda semanal
+(baixar aplica-se já; subir ou retirar, 24 h depois), pausas de 24/72 h e autoexclusão.
+
 ## Estrutura
 
 ```

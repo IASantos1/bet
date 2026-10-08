@@ -13,6 +13,11 @@ import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
 } from './security.js';
 import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
+import {
+  promoConfig, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
+  activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
+} from './promotions.js';
+import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
@@ -243,6 +248,8 @@ export function createApp(db, {
   }
 
   const userById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  // The player as the pages see it, with the promotional balances (bonus, free bets) worked out here.
+  const userOut = (u) => ({ ...publicUser(u), freebet: cents(freebetCents(db, u.id)), bonus: cents(bonusBalanceCents(db, u.id)) });
 
   // Single wallet: anything that uses the balance first brings back money left in the casino.
   const reclaimCasino = async (req, _res, next) => {
@@ -550,7 +557,7 @@ export function createApp(db, {
       'INSERT INTO users (email, name, birthdate, phone, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(email, name, birthdate, phone, hashPassword(password), nowIso());
     startSession(res, Number(lastInsertRowid), req);
-    res.status(201).json({ user: publicUser(userById(Number(lastInsertRowid))) });
+    res.status(201).json({ user: userOut(userById(Number(lastInsertRowid))) });
   });
 
   app.post('/api/auth/login', (req, res) => {
@@ -563,7 +570,7 @@ export function createApp(db, {
     if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
     if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
     startSession(res, user.id, req);
-    res.json({ user: publicUser(user) });
+    res.json({ user: userOut(user) });
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -575,7 +582,7 @@ export function createApp(db, {
 
   // ---------- account ----------
 
-  app.get('/api/me', (req, res) => res.json({ user: req.user ? publicUser(req.user) : null }));
+  app.get('/api/me', (req, res) => res.json({ user: req.user ? userOut(req.user) : null }));
 
   // Profile: only the fields sent are changed (personal data, bank details, preferences).
   app.patch('/api/me', requireUser, (req, res) => {
@@ -605,7 +612,7 @@ export function createApp(db, {
     }
     const keys = Object.keys(set);
     if (keys.length) db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), req.user.id);
-    res.json({ user: publicUser(userById(req.user.id)) });
+    res.json({ user: userOut(userById(req.user.id)) });
   });
 
   // Active sessions (devices signed in), and signing the others out.
@@ -638,7 +645,7 @@ export function createApp(db, {
     const u = req.user;
     const data = {
       exportedAt: nowIso(),
-      account: { ...publicUser(u), casinoActive: undefined, banned: undefined },
+      account: { ...userOut(u), casinoActive: undefined, banned: undefined },
       bets: withLegs(db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id').all(u.id)),
       transactions: db.prepare('SELECT type, amount_cents, balance_after_cents, description, created_at FROM transactions WHERE user_id = ? ORDER BY id').all(u.id)
         .map((t) => ({ type: t.type, amount: cents(t.amount_cents), balanceAfter: cents(t.balance_after_cents), description: t.description, at: t.created_at })),
@@ -672,11 +679,15 @@ export function createApp(db, {
 
   app.post('/api/me/self-exclusion', requireUser, (req, res) => {
     const days = Number(req.body.days);
-    if (![1, 7, 30, 90, 180, 365].includes(days)) throw new HttpError(400, 'Período inválido.');
+    if (![1, 3, 7, 30, 90, 180, 365].includes(days)) throw new HttpError(400, 'Período inválido.');
     const current = req.user.excluded_until && req.user.excluded_until > nowIso() ? new Date(req.user.excluded_until) : new Date();
     const until = new Date(Math.max(current.getTime(), Date.now() + days * 86_400_000)).toISOString();
-    db.prepare('UPDATE users SET excluded_until = ? WHERE id = ?').run(until, req.user.id);
-    res.json({ user: publicUser(userById(req.user.id)) });
+    tx(db, () => {
+      db.prepare('UPDATE users SET excluded_until = ? WHERE id = ?').run(until, req.user.id);
+      // Promotions end with a self-exclusion (only promotional money; the real balance stays).
+      cancelUserPromos(db, req.user.id, 'autoexclusão');
+    });
+    res.json({ user: userOut(userById(req.user.id)) });
   });
 
   // ---------- wallet ----------
@@ -694,7 +705,7 @@ export function createApp(db, {
       id: w.id, amount: cents(w.amount_cents), iban: `${w.iban.slice(0, 4)}…${w.iban.slice(-4)}`, status: w.status,
       createdAt: w.created_at, decidedAt: w.decided_at,
     }));
-    res.json({ balance: cents(req.user.balance_cents), transactions, withdrawals });
+    res.json({ balance: cents(req.user.balance_cents), bonus: cents(bonusBalanceCents(db, req.user.id)), freebet: cents(freebetCents(db, req.user.id)), transactions, withdrawals });
   });
 
   app.post('/api/wallet/deposit', requireUser, async (req, res, next) => {
@@ -709,19 +720,23 @@ export function createApp(db, {
       if (amount < minDepositCents || amount > maxDepositCents) {
         throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
       }
+      // The player's own deposit limits (responsible gaming).
+      checkDeposit(db, req.user, amount);
+      // The player may decline the deposit bonus; whether one is given, and how much, is decided here.
+      const bonus = req.body.bonus !== false;
       if (stripeMode) {
         // Inside the site: MB WAY / Multibanco confirmed here, the card through Stripe's form on our page.
         const method = String(req.body.method || '');
         if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'Pagamento por cartão indisponível: falta STRIPE_PUBLISHABLE_KEY.');
         let r;
         try {
-          r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone });
+          r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone, bonus });
         } catch (err) {
           throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
         }
         return res.status(201).json({ payment: depositOut(r), clientSecret: r.clientSecret, publishableKey: r.publishableKey, balance: cents(userById(req.user.id).balance_cents) });
       }
-      demoDeposit(req, res, amount);
+      demoDeposit(req, res, amount, bonus);
     } catch (err) { next(err); }
   });
 
@@ -740,19 +755,49 @@ export function createApp(db, {
     entity: r.entity, reference: r.reference, expiresAt: r.expiresAt, voucherUrl: r.voucherUrl,
   });
 
-  function demoDeposit(req, res, amount) {
+  function demoDeposit(req, res, amount, bonus) {
     const method = ['mbway', 'multibanco', 'cartao'].includes(req.body.method) ? req.body.method : 'cartao';
     const label = { mbway: 'MB WAY', multibanco: 'Multibanco', cartao: 'Cartão' }[method];
-    const balance = tx(db, () => postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`));
-    res.status(201).json({ balance: cents(balance) });
+    const granted = tx(db, () => {
+      postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`);
+      const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
+      return onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', optIn: bonus });
+    });
+    const u = userById(req.user.id);
+    res.status(201).json({ balance: cents(u.balance_cents), bonus: granted ? bonusView(granted) : null, user: userOut(u) });
   }
+
+  // ---------- promotions ----------
+
+  // The campaigns (public) and the player's own: bonuses with their rollover, free bets, ledger.
+  app.get('/api/promotions', (req, res) => {
+    res.json({ campaigns: publicCampaigns(db), mine: req.user ? playerPromos(db, req.user.id) : null });
+  });
+  // What a deposit of this amount would earn now (the deposit form shows it; the server decides again on payment).
+  app.get('/api/promotions/offer', requireUser, (req, res) => {
+    const amount = Math.round(Number(String(req.query.amount || '0').replace(',', '.')) * 100);
+    const o = depositOffer(db, req.user.id, Number.isFinite(amount) ? amount : 0, { method: str(req.query.method, 20) || null });
+    res.json({ campaign: o.campaign, name: o.name, bonus: o.bonusCents ? cents(o.bonusCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+  });
+
+  // Responsible-gaming limits (stricter at once, looser after 24 h).
+  app.get('/api/me/limits', requireUser, (req, res) => res.json({ limits: limitsView(currentLimits(db, req.user)) }));
+  app.put('/api/me/limits', requireUser, (req, res) => {
+    res.json({ limits: limitsView(setLimits(db, req.user, req.body || {})) });
+  });
 
   app.post('/api/wallet/withdraw', requireUser, reclaimCasino, (req, res) => {
     const amount = parseEuros(req.body.amount, 'Valor do levantamento');
     if (amount < config.limits.minWithdrawCents) throw new HttpError(400, `Levantamento mínimo: €${cents(config.limits.minWithdrawCents)}.`);
     const iban = str(req.body.iban, 60).replace(/\s+/g, '').toUpperCase();
     if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) throw new HttpError(400, 'IBAN inválido.');
+    // Withdrawing while a deposit bonus runs gives the bonus up (the player is asked first).
+    const running = activeDepositBonus(db, req.user.id);
+    if (running && req.body.forfeitBonus !== true) {
+      throw new HttpError(409, `Tem o ${CAMPAIGN_NAMES[running.kind]} ativo (€${cents(running.balance_cents).toFixed(2)} de bónus). Ao levantar, o bónus é cancelado.`, { bonusActive: true });
+    }
     const balance = tx(db, () => {
+      if (running) cancelBonus(db, running.id, 'levantamento pedido com o bónus ativo');
       const { lastInsertRowid } = db.prepare(
         'INSERT INTO withdrawals (user_id, amount_cents, iban, created_at) VALUES (?, ?, ?, ?)'
       ).run(req.user.id, amount, iban, nowIso());
@@ -768,8 +813,10 @@ export function createApp(db, {
     const picks = Array.isArray(req.body.selections)
       ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
       : [];
-    const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks }));
-    res.status(201).json({ betIds, balance: cents(userById(req.user.id).balance_cents) });
+    const freebetId = req.body.freebetId ? Number(req.body.freebetId) : null;
+    const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId }));
+    const u = userById(req.user.id);
+    res.status(201).json({ betIds, balance: cents(u.balance_cents), user: userOut(u) });
   });
 
   app.get('/api/bets', requireUser, (req, res) => {
@@ -787,6 +834,7 @@ export function createApp(db, {
     return bets.map((b) => ({
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
+      freebet: cents(b.freebet_stake_cents || 0), bonusStake: cents(b.bonus_stake_cents || 0), protected: !!b.protected,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
         match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
@@ -1064,7 +1112,7 @@ export function createApp(db, {
       `SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets
          FROM users u ORDER BY u.id DESC LIMIT 200`
     ).all();
-    res.json({ users: rows.map((u) => ({ ...publicUser(u), bets: u.bets })) });
+    res.json({ users: rows.map((u) => ({ ...userOut(u), bets: u.bets })) });
   });
 
   // ---------- one player: wallet, free bets, ban, details and identity documents ----------
@@ -1089,13 +1137,54 @@ export function createApp(db, {
     res.json({ ok: true, balance: cents(balance) });
   });
 
+  // A free bet for the player (one token of this amount, valid for `days`).
   admin.post('/users/:id/freebet', (req, res) => {
     const u = playerRow(req.params.id);
-    const amount = signedCents(req.body?.amount);
-    const next = (u.freebet_cents || 0) + amount;
-    if (next < 0) throw new HttpError(400, 'O saldo de freebets não pode ficar negativo.');
-    db.prepare('UPDATE users SET freebet_cents = ? WHERE id = ?').run(next, u.id);
-    res.json({ ok: true, freebet: cents(next) });
+    const amount = parseEuros(req.body?.amount, 'Valor');
+    const days = Math.min(365, Math.max(1, Number(req.body?.days) || 7));
+    tx(db, () => grantFreebet(db, u.id, { amountCents: amount, source: 'admin', ref: `admin:${req.user.id}:${Date.now()}:${u.id}`, validityDays: days,
+      description: `Free bet do administrador${req.body?.note ? ` — ${str(req.body.note, 120)}` : ''}` }));
+    res.json({ ok: true, freebet: cents(freebetCents(db, u.id)) });
+  });
+  admin.post('/freebets/:id/cancel', (req, res) => {
+    const f = db.prepare('SELECT * FROM freebets WHERE id = ?').get(Number(req.params.id));
+    if (!f) throw new HttpError(404, 'Free bet não encontrada.');
+    if (f.status !== 'active') throw new HttpError(409, 'Esta free bet já não está ativa.');
+    db.prepare("UPDATE freebets SET status = 'cancelled' WHERE id = ?").run(f.id);
+    res.json({ ok: true });
+  });
+
+  // ---------- promotions (configuration, bonuses, decisions) ----------
+  admin.get('/promotions', (_req, res) => {
+    const who = (r) => ({ userId: r.user_id, user: r.name, email: r.email });
+    res.json({
+      config: promoConfig(db),
+      bonuses: db.prepare('SELECT b.*, u.name, u.email FROM bonuses b JOIN users u ON u.id = b.user_id ORDER BY b.id DESC LIMIT 200').all()
+        .map((b) => ({ ...bonusView(b), ...who(b) })),
+      freebets: db.prepare('SELECT f.*, u.name, u.email FROM freebets f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100').all()
+        .map((f) => ({ ...freebetView(f), ...who(f) })),
+      log: db.prepare('SELECT l.*, u.name, u.email FROM promo_log l JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT 200').all()
+        .map((l) => ({ campaign: l.campaign, ref: l.ref, outcome: l.outcome, reason: l.reason, createdAt: l.created_at, ...who(l) })),
+      totals: db.prepare("SELECT kind, COUNT(*) AS n, SUM(amount_cents) AS granted, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed FROM bonuses GROUP BY kind").all()
+        .map((t) => ({ kind: t.kind, count: t.n, granted: cents(t.granted || 0), completed: t.completed })),
+    });
+  });
+  admin.put('/promotions/config', (req, res) => res.json({ config: savePromoConfig(db, req.body || {}) }));
+  admin.post('/bonuses/:id/cancel', (req, res) => {
+    const reason = str(req.body?.reason, 200);
+    if (reason.length < 3) throw new HttpError(400, 'Indique o motivo do cancelamento.');
+    tx(db, () => cancelBonus(db, Number(req.params.id), reason));
+    res.json({ ok: true });
+  });
+  // Promotional abuse: no more promotions for this player (active ones cancelled).
+  admin.post('/users/:id/promo-block', (req, res) => {
+    const u = playerRow(req.params.id);
+    const blocked = req.body?.blocked !== false;
+    tx(db, () => {
+      db.prepare('UPDATE users SET promo_blocked = ? WHERE id = ?').run(blocked ? 1 : 0, u.id);
+      if (blocked) cancelUserPromos(db, u.id, str(req.body?.reason, 200) || 'abuso promocional');
+    });
+    res.json({ ok: true, blocked });
   });
 
   admin.post('/users/:id/ban', (req, res) => {
@@ -1105,6 +1194,7 @@ export function createApp(db, {
     tx(db, () => {
       db.prepare('UPDATE users SET banned_at = ? WHERE id = ?').run(banned ? nowIso() : null, u.id);
       if (banned) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+      if (banned) cancelUserPromos(db, u.id, 'conta suspensa');
     });
     res.json({ ok: true, banned });
   });
@@ -1120,7 +1210,8 @@ export function createApp(db, {
       .map((d) => ({ id: d.id, kind: d.kind, fileName: d.file_name, mimeType: d.mime_type, size: d.file_size, status: d.status, createdAt: d.created_at, reviewedAt: d.reviewed_at }));
     const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = ?').get(u.id, type).s);
     res.json({
-      user: { ...publicUser(u), bets: bets.length }, bets, transactions: txs, withdrawals, documents,
+      user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked }, bets, transactions: txs, withdrawals, documents,
+      promotions: playerPromos(db, u.id), limits: limitsView(currentLimits(db, u)),
       totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout') },
     });
   });
