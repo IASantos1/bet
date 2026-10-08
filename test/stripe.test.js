@@ -5,7 +5,7 @@ import { openDb } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { config } from '../server/config.js';
-import { createStripe, verifyWebhook, formEncode } from '../server/stripe.js';
+import { createStripe, verifyWebhook, formEncode, ptPhone } from '../server/stripe.js';
 
 const WHSEC = 'whsec_test123';
 const sign = (body, t = Math.floor(Date.now() / 1000), secret = WHSEC) =>
@@ -20,26 +20,39 @@ test('formEncode and webhook signature', () => {
   assert.throws(() => verifyWebhook(`${body} `, sign(body), WHSEC), /inválida/);
 });
 
-test('Stripe deposit: Checkout page, webhook credits once, return check, wrong amount refused', async () => {
+test('ptPhone', () => {
+  assert.equal(ptPhone('912 345 678'), '+351912345678');
+  assert.equal(ptPhone('+351 912345678'), '+351912345678');
+  assert.equal(ptPhone('00351912345678'), '+351912345678');
+  assert.equal(ptPhone('212345678'), '');
+  assert.equal(ptPhone('12'), '');
+});
+
+test('Stripe deposits inside the site: MB WAY, Multibanco, card; credited once by webhook / status / sweep', async () => {
   const db = openDb(':memory:');
   seed(db);
-  const stripeCalls = [];
-  const sessions = new Map();
+  const intents = new Map();
   let seq = 0;
+  const posted = [];
   const fetchImpl = async (url, opts) => {
-    stripeCalls.push({ url, opts });
     assert.equal(opts.headers.Authorization, 'Bearer sk_test_abc');
+    assert.ok(opts.headers['Stripe-Version']);
     if (opts.method === 'POST') {
       const p = new URLSearchParams(opts.body);
-      const id = `cs_test_${++seq}`;
-      const s = { id, object: 'checkout.session', url: `https://checkout.stripe.com/c/pay/${id}`, amount_total: Number(p.get('line_items[0][price_data][unit_amount]')), currency: p.get('line_items[0][price_data][currency]'), payment_status: 'unpaid', status: 'open', success: p.get('success_url') };
-      sessions.set(id, s);
-      return Response.json(s);
+      posted.push(p);
+      const type = p.get('payment_method_types[0]');
+      const id = `pi_test_${++seq}`;
+      const pi = {
+        id, object: 'payment_intent', amount: Number(p.get('amount')), currency: p.get('currency'), client_secret: `${id}_secret_x`,
+        status: type === 'card' ? 'requires_payment_method' : type === 'multibanco' ? 'requires_action' : 'processing',
+        next_action: type === 'multibanco' ? { type: 'multibanco_display_details', multibanco_display_details: { entity: '12345', reference: '123456789', expires_at: 1900000000, hosted_voucher_url: 'https://v' } } : null,
+      };
+      intents.set(id, pi);
+      return Response.json(pi);
     }
-    const id = decodeURIComponent(url.split('/').pop());
-    return Response.json(sessions.get(id));
+    return Response.json(intents.get(decodeURIComponent(url.split('/').pop())));
   };
-  const stripe = createStripe(db, { secretKey: 'sk_test_abc', webhookSecret: WHSEC, fetchImpl });
+  const stripe = createStripe(db, { secretKey: 'sk_test_abc', publishableKey: 'pk_test_xyz', webhookSecret: WHSEC, fetchImpl });
   const prevMode = config.paymentsMode;
   config.paymentsMode = 'stripe';
   const server = createApp(db, { loginAttempts: 1000, registrations: 1000, stripe }).listen(0);
@@ -53,53 +66,68 @@ test('Stripe deposit: Checkout page, webhook credits once, return check, wrong a
       if (set) cookie = set.split(';')[0];
       return { status: res.status, body: await res.json() };
     };
-    const reg = await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true });
-    assert.equal(reg.status, 201);
+    const balance = async () => (await call('GET', '/api/wallet')).body.balance;
+    const hook = (obj, type = 'payment_intent.succeeded', secret = WHSEC) => {
+      const body = JSON.stringify({ id: `evt_${obj.id}`, type, data: { object: obj } });
+      return fetch(`${base}/api/stripe/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': sign(body, undefined, secret) }, body });
+    };
+    assert.equal((await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true })).status, 201);
 
-    const dep = await call('POST', '/api/wallet/deposit', { amount: 25 });
-    assert.equal(dep.status, 201, JSON.stringify(dep.body));
-    assert.match(dep.body.checkoutUrl, /^https:\/\/checkout\.stripe\.com\//);
-    assert.equal(dep.body.balance, undefined);
-    const s = sessions.get(dep.body.sessionId);
-    assert.equal(s.amount_total, 2500);
-    assert.match(s.success, /#\/perfil\/carteira\?deposito=\{CHECKOUT_SESSION_ID\}$/);
-    assert.equal((await call('GET', '/api/wallet')).body.balance, 0);
-
-    // Not paid yet.
-    assert.equal((await call('GET', `/api/wallet/deposit/${s.id}`)).body.status, 'pending');
-
+    // MB WAY: phone required; confirmed by the server with the phone.
+    assert.equal((await call('POST', '/api/wallet/deposit', { amount: 25, method: 'mbway', phone: '12' })).status, 400);
+    const mb = await call('POST', '/api/wallet/deposit', { amount: 25, method: 'mbway', phone: '912 345 678' });
+    assert.equal(mb.status, 201, JSON.stringify(mb.body));
+    assert.deepEqual([mb.body.payment.method, mb.body.payment.status, mb.body.payment.amount], ['mbway', 'processing', 25]);
+    const p1 = posted.at(-1);
+    assert.deepEqual([p1.get('payment_method_types[0]'), p1.get('confirm'), p1.get('payment_method_data[type]'), p1.get('payment_method_data[billing_details][phone]')], ['mb_way', 'true', 'mb_way', '+351912345678']);
+    assert.equal(await balance(), 0);
     // Webhook: bad signature refused; good one credits; a repeat does nothing.
-    const paid = { ...s, status: 'complete', payment_status: 'paid', payment_intent: 'pi_1' };
-    const evt = JSON.stringify({ id: 'evt_1', type: 'checkout.session.completed', data: { object: paid } });
-    const hook = (body, sig) => fetch(`${base}/api/stripe/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': sig }, body });
-    assert.equal((await hook(evt, sign(evt, undefined, 'whsec_bad'))).status, 400);
-    assert.equal((await call('GET', '/api/wallet')).body.balance, 0);
-    assert.equal((await hook(evt, sign(evt))).status, 200);
-    assert.equal((await hook(evt, sign(evt))).status, 200);
-    assert.equal((await call('GET', '/api/wallet')).body.balance, 25);
-    const back = await call('GET', `/api/wallet/deposit/${s.id}`);
-    assert.deepEqual([back.body.status, back.body.balance], ['paid', 25]);
+    const paid1 = { ...intents.get(mb.body.payment.id), status: 'succeeded', amount_received: 2500 };
+    assert.equal((await hook(paid1, undefined, 'whsec_bad')).status, 400);
+    assert.equal(await balance(), 0);
+    assert.equal((await hook(paid1)).status, 200);
+    assert.equal((await hook(paid1)).status, 200);
+    assert.equal(await balance(), 25);
+    assert.equal((await call('GET', `/api/wallet/deposit/${mb.body.payment.id}`)).body.status, 'paid');
 
-    // Return before the webhook: the check with Stripe credits it (once).
-    const dep2 = await call('POST', '/api/wallet/deposit', { amount: 10 });
-    Object.assign(sessions.get(dep2.body.sessionId), { status: 'complete', payment_status: 'paid' });
-    assert.equal((await call('GET', `/api/wallet/deposit/${dep2.body.sessionId}`)).body.balance, 35);
-    const evt2 = JSON.stringify({ id: 'evt_2', type: 'checkout.session.completed', data: { object: sessions.get(dep2.body.sessionId) } });
-    assert.equal((await hook(evt2, sign(evt2))).status, 200);
-    assert.equal((await call('GET', '/api/wallet')).body.balance, 35);
+    // Multibanco: entity + reference on our page.
+    const ref = await call('POST', '/api/wallet/deposit', { amount: 10, method: 'multibanco' });
+    assert.deepEqual([ref.body.payment.entity, ref.body.payment.reference, ref.body.payment.status], ['12345', '123456789', 'pending']);
+    assert.equal(posted.at(-1).get('payment_method_types[0]'), 'multibanco');
+    // Paid at the ATM, webhook lost: the sweep credits it.
+    Object.assign(intents.get(ref.body.payment.id), { status: 'succeeded', amount_received: 1000 });
+    assert.deepEqual(await stripe.sweep(), { checked: 1, credited: 1 });
+    assert.equal(await balance(), 35);
 
-    // Stripe reports a different amount than the page we created: not credited.
-    const dep3 = await call('POST', '/api/wallet/deposit', { amount: 10 });
-    const evt3 = JSON.stringify({ id: 'evt_3', type: 'checkout.session.completed', data: { object: { ...sessions.get(dep3.body.sessionId), payment_status: 'paid', amount_total: 99999 } } });
-    assert.equal((await hook(evt3, sign(evt3))).status, 200);
-    assert.equal((await call('GET', '/api/wallet')).body.balance, 35);
-    assert.equal((await call('GET', `/api/wallet/deposit/${dep3.body.sessionId}`)).body.status, 'mismatch');
+    // Card: a client secret for the Payment Element, not confirmed by the server.
+    const card = await call('POST', '/api/wallet/deposit', { amount: 10, method: 'cartao' });
+    assert.equal(card.body.publishableKey, 'pk_test_xyz');
+    assert.match(card.body.clientSecret, /^pi_test_\d+_secret_/);
+    assert.equal(posted.at(-1).get('confirm'), null);
+    assert.equal((await call('GET', `/api/wallet/deposit/${card.body.payment.id}`)).body.status, 'pending');
+    // A declined card stays open (it can be tried again); then the status check credits it.
+    Object.assign(intents.get(card.body.payment.id), { last_payment_error: { code: 'card_declined' } });
+    assert.equal((await call('GET', `/api/wallet/deposit/${card.body.payment.id}`)).body.status, 'pending');
+    Object.assign(intents.get(card.body.payment.id), { status: 'succeeded', amount_received: 1000, last_payment_error: null });
+    assert.equal((await call('GET', `/api/wallet/deposit/${card.body.payment.id}`)).body.balance, 45);
+    assert.equal((await hook(intents.get(card.body.payment.id))).status, 200);
+    assert.equal(await balance(), 45);
 
-    // Someone else's session is not visible.
-    assert.equal((await call('GET', '/api/wallet/deposit/cs_nope')).status, 404);
-    // The secret key never reaches the browser.
+    // Stripe reports a different amount: not credited.
+    const odd = await call('POST', '/api/wallet/deposit', { amount: 10, method: 'cartao' });
+    assert.equal((await hook({ ...intents.get(odd.body.payment.id), status: 'succeeded', amount_received: 99999 })).status, 200);
+    assert.equal(await balance(), 45);
+    assert.equal((await call('GET', `/api/wallet/deposit/${odd.body.payment.id}`)).body.status, 'mismatch');
+
+    // MB WAY refused in the app: failed.
+    const mb2 = await call('POST', '/api/wallet/deposit', { amount: 10, method: 'mbway', phone: '912345678' });
+    assert.equal((await hook({ ...intents.get(mb2.body.payment.id), status: 'requires_payment_method', last_payment_error: { code: 'payment_intent_payment_attempt_failed' } }, 'payment_intent.payment_failed')).status, 200);
+    assert.equal((await call('GET', `/api/wallet/deposit/${mb2.body.payment.id}`)).body.status, 'failed');
+
+    // Someone else's payment is not visible; keys never reach the browser except the publishable one.
+    assert.equal((await call('GET', '/api/wallet/deposit/pi_nope')).status, 404);
     assert.ok(!JSON.stringify((await call('GET', '/api/config')).body).includes('sk_test'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE type = 'deposit'").get().n, 2);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE type = 'deposit'").get().n, 3);
   } finally {
     config.paymentsMode = prevMode;
     server.close();

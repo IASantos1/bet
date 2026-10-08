@@ -333,9 +333,11 @@ O software está pronto a funcionar, mas apostas a dinheiro real exigem, por lei
 podem vir no código:
 
 1. **Licença** da entidade reguladora do país onde vai operar (em Portugal, o SRIJ).
-2. **Fornecedor de pagamentos** — depósitos pela **Stripe Checkout** (`STRIPE_SECRET_KEY`,
-   `STRIPE_WEBHOOK_SECRET`; webhook em `/api/stripe/webhook`). O saldo só é creditado quando a Stripe
-   confirma o pagamento (webhook assinado, ou consulta à Stripe quando o jogador volta), uma única vez.
+2. **Fornecedor de pagamentos** — depósitos pela **Stripe, dentro do site**: MB WAY (pedido para o
+   telemóvel), Multibanco (entidade + referência) e cartão (Payment Element na própria página)
+   (`STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`; webhook em `/api/stripe/webhook`).
+   O saldo só é creditado quando a Stripe confirma o pagamento (webhook assinado, consulta do estado
+   pela página, ou a verificação de pendentes a cada minuto), uma única vez.
    Sem chave Stripe, `PAYMENTS_MODE=demo` credita sem dinheiro real. Os levantamentos são pedidos
    (IBAN) que o administrador aprova após fazer a transferência.
 3. **Verificação de identidade (KYC)** e limites de depósito exigidos pelo regulador.

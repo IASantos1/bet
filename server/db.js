@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   decided_at   TEXT
 );
 
--- Stripe Checkout deposits: one row per payment page; credited once, when Stripe says it is paid.
+-- Stripe deposits (session_id = the PaymentIntent id): one row per deposit; credited once, when Stripe says it is paid.
 CREATE TABLE IF NOT EXISTS stripe_payments (
   id             INTEGER PRIMARY KEY,
   session_id     TEXT    NOT NULL UNIQUE,
@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS stripe_payments (
   currency       TEXT    NOT NULL,
   status         TEXT    NOT NULL DEFAULT 'pending',
   payment_intent TEXT,
+  method         TEXT,
+  entity         TEXT,
+  reference      TEXT,
+  expires_at     TEXT,
   created_at     TEXT    NOT NULL,
   updated_at     TEXT
 );
@@ -159,6 +163,8 @@ export function openDb(file) {
 
 /** Additive migrations for databases created by earlier versions. */
 function migrate(db) {
+  const pay = new Set(db.prepare('PRAGMA table_info(stripe_payments)').all().map((c) => c.name));
+  for (const c of ['method', 'entity', 'reference', 'expires_at']) if (!pay.has(c)) db.exec(`ALTER TABLE stripe_payments ADD COLUMN ${c} TEXT`);
   const cols = new Set(db.prepare('PRAGMA table_info(events)').all().map((c) => c.name));
   // Events imported from an external data feed: where they came from and their id there.
   if (!cols.has('source')) db.exec("ALTER TABLE events ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");

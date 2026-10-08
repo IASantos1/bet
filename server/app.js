@@ -113,7 +113,8 @@ export function createApp(db, {
   app.use((req, res, next) => {
     res.set({
       'Content-Security-Policy':
-        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self'; " +
+        // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com; " +
         // Casino games run inside the page in an iframe from the provider's host.
         `frame-src https:${config.isProduction ? '' : ' http:'}; ` +
         "manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
@@ -561,31 +562,34 @@ export function createApp(db, {
         throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
       }
       if (stripeMode) {
-        // The player pays on Stripe's page and comes back to the wallet; the balance moves when Stripe confirms.
-        const base = config.stripe.publicUrl || `${req.protocol}://${req.get('host')}`;
-        let page;
+        // Inside the site: MB WAY / Multibanco confirmed here, the card through Stripe's form on our page.
+        const method = String(req.body.method || '');
+        if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'Pagamento por cartão indisponível: falta STRIPE_PUBLISHABLE_KEY.');
+        let r;
         try {
-          page = await stripe.createDeposit(req.user, amount, {
-            successUrl: `${base}/#/perfil/carteira?deposito={CHECKOUT_SESSION_ID}`,
-            cancelUrl: `${base}/#/perfil/carteira`,
-          });
+          r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone });
         } catch (err) {
-          throw new HttpError(502, `Não foi possível abrir o pagamento: ${err.message}`);
+          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
         }
-        return res.status(201).json({ checkoutUrl: page.url, sessionId: page.id });
+        return res.status(201).json({ payment: depositOut(r), clientSecret: r.clientSecret, publishableKey: r.publishableKey, balance: cents(userById(req.user.id).balance_cents) });
       }
       demoDeposit(req, res, amount);
     } catch (err) { next(err); }
   });
 
-  // Back from Stripe: the deposit's state (asks Stripe if the webhook has not arrived yet).
+  // A deposit's state, for the player's page (asks Stripe if the webhook has not arrived yet).
   app.get('/api/wallet/deposit/:sessionId', requireUser, async (req, res, next) => {
     try {
       if (!stripe) throw new HttpError(404, 'Depósito não encontrado.');
       const r = await stripe.refresh(req.params.sessionId, req.user.id);
       if (!r) throw new HttpError(404, 'Depósito não encontrado.');
-      res.json({ status: r.status, amount: cents(r.amountCents), balance: cents(userById(req.user.id).balance_cents) });
+      res.json({ ...depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
     } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(502, err.message) : err); }
+  });
+
+  const depositOut = (r) => ({
+    id: r.id, method: r.method, status: r.status, amount: cents(r.amountCents),
+    entity: r.entity, reference: r.reference, expiresAt: r.expiresAt, voucherUrl: r.voucherUrl,
   });
 
   function demoDeposit(req, res, amount) {
