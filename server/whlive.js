@@ -54,7 +54,7 @@ export function createWinHouseLive({
   const enabled = !!client?.livestream;
 
   // The video needs a signed-in player: one book session for WINHOUSE_STREAM_PLAYER (seamless
-  // wallet, /tenant/session with the wallet API key), kept until shortly before it expires.
+  // wallet: a launch token signed with the wallet API key, /tenant/sso; else /tenant/session), kept until shortly before it expires.
   let session = null; // { token, until, username }
   let sessionPending = null;
   const sessionInfo = { configured: !!(client?.hasWallet && playerId), ok: null, error: null, at: null, username: null };
@@ -64,15 +64,27 @@ export function createWinHouseLive({
     if (sessionPending) return sessionPending;
     sessionPending = (async () => {
       try {
-        const r = await client.tenantSession(playerId);
-        const token = r.body?.token;
+        const why = (via, r) => `${via}: HTTP ${r.status}${r.body?.error || r.body?.message ? ` ${r.body.error || r.body.message}` : ''}${r.body?.ip ? ` (IP ${r.body.ip})` : ''}`;
+        const good = (r) => r.ok && r.body?.ok !== false && r.body?.token;
+        // The signed launch token first (no Server IP check), then the server-to-server call.
+        const errors = [];
+        let r = null;
+        if (client.tenantSso) {
+          r = await client.tenantSso(playerId);
+          if (!good(r)) { errors.push(why('sso', r)); r = null; }
+        }
+        if (!r && client.tenantSession) {
+          r = await client.tenantSession(playerId);
+          if (!good(r)) { errors.push(why('session', r)); r = null; }
+        }
         sessionInfo.at = new Date(now()).toISOString();
-        if (!r.ok || !r.body?.ok || !token) {
+        if (!r) {
           sessionInfo.ok = false;
-          sessionInfo.error = `HTTP ${r.status}${r.body?.error || r.body?.message ? ` ${r.body.error || r.body.message}` : ''}${r.body?.ip ? ` (IP ${r.body.ip})` : ''}`;
+          sessionInfo.error = errors.join(' · ') || 'sem método de sessão';
           session = null;
           return null;
         }
+        const token = r.body.token;
         const exp = Number(tokenPayload(token)?.exp);
         const until = Number.isFinite(exp) && exp > 0 ? Math.min((exp > 1e12 ? exp : exp * 1000) - 60_000, now() + 6 * 3600_000) : now() + 30 * 60_000;
         session = { token, until: Math.max(until, now() + 60_000), username: r.body.username || null };
