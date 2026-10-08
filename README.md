@@ -333,10 +333,11 @@ O software está pronto a funcionar, mas apostas a dinheiro real exigem, por lei
 podem vir no código:
 
 1. **Licença** da entidade reguladora do país onde vai operar (em Portugal, o SRIJ).
-2. **Fornecedor de pagamentos** — hoje os depósitos estão em `PAYMENTS_MODE=demo` (creditados sem
-   dinheiro real). Integre o fornecedor em `POST /api/wallet/deposit` e use `PAYMENTS_MODE=disabled`
-   até lá. Os levantamentos já funcionam como pedidos que o administrador aprova após fazer a
-   transferência.
+2. **Fornecedor de pagamentos** — depósitos pela **Stripe Checkout** (`STRIPE_SECRET_KEY`,
+   `STRIPE_WEBHOOK_SECRET`; webhook em `/api/stripe/webhook`). O saldo só é creditado quando a Stripe
+   confirma o pagamento (webhook assinado, ou consulta à Stripe quando o jogador volta), uma única vez.
+   Sem chave Stripe, `PAYMENTS_MODE=demo` credita sem dinheiro real. Os levantamentos são pedidos
+   (IBAN) que o administrador aprova após fazer a transferência.
 3. **Verificação de identidade (KYC)** e limites de depósito exigidos pelo regulador.
 4. **Fonte de odds e resultados** — o feed de futebol acima cobre jogos, odds pré-jogo e resultados;
    para odds ao vivo ou outros desportos é preciso um fornecedor adicional (ou gestão manual no painel).

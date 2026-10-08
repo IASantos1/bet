@@ -647,18 +647,21 @@ function overviewView() {
 
 function walletView() {
   setTimeout(loadWallet);
+  const back = currentRoute().query.get('deposito');
+  if (back) setTimeout(() => checkStripeDeposit(back));
   const demo = state.config?.paymentsMode === 'demo';
+  const stripe = state.config?.paymentsMode === 'stripe';
   const c = state.config || {};
   return `<div class="stat-grid"><div class="stat"><small>Saldo disponível</small><strong id="walletBalance">${money(state.user.balance)}</strong></div></div>
     <h3>Depositar</h3>
     ${demo ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato. Ligue um fornecedor de pagamentos para operar com dinheiro real.</div><br>' : ''}
     ${c.paymentsMode === 'disabled' ? '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>' : `
     <form data-form="deposit">
-      <div class="methods">
+      ${stripe ? '<p class="muted">O pagamento é feito na página segura da Stripe (cartão e os outros métodos disponíveis). O saldo é creditado assim que o pagamento for confirmado.</p>' : `<div class="methods">
         <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
         <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
         <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
-      </div>
+      </div>`}
       <div class="form-grid"><div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>`}
@@ -668,6 +671,32 @@ function walletView() {
       <div class="field"><label>IBAN</label><input name="iban" required placeholder="PT50 0000 0000 0000 0000 0000 0"></div>
     </div><div class="form-actions"><button class="outline-btn">Pedir levantamento</button></div></form>
     <div id="walletLists"><div class="loading">A carregar movimentos…</div></div>`;
+}
+
+// Back from Stripe's page: wait for the confirmation (webhook or a check with Stripe), then clean the address.
+async function checkStripeDeposit(sessionId) {
+  if (state.stripeChecking === sessionId) return;
+  state.stripeChecking = sessionId;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const r = await api(`/api/wallet/deposit/${encodeURIComponent(sessionId)}`);
+      if (r.status === 'paid') {
+        state.user.balance = r.balance;
+        toast('Depósito confirmado', `${money(r.amount)} creditados. Novo saldo: ${money(r.balance)}`);
+        break;
+      }
+      if (r.status === 'processing') { toast('Pagamento em processamento', 'O saldo é creditado assim que o pagamento for confirmado (ex.: referência Multibanco).'); break; }
+      if (['expired', 'failed', 'mismatch'].includes(r.status)) { toast('Depósito não concluído', 'O pagamento não foi confirmado.'); break; }
+      await new Promise((ok) => setTimeout(ok, 3000));
+      if (i === 9) toast('A aguardar confirmação', 'O saldo é atualizado quando a Stripe confirmar o pagamento.');
+    }
+  } catch (err) {
+    toast('Depósito', err.message);
+  } finally {
+    state.stripeChecking = null;
+    history.replaceState(null, '', '#/perfil/carteira');
+    updateHeader(); loadWallet();
+  }
 }
 
 async function loadWallet() {
@@ -926,8 +955,9 @@ function renderSidebar() {
 }
 
 function currentRoute() {
-  const [page = '', sub = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
-  return { page: page || 'home', sub, rest: rest.join('/') };
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [page = '', sub = '', ...rest] = path.split('/');
+  return { page: page || 'home', sub, rest: rest.join('/'), query: new URLSearchParams(query) };
 }
 
 function render({ keepScroll = false } = {}) {
@@ -1042,6 +1072,7 @@ const formHandlers = {
   async deposit(form) {
     const d = formData(form);
     const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method } });
+    if (res.checkoutUrl) { location.href = res.checkoutUrl; return; }
     state.user.balance = res.balance;
     toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}`);
     updateHeader(); loadWallet();

@@ -44,7 +44,17 @@ export const config = {
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.
-  paymentsMode: env.PAYMENTS_MODE || 'demo',
+  // "stripe": Stripe Checkout (default once STRIPE_SECRET_KEY is set).
+  paymentsMode: env.PAYMENTS_MODE || ((env.STRIPE_SECRET_KEY || '').trim() ? 'stripe' : 'demo'),
+  stripe: {
+    secretKey: unquote(env.STRIPE_SECRET_KEY),
+    webhookSecret: unquote(env.STRIPE_WEBHOOK_SECRET),
+    // Not needed by the hosted Checkout page; kept for a future embedded form.
+    publishableKey: unquote(env.STRIPE_PUBLISHABLE_KEY),
+    currency: (env.STRIPE_CURRENCY || 'eur').trim().toLowerCase(),
+    // Where Stripe sends the player back (else this request's own host).
+    publicUrl: (env.PUBLIC_URL || '').trim().replace(/\/+$/, ''),
+  },
 
   // Football data feed (sports.bzzoiro.com). Disabled while no token is set.
   feed: {

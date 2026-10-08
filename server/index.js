@@ -14,6 +14,7 @@ import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
 import { createWinHouseTracker } from './whtracker.js';
 import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
+import { createStripe } from './stripe.js';
 
 const db = openDb(config.dbPath);
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
@@ -87,7 +88,12 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive }).listen(config.port, () => {
+const stripe = config.stripe.secretKey
+  ? createStripe(db, { ...config.stripe, log: (m) => console.warn(m) })
+  : null;
+if (stripe) console.log(`Stripe: ${stripe.live ? 'live' : 'teste'}, webhook ${stripe.hasWebhook ? 'configurado' : 'em falta (STRIPE_WEBHOOK_SECRET)'}`);
+
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
