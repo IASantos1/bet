@@ -10,9 +10,9 @@ import { config } from '../server/config.js';
 // A tiny seeded random, so draws are repeatable.
 const seeded = (n) => () => { n = (n * 16807) % 2147483647; return (n - 1) / 2147483646; };
 
-function addEvent(db, { sport = 'futebol', hours = 3, home, away }) {
+function addEvent(db, { sport = 'futebol', hours = 3, home, away, base = Date.now() }) {
   const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, created_at, updated_at)
-    VALUES (?, 'Liga', ?, ?, ?, 'scheduled', ?, ?)`).run(sport, home, away, new Date(Date.now() + hours * 3600_000).toISOString(), nowIso(), nowIso()).lastInsertRowid);
+    VALUES (?, 'Liga', ?, ?, ?, 'scheduled', ?, ?)`).run(sport, home, away, new Date(base + hours * 3600_000).toISOString(), nowIso(), nowIso()).lastInsertRowid);
   const add = (market, code, odds) => db.prepare('INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)').run(id, market, code, odds);
   if (sport === 'futebol') {
     add('1x2', '1', 150); add('1x2', 'X', 380); add('1x2', '2', 600);
@@ -81,10 +81,12 @@ test('featured: six builders (result + one more market + goals) and four-leg mul
 
 test('accas: football of today, then football of the next days, before any other sport', () => {
   const db = openDb(':memory:');
-  for (let i = 0; i < 4; i++) addEvent(db, { home: `Hoje ${i}`, away: `X${i}`, hours: 1 + i * 0.1 });
-  for (let i = 0; i < 8; i++) addEvent(db, { home: `Depois ${i}`, away: `Y${i}`, hours: 30 + i });
-  for (let i = 0; i < 8; i++) addEvent(db, { sport: 'tenis', home: `T${i}`, away: `U${i}`, hours: 1 });
-  const f = createFeatured(db, { rng: seeded(11) }).get();
+  // A fixed clock at 10:00 in Lisbon: "today" never crosses midnight whatever the time the tests run.
+  const base = Date.UTC(2030, 0, 15, 10, 0);
+  for (let i = 0; i < 4; i++) addEvent(db, { home: `Hoje ${i}`, away: `X${i}`, hours: 1 + i * 0.1, base });
+  for (let i = 0; i < 8; i++) addEvent(db, { home: `Depois ${i}`, away: `Y${i}`, hours: 30 + i, base });
+  for (let i = 0; i < 8; i++) addEvent(db, { sport: 'tenis', home: `T${i}`, away: `U${i}`, hours: 1, base });
+  const f = createFeatured(db, { rng: seeded(11), now: () => base }).get();
   const sports = f.accas.map((a) => a.legs[0].sport);
   assert.deepEqual(sports, ['futebol', 'futebol', 'futebol', 'tenis', 'tenis']);
   assert.ok(f.accas[0].legs.every((l) => l.home.startsWith('Hoje')));

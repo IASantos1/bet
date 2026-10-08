@@ -2098,6 +2098,10 @@ function bindChrome() {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
+  // Phone / installed app: the page never zooms (Safari ignores user-scalable=no, so pinches are stopped here;
+  // double taps are stopped by touch-action in the CSS, focusing a field by 16px text).
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   // The profile is a side menu on a computer and an accordion on a phone: redrawn when that changes.
   matchMedia('(max-width: 760px)').addEventListener('change', () => { if (currentRoute().page === 'perfil') render({ keepScroll: true }); });
   // The live widget sits above the slip on wide screens and inside the match page on narrow ones.

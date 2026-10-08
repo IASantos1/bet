@@ -214,10 +214,12 @@ h1, h2, h3 { margin-top: 0; }
 .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .game-card { overflow: hidden; text-align: left; padding: 0; color: inherit; }
 .game-card:hover { border-color: var(--brand); }
-.game-art { height: 125px; background: linear-gradient(135deg, #171b22, #4b1016); display: grid; place-items: center; font-size: 38px; position: relative; }
+/* Game artwork: square, the whole image visible (never cropped), whatever size the provider sends. */
+.game-art { aspect-ratio: 1 / 1; height: auto; background: linear-gradient(135deg, #171b22, #2b3440); display: grid; place-items: center; font-size: 38px; position: relative; overflow: hidden; }
 .game-art::before { content: ""; position: absolute; inset: 12px; border: 1px solid #ffffff18; border-radius: 50%; }
 .game-info { padding: 9px; }
-.game-img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
+.game-img { width: 100%; height: 100%; object-fit: contain; position: absolute; inset: 0; }
+.game-art:has(.game-img)::before { display: none; }
 .casino-wallet { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; }
 .game-info strong { font-size: 11px; }
 .game-info small { display: block; color: #747e89; margin-top: 3px; }
@@ -898,7 +900,7 @@ html.splash-on { overflow: hidden; }
 .cg-close { position: absolute; top: 14px; left: 14px; z-index: 2; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; line-height: 1;
   color: #fff; background: rgba(0, 0, 0, .45); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, .15); }
 .cg-art { position: relative; z-index: 1; width: min(320px, 70vw); aspect-ratio: 1; border-radius: 18px; overflow: hidden; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); background: var(--card); display: grid; place-items: center; }
-.cg-art img { width: 100%; height: 100%; object-fit: cover; }
+.cg-art img { width: 100%; height: 100%; object-fit: contain; }
 .cg-emoji { font-size: 80px; }
 .cg-body { position: relative; z-index: 1; padding: 6px 4px 10px; margin-top: -10px; }
 .cg-body h1 { margin: 0; font-size: clamp(24px, 4vw, 32px); line-height: 1.15; }
@@ -917,7 +919,7 @@ html.splash-on { overflow: hidden; }
 .cg-note a { color: #9fb2c8; text-decoration: underline; }
 .cg-rel { flex: 0 0 160px; display: flex; flex-direction: column; gap: 6px; scroll-snap-align: start; }
 .cg-rel-art { aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--card); display: grid; place-items: center; font-size: 40px; }
-.cg-rel-art img { width: 100%; height: 100%; object-fit: cover; }
+.cg-rel-art img { width: 100%; height: 100%; object-fit: contain; }
 .cg-rel strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .casino-bar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--nav); border-bottom: 1px solid var(--line); font-size: 13px; }
 .casino-bar strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -933,3 +935,33 @@ html.splash-on { overflow: hidden; }
   .cg-btn.fs { flex-basis: 100%; }
 }
 #cgRelated .car-track { grid-auto-columns: 150px; }
+
+/* ---------- mobile / installed app (PWA): no zoom, no sideways drift, safe areas ---------- */
+:root { --top-h: 68px; --nav-h: 62px; --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); }
+@media (max-width: 700px) { :root { --top-h: 60px; } }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overflow-x: hidden; overscroll-behavior-x: none; }
+/* clip (not hidden) on the body: it must not become a scroll container, or the sticky header stops sticking. */
+@supports (overflow: clip) { body { overflow-x: clip; } }
+body { -webkit-tap-highlight-color: transparent; }
+img, video, iframe { max-width: 100%; }
+@media (max-width: 1000px) {
+  /* iOS zooms into any field with text smaller than 16px: keep them at 16px. */
+  input, select, textarea { font-size: 16px !important; }
+  /* Notch and home bar of the installed app. */
+  .topbar { padding-top: var(--safe-t); height: calc(var(--top-h) + var(--safe-t)); }
+  .mobile-nav { height: calc(var(--nav-h) + var(--safe-b)); padding-bottom: var(--safe-b); }
+  .left-sidebar { top: calc(var(--top-h) + var(--safe-t)); }
+  .betslip { top: calc(var(--top-h) + var(--safe-t)); bottom: calc(var(--nav-h) + var(--safe-b)); }
+  .content { padding-bottom: calc(90px + var(--safe-b)); }
+  .casino-player { height: calc(100dvh - var(--top-h) - var(--nav-h) - var(--safe-t) - var(--safe-b)); }
+  .immersive .content { padding: 0; }
+  .slip-fab { bottom: calc(76px + var(--safe-b)); }
+  .toast-wrap { top: calc(var(--top-h) + 8px + var(--safe-t)); }
+}
+@media (max-width: 700px) {
+  /* Casino on a phone: three columns of square cards, names on one line. */
+  .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .game-info { padding: 6px 7px 8px; }
+  .game-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+}
