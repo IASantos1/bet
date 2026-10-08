@@ -210,6 +210,9 @@ export const config = {
 
   // Bet builder (several picks on one match): the legs' odds multiplied by this, for their correlation.
   builderFactor: Math.min(1, Math.max(0.5, Number(env.BUILDER_FACTOR) || 0.9)),
+  // Cash out: the bet's fair value now (its stake × odds taken / current odds of the legs still open)
+  // times this factor (the house margin). CASHOUT=0 turns cash out off.
+  cashout: { enabled: env.CASHOUT !== '0', factor: Math.min(1, Math.max(0.5, Number(env.CASHOUT_FACTOR) || 0.95)), minCents: 10 },
   // Contacts shown in the profile's support section (empty: not shown).
   supportEmail: String(env.SUPPORT_EMAIL || '').trim(),
   supportPhone: String(env.SUPPORT_PHONE || '').trim(),

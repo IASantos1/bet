@@ -8,7 +8,7 @@ const SPORT_META = {
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const STATUS_LABEL = {
-  open: 'Em aberto', won: 'Ganha', lost: 'Perdida', void: 'Anulada', pending: 'Pendente', approved: 'Aprovado',
+  open: 'Em aberto', won: 'Ganha', lost: 'Perdida', void: 'Anulada', cashout: 'Cash out', pending: 'Pendente', approved: 'Aprovado',
   rejected: 'Rejeitado', scheduled: 'Agendado', live: 'Ao vivo', finished: 'Terminado', cancelled: 'Cancelado',
 };
 
@@ -94,7 +94,7 @@ function usersTable(users) {
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido', bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
   casino_out: 'Casino (saída)', casino_in: 'Casino (entrada)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
-  bonus_convert: 'Bónus convertido', chargeback: 'Chargeback',
+  bonus_convert: 'Bónus convertido', chargeback: 'Chargeback', cashout: 'Cash out', casino_bet: 'Casino (aposta)', casino_win: 'Casino (ganho)', free_spin_win: 'Ganhos Free Spins',
 };
 
 // ---------- promotions ----------

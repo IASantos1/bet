@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback', 'casino_bet', 'casino_win', 'free_spin_win')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback', 'casino_bet', 'casino_win', 'free_spin_win', 'cashout')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -122,10 +122,18 @@ CREATE TABLE IF NOT EXISTS bets (
   stake_cents     INTEGER NOT NULL CHECK (stake_cents > 0),
   total_odds      REAL    NOT NULL,
   potential_cents INTEGER NOT NULL,
-  status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'won', 'lost', 'void')),
+  status          TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'won', 'lost', 'void', 'cashout')),
   payout_cents    INTEGER NOT NULL DEFAULT 0,
   created_at      TEXT    NOT NULL,
-  settled_at      TEXT
+  settled_at      TEXT,
+  -- How the bet was paid for (real / bonus / free bet) and what of its payout was real money.
+  real_stake_cents    INTEGER,
+  bonus_stake_cents   INTEGER NOT NULL DEFAULT 0,
+  freebet_stake_cents INTEGER NOT NULL DEFAULT 0,
+  bonus_id            INTEGER,
+  freebet_id          INTEGER,
+  protected           INTEGER NOT NULL DEFAULT 0,
+  real_payout_cents   INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_bets_user ON bets(user_id, id);
 
@@ -381,16 +389,24 @@ function migrate(db) {
   // Ledger types for casino transfers and admin adjustments. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.
   // Bet builder bets (several legs on one match).
+  // Bet builder bets and cashed-out bets ('cashout'): the bets table is rebuilt with every column it has.
   const betsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bets'").get()?.sql || '';
-  if (betsSql && !betsSql.includes("'builder'")) {
-    rebuild(db, 'bets', `INSERT INTO bets (id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at)
-      SELECT id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at FROM bets_old`);
-  }
+  if (betsSql && (!betsSql.includes("'builder'") || !betsSql.includes("'cashout'"))) rebuildKeeping(db, 'bets');
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
-  if (!txSql.includes('free_spin_win')) {
+  if (!txSql.includes("'cashout'")) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }
+}
+
+/** rebuild() copying every column the old table and the new definition have in common. */
+function rebuildKeeping(db, table) {
+  const before = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  // The new definition's columns: read from SCHEMA through a scratch in-memory table.
+  const def = SCHEMA.match(new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\n\\);`))?.[1] || '';
+  const after = def.split('\n').map((l) => /^\s{2}([a-z_]+)\s/.exec(l)?.[1]).filter(Boolean);
+  const cols = before.filter((c) => after.includes(c)).join(', ');
+  rebuild(db, table, `INSERT INTO ${table} (${cols}) SELECT ${cols} FROM ${table}_old`);
 }
 
 /** Recreates a table from SCHEMA (to change constraints SQLite cannot ALTER), copying its rows. */

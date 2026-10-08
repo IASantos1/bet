@@ -315,6 +315,15 @@ são um saldo próprio (rodadas × valor) jogado numa sessão à parte (jogador 
 jogos elegíveis; o custo máximo é o valor oferecido. Ao terminar (pelo jogador, saldo esgotado ou fim do
 prazo), o que o saldo tiver acima do valor oferecido é pago em saldo real (`free_spin_win`); o resto expira.
 
+## As minhas apostas e cash out
+
+O ícone de bilhete no topo abre **As minhas apostas** (`#/apostas`): separadores Em aberto, Resolvidas, Cash Out e
+Anuladas; cada bilhete tem referência (`BT62-000123`), o estado de cada seleção e, com o jogo a decorrer, o
+relógio e o placar (atualizados a cada 10 s). **Cash out** (`server/cashout.js`): valor = aposta × odds tomadas ÷
+odds atuais das seleções ainda em aberto × `CASHOUT_FACTOR` (0.95 por omissão; `CASHOUT=0` desliga). Só em simples
+e múltiplas pagas com dinheiro real (não em free bets, saldo de bónus nem criador de apostas), e só com todos os
+mercados abertos (ao vivo, com preço recente); se o valor mudar, o jogador confirma o novo antes de receber.
+
 ## Promoções de desporto
 
 Configuradas em **Admin → Promoções** (sem alterar código): estado ACTIVE/INACTIVE, período, percentagens,
