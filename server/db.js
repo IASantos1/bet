@@ -79,6 +79,13 @@ CREATE TABLE IF NOT EXISTS stripe_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_stripe_user ON stripe_payments(user_id, id);
 
+-- Settings changed in the admin (key → JSON value), read by the server while it runs.
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY,
   sport       TEXT    NOT NULL,
@@ -291,3 +298,15 @@ export function tx(db, fn) {
 }
 
 export const nowIso = () => new Date().toISOString();
+
+/** A setting saved in the admin, or `fallback` when none is saved. */
+export function getSetting(db, key, fallback = null) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  if (!row) return fallback;
+  try { return JSON.parse(row.value); } catch { return fallback; }
+}
+
+export function setSetting(db, key, value) {
+  db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
+    .run(key, JSON.stringify(value), new Date().toISOString());
+}

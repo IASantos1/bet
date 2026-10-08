@@ -598,3 +598,39 @@ test('streams: games with live video from /ajax/streams (needs the tenant key)',
   assert.deepEqual(feed.streamOf(62), { has: false, url: null });
   assert.equal(await createWinHouseFeed(t.db, { client: { ...client, hasTenant: false } }).syncStreams(), null);
 });
+
+test('future games: each sport\'s full list up to `futureDays` ahead, every `futureMinutes` (or forced); 0 = off', async () => {
+  const days = (d) => -d * 1440; // minutes "played" → negative = in the future
+  const soon = { ...football(41, days(20), '', ODD), result: '', current_minute: '' };
+  const far = { ...football(42, days(50), '', ODD), result: '', current_minute: '' };
+  const db = openDb(':memory:');
+  const asked = [];
+  const empty = async () => ({ ok: true, status: 200, body: [] });
+  const client = {
+    enabled: true, prematchMain: empty, prematchTop: empty, prematch24h: empty,
+    prematchBySport: async (id) => { asked.push(id); return { ok: true, status: 200, body: id === '1' ? [soon, far] : [] }; },
+  };
+  let setting = 30;
+  const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, futureDays: () => setting, futureMinutes: 10 });
+  const r = await feed.syncPrematch();
+  assert.equal(r.created, 1);
+  assert.deepEqual(db.prepare("SELECT external_id FROM events WHERE source = 'winhouse'").all().map((e) => e.external_id), ['41']);
+  assert.ok(asked.includes('1') && asked.includes('5'));
+  const f = feed.status().last.future;
+  assert.equal(f.games, 1);
+  assert.equal(f.days, 30);
+  assert.ok(f.bySport.futebol.until);
+  // Within the refresh gap: not read again; forced (admin "buscar agora"): read again, with the new setting.
+  asked.length = 0;
+  await feed.syncPrematch();
+  assert.equal(asked.length, 0);
+  setting = 60;
+  await feed.syncPrematch({ force: true });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = 'winhouse'").get().n, 2);
+  // 0 = off.
+  setting = 0;
+  asked.length = 0;
+  await feed.syncPrematch({ force: true });
+  assert.equal(asked.length, 0);
+  assert.equal(feed.status().last.future.off, true);
+});

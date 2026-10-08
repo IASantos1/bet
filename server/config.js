@@ -138,7 +138,7 @@ export const config = {
       // this at prematchgame (which answers [] once a game starts) is ignored.
       liveEvent: /prematchgame/i.test(unquote(env.WINHOUSE_LIVE_EVENT) || '') ? '' : unquote(env.WINHOUSE_LIVE_EVENT),
       widget: unquote(env.WINHOUSE_WIDGET), widgetData: unquote(env.WINHOUSE_WIDGET_DATA), wsWidget: unquote(env.WINHOUSE_WS_WIDGET), tracker: unquote(env.WINHOUSE_TRACKER_ROUTE),
-      streams: unquote(env.WINHOUSE_STREAMS), livestream: unquote(env.WINHOUSE_LIVESTREAM),
+      streams: unquote(env.WINHOUSE_STREAMS), livestream: unquote(env.WINHOUSE_LIVESTREAM), prematchBySport: unquote(env.WINHOUSE_PREMATCH_BY_SPORT),
     },
     // Collector: on unless WINHOUSE_FEED=0. Intervals, WinHouse's clock zone (minutes from UTC;
     // unset = estimated from the live list) and how long a match must stay out of the live list
@@ -154,6 +154,10 @@ export const config = {
     oddsPushPath: unquote(env.WINHOUSE_ODDS_PUSH_PATH) || '/sio',
     liveMs: Math.max(5_000, int(env.WINHOUSE_LIVE_INTERVAL_MS, 15_000)),
     prematchMs: Math.max(20_000, int(env.WINHOUSE_PREMATCH_INTERVAL_MS, 60_000)),
+    // Future games: every sport's full fixture list (prematchgamesbysport), games up to this many
+    // days ahead, read every WINHOUSE_FUTURE_MINUTES. Changed in the admin; 0 = only the short lists.
+    futureDays: Math.min(90, Math.max(0, int(env.WINHOUSE_FUTURE_DAYS, 30))),
+    futureMinutes: Math.max(5, int(env.WINHOUSE_FUTURE_MINUTES, 10)),
     tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,
     finishConfirmSeconds: int(env.WINHOUSE_FINISH_CONFIRM_SECONDS, 600),
     // Women's and youth (U19, Sub-20, Junior…) games are left out unless set to 0.

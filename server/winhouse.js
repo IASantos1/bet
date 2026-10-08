@@ -18,6 +18,8 @@ const ROUTES = {
   prematchMain: '/ajax/prematchgamesmainleague?lang={lang}',
   prematchTop: '/ajax/toptenprematchgames?lang={lang}',
   prematch24h: '/ajax/prematchgames24hour?lang={lang}',
+  // Every upcoming fixture of one sport, no time window (the book's own "Upcoming" board): games weeks ahead.
+  prematchBySport: '/ajax/prematchgamesbysport/{sportId}?lang={lang}',
   prematchEvent: '/ajax/prematchgame/{gameId}?lang={lang}',
   // A live game's page (every in-play market). WINHOUSE_LIVE_EVENT changes it if WinHouse uses another path.
   liveEvent: '/ajax/livegame/{gameId}?lang={lang}',
@@ -196,7 +198,7 @@ export function createWinHouseClient({
   const paths = { ...ROUTES, ...Object.fromEntries(Object.entries(routes).filter(([, v]) => v)) };
   const enabled = /^https:\/\//.test(base);
   const url = (key, vars = {}) => base + paths[key].replace('{lang}', encodeURIComponent(lang)).replace('{gameId}', encodeURIComponent(vars.gameId ?? ''))
-    .replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? '')).replace('{tenant}', encodeURIComponent(tenant));
+    .replace('{sportId}', encodeURIComponent(vars.sportId ?? '')).replace('{eid}', encodeURIComponent(vars.eid ?? '')).replace('{akey}', encodeURIComponent(vars.akey ?? '')).replace('{tenant}', encodeURIComponent(tenant));
 
   async function request(key, vars, extraHeaders = {}, { method = 'GET', body: payload } = {}) {
     if (!enabled) throw new Error('WinHouse desligado: defina WINHOUSE_BASE_URL (https://…) no servidor.');
@@ -412,6 +414,7 @@ export function createWinHouseClient({
     prematchMain: () => request('prematchMain'),
     prematchTop: () => request('prematchTop'),
     prematch24h: () => request('prematch24h'),
+    prematchBySport: (sportId) => request('prematchBySport', { sportId }),
     prematchEvent: (gameId) => request('prematchEvent', { gameId }),
     liveEvent: (gameId) => request('liveEvent', { gameId }),
     widget: (gameId) => request('widget', { gameId }),
@@ -767,6 +770,7 @@ export function finishVerdict(row) {
 export function createWinHouseFeed(db, {
   client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined,
   detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
+  futureDays = 0, futureMinutes = 10,
 } = {}) {
   const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues), leagues: allowLeagues === undefined ? null : footballLeagues(allowLeagues) };
   const state = {
@@ -1024,12 +1028,56 @@ export function createWinHouseFeed(db, {
     return { finished, review };
   }
 
-  /** Every minute: the three pre-match lists → upcoming matches and their prices. */
-  async function syncPrematch() {
+  // Future games: each sport's full list, every `futureMinutes` (sooner than prices go stale).
+  // `futureDays` may be a function (the admin setting, read on every run).
+  const futureDaysNow = () => Math.min(90, Math.max(0, Number(typeof futureDays === 'function' ? futureDays() : futureDays) || 0));
+  let futureAt = 0;
+  async function readFuture(days) {
+    const until = Date.now() + days * 86_400_000;
+    const games = [];
+    const bySport = {};
+    let failed = 0;
+    for (const [id, sport] of Object.entries(SPORTS)) {
+      try {
+        const r = await client.prematchBySport(id);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        let n = 0;
+        let last = null;
+        for (const raw of eventsOf(r.body)) {
+          if (raw?.id === undefined) continue;
+          const ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
+          if (!ev) continue;
+          const t = new Date(ev.startTime).getTime();
+          if (t > until) continue;
+          games.push(raw);
+          n += 1;
+          if (!last || t > last) last = t;
+        }
+        bySport[sport] = { games: n, until: last ? new Date(last).toISOString() : null };
+      } catch (err) {
+        failed += 1;
+        bySport[sport] = { error: err.message };
+      }
+    }
+    state.last.future = { at: nowIso(), days, games: games.length, failed, bySport };
+    return games;
+  }
+
+  /**
+   * Every minute: the three pre-match lists → upcoming matches and their prices; every
+   * `futureMinutes` (or when `force`) also each sport's full list, for games up to `futureDays` ahead.
+   */
+  async function syncPrematch({ force = false } = {}) {
     const lists = await Promise.all([client.prematchMain(), client.prematchTop(), client.prematch24h()].map((p) => p.catch((err) => ({ ok: false, error: err.message }))));
     const failed = lists.filter((r) => !r.ok);
     if (failed.length === lists.length) throw new Error(`pré-jogo: ${failed.map((r) => r.error || `HTTP ${r.status}`).join(' · ')}`);
     const byId = new Map();
+    const days = futureDaysNow();
+    if (days > 0 && client.prematchBySport && (force || Date.now() - futureAt >= futureMinutes * 60_000)) {
+      futureAt = Date.now();
+      for (const raw of await readFuture(days)) byId.set(String(raw.id), raw);
+    } else if (!days) state.last.future = { off: true };
+    // The short lists last: theirs are the freshest prices.
     for (const r of lists) if (r.ok) for (const raw of eventsOf(r.body)) if (raw?.id !== undefined) byId.set(String(raw.id), raw);
     const now = Date.now();
     let created = 0;
@@ -1051,7 +1099,8 @@ export function createWinHouseFeed(db, {
       } catch (err) { log(`WinHouse pré-jogo ${ev.externalId}: ${err.message}`); }
     }
     // Pre-match prices not confirmed by any list for a while are closed (the match left the lists).
-    const stale = new Date(now - prematchStaleSeconds * 1000).toISOString();
+    // Future games are confirmed every `futureMinutes`: their prices must outlive that gap.
+    const stale = new Date(now - Math.max(prematchStaleSeconds, futureMinutes * 90) * 1000).toISOString();
     db.prepare(`UPDATE selections SET active = 0 WHERE event_id IN (SELECT id FROM events WHERE source = ? AND status = 'scheduled' AND (wh_seen_at IS NULL OR wh_seen_at < ?))`)
       .run(SOURCE, stale);
     const removed = purgeBlocked();
@@ -1224,6 +1273,7 @@ export function createWinHouseFeed(db, {
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
     streams: client.hasTenant ? (state.last.streams || null) : false,
     push: { socket: oddsPush?.status() ?? null, ...pushStats, tracked: coefIndex.size, games: eventCoefs.size },
+    futureDays: futureDaysNow(), futureMinutes,
   });
 
   return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };

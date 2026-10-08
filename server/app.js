@@ -7,7 +7,7 @@ import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
 import { FOOTBALL_TREE, leagueKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
-import { nowIso, tx } from './db.js';
+import { nowIso, tx, getSetting, setSetting } from './db.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
 } from './security.js';
@@ -299,12 +299,16 @@ export function createApp(db, {
     });
   });
 
+  // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
+  const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
+  const horizonMs = (min) => Math.max(min, futureDays()) * 86_400_000;
+
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
   const LEAGUE_TREES = { futebol: FOOTBALL_TREE };
   const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
     AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
     AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))`)
-    .all(sport, nowIso(), new Date(Date.now() + 31 * 86_400_000).toISOString());
+    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString());
   app.get('/api/leagues', (_req, res) => {
     const out = {};
     for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {
@@ -325,7 +329,7 @@ export function createApp(db, {
       const events = ids.length ? loadEvents(`e.id IN (${ids.map(() => '?').join(',')})`, ids, 'e.start_time ASC', 400) : [];
       return res.json({ events, serverTime: now });
     }
-    const until = new Date(Date.now() + 14 * 86_400_000).toISOString();
+    const until = new Date(Date.now() + horizonMs(14)).toISOString();
     const sport = str(req.query.sport, 30);
     const status = str(req.query.status, 20);
     const clauses = [];
@@ -336,7 +340,7 @@ export function createApp(db, {
     if (sport) { clauses.push('e.sport = ?'); params.push(sport); }
     // Imported fixtures stay hidden until the feed has priced them.
     clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
-    res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 800), serverTime: now });
+    res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 1500), serverTime: now });
   });
 
   // One match with every market (the match page).
@@ -1058,6 +1062,18 @@ export function createApp(db, {
       requestBudget: providerSummary()[0] || null,
       winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null },
     });
+  });
+
+  // Future games: how many days ahead to import (0–90), saved and read at once; "now" reads the lists straight away.
+  admin.post('/winhouse/future', async (req, res, next) => {
+    try {
+      const days = Number(req.body?.days);
+      if (!Number.isInteger(days) || days < 0 || days > 90) throw new HttpError(400, 'Dias inválidos (0 a 90).');
+      setSetting(db, 'winhouse.futureDays', days);
+      let result = null;
+      if (req.body?.now && winhouseFeed?.enabled) result = await winhouseFeed.syncPrematch({ force: true });
+      res.json({ futureDays: days, result, future: winhouseFeed?.status().last.future ?? null });
+    } catch (err) { next(err); }
   });
 
   // WinHouse (evaluation): call every route from this server and report what comes back.
