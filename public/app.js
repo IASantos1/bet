@@ -413,21 +413,23 @@ const emptyEvents = () => `<div class="panel empty">${state.eventsLoaded ? 'Sem 
 
 /** One league (from the sidebar): all its games of the next month, live first. */
 function leaguePage(name) {
+  // The sport whose sidebar tree lists this league (football when the tree is not loaded yet).
+  const [sport, country] = Object.entries(state.leagueTree || {}).map(([sp, tree]) => [sp, tree.find((c) => c.leagues.some((l) => l.name === name))?.country])
+    .find(([, c]) => c) || ['futebol', null];
   const v = state.leagueView;
-  if (!v || v.name !== name || Date.now() - v.at > 30_000) {
-    const keep = v?.name === name ? v.events : null;
-    state.leagueView = { name, events: keep, at: Date.now() };
-    api(`/api/events?sport=futebol&competition=${encodeURIComponent(name)}`).then(({ events }) => {
+  if (!v || v.name !== name || v.sport !== sport || Date.now() - v.at > 30_000) {
+    const keep = v?.name === name && v.sport === sport ? v.events : null;
+    state.leagueView = { name, sport, events: keep, at: Date.now() };
+    api(`/api/events?sport=${encodeURIComponent(sport)}&competition=${encodeURIComponent(name)}`).then(({ events }) => {
       if (state.leagueView?.name !== name) return;
       state.leagueView.events = events;
       if (currentRoute().sub === 'liga') render({ keepScroll: true });
     }).catch(() => { if (state.leagueView?.name === name && !state.leagueView.events) state.leagueView.events = []; });
   }
   const events = state.leagueView.events;
-  const country = state.leagueTree?.futebol?.find((c) => c.leagues.some((l) => l.name === name))?.country;
   const live = (events || []).filter((e) => e.status === 'live');
   const next = (events || []).filter((e) => e.status !== 'live');
-  return `<div class="page-title"><h1>${esc(leagueShort(name))}</h1><p>${esc(country || 'Futebol')} · jogos ao vivo e do próximo mês.</p></div>
+  return `<div class="page-title"><h1>${esc(leagueShort(name))}</h1><p>${esc(country || SPORT_META[sport]?.name || 'Futebol')} · jogos ao vivo e do próximo mês.</p></div>
     <div class="sport-strip"><a class="sport-pill" href="#/desporto">‹ Todo o desporto</a></div>
     ${events === null ? '<div class="loading">A carregar…</div>' : !events.length ? '<div class="panel empty">Sem jogos desta liga com odds de momento.</div>'
       : `${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao vivo</h2></div>${groupByCompetition(live)}</section>` : ''}
@@ -1317,7 +1319,8 @@ function updateHeader() {
 }
 
 // "England. Premier League" → "Premier League" under the England heading.
-const leagueShort = (name) => String(name).replace(/^[^.]+\.\s+(?=\S)/, '');
+// "WTA. Beijing" → "WTA Beijing" (the tour is part of the name).
+const leagueShort = (name) => String(name).replace(/^(ATP|WTA)\.\s+/, '$1 ').replace(/^[^.]+\.\s+(?=\S)/, '');
 
 /** A sport's countries and leagues in the sidebar (opened by clicking the sport). */
 function sideTree(sport) {
@@ -1430,8 +1433,11 @@ function refreshView() {
 async function loadLeagues() {
   try {
     const { leagues } = await api('/api/leagues');
+    const first = !state.leagueTree;
     state.leagueTree = leagues;
     renderSidebar();
+    // A league page opened before the trees arrived: now its sport is known.
+    if (first && currentRoute().sub === 'liga') render({ keepScroll: true });
   } catch { /* the sidebar works without it */ }
 }
 

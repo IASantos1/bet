@@ -113,6 +113,9 @@ test('sidebar leagues: countries with open games per league; one league of the n
     const england = leagues.futebol.find((c) => c.country === 'England');
     assert.equal(england.leagues.find((l) => l.name === 'England. Premier League').count, 2);
     assert.equal(leagues.futebol.find((c) => c.country === 'Spain').leagues.find((l) => l.name === 'Spain. La Liga').count, 1);
+    // Basketball and tennis have their trees too.
+    assert.ok(leagues.basquetebol.find((c) => c.country === 'United States').leagues.some((l) => l.name === 'NBA'));
+    assert.ok(leagues.tenis.find((c) => c.country === 'China').leagues.some((l) => l.name === 'WTA. Beijing'));
     const { events } = await get(`/api/events?competition=${encodeURIComponent('England. Premier League')}`);
     assert.equal(events.length, 2);
     assert.ok(events.some((e) => e.id === later));

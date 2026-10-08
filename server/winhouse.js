@@ -523,15 +523,37 @@ export const FOOTBALL_TREE = [
   ['World', ['Club Friendlies', 'Friendlies. National Teams']],
 ];
 export const FOOTBALL_LEAGUES = FOOTBALL_TREE.flatMap(([, leagues]) => leagues);
+// Basketball and tennis: only these competitions too (WINHOUSE_BASKETBALL_LEAGUES / WINHOUSE_TENNIS_LEAGUES
+// replace the lists, "*" = all). Tennis tournaments change every week: the list needs keeping up to date.
+export const BASKETBALL_TREE = [
+  ['Europe', ['ABA League', 'Euroleague']],
+  ['France', ['France. LNB']],
+  ['Germany', ['Germany. BBL']],
+  ['Italy', ['Italy. Lega A']],
+  ['Philippines', ['Philippines. NCAA']],
+  ['Spain', ['Spain. Liga ACB']],
+  ['United States', ['NBA', 'WNBA']],
+];
+export const TENNIS_TREE = [
+  ['Australia', ['World Tennis. Darwin', 'World Tennis. Darwin. Doubles', 'World Tennis. Wagga Wagga. Women', 'World Tennis. Wagga Wagga. Women. Doubles']],
+  ['China', ['World Tennis. Luan', 'World Tennis. Luan. Doubles', 'World Tennis. Maanshan. Women', 'World Tennis. Maanshan. Women. Doubles', 'WTA. Beijing']],
+  ['Egypt', ['World Tennis. Sharm El Sheikh', 'World Tennis. Sharm El Sheikh. Doubles', 'World Tennis. Sharm El Sheikh. Women']],
+  ['Rwanda', ['World Tennis. Kigali']],
+  ['Tunisia', ['World Tennis. Monastir 2', 'World Tennis. Monastir 2. Doubles', 'World Tennis. Monastir. Women']],
+];
+/** The sidebar's country → leagues trees, per sport. */
+export const LEAGUE_TREES = { futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
-/** WINHOUSE_FOOTBALL_LEAGUES → the allowed football competitions (Set of keys), or null for all. */
-export function footballLeagues(list) {
+/** A list of competitions (names separated by ; or new lines) → the allowed ones (Set of keys); empty = the tree's, "*" = all (null). */
+export function allowedLeagues(list, tree = FOOTBALL_TREE) {
   const text = String(list ?? '').trim();
   if (text === '*' || /^(all|todas|todos)$/i.test(text)) return null;
-  const names = text ? text.split(/[;\n]|,(?!\s*\d)/).map((t) => t.trim()).filter(Boolean) : FOOTBALL_LEAGUES;
+  const names = text ? text.split(/[;\n]|,(?!\s*\d)/).map((t) => t.trim()).filter(Boolean) : tree.flatMap(([, leagues]) => leagues);
   return new Set(names.map(leagueKey));
 }
+/** WINHOUSE_FOOTBALL_LEAGUES → the allowed football competitions (Set of keys), or null for all. */
+export const footballLeagues = (list) => allowedLeagues(list, FOOTBALL_TREE);
 
 /** Admin sample: a shown sport, not blocked, football first, then the highest league tier. */
 export function bestLiveGame(evs) {
@@ -542,12 +564,20 @@ export function bestLiveGame(evs) {
   };
   return [...evs].sort((a, b) => rank(a) - rank(b))[0] || null;
 }
-/** True when the competition or a team marks the game as women's / youth / minor (as configured). */
+/**
+ * True when the game is left out: its sport has a list of competitions and this one is not in it, or
+ * the competition or a team marks it as women's / youth / minor (as configured). `leagues` is
+ * { sport: Set of keys } (a Set alone: football's). A competition listed by name is shown even when
+ * it is a women's one (WTA, "… Women"): it was picked on purpose.
+ */
 export function blockedGame(ev, { women = true, youth = true, minor = true, extra = null, leagues = null } = {}) {
   const text = [ev?.league, ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ');
   const sport = ev?.sport || SPORTS[Number(ev?.sport_id)];
-  return (!!leagues && sport === 'futebol' && !leagues.has(leagueKey(ev?.league)))
-    || (women && WOMEN.test(text)) || (youth && YOUTH.test(text))
+  const allow = leagues instanceof Set ? (sport === 'futebol' ? leagues : null) : leagues?.[sport] || null;
+  if (allow && !allow.has(leagueKey(ev?.league))) return true;
+  // Listed: the competition's own name does not count for the women's filter (the teams still do).
+  const womenText = allow ? [ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ') : text;
+  return (women && WOMEN.test(womenText)) || (youth && YOUTH.test(text))
     || (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text))))
     || (!!extra && extra.test(text));
 }
@@ -771,11 +801,14 @@ export function finishVerdict(row) {
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined,
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined,
   detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
   futureDays = 0, futureMinutes = 10,
 } = {}) {
-  const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues), leagues: allowLeagues === undefined ? null : footballLeagues(allowLeagues) };
+  // Per sport, the competitions shown (a sport left undefined shows all of its own).
+  const allow = Object.fromEntries(Object.entries({ futebol: allowLeagues, basquetebol: basketballLeagues, tenis: tennisLeagues })
+    .filter(([, list]) => list !== undefined).map(([sp, list]) => [sp, allowedLeagues(list, LEAGUE_TREES[sp])]));
+  const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues), leagues: Object.keys(allow).length ? allow : null };
   const state = {
     enabled: !!client?.enabled, last: {}, lastError: null, lastErrorAt: null,
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
@@ -1294,7 +1327,7 @@ export function createWinHouseFeed(db, {
 
   const status = () => ({
     enabled: state.enabled, last: state.last, lastError: state.lastError, lastErrorAt: state.lastErrorAt,
-    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block: { ...block, extra: block.extra ? block.extra.source : null, leagues: block.leagues ? block.leagues.size : null },
+    tzOffsetMinutes: state.offset, tzOffsetSource: state.offsetSource, block: { ...block, extra: block.extra ? block.extra.source : null, leagues: block.leagues ? Object.fromEntries(Object.entries(block.leagues).map(([sp, set]) => [sp, set ? set.size : 'todas'])) : null },
     events: Object.fromEntries(db.prepare('SELECT status, COUNT(*) AS n FROM events WHERE source = ? GROUP BY status').all(SOURCE).map((r) => [r.status, r.n])),
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
     streams: client.hasTenant ? (state.last.streams || null) : false,
