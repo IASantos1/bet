@@ -98,20 +98,61 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
   let last = null;
   let running = false;
 
-  /** providers: [{ sport, source, rawOdds(ext), extra?(ext) → payloads[] }] */
+  /**
+   * providers: [{ sport, source, rawOdds(ext), extra?(ext) → payloads[] }] (one sport each), or
+   * [{ source, sports() → [sport], gameMarkets(ext, { live }) → { markets }, wired(sport) → Set<marketId> }]
+   * (WinHouse: every sport it feeds, one game page per sampled game). Switched-off providers are left out.
+   */
   async function run({ sample = 12, liveSample = 5 } = {}) {
     if (running) return last;
     running = true;
     try {
       const sports = [];
       let calls = 0;
-      for (const p of providers) {
-        if (!p.enabled()) { sports.push({ sport: p.sport, disabled: true, markets: [] }); continue; }
+      const pickGames = (source, sport) => {
         const pick = (status, n) => db.prepare(
-          `SELECT id, external_id, competition FROM events WHERE source = ? AND status = ? ${status === 'scheduled' ? 'AND start_time > ?' : ''}
+          `SELECT id, external_id, competition FROM events WHERE source = ? AND status = ? ${sport ? 'AND sport = ?' : ''} ${status === 'scheduled' ? 'AND start_time > ?' : ''}
             ORDER BY start_time LIMIT ?`
-        ).all(...(status === 'scheduled' ? [p.source, status, nowIso(), n] : [p.source, status, n]));
-        const games = [...pick('scheduled', sample).map((g) => ({ ...g, live: false })), ...pick('live', liveSample).map((g) => ({ ...g, live: true }))];
+        ).all(source, status, ...(sport ? [sport] : []), ...(status === 'scheduled' ? [nowIso()] : []), status === 'scheduled' ? sample : liveSample);
+        return [...pick('scheduled').map((g) => ({ ...g, live: false })), ...pick('live').map((g) => ({ ...g, live: true }))];
+      };
+      for (const p of providers) {
+        if (!p.enabled()) continue;
+        if (p.gameMarkets) {
+          for (const sport of p.sports()) {
+            const games = pickGames(p.source, sport);
+            const byId = new Map();
+            const errors = [];
+            for (const g of games) {
+              let cat;
+              try { cat = await p.gameMarkets(g.external_id, { live: g.live }); calls += 1; } catch (err) { errors.push(`${g.external_id}: ${err.message}`); continue; }
+              for (const m of cat?.markets || []) {
+                const e = byId.get(m.marketId) || { kind: m.name || `Mercado ${m.marketId}`, family: `#${m.marketId}${m.code ? ` · ${m.code}` : ''}`, period: m.category || '—', source: p.source,
+                  marketId: m.marketId, lines: new Set(), selections: new Set(), events: new Set(), pre: 0, live: 0 };
+                for (const sel of m.selections || []) {
+                  const [, name, line] = /^(.*?)(?: \[([^\]]+)\])? @ /.exec(sel) || [null, sel, null];
+                  if (name) e.selections.add(name.trim());
+                  if (line) e.lines.add(line);
+                }
+                if (!e.events.has(g.id)) { e.events.add(g.id); if (g.live) e.live += 1; else e.pre += 1; }
+                byId.set(m.marketId, e);
+              }
+            }
+            const wired = p.wired(sport);
+            sports.push({
+              sport, source: p.source, sampled: games.length, sampledLive: games.filter((g) => g.live).length,
+              leagues: [...new Set(games.map((g) => g.competition))].slice(0, 12),
+              errors: errors.slice(0, 5),
+              markets: [...byId.values()].map((e) => ({
+                kind: e.kind, family: e.family, period: e.period, source: e.source,
+                lines: LIMIT(e.lines, 12), selections: LIMIT(e.selections, 14), bookmakers: 0,
+                events: e.events.size, pre: e.pre, live: e.live, wired: wired.has(e.marketId),
+              })).sort((a, b) => b.events - a.events || a.kind.localeCompare(b.kind)),
+            });
+          }
+          continue;
+        }
+        const games = pickGames(p.source, null);
         const map = new Map();
         const errors = [];
         for (const g of games) {
