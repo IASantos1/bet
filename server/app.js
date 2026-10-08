@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { parseLivestream } from './whlive.js';
+import { parseLivestream, sessionRefused } from './whlive.js';
 import { FOOTBALL_TREE, leagueKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx } from './db.js';
@@ -1080,14 +1080,20 @@ export function createApp(db, {
         if (!gameId) throw new HttpError(404, 'Nenhum jogo WinHouse ao vivo agora.');
       }
       // With the seamless-wallet session when configured (WINHOUSE_WALLET_KEY + WINHOUSE_STREAM_PLAYER).
-      const token = winhouseLive ? await winhouseLive.sessionToken() : null;
-      const r = await winhouse.livestream(gameId, token);
+      let token = winhouseLive ? await winhouseLive.sessionToken() : null;
+      let r = await winhouse.livestream(gameId, token);
+      // Session refused (expired…): a fresh one, as the player's request does.
+      let renewed = false;
+      if (token && sessionRefused(r.body)) {
+        token = await winhouseLive.sessionToken({ fresh: true });
+        if (token) { r = await winhouse.livestream(gameId, token); renewed = true; }
+      }
       const parsed = r.body ? parseLivestream(r.body, { hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl }) : { error: 'resposta não é JSON' };
       const mask = (v) => JSON.parse(JSON.stringify(v ?? null).replace(/([?&]t=)([A-Za-z0-9._~%-]{12})[A-Za-z0-9._~%-]+/g, '$1$2…'));
       res.json({
         gameId, hlsEnabled: !!winhouseLive?.enabled, withStream: !!winhouseFeed?.streamOf?.(gameId).has,
         tenant: !!config.winhouse.tenant, apiKey: !!config.winhouse.apiKey, walletKey: !!config.winhouse.walletKey, streamPlayer: config.winhouse.streamPlayer || null,
-        session: winhouseLive ? winhouseLive.session() : { configured: false, error: 'WINHOUSE_HLS=1 desligado' }, sentSession: !!token,
+        session: winhouseLive ? winhouseLive.session() : { configured: false, error: 'WINHOUSE_HLS=1 desligado' }, sentSession: !!token, renewed,
         livestream: { status: r.status, ms: r.ms, contentType: r.contentType, body: mask(r.body), text: r.body ? undefined : String(r.text || '').slice(0, 1500) },
         result: mask(parsed.error ? parsed : { streamId: parsed.streamId, embedUrl: parsed.embedUrl, hlsUrl: parsed.hlsUrl, expiresAt: parsed.expiresAt, expiresIn: parsed.expiresAt - Math.floor(Date.now() / 1000) }),
       });

@@ -46,6 +46,12 @@ export function parseLivestream(body, { hlsPath = '/tv/p/{stream_id}.m3u8?t={tok
   return { streamId, hlsUrl, embedUrl: embed.toString(), expiresAt };
 }
 
+/** The book's answer when it does not accept the player's session. */
+export function sessionRefused(body) {
+  return !!body && (body.Error === true || body.success === false)
+    && /log|token|expired|session|auth/i.test(String(body.Message || body.reason || body.error || ''));
+}
+
 export function createWinHouseLive({
   client, hlsPath, tvBase = '', marginSeconds = 45, playerId = '', log = () => {}, now = () => Date.now(),
 } = {}) {
@@ -69,8 +75,9 @@ export function createWinHouseLive({
         // The signed launch token first (no Server IP check), then the server-to-server call.
         const errors = [];
         let r = null;
+        let ssoAnswer = null;
         if (client.tenantSso) {
-          r = await client.tenantSso(playerId);
+          r = ssoAnswer = await client.tenantSso(playerId);
           if (!good(r)) { errors.push(why('sso', r)); r = null; }
         }
         if (!r && client.tenantSession) {
@@ -86,9 +93,14 @@ export function createWinHouseLive({
         }
         const token = r.body.token;
         const exp = Number(tokenPayload(token)?.exp);
-        const until = Number.isFinite(exp) && exp > 0 ? Math.min((exp > 1e12 ? exp : exp * 1000) - 60_000, now() + 6 * 3600_000) : now() + 30 * 60_000;
-        session = { token, until: Math.max(until, now() + 60_000), username: r.body.username || null };
-        Object.assign(sessionInfo, { ok: true, error: null, username: session.username });
+        const expMs = Number.isFinite(exp) && exp > 0 ? (exp > 1e12 ? exp : exp * 1000) : null;
+        // Without a readable expiry, a short life: the book answers error_token_expired and we renew anyway.
+        const until = expMs ? Math.min(expMs - 30_000, now() + 6 * 3600_000) : now() + 10 * 60_000;
+        session = { token, until: Math.max(until, now() + 30_000), username: r.body.username || null };
+        Object.assign(sessionInfo, {
+          ok: true, error: null, username: session.username, via: r === ssoAnswer ? 'sso' : 'session',
+          tokenExpiresAt: expMs ? new Date(expMs).toISOString() : null, renewAt: new Date(session.until).toISOString(),
+        });
         return token;
       } catch (err) {
         Object.assign(sessionInfo, { ok: false, error: err.message, at: new Date(now()).toISOString() });
@@ -103,8 +115,8 @@ export function createWinHouseLive({
   async function fetchStream(gameId) {
     let token = await sessionToken();
     let r = await client.livestream(gameId, token);
-    // A session the book no longer accepts: open a new one and ask once more.
-    if (token && r.body && (r.body.Error === true || r.body.success === false) && /log/i.test(String(r.body.Message || r.body.reason || ''))) {
+    // A session the book no longer accepts (error_not_logged_in, error_token_expired…): open a new one and ask once more.
+    if (token && sessionRefused(r.body)) {
       token = await sessionToken({ fresh: true });
       if (token) r = await client.livestream(gameId, token);
     }

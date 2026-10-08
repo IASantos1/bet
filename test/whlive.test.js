@@ -165,3 +165,28 @@ test('wallet session via launch token: signed HMAC on /tenant/sso, /tenant/sessi
   assert.deepEqual(calls, ['sso', 'session']);
   assert.match(live.session().error, /sso: HTTP 401 bad launch · session: HTTP 403 .*1\.2\.3\.4/);
 });
+
+test('error_token_expired: a fresh session and one more try', async () => {
+  const { sessionRefused } = await import('../server/whlive.js');
+  assert.ok(sessionRefused({ Error: true, Message: 'error_token_expired' }));
+  assert.ok(sessionRefused({ success: false, error: 'error_not_logged_in' }));
+  assert.ok(!sessionRefused({ success: false, error: 'no_stream' }));
+  let n = 0;
+  const seen = [];
+  const live = createWinHouseLive({
+    playerId: '1',
+    client: {
+      hasWallet: true,
+      tenantSso: async () => ({ ok: true, status: 200, body: { ok: true, token: `t${++n}` } }),
+      livestream: async (id, tok) => {
+        seen.push(tok);
+        return tok === 't1'
+          ? { ok: true, status: 200, body: { Error: true, Message: 'error_token_expired' } }
+          : { ok: true, status: 200, body: { success: true, embed_url: `https://winhouse.bet/tv/play?t=${jwt({ vi: '9' })}`, expires_at: Date.now() / 1000 + 600 } };
+      },
+    },
+  });
+  assert.equal((await live.getLiveStream(5)).streamId, '9');
+  assert.deepEqual(seen, ['t1', 't2']);
+  assert.equal(live.session().via, 'sso');
+});
