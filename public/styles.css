@@ -725,7 +725,23 @@ body.no-scroll { overflow: hidden; }
 .pay-box.mb dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 4px 0; }
 .pay-box.mb dt { color: var(--muted); font-size: 12px; align-self: center; }
 .pay-box.mb dd { margin: 0; font-weight: 800; font-size: 18px; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
-.pay-box #cardElement { min-height: 120px; }
+.pay-box.card { gap: 4px; }
+.pay-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.pay-head b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.pay-box .field { margin-bottom: 10px; }
+.stripe-field { height: 46px; padding: 0 12px; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--border); background: var(--dim); border-radius: 6px; transition: border-color .15s; }
+.stripe-field > * { width: 100%; }
+.stripe-field.StripeElement--focus { border-color: var(--brand); }
+.stripe-field.StripeElement--invalid { border-color: var(--down); }
+.stripe-field.StripeElement--complete { border-color: var(--up); }
+.pay-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pay-err { min-height: 16px; color: var(--down); font-size: 12px; }
+.pay-btn { width: 100%; height: 46px; font-weight: 800; font-size: 15px; border-radius: 6px; background: var(--up); border-color: var(--up); color: #0d1a12; }
+.pay-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pay-safe { text-align: center; margin-top: 6px; }
+.link-pay { margin-bottom: 6px; }
+.pay-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 8px; color: var(--text-3); font-size: 12px; }
+.pay-or::before, .pay-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .stream-box.locked p { color: var(--text-2); font-size: 13px; margin: 0; }
 .stream-box.locked .primary-btn { margin-top: 4px; }
 

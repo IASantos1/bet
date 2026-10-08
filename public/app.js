@@ -1249,41 +1249,93 @@ function loadStripeJs() {
   return stripeJs;
 }
 
+/**
+ * The card form in our own layout: card number, expiry and CVC are our fields (each one a small
+ * Stripe frame, so the card data never touches our server), plus Stripe's Link button above them.
+ */
 async function showCardForm(p, clientSecret, publishableKey) {
   depositPanel('<div class="pay-box"><strong>A carregar o formulário seguro…</strong></div>');
   const Stripe = await loadStripeJs();
   const stripe = Stripe(publishableKey);
   const css = getComputedStyle(document.documentElement);
   const v = (n, d) => css.getPropertyValue(n).trim() || d;
-  const elements = stripe.elements({
-    clientSecret, locale: 'pt',
-    appearance: { theme: 'night', variables: { colorPrimary: v('--red', '#10b981'), colorBackground: v('--panel', '#16191d'), colorText: v('--text', '#e8eaed'), borderRadius: '6px' } },
-  });
-  depositPanel(`<div class="pay-box card"><strong>Pagamento por cartão — ${money(p.amount)}</strong>
-    <div id="cardElement"></div>
-    <div class="form-actions"><button class="primary-btn" id="cardPay" disabled>Confirmar pagamento</button></div>
-    <small class="muted">Os dados do cartão vão diretamente para a Stripe; não passam pelo nosso servidor.</small></div>`);
-  const pe = elements.create('payment', { layout: 'tabs' });
-  pe.mount(walletEl('#cardElement'));
-  pe.on('ready', () => { const b = walletEl('#cardPay'); if (b) b.disabled = false; });
+  const returnUrl = `${location.origin}/#/perfil/carteira?deposito=${encodeURIComponent(p.id)}`;
+  depositPanel(`<div class="pay-box card">
+    <div class="pay-head"><strong>Pagamento por cartão</strong><b>${money(p.amount)}</b></div>
+    <div class="link-pay hidden" id="linkPay"><div id="linkButton"></div><div class="pay-or"><span>ou pague com cartão</span></div></div>
+    <div class="field"><label for="cardNumber">Número do cartão</label><div class="stripe-field" id="cardNumber"></div></div>
+    <div class="pay-row">
+      <div class="field"><label for="cardExpiry">Data de validade</label><div class="stripe-field" id="cardExpiry"></div></div>
+      <div class="field"><label for="cardCvc">Código CVC</label><div class="stripe-field" id="cardCvc"></div></div>
+    </div>
+    <small class="pay-err" id="cardErr" role="alert"></small>
+    <button class="primary-btn pay-btn" id="cardPay" disabled>Depositar ${money(p.amount)}</button>
+    <small class="muted pay-safe">🔒 Pagamento seguro: os dados do cartão vão diretamente para a Stripe e não passam pelo nosso servidor.</small></div>`);
+
+  const done = (status) => {
+    depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>');
+    watchDeposit(p.id, { every: status === 'succeeded' ? 1500 : 5000 });
+  };
+
+  // Card fields.
+  const cardEls = stripe.elements({ locale: 'pt' });
+  const style = {
+    base: {
+      color: v('--text', '#e8eaed'), iconColor: v('--text-2', '#b0b7bf'), fontSize: '16px', fontWeight: '500',
+      fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontSmoothing: 'antialiased', '::placeholder': { color: v('--text-4', '#676f79') },
+    },
+    invalid: { color: v('--down', '#e95a74'), iconColor: v('--down', '#e95a74') },
+  };
+  const fields = {
+    cardNumber: cardEls.create('cardNumber', { style, showIcon: true, placeholder: '1234 1234 1234 1234' }),
+    cardExpiry: cardEls.create('cardExpiry', { style, placeholder: 'MM/AA' }),
+    cardCvc: cardEls.create('cardCvc', { style, placeholder: 'CVC' }),
+  };
+  const complete = {};
+  const errors = {};
+  const refresh = () => {
+    const err = walletEl('#cardErr');
+    if (err) err.textContent = Object.values(errors).find(Boolean) || '';
+    const btn = walletEl('#cardPay');
+    if (btn && !btn.dataset.busy) btn.disabled = !Object.keys(fields).every((k) => complete[k]);
+  };
+  for (const [id, el] of Object.entries(fields)) {
+    el.mount(walletEl(`#${id}`));
+    el.on('change', (e) => { complete[id] = e.complete; errors[id] = e.error?.message || ''; refresh(); });
+  }
   walletEl('#cardPay').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    btn.disabled = true;
+    btn.disabled = true; btn.dataset.busy = '1'; btn.textContent = 'A processar…';
+    const again = () => { delete btn.dataset.busy; btn.textContent = `Depositar ${money(p.amount)}`; refresh(); };
     try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        // Only for a bank check that has to leave the page; otherwise it all happens here.
-        confirmParams: { return_url: `${location.origin}/#/perfil/carteira?deposito=${encodeURIComponent(p.id)}` },
-        redirect: 'if_required',
-      });
-      if (error) { toast('Pagamento recusado', error.message || 'Verifique os dados do cartão.', 'error'); btn.disabled = false; return; }
-      depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>');
-      watchDeposit(p.id, { every: paymentIntent?.status === 'succeeded' ? 1500 : 5000 });
+      // 3-D Secure, when the bank asks for it, opens over the page and comes back here.
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, { payment_method: { card: fields.cardNumber }, return_url: returnUrl });
+      if (error) { toast('Pagamento recusado', error.message || 'Verifique os dados do cartão.', 'error'); return again(); }
+      done(paymentIntent?.status);
     } catch (err) {
       toast('Pagamento', err.message, 'error');
-      btn.disabled = false;
+      again();
     }
   });
+
+  // Link: Stripe's own button (shown only when Link is available for this payment).
+  try {
+    const linkEls = stripe.elements({ clientSecret, locale: 'pt', appearance: { theme: 'night', variables: { borderRadius: '6px' } } });
+    const ece = linkEls.create('expressCheckout', {
+      paymentMethods: { link: 'auto', applePay: 'never', googlePay: 'never' },
+      buttonHeight: 44,
+    });
+    ece.on('ready', ({ availablePaymentMethods } = {}) => {
+      if (availablePaymentMethods?.link) walletEl('#linkPay')?.classList.remove('hidden');
+    });
+    ece.on('confirm', async () => {
+      const { error, paymentIntent } = await stripe.confirmPayment({ elements: linkEls, confirmParams: { return_url: returnUrl }, redirect: 'if_required' });
+      if (error) return toast('Pagamento recusado', error.message || 'O pagamento com Link não foi concluído.', 'error');
+      done(paymentIntent?.status);
+    });
+    ece.mount(walletEl('#linkButton'));
+  } catch { /* no Link: the card fields alone */ }
 }
 
 async function loadWallet() {
