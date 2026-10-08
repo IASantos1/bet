@@ -19,6 +19,7 @@ const TABS = [
   { id: 'apostas', label: 'Apostas', icon: '🎟️', section: 'Operações' },
   { id: 'levantamentos', label: 'Levantamentos', icon: '💸', section: 'Operações' },
   { id: 'utilizadores', label: 'Utilizadores', icon: '👥', section: 'Operações' },
+  { id: 'promocoes', label: 'Promoções', icon: '🎁', section: 'Operações' },
   { id: 'novo', label: 'Novo evento', icon: '➕', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: '📡', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: '🎰', section: 'Avançado' },
@@ -93,7 +94,79 @@ function usersTable(users) {
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido', bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
   casino_out: 'Casino (saída)', casino_in: 'Casino (entrada)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
+  bonus_convert: 'Bónus convertido', chargeback: 'Chargeback',
 };
+
+// ---------- promotions ----------
+
+const PROMO_STATUS = { active: 'Ativo', completed: 'Cumprido', expired: 'Expirado', cancelled: 'Cancelado', used: 'Usada', granted: 'Atribuído', refused: 'Recusado' };
+const CAMPAIGN = { welcome: 'Boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', general: 'Geral', all: 'Todas' };
+// Fields of each campaign in the admin form: [key, label, type].
+const PROMO_FIELDS = {
+  welcome: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
+    ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
+  reload: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
+    ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
+  firstBet: [['minStake', 'Aposta mínima (€)'], ['minOdds', 'Odd mínima'], ['maxRefund', 'Reembolso máximo em free bet (€)'], ['validityDays', 'Validade da free bet (dias)']],
+  cashback: [['percent', 'Cashback (%)'], ['minLoss', 'Perda líquida mínima (€)'], ['max', 'Cashback máximo (€/semana)'], ['rolloverMult', 'Rollover (×)'], ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)']],
+};
+const localDT = (iso) => (iso ? toLocalInput(iso) : '');
+
+function adminPromos(d) {
+  const c = d.config;
+  const field = (camp, [k, label, type]) => {
+    const v = c[camp][k];
+    if (type === 'base') return `<label class="field">${esc(label)}<select name="${camp}.${k}"><option value="deposit_bonus"${v !== 'bonus' ? ' selected' : ''}>Depósito + bónus</option><option value="bonus"${v === 'bonus' ? ' selected' : ''}>Só o bónus</option></select></label>`;
+    return `<label class="field">${esc(label)}<input name="${camp}.${k}" type="number" step="0.01" value="${v ?? ''}"${type === 'opt' ? ' placeholder="sem limite"' : ' required'}></label>`;
+  };
+  const campaign = (camp) => `<div class="panel promo-camp"><h3><label class="adm-switch"><input type="checkbox" name="${camp}.active"${c[camp].active ? ' checked' : ''}> ${CAMPAIGN[camp]}</label>
+      <span class="pill ${c[camp].active ? 'won' : 'void'}">${c[camp].active ? 'ACTIVE' : 'INACTIVE'}</span></h3>
+    <div class="adm-grid">${PROMO_FIELDS[camp].map((f) => field(camp, f)).join('')}
+      <label class="field">Início (opcional)<input name="${camp}.startAt" type="datetime-local" value="${localDT(c[camp].startAt)}"></label>
+      <label class="field">Fim (opcional)<input name="${camp}.endAt" type="datetime-local" value="${localDT(c[camp].endAt)}"></label></div></div>`;
+  const methods = [['mbway', 'MB WAY'], ['multibanco', 'Multibanco'], ['cartao', 'Cartão'], ['demo', 'Modo demonstração']];
+  const totals = d.totals.length ? `<div class="adm-cards">${d.totals.map((t) => `<div class="adm-card"><small>${esc(CAMPAIGN[t.kind] || t.kind)}</small><strong>${money(t.granted)}</strong><em>${t.count} atribuídos · ${t.completed} cumpridos</em></div>`).join('')}</div>` : '';
+  const bonuses = d.bonuses.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Campanha</th><th class="num">Bónus</th><th class="num">Saldo</th><th>Rollover</th><th>Expira</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${d.bonuses.map((b) => `<tr><td>${b.id}</td><td>${esc(b.user)}<br><small class="muted">${esc(b.email)}</small></td><td>${esc(b.name)}</td><td class="num">${money(b.amount)}</td><td class="num">${money(b.balance)}</td>
+      <td>${money(b.rolloverProgress)} / ${money(b.rolloverTarget)}</td><td>${esc(fmtDateTime(b.expiresAt))}</td>
+      <td><span class="pill ${b.status === 'active' ? 'open' : b.status === 'completed' ? 'won' : 'void'}">${PROMO_STATUS[b.status]}</span>${b.cancelReason ? `<br><small class="muted">${esc(b.cancelReason)}</small>` : ''}</td>
+      <td>${b.status === 'active' ? `<button class="danger-btn btn-sm" data-action="bonus-cancel" data-id="${b.id}">Cancelar</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda não há bónus atribuídos.</p>';
+  const freebets = d.freebets.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Origem</th><th class="num">Valor</th><th>Expira</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${d.freebets.map((f) => `<tr><td>${f.id}</td><td>${esc(f.user)}</td><td>${f.source === 'first_bet' ? 'Primeira aposta' : 'Administrador'}</td><td class="num">${money(f.amount)}</td><td>${esc(fmtDateTime(f.expiresAt))}</td>
+      <td><span class="pill ${f.status === 'active' ? 'open' : 'void'}">${PROMO_STATUS[f.status]}</span>${f.betId ? ` <small class="muted">aposta #${f.betId}</small>` : ''}</td>
+      <td>${f.status === 'active' ? `<button class="danger-btn btn-sm" data-action="freebet-cancel" data-id="${f.id}">Cancelar</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sem free bets.</p>';
+  const log = d.log.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>Campanha</th><th>Decisão</th><th>Motivo</th></tr></thead><tbody>
+    ${d.log.map((l) => `<tr><td>${esc(fmtDateTime(l.createdAt))}</td><td>${esc(l.user)}</td><td>${esc(CAMPAIGN[l.campaign] || l.campaign)}</td><td>${esc(PROMO_STATUS[l.outcome] || l.outcome)}</td><td>${esc(l.reason || '')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sem decisões registadas.</p>';
+  return `${totals}
+    <form data-form="promo-config">
+      <div class="panel"><h3>Regras gerais</h3>
+        <label class="adm-switch"><input type="checkbox" name="general.requireKyc"${c.general.requireKyc ? ' checked' : ''}> Exigir identidade verificada (KYC) para receber promoções</label>
+        <p class="muted">Métodos de pagamento elegíveis:</p>
+        <div class="form-actions">${methods.map(([k, l]) => `<label class="adm-switch"><input type="checkbox" name="general.methods" value="${k}"${c.general.methods.includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</div>
+        <p class="muted">Sempre aplicado: uma promoção de depósito ativa por jogador, sem autoexclusão nem conta suspensa, sem contas duplicadas (telemóvel / NIF / IBAN), depósito confirmado e não revertido. Os valores e o rollover são sempre calculados pelo servidor.</p></div>
+      ${['welcome', 'firstBet', 'reload', 'cashback'].map(campaign).join('')}
+      <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div>
+    </form>
+    <div class="panel"><h3>Bónus</h3>${bonuses}</div>
+    <div class="panel"><h3>Free bets</h3>${freebets}</div>
+    <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;
+}
+
+function userPromosPanel(d) {
+  const p = d.promotions;
+  const u = d.user;
+  const lim = d.limits;
+  const LIM = [['depositDay', 'Depósito diário'], ['depositWeek', 'Depósito semanal'], ['depositMonth', 'Depósito mensal'], ['betMax', 'Aposta máxima'], ['lossWeek', 'Perda semanal']];
+  return `<div class="panel"><h3>Promoções ${u.promoBlocked ? '<span class="pill lost">Bloqueadas</span>' : ''}</h3>
+    <p>Saldo de bónus <b>${money(p.bonusBalance)}</b> · Free bets <b>${money(p.freebetBalance)}</b> · Primeira aposta protegida: ${p.firstBetUsed ? 'utilizada' : 'disponível'}</p>
+    ${p.bonuses.length ? `<div class="table-wrap"><table><tbody>${p.bonuses.map((b) => `<tr><td>${esc(b.name)}</td><td class="num">${money(b.amount)}</td><td>${money(b.rolloverProgress)} / ${money(b.rolloverTarget)}</td><td><span class="pill">${PROMO_STATUS[b.status]}</span>${b.cancelReason ? ` <small class="muted">${esc(b.cancelReason)}</small>` : ''}</td>
+      <td>${b.status === 'active' ? `<button class="danger-btn btn-sm" data-action="bonus-cancel" data-id="${b.id}">Cancelar</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem bónus.</p>'}
+    <div class="form-actions"><button class="${u.promoBlocked ? 'ghost-btn' : 'danger-btn'} btn-sm" data-action="promo-block" data-id="${u.id}" data-blocked="${u.promoBlocked ? 0 : 1}">${u.promoBlocked ? 'Desbloquear promoções' : 'Bloquear promoções (abuso)'}</button></div>
+    <p class="muted">Limites do jogador: ${LIM.map(([k, l]) => `${l} ${lim[k] === null ? '—' : money(lim[k])}`).join(' · ')}</p></div>`;
+}
 
 function userDetailView(d) {
   const u = d.user;
@@ -119,6 +192,7 @@ function userDetailView(d) {
         ${u.role === 'admin' ? '' : `<button class="ua ban${u.banned ? ' on' : ''}" data-action="user-ban" data-id="${u.id}" data-name="${esc(u.name)}" data-banned="${u.banned ? 1 : 0}" title="${u.banned ? 'Desbanir' : 'Banir'}">${ICON.ban}</button>`}
       </div>
     </div>
+    ${userPromosPanel(d)}
     <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}</div>
     <div class="panel"><h3>Apostas <small class="muted">${d.bets.length}</small></h3>${d.bets.length ? d.bets.map((b) => betCard(b)).join('') : '<p class="muted">Sem apostas.</p>'}</div>
     <div class="panel"><h3>Depósitos <small class="muted">${deposits.length}</small></h3>${deposits.length ? `<div class="table-wrap"><table><tbody>${deposits.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem depósitos.</p>'}</div>
@@ -226,6 +300,7 @@ async function loadTab() {
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
+    else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
     else if (tab === 'levantamentos') {
       const { withdrawals } = await api('/api/admin/withdrawals');
       main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -542,6 +617,22 @@ function adminNewEvent() {
 // ---------- forms ----------
 
 const handlers = {
+  async 'promo-config'(form) {
+    const body = { general: { requireKyc: false, methods: [] } };
+    for (const el of form.elements) {
+      if (!el.name || !el.name.includes('.')) continue;
+      const [camp, key] = el.name.split('.');
+      body[camp] ||= {};
+      if (key === 'methods') { if (el.checked) body.general.methods.push(el.value); continue; }
+      if (el.type === 'checkbox') body[camp][key] = el.checked;
+      else if (el.type === 'datetime-local') body[camp][key] = el.value ? new Date(el.value).toISOString() : null;
+      else if (el.tagName === 'SELECT') body[camp][key] = el.value;
+      else body[camp][key] = el.value === '' ? null : Number(el.value);
+    }
+    await api('/api/admin/promotions/config', { method: 'PUT', body });
+    toast('Guardado', 'Configuração das promoções atualizada.');
+    loadTab();
+  },
   async login(form) {
     const d = formData(form);
     const box = $('.form-error', form);
@@ -648,7 +739,9 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
   if (action === 'user-balance' || action === 'user-freebet') {
     const what = action === 'user-balance' ? 'saldo da carteira' : 'saldo de FreeBets';
-    const v = prompt(`${actionEl.dataset.name}: valor a juntar ao ${what} em € (ex.: 50). Para retirar, use o sinal menos (ex.: -20).`);
+    const v = prompt(action === 'user-balance'
+      ? `${actionEl.dataset.name}: valor a juntar ao ${what} em € (ex.: 50). Para retirar, use o sinal menos (ex.: -20).`
+      : `${actionEl.dataset.name}: valor da free bet em € (ex.: 10). Fica válida 7 dias.`);
     if (v === null || !v.trim()) return;
     try {
       await api(`/api/admin/users/${actionEl.dataset.id}/${action === 'user-balance' ? 'balance' : 'freebet'}`, { method: 'POST', body: { amount: v.trim() } });
@@ -663,6 +756,36 @@ document.addEventListener('click', async (e) => {
     try {
       await api(`/api/admin/users/${actionEl.dataset.id}/ban`, { method: 'POST', body: { banned } });
       toast('Feito', banned ? 'Conta banida.' : 'Conta desbanida.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'bonus-cancel') {
+    const reason = prompt('Motivo do cancelamento (fica registado; ex.: fraude confirmada, conta duplicada, violação dos termos):');
+    if (reason === null) return;
+    try {
+      await api(`/api/admin/bonuses/${actionEl.dataset.id}/cancel`, { method: 'POST', body: { reason: reason.trim() } });
+      toast('Feito', 'Bónus cancelado (só o saldo de bónus foi removido).');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'freebet-cancel') {
+    if (!confirm('Cancelar esta free bet?')) return;
+    try {
+      await api(`/api/admin/freebets/${actionEl.dataset.id}/cancel`, { method: 'POST', body: {} });
+      toast('Feito', 'Free bet cancelada.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'promo-block') {
+    const blocked = actionEl.dataset.blocked === '1';
+    const reason = blocked ? prompt('Motivo (ex.: abuso promocional, conta duplicada):') : '';
+    if (reason === null) return;
+    try {
+      await api(`/api/admin/users/${actionEl.dataset.id}/promo-block`, { method: 'POST', body: { blocked, reason } });
+      toast('Feito', blocked ? 'Promoções bloqueadas e as ativas canceladas.' : 'Promoções desbloqueadas.');
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;

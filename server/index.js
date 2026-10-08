@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { openDb, getSetting } from './db.js';
+import { openDb, getSetting, tx } from './db.js';
 import { seed } from './seed.js';
 import { createApp } from './app.js';
 import { createFeed } from './feed.js';
@@ -15,6 +15,7 @@ import { createWinHouseTracker } from './whtracker.js';
 import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
 import { createStripe } from './stripe.js';
+import { expireDue, runCashback } from './promotions.js';
 
 const db = openDb(config.dbPath);
 if (!config.dbPersistent) {
@@ -102,6 +103,17 @@ if (stripe) {
   setTimeout(sweep, 10_000).unref();
   setInterval(sweep, 60_000).unref();
 }
+
+// Promotions: expired bonuses / free bets removed, and the weekly cashback credited (once per week).
+const promoJobs = () => {
+  try {
+    tx(db, () => expireDue(db));
+    const n = tx(db, () => runCashback(db));
+    if (n) console.log(`Promoções: cashback creditado a ${n} jogador(es)`);
+  } catch (err) { console.warn(`promoções: ${err.message}`); }
+};
+setTimeout(promoJobs, 15_000).unref();
+setInterval(promoJobs, 5 * 60_000).unref();
 
 const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);

@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -142,6 +142,73 @@ CREATE TABLE IF NOT EXISTS bet_legs (
 CREATE INDEX IF NOT EXISTS idx_bet_legs_event ON bet_legs(event_id, status);
 CREATE INDEX IF NOT EXISTS idx_bet_legs_bet ON bet_legs(bet_id);
 
+-- Promotions (server/promotions.js). A bonus is promotional money kept apart from the real balance
+-- (never withdrawable) until its rollover is met; ref makes each grant unique (deposit / week).
+CREATE TABLE IF NOT EXISTS bonuses (
+  id                      INTEGER PRIMARY KEY,
+  user_id                 INTEGER NOT NULL REFERENCES users(id),
+  kind                    TEXT    NOT NULL CHECK (kind IN ('welcome', 'reload', 'cashback')),
+  ref                     TEXT    NOT NULL UNIQUE,
+  status                  TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'expired', 'cancelled')),
+  deposit_cents           INTEGER NOT NULL DEFAULT 0,
+  amount_cents            INTEGER NOT NULL CHECK (amount_cents > 0),
+  balance_cents           INTEGER NOT NULL CHECK (balance_cents >= 0),
+  rollover_target_cents   INTEGER NOT NULL,
+  rollover_progress_cents INTEGER NOT NULL DEFAULT 0,
+  min_odds_x100           INTEGER NOT NULL DEFAULT 100,
+  max_count_cents         INTEGER,
+  period                  TEXT,
+  expires_at              TEXT    NOT NULL,
+  created_at              TEXT    NOT NULL,
+  ended_at                TEXT,
+  cancel_reason           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bonuses_user ON bonuses(user_id, status);
+
+-- Free bets: a stake the player places without paying it (only the net winnings are paid).
+CREATE TABLE IF NOT EXISTS freebets (
+  id            INTEGER PRIMARY KEY,
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  amount_cents  INTEGER NOT NULL CHECK (amount_cents > 0),
+  source        TEXT    NOT NULL,
+  ref           TEXT    NOT NULL UNIQUE,
+  status        TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
+  min_odds_x100 INTEGER NOT NULL DEFAULT 100,
+  expires_at    TEXT    NOT NULL,
+  created_at    TEXT    NOT NULL,
+  used_at       TEXT,
+  bet_id        INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_freebets_user ON freebets(user_id, status);
+
+-- Promotional ledger (bonus and free-bet money, rollover); (type, ref) unique so nothing is applied twice.
+CREATE TABLE IF NOT EXISTS promo_ledger (
+  id                  INTEGER PRIMARY KEY,
+  user_id             INTEGER NOT NULL REFERENCES users(id),
+  bonus_id            INTEGER,
+  freebet_id          INTEGER,
+  type                TEXT    NOT NULL,
+  amount_cents        INTEGER NOT NULL,
+  balance_after_cents INTEGER,
+  description         TEXT    NOT NULL,
+  ref                 TEXT,
+  created_at          TEXT    NOT NULL,
+  UNIQUE (type, ref)
+);
+CREATE INDEX IF NOT EXISTS idx_promo_ledger_user ON promo_ledger(user_id, id);
+
+-- Every promotion decision (granted / refused and why), for the administrator.
+CREATE TABLE IF NOT EXISTS promo_log (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  campaign   TEXT    NOT NULL,
+  ref        TEXT,
+  outcome    TEXT    NOT NULL,
+  reason     TEXT,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_promo_log_user ON promo_log(user_id, id);
+
 -- Settlement audit log: every result or void applied to an event, by whom and with what effect.
 CREATE TABLE IF NOT EXISTS settlements (
   id           INTEGER PRIMARY KEY,
@@ -250,6 +317,24 @@ function migrate(db) {
   if (!userCols.has('kyc_status')) db.exec("ALTER TABLE users ADD COLUMN kyc_status TEXT NOT NULL DEFAULT 'not_submitted'");
   // Profile: bank details for withdrawals, tax number, account preferences (JSON).
   for (const c of ['nif', 'iban', 'iban_name', 'prefs']) if (!userCols.has(c)) db.exec(`ALTER TABLE users ADD COLUMN ${c} TEXT`);
+  // Promotions: blocked by the administrator (abuse); responsible-gaming limits (JSON, see limits.js).
+  if (!userCols.has('promo_blocked')) db.exec('ALTER TABLE users ADD COLUMN promo_blocked INTEGER NOT NULL DEFAULT 0');
+  if (!userCols.has('limits')) db.exec('ALTER TABLE users ADD COLUMN limits TEXT');
+  // How each bet was paid for (real / bonus / free bet) and what of its payout was real money.
+  const betCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
+  for (const [c, type] of [['real_stake_cents', 'INTEGER'], ['bonus_stake_cents', 'INTEGER NOT NULL DEFAULT 0'], ['freebet_stake_cents', 'INTEGER NOT NULL DEFAULT 0'],
+    ['bonus_id', 'INTEGER'], ['freebet_id', 'INTEGER'], ['protected', 'INTEGER NOT NULL DEFAULT 0'], ['real_payout_cents', 'INTEGER']]) {
+    if (!betCols.has(c)) db.exec(`ALTER TABLE bets ADD COLUMN ${c} ${type}`);
+  }
+  // A deposit made with the player's consent to a deposit bonus (1) or declining it (0).
+  if (!pay.has('promo_opt')) db.exec('ALTER TABLE stripe_payments ADD COLUMN promo_opt INTEGER NOT NULL DEFAULT 1');
+  // Free-bet balance given by the administrator before free bets were tokens: moved to a token.
+  const legacy = db.prepare('SELECT id, freebet_cents FROM users WHERE freebet_cents > 0').all();
+  for (const u of legacy) {
+    db.prepare(`INSERT OR IGNORE INTO freebets (user_id, amount_cents, source, ref, expires_at, created_at) VALUES (?, ?, 'admin', ?, ?, ?)`)
+      .run(u.id, u.freebet_cents, `legacy:${u.id}`, new Date(Date.now() + 30 * 86_400_000).toISOString(), new Date().toISOString());
+    db.prepare('UPDATE users SET freebet_cents = 0 WHERE id = ?').run(u.id);
+  }
   // Active sessions list: which browser / device opened each one.
   const sessCols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
   if (!sessCols.has('user_agent')) db.exec('ALTER TABLE sessions ADD COLUMN user_agent TEXT');
@@ -263,7 +348,7 @@ function migrate(db) {
       SELECT id, user_id, type, stake_cents, total_odds, potential_cents, status, payout_cents, created_at, settled_at FROM bets_old`);
   }
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
-  if (!txSql.includes('admin_credit')) {
+  if (!txSql.includes('chargeback')) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }

@@ -7,6 +7,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { postTransaction } from './wallet.js';
+import { onDeposit, onChargeback } from './promotions.js';
 
 export const METHODS = {
   mbway: { label: 'MB WAY', type: 'mb_way' },
@@ -51,7 +52,7 @@ export function ptPhone(raw) {
   return /^3519\d{8}$/.test(d) ? `+${d}` : '';
 }
 
-const FINAL = ['paid', 'failed', 'expired', 'mismatch'];
+const FINAL = ['paid', 'failed', 'expired', 'mismatch', 'reversed'];
 
 export function createStripe(db, {
   secretKey, publishableKey = '', webhookSecret = '', currency = 'eur', apiVersion = '2026-06-24.dahlia',
@@ -92,7 +93,7 @@ export function createStripe(db, {
    * A deposit: the PaymentIntent and our pending row. MB WAY and Multibanco are confirmed here;
    * the card gets a client secret for the Payment Element.
    */
-  async function createDeposit(user, amountCents, { method, phone } = {}) {
+  async function createDeposit(user, amountCents, { method, phone, bonus = true } = {}) {
     const m = METHODS[method];
     if (!m) throw Object.assign(new Error('Método de pagamento inválido.'), { status: 400, ours: true });
     const tel = method === 'mbway' ? ptPhone(phone) : '';
@@ -113,9 +114,9 @@ export function createStripe(db, {
     const mb = intent.next_action?.multibanco_display_details;
     const expires = mb?.expires_at ? new Date(mb.expires_at * 1000).toISOString() : null;
     db.prepare(
-      `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, entity, reference, expires_at, created_at)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
-    ).run(intent.id, user.id, amountCents, currency, method, mb?.entity || null, mb?.reference || null, expires, nowIso());
+      `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, entity, reference, expires_at, created_at, promo_opt)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+    ).run(intent.id, user.id, amountCents, currency, method, mb?.entity || null, mb?.reference || null, expires, nowIso(), bonus ? 1 : 0);
     if (method === 'multibanco' && !(mb?.entity && mb?.reference)) log(`stripe ${intent.id}: Multibanco sem entidade/referência (${intent.status})`);
     const r = applyIntent(intent);
     return {
@@ -146,8 +147,11 @@ export function createStripe(db, {
         const r = db.prepare("UPDATE stripe_payments SET status = 'paid', updated_at = ? WHERE id = ? AND status <> 'paid'").run(nowIso(), row.id);
         if (!r.changes) return { status: 'paid', row };
         const label = METHODS[row.method]?.label || 'Stripe';
-        const balance = postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, `stripe:${row.session_id}`);
-        return { status: 'paid', credited: true, balance, row };
+        postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, `stripe:${row.session_id}`);
+        // The deposit bonus it earns, if any (once per deposit, decided by the server).
+        const bonus = onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, method: row.method, optIn: row.promo_opt !== 0 });
+        const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(row.user_id).balance_cents;
+        return { status: 'paid', credited: true, balance, bonus, row };
       });
     }
     const status = pi.status === 'canceled' ? 'failed'
@@ -159,11 +163,29 @@ export function createStripe(db, {
     return { status, row };
   }
 
-  /** The webhook: payment_intent.* events. Returns what was done (for the log / tests). */
+  /**
+   * A paid deposit reversed (chargeback opened, or refunded): its money is taken back and the
+   * player's promotions cancelled (promotions.onChargeback), once.
+   */
+  function reverse(piId, reason) {
+    const row = rowOf(piId);
+    if (!row || row.status !== 'paid') return { status: row ? row.status : 'unknown' };
+    return tx(db, () => {
+      const r = db.prepare("UPDATE stripe_payments SET status = 'reversed', updated_at = ? WHERE id = ? AND status = 'paid'").run(nowIso(), row.id);
+      if (!r.changes) return { status: 'reversed' };
+      onChargeback(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, reason });
+      log(`stripe ${row.session_id}: depósito revertido (${reason})`);
+      return { status: 'reversed', reversed: true };
+    });
+  }
+
+  /** The webhook: payment_intent.* events, chargebacks and refunds. Returns what was done (for the log / tests). */
   function handleEvent(event) {
     const type = String(event?.type || '');
     const obj = event?.data?.object;
     if (type.startsWith('payment_intent.') && obj?.object === 'payment_intent') return applyIntent(obj);
+    if (type === 'charge.dispute.created' && obj?.payment_intent) return reverse(obj.payment_intent, 'chargeback');
+    if (type === 'charge.refunded' && obj?.payment_intent && obj.refunded) return reverse(obj.payment_intent, 'depósito reembolsado');
     return { ignored: type };
   }
 
@@ -193,7 +215,7 @@ export function createStripe(db, {
 
   return {
     enabled, live, hasWebhook: !!webhookSecret, hasPublishable: !!publishableKey,
-    createDeposit, applyIntent, handleEvent, refresh, sweep,
+    createDeposit, applyIntent, handleEvent, reverse, refresh, sweep,
     verify: (raw, header) => verifyWebhook(raw, header, webhookSecret),
   };
 }
