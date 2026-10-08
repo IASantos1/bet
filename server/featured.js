@@ -3,7 +3,7 @@
 //             the full-time result, one more market (both teams to score, cards, corners, shots
 //             on target, team to score first) and goals over / under 1.5–3.5.
 //   accas     "Apostas vencedoras": four favourites from different matches (full-time result /
-//             winner), the first cards with today's games only, the rest with today's and tomorrow's.
+//             winner): football of today, then of the next days; other sports only to complete the six.
 // A draw is kept for a few minutes (it would reshuffle on every refresh otherwise); a card whose
 // match started or whose prices closed is dropped, and the prices shown are always the current ones.
 import { MARKETS, selectionLabel, splitSpecial } from './markets.js';
@@ -70,6 +70,14 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
     return out;
   }
 
+  /**
+   * Four-leg multiples, football first:
+   *   1. football games of today (as many cards as they fill);
+   *   2. football of the next days (tomorrow first) for the cards still missing;
+   *   3. only then whole cards of one other sport each (tennis, then basketball, then the rest),
+   *      today's games first.
+   * A card never mixes sports; a match is in one card only.
+   */
   function drawAccas(t) {
     const today = dayOf(new Date(t).toISOString());
     const tomorrow = dayOf(new Date(t + 86_400_000).toISOString());
@@ -77,34 +85,31 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
       const sels = selectionsOf(e.id).filter((s) => s.market === '1x2' || s.market === 'ml');
       const main = sels.some((s) => s.market === '1x2') ? '1x2' : 'ml';
       const best = sels.filter((s) => s.market === main && s.code !== 'X' && s.odds_x100 >= 115 && s.odds_x100 <= 195).sort((a, b) => a.odds_x100 - b.odds_x100)[0];
-      return best ? { eventId: e.id, sel: best.id, sport: e.sport } : null;
+      return best ? { eventId: e.id, sel: best.id, sport: e.sport, today: dayOf(e.start_time) === today, tomorrow: dayOf(e.start_time) === tomorrow } : null;
     };
-    const pool = upcoming(t + 10 * 60_000, t + 3 * 86_400_000).map((e) => ({ e, day: dayOf(e.start_time) }))
-      .filter((x) => x.day === today || x.day === tomorrow);
-    const todays = shuffle(pool.filter((x) => x.day === today), rng).map((x) => favourite(x.e)).filter(Boolean);
-    const both = shuffle(pool, rng).map((x) => favourite(x.e)).filter(Boolean);
+    const pool = upcoming(t + 10 * 60_000, t + 4 * 86_400_000).map(favourite).filter(Boolean);
     const used = new Set();
     const cards = [];
-    // Four legs, preferring different sports in a card.
-    const take = (list) => {
-      const legs = [];
-      const sports = new Set();
-      for (const pass of [true, false]) {
-        for (const c of list) {
-          if (legs.length >= 4) break;
-          if (used.has(c.eventId) || legs.includes(c) || (pass && sports.has(c.sport))) continue;
-          legs.push(c);
-          sports.add(c.sport);
-        }
+    // As many four-leg cards as `list` fills (unused matches only), up to six in all.
+    const fill = (list, todayOnly) => {
+      const free = shuffle(list.filter((c) => !used.has(c.eventId)), rng);
+      while (cards.length < 6 && free.length >= 4) {
+        const legs = free.splice(0, 4);
+        legs.forEach((c) => used.add(c.eventId));
+        cards.push({ legs: legs.map((c) => c.sel), today: todayOnly, sport: legs[0].sport });
       }
-      if (legs.length < 4) return null;
-      legs.forEach((c) => used.add(c.eventId));
-      return legs.map((c) => c.sel);
     };
-    for (let i = 0; i < 6; i++) {
-      // The first three with today's games; then today's and tomorrow's (or when today runs out).
-      const legs = (i < 3 && take(todays)) || take(both);
-      if (legs) cards.push({ legs, today: i < 3 });
+    const football = pool.filter((c) => c.sport === 'futebol');
+    fill(football.filter((c) => c.today), true);
+    // Then tomorrow's football, then the days after (a card may join the two when one runs short).
+    fill(football.filter((c) => c.tomorrow), false);
+    fill(football.filter((c) => !c.today), false);
+    const others = ['tenis', 'basquetebol', ...new Set(pool.map((c) => c.sport).filter((sp) => !['futebol', 'tenis', 'basquetebol'].includes(sp)))];
+    for (const sp of others) {
+      if (cards.length >= 6) break;
+      const list = pool.filter((c) => c.sport === sp);
+      fill(list.filter((c) => c.today), true);
+      fill(list, false);
     }
     return cards;
   }

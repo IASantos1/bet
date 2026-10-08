@@ -337,3 +337,65 @@ test('API answers are never cached; the admin sees where the database lives', as
   assert.equal(typeof s.body.storage.persistent, 'boolean');
   assert.ok(s.body.storage.path);
 });
+
+test('profile: only the fields sent change; NIF, IBAN and preferences are checked', async () => {
+  const c = await newPlayer();
+  let r = await c('PATCH', '/api/me', { iban: 'pt50 0002 0123 1234 5678 9015 4', ibanName: 'Ana Silva', nif: '123 456 789' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.user.iban, 'PT50000201231234567890154');
+  assert.equal(r.body.user.nif, '123456789');
+  assert.equal(r.body.user.name, 'Ana Silva');
+  r = await c('PATCH', '/api/me', { prefs: { notifyPromos: true, bogus: true, shareData: 'yes' } });
+  assert.equal(r.body.user.prefs.notifyPromos, true);
+  assert.equal(r.body.user.prefs.notifyResults, true); // default kept
+  assert.equal(r.body.user.prefs.shareData, false); // not a boolean: ignored
+  assert.equal(r.body.user.prefs.bogus, undefined);
+  assert.equal(r.body.user.iban, 'PT50000201231234567890154'); // untouched
+  assert.equal((await c('PATCH', '/api/me', { nif: '12345' })).status, 400);
+  assert.equal((await c('PATCH', '/api/me', { iban: 'nada' })).status, 400);
+  assert.equal((await c('PATCH', '/api/me', { name: 'A' })).status, 400);
+});
+
+test('profile: sessions are listed and the others can be signed out', async () => {
+  const email = `sess${++emailSeq}@example.com`;
+  const a = client();
+  assert.equal((await a('POST', '/api/auth/register', { ...adult, email })).status, 201);
+  const b = client();
+  assert.equal((await b('POST', '/api/auth/login', { email, password: adult.password })).status, 200);
+  let r = await a('GET', '/api/me/sessions');
+  assert.equal(r.body.sessions.length, 2);
+  assert.equal(r.body.sessions.filter((s) => s.current).length, 1);
+  r = await a('POST', '/api/me/sessions/end-others', {});
+  assert.equal(r.body.ended, 1);
+  assert.equal((await b('GET', '/api/me/sessions')).status, 401);
+  assert.equal((await a('GET', '/api/me/sessions')).body.sessions.length, 1);
+});
+
+test('profile: activity summary and data export', async () => {
+  const c = await newPlayer(50);
+  const r = await c('GET', '/api/me/stats');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { bets: 0, staked: 0, won: 0, biggestWin: 0, deposits: 50, winRate: 0 });
+  const x = await c('GET', '/api/me/export');
+  assert.equal(x.status, 200);
+  assert.equal(x.body.account.balance, 50);
+  assert.equal(x.body.transactions[0].type, 'deposit');
+  assert.ok(Array.isArray(x.body.bets));
+});
+
+test('profile: KYC upload checks type and size and puts the account in review', async () => {
+  const c = await newPlayer();
+  const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  assert.equal((await c('POST', '/api/me/kyc', { kind: 'selfie', mimeType: 'image/png', data: png })).status, 400);
+  assert.equal((await c('POST', '/api/me/kyc', { kind: 'id_front', mimeType: 'text/html', data: png })).status, 400);
+  const big = Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64');
+  assert.equal((await c('POST', '/api/me/kyc', { kind: 'id_front', mimeType: 'image/png', data: big })).status, 400);
+  assert.equal((await client()('POST', '/api/me/kyc', { kind: 'id_front', mimeType: 'image/png', data: png })).status, 401);
+  const r = await c('POST', '/api/me/kyc', { kind: 'id_front', mimeType: 'image/png', fileName: 'cc.png', data: png });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const k = await c('GET', '/api/me/kyc');
+  assert.equal(k.body.status, 'pending');
+  assert.equal(k.body.documents.length, 1);
+  assert.equal(k.body.documents[0].kind, 'Documento (frente)');
+  assert.equal(k.body.documents[0].status, 'pending');
+});

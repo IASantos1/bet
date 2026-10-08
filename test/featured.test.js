@@ -59,6 +59,23 @@ test('featured: six builders (result + one more market + goals) and four-leg mul
   // No match is used by two multiples.
   const used = f.accas.flatMap((a) => a.legs.map((l) => l.eventId));
   assert.equal(new Set(used).size, used.length);
+  // Football first; other sports only in whole cards of their own, after it runs out.
+  for (const a of f.accas) assert.equal(new Set(a.legs.map((l) => l.sport)).size, 1);
+  const sports = f.accas.map((a) => a.legs[0].sport);
+  assert.deepEqual(sports.slice(0, 2), ['futebol', 'futebol']);
+  assert.ok(sports.slice(2).every((sp) => sp !== 'futebol'));
+  assert.equal(sports[2], 'tenis');
+});
+
+test('accas: football of today, then football of the next days, before any other sport', () => {
+  const db = openDb(':memory:');
+  for (let i = 0; i < 4; i++) addEvent(db, { home: `Hoje ${i}`, away: `X${i}`, hours: 1 + i * 0.1 });
+  for (let i = 0; i < 8; i++) addEvent(db, { home: `Depois ${i}`, away: `Y${i}`, hours: 30 + i });
+  for (let i = 0; i < 8; i++) addEvent(db, { sport: 'tenis', home: `T${i}`, away: `U${i}`, hours: 1 });
+  const f = createFeatured(db, { rng: seeded(11) }).get();
+  const sports = f.accas.map((a) => a.legs[0].sport);
+  assert.deepEqual(sports, ['futebol', 'futebol', 'futebol', 'tenis', 'tenis']);
+  assert.ok(f.accas[0].legs.every((l) => l.home.startsWith('Hoje')));
 });
 
 test('bet builder bet: one match, priced with the margin, settled with it', async () => {

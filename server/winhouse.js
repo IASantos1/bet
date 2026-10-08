@@ -792,6 +792,26 @@ export function createWinHouseFeed(db, {
   const liveListPrices = new Map(); // externalId → prices from the last live list
   const livePages = new Map(); // externalId → { at, prices }
   const liveFresh = (ext) => { const p = livePages.get(ext); return p && Date.now() - p.at < liveDetailSeconds * 2000 ? p.prices : {}; };
+  // Fallback after a restart (deploy): the page markets lived only in memory, so the first list read
+  // would drop them until each page was read again. They are taken back from the database instead,
+  // as if read just past their refresh time: still shown, but first in line to be read again, and
+  // replaced as soon as WinHouse answers. Pre-match they last one refresh period at most; in play
+  // only liveDetailSeconds (a goal, or the live list suspending the game, still closes them).
+  (function restorePages() {
+    const rows = db.prepare(`SELECT e.external_id AS ext, e.status, s.market, s.code, s.odds_x100 FROM events e
+        JOIN selections s ON s.event_id = e.id WHERE e.source = ? AND e.status IN ('scheduled', 'live') AND s.active = 1`).all(SOURCE);
+    const byEvent = new Map();
+    for (const r of rows) {
+      if (!byEvent.has(r.ext)) byEvent.set(r.ext, { live: r.status === 'live', prices: {} });
+      byEvent.get(r.ext).prices[`${r.market}|${r.code}`] = r.odds_x100;
+    }
+    const t = Date.now();
+    for (const [ext, { live, prices }] of byEvent) {
+      if (live) livePages.set(ext, { at: t - liveDetailSeconds * 1000, prices, restored: true });
+      else pagePrices.set(ext, { at: t - detailRefreshMinutes * 60_000, prices, restored: true });
+    }
+    state.restored = { at: nowIso(), prematch: [...byEvent.values()].filter((v) => !v.live).length, live: [...byEvent.values()].filter((v) => v.live).length };
+  })();
   let liveDetailPausedUntil = 0;
   let livePageRoute = null; // 'live' or 'pre': which page answered for live games
   /**
@@ -1279,7 +1299,7 @@ export function createWinHouseFeed(db, {
     review: db.prepare('SELECT COUNT(*) AS n FROM events WHERE source = ? AND review_reason IS NOT NULL').get(SOURCE).n,
     streams: client.hasTenant ? (state.last.streams || null) : false,
     push: { socket: oddsPush?.status() ?? null, ...pushStats, tracked: coefIndex.size, games: eventCoefs.size },
-    futureDays: futureDaysNow(), futureMinutes,
+    futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
   });
 
   return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };

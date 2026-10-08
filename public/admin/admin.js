@@ -422,6 +422,7 @@ function winhouseFeedInfo(fd) {
       ${pushInfo ? `Odds em tempo real: ${pushInfo} ·` : ''}
       Transmissões: ${fd.streams === false ? 'defina WINHOUSE_TENANT (a chave ifr_… do iframe) nas Variables' : fd.streams ? `${fd.streams.ids} jogos com vídeo, ${fd.streams.live} dos nossos ao vivo (${esc(fmtDateTime(fd.streams.at))})` : 'ainda não lidas'} ·
       Jogos futuros: ${fd.last?.future?.off || !fd.futureDays ? 'desligado' : fd.last?.future?.at ? `${fd.last.future.games} jogos até ${fd.futureDays} dias${fd.last.future.failed ? `, ${fd.last.future.failed} desporto(s) com erro` : ''}${futureUntil(fd.last.future)} (${esc(fmtDateTime(fd.last.future.at))}, de ${fd.futureMinutes} em ${fd.futureMinutes} min)` : `${fd.futureDays} dias — ainda não lidos`} ·
+      ${fd.restored ? `Mercados repostos no arranque (reserva até a WinHouse responder): ${fd.restored.prematch} jogos pré-jogo, ${fd.restored.live} ao vivo ·` : ''}
       Fuso da WinHouse: ${fd.tzOffsetMinutes === null ? 'a estimar' : `UTC${fd.tzOffsetMinutes >= 0 ? '+' : ''}${fd.tzOffsetMinutes / 60} h (${esc(fd.tzOffsetSource || '')})`}</p>
     ${fd.lastError ? `<p class="muted">Último aviso (${esc(fmtDateTime(fd.lastErrorAt))}): ${esc(fd.lastError)}</p>` : ''}`;
 }
