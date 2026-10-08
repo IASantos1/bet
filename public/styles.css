@@ -965,3 +965,120 @@ img, video, iframe { max-width: 100%; }
   .game-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .game-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 }
+
+/* ---------- header balance pills: tap the balance → Depósito / Levantamento ---------- */
+.bal-pill { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 5px; border-radius: 999px; border: 0; white-space: nowrap;
+  background: linear-gradient(135deg, #2f9d63, var(--up)); color: #fff; font-weight: 900; font-size: 15px; box-shadow: 0 4px 14px rgba(81, 197, 128, .25); cursor: pointer; }
+.bal-pill strong { font-weight: 900; letter-spacing: .01em; }
+.bal-plus { width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #2f9d63; display: grid; place-items: center; font-size: 22px; font-weight: 900; line-height: 1; padding-bottom: 2px; }
+.bal-pill:hover { filter: brightness(1.06); }
+/* Free bets: shown, not a button. */
+.bal-pill.fb { padding: 0 14px; cursor: default; background: linear-gradient(135deg, #1f6b46, #2f8f5c); box-shadow: none; }
+.bal-pill.hidden { display: none; }
+@media (max-width: 1000px) {
+  /* The phone has Perfil in the bottom bar: the account button stays on the computer only. */
+  #profileBtn { display: none !important; }
+  .top-actions { gap: 6px; }
+}
+@media (max-width: 420px) {
+  .bal-pill { height: 34px; font-size: 13.5px; gap: 6px; padding-right: 11px; }
+  .bal-plus { width: 25px; height: 25px; font-size: 19px; }
+  .bal-pill.fb { padding: 0 10px; }
+}
+
+/* ---------- wallet window (Depósito / Levantamento) ---------- */
+.wallet-modal { width: min(480px, 100%); padding: 0; overflow: auto; }
+.wm-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; background: linear-gradient(90deg, var(--card), var(--dim)); border-bottom: 1px solid var(--line); }
+.wm-head > div:nth-child(2) { display: flex; flex-direction: column; }
+.wm-head strong { font-size: 16px; font-weight: 900; }
+.wm-head small { color: var(--text-3); font-size: 12px; }
+.wm-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 900; font-size: 20px; color: #fff; flex-shrink: 0; }
+.wm-icon.dep { background: var(--up); }
+.wm-icon.wd { background: #d9822b; }
+.wm-bal { margin-left: auto; text-align: right; }
+.wm-bal small { display: block; font-size: 10px; }
+.wm-bal b { color: var(--up); font-weight: 900; }
+.wm-head .modal-close { margin-left: 6px; }
+.wm-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+.wm-tabs button { padding: 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-3); font-weight: 800; font-size: 12.5px; letter-spacing: .03em; }
+.wm-tabs button.active { color: #fff; background: var(--card); }
+.wm-tabs button.active.dep { border-bottom-color: var(--up); }
+.wm-tabs button.active.wd { border-bottom-color: #d9822b; }
+.amount-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0 4px; }
+.amount-presets button { padding: 8px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text-2); font-weight: 800; font-size: 13px; }
+.amount-presets button.active { border-color: var(--up); color: var(--up); background: rgba(81, 197, 128, .1); }
+.wallet-modal .form-actions button { width: 100%; height: 46px; font-size: 15px; font-weight: 900; }
+.wallet-modal form[data-form="deposit"] .primary-btn { background: linear-gradient(135deg, #2f9d63, var(--up)); border-color: transparent; color: #fff; }
+.wallet-modal form[data-form="withdraw"] .outline-btn { border-color: #d9822b; color: #f0a95e; }
+
+/* ---------- header ticket button + my bets (tickets) ---------- */
+.tickets-btn { position: relative; width: 40px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); display: grid; place-items: center; font-size: 19px; }
+.tickets-btn b { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--live); color: #fff; font-size: 10.5px; font-weight: 900; display: grid; place-items: center; }
+.tickets-btn.hidden, .tickets-btn b.hidden { display: none; }
+@media (max-width: 420px) { .tickets-btn { width: 34px; height: 34px; font-size: 16px; } }
+
+.mb-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
+.mb-tabs button { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; padding: 11px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-3); font-weight: 800; font-size: 13.5px; }
+.mb-tabs button.active { color: #fff; border-bottom-color: var(--brand); }
+.mb-tabs b { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--brand); color: #fff; font-size: 11px; display: grid; place-items: center; }
+.mb-empty { text-align: center; padding: 50px 16px; color: var(--text-3); border: 1px solid var(--line); border-radius: 14px; background: var(--dim); }
+.mb-empty > div { font-size: 44px; opacity: .35; }
+.tickets { display: grid; gap: 14px; }
+@media (min-width: 1300px) { .tickets { grid-template-columns: 1fr 1fr; align-items: start; } }
+
+.ticket { border: 1px solid var(--line); border-radius: 16px; background: var(--dim); overflow: hidden; box-shadow: 0 4px 18px rgba(0, 0, 0, .35); }
+.ticket.won { box-shadow: 0 8px 26px rgba(81, 197, 128, .22); }
+.ticket.lost { box-shadow: 0 8px 26px rgba(233, 90, 116, .18); }
+.ticket.cashout { box-shadow: 0 8px 26px rgba(226, 179, 60, .2); }
+.tk-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 16px 6px; }
+.tk-head strong { font-size: 18px; font-weight: 900; }
+.tk-dots { display: flex; gap: 4px; margin-top: 7px; flex-wrap: wrap; }
+.tk-dot { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 900; color: #fff; background: var(--brand); animation: tk-pulse 1.6s ease-in-out infinite; }
+.tk-dot.won { background: var(--up); animation: none; }
+.tk-dot.lost { background: #5a1f2b; border: 1px solid #8a2f42; animation: none; }
+.tk-dot.void { background: var(--row-hover); animation: none; }
+@keyframes tk-pulse { 50% { opacity: .55; } }
+.tk-badge { flex-shrink: 0; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .03em; }
+.tk-badge.pending { background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .25); }
+.tk-badge.won { background: var(--up); color: #fff; }
+.tk-badge.lost { background: #5a1f2b; color: #fff; border: 1px solid #8a2f42; }
+.tk-badge.void { background: var(--row-hover); }
+.tk-badge.cashout { background: var(--bet-now); color: #2a1f00; }
+.tk-legs > .tk-leg + .tk-leg { border-top: 1px solid var(--line); }
+.tk-leg { padding: 14px 16px; }
+.tk-leg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.tk-pick { flex: 1; min-width: 0; }
+.tk-pick strong { display: block; font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-pick small { display: block; color: var(--text-3); font-size: 11.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-odd { flex-shrink: 0; background: var(--brand); color: #fff; font-weight: 900; font-size: 13px; padding: 5px 10px; border-radius: 8px; }
+.lg-ic { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; font-size: 12px; font-weight: 900; color: #fff; }
+.lg-ic.won { background: var(--up); }
+.lg-ic.lost { background: var(--down); }
+.lg-ic.void { background: var(--row-hover); }
+.lg-ic.sport { font-size: 17px; }
+.tk-box { position: relative; display: block; border: 1px solid var(--line); border-radius: 12px; padding: 16px 12px 10px; text-align: center; }
+.tk-box.live { border-color: rgba(233, 90, 116, .7); }
+.tk-box-top { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); padding: 0 8px; background: var(--dim); color: var(--text-3); font-size: 10.5px; font-weight: 700; white-space: nowrap; max-width: 85%; overflow: hidden; text-overflow: ellipsis; }
+.tk-live { display: inline-flex; align-items: center; gap: 5px; color: var(--live); font-weight: 900; text-transform: uppercase; }
+.tk-box-body { font-size: 15px; font-weight: 900; letter-spacing: .02em; }
+.tk-box.live .tk-box-body { font-size: 18px; }
+.tk-sum { margin: 0 16px; border-top: 1px solid var(--line); }
+.tk-sum > div { display: flex; justify-content: space-between; padding: 9px 0; color: var(--text-3); font-size: 13.5px; }
+.tk-sum > div + div { border-top: 1px solid rgba(255, 255, 255, .05); }
+.tk-sum b { color: var(--text); font-weight: 900; }
+.co-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 12px 16px; width: calc(100% - 32px); padding: 14px; border-radius: 14px; border: 0;
+  background: linear-gradient(135deg, #2f9d63, var(--up)); color: #fff; font-weight: 900; font-size: 15px; }
+.co-btn.locked { background: var(--card); border: 1px solid var(--line); color: var(--text-4); font-size: 13px; font-weight: 700; }
+.co-confirm { display: flex; align-items: center; gap: 10px; margin: 12px 16px; padding: 12px 14px; border-radius: 14px; background: linear-gradient(135deg, #2f9d63, var(--up)); }
+.co-confirm > div { flex: 1; }
+.co-confirm small { display: block; color: #e6fff0; font-size: 11px; }
+.co-confirm b { color: #fff; font-size: 18px; font-weight: 900; }
+.co-confirm .ghost-btn { background: none; border: 0; color: #e6fff0; font-size: 12px; }
+.co-yes { background: #fff; color: #23824f; border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 900; }
+.tk-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; justify-content: space-between; padding: 12px 16px 14px; border-top: 1px solid var(--line); color: var(--text-4); font-size: 11px; }
+.tk-ref { background: none; border: 0; color: var(--text-3); font: 700 11px ui-monospace, Menlo, monospace; padding: 0; }
+.tk-foot small { width: 100%; }
+.tk-ok { width: 100%; }
+.tk-ok { display: inline-flex; width: auto; padding: 5px 11px; border-radius: 999px; border: 1px solid rgba(103, 120, 140, .5); background: rgba(103, 120, 140, .12); color: var(--text-2); font-weight: 800; }
+.tk-ok.won { border-color: rgba(81, 197, 128, .5); background: rgba(81, 197, 128, .12); color: var(--up); }
+.tk-sum b.tk-cash { color: var(--bet-now); }

@@ -8,7 +8,7 @@ const SPORT_META = {
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const STATUS_LABEL = {
-  open: 'Em aberto', won: 'Ganha', lost: 'Perdida', void: 'Anulada', pending: 'Pendente', approved: 'Aprovado',
+  open: 'Em aberto', won: 'Ganha', lost: 'Perdida', void: 'Anulada', cashout: 'Cash out', pending: 'Pendente', approved: 'Aprovado',
   rejected: 'Rejeitado', scheduled: 'Agendado', live: 'Ao vivo', finished: 'Terminado', cancelled: 'Cancelado',
 };
 
@@ -94,7 +94,7 @@ function usersTable(users) {
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido', bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
   casino_out: 'Casino (saída)', casino_in: 'Casino (entrada)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
-  bonus_convert: 'Bónus convertido', chargeback: 'Chargeback',
+  bonus_convert: 'Bónus convertido', chargeback: 'Chargeback', cashout: 'Cash out', casino_bet: 'Casino (aposta)', casino_win: 'Casino (ganho)', free_spin_win: 'Ganhos Free Spins',
 };
 
 // ---------- promotions ----------
@@ -161,6 +161,27 @@ function adminPromos(d) {
         <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.status === 'active' ? 'open' : 'void'}">${({ active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' })[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Sem Free Spins atribuídas.</p>'}</div>
     <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;
+}
+
+/** Cash out: its rules (saved on the server) and what has been paid. */
+function cashoutPanel({ config: c, totals: t, recent }) {
+  const num = (k, label, step = '1', placeholder = '') => `<label class="field">${esc(label)}<input name="${k}" type="number" step="${step}" value="${c[k] ?? ''}"${placeholder ? ` placeholder="${placeholder}"` : ''}></label>`;
+  return `<div class="panel"><h3>Cash out <span class="pill ${c.enabled ? 'won' : 'void'}">${c.enabled ? 'ATIVO' : 'DESLIGADO'}</span></h3>
+    <div class="adm-cards"><div class="adm-card"><small>Cash outs</small><strong>${t.count}</strong><em>${t.live} ao vivo</em></div>
+      <div class="adm-card"><small>Pago</small><strong>${money(t.paid)}</strong><em>apostado ${money(t.stake)}</em></div>
+      <div class="adm-card green"><small>Margem retida</small><strong>${money(t.margin)}</strong><em>valor justo − pago</em></div></div>
+    <form data-form="cashout-config">
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="enabled"${c.enabled ? ' checked' : ''}> Cash out ativo</label>
+        <label class="adm-switch"><input type="checkbox" name="prematch"${c.prematch ? ' checked' : ''}> Antes do início</label>
+        <label class="adm-switch"><input type="checkbox" name="live"${c.live ? ' checked' : ''}> Ao vivo</label></div>
+      <div class="adm-grid">${num('factor', 'Fator (0.95 = 5% de margem)', '0.01')}${num('minAgeSeconds', 'Só depois de (s) da aposta')}${num('liveDelaySeconds', 'Atraso de aceitação ao vivo (s)')}
+        ${num('goalLockSeconds', 'Bloqueio após golo/ponto (s)')}${num('minValue', 'Valor mínimo (€)', '0.01')}${num('maxValue', 'Valor máximo por aposta (€)', '0.01', 'sem limite')}</div>
+      <div class="form-actions"><button class="primary-btn">Guardar regras</button></div>
+    </form>
+    <p class="muted">Só simples e múltiplas pagas com dinheiro real (não free bets, bónus nem criador de apostas). Suspenso com mercado fechado, preço ao vivo antigo ou anterior ao último golo, e com o jogo a começar/terminado. Se o valor baixar durante o atraso, o jogador confirma o novo valor. Não conta para o rollover.</p>
+    ${recent.length ? `<div class="table-wrap"><table><thead><tr><th>Aposta</th><th>Jogador</th><th class="num">Aposta</th><th class="num">Pago</th><th class="num">Valor justo</th><th></th><th>Data</th></tr></thead><tbody>
+      ${recent.map((r) => `<tr><td>#${r.betId}</td><td>${esc(r.user)}</td><td class="num">${money(r.stake)}</td><td class="num">${money(r.value)}</td><td class="num">${money(r.fair)}</td><td>${r.live ? 'ao vivo' : 'pré-jogo'}</td><td>${esc(fmtDateTime(r.createdAt))}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}</div>`;
 }
 
 function userPromosPanel(d) {
@@ -317,8 +338,8 @@ async function loadTab() {
           <td>${w.status === 'pending' ? `<div class="form-actions"><button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button><button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>` : esc(fmtDateTime(w.decidedAt))}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="panel empty">Sem pedidos de levantamento.</div>';
     } else if (tab === 'apostas') {
-      const { bets } = await api('/api/admin/bets');
-      main.innerHTML = bets.length ? bets.map((b) => betCard(b, { showUser: true })).join('') : '<div class="panel empty">Sem apostas.</div>';
+      const [{ bets }, co] = await Promise.all([api('/api/admin/bets'), api('/api/admin/cashout')]);
+      main.innerHTML = cashoutPanel(co) + (bets.length ? bets.map((b) => betCard(b, { showUser: true })).join('') : '<div class="panel empty">Sem apostas.</div>');
     } else if (tab === 'utilizadores') {
       if (state.userDetail) {
         main.innerHTML = userDetailView(await api(`/api/admin/users/${state.userDetail}`));
@@ -642,6 +663,14 @@ function adminNewEvent() {
 // ---------- forms ----------
 
 const handlers = {
+  async 'cashout-config'(form) {
+    const d = formData(form);
+    const body = { enabled: form.enabled.checked, prematch: form.prematch.checked, live: form.live.checked };
+    for (const k of ['factor', 'minAgeSeconds', 'liveDelaySeconds', 'goalLockSeconds', 'minValue', 'maxValue']) body[k] = d[k] === '' ? null : Number(d[k]);
+    await api('/api/admin/cashout', { method: 'PUT', body });
+    toast('Guardado', 'Regras do cash out atualizadas.');
+    loadTab();
+  },
   async 'promo-config'(form) {
     const body = { general: { requireKyc: false, methods: [] } };
     for (const el of form.elements) {
