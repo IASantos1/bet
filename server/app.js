@@ -299,6 +299,11 @@ export function createApp(db, {
     });
   });
 
+  // A live game the feed no longer lists (WinHouse ended it) leaves the site within a minute, while
+  // it waits to be settled (automatically, or by the operator in Liquidação). Its own page stays.
+  const NOT_GONE = "NOT (e.status = 'live' AND e.wh_missing_since IS NOT NULL AND e.wh_missing_since < ?)";
+  const goneBefore = () => new Date(Date.now() - 60_000).toISOString();
+
   // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
   const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
   const horizonMs = (min) => Math.max(min, futureDays()) * 86_400_000;
@@ -307,8 +312,9 @@ export function createApp(db, {
   const LEAGUE_TREES = { futebol: FOOTBALL_TREE };
   const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
     AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
-    AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))`)
-    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString());
+    AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))
+    AND ${NOT_GONE}`)
+    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore());
   app.get('/api/leagues', (_req, res) => {
     const out = {};
     for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {
@@ -340,6 +346,8 @@ export function createApp(db, {
     if (sport) { clauses.push('e.sport = ?'); params.push(sport); }
     // Imported fixtures stay hidden until the feed has priced them.
     clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
+    clauses.push(NOT_GONE);
+    params.push(goneBefore());
     res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 1500), serverTime: now });
   });
 

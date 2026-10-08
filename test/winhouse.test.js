@@ -634,3 +634,24 @@ test('future games: each sport\'s full list up to `futureDays` ahead, every `fut
   assert.equal(asked.length, 0);
   assert.equal(feed.status().last.future.off, true);
 });
+
+test('a finished match that WinHouse reports at 0 minutes keeps its last clock and is settled when it leaves the list', async () => {
+  const db = openDb(':memory:');
+  const lists = { live: [football(77, 89, '6-1', ODD)] };
+  const empty = async () => ({ ok: true, status: 200, body: [] });
+  const client = { enabled: true, live: async () => ({ ok: true, status: 200, body: lists.live }), prematchMain: empty, prematchTop: empty, prematch24h: empty };
+  const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
+  await feed.syncLive();
+  // Final whistle: the list still has it, but at "00:00".
+  lists.live = [{ ...football(77, 89, '6-1', ODD), current_minute: '00:00' }];
+  await feed.syncLive();
+  let row = db.prepare("SELECT * FROM events WHERE external_id = '77'").get();
+  assert.equal(row.wh_minute, 89);
+  assert.equal(row.clock, "89'");
+  // Gone from the list: missing first, then settled from the last score.
+  lists.live = [];
+  await feed.syncLive();
+  await feed.syncLive();
+  row = db.prepare("SELECT * FROM events WHERE external_id = '77'").get();
+  assert.deepEqual([row.status, row.home_score, row.away_score], ['finished', 6, 1]);
+});

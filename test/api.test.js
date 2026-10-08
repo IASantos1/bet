@@ -315,3 +315,16 @@ test('admin: future games setting (0–90 days) is saved', async () => {
   assert.equal((await client()('POST', '/api/admin/winhouse/future', { days: 10 })).status, 401);
   assert.equal((await client()('GET', '/api/events')).status, 200);
 });
+
+test('a live game WinHouse no longer lists leaves the public lists after a minute; its own page stays', async () => {
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at, wh_missing_since)
+    VALUES ('futebol', 'L', 'Gone FC', 'Away FC', ?, 'live', 'winhouse', 'gone-1', ?, ?, ?)`).run(new Date().toISOString(), new Date().toISOString(), new Date().toISOString(), new Date(Date.now() - 5 * 60_000).toISOString()).lastInsertRowid);
+  const c = client();
+  const live = await c('GET', '/api/events?status=live');
+  assert.ok(!live.body.events.some((e) => e.id === id));
+  assert.ok(!(await c('GET', '/api/events')).body.events.some((e) => e.id === id));
+  assert.equal((await c('GET', `/api/events/${id}`)).status, 200);
+  // Missing for only a few seconds (a list hiccup): still shown.
+  db.prepare('UPDATE events SET wh_missing_since = ? WHERE id = ?').run(new Date().toISOString(), id);
+  assert.ok((await c('GET', '/api/events?status=live')).body.events.some((e) => e.id === id));
+});
