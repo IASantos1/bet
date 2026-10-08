@@ -1,14 +1,23 @@
-// Stripe deposits: a hosted Checkout page (card, MB WAY, Multibanco… whatever is turned on in the
-// Stripe dashboard), credited once when Stripe says it is paid — by the webhook, or by asking Stripe
-// when the player comes back. No SDK: two REST calls and the webhook signature (HMAC-SHA256).
+// Stripe deposits inside the site (as in Bet62Novo): one PaymentIntent per deposit, no Stripe page.
+//   MB WAY      → confirmed by the server with the player's phone; the player approves in the MB WAY app.
+//   Multibanco  → confirmed by the server; Stripe returns entity + reference to pay at an ATM / home banking.
+//   Card        → the server creates the intent; the card form is Stripe's Payment Element inside our page.
+// The wallet is credited once, when Stripe says "succeeded": by the webhook, by the player's page
+// asking for the status, or by the server's own sweep of pending payments. No SDK: REST + HMAC.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { postTransaction } from './wallet.js';
 
+export const METHODS = {
+  mbway: { label: 'MB WAY', type: 'mb_way' },
+  multibanco: { label: 'Multibanco', type: 'multibanco' },
+  cartao: { label: 'Cartão', type: 'card' },
+};
+
 /** Stripe's form encoding: { a: { b: 1 }, c: [x] } → a[b]=1&c[0]=x */
 export function formEncode(obj, prefix = '', out = new URLSearchParams()) {
   for (const [k, v] of Object.entries(obj)) {
-    if (v === undefined || v === null) continue;
+    if (v === undefined || v === null || v === '') continue;
     const key = prefix ? `${prefix}[${k}]` : k;
     if (typeof v === 'object') formEncode(v, key, out);
     else out.append(key, String(v));
@@ -34,8 +43,19 @@ export function verifyWebhook(rawBody, header, secret, { toleranceSeconds = 300,
   return JSON.parse(body);
 }
 
+/** A Portuguese mobile number as Stripe wants it (+351…), or '' when it is not one. */
+export function ptPhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length === 9) d = `351${d}`;
+  return /^3519\d{8}$/.test(d) ? `+${d}` : '';
+}
+
+const FINAL = ['paid', 'failed', 'expired', 'mismatch'];
+
 export function createStripe(db, {
-  secretKey, webhookSecret = '', currency = 'eur', apiBase = 'https://api.stripe.com/v1', fetchImpl = globalThis.fetch, log = () => {},
+  secretKey, publishableKey = '', webhookSecret = '', currency = 'eur', apiVersion = '2026-06-24.dahlia',
+  apiBase = 'https://api.stripe.com/v1', fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const enabled = !!secretKey;
   const live = /^(sk|rk)_live_/.test(secretKey || '');
@@ -45,6 +65,7 @@ export function createStripe(db, {
       method,
       headers: {
         Authorization: `Bearer ${secretKey}`,
+        ...(apiVersion ? { 'Stripe-Version': apiVersion } : {}),
         ...(params ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
       },
       body: params ? formEncode(params).toString() : undefined,
@@ -61,77 +82,118 @@ export function createStripe(db, {
     return body;
   }
 
-  /** A Checkout page for a deposit → { id, url }. The row is "pending" until Stripe says paid. */
-  async function createDeposit(user, amountCents, { successUrl, cancelUrl }) {
-    const session = await call('POST', '/checkout/sessions', {
-      mode: 'payment',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      client_reference_id: String(user.id),
-      customer_email: user.email,
-      line_items: [{ quantity: 1, price_data: { currency, unit_amount: amountCents, product_data: { name: 'Depósito na carteira' } } }],
-      metadata: { user_id: String(user.id), kind: 'deposit' },
-      payment_intent_data: { metadata: { user_id: String(user.id), kind: 'deposit' } },
+  const rowOf = (id) => db.prepare('SELECT * FROM stripe_payments WHERE session_id = ?').get(String(id || ''));
+  const view = (row) => ({
+    id: row.session_id, method: row.method, status: row.status, amountCents: row.amount_cents,
+    entity: row.entity || undefined, reference: row.reference || undefined, expiresAt: row.expires_at || undefined,
+  });
+
+  /**
+   * A deposit: the PaymentIntent and our pending row. MB WAY and Multibanco are confirmed here;
+   * the card gets a client secret for the Payment Element.
+   */
+  async function createDeposit(user, amountCents, { method, phone } = {}) {
+    const m = METHODS[method];
+    if (!m) throw Object.assign(new Error('Método de pagamento inválido.'), { status: 400, ours: true });
+    const tel = method === 'mbway' ? ptPhone(phone) : '';
+    if (method === 'mbway' && !tel) throw Object.assign(new Error('Número de telemóvel MB WAY inválido.'), { status: 400, ours: true });
+    const meta = { user_id: String(user.id), kind: 'deposit', method };
+    const intent = await call('POST', '/payment_intents', {
+      amount: amountCents,
+      currency,
+      payment_method_types: [m.type],
+      metadata: meta,
+      receipt_email: user.email,
+      description: `Depósito — €${(amountCents / 100).toFixed(2)}`,
+      ...(method === 'cartao' ? {} : {
+        confirm: 'true',
+        payment_method_data: { type: m.type, billing_details: { email: user.email, ...(tel ? { phone: tel } : {}) } },
+      }),
     });
+    const mb = intent.next_action?.multibanco_display_details;
+    const expires = mb?.expires_at ? new Date(mb.expires_at * 1000).toISOString() : null;
     db.prepare(
-      `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)`
-    ).run(session.id, user.id, amountCents, currency, nowIso());
-    return { id: session.id, url: session.url };
+      `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, entity, reference, expires_at, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
+    ).run(intent.id, user.id, amountCents, currency, method, mb?.entity || null, mb?.reference || null, expires, nowIso());
+    if (method === 'multibanco' && !(mb?.entity && mb?.reference)) log(`stripe ${intent.id}: Multibanco sem entidade/referência (${intent.status})`);
+    const r = applyIntent(intent);
+    return {
+      ...view(rowOf(intent.id)),
+      status: r.status,
+      clientSecret: method === 'cartao' ? intent.client_secret : undefined,
+      publishableKey: method === 'cartao' ? publishableKey : undefined,
+      voucherUrl: mb?.hosted_voucher_url || undefined,
+    };
   }
 
   /**
-   * Applies what Stripe says about one Checkout session. Credits the wallet exactly once, with the
-   * amount stored when the page was created (and checked against what Stripe charged).
+   * Applies what Stripe says about one PaymentIntent. Credits the wallet exactly once, with the
+   * amount stored when it was created (checked against what Stripe charged).
    */
-  function applySession(session) {
-    const row = db.prepare('SELECT * FROM stripe_payments WHERE session_id = ?').get(String(session?.id || ''));
+  function applyIntent(pi) {
+    const row = rowOf(pi?.id);
     if (!row) return { status: 'unknown' };
     if (row.status === 'paid') return { status: 'paid', row };
-    const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
-    if (paid) {
-      if (Number(session.amount_total) !== row.amount_cents || String(session.currency).toLowerCase() !== row.currency) {
+    if (pi.status === 'succeeded') {
+      if (Number(pi.amount_received ?? pi.amount) !== row.amount_cents || String(pi.currency).toLowerCase() !== row.currency) {
         db.prepare("UPDATE stripe_payments SET status = 'mismatch', updated_at = ? WHERE id = ?").run(nowIso(), row.id);
-        log(`stripe ${row.session_id}: valor ${session.amount_total} ${session.currency} ≠ ${row.amount_cents} ${row.currency}`);
+        log(`stripe ${row.session_id}: valor ${pi.amount_received ?? pi.amount} ${pi.currency} ≠ ${row.amount_cents} ${row.currency}`);
         return { status: 'mismatch', row };
       }
       return tx(db, () => {
-        // Inside the transaction: a webhook and the player's return can arrive together.
-        const r = db.prepare("UPDATE stripe_payments SET status = 'paid', payment_intent = ?, updated_at = ? WHERE id = ? AND status <> 'paid'")
-          .run(session.payment_intent ? String(session.payment_intent) : null, nowIso(), row.id);
+        // Inside the transaction: the webhook, the player's page and the sweep can arrive together.
+        const r = db.prepare("UPDATE stripe_payments SET status = 'paid', updated_at = ? WHERE id = ? AND status <> 'paid'").run(nowIso(), row.id);
         if (!r.changes) return { status: 'paid', row };
-        const balance = postTransaction(db, row.user_id, row.amount_cents, 'deposit', 'Depósito (Stripe)', `stripe:${row.session_id}`);
+        const label = METHODS[row.method]?.label || 'Stripe';
+        const balance = postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, `stripe:${row.session_id}`);
         return { status: 'paid', credited: true, balance, row };
       });
     }
-    const status = session.status === 'expired' ? 'expired' : session.payment_status === 'unpaid' && session.status === 'complete' ? 'processing' : row.status;
+    const status = pi.status === 'canceled' ? 'failed'
+      : pi.status === 'processing' ? 'processing'
+      // A refused card can be tried again on the same intent; MB WAY / Multibanco cannot.
+      : pi.status === 'requires_payment_method' && pi.last_payment_error && row.method !== 'cartao' ? 'failed'
+      : 'pending';
     if (status !== row.status) db.prepare('UPDATE stripe_payments SET status = ?, updated_at = ? WHERE id = ?').run(status, nowIso(), row.id);
     return { status, row };
   }
 
-  /** The webhook: checkout.session.* events. Returns what was done (for the log / tests). */
+  /** The webhook: payment_intent.* events. Returns what was done (for the log / tests). */
   function handleEvent(event) {
     const type = String(event?.type || '');
-    const session = event?.data?.object;
-    if (!type.startsWith('checkout.session.') || session?.object !== 'checkout.session') return { ignored: type };
-    if (type === 'checkout.session.async_payment_failed') {
-      db.prepare("UPDATE stripe_payments SET status = 'failed', updated_at = ? WHERE session_id = ? AND status <> 'paid'").run(nowIso(), String(session.id));
-      return { status: 'failed' };
-    }
-    return applySession(session);
+    const obj = event?.data?.object;
+    if (type.startsWith('payment_intent.') && obj?.object === 'payment_intent') return applyIntent(obj);
+    return { ignored: type };
   }
 
-  /** The player is back from Checkout: our row, refreshed from Stripe while it is not final. */
-  async function refresh(sessionId, userId) {
-    const row = db.prepare('SELECT * FROM stripe_payments WHERE session_id = ? AND user_id = ?').get(String(sessionId), userId);
+  /** The player's page asks: our row, refreshed from Stripe while it is not final. */
+  async function refresh(id, userId) {
+    const row = db.prepare('SELECT * FROM stripe_payments WHERE session_id = ? AND user_id = ?').get(String(id), userId);
     if (!row) return null;
-    if (['paid', 'expired', 'failed', 'mismatch'].includes(row.status)) return { status: row.status, amountCents: row.amount_cents };
-    const session = await call('GET', `/checkout/sessions/${encodeURIComponent(row.session_id)}`);
-    const r = applySession(session);
-    return { status: r.status, amountCents: row.amount_cents };
+    if (FINAL.includes(row.status) || !row.session_id.startsWith('pi_')) return view(row);
+    applyIntent(await call('GET', `/payment_intents/${encodeURIComponent(row.session_id)}`));
+    return view(rowOf(row.session_id));
+  }
+
+  /** Pending deposits of the last 48 h, checked with Stripe (a missed webhook still credits). */
+  async function sweep({ limit = 50 } = {}) {
+    const since = new Date(Date.now() - 48 * 3600_000).toISOString();
+    const rows = db.prepare(
+      "SELECT session_id FROM stripe_payments WHERE status IN ('pending', 'processing') AND session_id LIKE 'pi\\_%' ESCAPE '\\' AND created_at >= ? ORDER BY id LIMIT ?"
+    ).all(since, limit);
+    let credited = 0;
+    for (const { session_id: id } of rows) {
+      try {
+        if (applyIntent(await call('GET', `/payment_intents/${encodeURIComponent(id)}`)).credited) credited += 1;
+      } catch (err) { log(`stripe sweep ${id}: ${err.message}`); }
+    }
+    return { checked: rows.length, credited };
   }
 
   return {
-    enabled, live, hasWebhook: !!webhookSecret, createDeposit, applySession, handleEvent, refresh,
+    enabled, live, hasWebhook: !!webhookSecret, hasPublishable: !!publishableKey,
+    createDeposit, applyIntent, handleEvent, refresh, sweep,
     verify: (raw, header) => verifyWebhook(raw, header, webhookSecret),
   };
 }

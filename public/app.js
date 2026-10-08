@@ -647,24 +647,28 @@ function overviewView() {
 
 function walletView() {
   setTimeout(loadWallet);
+  // Back from a bank check (3-D Secure) that left the page: follow that deposit.
   const back = currentRoute().query.get('deposito');
-  if (back) setTimeout(() => checkStripeDeposit(back));
+  if (back) setTimeout(() => { history.replaceState(null, '', '#/perfil/carteira'); watchDeposit(back); });
   const demo = state.config?.paymentsMode === 'demo';
-  const stripe = state.config?.paymentsMode === 'stripe';
   const c = state.config || {};
   return `<div class="stat-grid"><div class="stat"><small>Saldo disponível</small><strong id="walletBalance">${money(state.user.balance)}</strong></div></div>
     <h3>Depositar</h3>
     ${demo ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato. Ligue um fornecedor de pagamentos para operar com dinheiro real.</div><br>' : ''}
     ${c.paymentsMode === 'disabled' ? '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>' : `
-    <form data-form="deposit">
-      ${stripe ? '<p class="muted">O pagamento é feito na página segura da Stripe (cartão e os outros métodos disponíveis). O saldo é creditado assim que o pagamento for confirmado.</p>' : `<div class="methods">
+    <form data-form="deposit" class="deposit-form">
+      <div class="methods">
         <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
         <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
         <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
-      </div>`}
-      <div class="form-grid"><div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
+        <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
+      </div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
-    </form>`}
+    </form>
+    <div id="depositPanel"></div>`}
     <h3>Levantar</h3>
     <form data-form="withdraw"><div class="form-grid">
       <div class="field"><label>Valor (mín. €${c.minWithdraw ?? 10})</label><input name="amount" type="number" min="${c.minWithdraw ?? 10}" step="0.01" required inputmode="decimal"></div>
@@ -673,30 +677,90 @@ function walletView() {
     <div id="walletLists"><div class="loading">A carregar movimentos…</div></div>`;
 }
 
-// Back from Stripe's page: wait for the confirmation (webhook or a check with Stripe), then clean the address.
-async function checkStripeDeposit(sessionId) {
-  if (state.stripeChecking === sessionId) return;
-  state.stripeChecking = sessionId;
-  try {
-    for (let i = 0; i < 10; i++) {
-      const r = await api(`/api/wallet/deposit/${encodeURIComponent(sessionId)}`);
-      if (r.status === 'paid') {
-        state.user.balance = r.balance;
-        toast('Depósito confirmado', `${money(r.amount)} creditados. Novo saldo: ${money(r.balance)}`);
-        break;
-      }
-      if (r.status === 'processing') { toast('Pagamento em processamento', 'O saldo é creditado assim que o pagamento for confirmado (ex.: referência Multibanco).'); break; }
-      if (['expired', 'failed', 'mismatch'].includes(r.status)) { toast('Depósito não concluído', 'O pagamento não foi confirmado.'); break; }
-      await new Promise((ok) => setTimeout(ok, 3000));
-      if (i === 9) toast('A aguardar confirmação', 'O saldo é atualizado quando a Stripe confirmar o pagamento.');
+// ---------- deposits through Stripe, inside the page ----------
+
+function depositPanel(html) {
+  const box = $('#depositPanel');
+  if (box) box.innerHTML = html;
+  return box;
+}
+
+function depositDone(r) {
+  state.depositWatch = null;
+  state.user.balance = r.balance;
+  depositPanel(`<div class="pay-box ok"><strong>Depósito confirmado</strong><span>${money(r.amount)} creditados na sua conta.</span></div>`);
+  toast('Depósito confirmado', `Novo saldo: ${money(r.balance)}`);
+  updateHeader(); loadWallet();
+}
+
+/** Asks for the deposit's state until it is final (or the player leaves the wallet). */
+async function watchDeposit(id, { every = 5000, forMs = 10 * 60_000 } = {}) {
+  state.depositWatch = id;
+  const until = Date.now() + forMs;
+  while (state.depositWatch === id && Date.now() < until) {
+    let r;
+    try { r = await api(`/api/wallet/deposit/${encodeURIComponent(id)}`); } catch { r = null; }
+    if (state.depositWatch !== id) return;
+    if (r?.status === 'paid') return depositDone(r);
+    if (r && ['failed', 'expired', 'mismatch'].includes(r.status)) {
+      state.depositWatch = null;
+      depositPanel(`<div class="pay-box error"><strong>Pagamento não concluído</strong><span>${r.method === 'mbway' ? 'O pedido MB WAY foi recusado ou expirou.' : 'O pagamento não foi confirmado.'} Pode tentar de novo.</span></div>`);
+      return;
     }
-  } catch (err) {
-    toast('Depósito', err.message);
-  } finally {
-    state.stripeChecking = null;
-    history.replaceState(null, '', '#/perfil/carteira');
-    updateHeader(); loadWallet();
+    if (r && !$('#depositPanel').innerHTML.trim()) depositPanel('<div class="pay-box"><strong>A aguardar confirmação do pagamento…</strong></div>');
+    await new Promise((ok) => setTimeout(ok, every));
+    if (!$('#depositPanel')) { state.depositWatch = null; return; }
   }
+}
+
+let stripeJs = null;
+function loadStripeJs() {
+  stripeJs ||= new Promise((ok, fail) => {
+    if (window.Stripe) return ok(window.Stripe);
+    const el = document.createElement('script');
+    el.src = 'https://js.stripe.com/v3/';
+    el.onload = () => ok(window.Stripe);
+    el.onerror = () => { stripeJs = null; fail(new Error('Não foi possível carregar o formulário de pagamento.')); };
+    document.head.append(el);
+  });
+  return stripeJs;
+}
+
+async function showCardForm(p, clientSecret, publishableKey) {
+  depositPanel('<div class="pay-box"><strong>A carregar o formulário seguro…</strong></div>');
+  const Stripe = await loadStripeJs();
+  const stripe = Stripe(publishableKey);
+  const css = getComputedStyle(document.documentElement);
+  const v = (n, d) => css.getPropertyValue(n).trim() || d;
+  const elements = stripe.elements({
+    clientSecret, locale: 'pt',
+    appearance: { theme: 'night', variables: { colorPrimary: v('--red', '#10b981'), colorBackground: v('--panel', '#16191d'), colorText: v('--text', '#e8eaed'), borderRadius: '6px' } },
+  });
+  depositPanel(`<div class="pay-box card"><strong>Pagamento por cartão — ${money(p.amount)}</strong>
+    <div id="cardElement"></div>
+    <div class="form-actions"><button class="primary-btn" id="cardPay" disabled>Confirmar pagamento</button></div>
+    <small class="muted">Os dados do cartão vão diretamente para a Stripe; não passam pelo nosso servidor.</small></div>`);
+  const pe = elements.create('payment', { layout: 'tabs' });
+  pe.mount('#cardElement');
+  pe.on('ready', () => { const b = $('#cardPay'); if (b) b.disabled = false; });
+  $('#cardPay').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        // Only for a bank check that has to leave the page; otherwise it all happens here.
+        confirmParams: { return_url: `${location.origin}/#/perfil/carteira?deposito=${encodeURIComponent(p.id)}` },
+        redirect: 'if_required',
+      });
+      if (error) { toast('Pagamento recusado', error.message || 'Verifique os dados do cartão.', 'error'); btn.disabled = false; return; }
+      depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>');
+      watchDeposit(p.id, { every: paymentIntent?.status === 'succeeded' ? 1500 : 5000 });
+    } catch (err) {
+      toast('Pagamento', err.message, 'error');
+      btn.disabled = false;
+    }
+  });
 }
 
 async function loadWallet() {
@@ -1071,8 +1135,22 @@ const formHandlers = {
   },
   async deposit(form) {
     const d = formData(form);
-    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method } });
-    if (res.checkoutUrl) { location.href = res.checkoutUrl; return; }
+    const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone } });
+    if (res.payment) {
+      const p = res.payment;
+      state.depositWatch = null;
+      if (p.status === 'paid') return depositDone({ ...p, balance: res.balance });
+      if (p.method === 'cartao') return showCardForm(p, res.clientSecret, res.publishableKey);
+      if (p.method === 'multibanco') {
+        depositPanel(`<div class="pay-box mb"><strong>Referência Multibanco</strong>
+          <dl><dt>Entidade</dt><dd>${esc(p.entity || '—')}</dd><dt>Referência</dt><dd>${esc(String(p.reference || '—').replace(/(\d{3})(?=\d)/g, '$1 '))}</dd><dt>Valor</dt><dd>${money(p.amount)}</dd>
+          ${p.expiresAt ? `<dt>Válida até</dt><dd>${esc(fmtDateTime(p.expiresAt))}</dd>` : ''}</dl>
+          <span>Pague num multibanco ou no homebanking. O saldo é creditado automaticamente após o pagamento.</span></div>`);
+        return watchDeposit(p.id, { every: 15_000, forMs: 60 * 60_000 });
+      }
+      depositPanel(`<div class="pay-box"><strong>Pedido MB WAY enviado</strong><span>Confirme o pagamento de ${money(p.amount)} na app MB WAY (tem cerca de 4 minutos).</span></div>`);
+      return watchDeposit(p.id, { every: 4000, forMs: 6 * 60_000 });
+    }
     state.user.balance = res.balance;
     toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}`);
     updateHeader(); loadWallet();

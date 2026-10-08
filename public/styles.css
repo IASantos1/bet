@@ -723,3 +723,15 @@ body.no-scroll { overflow: hidden; }
 .brand-word span { color: var(--logo); }
 .brand-word.small { font-size: 18px; }
 @media (max-width: 700px) { .brand-word { font-size: 21px; } }
+
+/* Deposits (Stripe, inside the page) */
+.deposit-form .mbway-only { display: none; }
+.deposit-form:has(input[value="mbway"]:checked) .mbway-only { display: block; }
+.pay-box { display: grid; gap: 8px; margin: 12px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+.pay-box > span { color: var(--text-2); font-size: 13px; }
+.pay-box.ok { border-color: var(--green); }
+.pay-box.error { border-color: var(--suspended, #c0392b); }
+.pay-box.mb dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 4px 0; }
+.pay-box.mb dt { color: var(--muted); font-size: 12px; align-self: center; }
+.pay-box.mb dd { margin: 0; font-weight: 800; font-size: 18px; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
+.pay-box #cardElement { min-height: 120px; }

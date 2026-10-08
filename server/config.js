@@ -44,16 +44,15 @@ export const config = {
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.
-  // "stripe": Stripe Checkout (default once STRIPE_SECRET_KEY is set).
+  // "stripe": MB WAY, Multibanco and card through Stripe, inside the site (default once STRIPE_SECRET_KEY is set).
   paymentsMode: env.PAYMENTS_MODE || ((env.STRIPE_SECRET_KEY || '').trim() ? 'stripe' : 'demo'),
   stripe: {
     secretKey: unquote(env.STRIPE_SECRET_KEY),
     webhookSecret: unquote(env.STRIPE_WEBHOOK_SECRET),
-    // Not needed by the hosted Checkout page; kept for a future embedded form.
-    publishableKey: unquote(env.STRIPE_PUBLISHABLE_KEY),
+    // The card form (Stripe Payment Element) runs in the browser with the publishable key.
+    publishableKey: unquote(env.STRIPE_PUBLISHABLE_KEY || env.VITE_STRIPE_PUBLISHABLE_KEY),
+    apiVersion: (env.STRIPE_API_VERSION || '2026-06-24.dahlia').trim(),
     currency: (env.STRIPE_CURRENCY || 'eur').trim().toLowerCase(),
-    // Where Stripe sends the player back (else this request's own host).
-    publicUrl: (env.PUBLIC_URL || '').trim().replace(/\/+$/, ''),
   },
 
   // Football data feed (sports.bzzoiro.com). Disabled while no token is set.

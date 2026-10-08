@@ -91,7 +91,13 @@ const stopSettlement = settlement.start();
 const stripe = config.stripe.secretKey
   ? createStripe(db, { ...config.stripe, log: (m) => console.warn(m) })
   : null;
-if (stripe) console.log(`Stripe: ${stripe.live ? 'live' : 'teste'}, webhook ${stripe.hasWebhook ? 'configurado' : 'em falta (STRIPE_WEBHOOK_SECRET)'}`);
+if (stripe) {
+  console.log(`Stripe: ${stripe.live ? 'live' : 'teste'}, webhook ${stripe.hasWebhook ? 'configurado' : 'em falta (STRIPE_WEBHOOK_SECRET)'}, cartão ${stripe.hasPublishable ? 'ok' : 'sem STRIPE_PUBLISHABLE_KEY'}`);
+  // A missed webhook still credits: pending deposits are checked with Stripe every minute.
+  const sweep = () => stripe.sweep().then((r) => { if (r.credited) console.log(`Stripe: ${r.credited} depósito(s) creditado(s) pela verificação`); }).catch((err) => console.warn(`stripe sweep: ${err.message}`));
+  setTimeout(sweep, 10_000).unref();
+  setInterval(sweep, 60_000).unref();
+}
 
 const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
