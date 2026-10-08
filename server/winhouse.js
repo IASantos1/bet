@@ -720,6 +720,9 @@ export function estimateOffset(items, now = Date.now()) {
   return Math.round(samples[Math.floor(samples.length / 2)] / 30) * 30;
 }
 
+// Sports whose clock counts up through the match.
+const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
+
 const clockText = (sport, minutes, raw) => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
   if (['futebol', 'hoquei', 'andebol', 'futsal'].includes(sport)) return `${Math.floor(minutes)}'`;
@@ -968,10 +971,13 @@ export function createWinHouseFeed(db, {
           const away = ev.awayScore ?? row.away_score ?? 0;
           const scoreChanged = row.status === 'live' && (row.home_score !== home || row.away_score !== away);
           // Ice hockey: once past 60 minutes it is overtime, which follows a regulation draw.
-          const overtime = row.sport === 'hoquei' && ev.minutes !== null && ev.minutes >= 60 && !row.wh_overtime;
+          // The clock only moves forward: at the final whistle WinHouse can send 0 ("00:00") for a
+          // finished match, which would show 0' and stop it being settled as over.
+          const minutes = CLOCK_SPORTS.has(row.sport) && ev.minutes !== null && Number(row.wh_minute) > ev.minutes ? Number(row.wh_minute) : ev.minutes;
+          const overtime = row.sport === 'hoquei' && minutes !== null && minutes >= 60 && !row.wh_overtime;
           db.prepare(`UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = COALESCE(?, wh_minute),
               wh_seen_at = ?, wh_missing_since = NULL, review_reason = NULL, postponed_at = NULL, updated_at = ? WHERE id = ?`)
-            .run(home, away, clockText(row.sport, ev.minutes, ev.clockRaw), ev.minutes, nowIso(), nowIso(), row.id);
+            .run(home, away, clockText(row.sport, minutes, ev.clockRaw), minutes, nowIso(), nowIso(), row.id);
           if (overtime) {
             const tie = Math.min(home, away);
             db.prepare('UPDATE events SET wh_overtime = 1, reg_home_score = ?, reg_away_score = ? WHERE id = ?').run(tie, tie, row.id);
