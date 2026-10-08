@@ -109,3 +109,15 @@ test('bet builder bet: one match, priced with the margin, settled with it', asyn
     db.close();
   }
 });
+
+test('featured: a short draw (board still filling after a restart) is redrawn after a minute, not kept ten', () => {
+  const db = openDb(':memory:');
+  let t = Date.now();
+  const f = createFeatured(db, { rng: seeded(3), now: () => t });
+  assert.equal(f.get().builders.length, 0);
+  for (let i = 0; i < 7; i++) addEvent(db, { home: `C${i}`, away: `F${i}` });
+  t += 30_000;
+  assert.equal(f.get().builders.length, 0); // still within the minute
+  t += 40_000;
+  assert.equal(f.get().builders.length, 6);
+});

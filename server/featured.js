@@ -42,7 +42,7 @@ export function builderConflict(legs) {
 const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 const shuffle = (arr, rng) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
-export function createFeatured(db, { ttlMs = 10 * 60_000, rng = Math.random, now = () => Date.now() } = {}) {
+export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng = Math.random, now = () => Date.now() } = {}) {
   let cache = null; // { at, builders, accas } — selection ids only; prices and labels are read fresh
 
   const upcoming = (fromMs, untilMs) => db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
@@ -126,7 +126,10 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, rng = Math.random, now
 
   function get(retry = true) {
     const t = now();
-    if (!cache || t - cache.at > ttlMs) cache = { at: t, builders: drawBuilders(t), accas: drawAccas(t) };
+    // A short draw (right after a restart the board is still filling: games' pages, with markets like
+    // both teams to score, are read over the first minutes) is tried again after a minute, not kept 10.
+    const full = cache && cache.builders.length >= 6 && cache.accas.length >= 6;
+    if (!cache || t - cache.at > (full ? ttlMs : retryMs)) cache = { at: t, builders: drawBuilders(t), accas: drawAccas(t) };
     let builders = cache.builders.map((b) => ({ ...b, legs: resolve(b.legs) })).filter((b) => b.legs);
     let accas = cache.accas.map((a) => ({ ...a, legs: resolve(a.legs) })).filter((a) => a.legs);
     // Cards dropped (a match started, a price closed): draw again rather than show fewer.
