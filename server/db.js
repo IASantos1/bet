@@ -248,6 +248,11 @@ function migrate(db) {
   if (!userCols.has('freebet_cents')) db.exec('ALTER TABLE users ADD COLUMN freebet_cents INTEGER NOT NULL DEFAULT 0');
   if (!userCols.has('banned_at')) db.exec('ALTER TABLE users ADD COLUMN banned_at TEXT');
   if (!userCols.has('kyc_status')) db.exec("ALTER TABLE users ADD COLUMN kyc_status TEXT NOT NULL DEFAULT 'not_submitted'");
+  // Profile: bank details for withdrawals, tax number, account preferences (JSON).
+  for (const c of ['nif', 'iban', 'iban_name', 'prefs']) if (!userCols.has(c)) db.exec(`ALTER TABLE users ADD COLUMN ${c} TEXT`);
+  // Active sessions list: which browser / device opened each one.
+  const sessCols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
+  if (!sessCols.has('user_agent')) db.exec('ALTER TABLE sessions ADD COLUMN user_agent TEXT');
 
   // Ledger types for casino transfers and admin adjustments. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.

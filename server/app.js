@@ -81,7 +81,16 @@ function publicUser(u) {
     balance: cents(u.balance_cents), excludedUntil: u.excluded_until, createdAt: u.created_at,
     casinoActive: !!u.casino_active,
     freebet: cents(u.freebet_cents || 0), kycStatus: u.kyc_status || 'not_submitted', banned: !!u.banned_at,
+    nif: u.nif || null, iban: u.iban || null, ibanName: u.iban_name || null, prefs: parsePrefs(u.prefs),
   };
+}
+
+// Account preferences the player can change in the profile (unknown keys are dropped).
+const PREF_DEFAULTS = { notifyResults: true, notifyPromos: false, notifySms: false, notifyPush: true, cookiesAnalytics: true, cookiesMarketing: false, shareData: false };
+function parsePrefs(raw) {
+  let v = {};
+  try { v = JSON.parse(raw || '{}') || {}; } catch { /* keep defaults */ }
+  return Object.fromEntries(Object.entries(PREF_DEFAULTS).map(([k, d]) => [k, typeof v[k] === 'boolean' ? v[k] : d]));
 }
 
 function oddsInput(v, label) {
@@ -147,6 +156,39 @@ export function createApp(db, {
     res.json({ received: true });
   });
 
+  // A KYC document (image / PDF as base64): its own, larger body limit, before the general parser.
+  const KYC_KINDS = { id_front: 'Documento (frente)', id_back: 'Documento (verso)', passport: 'Passaporte', address: 'Comprovativo de IBAN / morada' };
+  const KYC_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+  app.post('/api/me/kyc', express.json({ limit: '8mb' }), (req, res, next) => {
+    try {
+      if (!req.is('application/json')) throw new HttpError(415, 'Pedido inválido.');
+      const origin = req.get('origin');
+      if (origin) {
+        let host = '';
+        try { host = new URL(origin).host; } catch { /* invalid */ }
+        const own = [req.get('host'), ...String(req.get('x-forwarded-host') || '').split(',')].map((h) => h?.trim()).filter(Boolean);
+        if (!own.includes(host)) throw new HttpError(403, 'Origem não permitida.');
+      }
+      const token = parseCookies(req.headers.cookie)[COOKIE];
+      const user = token ? db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?').get(hashToken(token), nowIso()) : null;
+      if (!user || user.banned_at) throw new HttpError(401, 'Inicie sessão para continuar.');
+      const kind = String(req.body?.kind || '');
+      if (!KYC_KINDS[kind]) throw new HttpError(400, 'Tipo de documento inválido.');
+      const mime = String(req.body?.mimeType || '');
+      if (!KYC_TYPES.has(mime)) throw new HttpError(400, 'Envie uma imagem (JPG, PNG, WEBP) ou um PDF.');
+      const data = Buffer.from(String(req.body?.data || ''), 'base64');
+      if (!data.length) throw new HttpError(400, 'Ficheiro vazio.');
+      if (data.length > 5 * 1024 * 1024) throw new HttpError(400, 'Ficheiro demasiado grande (máximo 5 MB).');
+      const fileName = String(req.body?.fileName || 'documento').replace(/[^\w .()-]/g, '_').slice(0, 120);
+      tx(db, () => {
+        db.prepare(`INSERT INTO kyc_documents (user_id, kind, file_name, mime_type, file_size, data, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
+          .run(user.id, KYC_KINDS[kind], fileName, mime, data.length, data, nowIso());
+        if (user.kyc_status !== 'approved') db.prepare("UPDATE users SET kyc_status = 'pending' WHERE id = ?").run(user.id);
+      });
+      res.status(201).json({ ok: true });
+    } catch (err) { next(err); }
+  });
+
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -189,12 +231,12 @@ export function createApp(db, {
     next();
   };
 
-  function startSession(res, userId) {
+  function startSession(res, userId, req = null) {
     const token = newSessionToken();
     const expires = new Date(Date.now() + config.sessionDays * 86_400_000);
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(nowIso());
-    db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
-      .run(hashToken(token), userId, expires.toISOString(), nowIso());
+    db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at, user_agent) VALUES (?, ?, ?, ?, ?)')
+      .run(hashToken(token), userId, expires.toISOString(), nowIso(), String(req?.get?.('user-agent') || '').slice(0, 200) || null);
     res.cookie(COOKIE, token, {
       httpOnly: true, sameSite: 'lax', secure: config.isProduction, expires, path: '/',
     });
@@ -301,6 +343,7 @@ export function createApp(db, {
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents),
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
+      supportEmail: config.supportEmail || undefined, supportPhone: config.supportPhone || undefined,
       sports: SPORTS, version: APP_VERSION,
     });
   });
@@ -507,7 +550,7 @@ export function createApp(db, {
     const { lastInsertRowid } = db.prepare(
       'INSERT INTO users (email, name, birthdate, phone, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(email, name, birthdate, phone, hashPassword(password), nowIso());
-    startSession(res, Number(lastInsertRowid));
+    startSession(res, Number(lastInsertRowid), req);
     res.status(201).json({ user: publicUser(userById(Number(lastInsertRowid))) });
   });
 
@@ -520,7 +563,7 @@ export function createApp(db, {
     const ok = user && (verifyPassword(password, user.password_hash) || (password.trim() !== password && verifyPassword(password.trim(), user.password_hash)));
     if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
     if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
-    startSession(res, user.id);
+    startSession(res, user.id, req);
     res.json({ user: publicUser(user) });
   });
 
@@ -535,12 +578,86 @@ export function createApp(db, {
 
   app.get('/api/me', (req, res) => res.json({ user: req.user ? publicUser(req.user) : null }));
 
+  // Profile: only the fields sent are changed (personal data, bank details, preferences).
   app.patch('/api/me', requireUser, (req, res) => {
-    const name = str(req.body.name, 80);
-    const phone = str(req.body.phone, 30) || null;
-    if (name.length < 2) throw new HttpError(400, 'Indique o seu nome.');
-    db.prepare('UPDATE users SET name = ?, phone = ? WHERE id = ?').run(name, phone, req.user.id);
+    const b = req.body || {};
+    const set = {};
+    if (b.name !== undefined) {
+      const name = str(b.name, 80);
+      if (name.length < 2) throw new HttpError(400, 'Indique o seu nome.');
+      set.name = name;
+    }
+    if (b.phone !== undefined) set.phone = str(b.phone, 30) || null;
+    if (b.nif !== undefined) {
+      const nif = str(b.nif, 20).replace(/\D/g, '');
+      if (nif && !/^\d{9}$/.test(nif)) throw new HttpError(400, 'NIF inválido: 9 dígitos.');
+      set.nif = nif || null;
+    }
+    if (b.iban !== undefined) {
+      const iban = str(b.iban, 60).replace(/\s+/g, '').toUpperCase();
+      if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) throw new HttpError(400, 'IBAN inválido.');
+      set.iban = iban || null;
+    }
+    if (b.ibanName !== undefined) set.iban_name = str(b.ibanName, 80) || null;
+    if (b.prefs !== undefined) {
+      const cur = parsePrefs(req.user.prefs);
+      for (const k of Object.keys(PREF_DEFAULTS)) if (typeof b.prefs?.[k] === 'boolean') cur[k] = b.prefs[k];
+      set.prefs = JSON.stringify(cur);
+    }
+    const keys = Object.keys(set);
+    if (keys.length) db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), req.user.id);
     res.json({ user: publicUser(userById(req.user.id)) });
+  });
+
+  // Active sessions (devices signed in), and signing the others out.
+  app.get('/api/me/sessions', requireUser, (req, res) => {
+    const mine = hashToken(parseCookies(req.headers.cookie)[COOKIE]);
+    const rows = db.prepare('SELECT token_hash, created_at, expires_at, user_agent FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC').all(req.user.id, nowIso());
+    res.json({ sessions: rows.map((r, i) => ({ id: i + 1, current: r.token_hash === mine, createdAt: r.created_at, expiresAt: r.expires_at, device: r.user_agent || null })) });
+  });
+  app.post('/api/me/sessions/end-others', requireUser, (req, res) => {
+    const mine = hashToken(parseCookies(req.headers.cookie)[COOKIE]);
+    const { changes } = db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?').run(req.user.id, mine);
+    res.json({ ended: changes });
+  });
+
+  // Activity summary for the profile.
+  app.get('/api/me/stats', requireUser, (req, res) => {
+    const one = (sql) => db.prepare(sql).get(req.user.id);
+    const all = one('SELECT COUNT(*) AS n, COALESCE(SUM(stake_cents), 0) AS s FROM bets WHERE user_id = ?');
+    const won = one("SELECT COUNT(*) AS n, COALESCE(SUM(payout_cents), 0) AS p, COALESCE(MAX(payout_cents), 0) AS m FROM bets WHERE user_id = ? AND status = 'won'");
+    const settled = one("SELECT COUNT(*) AS n FROM bets WHERE user_id = ? AND status IN ('won', 'lost')").n;
+    const dep = one("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = 'deposit'").s;
+    res.json({
+      bets: all.n, staked: cents(all.s), won: cents(won.p), biggestWin: cents(won.m), deposits: cents(dep),
+      winRate: settled ? Math.round((won.n / settled) * 100) : 0,
+    });
+  });
+
+  // Everything we hold about the player, as a file (privacy: "descarregar os meus dados").
+  app.get('/api/me/export', requireUser, (req, res) => {
+    const u = req.user;
+    const data = {
+      exportedAt: nowIso(),
+      account: { ...publicUser(u), casinoActive: undefined, banned: undefined },
+      bets: withLegs(db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id').all(u.id)),
+      transactions: db.prepare('SELECT type, amount_cents, balance_after_cents, description, created_at FROM transactions WHERE user_id = ? ORDER BY id').all(u.id)
+        .map((t) => ({ type: t.type, amount: cents(t.amount_cents), balanceAfter: cents(t.balance_after_cents), description: t.description, at: t.created_at })),
+      withdrawals: db.prepare('SELECT amount_cents, iban, status, created_at, decided_at FROM withdrawals WHERE user_id = ? ORDER BY id').all(u.id)
+        .map((w) => ({ amount: cents(w.amount_cents), iban: w.iban, status: w.status, at: w.created_at, decidedAt: w.decided_at })),
+      documents: db.prepare('SELECT kind, file_name, status, created_at FROM kyc_documents WHERE user_id = ? ORDER BY id').all(u.id),
+    };
+    res.set({ 'Content-Disposition': `attachment; filename="bet62-dados-${u.id}.json"`, 'Cache-Control': 'no-store' });
+    res.json(data);
+  });
+
+  // Identity documents sent by the player (KYC), reviewed in the admin.
+  app.get('/api/me/kyc', requireUser, (req, res) => {
+    res.json({
+      status: req.user.kyc_status || 'not_submitted',
+      documents: db.prepare('SELECT id, kind, file_name, file_size, status, created_at, reviewed_at FROM kyc_documents WHERE user_id = ? ORDER BY id DESC').all(req.user.id)
+        .map((d) => ({ id: d.id, kind: d.kind, fileName: d.file_name, size: d.file_size, status: d.status, createdAt: d.created_at, reviewedAt: d.reviewed_at })),
+    });
   });
 
   app.post('/api/me/password', requireUser, (req, res) => {

@@ -200,6 +200,9 @@ export const config = {
 
   // Bet builder (several picks on one match): the legs' odds multiplied by this, for their correlation.
   builderFactor: Math.min(1, Math.max(0.5, Number(env.BUILDER_FACTOR) || 0.9)),
+  // Contacts shown in the profile's support section (empty: not shown).
+  supportEmail: String(env.SUPPORT_EMAIL || '').trim(),
+  supportPhone: String(env.SUPPORT_PHONE || '').trim(),
 
   limits: {
     minStakeCents: int(env.MIN_STAKE_CENTS, 100), // €1

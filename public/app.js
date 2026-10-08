@@ -442,12 +442,12 @@ function sportsPage(sub, rest = '') {
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    ${builderSection()}
     <div class="sport-strip">
       <button class="sport-pill${!state.sport ? ' active' : ''}" data-sport="">Todos</button>
       ${sports.map((s) => `<button class="sport-pill${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${SPORT_META[s]?.icon || ''} ${esc(SPORT_META[s]?.name || s)}</button>`).join('')}
       <a class="sport-pill" href="#/desporto/resultados">🏁 Resultados</a>
     </div>
+    ${builderSection()}
     <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
     ${footer()}`;
 }
@@ -723,40 +723,230 @@ function promosPage() {
 
 // ---------- account ----------
 
+// The profile, as in Bet62Novo: a header card, then sections (side menu on a computer, accordion on a phone).
+const PROFILE_SECTIONS = [
+  { id: 'pessoais', icon: '👤', label: 'Informações pessoais', title: 'Informações Pessoais', text: 'Gestão e atualização dos seus dados pessoais, garantindo a exatidão e conformidade com os requisitos legais aplicáveis.' },
+  { id: 'carteira', icon: '💶', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
+  { id: 'apostas', icon: '🎟️', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
+  { id: 'verificacao', icon: '🛡️', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
+  { id: 'seguranca', icon: '🔑', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
+  { id: 'preferencias', icon: '⚙️', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
+  { id: 'limites', icon: '⚠️', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Opções de autoexclusão para uma experiência de jogo responsável.' },
+  { id: 'atividade', icon: '📊', label: 'Histórico de atividade', title: 'Histórico de Atividade', text: 'Resumo da sua atividade na plataforma: apostas realizadas e resultados obtidos.' },
+  { id: 'pagamento', icon: '🏦', label: 'Dados bancários', title: 'Dados Bancários para Levantamento', text: 'Guarde os seus dados bancários para facilitar os pedidos de levantamento.' },
+  { id: 'notificacoes', icon: '🔔', label: 'Notificações', title: 'Notificações', text: 'Preferências de comunicação e alertas da sua conta.' },
+  { id: 'sessoes', icon: '📱', label: 'Sessões ativas', title: 'Sessões Ativas', text: 'Dispositivos com sessão iniciada na sua conta.' },
+  { id: 'suporte', icon: '❓', label: 'Suporte e assistência', title: 'Suporte e Assistência', text: 'Canais de contacto para esclarecimento de dúvidas relacionadas com a conta.' },
+  { id: 'privacidade', icon: '👁️', label: 'Privacidade', title: 'Configurações de Privacidade', text: 'Preferências relativas ao tratamento e proteção dos seus dados pessoais.' },
+];
+const PROFILE_ALIAS = { '': 'pessoais', 'jogo-responsavel': 'limites' };
+const phoneLayout = () => matchMedia('(max-width: 760px)').matches;
+const memberId = (u) => `BET62-${String(u.id).padStart(6, '0')}`;
+
 function accountPage(sub) {
   if (!state.user) {
     return `<div class="panel empty"><p>Inicie sessão para ver a sua conta.</p><div class="hero-actions"><button class="primary-btn" data-action="login">Entrar</button><button class="outline-btn" data-action="register">Criar conta</button></div></div>${footer()}`;
   }
-  const tabs = [['', 'Visão geral'], ['carteira', 'Carteira'], ['apostas', 'As minhas apostas'], ['jogo-responsavel', 'Jogo responsável']];
-  const nav = `<div class="profile-nav">${tabs.map(([k, l]) => `<a href="#/perfil${k ? `/${k}` : ''}" class="${(sub || '') === k ? 'active' : ''}">${l}</a>`).join('')}
-    ${state.user.role === 'admin' ? '<a href="/admin">Administração</a>' : ''}<button data-action="logout">Terminar sessão</button></div>`;
-  let main = '';
-  if (sub === 'carteira') main = walletView();
-  else if (sub === 'apostas') main = betsView();
-  else if (sub === 'jogo-responsavel') main = responsibleView();
-  else main = overviewView();
-  return `<div class="page-title"><h1>A minha conta</h1><p>Gerir dados, saldo e atividade.</p></div><div class="profile-grid">${nav}<div class="profile-main" id="accountMain">${main}</div></div>${footer()}`;
+  const u = state.user;
+  const active = PROFILE_SECTIONS.find((s) => s.id === (PROFILE_ALIAS[sub] ?? sub))?.id || 'pessoais';
+  const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
+  const head = `<div class="pf-head">
+    <div class="pf-avatar">${esc(initials(u.name))}</div>
+    <div class="pf-who"><strong>${esc(u.name)}</strong><span>${esc(u.email)}</span><small>${memberId(u)}</small></div>
+    <div class="pf-balance"><small>Saldo disponível</small><strong>${money(u.balance)}</strong>
+      ${excluded ? `<em>Autoexcluído até ${esc(new Date(u.excludedUntil).toLocaleDateString('pt-PT'))}</em>` : ''}</div>
+  </div>`;
+  const extra = `${u.role === 'admin' ? '<a class="pf-link" href="/admin">🧰 Administração</a>' : ''}<button class="pf-link" data-action="logout">↩ Terminar sessão</button>`;
+  const card = (s) => `<div class="pf-card"><div class="pf-card-head"><h3>${s.title}</h3><p>${s.text}</p></div>${profileSection(s.id)}</div>`;
+  let body;
+  if (phoneLayout()) {
+    const open = state.profileCollapsed ? null : active;
+    body = `<div class="pf-acc">${PROFILE_SECTIONS.map((s) => `<div class="pf-acc-item${s.id === open ? ' open' : ''}" id="pf-${s.id}">
+        <a class="pf-acc-head" href="#/perfil/${s.id}" data-pf-acc="${s.id}"><span class="pf-ico">${s.icon}</span><span>${s.label}</span><i>▾</i></a>
+        ${s.id === open ? `<div class="pf-acc-body">${card(s)}</div>` : ''}</div>`).join('')}
+      <div class="pf-acc-extra">${extra}</div></div>`;
+  } else {
+    body = `<div class="pf-grid"><nav class="pf-nav">${PROFILE_SECTIONS.map((s) => `<a href="#/perfil/${s.id}" class="${s.id === active ? 'active' : ''}"><span class="pf-ico">${s.icon}</span><span>${s.label}</span>${s.id === active ? '<i>›</i>' : ''}</a>`).join('')}
+        <div class="pf-sep"></div>${extra}</nav>
+      <div class="pf-main" id="accountMain">${card(PROFILE_SECTIONS.find((s) => s.id === active))}</div></div>`;
+  }
+  return `<div class="pf">${head}${body}</div>${footer()}`;
 }
 
-function overviewView() {
+function profileSection(id) {
+  switch (id) {
+    case 'carteira': return walletView();
+    case 'apostas': return betsView();
+    case 'verificacao': setTimeout(loadKyc); return '<div id="kycBox"><div class="loading">A carregar…</div></div>';
+    case 'seguranca': return securityView();
+    case 'preferencias': return preferencesView();
+    case 'limites': return responsibleView();
+    case 'atividade': setTimeout(loadStats); return '<div id="statsBox"><div class="loading">A carregar…</div></div>';
+    case 'pagamento': return bankView();
+    case 'notificacoes': return prefToggles([
+      ['notifyResults', 'Resultados das apostas por email', 'Aviso quando uma aposta é resolvida'],
+      ['notifyPromos', 'Promoções por email', 'Ofertas e campanhas'],
+      ['notifySms', 'Alertas por SMS', 'Avisos importantes da conta'],
+      ['notifyPush', 'Notificações no dispositivo', 'Golos e resultados dos jogos em que apostou'],
+    ]);
+    case 'sessoes': setTimeout(loadSessions); return '<div id="sessionsBox"><div class="loading">A carregar…</div></div>';
+    case 'suporte': return supportView();
+    case 'privacidade': return `${prefToggles([
+      ['cookiesAnalytics', 'Cookies analíticos', 'Dados de utilização para melhorar a plataforma'],
+      ['cookiesMarketing', 'Cookies de marketing', 'Personalização de anúncios e conteúdos'],
+      ['shareData', 'Partilha de dados com parceiros', 'Dados partilhados com entidades afiliadas'],
+    ])}
+      <div class="pf-actions"><a class="outline-btn" href="/api/me/export" download>⬇ Descarregar os meus dados</a>
+        <button class="danger-outline" data-action="delete-account">🗑 Eliminar conta</button></div>`;
+    default: return personalView();
+  }
+}
+
+function personalView() {
   const u = state.user;
-  const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
-  return `<div class="user-head"><div class="big-avatar">${esc(initials(u.name))}</div><div><h2>${esc(u.name)}</h2><span class="muted">${esc(u.email)}</span></div></div>
-    <div class="stat-grid"><div class="stat"><small>Saldo disponível</small><strong>${money(u.balance)}</strong></div>
-      <div class="stat"><small>Membro desde</small><strong>${esc(new Date(u.createdAt).toLocaleDateString('pt-PT'))}</strong></div>
-      <div class="stat"><small>Estado</small><strong class="${excluded ? 'red' : 'green'}">${excluded ? 'Autoexcluída' : 'Ativa'}</strong></div></div>
-    <h3>Dados pessoais</h3>
-    <form data-form="profile"><div class="form-grid">
-      <div class="field"><label>Nome</label><input name="name" value="${esc(u.name)}" required></div>
-      <div class="field"><label>Telefone</label><input name="phone" value="${esc(u.phone || '')}" placeholder="+351 900 000 000"></div>
+  return `<form data-form="profile"><div class="form-grid">
+      <div class="field"><label>Nome completo</label><input name="name" value="${esc(u.name)}" required autocomplete="name"></div>
+      <div class="field"><label>Telemóvel</label><input name="phone" type="tel" value="${esc(u.phone || '')}" placeholder="+351 900 000 000" autocomplete="tel"></div>
       <div class="field"><label>Email</label><input value="${esc(u.email)}" readonly></div>
-      <div class="field"><label>Data de nascimento</label><input value="${esc(u.birthdate)}" readonly></div>
+      <div class="field"><label>Data de nascimento</label><input value="${esc(u.birthdate ? new Date(u.birthdate).toLocaleDateString('pt-PT') : '')}" readonly></div>
+      <div class="field"><label>ID de membro</label><input value="${memberId(u)}" readonly></div>
+      <div class="field"><label>Membro desde</label><input value="${esc(new Date(u.createdAt).toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' }))}" readonly></div>
     </div><div class="form-actions"><button class="primary-btn">Guardar alterações</button></div></form>
-    <h3>Alterar palavra-passe</h3>
+    <p class="muted small">O email e a data de nascimento não podem ser alterados aqui: contacte o suporte.</p>`;
+}
+
+const KYC_STATE = {
+  approved: ['verified', 'Verificado'], pending: ['pending', 'Pendente'], rejected: ['rejected', 'Recusado'],
+  given: ['verified', 'Indicado'], missing: ['none', 'Não enviado'], none: ['none', 'Em falta'],
+};
+const badge = (label, st, sub = '') => `<div class="pf-row"><div><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</div><span class="pf-badge ${KYC_STATE[st][0]}">${KYC_STATE[st][1]}</span></div>`;
+
+async function loadKyc() {
+  let k;
+  try { k = await api('/api/me/kyc'); } catch (err) { toast('Erro', err.message, 'error'); return; }
+  const box = $('#kycBox');
+  if (!box) return;
+  // A slot's state: its best document (approved, else pending, else rejected).
+  const slot = (kinds) => {
+    const docs = k.documents.filter((d) => kinds.includes(d.kind)).map((d) => d.status);
+    return docs.includes('approved') ? 'approved' : docs.includes('pending') ? 'pending' : docs.includes('rejected') ? 'rejected' : 'missing';
+  };
+  const u = state.user;
+  const notice = {
+    approved: '<div class="pf-note ok"><strong>Conta verificada.</strong> Os levantamentos estão desbloqueados.</div>',
+    pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A equipa responde até 48 horas úteis.</div>',
+    rejected: '<div class="pf-note bad"><strong>Verificação recusada.</strong> Envie documentos legíveis e dentro da validade.</div>',
+  }[k.status] || '<div class="pf-note">Envie um documento de identificação (Cartão de Cidadão ou passaporte) e um comprovativo de IBAN ou morada.</div>';
+  box.innerHTML = `${notice}
+    <div class="pf-list">
+      ${badge('Email', 'given', esc(u.email))}
+      ${badge('NIF', u.nif ? 'given' : 'none', u.nif ? esc(u.nif) : 'Indique-o em Dados bancários')}
+      ${badge('Documento de identificação', slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']), 'Cartão de Cidadão (frente e verso) ou passaporte')}
+      ${badge('Comprovativo de IBAN / morada', slot(['Comprovativo de IBAN / morada']))}
+    </div>
+    <h4>Enviar documento</h4>
+    <form data-form="kyc"><div class="form-grid">
+      <div class="field"><label>Tipo de documento</label><select name="kind">
+        <option value="id_front">Cartão de Cidadão — frente</option><option value="id_back">Cartão de Cidadão — verso</option>
+        <option value="passport">Passaporte</option><option value="address">Comprovativo de IBAN / morada</option></select></div>
+      <div class="field"><label>Ficheiro (JPG, PNG, WEBP ou PDF, máx. 5 MB)</label><input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div>
+    </div><div class="form-actions"><button class="primary-btn">Enviar documento</button></div></form>
+    ${k.documents.length ? `<h4>Documentos enviados</h4><div class="pf-list">${k.documents.map((d) => `<div class="pf-row"><div><b>${esc(d.kind)}</b><small>${esc(d.fileName)} · ${esc(fmtDateTime(d.createdAt))}</small></div>
+      <span class="pf-badge ${KYC_STATE[d.status][0]}">${KYC_STATE[d.status][1]}</span></div>`).join('')}</div>` : ''}`;
+}
+
+function securityView() {
+  return `<h4>Alterar palavra-passe</h4>
     <form data-form="password"><div class="form-grid">
       <div class="field"><label>Palavra-passe atual</label><input name="currentPassword" type="password" required autocomplete="current-password"></div>
-      <div class="field"><label>Nova palavra-passe</label><input name="newPassword" type="password" minlength="8" required autocomplete="new-password"></div>
-    </div><div class="form-actions"><button class="outline-btn">Alterar palavra-passe</button></div></form>`;
+      <div class="field"><label>Nova palavra-passe (mín. 8 caracteres)</label><input name="newPassword" type="password" minlength="8" required autocomplete="new-password"></div>
+      <div class="field"><label>Confirmar nova palavra-passe</label><input name="confirmPassword" type="password" minlength="8" required autocomplete="new-password"></div>
+    </div><div class="form-actions"><button class="primary-btn">Alterar palavra-passe</button></div></form>
+    <div class="pf-note">Ao alterar a palavra-passe, as sessões abertas noutros dispositivos são terminadas. Veja-as em <a href="#/perfil/sessoes">Sessões ativas</a>.</div>`;
+}
+
+function preferencesView() {
+  return `<div class="pf-box"><h4>📈 Formato de odds</h4><div class="pf-chips"><span class="pf-chip on">Decimal (2.50)</span></div>
+      <small class="muted">As odds são apresentadas em formato decimal.</small></div>
+    <div class="pf-box"><h4>🌐 Idioma e região</h4>
+      <div class="pf-row plain"><div><b>Idioma</b><small>Português (Portugal)</small></div><span class="pf-tag">🇵🇹 PT</span></div>
+      <div class="pf-row plain"><div><b>Fuso horário</b><small>Europe/Lisbon</small></div><span class="pf-tag">WET/WEST</span></div>
+      <div class="pf-row plain"><div><b>Moeda</b><small>Euro</small></div><span class="pf-tag">€ EUR</span></div></div>`;
+}
+
+function responsibleView() {
+  const u = state.user;
+  const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
+  return `<p class="muted">Apostar deve ser uma forma de entretenimento. Faça pausas e nunca aposte dinheiro de que precise. Se sentir que perdeu o controlo, procure apoio especializado.</p>
+    <div class="pf-box"><h4>⚠️ Autoexclusão</h4>
+    ${excluded ? `<div class="pf-note warn"><strong>Autoexclusão ativa</strong> até ${esc(fmtDateTime(u.excludedUntil))}. Durante este período não é possível apostar nem depositar; os levantamentos continuam disponíveis.</div>` : `
+      <p class="muted small">A autoexclusão é imediata e não pode ser anulada antes do fim. Os levantamentos continuam disponíveis.</p>
+      <div class="pf-excl">${[[1, '24 horas'], [7, '1 semana'], [30, '1 mês'], [90, '3 meses'], [180, '6 meses'], [365, '1 ano']]
+        .map(([d, l]) => `<button class="pf-excl-btn" data-exclude="${d}" data-label="${l}">${l}</button>`).join('')}</div>`}
+    </div>
+    <div class="pf-note">Ajuda com problemas de jogo: <strong>SICAD — Linha Vida 1414</strong> (chamada anónima e confidencial).</div>`;
+}
+
+async function loadStats() {
+  let s;
+  try { s = await api('/api/me/stats'); } catch (err) { toast('Erro', err.message, 'error'); return; }
+  const box = $('#statsBox');
+  if (!box) return;
+  box.innerHTML = `<div class="pf-stats">
+      <div><small>Apostas feitas</small><strong>${s.bets}</strong></div>
+      <div><small>Total apostado</small><strong>${money(s.staked)}</strong></div>
+      <div><small>Total ganho</small><strong class="green">${money(s.won)}</strong></div>
+      <div><small>Maior ganho</small><strong class="gold">${money(s.biggestWin)}</strong></div>
+      <div><small>Taxa de vitória</small><strong>${s.winRate}%</strong></div>
+      <div><small>Total depositado</small><strong>${money(s.deposits)}</strong></div>
+    </div>
+    <div class="pf-actions"><a class="outline-btn" href="#/perfil/apostas">Ver as minhas apostas</a><a class="outline-btn" href="#/perfil/carteira">Ver movimentos</a></div>`;
+}
+
+function bankView() {
+  const u = state.user;
+  return `<form data-form="bank"><div class="form-grid">
+      <div class="field"><label>IBAN</label><input name="iban" value="${esc(u.iban || '')}" placeholder="PT50 0000 0000 0000 0000 0000 0" autocomplete="off"></div>
+      <div class="field"><label>Titular da conta</label><input name="ibanName" value="${esc(u.ibanName || u.name)}" autocomplete="name"></div>
+      <div class="field"><label>NIF</label><input name="nif" value="${esc(u.nif || '')}" inputmode="numeric" maxlength="9" placeholder="123456789"></div>
+    </div><div class="form-actions"><button class="primary-btn">Guardar dados bancários</button></div></form>
+    <div class="pf-note">🔒 Os levantamentos são pagos apenas para contas em nome do titular da conta Bet62.</div>`;
+}
+
+function prefToggles(items) {
+  const p = state.user.prefs || {};
+  return `<div class="pf-list">${items.map(([k, label, sub]) => `<div class="pf-row"><div><b>${label}</b><small>${sub}</small></div>
+    <button class="pf-toggle${p[k] ? ' on' : ''}" data-pref="${k}" role="switch" aria-checked="${!!p[k]}" aria-label="${label}"><i></i></button></div>`).join('')}</div>`;
+}
+
+const deviceName = (ua) => {
+  if (!ua) return 'Dispositivo desconhecido';
+  const os = /iPhone|iPad/.test(ua) ? 'iPhone / iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Outro';
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
+  return `${br} · ${os}`;
+};
+
+async function loadSessions() {
+  let r;
+  try { r = await api('/api/me/sessions'); } catch (err) { toast('Erro', err.message, 'error'); return; }
+  const box = $('#sessionsBox');
+  if (!box) return;
+  const others = r.sessions.filter((s) => !s.current).length;
+  box.innerHTML = `<div class="pf-list">${r.sessions.map((s) => `<div class="pf-row"><div><b>${/Mobi|Android|iPhone/.test(s.device || '') ? '📱' : '💻'} ${esc(deviceName(s.device))}</b>
+      <small>Início: ${esc(fmtDateTime(s.createdAt))}</small></div>${s.current ? '<span class="pf-badge verified">Este dispositivo</span>' : ''}</div>`).join('')}</div>
+    ${others ? `<div class="pf-actions"><button class="danger-outline" data-action="end-sessions">Terminar as outras ${others} sessões</button></div>` : '<p class="muted small">Não há outras sessões abertas.</p>'}`;
+}
+
+function supportView() {
+  const c = state.config || {};
+  const rows = [
+    c.supportEmail && ['✉️', 'Email de suporte', `<a href="mailto:${esc(c.supportEmail)}">${esc(c.supportEmail)}</a>`, 'Resposta até 24 horas úteis'],
+    c.supportPhone && ['📞', 'Linha de apoio', `<a href="tel:${esc(c.supportPhone.replace(/\s+/g, ''))}">${esc(c.supportPhone)}</a>`, ''],
+    ['🕒', 'Horário de atendimento', '24 horas, 7 dias por semana', ''],
+    ['🛡️', 'Jogo responsável', 'SICAD — Linha Vida 1414', 'Apoio anónimo e confidencial'],
+  ].filter(Boolean);
+  return `<div class="pf-list">${rows.map(([i, l, v, s]) => `<div class="pf-row plain"><span class="pf-ico big">${i}</span><div class="grow"><small>${l}</small><b>${v}</b>${s ? `<small>${s}</small>` : ''}</div></div>`).join('')}</div>
+    <div class="pf-actions"><a class="outline-btn" href="#/perfil/limites">Limites e autoexclusão</a><a class="outline-btn" href="#/perfil/privacidade">Privacidade</a></div>`;
 }
 
 function walletView() {
@@ -786,7 +976,7 @@ function walletView() {
     <h3>Levantar</h3>
     <form data-form="withdraw"><div class="form-grid">
       <div class="field"><label>Valor (mín. €${c.minWithdraw ?? 10})</label><input name="amount" type="number" min="${c.minWithdraw ?? 10}" step="0.01" required inputmode="decimal"></div>
-      <div class="field"><label>IBAN</label><input name="iban" required placeholder="PT50 0000 0000 0000 0000 0000 0"></div>
+      <div class="field"><label>IBAN</label><input name="iban" required placeholder="PT50 0000 0000 0000 0000 0000 0" value="${esc(state.user.iban || '')}"></div>
     </div><div class="form-actions"><button class="outline-btn">Pedir levantamento</button></div></form>
     <div id="walletLists"><div class="loading">A carregar movimentos…</div></div>`;
 }
@@ -917,19 +1107,6 @@ async function loadBets() {
     const box = $('#betsList');
     if (box) box.innerHTML = bets.length ? bets.map((b) => betCard(b)).join('') : '<div class="empty">Ainda não fez nenhuma aposta.</div>';
   } catch (err) { toast('Erro', err.message, 'error'); }
-}
-
-function responsibleView() {
-  const u = state.user;
-  const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
-  return `<h3>Jogo responsável</h3>
-    <p class="muted">Apostar deve ser uma forma de entretenimento. Defina limites, faça pausas e nunca aposte dinheiro de que precise. Se sentir que perdeu o controlo, procure apoio especializado.</p>
-    <h3>Autoexclusão</h3>
-    ${excluded ? `<div class="notice"><strong>Autoexclusão ativa</strong> até ${esc(fmtDateTime(u.excludedUntil))}. Durante este período não é possível apostar nem depositar.</div>` : ''}
-    <form data-form="exclusion"><div class="form-grid"><div class="field"><label>Período</label><select name="days">
-      <option value="1">24 horas</option><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">3 meses</option><option value="180">6 meses</option><option value="365">1 ano</option>
-    </select></div></div><div class="form-actions"><button class="danger-btn">Ativar autoexclusão</button></div></form>
-    <p class="muted">A autoexclusão não pode ser cancelada antes de terminar. Os levantamentos continuam disponíveis.</p>`;
 }
 
 // ---------- bet slip ----------
@@ -1339,9 +1516,32 @@ const formHandlers = {
     updateHeader();
     toast('Dados atualizados');
   },
+  async bank(form) {
+    const d = formData(form);
+    const { user } = await api('/api/me', { method: 'PATCH', body: { iban: d.iban, ibanName: d.ibanName, nif: d.nif } });
+    state.user = user;
+    toast('Dados bancários guardados');
+    render({ keepScroll: true });
+  },
+  async kyc(form) {
+    const file = form.file.files[0];
+    if (!file) throw new Error('Escolha um ficheiro.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Ficheiro demasiado grande (máximo 5 MB).');
+    const data = await new Promise((ok, fail) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result).split(',')[1] || '');
+      r.onerror = () => fail(new Error('Não foi possível ler o ficheiro.'));
+      r.readAsDataURL(file);
+    });
+    await api('/api/me/kyc', { method: 'POST', body: { kind: form.kind.value, mimeType: file.type, fileName: file.name, data } });
+    if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
+    toast('Documento enviado', 'A equipa vai analisá-lo em até 48 horas úteis.');
+    loadKyc();
+  },
   async password(form) {
     const d = formData(form);
-    await api('/api/me/password', { method: 'POST', body: d });
+    if (d.newPassword !== d.confirmPassword) throw new Error('As palavras-passe novas não coincidem.');
+    await api('/api/me/password', { method: 'POST', body: { currentPassword: d.currentPassword, newPassword: d.newPassword } });
     form.reset();
     toast('Palavra-passe alterada', 'As outras sessões foram terminadas.');
   },
@@ -1374,14 +1574,6 @@ const formHandlers = {
     form.reset();
     toast('Levantamento pedido', 'O pedido será analisado pela equipa.');
     updateHeader(); loadWallet();
-  },
-  async exclusion(form) {
-    const days = Number(formData(form).days);
-    if (!confirm(`Ativar autoexclusão por ${form.days.selectedOptions[0].textContent}? Não pode ser anulada antes do fim.`)) return;
-    const { user } = await api('/api/me/self-exclusion', { method: 'POST', body: { days } });
-    state.user = user;
-    toast('Autoexclusão ativada');
-    render({ keepScroll: true });
   },
 };
 
@@ -1457,6 +1649,46 @@ document.addEventListener('click', async (e) => {
   const prov = e.target.closest('[data-casino-prov]');
   if (prov) { state.casinoFilter.provider = prov.dataset.casinoProv; loadCasino({ reset: true }); return; }
 
+  // Profile: the phone accordion (a tap on the open section closes it), switches and buttons.
+  const acc = e.target.closest('[data-pf-acc]');
+  if (acc) {
+    e.preventDefault();
+    const id = acc.dataset.pfAcc;
+    const wasOpen = acc.parentElement.classList.contains('open');
+    state.profileCollapsed = wasOpen;
+    if (!wasOpen) history.replaceState(null, '', `#/perfil/${id}`);
+    render({ keepScroll: true });
+    if (!wasOpen) $(`#pf-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  const pref = e.target.closest('[data-pref]');
+  if (pref) {
+    const k = pref.dataset.pref;
+    const on = !pref.classList.contains('on');
+    pref.classList.toggle('on', on);
+    pref.setAttribute('aria-checked', String(on));
+    try {
+      const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: { [k]: on } } });
+      state.user = user;
+    } catch (err) {
+      pref.classList.toggle('on', !on);
+      pref.setAttribute('aria-checked', String(!on));
+      toast('Erro', err.message, 'error');
+    }
+    return;
+  }
+  const excl = e.target.closest('[data-exclude]');
+  if (excl) {
+    if (!confirm(`Ativar autoexclusão por ${excl.dataset.label}? Não pode ser anulada antes do fim.`)) return;
+    try {
+      const { user } = await api('/api/me/self-exclusion', { method: 'POST', body: { days: Number(excl.dataset.exclude) } });
+      state.user = user;
+      toast('Autoexclusão ativada');
+      render({ keepScroll: true });
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
@@ -1469,6 +1701,22 @@ document.addEventListener('click', async (e) => {
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
   } else if (action === 'casino-more') {
     loadCasino();
+  } else if (action === 'logout') {
+    await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
+    state.user = null;
+    toast('Sessão terminada');
+    updateHeader(); renderSlip();
+    location.hash = '#/';
+    render();
+  } else if (action === 'end-sessions') {
+    try {
+      const { ended } = await api('/api/me/sessions/end-others', { method: 'POST', body: {} });
+      toast('Sessões terminadas', `${ended} ${ended === 1 ? 'sessão terminada' : 'sessões terminadas'}.`);
+      loadSessions();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'delete-account') {
+    const c = state.config || {};
+    toast('Eliminar conta', c.supportEmail ? `Para eliminar a conta, contacte ${c.supportEmail}.` : 'Para eliminar a conta, contacte o suporte.');
 
   }
 });
@@ -1567,7 +1815,9 @@ function bindChrome() {
   $$('.quick-stakes button').forEach((b) => b.addEventListener('click', () => { $('#stake').value = b.dataset.stake; renderSlip(); }));
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
-  window.addEventListener('hashchange', () => render());
+  window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
+  // The profile is a side menu on a computer and an accordion on a phone: redrawn when that changes.
+  matchMedia('(max-width: 760px)').addEventListener('change', () => { if (currentRoute().page === 'perfil') render({ keepScroll: true }); });
   // The live widget sits above the slip on wide screens and inside the match page on narrow ones.
   let resizeTimer;
   window.addEventListener('resize', () => {
