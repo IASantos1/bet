@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
-import { FOOTBALL_TREE, leagueKey } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createFeatured } from './featured.js';
@@ -362,7 +362,6 @@ export function createApp(db, {
   app.get('/api/featured', (_req, res) => res.json(featured.get()));
 
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
-  const LEAGUE_TREES = { futebol: FOOTBALL_TREE };
   const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
     AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
     AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))

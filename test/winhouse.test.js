@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, leagueKey, detailOdds } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -582,6 +582,22 @@ test('football league list: only the listed competitions (names compared loosely
   assert.equal(t.row(40).home_score, 1); // still followed (it has a bet)
   assert.equal(open(40), 0); // but closed to new bets
   assert.ok(open(41) > 0);
+});
+
+test('basketball and tennis lists: only the listed competitions; a listed women\'s tournament is shown', () => {
+  const leagues = { futebol: footballLeagues(''), basquetebol: allowedLeagues('', BASKETBALL_TREE), tenis: allowedLeagues('', TENNIS_TREE) };
+  const block = { women: true, youth: true, minor: true, leagues };
+  assert.ok(!blockedGame({ sport_id: 2, league: 'NBA', home_team: 'Lakers', away_team: 'Celtics' }, block));
+  assert.ok(!blockedGame({ sport_id: 2, league: 'Spain. Liga ACB' }, block));
+  assert.ok(blockedGame({ sport_id: 2, league: 'Egypt. Super League' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'WTA. Beijing', home_team: 'Swiatek I.', away_team: 'Gauff C.' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'World Tennis. Maanshan. Women. Doubles' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'world tennis darwin' }, block));
+  assert.ok(blockedGame({ sport_id: 5, league: 'ATP. Challenger. Lyon' }, block));
+  assert.ok(blockedGame({ sport_id: 1, league: 'Club Friendlies', home_team: 'Arsenal Women', away_team: 'Chelsea Women' }, block)); // teams still count
+  assert.ok(!blockedGame({ sport_id: 4, league: 'Russia. KHL' }, block)); // sports without a list: all
+  assert.equal(allowedLeagues('*', TENNIS_TREE), null);
+  assert.ok(!blockedGame({ sport_id: 5, league: 'ATP. Challenger. Lyon' }, { leagues: { ...leagues, tenis: null } }));
 });
 
 test('game pages: the line after the [CODE] tag is not part of the market name; lines gone from the book are removed, not left locked', async () => {
