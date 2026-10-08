@@ -314,7 +314,8 @@ function eventRow(e) {
   </div>`;
 }
 
-function groupByCompetition(events) {
+/** `insert` (html) goes right after the `after`-th event of the list (the block is split there). */
+function groupByCompetition(events, { after = 0, insert = '' } = {}) {
   const groups = new Map();
   const ordered = [...events].sort((a, b) => (sportRank(a.sport) - sportRank(b.sport)) || byPriority(a, b));
   for (const e of ordered) {
@@ -322,14 +323,27 @@ function groupByCompetition(events) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(e);
   }
-  return [...groups.entries()].map(([key, list]) => {
+  let seen = 0;
+  let pending = !!insert && after > 0;
+  const html = [...groups.entries()].map(([key, list]) => {
     const [sport, comp] = key.split('|');
     const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
     const icon = logo
       ? `<span class="league-logo" data-icon="${SPORT_META[sport]?.icon || '🏆'}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
       : `<span class="league-logo">${SPORT_META[sport]?.icon || '🏆'}</span>`;
-    return `<div class="comp-block"><div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${list.length}</span></div>${list.map(eventRow).join('')}</div>`;
+    const head = (n) => `<div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${n}</span></div>`;
+    if (pending && seen + list.length >= after) {
+      const cut = after - seen;
+      seen += list.length;
+      pending = false;
+      const rest = list.slice(cut);
+      return `<div class="comp-block">${head(list.length)}${list.slice(0, cut).map(eventRow).join('')}</div>${insert}`
+        + (rest.length ? `<div class="comp-block">${head(list.length)}${rest.map(eventRow).join('')}</div>` : '');
+    }
+    seen += list.length;
+    return `<div class="comp-block">${head(list.length)}${list.map(eventRow).join('')}</div>`;
   }).join('');
+  return pending ? html + insert : html;
 }
 
 function footer() {
@@ -428,13 +442,13 @@ function sportsPage(sub, rest = '') {
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    ${featuredSections()}
+    ${builderSection()}
     <div class="sport-strip">
       <button class="sport-pill${!state.sport ? ' active' : ''}" data-sport="">Todos</button>
       ${sports.map((s) => `<button class="sport-pill${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${SPORT_META[s]?.icon || ''} ${esc(SPORT_META[s]?.name || s)}</button>`).join('')}
       <a class="sport-pill" href="#/desporto/resultados">🏁 Resultados</a>
     </div>
-    <section class="section">${list.length ? groupByCompetition(list) : emptyEvents()}</section>
+    <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
     ${footer()}`;
 }
 
@@ -472,11 +486,14 @@ function accaCard(a, i) {
   </div>`;
 }
 
-function featuredSections() {
-  const f = state.featured;
-  if (!f) return '';
-  return `${f.builders?.length ? `<section class="section"><div class="section-head"><h2>Construa o seu ganho</h2></div>${carousel('builderCar', f.builders.map(builderCard))}</section>` : ''}
-    ${f.accas?.length ? `<section class="section"><div class="section-head"><h2>🏆 Apostas vencedoras</h2></div>${carousel('accaCar', f.accas.map(accaCard))}</section>` : ''}`;
+// "Construa o seu ganho" under the page title; "Apostas vencedoras" after the first four events.
+function builderSection() {
+  const b = state.featured?.builders;
+  return b?.length ? `<section class="section"><div class="section-head"><h2>Construa o seu ganho</h2></div>${carousel('builderCar', b.map(builderCard))}</section>` : '';
+}
+function accaSection() {
+  const a = state.featured?.accas;
+  return a?.length ? `<div class="acca-section"><div class="section-head"><h2>🏆 Apostas vencedoras</h2></div>${carousel('accaCar', a.map(accaCard))}</div>` : '';
 }
 
 /** A bet builder goes into the slip on its own (its legs are one bet on one match). */

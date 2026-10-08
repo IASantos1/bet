@@ -764,3 +764,4 @@ body.no-scroll { overflow: hidden; }
 .acca-last { color: var(--text-4); font-size: 11px; }
 .acca-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: auto; }
 .acca-foot b { color: var(--green); }
+.acca-section { margin: 18px 0; }
