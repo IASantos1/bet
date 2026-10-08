@@ -17,6 +17,10 @@ import { createWinHouseLive } from './whlive.js';
 import { createStripe } from './stripe.js';
 
 const db = openDb(config.dbPath);
+if (!config.dbPersistent) {
+  console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `
+    + 'Crie um Volume no Railway (Settings → Volumes) para guardar saldos, apostas e utilizadores.');
+}
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
 const log = (msg) => console.warn(`[feed] ${msg}`);
 const liveSocket = config.feed.token && config.feed.liveWs

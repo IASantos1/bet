@@ -190,7 +190,10 @@ function dashboard(s, settle) {
   const card = (icon, label, value, sub = '', tone = '') => `<div class="adm-card ${tone}"><span class="adm-card-icon">${icon}</span><small>${esc(label)}</small><strong>${esc(value)}</strong>${sub ? `<em>${esc(sub)}</em>` : ''}</div>`;
   const alert = s.pendingWithdrawals ? `<button class="adm-alert" data-tab="levantamentos">⚠️ ${s.pendingWithdrawals} levantamento(s) pendente(s) a aguardar aprovação — total ${esc(money(s.pendingWithdrawalAmount))} ›</button>` : '';
   const sm = settle?.summary || {};
-  return `${alert}
+  const storage = s.storage && !s.storage.persistent
+    ? `<div class="adm-alert">⚠️ A base de dados está no disco temporário do servidor (${esc(s.storage.path)}): saldos, apostas e utilizadores são apagados em cada deploy. No Railway, crie um <strong>Volume</strong> neste serviço (Settings → Volumes, por exemplo em /data) e faça redeploy — o servidor passa a usá-lo sozinho.</div>`
+    : '';
+  return `${storage}${alert}
     <div class="adm-cards">
       ${card('👥', 'Jogadores', s.users, '', 'blue')}
       ${card('🎟️', 'Apostas em aberto', s.openBets, money(s.openStake) + ' apostado', 'gold')}

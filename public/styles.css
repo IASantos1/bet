@@ -354,7 +354,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .top-actions .deposit-btn, #searchBtn { display: none; }
   .outline-btn, .primary-btn { height: 34px; padding: 0 11px; font-size: 12px; }
   .layout { display: block; min-height: calc(100vh - 60px); }
-  .left-sidebar { position: fixed; z-index: 90; top: 0; bottom: 0; left: 0; width: 270px; transform: translateX(-100%); transition: transform .25s; box-shadow: 12px 0 30px #0005; overflow: auto; }
+  .left-sidebar { position: fixed; z-index: 90; top: 60px; bottom: 0; left: 0; width: 270px; transform: translateX(-100%); transition: transform .25s; box-shadow: 12px 0 30px #0005; overflow: auto; }
   .left-sidebar.open { transform: none; }
   .close-mobile { display: block; border: 0; background: none; color: #aaa; font-size: 20px; }
   .content { padding: 14px 14px 90px; }

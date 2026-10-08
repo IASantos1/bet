@@ -35,7 +35,11 @@ export const config = {
   env: env.NODE_ENV || 'development',
   isProduction: env.NODE_ENV === 'production',
   port: int(env.PORT, 8080),
-  dbPath: env.DB_PATH || 'data/classicbet.db',
+  // The database must live on persistent storage, or every deploy starts from an empty one (balances,
+  // bets, users gone). On Railway, attach a Volume: its mount path is used automatically.
+  dbPath: env.DB_PATH || (env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(env.RAILWAY_VOLUME_MOUNT_PATH, 'classicbet.db') : 'data/classicbet.db'),
+  // Whether that storage survives a deploy: a Railway volume, or a DB_PATH chosen by the operator.
+  dbPersistent: !!env.DB_PATH || !!env.RAILWAY_VOLUME_MOUNT_PATH || !env.RAILWAY_ENVIRONMENT,
 
   // Initial administrator. In production both must be set explicitly.
   adminEmail: unquote(env.ADMIN_EMAIL).toLowerCase(),

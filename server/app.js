@@ -147,6 +147,11 @@ export function createApp(db, {
   });
 
   app.use('/api', express.json({ limit: '32kb' }));
+  // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' && !res.get('Cache-Control')) res.set('Cache-Control', 'no-store');
+    next();
+  });
 
   // CSRF: state-changing API calls must be JSON (cross-site forms cannot send it without CORS)
   // and, when the browser sends an Origin, it must be this site.
@@ -733,6 +738,8 @@ export function createApp(db, {
       users, openBets: open.n, openStake: cents(open.s), settledStake: cents(settled.s), settledPayout: cents(settled.p),
       grossRevenue: cents(settled.s - settled.p), pendingWithdrawals: pending.n, pendingWithdrawalAmount: cents(pending.s),
       customerBalances: cents(balances),
+      // Where the data lives, and whether it survives a deploy.
+      storage: { path: config.dbPath, persistent: config.dbPersistent },
     });
   });
 
