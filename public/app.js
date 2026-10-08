@@ -1585,11 +1585,19 @@ function toggleExpand(box) {
   if (box.requestFullscreen) box.requestFullscreen().catch(overlay); else overlay();
 }
 
-/** The match's live video, where WinHouse gives an address; otherwise why there is none. */
+/** Why this viewer may not watch (signed out / no balance), or null. The server checks the same. */
+function streamLock() {
+  if (!state.user) return { text: 'Inicie sessão para ver a transmissão ao vivo.', btn: '<button class="primary-btn" data-action="login">Entrar</button>' };
+  if (!(Number(state.user.balance) > 0)) return { text: 'Saldo insuficiente. Deposite para ver a transmissão ao vivo.', btn: '<a class="primary-btn" href="#/perfil/carteira">Depositar</a>' };
+  return null;
+}
+
+const streamLockHtml = (l) => `<span>${ICON_TV}</span><p><strong>${l.text}</strong></p>${l.btn}`;
+
+/** The match's live video box: locked, or waiting for WinHouse's player address (loadStream). */
 function streamBox(e) {
-  if (e.streamUrl) {
-    return `<div class="stream-box">${expandBtn()}<iframe src="${esc(e.streamUrl)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
-  }
+  const lock = e.stream ? streamLock() : null;
+  if (lock) return `<div class="stream-box empty locked">${streamLockHtml(lock)}</div>`;
   return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'A abrir a transmissão…' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
 }
 
@@ -1610,7 +1618,15 @@ async function loadStream(e, el) {
     const wait = Math.max(30, Number(r.expires_at) - Date.now() / 1000 - 60) * 1000;
     m.streamTimer = setTimeout(() => { if (m.streamEl === el && el.isConnected) loadStream(e, el); }, Math.min(wait, 30 * 60_000));
   } catch (err) {
-    if (m.streamEl !== el || el.querySelector('iframe')) return;
+    if (m.streamEl !== el) return;
+    // Signed out or out of balance (e.g. the session ended): the player goes, the reason shows.
+    const reason = err.data?.reason;
+    if (reason === 'login' || reason === 'balance') {
+      el.className = 'stream-box empty locked';
+      el.innerHTML = streamLockHtml(reason === 'login' ? { text: 'Inicie sessão para ver a transmissão ao vivo.', btn: '<button class="primary-btn" data-action="login">Entrar</button>' } : { text: 'Saldo insuficiente. Deposite para ver a transmissão ao vivo.', btn: '<a class="primary-btn" href="#/perfil/carteira">Depositar</a>' });
+      return;
+    }
+    if (el.querySelector('iframe')) return;
     const p = el.querySelector('p');
     if (p) p.textContent = 'Transmissão indisponível de momento. Tente daqui a pouco.';
   }
@@ -1792,14 +1808,15 @@ function mountLiveWidget() {
   const slot = wide ? $('#sideTracker') : $('#trackerInline');
   // Live video chosen: it takes the tracker's place (beside the slip on wide screens, in the header on phones).
   if (e?.status === 'live' && m.view === 'stream') {
-    // Not the address: a new one for the same game must not rebuild (and so reload) the player.
-    const key = `${e.id}|${!!e.stream}|${!!e.streamUrl}`;
+    // Signing in, or the balance crossing zero, opens or closes the player.
+    const lock = e.stream ? streamLock() : null;
+    const key = `${e.id}|${!!e.stream}|${lock ? lock.text : 'open'}`;
     if (!m.streamEl || m.streamKey !== key) {
       const holder = document.createElement('div');
       holder.innerHTML = streamBox(e);
       m.streamEl = holder.firstElementChild;
       m.streamKey = key;
-      if (e.stream && !e.streamUrl) loadStream(e, m.streamEl);
+      if (e.stream && !lock) loadStream(e, m.streamEl);
     }
     if (slot && m.streamEl.parentElement !== slot) slot.replaceChildren(m.streamEl);
     return;

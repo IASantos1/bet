@@ -61,8 +61,23 @@ test('GET /api/live/:eventId: only WinHouse games in play here; our id or the Wi
   const winhouseFeed = { streamOf: (ext) => ({ has: ext === '2085793307', url: null }) };
   const server = createApp(db, { winhouseLive, winhouseFeed }).listen(0);
   await new Promise((r) => server.once('listening', r));
-  const get = async (p) => { const r = await fetch(`http://127.0.0.1:${server.address().port}${p}`); return { status: r.status, body: await r.json() }; };
+  let cookie = '';
+  const req = async (p, init = {}) => {
+    const r = await fetch(`http://127.0.0.1:${server.address().port}${p}`, { ...init, headers: { ...(init.headers || {}), ...(cookie ? { Cookie: cookie } : {}) } });
+    const set = r.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return { status: r.status, body: await r.json() };
+  };
+  const get = (p) => req(p);
   try {
+    // Live TV: signed-in players with balance only.
+    assert.deepEqual(await get('/api/live/2085793307'), { status: 401, body: { success: false, reason: 'login', error: 'Inicie sessão para ver a transmissão.' } });
+    assert.equal((await get('/api/live')).status, 401);
+    const reg = await req('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ana Silva', email: 'tv@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true }) });
+    assert.equal(reg.status, 201);
+    const noMoney = await get('/api/live/2085793307');
+    assert.deepEqual([noMoney.status, noMoney.body.reason], [403, 'balance']);
+    db.prepare('UPDATE users SET balance_cents = 100 WHERE email = ?').run('tv@example.com');
     const want = { success: true, event_id: 2085793307, id: liveId, stream_id: 20571954, embed_url: `https://winhouse.bet/tv/play?t=${token}`, hls_url: `https://winhouse.bet/tv/p/20571954.m3u8?t=${token}`, expires_at: 1791413872 };
     assert.deepEqual(await get('/api/live/2085793307'), { status: 200, body: want });
     assert.deepEqual((await get(`/api/live/${liveId}`)).body, want);
