@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openDb, nowIso, tx } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
-import { createFeatured, builderConflict, builderOdds } from '../server/featured.js';
+import { createFeatured, builderConflict, builderOdds, impliedLeg } from '../server/featured.js';
 import { settleEvent } from '../server/betting.js';
 import { config } from '../server/config.js';
 
@@ -16,7 +16,7 @@ function addEvent(db, { sport = 'futebol', hours = 3, home, away }) {
   const add = (market, code, odds) => db.prepare('INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)').run(id, market, code, odds);
   if (sport === 'futebol') {
     add('1x2', '1', 150); add('1x2', 'X', 380); add('1x2', '2', 600);
-    add('dc', '1X', 110);
+    add('dc', '1X', 110); add('dc', 'X2', 210);
     add('ou', 'O2.5', 190); add('ou', 'U2.5', 185); add('ou', 'U1.5', 300);
     add('btts', 'Y', 170); add('btts', 'N', 200);
     add('x', '77~Cantos · Total~Mais de (8.5)', 180);
@@ -26,12 +26,19 @@ function addEvent(db, { sport = 'futebol', hours = 3, home, away }) {
   return id;
 }
 
-test('builder rules: no result + double chance, no "both score" + under 1.5, one pick per market', () => {
-  assert.match(builderConflict([{ market: '1x2', code: '1' }, { market: 'dc', code: '1X' }]), /dupla/);
+test('builder rules: double chance only covering the result, no "both score" + under 1.5, one pick per market', () => {
+  assert.equal(builderConflict([{ market: '1x2', code: '1' }, { market: 'dc', code: '1X' }]), null);
+  assert.equal(builderConflict([{ market: '1x2', code: '1' }, { market: 'dc', code: '12' }]), null);
+  assert.match(builderConflict([{ market: '1x2', code: '1' }, { market: 'dc', code: 'X2' }]), /dupla/);
+  assert.match(builderConflict([{ market: '1x2', code: 'X' }, { market: 'dc', code: '12' }]), /dupla/);
   assert.match(builderConflict([{ market: 'btts', code: 'Y' }, { market: 'ou', code: 'U1.5' }]), /Ambas/);
   assert.match(builderConflict([{ market: 'ou', code: 'O2.5' }, { market: 'ou', code: 'O1.5' }]), /mesmo mercado/);
   assert.equal(builderConflict([{ market: '1x2', code: '1' }, { market: 'btts', code: 'Y' }, { market: 'ou', code: 'O2.5' }]), null);
   assert.equal(builderOdds([1.5, 1.7, 1.9]), Math.round(1.5 * 1.7 * 1.9 * config.builderFactor * 100) / 100);
+  // A double chance covering the result is certain with it: priced at 1.00.
+  const legs = [{ market: '1x2', code: '1', odds: 1.5 }, { market: 'dc', code: '1X', odds: 1.1 }, { market: 'ou', code: 'O2.5', odds: 1.9 }];
+  assert.ok(impliedLeg(legs[1], legs));
+  assert.equal(builderOdds(legs), Math.round(1.5 * 1.9 * config.builderFactor * 100) / 100);
 });
 
 test('featured: six builders (result + one more market + goals) and four-leg multiples', () => {
@@ -43,7 +50,12 @@ test('featured: six builders (result + one more market + goals) and four-leg mul
   for (const b of f.builders) {
     assert.equal(b.legs.length, 3);
     assert.equal(b.legs[0].market, '1x2');
-    assert.ok(['btts', 'x'].includes(b.legs[1].market), b.legs[1].market);
+    assert.ok(['dc', 'btts', 'x'].includes(b.legs[1].market), b.legs[1].market);
+    if (b.legs[1].market === 'dc') {
+      assert.ok(b.legs[1].code.includes(b.legs[0].code));
+      assert.equal(b.legs[1].implied, true);
+      assert.equal(b.odds, Math.round(b.legs[0].odds * b.legs[2].odds * config.builderFactor * 100) / 100);
+    }
     assert.equal(b.legs[2].market, 'ou');
     assert.equal(builderConflict(b.legs), null);
     assert.ok(b.legs[0].odds <= 5);
@@ -98,9 +110,14 @@ test('bet builder bet: one match, priced with the margin, settled with it', asyn
     db.prepare("UPDATE users SET balance_cents = 10000 WHERE email = 'b@example.com'").run();
     const pick = (s) => ({ selectionId: s.id, odds: s.odds_x100 / 100 });
     const legs = [sel(ev, '1x2', '1'), sel(ev, 'btts', 'Y'), sel(ev, 'ou', 'O2.5')];
-    // Refused: two matches; result + double chance; a single leg.
+    // Refused: two matches; a double chance without the result; a single leg.
     assert.equal((await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: [pick(legs[0]), pick(sel(other, 'btts', 'Y'))] })).status, 400);
-    assert.equal((await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: [pick(legs[0]), pick(sel(ev, 'dc', '1X'))] })).status, 400);
+    assert.equal((await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: [pick(legs[0]), pick(sel(ev, 'dc', 'X2'))] })).status, 400);
+    // Result + the double chance covering it + goals: the double chance counts as 1.00.
+    const dc = await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: [legs[0], sel(ev, 'dc', '1X'), legs[2]].map(pick) });
+    assert.equal(dc.status, 201, JSON.stringify(dc.body));
+    const dcBet = db.prepare('SELECT * FROM bets WHERE id = ?').get(dc.body.betIds[0]);
+    assert.equal(dcBet.total_odds, Math.round(1.5 * 1.9 * config.builderFactor * 100) / 100);
     assert.equal((await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: [pick(legs[0])] })).status, 400);
     const r = await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections: legs.map(pick) });
     assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -117,6 +134,9 @@ test('bet builder bet: one match, priced with the margin, settled with it', asyn
     const done = db.prepare('SELECT * FROM bets WHERE id = ?').get(bet.id);
     assert.equal(done.status, 'won');
     assert.ok(Math.abs(done.payout_cents - Math.floor(1000 * product * config.builderFactor)) <= 1, `${done.payout_cents}`);
+    const dcDone = db.prepare('SELECT * FROM bets WHERE id = ?').get(dcBet.id);
+    assert.equal(dcDone.status, 'won');
+    assert.ok(Math.abs(dcDone.payout_cents - Math.round(1000 * dcBet.total_odds)) <= 1, `${dcDone.payout_cents}`); // the quoted total
     // The sports page draws use the same price.
     const f = await call('GET', '/api/featured');
     assert.equal(f.status, 200);

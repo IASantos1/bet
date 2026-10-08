@@ -1,7 +1,8 @@
 // Ready-made bets on the sports page, drawn at random from the pre-match board:
 //   builders  "Construa o seu ganho": one football match, three legs settled together (bet builder):
-//             the full-time result, one more market (both teams to score, cards, corners, shots
-//             on target, team to score first) and goals over / under 1.5–3.5.
+//             the full-time result, one more market (double chance, both teams to score, cards,
+//             corners, shots on target, team to score first) and goals over / under 1.5–3.5.
+//             Six cards are kept: one whose match starts or whose price closes is replaced by a new one.
 //   accas     "Apostas vencedoras": four favourites from different matches (full-time result /
 //             winner): football of today, then of the next days; other sports only to complete the six.
 // A draw is kept for a few minutes (it would reshuffle on every refresh otherwise); a card whose
@@ -12,9 +13,10 @@ import { config } from './config.js';
 const TZ = 'Europe/Lisbon';
 const dayOf = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso));
 
-// The second builder leg: markets that sit alongside a full-time result without contradicting it
-// or following from it (double chance always does one or the other, so it is left out).
+// The second builder leg: markets that sit alongside a full-time result. Double chance must cover
+// the result (1 with 1X or 12): it then adds no risk, so it is priced at 1.00 (see builderOdds).
 const SECOND = [
+  { key: 'dc', name: 'Dupla hipótese', match: (s) => s.market === 'dc' },
   { key: 'btts', name: 'Ambas as equipas marcam', match: (s) => s.market === 'btts' },
   { key: 'cards', name: 'Cartões', match: (s) => s.market === 'x' && /cart(ã|a)o|cartões|cards?\b|booking/i.test(splitSpecial(s.code)?.group || '') },
   { key: 'corners', name: 'Cantos', match: (s) => s.market === 'x' && /cantos?|corners?/i.test(splitSpecial(s.code)?.group || '') },
@@ -23,15 +25,23 @@ const SECOND = [
 ];
 const GOAL_LINES = new Set(['O1.5', 'U1.5', 'O2.5', 'U2.5', 'O3.5', 'U3.5']);
 
-/** Bet builder price: the legs multiplied, less the margin for their correlation. */
-export const builderOdds = (oddsList) => Math.round(oddsList.reduce((a, o) => a * o, 1) * config.builderFactor * 100) / 100;
+/** A double chance that covers the builder's full-time result (1 + 1X): won whenever that is, so it adds nothing. */
+export const impliedLeg = (leg, legs) => leg.market === 'dc' && legs.some((l) => l.market === '1x2' && String(leg.code).includes(l.code));
+
+/**
+ * Bet builder price: the legs multiplied, less the margin for their correlation. A leg another leg
+ * makes certain counts as 1.00. `legs` = [{ market, code, odds }] (or plain odds, all counted).
+ */
+export const builderOdds = (legs) => Math.round(legs.reduce((a, l) => a * (typeof l === 'number' ? l : impliedLeg(l, legs) ? 1 : l.odds), 1) * config.builderFactor * 100) / 100;
 
 /** Legs that cannot stand together in one builder (one makes the other impossible or certain). */
 export function builderConflict(legs) {
   const markets = legs.map((l) => (l.market === 'x' ? `x${splitSpecial(l.code)?.id}` : l.market));
   if (new Set(markets).size !== markets.length) return 'Duas seleções do mesmo mercado.';
   const has = (m) => legs.find((l) => l.market === m);
-  if (has('1x2') && has('dc')) return 'Resultado final e dupla hipótese não podem ser combinados.';
+  const result = has('1x2');
+  const dc = has('dc');
+  if (result && dc && !String(dc.code).includes(result.code)) return 'A dupla hipótese tem de incluir o resultado final escolhido.';
   const btts = has('btts');
   const ou = has('ou');
   // Both teams scoring means at least two goals.
@@ -52,7 +62,9 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
 
   function drawBuilders(t) {
     const out = [];
-    const events = shuffle(upcoming(t + 10 * 60_000, t + 48 * 3600_000).filter((e) => e.sport === 'futebol'), rng);
+    // The next 48 hours first; later games (up to 4 days) only when those do not fill six cards.
+    const football = (from, until) => shuffle(upcoming(from, until).filter((e) => e.sport === 'futebol'), rng);
+    const events = [...football(t + 10 * 60_000, t + 48 * 3600_000), ...football(t + 48 * 3600_000 - 1, t + 4 * 86_400_000)];
     for (const e of events) {
       if (out.length >= 6) break;
       const sels = selectionsOf(e.id);
@@ -63,7 +75,11 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
       if (!results.length || !goals.length || !seconds.length) continue;
       for (let tries = 0; tries < 6; tries++) {
         const second = pick(seconds, rng);
-        const legs = [pick(results, rng), pick(second.sels, rng), pick(goals, rng)];
+        const result = pick(results, rng);
+        // Double chance: one that covers the result picked.
+        const options = second.m.key === 'dc' ? second.sels.filter((s) => s.code.includes(result.code)) : second.sels;
+        if (!options.length) continue;
+        const legs = [result, pick(options, rng), pick(goals, rng)];
         if (!builderConflict(legs)) { out.push({ eventId: e.id, legs: legs.map((l) => l.id), second: second.m.name }); break; }
       }
     }
@@ -144,7 +160,8 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
     }
     builders = builders.map((b) => {
       const l = b.legs[0];
-      return { eventId: b.eventId, match: `${l.home} × ${l.away}`, competition: l.competition, startTime: l.startTime, legs: b.legs, odds: builderOdds(b.legs.map((x) => x.odds)) };
+      const legs = b.legs.map((x) => (impliedLeg(x, b.legs) ? { ...x, implied: true } : x));
+      return { eventId: b.eventId, match: `${l.home} × ${l.away}`, competition: l.competition, startTime: l.startTime, legs, odds: builderOdds(b.legs) };
     });
     accas = accas.map((a) => ({
       today: a.today, legs: a.legs, odds: Math.round(a.legs.reduce((p, l) => p * l.odds, 1) * 100) / 100,

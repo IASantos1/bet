@@ -523,7 +523,9 @@ function addAcca(i) {
   toast('Adicionado ao boletim', `Múltipla de ${a.legs.length} seleções`);
 }
 
-const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * l.odds, 1) * (state.config?.builderFactor ?? 1) * 100) / 100;
+// A leg the others make certain (double chance covering the result) counts as 1.00, as on the server.
+const impliedLeg = (l, legs) => l.market === 'dc' && legs.some((r) => r.market === '1x2' && String(l.code).includes(r.code));
+const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * (impliedLeg(l, b.legs) ? 1 : l.odds), 1) * (state.config?.builderFactor ?? 1) * 100) / 100;
 
 function resultsPage() {
   setTimeout(async () => {

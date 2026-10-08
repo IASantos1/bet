@@ -3,7 +3,7 @@ import { nowIso } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
 import { legOutcome, resultCode, PERIOD_MARKETS } from './markets.js';
-import { builderConflict } from './featured.js';
+import { builderConflict, impliedLeg } from './featured.js';
 
 export { resultCode };
 
@@ -89,7 +89,9 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   );
   const betIds = [];
   for (const slipLegs of slips) {
-    const { totalOdds, payoutCents } = payoutFor(stakeCents, slipLegs.map((l) => l.odds_x100), factor);
+    // A builder leg another leg makes certain (double chance covering the result) counts as 1.00.
+    const prices = slipLegs.map((l) => (mode === 'builder' && impliedLeg(l, slipLegs) ? 100 : l.odds_x100));
+    const { totalOdds, payoutCents } = payoutFor(stakeCents, prices, factor);
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
     for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
@@ -102,7 +104,7 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   return betIds;
 }
 
-/** The margin a builder bet was priced with: its total odds over the product of its legs. */
+/** The margin a builder bet was priced with: its total odds over the product of its legs (implied legs included). */
 function builderFactorOf(bet, legs) {
   const product = legs.reduce((a, l) => a * (l.odds_x100 / 100), 1);
   return product > 0 ? Math.min(1, bet.total_odds / product) : 1;
