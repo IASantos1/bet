@@ -739,3 +739,29 @@ body.no-scroll { overflow: hidden; }
 .pay-box #cardElement { min-height: 120px; }
 .stream-box.locked p { color: var(--text-2); font-size: 13px; margin: 0; }
 .stream-box.locked .primary-btn { margin-top: 4px; }
+
+/* Ready-made bets (sports page): bet builders and four-leg multiples */
+.combo-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); min-height: 100%; }
+.combo-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.combo-head strong { display: block; font-size: 15px; line-height: 1.25; }
+.combo-head small { color: var(--text-3); font-size: 12px; }
+.combo-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: #22354f; color: #9db4d3; }
+.combo-icon svg { width: 18px; height: 18px; }
+.combo-legs { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 1px solid var(--line); display: grid; gap: 12px; }
+.combo-legs li { position: relative; font-size: 13px; color: var(--text-3); }
+.combo-legs li::before { content: ''; position: absolute; left: -21px; top: 4px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-4); background: var(--panel); }
+.combo-legs b { color: var(--text); }
+.combo-btn { margin-top: auto; display: grid; gap: 2px; padding: 12px; border: 0; border-radius: 8px; background: var(--panel2); color: var(--text-3); cursor: pointer; text-align: center; }
+.combo-btn strong { color: var(--green); font-size: 20px; }
+.combo-btn small { font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.combo-btn:hover { background: var(--row-hover); }
+.acca-leg { display: grid; gap: 6px; }
+.acca-when { color: var(--text-3); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acca-pick { display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 8px; background: var(--panel2); }
+.acca-pick small { display: block; color: var(--text-3); font-size: 11px; }
+.acca-pick b { font-size: 14px; }
+.acca-pick span { color: var(--green); font-weight: 800; }
+.acca-last { color: var(--text-4); font-size: 11px; }
+.acca-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: auto; }
+.acca-foot b { color: var(--green); }
+.acca-section { margin: 18px 0; }

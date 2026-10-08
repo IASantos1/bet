@@ -198,6 +198,9 @@ export const config = {
   sessionDays: int(env.SESSION_DAYS, 30),
   minAge: 18,
 
+  // Bet builder (several picks on one match): the legs' odds multiplied by this, for their correlation.
+  builderFactor: Math.min(1, Math.max(0.5, Number(env.BUILDER_FACTOR) || 0.9)),
+
   limits: {
     minStakeCents: int(env.MIN_STAKE_CENTS, 100), // €1
     maxStakeCents: int(env.MAX_STAKE_CENTS, 100_000), // €1.000

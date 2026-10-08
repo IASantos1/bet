@@ -3,12 +3,16 @@ import { nowIso } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
 import { legOutcome, resultCode, PERIOD_MARKETS } from './markets.js';
+import { builderConflict } from './featured.js';
 
 export { resultCode };
 
-/** Payout for `stakeCents` at the product of the given odds (x100), floored and capped. */
-export function payoutFor(stakeCents, oddsX100List) {
-  const odds = oddsX100List.reduce((acc, o) => acc * (o / 100), 1);
+/**
+ * Payout for `stakeCents` at the product of the given odds (x100), floored and capped. A bet
+ * builder (`factor` < 1) pays that product less the margin for its legs' correlation.
+ */
+export function payoutFor(stakeCents, oddsX100List, factor = 1) {
+  const odds = oddsX100List.reduce((acc, o) => acc * (o / 100), 1) * factor;
   const raw = Math.floor(stakeCents * odds + 1e-6);
   return { totalOdds: Math.round(odds * 100) / 100, payoutCents: Math.min(raw, config.limits.maxPayoutCents) };
 }
@@ -20,7 +24,7 @@ export function payoutFor(stakeCents, oddsX100List) {
  */
 export function placeBets(db, user, { mode, stakeCents, picks }) {
   const { limits } = config;
-  if (mode !== 'single' && mode !== 'multiple') throw new HttpError(400, 'Tipo de aposta inválido.');
+  if (!['single', 'multiple', 'builder'].includes(mode)) throw new HttpError(400, 'Tipo de aposta inválido.');
   if (!Array.isArray(picks) || picks.length === 0) throw new HttpError(400, 'O boletim está vazio.');
   if (picks.length > limits.maxSelections) throw new HttpError(400, `Máximo de ${limits.maxSelections} seleções.`);
   if (stakeCents < limits.minStakeCents) throw new HttpError(400, `Aposta mínima: €${(limits.minStakeCents / 100).toFixed(2)}.`);
@@ -66,7 +70,17 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
     }
   }
 
-  const slips = mode === 'multiple' ? [legs] : legs.map((l) => [l]);
+  if (mode === 'builder') {
+    // Several picks on one match, priced together.
+    if (legs.length < 2 || legs.length > 4) throw new HttpError(400, 'O criador de apostas leva 2 a 4 seleções.');
+    if (new Set(legs.map((l) => l.event_id)).size !== 1) throw new HttpError(400, 'Criador de apostas: todas as seleções do mesmo jogo.');
+    if (legs[0].status !== 'scheduled') throw new HttpError(409, 'O criador de apostas é só antes do jogo.');
+    const conflict = builderConflict(legs);
+    if (conflict) throw new HttpError(400, conflict);
+  }
+
+  const factor = mode === 'builder' ? config.builderFactor : 1;
+  const slips = mode === 'single' ? legs.map((l) => [l]) : [legs];
   const insertBet = db.prepare(
     `INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   );
@@ -75,7 +89,7 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   );
   const betIds = [];
   for (const slipLegs of slips) {
-    const { totalOdds, payoutCents } = payoutFor(stakeCents, slipLegs.map((l) => l.odds_x100));
+    const { totalOdds, payoutCents } = payoutFor(stakeCents, slipLegs.map((l) => l.odds_x100), factor);
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
     for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
@@ -83,9 +97,15 @@ export function placeBets(db, user, { mode, stakeCents, picks }) {
   }
   // Debit last so the ledger entry can reference the bets; a short balance rolls everything back.
   postTransaction(db, user.id, -stakeCents * slips.length, 'bet',
-    mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : `Aposta simples ×${slips.length}`,
+    mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? `Criador de apostas (${legs.length} seleções)` : `Aposta simples ×${slips.length}`,
     `bet:${betIds.join(',')}`);
   return betIds;
+}
+
+/** The margin a builder bet was priced with: its total odds over the product of its legs. */
+function builderFactorOf(bet, legs) {
+  const product = legs.reduce((a, l) => a * (l.odds_x100 / 100), 1);
+  return product > 0 ? Math.min(1, bet.total_odds / product) : 1;
 }
 
 /**
@@ -111,8 +131,8 @@ export function settleBet(db, betId) {
     postTransaction(db, bet.user_id, bet.stake_cents, 'refund', `Aposta #${betId} anulada — reembolso`, `bet:${betId}`);
     return bet.stake_cents;
   }
-  // Void legs count as odds 1.00, so the payout uses only the winning legs.
-  const { payoutCents } = payoutFor(bet.stake_cents, won.map((l) => l.odds_x100));
+  // Void legs count as odds 1.00, so the payout uses only the winning legs (a builder keeps its margin).
+  const { payoutCents } = payoutFor(bet.stake_cents, won.map((l) => l.odds_x100), bet.type === 'builder' ? builderFactorOf(bet, legs) : 1);
   db.prepare("UPDATE bets SET status = 'won', payout_cents = ?, settled_at = ? WHERE id = ?").run(payoutCents, now, betId);
   postTransaction(db, bet.user_id, payoutCents, 'payout', `Aposta #${betId} ganha`, `bet:${betId}`);
   return payoutCents;

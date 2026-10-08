@@ -40,7 +40,7 @@ const state = {
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
   match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
-  slip: loadSlip(),
+  slip: loadSlip(), builder: loadBuilder(), featured: null,
   mode: 'single',
   sport: '',
   previousOdds: new Map(),
@@ -79,7 +79,13 @@ function loadSlip() {
   } catch { return []; }
 }
 function saveSlip() {
-  try { localStorage.setItem('bet62_slip', JSON.stringify(state.slip)); } catch { /* storage unavailable */ }
+  try {
+    localStorage.setItem('bet62_slip', JSON.stringify(state.slip));
+    if (state.builder) localStorage.setItem('bet62_builder', JSON.stringify(state.builder)); else localStorage.removeItem('bet62_builder');
+  } catch { /* storage unavailable */ }
+}
+function loadBuilder() {
+  try { const v = JSON.parse(localStorage.getItem('bet62_builder') || 'null'); return v && Array.isArray(v.legs) ? v : null; } catch { return null; }
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -308,7 +314,8 @@ function eventRow(e) {
   </div>`;
 }
 
-function groupByCompetition(events) {
+/** `insert` (html) goes right after the `after`-th event of the list (the block is split there). */
+function groupByCompetition(events, { after = 0, insert = '' } = {}) {
   const groups = new Map();
   const ordered = [...events].sort((a, b) => (sportRank(a.sport) - sportRank(b.sport)) || byPriority(a, b));
   for (const e of ordered) {
@@ -316,14 +323,27 @@ function groupByCompetition(events) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(e);
   }
-  return [...groups.entries()].map(([key, list]) => {
+  let seen = 0;
+  let pending = !!insert && after > 0;
+  const html = [...groups.entries()].map(([key, list]) => {
     const [sport, comp] = key.split('|');
     const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
     const icon = logo
       ? `<span class="league-logo" data-icon="${SPORT_META[sport]?.icon || '🏆'}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
       : `<span class="league-logo">${SPORT_META[sport]?.icon || '🏆'}</span>`;
-    return `<div class="comp-block"><div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${list.length}</span></div>${list.map(eventRow).join('')}</div>`;
+    const head = (n) => `<div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${n}</span></div>`;
+    if (pending && seen + list.length >= after) {
+      const cut = after - seen;
+      seen += list.length;
+      pending = false;
+      const rest = list.slice(cut);
+      return `<div class="comp-block">${head(list.length)}${list.slice(0, cut).map(eventRow).join('')}</div>${insert}`
+        + (rest.length ? `<div class="comp-block">${head(list.length)}${rest.map(eventRow).join('')}</div>` : '');
+    }
+    seen += list.length;
+    return `<div class="comp-block">${head(list.length)}${list.map(eventRow).join('')}</div>`;
   }).join('');
+  return pending ? html + insert : html;
 }
 
 function footer() {
@@ -420,15 +440,88 @@ function sportsPage(sub, rest = '') {
   if (sub === 'liga' && rest) return leaguePage(decodeURIComponent(rest));
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
+  if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
+    ${builderSection()}
     <div class="sport-strip">
       <button class="sport-pill${!state.sport ? ' active' : ''}" data-sport="">Todos</button>
       ${sports.map((s) => `<button class="sport-pill${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${SPORT_META[s]?.icon || ''} ${esc(SPORT_META[s]?.name || s)}</button>`).join('')}
       <a class="sport-pill" href="#/desporto/resultados">🏁 Resultados</a>
     </div>
-    <section class="section">${list.length ? groupByCompetition(list) : emptyEvents()}</section>
+    <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
     ${footer()}`;
 }
+
+// ---------- ready-made bets (sports page) ----------
+
+let featuredLoading = false;
+async function loadFeatured() {
+  if (featuredLoading) return;
+  featuredLoading = true;
+  try {
+    const f = await api('/api/featured');
+    state.featured = { ...f, at: Date.now() };
+    if (currentRoute().page === 'desporto' && !currentRoute().sub) render({ keepScroll: true });
+  } catch { /* the board works without it */ } finally { featuredLoading = false; }
+}
+
+const shortWhen = (iso) => fmtWhen(iso).replace(' ', ', ');
+
+function builderCard(b, i) {
+  return `<div class="combo-card builder">
+    <div class="combo-head"><div><strong>${esc(b.match)}</strong><small>${esc(shortWhen(b.startTime))}</small></div><span class="combo-icon">${ICON_SLIP}</span></div>
+    <ul class="combo-legs">${b.legs.map((l) => `<li><span>${esc(l.marketName)} - </span><b>${esc(l.label)}</b></li>`).join('')}</ul>
+    <button class="combo-btn" data-builder="${i}"><strong>${fmtOdds(b.odds)}</strong><small>CRIADOR DE APOSTAS</small></button>
+  </div>`;
+}
+
+function accaCard(a, i) {
+  return `<div class="combo-card acca">
+    ${a.legs.map((l) => `<div class="acca-leg">
+      <div class="acca-when">${SPORT_META[l.sport]?.icon || '⚽'} ${esc(shortWhen(l.startTime))}, ${esc(l.home)} - ${esc(l.away)}</div>
+      <div class="acca-pick"><div><small>${esc(l.market === 'ml' ? 'Vencedor' : 'Resultado no fim do tempo regulamentar')}</small><b>${esc(l.label)}</b></div><span>${fmtOdds(l.odds)}</span></div>
+    </div>`).join('')}
+    <div class="acca-last">Início do último jogo: ${esc(shortWhen(a.lastStart))}</div>
+    <div class="acca-foot"><span>Odds totais <b>${fmtOdds(a.odds)}</b></span><button class="primary-btn" data-acca="${i}">Adicionar ao boletim</button></div>
+  </div>`;
+}
+
+// "Construa o seu ganho" under the page title; "Apostas vencedoras" after the first four events.
+function builderSection() {
+  const b = state.featured?.builders;
+  return b?.length ? `<section class="section"><div class="section-head"><h2>Construa o seu ganho</h2></div>${carousel('builderCar', b.map(builderCard))}</section>` : '';
+}
+function accaSection() {
+  const a = state.featured?.accas;
+  return a?.length ? `<div class="acca-section"><div class="section-head"><h2>🏆 Apostas vencedoras</h2></div>${carousel('accaCar', a.map(accaCard))}</div>` : '';
+}
+
+/** A bet builder goes into the slip on its own (its legs are one bet on one match). */
+function addBuilder(i) {
+  const b = state.featured?.builders?.[i];
+  if (!b) return;
+  if (state.slip.length) toast('Boletim', 'O criador de apostas substituiu as seleções anteriores.');
+  state.slip = [];
+  state.builder = { eventId: b.eventId, match: b.match, competition: b.competition, startTime: b.startTime, legs: b.legs.map((l) => ({ ...l })) };
+  saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
+}
+
+/** A ready-made multiple: its four picks into the slip (replacing other picks on those matches). */
+function addAcca(i) {
+  const a = state.featured?.accas?.[i];
+  if (!a) return;
+  state.builder = null;
+  const events = new Set(a.legs.map((l) => l.eventId));
+  state.slip = state.slip.filter((s) => !events.has(s.eventId));
+  for (const l of a.legs) {
+    state.slip.push({ selectionId: l.selectionId, eventId: l.eventId, market: l.market, marketName: l.marketName, code: l.code, label: l.label, odds: l.odds, match: `${l.home} vs ${l.away}`, competition: l.competition });
+  }
+  state.mode = 'multiple';
+  saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
+  toast('Adicionado ao boletim', `Múltipla de ${a.legs.length} seleções`);
+}
+
+const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * l.odds, 1) * (state.config?.builderFactor ?? 1) * 100) / 100;
 
 function resultsPage() {
   setTimeout(async () => {
@@ -449,6 +542,7 @@ function resultsPage() {
     <section class="section" id="resultsBox"><div class="loading">A carregar…</div></section>${footer()}`;
 }
 
+const ICON_SLIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10h6M8 14h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16.5" cy="10" r="1.4" fill="currentColor"/></svg>';
 const ICON_TV = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 2.5l4 3.5 4-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 10v5l4.5-2.5z" fill="currentColor"/></svg>';
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8v8l6-4z" fill="currentColor"/></svg>';
 const ICON_EXPAND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -810,7 +904,7 @@ function betsView() {
 
 function betCard(b, { showUser = false } = {}) {
   return `<div class="bet-card">
-    <div class="bet-card-head"><span>#${b.id} · ${b.type === 'multiple' ? `Múltipla (${b.legs.length})` : 'Simples'} · ${esc(fmtDateTime(b.createdAt))}${showUser ? ` · ${esc(b.email)}` : ''}</span><span class="pill ${b.status}">${STATUS_LABEL[b.status]}</span></div>
+    <div class="bet-card-head"><span>#${b.id} · ${b.type === 'multiple' ? `Múltipla (${b.legs.length})` : b.type === 'builder' ? `Criador de apostas (${b.legs.length})` : 'Simples'} · ${esc(fmtDateTime(b.createdAt))}${showUser ? ` · ${esc(b.email)}` : ''}</span><span class="pill ${b.status}">${STATUS_LABEL[b.status]}</span></div>
     ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${esc(l.marketName && l.market !== '1x2' ? `${l.marketName}: ` : '')}${esc(l.label || CODE_LABEL[l.code])}${l.score ? ` · ${esc(l.score)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span></div></div>`).join('')}
     <div class="bet-card-foot"><span>Aposta <strong>${money(b.stake)}</strong></span><span>Cotação <strong>${fmtOdds(b.totalOdds)}</strong></span>
       <span>${b.status === 'open' ? 'Retorno potencial' : 'Pago'} <strong class="${b.status === 'won' ? 'green' : ''}">${money(b.status === 'open' ? b.potential : b.payout)}</strong></span></div>
@@ -860,6 +954,7 @@ function toggleSelection(selId) {
   const found = findSelection(selId);
   if (!found) return;
   const { ev, sel } = found;
+  state.builder = null; // a pick of its own replaces a bet builder
   const idx = state.slip.findIndex((s) => s.selectionId === selId);
   if (idx >= 0) {
     state.slip.splice(idx, 1);
@@ -907,6 +1002,10 @@ function reconcileSlip() {
 function slipTotals() {
   const stake = Number(String($('#stake').value).replace(',', '.')) || 0;
   const items = state.slip;
+  if (state.builder) {
+    const odds = builderTotal(state.builder);
+    return { stake, total: stake, odds, potential: Math.min(stake * odds, state.config?.maxPayout ?? Infinity) };
+  }
   if (state.mode === 'multiple') {
     const odds = items.reduce((a, s) => a * s.odds, 1);
     return { stake, total: stake, odds, potential: Math.min(stake * odds, state.config?.maxPayout ?? Infinity) };
@@ -915,7 +1014,35 @@ function slipTotals() {
   return { stake, total: stake * items.length, odds: null, potential };
 }
 
+function renderBuilderSlip() {
+  const b = state.builder;
+  const n = b.legs.length;
+  $('#betCount').textContent = 'Criador de apostas';
+  $('#slipFabCount').textContent = n;
+  $('#slipFab').classList.toggle('hidden', false);
+  $$('.bet-tabs button').forEach((x) => x.classList.remove('active'));
+  const changed = b.legs.some((l) => l.newOdds);
+  $('#betItems').innerHTML = `<div class="bet-item${changed ? ' warn' : ''}">
+      <div class="bet-item-top"><span>${esc(b.competition)} · Criador de apostas</span><span><span class="odd">${fmtOdds(builderTotal(b))}</span><button class="remove-bet" data-remove-builder aria-label="Remover">×</button></span></div>
+      <strong>${esc(b.match)}</strong>
+      ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small>${l.newOdds ? ` <small class="note">${fmtOdds(l.odds)} → ${fmtOdds(l.newOdds)}</small>` : ''}</div>`).join('')}
+    </div>`;
+  $('#betFooter').classList.remove('hidden');
+  const t = slipTotals();
+  $('#oddsLabel').textContent = 'Cotação do criador';
+  $('#totalOdds').textContent = fmtOdds(t.odds);
+  $('#stakeLabel').textContent = 'Valor da aposta';
+  $('#totalStake').textContent = money(t.total);
+  $('#potential').textContent = money(t.potential);
+  $('#slipError').classList.add('hidden');
+  const btn = $('#placeBet');
+  btn.disabled = false;
+  btn.textContent = changed ? 'ACEITAR NOVAS ODDS' : state.user ? 'APOSTAR AGORA' : 'ENTRAR PARA APOSTAR';
+  btn.dataset.state = changed ? 'accept' : 'place';
+}
+
 function renderSlip() {
+  if (state.builder) return renderBuilderSlip();
   reconcileSlip();
   const n = state.slip.length;
   $('#betCount').textContent = `${n} ${n === 1 ? 'seleção' : 'seleções'}`;
@@ -955,6 +1082,7 @@ function renderSlip() {
 async function placeBet() {
   const btn = $('#placeBet');
   if (btn.dataset.state === 'accept') {
+    state.builder?.legs.forEach((l) => { if (l.newOdds) { l.odds = l.newOdds; delete l.newOdds; } });
     state.slip.forEach((s) => { if (s.newOdds) s.odds = s.newOdds; });
     saveSlip();
     renderSlip();
@@ -965,12 +1093,16 @@ async function placeBet() {
   btn.disabled = true;
   btn.textContent = 'A PROCESSAR…';
   try {
+    const b = state.builder;
     const res = await api('/api/bets', {
       method: 'POST',
-      body: { mode: state.mode, stake, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
+      body: b
+        ? { mode: 'builder', stake, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
+        : { mode: state.mode, stake, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
     });
     state.user.balance = res.balance;
     state.slip = [];
+    state.builder = null;
     saveSlip();
     toast('Aposta registada', `${res.betIds.length > 1 ? `${res.betIds.length} apostas` : `Aposta #${res.betIds[0]}`} · saldo ${money(res.balance)}`);
     updateHeader();
@@ -979,7 +1111,7 @@ async function placeBet() {
   } catch (err) {
     if (err.data?.changes) {
       for (const c of err.data.changes) {
-        const item = state.slip.find((s) => s.selectionId === c.selectionId);
+        const item = state.slip.find((s) => s.selectionId === c.selectionId) || state.builder?.legs.find((l) => l.selectionId === c.selectionId);
         if (item) item.newOdds = c.odds;
       }
       await refreshEvents();
@@ -1296,6 +1428,12 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  const builderBtn = e.target.closest('[data-builder]');
+  if (builderBtn) { addBuilder(Number(builderBtn.dataset.builder)); return; }
+  const accaBtn = e.target.closest('[data-acca]');
+  if (accaBtn) { addAcca(Number(accaBtn.dataset.acca)); return; }
+  if (e.target.closest('[data-remove-builder]')) { state.builder = null; saveSlip(); renderSlip(); return; }
+
   const sport = e.target.closest('[data-sport]');
   if (sport) { state.sport = sport.dataset.sport; render({ keepScroll: true }); return; }
   const sportLink = e.target.closest('[data-sport-link]');
@@ -1418,9 +1556,10 @@ function bindChrome() {
   }, { passive: true });
   $('#slipFab').addEventListener('click', () => setSlipOpen(true));
   $('#closeSlip').addEventListener('click', () => setSlipOpen(false));
-  $('#clearBets').addEventListener('click', () => { state.slip = []; saveSlip(); autoMode(); syncSelectedButtons(); renderSlip(); });
+  $('#clearBets').addEventListener('click', () => { state.slip = []; state.builder = null; saveSlip(); autoMode(); syncSelectedButtons(); renderSlip(); });
   $('#placeBet').addEventListener('click', placeBet);
   $$('.bet-tabs button').forEach((b) => b.addEventListener('click', () => {
+    if (state.builder) return; // a bet builder is one bet
     state.mode = b.dataset.tab;
     try { localStorage.setItem('classicbet_mode_touched', '1'); } catch { /* ignore */ }
     renderSlip();
