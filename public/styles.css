@@ -79,6 +79,8 @@ h1, h2, h3 { margin-top: 0; }
 .side-country b, .side-league b { margin-left: auto; color: var(--text-4); font-size: 10px; }
 .side-country:hover, .side-league:hover { background: var(--row-hover); color: #fff; }
 .side-country.none, .side-league.none { opacity: .5; }
+.side-flag { flex: none; width: 18px; height: 18px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 1px #ffffff26; background: var(--dim); }
+.side-flag.globe { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; box-shadow: none; background: none; }
 .side-league { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 25px; border-radius: 6px; color: var(--text-3); font-size: 12px; font-weight: 600; }
 .side-league.active { background: var(--brand); color: #fff; }
 .side-league.active b { color: #ffffffb3; }

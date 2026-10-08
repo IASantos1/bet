@@ -214,6 +214,26 @@ const flagUrl = (cc) => {
   return `https://flagcdn.com/w80/${FLAG_CODE[code] || code.toLowerCase()}.png`;
 };
 
+// Sidebar countries (names as the league tree has them) → flag codes; regions get an icon instead.
+const COUNTRY_FLAG = {
+  argentina: 'ar', australia: 'au', austria: 'at', belgium: 'be', brazil: 'br', canada: 'ca', chile: 'cl', colombia: 'co',
+  'czech republic': 'cz', denmark: 'dk', ecuador: 'ec', england: 'gb-eng', scotland: 'gb-sct', wales: 'gb-wls', finland: 'fi',
+  france: 'fr', germany: 'de', greece: 'gr', israel: 'il', italy: 'it', japan: 'jp', mexico: 'mx', netherlands: 'nl', norway: 'no',
+  paraguay: 'py', peru: 'pe', poland: 'pl', portugal: 'pt', romania: 'ro', serbia: 'rs', 'south korea': 'kr', spain: 'es',
+  sweden: 'se', switzerland: 'ch', turkey: 'tr', 'united states': 'us', uruguay: 'uy', ireland: 'ie', croatia: 'hr',
+  ukraine: 'ua', russia: 'ru', china: 'cn', 'saudi arabia': 'sa', egypt: 'eg', morocco: 'ma', bolivia: 'bo',
+  venezuela: 've', iceland: 'is', hungary: 'hu', slovakia: 'sk', slovenia: 'si', bulgaria: 'bg', cyprus: 'cy', qatar: 'qa',
+};
+const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐' };
+
+/** A round flag for a sidebar country (or a globe for a continent / world competitions). */
+function countryFlag(country) {
+  const k = String(country || '').toLowerCase().trim();
+  const code = COUNTRY_FLAG[k];
+  if (code) return `<img class="side-flag" src="https://flagcdn.com/w40/${code}.png" alt="" loading="lazy">`;
+  return `<span class="side-flag globe" aria-hidden="true">${REGION_ICON[k] || '🌐'}</span>`;
+}
+
 /** Club badge or player photo; for players, the country flag when there is no photo. */
 function sideBadge(e, side, size = '') {
   const flag = flagUrl(e[`${side}Country`]);
@@ -1000,7 +1020,7 @@ function sideTree(sport) {
     const total = leagues.reduce((n, l) => n + l.count, 0);
     const open = state.sideOpen[`${sport}|${country}`] || leagues.some((l) => l.name === current);
     return `<button class="side-country${open ? ' open' : ''}${total ? '' : ' none'}" data-side-country="${esc(`${sport}|${country}`)}">
-        <i class="caret">${open ? '▾' : '▸'}</i>${esc(country)}<b>${total || ''}</b></button>
+        <i class="caret">${open ? '▾' : '▸'}</i>${countryFlag(country)}${esc(country)}<b>${total || ''}</b></button>
       ${open ? leagues.map((l) => `<a class="side-league${l.name === current ? ' active' : ''}${l.count ? '' : ' none'}" href="#/desporto/liga/${encodeURIComponent(l.name)}">
         ${esc(leagueShort(l.name))}<b>${l.count || ''}</b></a>`).join('') : ''}`;
   }).join('')}</div>`;
@@ -1318,6 +1338,16 @@ document.addEventListener('click', async (e) => {
 // A casino thumbnail that fails to load shows the generic art instead.
 document.addEventListener('error', (e) => {
   if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img')) e.target.replaceWith('🎰');
+}, true);
+
+// A sidebar flag that fails to load becomes a globe (same size, so the list does not jump).
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('side-flag')) return;
+  const globe = document.createElement('span');
+  globe.className = 'side-flag globe';
+  globe.textContent = '🌐';
+  img.replaceWith(globe);
 }, true);
 
 // A badge that fails to load (the provider answers 204/404 when it has none) becomes initials.
