@@ -1081,7 +1081,12 @@ function render({ keepScroll = false } = {}) {
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
-  $('#leftSidebar').classList.remove('open');
+}
+
+/** The phone menu: opened and closed by its button (or a swipe), never by a page refresh. */
+function setSideMenu(open) {
+  $('#leftSidebar').classList.toggle('open', open);
+  $('#menuBtn')?.setAttribute('aria-expanded', String(open));
 }
 
 /** Re-renders only pages that show odds, and never while the user is typing. */
@@ -1117,8 +1122,31 @@ async function refreshMe() {
   try {
     const { user } = await api('/api/me');
     state.user = user;
-  } catch { state.user = null; }
+  } catch (err) {
+    // Only a real sign-out clears the account; a dropped connection keeps the last balance shown.
+    if (err.status === 401) state.user = null;
+  }
   updateHeader();
+}
+
+/**
+ * Coming back to the page (tab shown again, app reopened, phone unlocked, back online): fetch
+ * everything fresh at once instead of waiting for the next poll, so old data never stays on screen.
+ */
+let lastResume = 0;
+async function resume() {
+  if (document.hidden || Date.now() - lastResume < 2000) return;
+  lastResume = Date.now();
+  try {
+    const c = await api('/api/config');
+    // A deploy happened while away: load the new version.
+    if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) { window.location.reload(); return; }
+  } catch { /* offline: the polls retry */ }
+  await Promise.all([refreshMe(), refreshEvents(), loadLeagues()]);
+  const { page, sub } = currentRoute();
+  if (page === 'jogo' && state.match.id) loadMatch(state.match.id, { quiet: true });
+  if (page === 'perfil' && sub === 'carteira') loadWallet();
+  renderSlip();
 }
 
 // ---------- event handlers ----------
@@ -1260,6 +1288,9 @@ document.addEventListener('click', async (e) => {
   }
   const sideCountry = e.target.closest('[data-side-country]');
   if (sideCountry) { const k = sideCountry.dataset.sideCountry; state.sideOpen[k] = !state.sideOpen[k]; renderSidebar(); return; }
+  // A league or page picked in the phone menu: go there and put the menu away (expanding a sport or
+  // a country above keeps it open).
+  if (e.target.closest('#leftSidebar a[href]:not([data-sport-link])')) setSideMenu(false);
 
   const game = e.target.closest('[data-game]');
   if (game && !game.matches('form')) { openGame(Number(game.dataset.game)); return; }
@@ -1341,8 +1372,20 @@ function bindChrome() {
   $('#loginBtn').addEventListener('click', () => openAuth('login'));
   $('#registerBtn').addEventListener('click', () => openAuth('register'));
   $('#searchBtn').addEventListener('click', openSearch);
-  $('#menuBtn').addEventListener('click', () => $('#leftSidebar').classList.add('open'));
-  $('#closeMenu').addEventListener('click', () => $('#leftSidebar').classList.remove('open'));
+  $('#menuBtn').addEventListener('click', () => setSideMenu(!$('#leftSidebar').classList.contains('open')));
+  $('#closeMenu').addEventListener('click', () => setSideMenu(false));
+  // A swipe to the left on the open menu closes it.
+  const side = $('#leftSidebar');
+  let touch = null;
+  side.addEventListener('touchstart', (e) => { const t = e.touches[0]; touch = { x: t.clientX, y: t.clientY }; }, { passive: true });
+  side.addEventListener('touchend', (e) => {
+    if (!touch) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touch.x;
+    const dy = t.clientY - touch.y;
+    touch = null;
+    if (dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.5) setSideMenu(false);
+  }, { passive: true });
   $('#slipFab').addEventListener('click', () => setSlipOpen(true));
   $('#closeSlip').addEventListener('click', () => setSlipOpen(false));
   $('#clearBets').addEventListener('click', () => { state.slip = []; saveSlip(); autoMode(); syncSelectedButtons(); renderSlip(); });
@@ -1999,8 +2042,13 @@ async function init() {
   setInterval(() => { if (!document.hidden) loadLeagues(); }, 60_000);
   // Live events refresh every 10s; the rest of the board rides along.
   setInterval(() => { if (!document.hidden) refreshEvents(); }, 5_000);
-  // Keep the balance fresh (settlements happen server-side).
-  setInterval(() => { if (!document.hidden && state.user) refreshMe(); }, 60_000);
+  // Keep the balance fresh (settlements and admin credits happen server-side).
+  setInterval(() => { if (!document.hidden && state.user) refreshMe(); }, 20_000);
+  // Back to the page: refresh everything right away (hidden tab, reopened app, back/forward cache).
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
+  window.addEventListener('focus', resume);
+  window.addEventListener('online', resume);
 }
 
 init();

@@ -328,3 +328,12 @@ test('a live game WinHouse no longer lists leaves the public lists after a minut
   db.prepare('UPDATE events SET wh_missing_since = ? WHERE id = ?').run(new Date().toISOString(), id);
   assert.ok((await c('GET', '/api/events?status=live')).body.events.some((e) => e.id === id));
 });
+
+test('API answers are never cached; the admin sees where the database lives', async () => {
+  const res = await fetch(`${base}/api/events`);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  const adm = await adminClient();
+  const s = await adm('GET', '/api/admin/stats');
+  assert.equal(typeof s.body.storage.persistent, 'boolean');
+  assert.ok(s.body.storage.path);
+});
