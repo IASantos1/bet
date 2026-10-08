@@ -190,3 +190,50 @@ test('error_token_expired: a fresh session and one more try', async () => {
   assert.deepEqual(seen, ['t1', 't2']);
   assert.equal(live.session().via, 'sso');
 });
+
+test('video session: the sign-in token is swapped for a read-scope lToken (/aaa/token_l), and that is what goes with the video', async () => {
+  const calls = [];
+  let n = 0;
+  const live = createWinHouseLive({
+    playerId: '1',
+    client: {
+      hasWallet: true,
+      tenantSso: async () => { calls.push('sso'); return { ok: true, status: 200, body: { ok: true, token: `r${++n}`, username: 'x_1' } }; },
+      tokenL: async (r) => { calls.push(`token_l ${r}`); return { ok: true, status: 200, body: { lToken: `l-${r}` } }; },
+      livestream: async (id, tok) => {
+        calls.push(`stream ${tok}`);
+        return tok === 'l-r2'
+          ? { ok: true, status: 200, body: { success: true, embed_url: `https://winhouse.bet/tv/play?t=${jwt({ vi: '4' })}`, expires_at: Date.now() / 1000 + 600 } }
+          : { ok: true, status: 200, body: { Error: true, Message: 'error_token_expired' } };
+      },
+    },
+  });
+  assert.equal((await live.getLiveStream(3)).streamId, '4');
+  assert.deepEqual(calls, ['sso', 'token_l r1', 'stream l-r1', 'sso', 'token_l r2', 'stream l-r2']);
+  assert.equal(live.session().via, 'sso + token_l');
+
+  const bad = createWinHouseLive({
+    playerId: '1',
+    client: {
+      hasWallet: true,
+      tenantSso: async () => ({ ok: true, status: 200, body: { ok: true, token: 'r' } }),
+      tokenL: async () => ({ ok: true, status: 200, body: { Error: true, Message: 'error_not_logged_in' } }),
+      livestream: async () => ({ ok: true, status: 200, body: {} }),
+    },
+  });
+  assert.equal(await bad.sessionToken(), null);
+  assert.match(bad.session().error, /token_l: HTTP 200 error_not_logged_in/);
+});
+
+test('client tokenL: POST /aaa/token_l with the sign-in token as x-access-token', async () => {
+  const { createWinHouseClient } = await import('../server/winhouse.js');
+  const sent = [];
+  const client = createWinHouseClient({
+    baseUrl: 'https://wh.test', tenant: 'ifr_x',
+    fetchImpl: async (url, opts) => { sent.push({ url: String(url), opts }); return new Response('{"lToken":"L"}', { status: 200 }); },
+  });
+  assert.equal((await client.tokenL('R')).body.lToken, 'L');
+  assert.equal(sent[0].url, 'https://wh.test/aaa/token_l');
+  assert.equal(sent[0].opts.method, 'POST');
+  assert.equal(sent[0].opts.headers['x-access-token'], 'R');
+});

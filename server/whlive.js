@@ -70,7 +70,7 @@ export function createWinHouseLive({
     if (sessionPending) return sessionPending;
     sessionPending = (async () => {
       try {
-        const why = (via, r) => `${via}: HTTP ${r.status}${r.body?.error || r.body?.message ? ` ${r.body.error || r.body.message}` : ''}${r.body?.ip ? ` (IP ${r.body.ip})` : ''}`;
+        const why = (via, r) => { const m = r.body?.error || r.body?.message || r.body?.Message; return `${via}: HTTP ${r.status}${m ? ` ${m}` : ''}${r.body?.ip ? ` (IP ${r.body.ip})` : ''}`; };
         const good = (r) => r.ok && r.body?.ok !== false && r.body?.token;
         // The signed launch token first (no Server IP check), then the server-to-server call.
         const errors = [];
@@ -91,14 +91,27 @@ export function createWinHouseLive({
           session = null;
           return null;
         }
-        const token = r.body.token;
+        // The book never sends the sign-in token with the video: it swaps it for a read-scope one
+        // (POST /aaa/token_l → { lToken }, ~1 h; betting.js keeps it 50 min) and sends that.
+        let token = r.body.token;
+        let readScope = false;
+        if (client.tokenL) {
+          const l = await client.tokenL(token);
+          if (!l.ok || !l.body?.lToken) {
+            Object.assign(sessionInfo, { ok: false, error: why('token_l', l), at: new Date(now()).toISOString() });
+            session = null;
+            return null;
+          }
+          token = l.body.lToken;
+          readScope = true;
+        }
         const exp = Number(tokenPayload(token)?.exp);
         const expMs = Number.isFinite(exp) && exp > 0 ? (exp > 1e12 ? exp : exp * 1000) : null;
         // Without a readable expiry, a short life: the book answers error_token_expired and we renew anyway.
-        const until = expMs ? Math.min(expMs - 30_000, now() + 6 * 3600_000) : now() + 10 * 60_000;
+        const until = expMs ? Math.min(expMs - 60_000, now() + 6 * 3600_000) : now() + (readScope ? 50 : 10) * 60_000;
         session = { token, until: Math.max(until, now() + 30_000), username: r.body.username || null };
         Object.assign(sessionInfo, {
-          ok: true, error: null, username: session.username, via: r === ssoAnswer ? 'sso' : 'session',
+          ok: true, error: null, username: session.username, via: `${r === ssoAnswer ? 'sso' : 'session'}${readScope ? ' + token_l' : ''}`,
           tokenExpiresAt: expMs ? new Date(expMs).toISOString() : null, renewAt: new Date(session.until).toISOString(),
         });
         return token;

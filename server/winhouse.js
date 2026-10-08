@@ -36,6 +36,8 @@ const ROUTES = {
   tenantSession: '/tenant/session',
   // The same session from a signed launch token (what bet62.plus's "play" does): not tied to the Server IP.
   tenantSso: '/tenant/sso',
+  // The book's sign-in token (from sso/session) → a read-scope token (~1 h): what /ajax/livestream takes.
+  tokenL: '/aaa/token_l',
 };
 
 /**
@@ -436,6 +438,8 @@ export function createWinHouseClient({
       const sig = createHmac('sha256', walletKey).update(`${player}|${expiry}|${session}`).digest('hex');
       return request('tenantSso', {}, {}, { method: 'POST', body: { key: tenant, launch: `${player}.${expiry}.${session}.${sig}` } });
     },
+    /** POST /aaa/token_l (x-access-token: the sign-in token) → { lToken }, as betting.js does before the video. */
+    tokenL: (signInToken) => request('tokenL', {}, { 'x-access-token': signInToken }, { method: 'POST', body: {} }),
     hasTenant: !!tenant,
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,
