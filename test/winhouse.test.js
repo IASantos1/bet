@@ -311,6 +311,27 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
   assert.equal(active(10)['tou|2O1.5'], 338);
   // Not read again before the refresh time.
   assert.equal((await t.feed.syncDetails()).due, 0);
+
+  // A deploy: a new feed (empty memory) on the same database. The page markets stay as a fallback
+  // through the list reads, even while the page cannot be read…
+  const client2 = {
+    enabled: true, live: async () => ({ ok: true, status: 200, body: [] }),
+    prematchMain: async () => ({ ok: true, status: 200, body: lists.pre }), prematchTop: async () => ({ ok: true, status: 200, body: [] }), prematch24h: async () => ({ ok: false, status: 500 }),
+    prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
+  };
+  const restarted = createWinHouseFeed(t.db, { client: client2, tzOffsetMinutes: 60 });
+  assert.equal(restarted.status().restored.prematch, 2);
+  const saved = lists.pages;
+  lists.pages = {};
+  await restarted.syncPrematch();
+  assert.equal(active(10)['btts|Y'], 192);
+  assert.equal(active(10)['hcp|1-2.5'], 790);
+  // …are first in line to be read again, and WinHouse's new prices replace them.
+  const both = JSON.parse(JSON.stringify(saved[10]).replace('"1.92"', '"2.10"'));
+  lists.pages = { 10: both };
+  const again = await restarted.syncDetails();
+  assert.equal(again.read, 1);
+  assert.equal(active(10)['btts|Y'], 210);
 });
 
 test('every other market of a page becomes an operator-settled selection', async () => {
