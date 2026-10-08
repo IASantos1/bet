@@ -1018,6 +1018,32 @@ function renderSidebar() {
   $('#liveCount').textContent = live || '';
 }
 
+/**
+ * Sets `root` to `html` but keeps the element #keepId (and its ancestors) in place: everything
+ * around it is replaced, it and its children stay untouched. Falls back to innerHTML when the new
+ * page has no such element.
+ */
+function mergeKeeping(root, html, keepId) {
+  const fresh = document.createElement('div');
+  fresh.innerHTML = html;
+  if (!fresh.querySelector(`#${keepId}`)) { root.innerHTML = html; return; }
+  const holds = (n) => n.nodeType === 1 && (n.id === keepId || !!n.querySelector(`#${keepId}`));
+  (function merge(oldEl, newEl) {
+    if (oldEl !== root) {
+      for (const a of [...oldEl.attributes]) if (!newEl.hasAttribute(a.name)) oldEl.removeAttribute(a.name);
+      for (const a of [...newEl.attributes]) if (oldEl.getAttribute(a.name) !== a.value) oldEl.setAttribute(a.name, a.value);
+    }
+    if (oldEl.id === keepId) return;
+    const oldPath = [...oldEl.childNodes].find(holds);
+    const kids = [...newEl.childNodes];
+    const i = kids.findIndex(holds);
+    for (const c of [...oldEl.childNodes]) if (c !== oldPath) c.remove();
+    oldPath.before(...kids.slice(0, i));
+    oldPath.after(...kids.slice(i + 1));
+    merge(oldPath, kids[i]);
+  })(root, fresh);
+}
+
 function currentRoute() {
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = '', sub = '', ...rest] = path.split('/');
@@ -1044,7 +1070,13 @@ function render({ keepScroll = false } = {}) {
   document.body.classList.toggle('immersive', immersive);
   // Carousels keep their position when the page refreshes itself (odds, live scores).
   const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
-  $('#content').innerHTML = immersive ? casinoPlayPage() : (pages[page] || homePage)();
+  const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();
+  // A playing video must never leave the document: an iframe that is detached, even for a moment,
+  // reloads (black "Loading stream…", sound lost). The match page refreshes every few seconds, so
+  // there the new page is merged around the slot that holds it instead of replacing everything.
+  const keep = page === 'jogo' ? $('#content #trackerInline') : null;
+  if (keep?.querySelector('iframe')) mergeKeeping($('#content'), html, 'trackerInline');
+  else $('#content').innerHTML = html;
   for (const [id, left] of carScroll) { const t = $(`#${id} .car-track`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
@@ -1760,7 +1792,8 @@ function mountLiveWidget() {
   const slot = wide ? $('#sideTracker') : $('#trackerInline');
   // Live video chosen: it takes the tracker's place (beside the slip on wide screens, in the header on phones).
   if (e?.status === 'live' && m.view === 'stream') {
-    const key = `${e.id}|${e.stream}|${e.streamUrl || ''}`;
+    // Not the address: a new one for the same game must not rebuild (and so reload) the player.
+    const key = `${e.id}|${!!e.stream}|${!!e.streamUrl}`;
     if (!m.streamEl || m.streamKey !== key) {
       const holder = document.createElement('div');
       holder.innerHTML = streamBox(e);
