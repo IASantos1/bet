@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
@@ -33,6 +34,8 @@ const ROUTES = {
   livestream: '/ajax/livestream?event_id={gameId}',
   // Seamless wallet (model B): a book session for a player, server-to-server with the wallet API key.
   tenantSession: '/tenant/session',
+  // The same session from a signed launch token (what bet62.plus's "play" does): not tied to the Server IP.
+  tenantSso: '/tenant/sso',
 };
 
 /**
@@ -419,6 +422,16 @@ export function createWinHouseClient({
     /** POST /tenant/session → { ok, token, username, tenant }: a book session for one of our players. */
     tenantSession: (playerId) => request('tenantSession', {}, { Authorization: `Bearer ${walletKey}` },
       { method: 'POST', body: { customer_key: tenant, player_id: String(playerId) } }),
+    /**
+     * POST /tenant/sso { key, launch } → { ok, token, username }. launch =
+     * playerId.expiry(ms).session.HMAC_SHA256("playerId|expiry|session", wallet key) — the key only signs, it is never sent.
+     */
+    tenantSso: (playerId, { session = 'bet62-tv', ttlMs = 5 * 60_000, now = Date.now() } = {}) => {
+      const player = String(playerId);
+      const expiry = now + ttlMs;
+      const sig = createHmac('sha256', walletKey).update(`${player}|${expiry}|${session}`).digest('hex');
+      return request('tenantSso', {}, {}, { method: 'POST', body: { key: tenant, launch: `${player}.${expiry}.${session}.${sig}` } });
+    },
     hasTenant: !!tenant,
     wsUrl: (eid, akey) => url('wsWidget', { eid, akey }).replace(/^https:/, 'wss:'),
     origin: base,

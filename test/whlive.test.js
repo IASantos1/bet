@@ -131,3 +131,37 @@ test('live video with a wallet session: /tenant/session once, its token as x-acc
   const plain = createWinHouseLive({ client: { ...client, hasWallet: false }, playerId: '5512' });
   assert.equal(await plain.sessionToken(), null);
 });
+
+test('wallet session via launch token: signed HMAC on /tenant/sso, /tenant/session only when sso fails', async () => {
+  const { createWinHouseClient } = await import('../server/winhouse.js');
+  const { createHmac } = await import('node:crypto');
+  const sent = [];
+  const fetchImpl = async (url, opts) => {
+    sent.push({ url: String(url), opts });
+    return new Response(JSON.stringify({ ok: true, token: 'ssotok', username: 'bet62_7' }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const client = createWinHouseClient({ baseUrl: 'https://wh.test', tenant: 'ifr_x', walletKey: 'k3y', fetchImpl });
+  const r = await client.tenantSso('7', { now: 1000 });
+  assert.equal(r.body.token, 'ssotok');
+  assert.equal(sent[0].url, 'https://wh.test/tenant/sso');
+  const body = JSON.parse(sent[0].opts.body);
+  assert.equal(body.key, 'ifr_x');
+  const [player, expiry, sess, sig] = body.launch.split('.');
+  assert.deepEqual([player, expiry, sess], ['7', '301000', 'bet62-tv']);
+  assert.equal(sig, createHmac('sha256', 'k3y').update('7|301000|bet62-tv').digest('hex'));
+  assert.ok(!JSON.stringify(sent[0]).includes('k3y'));
+
+  const calls = [];
+  const live = createWinHouseLive({
+    playerId: '7',
+    client: {
+      hasWallet: true,
+      tenantSso: async () => { calls.push('sso'); return { ok: false, status: 401, body: { ok: false, error: 'bad launch' } }; },
+      tenantSession: async () => { calls.push('session'); return { ok: false, status: 403, body: { error: 'IP address not allowed for this key', ip: '1.2.3.4' } }; },
+      livestream: async () => ({ ok: true, status: 200, body: {} }),
+    },
+  });
+  assert.equal(await live.sessionToken(), null);
+  assert.deepEqual(calls, ['sso', 'session']);
+  assert.match(live.session().error, /sso: HTTP 401 bad launch · session: HTTP 403 .*1\.2\.3\.4/);
+});
