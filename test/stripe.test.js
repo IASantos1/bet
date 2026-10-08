@@ -104,6 +104,7 @@ test('Stripe deposits inside the site: MB WAY, Multibanco, card; credited once b
     assert.equal(card.body.publishableKey, 'pk_test_xyz');
     assert.match(card.body.clientSecret, /^pi_test_\d+_secret_/);
     assert.equal(posted.at(-1).get('confirm'), null);
+    assert.deepEqual([posted.at(-1).get('payment_method_types[0]'), posted.at(-1).get('payment_method_types[1]')], ['card', 'link']);
     assert.equal((await call('GET', `/api/wallet/deposit/${card.body.payment.id}`)).body.status, 'pending');
     // A declined card stays open (it can be tried again); then the status check credits it.
     Object.assign(intents.get(card.body.payment.id), { last_payment_error: { code: 'card_declined' } });

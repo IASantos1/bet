@@ -103,10 +103,12 @@ export function createStripe(db, {
     const tel = method === 'mbway' ? ptPhone(phone) : '';
     if (method === 'mbway' && !tel) throw Object.assign(new Error('Número de telemóvel MB WAY inválido.'), { status: 400, ours: true });
     const meta = { user_id: String(user.id), kind: 'deposit', method };
-    const intent = await call('POST', '/payment_intents', {
+    // The card also offers Link (its own button beside our card fields); an account without Link
+    // refuses the type, and then the card goes alone.
+    const create = (types) => call('POST', '/payment_intents', {
       amount: amountCents,
       currency,
-      payment_method_types: [m.type],
+      payment_method_types: types,
       metadata: meta,
       receipt_email: user.email,
       description: `Depósito — €${(amountCents / 100).toFixed(2)}`,
@@ -115,6 +117,14 @@ export function createStripe(db, {
         payment_method_data: { type: m.type, billing_details: { email: user.email, ...(tel ? { phone: tel } : {}) } },
       }),
     });
+    let intent;
+    if (method !== 'cartao') intent = await create([m.type]);
+    else {
+      try { intent = await create([m.type, 'link']); } catch (err) {
+        if (!/link/i.test(err.message)) throw err;
+        intent = await create([m.type]);
+      }
+    }
     const mb = intent.next_action?.multibanco_display_details;
     const expires = mb?.expires_at ? new Date(mb.expires_at * 1000).toISOString() : null;
     db.prepare(
