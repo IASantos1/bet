@@ -19,7 +19,7 @@ import {
   casinoOffer, claimSpins, spinsRow, spinsView,
 } from './promotions.js';
 import { playerToken } from './bigbang.js';
-import { cashoutOffer, cashOut, offerView } from './cashout.js';
+import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
@@ -842,10 +842,19 @@ export function createApp(db, {
     const offers = new Map(rows.filter((b) => b.status === 'open').map((b) => [b.id, offerView(cashoutOffer(db, b))]));
     res.json({ bets: withLegs(rows).map((b) => (offers.has(b.id) ? { ...b, cashout: offers.get(b.id) } : b)) });
   });
-  app.post('/api/bets/:id/cashout', requireUser, reclaimCasino, (req, res) => {
-    const seen = Math.round(Number(req.body?.value) * 100);
-    const r = tx(db, () => cashOut(db, req.user.id, req.params.id, seen));
-    res.json({ value: cents(r.valueCents), balance: cents(r.balance), user: userOut(userById(req.user.id)) });
+  // Cash out: checked, then (in play) held for the acceptance delay and checked again before paying.
+  app.post('/api/bets/:id/cashout', requireUser, reclaimCasino, async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (cashoutPending.has(id)) return next(new HttpError(409, 'Já há um pedido de cash out em curso para esta aposta.'));
+    cashoutPending.add(id);
+    try {
+      const seen = Math.round(Number(req.body?.value) * 100);
+      const offer = precheck(db, req.user.id, id);
+      const delay = offer.live ? cashoutConfig(db).liveDelaySeconds * 1000 : 0;
+      if (delay) await new Promise((ok) => setTimeout(ok, delay));
+      const r = tx(db, () => cashOut(db, req.user.id, id, seen));
+      res.json({ value: cents(r.valueCents), balance: cents(r.balance), user: userOut(userById(req.user.id)) });
+    } catch (err) { next(err); } finally { cashoutPending.delete(id); }
   });
 
   function withLegs(bets) {
@@ -1235,6 +1244,15 @@ export function createApp(db, {
     db.prepare("UPDATE freebets SET status = 'cancelled' WHERE id = ?").run(f.id);
     res.json({ ok: true });
   });
+
+  // ---------- cash out (rules and what was paid) ----------
+  admin.get('/cashout', (_req, res) => {
+    const t = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(stake_cents), 0) AS stake, COALESCE(SUM(value_cents), 0) AS paid, COALESCE(SUM(fair_cents), 0) AS fair, COALESCE(SUM(live), 0) AS live FROM cashouts').get();
+    const recent = db.prepare('SELECT c.*, u.name FROM cashouts c JOIN users u ON u.id = c.user_id ORDER BY c.id DESC LIMIT 30').all()
+      .map((c) => ({ betId: c.bet_id, user: c.name, stake: cents(c.stake_cents), value: cents(c.value_cents), fair: cents(c.fair_cents), live: !!c.live, createdAt: c.created_at }));
+    res.json({ config: cashoutConfig(db), totals: { count: t.n, stake: cents(t.stake), paid: cents(t.paid), margin: cents(t.fair - t.paid), live: t.live }, recent });
+  });
+  admin.put('/cashout', (req, res) => res.json({ config: saveCashoutConfig(db, req.body || {}) }));
 
   // ---------- promotions (configuration, bonuses, decisions) ----------
   admin.get('/promotions', (_req, res) => {

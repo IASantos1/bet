@@ -256,6 +256,19 @@ CREATE TABLE IF NOT EXISTS casino_spins (
 );
 CREATE INDEX IF NOT EXISTS idx_casino_spins_user ON casino_spins(user_id, status);
 
+-- Cash outs done (audit): what was paid, the fair value at that moment and what the player had seen.
+CREATE TABLE IF NOT EXISTS cashouts (
+  id           INTEGER PRIMARY KEY,
+  bet_id       INTEGER NOT NULL UNIQUE REFERENCES bets(id),
+  user_id      INTEGER NOT NULL REFERENCES users(id),
+  stake_cents  INTEGER NOT NULL,
+  value_cents  INTEGER NOT NULL,
+  fair_cents   INTEGER NOT NULL,
+  seen_cents   INTEGER NOT NULL,
+  live         INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT    NOT NULL
+);
+
 -- Settlement audit log: every result or void applied to an event, by whom and with what effect.
 CREATE TABLE IF NOT EXISTS settlements (
   id           INTEGER PRIMARY KEY,

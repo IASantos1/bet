@@ -319,10 +319,16 @@ prazo), o que o saldo tiver acima do valor oferecido é pago em saldo real (`fre
 
 O ícone de bilhete no topo abre **As minhas apostas** (`#/apostas`): separadores Em aberto, Resolvidas, Cash Out e
 Anuladas; cada bilhete tem referência (`BT62-000123`), o estado de cada seleção e, com o jogo a decorrer, o
-relógio e o placar (atualizados a cada 10 s). **Cash out** (`server/cashout.js`): valor = aposta × odds tomadas ÷
-odds atuais das seleções ainda em aberto × `CASHOUT_FACTOR` (0.95 por omissão; `CASHOUT=0` desliga). Só em simples
-e múltiplas pagas com dinheiro real (não em free bets, saldo de bónus nem criador de apostas), e só com todos os
-mercados abertos (ao vivo, com preço recente); se o valor mudar, o jogador confirma o novo antes de receber.
+relógio e o placar (atualizados a cada 10 s).
+
+**Cash out** (`server/cashout.js`, regras em **Admin → Apostas**): valor justo = aposta × odds tomadas ÷ odds
+atuais das seleções em aberto; paga-se o valor justo × fator (0.95 = 5% de margem), nunca acima do retorno
+potencial nem do máximo configurado. Regras: só simples e múltiplas com dinheiro real (não free bets, bónus nem
+criador de apostas); só depois de 30 s da aposta; suspenso com mercado fechado, jogo a começar/terminado, preço ao
+vivo antigo ou anterior ao último golo, e durante 30 s após um golo/ponto; ao vivo, o pedido espera 5 s e o valor
+é recalculado (se baixou, o jogador confirma o novo; se não, recebe o que aceitou); um pedido de cada vez por
+aposta, pago uma só vez e registado em `cashouts` (pago, valor justo, valor visto). Interruptores separados para
+antes do início e ao vivo; `CASHOUT=0` / `CASHOUT_FACTOR` dão os valores por omissão.
 
 ## Promoções de desporto
 

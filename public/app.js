@@ -2030,7 +2030,7 @@ document.addEventListener('click', async (e) => {
   if (coAsk) { state.cashoutConfirm = Number(coAsk.dataset.cashout); $('#betsList').innerHTML = myBetsHtml(); return; }
   if (e.target.closest('[data-cashout-cancel]')) { state.cashoutConfirm = null; $('#betsList').innerHTML = myBetsHtml(); return; }
   const coDo = e.target.closest('[data-cashout-do]');
-  if (coDo) { coDo.disabled = true; doCashout(Number(coDo.dataset.cashoutDo), Number(coDo.dataset.value)); return; }
+  if (coDo) { coDo.disabled = true; coDo.textContent = 'A CONFIRMAR…'; doCashout(Number(coDo.dataset.cashoutDo), Number(coDo.dataset.value)); return; }
   const copy = e.target.closest('[data-copy]');
   if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Referência copiada', copy.dataset.copy)).catch(() => {}); return; }
   const walletTab = e.target.closest('[data-wallet-tab]');
