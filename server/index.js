@@ -16,6 +16,7 @@ import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
 import { createStripe } from './stripe.js';
 import { expireDue, runCashback } from './promotions.js';
+import { createBigBang } from './bigbang.js';
 
 const db = openDb(config.dbPath);
 if (!config.dbPersistent) {
@@ -115,7 +116,10 @@ const promoJobs = () => {
 setTimeout(promoJobs, 15_000).unref();
 setInterval(promoJobs, 5 * 60_000).unref();
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe }).listen(config.port, () => {
+const bigbang = createBigBang(db, { ...config.bigbang, log: (m) => console.warn(`[bigbang] ${m}`) });
+if (bigbang.enabled) console.log(`Casino BigBang: chave ${bigbang.sandbox ? 'sandbox (ek_test_)' : 'real'}`);
+
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe, bigbang }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 

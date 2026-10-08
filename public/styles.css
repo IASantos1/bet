@@ -888,3 +888,48 @@ html.splash-on { overflow: hidden; }
 #stake:disabled { opacity: .8; }
 @media (max-width: 700px) { .bonus-nums { grid-template-columns: 1fr 1fr; } }
 .bet-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+
+/* ---------- casino: one game's page (Jogar / Testar) ---------- */
+.cg { max-width: 920px; margin: 0 auto; }
+.cg-hero { position: relative; overflow: hidden; border-radius: 16px; min-height: 300px; display: grid; place-items: center; padding: 48px 20px 30px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(103, 120, 140, .35), transparent 70%), var(--dim); }
+.cg-bg { position: absolute; inset: -30px; width: calc(100% + 60px); height: calc(100% + 60px); object-fit: cover; filter: blur(26px) brightness(.55) saturate(1.2); transform: scale(1.05); }
+.cg-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, var(--page) 100%); pointer-events: none; }
+.cg-close { position: absolute; top: 14px; left: 14px; z-index: 2; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; line-height: 1;
+  color: #fff; background: rgba(0, 0, 0, .45); backdrop-filter: blur(6px); border: 1px solid rgba(255, 255, 255, .15); }
+.cg-art { position: relative; z-index: 1; width: min(320px, 70vw); aspect-ratio: 1; border-radius: 18px; overflow: hidden; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); background: var(--card); display: grid; place-items: center; }
+.cg-art img { width: 100%; height: 100%; object-fit: cover; }
+.cg-emoji { font-size: 80px; }
+.cg-body { position: relative; z-index: 1; padding: 6px 4px 10px; margin-top: -10px; }
+.cg-body h1 { margin: 0; font-size: clamp(24px, 4vw, 32px); line-height: 1.15; }
+.cg-provider { color: var(--highlight); font-weight: 800; font-size: 18px; margin-top: 4px; }
+.cg-tags { color: var(--text-2); margin: 10px 0 18px; }
+.cg-actions { display: flex; flex-direction: column; gap: 10px; }
+.cg-btn { width: 100%; padding: 15px; border-radius: 12px; border: 0; font-size: 17px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.cg-btn.play { background: linear-gradient(135deg, var(--brand), #8597ab); color: #fff; }
+.cg-btn.play:hover { filter: brightness(1.08); }
+.cg-play-ico { width: 26px; height: 26px; border-radius: 50%; background: #fff; color: var(--brand); display: grid; place-items: center; font-size: 12px; padding-left: 2px; }
+.cg-btn.demo { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+.cg-btn.demo:hover { background: var(--row-hover); }
+.cg-btn.fs { background: linear-gradient(135deg, #2f7d56, var(--up)); color: #fff; flex-direction: column; gap: 2px; }
+.cg-btn.fs small { font-size: 12px; font-weight: 600; opacity: .9; }
+.cg-note { color: var(--text-3); font-size: 12.5px; margin: 12px 0 0; }
+.cg-note a { color: #9fb2c8; text-decoration: underline; }
+.cg-rel { flex: 0 0 160px; display: flex; flex-direction: column; gap: 6px; scroll-snap-align: start; }
+.cg-rel-art { aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--card); display: grid; place-items: center; font-size: 40px; }
+.cg-rel-art img { width: 100%; height: 100%; object-fit: cover; }
+.cg-rel strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.casino-bar { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--nav); border-bottom: 1px solid var(--line); font-size: 13px; }
+.casino-bar strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbar-back { color: var(--text-2); font-weight: 700; }
+.cbar-tag { padding: 4px 10px; border-radius: 999px; background: var(--card); color: var(--text-2); font-weight: 700; font-size: 11.5px; white-space: nowrap; }
+.cbar-tag.fs { background: rgba(81, 197, 128, .15); color: var(--up); }
+.promo-pick { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 10px 0 4px; font-size: 13px; color: var(--text-2); }
+.promo-pick > span { width: 100%; color: var(--text-3); font-size: 11px; }
+.promo-pick label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+@media (min-width: 760px) {
+  .cg-actions { flex-direction: row; flex-wrap: wrap; }
+  .cg-btn.play, .cg-btn.demo { flex: 1; }
+  .cg-btn.fs { flex-basis: 100%; }
+}
+#cgRelated .car-track { grid-auto-columns: 150px; }

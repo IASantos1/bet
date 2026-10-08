@@ -26,9 +26,14 @@ export const PROMO_DEFAULTS = {
   },
   firstBet: { active: true, startAt: null, endAt: null, minStake: 5, minOdds: 1.5, maxRefund: 10, validityDays: 7 },
   cashback: { active: true, startAt: null, endAt: null, percent: 5, minLoss: 20, max: 25, rolloverMult: 3, minOdds: 1.5, validityDays: 7 },
+  // Casino free spins on a deposit: [deposit from €, spins], each spin worth spinValue €; only in `games` (BigBang ids).
+  casinoFs: {
+    active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], spinValue: 0.2,
+    validityDays: 7, maxDeposit: 100, maxClaims: null, games: [],
+  },
 };
 
-export const CAMPAIGN_NAMES = { welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida' };
+export const CAMPAIGN_NAMES = { welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', casinoFs: 'Free Spins casino' };
 const DEPOSIT_KINDS = ['welcome', 'reload'];
 const DAY = 86_400_000;
 const c100 = (euros) => Math.round(Number(euros) * 100);
@@ -47,8 +52,18 @@ export function promoConfig(db) {
 const NUM = {
   percent: [1, 500], minDeposit: [0, 100_000], maxBonus: [0, 100_000], rolloverMult: [0, 100], minOdds: [1, 100],
   validityDays: [1, 365], maxCountStake: [0, 100_000, true], maxCountPct: [0, 100, true], minStake: [0, 100_000],
-  maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000],
+  maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000], spinValue: [0.01, 100], maxDeposit: [1, 100_000], maxClaims: [1, 1000, true],
 };
+/** "10:5, 20:10" or [[10, 5], …] → sorted [[deposit €, spins], …]. */
+function parseTiers(v) {
+  const pairs = Array.isArray(v) ? v : String(v || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>-]+/).map((n) => n.trim()));
+  const out = pairs.map(([d, n]) => [Number(d), Math.round(Number(n))]);
+  if (!out.length || out.some(([d, n]) => !Number.isFinite(d) || d <= 0 || !Number.isInteger(n) || n <= 0 || n > 1000)) {
+    throw new HttpError(400, 'Free Spins: escalões inválidos (ex.: 10:5, 20:10, 50:25, 100:50).');
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+const parseGames = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
 const isoOrNull = (v) => {
   if (v === null || v === undefined || v === '') return null;
   const t = new Date(v);
@@ -70,6 +85,8 @@ export function savePromoConfig(db, input) {
       else if (f === 'startAt' || f === 'endAt') c[f] = isoOrNull(v);
       else if (f === 'rolloverBase') c[f] = v === 'bonus' ? 'bonus' : 'deposit_bonus';
       else if (f === 'methods') c[f] = (Array.isArray(v) ? v : []).filter((m) => ['mbway', 'multibanco', 'cartao', 'demo'].includes(m));
+      else if (f === 'tiers') c[f] = parseTiers(v);
+      else if (f === 'games') c[f] = parseGames(v);
       else if (NUM[f]) {
         const [min, max, nullable] = NUM[f];
         if ((v === null || v === '') && nullable) { c[f] = null; continue; }
@@ -219,18 +236,126 @@ function grantBonus(db, user, { kind, ref, depositCents = 0, bonusCents, c, peri
  * A confirmed deposit (already credited to the wallet): the welcome bonus on the first eligible
  * deposit, the weekly reload after it. `ref` identifies the deposit (one bonus per deposit, ever).
  */
-export function onDeposit(db, { userId, amountCents, ref, method = null, optIn = true, now = nowIso() }) {
+export function onDeposit(db, { userId, amountCents, ref, method = null, optIn = true, choice = null, now = nowIso() }) {
   const bonusRef = `deposit:${ref}`;
-  if (db.prepare('SELECT 1 FROM bonuses WHERE ref = ?').get(bonusRef)) return null;
-  if (db.prepare("SELECT 1 FROM promo_log WHERE ref = ? AND campaign IN ('welcome', 'reload')").get(bonusRef)) return null;
+  // One promotion per deposit, ever: the player picks the sports bonus or the casino free spins.
+  if (db.prepare('SELECT 1 FROM bonuses WHERE ref = ?').get(bonusRef) || db.prepare('SELECT 1 FROM casino_spins WHERE ref = ?').get(bonusRef)) return null;
+  if (db.prepare("SELECT 1 FROM promo_log WHERE ref = ? AND campaign IN ('welcome', 'reload', 'casinoFs')").get(bonusRef)) return null;
+  const pick = choice || (optIn ? 'sport' : 'none');
+  if (pick === 'casino') return grantSpinsFor(db, { userId, amountCents, ref: bonusRef, method, now });
   const offer = depositOffer(db, userId, amountCents, { now, method, credited: true });
-  if (!optIn) { log(db, userId, offer.campaign, bonusRef, 'refused', 'recusado pelo jogador'); return null; }
+  if (pick === 'none') { log(db, userId, offer.campaign, bonusRef, 'refused', 'recusado pelo jogador'); return null; }
   if (!offer.bonusCents) { log(db, userId, offer.campaign, bonusRef, 'refused', offer.reason); return null; }
   return grantBonus(db, userRow(db, userId), {
     kind: offer.campaign, ref: bonusRef, depositCents: amountCents, bonusCents: offer.bonusCents, c: promoConfig(db)[offer.campaign],
     period: offer.campaign === 'reload' ? weekOf(Date.parse(now)).key : null, now,
   });
 }
+
+// ---------- casino free spins ----------
+
+export const spinsRow = (db, id, userId) => db.prepare('SELECT * FROM casino_spins WHERE id = ? AND user_id = ?').get(id, userId);
+const activeSpins = (db, userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
+
+/** The free spins a deposit of `amountCents` would get now (the highest tier it reaches, up to maxDeposit). */
+export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = null } = {}) {
+  const c = promoConfig(db).casinoFs;
+  const out = { campaign: 'casinoFs', name: CAMPAIGN_NAMES.casinoFs, spinValue: c.spinValue };
+  if (!campaignOpen(c, now)) return { ...out, reason: 'campanha inativa' };
+  if (!c.games.length) return { ...out, reason: 'sem jogos elegíveis configurados' };
+  if (activeSpins(db, userId)) return { ...out, reason: 'já tem uma campanha de casino ativa' };
+  if (c.maxClaims && db.prepare('SELECT COUNT(*) AS n FROM casino_spins WHERE user_id = ?').get(userId).n >= c.maxClaims) return { ...out, reason: 'limite de utilizações atingido' };
+  const why = ineligible(db, userRow(db, userId), { method });
+  if (why) return { ...out, reason: why };
+  const counted = Math.min(amountCents, c100(c.maxDeposit));
+  const tier = [...c.tiers].reverse().find(([min]) => counted >= c100(min));
+  if (!tier) return { ...out, reason: `depósito mínimo €${c.tiers[0][0]}`, minDeposit: c.tiers[0][0] };
+  return { ...out, spins: tier[1], valueCents: Math.round(tier[1] * c100(c.spinValue)), minDeposit: c.tiers[0][0] };
+}
+
+function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
+  const offer = casinoOffer(db, userId, amountCents, { now, method });
+  if (!offer.spins) { log(db, userId, 'casinoFs', ref, 'refused', offer.reason); return null; }
+  const c = promoConfig(db).casinoFs;
+  const r = db.prepare(`INSERT OR IGNORE INTO casino_spins (user_id, ref, spins, spin_value_cents, value_cents, balance_cents, games, deposit_cents, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(userId, ref, offer.spins, c100(c.spinValue), offer.valueCents, offer.valueCents, JSON.stringify(c.games), amountCents,
+    new Date(Date.parse(now) + c.validityDays * DAY).toISOString(), now);
+  if (!r.changes) return null;
+  const id = Number(r.lastInsertRowid);
+  ledger(db, { userId, type: 'free_spin_credit', amount: offer.valueCents, balanceAfter: offer.valueCents, description: `${offer.spins} Free Spins de €${c.spinValue.toFixed(2)} creditadas`, ref: `fs:${id}` });
+  log(db, userId, 'casinoFs', ref, 'granted');
+  return { kind: 'casinoFs', ...db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id) };
+}
+
+const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
+
+/**
+ * Ends a free-spins grant: what its balance holds above the value given is the player's winnings
+ * and is paid as real money (the free spins themselves are never paid). status: closed / expired.
+ */
+export function closeSpins(db, s, status = 'closed', reason = null) {
+  if (s.status !== 'active') return 0;
+  const win = Math.max(0, s.balance_cents - s.value_cents);
+  db.prepare('UPDATE casino_spins SET status = ?, balance_cents = 0, paid_cents = ?, ended_at = ?, cancel_reason = ? WHERE id = ? AND status = ?')
+    .run(status, win, nowIso(), reason, s.id, 'active');
+  if (win > 0) {
+    postTransaction(db, s.user_id, win, 'free_spin_win', 'Ganhos das Free Spins', `fs:${s.id}`);
+    ledger(db, { userId: s.user_id, type: 'free_spin_win', amount: win, description: 'Ganhos das Free Spins pagos em saldo real', ref: `fswin:${s.id}` });
+  }
+  const unused = s.balance_cents - win;
+  if (unused > 0 || status === 'expired') {
+    ledger(db, { userId: s.user_id, type: status === 'expired' ? 'free_spin_expiry' : 'free_spin_used', amount: -unused, balanceAfter: 0,
+      description: status === 'expired' ? 'Free Spins expiradas' : 'Free Spins terminadas', ref: `fsend:${s.id}` });
+  }
+  log(db, s.user_id, 'casinoFs', s.ref, status, reason);
+  return win;
+}
+
+/**
+ * One wallet move on a free-spins token (from the casino): a bet / win on the free-spins balance,
+ * only in the eligible games. Returns { balance } or { error, balance }.
+ */
+export function spinsMove(db, user, spinsId, move) {
+  let s = spinsRow(db, spinsId, user.id);
+  if (!s) return { error: 'unknown user', balance: 0 };
+  if (s.status === 'active' && s.expires_at <= nowIso()) { closeSpins(db, s, 'expired', 'prazo terminado'); s = spinsRow(db, spinsId, user.id); }
+  if (s.status !== 'active') {
+    // A win of a round that was open when the free spins ended: paid as winnings (real money).
+    if (move.cents > 0) {
+      postTransaction(db, user.id, move.cents, 'free_spin_win', 'Ganhos das Free Spins', `casino:${move.txId}`);
+      ledger(db, { userId: user.id, type: 'free_spin_win', amount: move.cents, description: 'Ganho de Free Spins depois de terminadas', ref: move.txId });
+    }
+    return move.cents < 0 ? { error: 'free spins ended', balance: 0 } : { balance: 0 };
+  }
+  if (move.cents < 0) {
+    if (move.gameId && !spinGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: s.balance_cents };
+    if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: s.balance_cents };
+    if (s.balance_cents + move.cents < 0) return { error: 'insufficient balance', balance: s.balance_cents };
+  }
+  const balance = s.balance_cents + move.cents;
+  db.prepare('UPDATE casino_spins SET balance_cents = ? WHERE id = ?').run(balance, s.id);
+  if (move.cents !== 0) {
+    ledger(db, { userId: user.id, type: move.cents < 0 ? 'free_spin_used' : 'free_spin_win', amount: move.cents, balanceAfter: balance,
+      description: `Free Spins · ${move.game}`, ref: move.txId });
+  }
+  // Nothing left and the round over: the grant ends.
+  if (balance === 0 && move.roundEnd !== 0) closeSpins(db, { ...s, balance_cents: 0 }, 'closed', 'saldo de Free Spins esgotado');
+  return { balance };
+}
+
+/** The player ends the free spins now (winnings above the value given are paid). */
+export function claimSpins(db, userId, spinsId) {
+  const s = spinsRow(db, Number(spinsId), userId);
+  if (!s) throw new HttpError(404, 'Free Spins não encontradas.');
+  if (s.status !== 'active') throw new HttpError(409, 'Estas Free Spins já terminaram.');
+  return closeSpins(db, s, 'closed', 'terminadas pelo jogador');
+}
+
+export const spinsView = (s, gameName = () => null) => ({
+  id: s.id, status: s.status, spins: s.spins, spinValue: s.spin_value_cents / 100, value: s.value_cents / 100, balance: s.balance_cents / 100,
+  winnings: Math.max(0, s.balance_cents - s.value_cents) / 100, paid: s.paid_cents / 100, expiresAt: s.expires_at, createdAt: s.created_at,
+  endedAt: s.ended_at, reason: s.cancel_reason, games: spinGames(s).map((id) => ({ id, name: gameName(id) })),
+});
 
 // ---------- bonus money ----------
 
@@ -295,6 +420,12 @@ export function cancelBonus(db, bonusId, reason) {
 /** Cancels every active bonus and free bet of a player (self-exclusion, suspension, fraud). */
 export function cancelUserPromos(db, userId, reason) {
   for (const b of db.prepare("SELECT * FROM bonuses WHERE user_id = ? AND status = 'active'").all(userId)) endBonus(db, b, 'cancelled', reason);
+  // Free spins: removed without paying anything.
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active'").all(userId)) {
+    db.prepare("UPDATE casino_spins SET status = 'cancelled', balance_cents = 0, ended_at = ?, cancel_reason = ? WHERE id = ?").run(nowIso(), reason, s.id);
+    ledger(db, { userId, type: 'bonus_cancel', amount: -s.balance_cents, balanceAfter: 0, description: `Free Spins canceladas: ${reason}`, ref: `fscancel:${s.id}` });
+    log(db, userId, 'casinoFs', s.ref, 'cancelled', reason);
+  }
   for (const f of db.prepare("SELECT * FROM freebets WHERE user_id = ? AND status = 'active'").all(userId)) {
     db.prepare("UPDATE freebets SET status = 'cancelled' WHERE id = ?").run(f.id);
     ledger(db, { userId, freebetId: f.id, type: 'bonus_cancel', amount: -f.amount_cents, description: `Free bet cancelada: ${reason}`, ref: `fbcancel:${f.id}` });
@@ -305,6 +436,7 @@ export function cancelUserPromos(db, userId, reason) {
 export function expireDue(db, now = nowIso()) {
   let n = 0;
   for (const b of db.prepare("SELECT * FROM bonuses WHERE status = 'active' AND expires_at <= ?").all(now)) { endBonus(db, b, 'expired', 'prazo terminado'); n += 1; }
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE status = 'active' AND expires_at <= ?").all(now)) { closeSpins(db, s, 'expired', 'prazo terminado'); n += 1; }
   for (const f of db.prepare("SELECT * FROM freebets WHERE status = 'active' AND expires_at <= ?").all(now)) {
     db.prepare("UPDATE freebets SET status = 'expired' WHERE id = ?").run(f.id);
     ledger(db, { userId: f.user_id, freebetId: f.id, type: 'freebet_expiry', amount: -f.amount_cents, description: 'Free bet expirada', ref: `fbexpiry:${f.id}` });
@@ -503,10 +635,13 @@ export function publicCampaigns(db, now = nowIso()) {
       rolloverMult: r.rolloverMult, rolloverBase: r.rolloverBase, minOdds: r.minOdds, validityDays: r.validityDays, endAt: r.endAt },
     { id: 'cashback', name: CAMPAIGN_NAMES.cashback, open: campaignOpen(cb, now), percent: cb.percent, minLoss: cb.minLoss, max: cb.max,
       rolloverMult: cb.rolloverMult, minOdds: cb.minOdds, validityDays: cb.validityDays, endAt: cb.endAt },
+    { id: 'casinoFs', name: CAMPAIGN_NAMES.casinoFs, open: campaignOpen(cfg.casinoFs, now) && cfg.casinoFs.games.length > 0, tiers: cfg.casinoFs.tiers,
+      spinValue: cfg.casinoFs.spinValue, validityDays: cfg.casinoFs.validityDays, maxDeposit: cfg.casinoFs.maxDeposit, games: cfg.casinoFs.games.length, endAt: cfg.casinoFs.endAt },
   ];
 }
 
-export function playerPromos(db, userId) {
+export function playerPromos(db, userId, { gameName } = {}) {
+  const spins = db.prepare('SELECT * FROM casino_spins WHERE user_id = ? ORDER BY id DESC LIMIT 10').all(userId).map((s) => spinsView(s, gameName));
   const bonuses = db.prepare('SELECT * FROM bonuses WHERE user_id = ? ORDER BY id DESC LIMIT 20').all(userId).map(bonusView);
   const freebets = db.prepare("SELECT * FROM freebets WHERE user_id = ? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id DESC LIMIT 20").all(userId).map(freebetView);
   const ledgerRows = db.prepare('SELECT type, amount_cents, balance_after_cents, description, created_at FROM promo_ledger WHERE user_id = ? ORDER BY id DESC LIMIT 40').all(userId)
@@ -515,6 +650,7 @@ export function playerPromos(db, userId) {
   return {
     bonusBalance: eur(bonusBalanceCents(db, userId)), freebetBalance: eur(freebetCents(db, userId)),
     active: bonuses.filter((b) => b.status === 'active'), bonuses, freebets, ledger: ledgerRows, firstBetUsed,
+    spins, activeSpins: spins.find((s) => s.status === 'active') || null,
   };
 }
 

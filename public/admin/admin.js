@@ -100,13 +100,15 @@ const TX_LABEL = {
 // ---------- promotions ----------
 
 const PROMO_STATUS = { active: 'Ativo', completed: 'Cumprido', expired: 'Expirado', cancelled: 'Cancelado', used: 'Usada', granted: 'Atribuído', refused: 'Recusado' };
-const CAMPAIGN = { welcome: 'Boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', general: 'Geral', all: 'Todas' };
+const CAMPAIGN = { casinoFs: 'Free Spins casino (CASINO_FREE_SPINS)', welcome: 'Boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', general: 'Geral', all: 'Todas' };
 // Fields of each campaign in the admin form: [key, label, type].
 const PROMO_FIELDS = {
   welcome: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
   reload: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
+  casinoFs: [['tiers', 'Escalões (depósito € : rodadas)', 'tiers'], ['spinValue', 'Valor por rodada (€)'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
+    ['maxClaims', 'Máximo de utilizações por jogador', 'opt'], ['games', 'Jogos elegíveis (IDs BigBang, separados por vírgula)', 'games']],
   firstBet: [['minStake', 'Aposta mínima (€)'], ['minOdds', 'Odd mínima'], ['maxRefund', 'Reembolso máximo em free bet (€)'], ['validityDays', 'Validade da free bet (dias)']],
   cashback: [['percent', 'Cashback (%)'], ['minLoss', 'Perda líquida mínima (€)'], ['max', 'Cashback máximo (€/semana)'], ['rolloverMult', 'Rollover (×)'], ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)']],
 };
@@ -116,6 +118,8 @@ function adminPromos(d) {
   const c = d.config;
   const field = (camp, [k, label, type]) => {
     const v = c[camp][k];
+    if (type === 'tiers') return `<label class="field">${esc(label)}<input name="${camp}.${k}" value="${esc(v.map(([d, n]) => `${d}:${n}`).join(', '))}" required></label>`;
+    if (type === 'games') return `<label class="field wide">${esc(label)}<input name="${camp}.${k}" value="${esc(v.join(', '))}" placeholder="ex.: 4821, 4822"><small class="muted">${v.length ? `${v.length} jogo(s)` : 'Sem jogos: a campanha não fica disponível.'} Os IDs aparecem no URL da página do jogo (#/casino/jogo/ID).</small></label>`;
     if (type === 'base') return `<label class="field">${esc(label)}<select name="${camp}.${k}"><option value="deposit_bonus"${v !== 'bonus' ? ' selected' : ''}>Depósito + bónus</option><option value="bonus"${v === 'bonus' ? ' selected' : ''}>Só o bónus</option></select></label>`;
     return `<label class="field">${esc(label)}<input name="${camp}.${k}" type="number" step="0.01" value="${v ?? ''}"${type === 'opt' ? ' placeholder="sem limite"' : ' required'}></label>`;
   };
@@ -147,11 +151,15 @@ function adminPromos(d) {
         <p class="muted">Métodos de pagamento elegíveis:</p>
         <div class="form-actions">${methods.map(([k, l]) => `<label class="adm-switch"><input type="checkbox" name="general.methods" value="${k}"${c.general.methods.includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</div>
         <p class="muted">Sempre aplicado: uma promoção de depósito ativa por jogador, sem autoexclusão nem conta suspensa, sem contas duplicadas (telemóvel / NIF / IBAN), depósito confirmado e não revertido. Os valores e o rollover são sempre calculados pelo servidor.</p></div>
-      ${['welcome', 'firstBet', 'reload', 'cashback'].map(campaign).join('')}
+      ${['welcome', 'firstBet', 'reload', 'cashback', 'casinoFs'].map(campaign).join('')}
       <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div>
     </form>
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>
     <div class="panel"><h3>Free bets</h3>${freebets}</div>
+    <div class="panel"><h3>Free Spins casino</h3>${d.spins?.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Rodadas</th><th class="num">Valor</th><th class="num">Saldo FS</th><th class="num">Ganhos pagos</th><th>Expira</th><th>Estado</th></tr></thead><tbody>
+      ${d.spins.map((x) => `<tr><td>${x.id}</td><td>${esc(x.user)}</td><td>${x.spins} × ${money(x.spinValue)}</td><td class="num">${money(x.value)}</td><td class="num">${money(x.balance)}</td><td class="num">${money(x.paid)}</td>
+        <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.status === 'active' ? 'open' : 'void'}">${({ active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' })[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="muted">Sem Free Spins atribuídas.</p>'}</div>
     <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;
 }
 
@@ -404,6 +412,23 @@ function liveSocketPanel(ws) {
 
 function adminCasino(c) {
   const test = '<br><button class="primary-btn" data-action="casino-test">Testar ligação</button><div id="casinoTest"></div>';
+  if (c.bigbang) {
+    return `<div class="panel">
+      <div class="section-head"><h2>Casino — BigBang</h2><span class="pill ${c.error ? 'lost' : 'won'}">${c.error ? 'Erro' : c.sandbox ? 'Sandbox (teste)' : 'Real'}</span></div>
+      ${c.error ? `<div class="form-error">${esc(c.error)}</div>` : ''}
+      <div class="stat-grid"><div class="stat"><small>Jogos</small><strong>${c.games}</strong></div><div class="stat"><small>Fornecedores</small><strong>${c.providers}</strong></div>
+        <div class="stat"><small>Apostado (dinheiro real)</small><strong>${money(c.bets)}</strong></div><div class="stat"><small>Ganhos pagos</small><strong>${money(c.wins)}</strong></div>
+        <div class="stat"><small>GGR</small><strong>${money(c.bets - c.wins)}</strong></div><div class="stat"><small>Ganhos de Free Spins pagos</small><strong>${money(c.freeSpinWins)}</strong></div></div>
+      <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
+      <div class="table-wrap"><table><tbody>
+        <tr><td><strong>user_data</strong> (GET)</td><td><code>${esc(c.callbacks.userData)}</code></td></tr>
+        <tr><td><strong>balance_change</strong> (POST)</td><td><code>${esc(c.callbacks.balanceChange)}</code></td></tr>
+      </tbody></table></div>
+      <p class="muted">O saldo nunca sai da Bet62: o BigBang pede o saldo e envia cada aposta/ganho assinados com a chave (HMAC), aplicados uma única vez por transação.
+        ${c.sandbox ? 'Chave de teste (ek_test_): os jogos correm com saldo virtual e nenhum dinheiro real é movido.' : ''}
+        Para mudar de chave (teste ↔ real) altere <strong>BIGBANG_API_KEY</strong> no Railway.</p>
+      ${test}</div>`;
+  }
   if (!c.enabled) {
     return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
       <strong>CASINO_API_URL</strong> ${c.urlSet ? '✔ definido' : '✘ em falta'} ·
@@ -626,7 +651,7 @@ const handlers = {
       if (key === 'methods') { if (el.checked) body.general.methods.push(el.value); continue; }
       if (el.type === 'checkbox') body[camp][key] = el.checked;
       else if (el.type === 'datetime-local') body[camp][key] = el.value ? new Date(el.value).toISOString() : null;
-      else if (el.tagName === 'SELECT') body[camp][key] = el.value;
+      else if (el.tagName === 'SELECT' || key === 'tiers' || key === 'games') body[camp][key] = el.value;
       else body[camp][key] = el.value === '' ? null : Number(el.value);
     }
     await api('/api/admin/promotions/config', { method: 'PUT', body });

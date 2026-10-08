@@ -273,7 +273,7 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     assert.equal(d.body.user.balance, 40);
     const mine = await call('GET', '/api/promotions');
     assert.equal(mine.body.mine.active[0].rolloverTarget, 400);
-    assert.equal(mine.body.campaigns.length, 4);
+    assert.equal(mine.body.campaigns.length, 5);
     // Withdrawal: asked first (409), then the bonus is cancelled and the real money withdrawn.
     const w = await call('POST', '/api/wallet/withdraw', { amount: 20, iban: 'PT50000201231234567890154' });
     assert.equal(w.status, 409);
