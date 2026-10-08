@@ -965,3 +965,48 @@ img, video, iframe { max-width: 100%; }
   .game-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .game-info small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 }
+
+/* ---------- header balance pills: tap the balance → Depósito / Levantamento ---------- */
+.bal-pill { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 5px; border-radius: 999px; border: 0; white-space: nowrap;
+  background: linear-gradient(135deg, #2f9d63, var(--up)); color: #fff; font-weight: 900; font-size: 15px; box-shadow: 0 4px 14px rgba(81, 197, 128, .25); cursor: pointer; }
+.bal-pill strong { font-weight: 900; letter-spacing: .01em; }
+.bal-plus { width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #2f9d63; display: grid; place-items: center; font-size: 22px; font-weight: 900; line-height: 1; padding-bottom: 2px; }
+.bal-pill:hover { filter: brightness(1.06); }
+/* Free bets: shown, not a button. */
+.bal-pill.fb { padding: 0 14px; cursor: default; background: linear-gradient(135deg, #1f6b46, #2f8f5c); box-shadow: none; }
+.bal-pill.hidden { display: none; }
+@media (max-width: 1000px) {
+  /* The phone has Perfil in the bottom bar: the account button stays on the computer only. */
+  #profileBtn { display: none !important; }
+  .top-actions { gap: 6px; }
+}
+@media (max-width: 420px) {
+  .bal-pill { height: 34px; font-size: 13.5px; gap: 6px; padding-right: 11px; }
+  .bal-plus { width: 25px; height: 25px; font-size: 19px; }
+  .bal-pill.fb { padding: 0 10px; }
+}
+
+/* ---------- wallet window (Depósito / Levantamento) ---------- */
+.wallet-modal { width: min(480px, 100%); padding: 0; overflow: auto; }
+.wm-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; background: linear-gradient(90deg, var(--card), var(--dim)); border-bottom: 1px solid var(--line); }
+.wm-head > div:nth-child(2) { display: flex; flex-direction: column; }
+.wm-head strong { font-size: 16px; font-weight: 900; }
+.wm-head small { color: var(--text-3); font-size: 12px; }
+.wm-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 900; font-size: 20px; color: #fff; flex-shrink: 0; }
+.wm-icon.dep { background: var(--up); }
+.wm-icon.wd { background: #d9822b; }
+.wm-bal { margin-left: auto; text-align: right; }
+.wm-bal small { display: block; font-size: 10px; }
+.wm-bal b { color: var(--up); font-weight: 900; }
+.wm-head .modal-close { margin-left: 6px; }
+.wm-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+.wm-tabs button { padding: 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-3); font-weight: 800; font-size: 12.5px; letter-spacing: .03em; }
+.wm-tabs button.active { color: #fff; background: var(--card); }
+.wm-tabs button.active.dep { border-bottom-color: var(--up); }
+.wm-tabs button.active.wd { border-bottom-color: #d9822b; }
+.amount-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0 4px; }
+.amount-presets button { padding: 8px 0; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text-2); font-weight: 800; font-size: 13px; }
+.amount-presets button.active { border-color: var(--up); color: var(--up); background: rgba(81, 197, 128, .1); }
+.wallet-modal .form-actions button { width: 100%; height: 46px; font-size: 15px; font-weight: 900; }
+.wallet-modal form[data-form="deposit"] .primary-btn { background: linear-gradient(135deg, #2f9d63, var(--up)); border-color: transparent; color: #fff; }
+.wallet-modal form[data-form="withdraw"] .outline-btn { border-color: #d9822b; color: #f0a95e; }

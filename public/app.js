@@ -1128,26 +1128,21 @@ function supportView() {
     <div class="pf-actions"><a class="outline-btn" href="#/perfil/limites">Limites e autoexclusão</a><a class="outline-btn" href="#/perfil/privacidade">Privacidade</a></div>`;
 }
 
-function walletView() {
-  setTimeout(loadWallet);
-  setTimeout(depositOffer);
-  // Back from a bank check (3-D Secure) that left the page: follow that deposit.
-  const back = currentRoute().query.get('deposito');
-  if (back) setTimeout(() => { history.replaceState(null, '', '#/perfil/carteira'); watchDeposit(back); });
-  const demo = state.config?.paymentsMode === 'demo';
+/** An element of the wallet forms: the one in the open wallet window first, else the one on the page. */
+const walletEl = (sel) => $(`#modal ${sel}`) || $(sel);
+
+const DEPOSIT_PRESETS = [10, 20, 50, 100, 200];
+function depositFormHtml() {
   const c = state.config || {};
-  return `<div class="stat-grid"><div class="stat"><small>Saldo real (levantável)</small><strong id="walletBalance">${money(state.user.balance)}</strong></div>
-      <div class="stat"><small>Saldo de bónus</small><strong>${money(state.user.bonus || 0)}</strong></div>
-      <div class="stat"><small>Free bets</small><strong>${money(state.user.freebet || 0)}</strong></div></div>
-    <h3>Depositar</h3>
-    ${demo ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato. Ligue um fornecedor de pagamentos para operar com dinheiro real.</div><br>' : ''}
-    ${c.paymentsMode === 'disabled' ? '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>' : `
+  if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
+  return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
       <div class="methods">
         <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
         <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
         <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
       </div>
+      <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
@@ -1159,19 +1154,55 @@ function walletView() {
       <div class="deposit-offer" id="depositOffer"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>
-    <div id="depositPanel"></div>`}
-    <h3>Levantar</h3>
+    <div id="depositPanel"></div>`;
+}
+
+function withdrawFormHtml() {
+  const c = state.config || {};
+  return `<div class="pf-note warn">Mínimo €${c.minWithdraw ?? 10}. Transferência bancária para uma conta em seu nome, em 2 a 5 dias úteis.</div>
     <form data-form="withdraw"><div class="form-grid">
       <div class="field"><label>Valor (mín. €${c.minWithdraw ?? 10})</label><input name="amount" type="number" min="${c.minWithdraw ?? 10}" step="0.01" required inputmode="decimal"></div>
       <div class="field"><label>IBAN</label><input name="iban" required placeholder="PT50 0000 0000 0000 0000 0000 0" value="${esc(state.user.iban || '')}"></div>
-    </div><div class="form-actions"><button class="outline-btn">Pedir levantamento</button></div></form>
+    </div><div class="form-actions"><button class="outline-btn">Pedir levantamento</button></div></form>`;
+}
+
+function walletView() {
+  setTimeout(loadWallet);
+  setTimeout(depositOffer);
+  // Back from a bank check (3-D Secure) that left the page: follow that deposit.
+  const back = currentRoute().query.get('deposito');
+  if (back) setTimeout(() => { history.replaceState(null, '', '#/perfil/carteira'); watchDeposit(back); });
+  return `<div class="stat-grid"><div class="stat"><small>Saldo real (levantável)</small><strong id="walletBalance">${money(state.user.balance)}</strong></div>
+      <div class="stat"><small>Saldo de bónus</small><strong>${money(state.user.bonus || 0)}</strong></div>
+      <div class="stat"><small>Free bets</small><strong>${money(state.user.freebet || 0)}</strong></div></div>
+    <h3>Depositar</h3>
+    ${depositFormHtml()}
+    <h3>Levantar</h3>
+    ${withdrawFormHtml()}
     <div id="walletLists"><div class="loading">A carregar movimentos…</div></div>`;
+}
+
+/** The wallet window (the balance pill in the header): Depósito / Levantamento, in the middle of the screen. */
+function openWalletModal(tab = 'deposit') {
+  if (!state.user) return openAuth('login');
+  const modal = $('#modal');
+  modal.className = 'modal wallet-modal';
+  const dep = tab === 'deposit';
+  modal.innerHTML = `<div class="wm-head">
+      <span class="wm-icon ${dep ? 'dep' : 'wd'}">${dep ? '+' : '↑'}</span>
+      <div><strong>${dep ? 'Depósito' : 'Levantamento'}</strong><small>${dep ? 'MB WAY · Multibanco · Cartão' : 'Transferência bancária · IBAN'}</small></div>
+      <div class="wm-bal"><small>Saldo atual</small><b>${money(state.user.balance)}</b></div>
+      <button class="modal-close" data-action="close-modal" aria-label="Fechar">×</button></div>
+    <div class="wm-tabs"><button class="${dep ? 'active dep' : ''}" data-wallet-tab="deposit">+ DEPOSITAR</button><button class="${dep ? '' : 'active wd'}" data-wallet-tab="withdraw">↑ LEVANTAR</button></div>
+    <div class="modal-body">${dep ? depositFormHtml() : withdrawFormHtml()}</div>`;
+  $('#modalBackdrop').classList.remove('hidden');
+  if (dep) setTimeout(depositOffer);
 }
 
 // ---------- deposits through Stripe, inside the page ----------
 
 function depositPanel(html) {
-  const box = $('#depositPanel');
+  const box = walletEl('#depositPanel');
   if (box) box.innerHTML = html;
   return box;
 }
@@ -1198,9 +1229,9 @@ async function watchDeposit(id, { every = 5000, forMs = 10 * 60_000 } = {}) {
       depositPanel(`<div class="pay-box error"><strong>Pagamento não concluído</strong><span>${r.method === 'mbway' ? 'O pedido MB WAY foi recusado ou expirou.' : 'O pagamento não foi confirmado.'} Pode tentar de novo.</span></div>`);
       return;
     }
-    if (r && !$('#depositPanel').innerHTML.trim()) depositPanel('<div class="pay-box"><strong>A aguardar confirmação do pagamento…</strong></div>');
+    if (r && !walletEl('#depositPanel')?.innerHTML.trim()) depositPanel('<div class="pay-box"><strong>A aguardar confirmação do pagamento…</strong></div>');
     await new Promise((ok) => setTimeout(ok, every));
-    if (!$('#depositPanel')) { state.depositWatch = null; return; }
+    if (!walletEl('#depositPanel')) { state.depositWatch = null; return; }
   }
 }
 
@@ -1232,9 +1263,9 @@ async function showCardForm(p, clientSecret, publishableKey) {
     <div class="form-actions"><button class="primary-btn" id="cardPay" disabled>Confirmar pagamento</button></div>
     <small class="muted">Os dados do cartão vão diretamente para a Stripe; não passam pelo nosso servidor.</small></div>`);
   const pe = elements.create('payment', { layout: 'tabs' });
-  pe.mount('#cardElement');
-  pe.on('ready', () => { const b = $('#cardPay'); if (b) b.disabled = false; });
-  $('#cardPay').addEventListener('click', async (e) => {
+  pe.mount(walletEl('#cardElement'));
+  pe.on('ready', () => { const b = walletEl('#cardPay'); if (b) b.disabled = false; });
+  walletEl('#cardPay').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
@@ -1528,14 +1559,14 @@ function updateHeader() {
   $('#loginBtn').classList.toggle('hidden', !!u);
   $('#registerBtn').classList.toggle('hidden', !!u);
   $('#balanceBtn').classList.toggle('hidden', !u);
-  $('#depositBtn').classList.toggle('hidden', !u);
+  if (!u) $('#freebetPill').classList.add('hidden');
   $('#profileBtn').classList.toggle('hidden', !u);
   if (u) {
     $('#headerBalance').textContent = money(u.balance);
-    // Promotional money is shown apart: it is not the withdrawable balance.
-    const extra = (u.bonus || 0) + (u.freebet || 0);
-    $('#headerBonus').classList.toggle('hidden', !extra);
-    $('#headerBonus').textContent = extra ? `+ ${money(extra)} bónus` : '';
+    // Free bets beside the balance (shown only, not a button): "5,00 F".
+    const fb = Number(u.freebet) || 0;
+    $('#freebetPill').classList.toggle('hidden', !fb);
+    $('#headerFreebet').textContent = `${fb.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} F`;
     $('#profileBtn').textContent = initials(u.name);
   }
 }
@@ -1799,6 +1830,7 @@ const formHandlers = {
       return watchDeposit(p.id, { every: 4000, forMs: 6 * 60_000 });
     }
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
+    if (form.closest('#modal')) closeModal();
     toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${res.bonus.spins ? `${res.bonus.spins} rodadas (${money(res.bonus.amount)})` : money(res.bonus.amount)}` : ''}`);
     updateHeader(); loadWallet(); loadPromos();
   },
@@ -1815,6 +1847,7 @@ const formHandlers = {
     }
     state.user.balance = res.balance;
     form.reset();
+    if (form.closest('#modal')) closeModal();
     toast('Levantamento pedido', 'O pedido será analisado pela equipa.');
     updateHeader(); loadWallet();
   },
@@ -1890,6 +1923,16 @@ document.addEventListener('click', async (e) => {
     // BigBang: the game's own page first (Jogar / Testar); the older aggregator opens it straight away.
     const g = state.casino.games[Number(game.dataset.game)];
     if (state.casino.bigbang && g) location.hash = `#/casino/jogo/${g.id}`; else openGame(Number(game.dataset.game));
+    return;
+  }
+  const walletTab = e.target.closest('[data-wallet-tab]');
+  if (walletTab) { openWalletModal(walletTab.dataset.walletTab); return; }
+  const preset = e.target.closest('.amount-presets [data-amount]');
+  if (preset) {
+    const input = preset.closest('form').amount;
+    input.value = preset.dataset.amount;
+    $$('[data-amount]', preset.parentElement).forEach((b) => b.classList.toggle('active', b === preset));
+    depositOffer();
     return;
   }
   const cgPlay = e.target.closest('[data-cg-play]');
@@ -2038,8 +2081,8 @@ let offerTimer = null;
 function depositOffer() {
   clearTimeout(offerTimer);
   offerTimer = setTimeout(async () => {
-    const form = $('form[data-form="deposit"]');
-    const box = $('#depositOffer');
+    const form = walletEl('form[data-form="deposit"]');
+    const box = walletEl('#depositOffer');
     if (!form || !box) return;
     const promo = form.promo?.value || 'none';
     if (promo === 'none') { box.innerHTML = '<small class="muted">Sem promoção neste depósito.</small>'; return; }
@@ -2094,6 +2137,7 @@ function bindChrome() {
     renderSlip();
   }));
   $$('.quick-stakes button').forEach((b) => b.addEventListener('click', () => { $('#stake').value = b.dataset.stake; renderSlip(); }));
+  $('#balanceBtn').addEventListener('click', () => openWalletModal('deposit'));
   $('#freebetSel').addEventListener('change', (e) => { state.freebetId = Number(e.target.value) || null; renderSlip(); });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
