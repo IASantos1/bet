@@ -735,3 +735,5 @@ body.no-scroll { overflow: hidden; }
 .pay-box.mb dt { color: var(--muted); font-size: 12px; align-self: center; }
 .pay-box.mb dd { margin: 0; font-weight: 800; font-size: 18px; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
 .pay-box #cardElement { min-height: 120px; }
+.stream-box.locked p { color: var(--text-2); font-size: 13px; margin: 0; }
+.stream-box.locked .primary-btn { margin-top: 4px; }

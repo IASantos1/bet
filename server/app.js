@@ -260,7 +260,6 @@ export function createApp(db, {
         // Live video on WinHouse for this game (the TV filter and the play button).
         stream: e.status === 'live' && e.source === 'winhouse' && !!winhouseFeed?.streamOf?.(e.external_id).has,
       };
-      if (allMarkets && out.stream) out.streamUrl = winhouseFeed.streamOf(e.external_id).url;
       if (allMarkets) {
         const block = (m, list, suffix = '') => ({
           market: m, name: marketName(e.sport, m) + suffix,
@@ -398,9 +397,18 @@ export function createApp(db, {
   // embed_url: WinHouse's own player page (what the book frames); hls_url: the raw stream.
   const videoOut = (row, s) => ({ event_id: Number(row.external_id), id: row.id, stream_id: Number(s.streamId), embed_url: s.embedUrl, hls_url: s.hlsUrl, expires_at: s.expiresAt });
 
+  // Live TV is for signed-in players with money in the wallet.
+  const videoGate = (req) => {
+    if (!req.user) return { status: 401, reason: 'login', error: 'Inicie sessão para ver a transmissão.' };
+    if (!(req.user.balance_cents > 0)) return { status: 403, reason: 'balance', error: 'Saldo insuficiente.' };
+    return null;
+  };
+
   app.get('/api/live/:eventId', async (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store');
+      const gate = videoGate(req);
+      if (gate) return res.status(gate.status).json({ success: false, reason: gate.reason, error: gate.error });
       if (!liveVideoLimiter(req.ip)) throw new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.');
       if (!winhouseLive?.enabled) return res.status(404).json({ success: false, error: 'Transmissões desligadas.' });
       const row = liveGameRow(req.params.eventId);
@@ -415,6 +423,8 @@ export function createApp(db, {
   app.get('/api/live', async (req, res, next) => {
     try {
       res.set('Cache-Control', 'no-store');
+      const gate = videoGate(req);
+      if (gate) return res.status(gate.status).json({ success: false, reason: gate.reason, error: gate.error });
       if (!liveVideoLimiter(req.ip)) throw new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.');
       if (!winhouseLive?.enabled || !winhouseFeed?.streamOf) return res.json({ success: true, streams: [] });
       const rows = db.prepare("SELECT id, external_id, status FROM events WHERE source = 'winhouse' AND status = 'live'").all()
