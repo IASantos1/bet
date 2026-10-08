@@ -61,6 +61,20 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   decided_at   TEXT
 );
 
+-- Stripe Checkout deposits: one row per payment page; credited once, when Stripe says it is paid.
+CREATE TABLE IF NOT EXISTS stripe_payments (
+  id             INTEGER PRIMARY KEY,
+  session_id     TEXT    NOT NULL UNIQUE,
+  user_id        INTEGER NOT NULL REFERENCES users(id),
+  amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
+  currency       TEXT    NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'pending',
+  payment_intent TEXT,
+  created_at     TEXT    NOT NULL,
+  updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_stripe_user ON stripe_payments(user_id, id);
+
 CREATE TABLE IF NOT EXISTS events (
   id          INTEGER PRIMARY KEY,
   sport       TEXT    NOT NULL,

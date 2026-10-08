@@ -101,7 +101,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, stripe = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -123,6 +123,26 @@ export function createApp(db, {
     });
     if (config.isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
+  });
+
+  // Stripe webhook: the raw body is what the signature covers, so it comes before the JSON parser
+  // (and the CSRF check: Stripe's server posts it, authenticated by the signature).
+  app.post('/api/stripe/webhook', express.raw({ type: '*/*', limit: '512kb' }), (req, res) => {
+    if (!stripe) return res.status(404).json({ error: 'Stripe não configurada.' });
+    let event;
+    try {
+      event = stripe.verify(req.body, req.get('stripe-signature'));
+    } catch (err) {
+      return res.status(400).json({ error: `Webhook: ${err.message}` });
+    }
+    try {
+      stripe.handleEvent(event);
+    } catch (err) {
+      // 500 → Stripe retries later.
+      console.warn(`stripe webhook ${event?.id}: ${err.message}`);
+      return res.status(500).json({ error: 'Erro ao processar.' });
+    }
+    res.json({ received: true });
   });
 
   app.use('/api', express.json({ limit: '32kb' }));
@@ -528,21 +548,52 @@ export function createApp(db, {
     res.json({ balance: cents(req.user.balance_cents), transactions, withdrawals });
   });
 
-  app.post('/api/wallet/deposit', requireUser, (req, res) => {
-    if (config.paymentsMode !== 'demo') {
-      throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: nenhum fornecedor de pagamentos está configurado.');
-    }
-    if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
-    const amount = parseEuros(req.body.amount, 'Valor do depósito');
-    const { minDepositCents, maxDepositCents } = config.limits;
-    if (amount < minDepositCents || amount > maxDepositCents) {
-      throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
-    }
+  app.post('/api/wallet/deposit', requireUser, async (req, res, next) => {
+    try {
+      const stripeMode = config.paymentsMode === 'stripe';
+      if (config.paymentsMode !== 'demo' && !(stripeMode && stripe)) {
+        throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: nenhum fornecedor de pagamentos está configurado.');
+      }
+      if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
+      const amount = parseEuros(req.body.amount, 'Valor do depósito');
+      const { minDepositCents, maxDepositCents } = config.limits;
+      if (amount < minDepositCents || amount > maxDepositCents) {
+        throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
+      }
+      if (stripeMode) {
+        // The player pays on Stripe's page and comes back to the wallet; the balance moves when Stripe confirms.
+        const base = config.stripe.publicUrl || `${req.protocol}://${req.get('host')}`;
+        let page;
+        try {
+          page = await stripe.createDeposit(req.user, amount, {
+            successUrl: `${base}/#/perfil/carteira?deposito={CHECKOUT_SESSION_ID}`,
+            cancelUrl: `${base}/#/perfil/carteira`,
+          });
+        } catch (err) {
+          throw new HttpError(502, `Não foi possível abrir o pagamento: ${err.message}`);
+        }
+        return res.status(201).json({ checkoutUrl: page.url, sessionId: page.id });
+      }
+      demoDeposit(req, res, amount);
+    } catch (err) { next(err); }
+  });
+
+  // Back from Stripe: the deposit's state (asks Stripe if the webhook has not arrived yet).
+  app.get('/api/wallet/deposit/:sessionId', requireUser, async (req, res, next) => {
+    try {
+      if (!stripe) throw new HttpError(404, 'Depósito não encontrado.');
+      const r = await stripe.refresh(req.params.sessionId, req.user.id);
+      if (!r) throw new HttpError(404, 'Depósito não encontrado.');
+      res.json({ status: r.status, amount: cents(r.amountCents), balance: cents(userById(req.user.id).balance_cents) });
+    } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(502, err.message) : err); }
+  });
+
+  function demoDeposit(req, res, amount) {
     const method = ['mbway', 'multibanco', 'cartao'].includes(req.body.method) ? req.body.method : 'cartao';
     const label = { mbway: 'MB WAY', multibanco: 'Multibanco', cartao: 'Cartão' }[method];
     const balance = tx(db, () => postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`));
     res.status(201).json({ balance: cents(balance) });
-  });
+  }
 
   app.post('/api/wallet/withdraw', requireUser, reclaimCasino, (req, res) => {
     const amount = parseEuros(req.body.amount, 'Valor do levantamento');
