@@ -332,8 +332,13 @@ export function createRapidStream({
     const hit = details.get(id);
     if (hit && Date.now() - hit.at < cacheSeconds * 1000) return hit.servers;
     let servers = [];
-    try { servers = findStreams(await get(streamPath.replace('{id}', encodeURIComponent(String(id))))); } catch (err) { log(`RapidAPI streaming ${id}: ${err.message}`); }
-    details.set(id, { at: Date.now(), servers });
+    let answer = null;
+    try {
+      const body = await get(streamPath.replace('{id}', encodeURIComponent(String(id))));
+      answer = JSON.stringify(body).slice(0, 600);
+      servers = findStreams(body);
+    } catch (err) { answer = `erro: ${err.message}`; log(`RapidAPI streaming ${id}: ${err.message}`); }
+    details.set(id, { at: Date.now(), servers, answer });
     if (details.size > 300) for (const [k, v] of details) if (Date.now() - v.at > cacheSeconds * 1000) details.delete(k);
     return servers;
   }
@@ -349,7 +354,9 @@ export function createRapidStream({
     const servers = playableServers(found.match.servers);
     return {
       servers, score: found.score,
-      match: { home: found.match.home_team_name, away: found.match.away_team_name, league: found.match.league_name },
+      match: { id: found.match.id, home: found.match.home_team_name, away: found.match.away_team_name, league: found.match.league_name },
+      // What the game's route answered (for the admin test), when it was asked.
+      answer: details.get(found.match.id)?.answer ?? null,
       error: servers.length ? null : 'sem servidor HLS direto para este jogo',
     };
   }

@@ -213,6 +213,7 @@ test('"football-live-stream-api" shape: result[] list (live only), links from th
   const r = await rs.streamsFor('Gimnasia y Esgrima La Plata', 'Atletico Tucuman');
   assert.deepEqual(r.servers.map((x) => [x.name, x.kind, x.referer]), [['HD', 'hls', 'https://site.example/'], ['Servidor 2', 'flv', null]]);
   assert.equal(calls.filter((u) => u.includes('/stream?id=8yomo4h16xykq0j')).length, 1);
+  assert.match(r.answer, /index\.m3u8/, 'what the game route answered is kept for the admin test');
   assert.equal((await rs.streamsFor('Benfica', 'Porto')).servers.length, 0, 'upcoming games are not live');
   assert.equal((await rs.liveMatches()).matches.map((m) => m.id).join(), '8yomo4h16xykq0j,late', 'kicked off but still "Upcoming" counts; finished does not');
   await rs.streamsFor('Gimnasia La Plata', 'Atl. Tucuman');
