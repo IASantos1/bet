@@ -46,6 +46,14 @@ test('live matches: all pages read once, cached, matched to our game in either o
   assert.equal(rs.status().requestsToday, 2);
 });
 
+test('the same game listed twice: the servers of both listings are offered', async () => {
+  const two = { ...HLS, name: 'Server 2', url: 'https://cdn.example.com/live/b.m3u8' };
+  const fetchImpl = async () => Response.json(page([match('Gimnasia La Plata', 'Atl. Tucuman', [HLS]), match('Gimnasia La Plata', 'Atletico Tucuman', [HLS, two])]));
+  const rs = createRapidStream({ apiKey: 'k', fetchImpl });
+  const r = await rs.streamsFor('Gimnasia y Esgrima La Plata', 'Atletico Tucuman');
+  assert.deepEqual(r.servers.map((s) => s.url), [HLS.url, two.url]);
+});
+
 test('an API error is reported, not thrown', async () => {
   const rs = createRapidStream({ apiKey: 'k', fetchImpl: async () => Response.json({ message: 'You are not subscribed' }, { status: 403 }) });
   const r = await rs.streamsFor('A', 'B');

@@ -78,16 +78,26 @@ export function createRapidStream({
     return inflight;
   }
 
-  /** The API's match for one of our games (both names must agree), or null. */
+  /**
+   * The API's match for one of our games (both names must agree), or null. The API can list the
+   * same game more than once (under two league names, each with its own servers): every listing
+   * that agrees is merged, servers included, so none is lost.
+   */
   function findMatch(matches, home, away) {
     let best = null;
+    const servers = [];
+    const urls = new Set();
     for (const m of matches) {
       const direct = Math.min(nameScore(home, m.home_team_name), nameScore(away, m.away_team_name));
       const swapped = Math.min(nameScore(home, m.away_team_name), nameScore(away, m.home_team_name));
       const s = Math.max(direct, swapped);
-      if (s >= 0.5 && (!best || s > best.score)) best = { match: m, score: s };
+      if (s < 0.5) continue;
+      if (!best || s > best.score) best = { match: m, score: s };
+      for (const v of Array.isArray(m.servers) ? m.servers : []) {
+        if (v?.url && !urls.has(v.url)) { urls.add(v.url); servers.push(v); }
+      }
     }
-    return best;
+    return best && { ...best, match: { ...best.match, servers } };
   }
 
   /** The playable streams for one of our live games: { servers: [{ name, url }], match } or { error }. */
