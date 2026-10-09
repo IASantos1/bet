@@ -1701,6 +1701,8 @@ export function createApp(db, {
       }
       res.json({
         status: rapidStream.status(), ourLive: ours.length, covered,
+        // Our live games by name, to compare with the API's list when nothing is covered.
+        ourGames: ours.slice(0, 40).map((e) => `${e.home} × ${e.away}`),
         sample: c.matches.slice(0, 15).map((m) => ({ game: `${m.home_team_name} × ${m.away_team_name}`, league: m.league_name, status: m.match_status,
           servers: (m.servers || []).map((v) => ({ name: v.name, type: v.type, https: /^https:/.test(String(v.url || '')), hls: /\.m3u8/i.test(String(v.url || '')), referer: !!v.header?.referer })) })),
       });
