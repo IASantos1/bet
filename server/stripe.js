@@ -8,6 +8,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { postTransaction } from './wallet.js';
 import { onDeposit, onChargeback } from './promotions.js';
+import { onReferredDeposit, onDepositReversed } from './affiliates.js';
 
 export const METHODS = {
   mbway: { label: 'MB WAY', type: 'mb_way' },
@@ -162,8 +163,13 @@ export function createStripe(db, {
         if (!r.changes) return { status: 'paid', row };
         const label = METHODS[row.method]?.label || 'Stripe';
         postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, `stripe:${row.session_id}`);
+        const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
         // The deposit bonus it earns, if any (once per deposit, decided by the server).
         const bonus = onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, method: row.method, choice: PROMO_CHOICE[row.promo_opt] || 'sport' });
+        // The referring affiliate's commission, when this is the player's first eligible deposit (once).
+        // A failure there never holds the deposit back: affiliates.recover() picks it up later.
+        try { onReferredDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, txId, ref: `stripe:${row.session_id}` }); }
+        catch (err) { log(`afiliados ${row.session_id}: ${err.message}`); }
         const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(row.user_id).balance_cents;
         return { status: 'paid', credited: true, balance, bonus, row };
       });
@@ -188,6 +194,7 @@ export function createStripe(db, {
       const r = db.prepare("UPDATE stripe_payments SET status = 'reversed', updated_at = ? WHERE id = ? AND status = 'paid'").run(nowIso(), row.id);
       if (!r.changes) return { status: 'reversed' };
       onChargeback(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, reason });
+      onDepositReversed(db, { ref: `stripe:${row.session_id}`, reason });
       log(`stripe ${row.session_id}: depósito revertido (${reason})`);
       return { status: 'reversed', reversed: true };
     });

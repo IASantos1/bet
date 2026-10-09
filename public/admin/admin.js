@@ -20,6 +20,7 @@ const TABS = [
   { id: 'levantamentos', label: 'Levantamentos', icon: '💸', section: 'Operações' },
   { id: 'utilizadores', label: 'Utilizadores', icon: '👥', section: 'Operações' },
   { id: 'promocoes', label: 'Promoções', icon: '🎁', section: 'Operações' },
+  { id: 'afiliados', label: 'Afiliados', icon: '🤝', section: 'Operações' },
   { id: 'novo', label: 'Novo evento', icon: '➕', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: '📡', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: '🎰', section: 'Avançado' },
@@ -161,6 +162,62 @@ function adminPromos(d) {
         <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.status === 'active' ? 'open' : 'void'}">${({ active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' })[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Sem Free Spins atribuídas.</p>'}</div>
     <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;
+}
+
+// ---------- affiliates ----------
+
+const AFF_STATUS = { pending: 'Pendente', active: 'Ativo', suspended: 'Suspenso', blocked: 'Bloqueado' };
+const COMM_STATUS = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga', reversed: 'Revertida', rejected: 'Rejeitada' };
+const COMM_PILL = { pending: 'pending', approved: 'open', paid: 'won', reversed: 'lost', rejected: 'void' };
+const AFF_FIELDS = [
+  ['rateBps', 'Comissão (pontos base; 1000 = 10%)'], ['minDepositCents', 'Depósito próprio mínimo (cêntimos)'],
+  ['minBalanceCents', 'Saldo elegível mínimo (cêntimos)'], ['dualApprovalCents', 'Dupla aprovação a partir de (cêntimos; 0 = desligada)'],
+  ['velocityPerDay', 'Registos por código em 24 h antes de rever'],
+];
+
+function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: commissions }, { items: auditLog }) {
+  const rec = `<div class="adm-cards">
+    <div class="adm-card"><small>Comissões pagas</small><strong>${money(r.commissionsPaid)}</strong><em>${r.paidCount} pagamentos</em></div>
+    <div class="adm-card"><small>Créditos na carteira</small><strong>${money(r.ledgerCredits)}</strong><em>${r.ledgerCount} movimentos</em></div>
+    <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
+    <div class="adm-card"><small>Reconciliação</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões em falta</button></em></div></div>`;
+  const cfg = `<form class="panel" data-form="aff-config"><h3><label class="adm-switch"><input type="checkbox" name="enabled"${c.enabled ? ' checked' : ''}> Programa de afiliados ativo</label>
+      <span class="pill ${c.enabled ? 'won' : 'void'}">${c.enabled ? 'ATIVO' : 'DESLIGADO'}</span></h3>
+    <p class="muted">⚖️ Antes de ativar, confirme com o jurista a conformidade com o SRIJ / Regime Jurídico dos Jogos e Apostas Online e com as regras de publicidade a jogo em Portugal.</p>
+    <div class="adm-grid">${AFF_FIELDS.map(([k, l]) => `<label class="field">${esc(l)}<input name="${k}" type="number" step="1" min="0" value="${c[k]}" required></label>`).join('')}</div>
+    <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="autoPayout"${c.autoPayout ? ' checked' : ''}> Pagar automaticamente as comissões aprovadas</label>
+      <label class="adm-switch"><input type="checkbox" name="countDemoDeposits"${c.countDemoDeposits ? ' checked' : ''}> Contar depósitos de demonstração (só servidores de teste)</label></div>
+    <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
+    <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div></form>`;
+  const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th class="num">Qualif.</th><th class="num">Saldo eleg.</th><th class="num">Pago</th><th class="num">Em aberto</th><th></th></tr></thead><tbody>
+    ${affiliates.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">${esc(a.email)}</small></td><td><b>${esc(a.code)}</b></td>
+      <td><span class="pill ${a.status === 'active' ? 'won' : a.status === 'pending' ? 'pending' : 'lost'}">${AFF_STATUS[a.status] || a.status}</span>${a.adminReason ? `<br><small class="muted">${esc(a.adminReason)}</small>` : ''}</td>
+      <td class="num">${a.clicks}</td><td class="num">${a.referrals}</td><td class="num">${a.qualified}</td><td class="num">${money(a.eligibleBalance)}</td><td class="num">${money(a.paid)}</td><td class="num">${money(a.open)}</td>
+      <td><div class="form-actions">${a.adminStatus ? `<button class="ghost-btn btn-sm" data-action="aff-status" data-status="active" data-id="${a.userId}">Reativar</button>` : `<button class="ghost-btn btn-sm" data-action="aff-status" data-status="suspended" data-id="${a.userId}">Suspender</button>`}
+        ${a.adminStatus !== 'blocked' ? `<button class="danger-btn btn-sm" data-action="aff-status" data-status="blocked" data-id="${a.userId}">Bloquear</button>` : ''}</div></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda não há afiliados (o código é criado quando o jogador abre a secção no perfil).</p>';
+  const actions = (x) => [
+    x.status === 'pending' ? `<button class="primary-btn btn-sm" data-action="aff-review" data-decision="approve" data-id="${x.id}">Aprovar</button>` : '',
+    x.status === 'approved' ? `<button class="primary-btn btn-sm" data-action="aff-pay" data-id="${x.id}">Pagar</button>` : '',
+    ['pending', 'approved'].includes(x.status) ? `<button class="danger-btn btn-sm" data-action="aff-review" data-decision="reject" data-id="${x.id}">Rejeitar</button>` : '',
+    x.status === 'approved' ? `<button class="ghost-btn btn-sm" data-action="aff-review" data-decision="review" data-id="${x.id}">Rever</button>` : '',
+    x.status === 'paid' ? `<button class="danger-btn btn-sm" data-action="aff-reverse" data-id="${x.id}">Reverter</button>` : '',
+  ].join('');
+  const comms = commissions.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Data</th><th>Afiliado</th><th>Convidado</th><th class="num">Depósito</th><th class="num">Comissão</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${commissions.map((x) => `<tr><td>${x.id}</td><td>${esc(fmtDateTime(x.createdAt))}</td><td>${esc(x.affiliate.name)}<br><small class="muted">${esc(x.affiliate.email)}</small></td>
+      <td>${esc(x.referred.name)}<br><small class="muted">${esc(x.referred.email)}</small></td><td class="num">${money(x.deposit)}<br><small class="muted">${esc(x.depositPayment || x.depositRef)}</small></td>
+      <td class="num">${money(x.amount)}<br><small class="muted">${x.rate}%</small></td>
+      <td><span class="pill ${COMM_PILL[x.status]}">${COMM_STATUS[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td>
+      <td><div class="form-actions">${actions(x)}</div></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sem comissões.</p>';
+  const log = auditLog.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Admin</th><th>Ação</th><th>Entidade</th><th>Resultado</th><th>Detalhes</th></tr></thead><tbody>
+    ${auditLog.map((l) => `<tr><td>${esc(fmtDateTime(l.created_at))}</td><td>${l.actor_user_id ?? '—'}</td><td>${esc(l.action)}</td><td>${esc(l.entity_type)} ${esc(l.entity_id ?? '')}</td><td>${esc(l.result)}</td>
+      <td><small class="muted">${esc(l.metadata ? JSON.stringify(l.metadata) : '')}</small></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sem registos.</p>';
+  return `${rec}${cfg}
+    <div class="panel"><h3>Afiliados</h3><form class="form-actions" data-form="aff-search"><input name="q" value="${esc(state.affQ || '')}" placeholder="Código, nome ou email"><button class="ghost-btn">Procurar</button></form>${affs}</div>
+    <div class="panel"><h3>Comissões</h3>${comms}</div>
+    <div class="panel"><h3>Auditoria (só de leitura)</h3>${log}</div>`;
 }
 
 /** Cash out: its rules (saved on the server) and what has been paid. */
@@ -330,6 +387,10 @@ async function loadTab() {
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
+    else if (tab === 'afiliados') {
+      const [a, c, l] = await Promise.all([api(`/api/admin/affiliates?q=${encodeURIComponent(state.affQ || '')}`), api('/api/admin/affiliates/commissions'), api('/api/admin/affiliates/audit')]);
+      main.innerHTML = adminAffiliates(a, c, l);
+    }
     else if (tab === 'levantamentos') {
       const { withdrawals } = await api('/api/admin/withdrawals');
       main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -679,6 +740,15 @@ const handlers = {
     toast('Guardado', 'Regras do cash out atualizadas.');
     loadTab();
   },
+  async 'aff-config'(form) {
+    const d = formData(form);
+    const config = { enabled: !!form.enabled.checked, autoPayout: !!form.autoPayout.checked, countDemoDeposits: !!form.countDemoDeposits.checked };
+    for (const [k] of AFF_FIELDS) config[k] = Number(d[k]);
+    await api('/api/admin/affiliates/config', { method: 'PUT', body: { config, reason: d.reason } });
+    toast('Feito', 'Configuração dos afiliados guardada (registada na auditoria).');
+    loadTab();
+  },
+  async 'aff-search'(form) { state.affQ = formData(form).q || ''; loadTab(); },
   async 'promo-config'(form) {
     const body = { general: { requireKyc: false, methods: [] } };
     for (const el of form.elements) {
@@ -818,6 +888,38 @@ document.addEventListener('click', async (e) => {
     try {
       await api(`/api/admin/users/${actionEl.dataset.id}/ban`, { method: 'POST', body: { banned } });
       toast('Feito', banned ? 'Conta banida.' : 'Conta desbanida.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action.startsWith('aff-')) {
+    const id = actionEl.dataset.id;
+    try {
+      if (action === 'aff-recover') {
+        const r = await api('/api/admin/affiliates/recover', { method: 'POST', body: {} });
+        toast('Feito', `${r.created} comissão(ões) recuperada(s).`);
+      } else if (action === 'aff-status') {
+        const status = actionEl.dataset.status;
+        const reason = prompt(`Motivo (${({ active: 'reativar', suspended: 'suspender', blocked: 'bloquear' })[status]} o afiliado; fica na auditoria):`);
+        if (!reason?.trim()) return;
+        await api(`/api/admin/affiliates/${id}/status`, { method: 'POST', body: { status, reason } });
+        toast('Feito', 'Estado do afiliado atualizado.');
+      } else if (action === 'aff-review') {
+        const decision = actionEl.dataset.decision;
+        const reason = decision === 'approve' ? (prompt('Nota da aprovação (opcional):') ?? null) : prompt('Motivo (obrigatório):');
+        if (reason === null || (decision !== 'approve' && !reason.trim())) return;
+        await api(`/api/admin/affiliates/commissions/${id}/review`, { method: 'POST', body: { decision, reason } });
+        toast('Feito', 'Comissão atualizada.');
+      } else if (action === 'aff-pay') {
+        if (!confirm('Pagar esta comissão na carteira do afiliado? Fica um movimento no extrato.')) return;
+        await api(`/api/admin/affiliates/commissions/${id}/payout`, { method: 'POST', body: {} });
+        toast('Feito', 'Comissão paga.');
+      } else if (action === 'aff-reverse') {
+        const reason = prompt('Motivo da reversão (ex.: chargeback do depósito de origem):');
+        if (!reason?.trim()) return;
+        await api(`/api/admin/affiliates/commissions/${id}/reverse`, { method: 'POST', body: { reason } });
+        toast('Feito', 'Comissão revertida.');
+      }
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;
