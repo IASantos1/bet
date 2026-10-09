@@ -602,9 +602,9 @@ const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
 
 /** The casino's tabs: the lobby, the two orders over every game and each kind of game the lobby has. */
 function casinoTabs(f) {
-  const kinds = (state.casinoLobby?.rows || []).map((r) => [r.key, r.key === 'populares' ? 'Populares' : r.key === 'novos' ? 'Novos' : r.title]);
+  const kinds = (state.casinoLobby?.rows || []).filter((r) => r.key !== 'provider').map((r) => [r.key, r.key === 'populares' ? 'Populares' : r.key === 'novos' ? 'Novos' : r.title]);
   const tabs = state.casino.bigbang && kinds.length ? [['', 'Início'], ...kinds] : [['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']];
-  return tabs.map(([k, l]) => `<button class="casino-tab${f.category === k ? ' active' : ''}" data-casino-cat="${k}">${esc(l)}</button>`).join('');
+  return tabs.map(([k, l]) => `<button class="casino-tab${f.category === k && !f.provider ? ' active' : ''}" data-casino-cat="${k}">${esc(l)}</button>`).join('');
 }
 
 async function loadCasinoLobby() {
@@ -632,21 +632,27 @@ function casinoPage() {
       ${footer()}`;
   }
   const more = c.games.length < c.total;
-  // The lobby: a row of 10 games per section (most popular first), each with "Ver todos".
+  // The lobby: a row of 10 games per section (most popular first), then one row per provider,
+  // each with "Ver mais" (every game of that section / provider).
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
   const lobby = rows.map((r, i) => `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
-      <button class="link-btn" data-casino-cat="${esc(r.key)}">Ver todos (${r.total}) ›</button></div>
+      ${r.key === 'provider' ? `<button class="link-btn" data-casino-prov="${esc(r.provider)}">Ver mais (${r.total}) ›</button>`
+        : `<button class="link-btn" data-casino-cat="${esc(r.key)}">Ver mais (${r.total}) ›</button>`}</div>
       ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`).join('');
-  return `<div class="page-title"><h1>Casino</h1><p>${c.total} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
+  // One provider open ("Ver mais"): its name and the way back to the lobby.
+  const prov = c.bigbang && f.provider ? c.providers.find((p) => String(p.id) === f.provider) : null;
+  const provHead = prov ? `<div class="section-head casino-prov-head"><h2>${esc(prov.name)} <small class="muted">· ${c.total} jogos</small></h2>
+      <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
+  return `<div class="page-title"><h1>Casino</h1><p>${state.casinoLobby?.total || c.total} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
     <div class="casino-filters">
       <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
     </div>
-    <div class="sport-strip">
+    ${c.bigbang ? '' : `<div class="sport-strip">
       <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
       ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
-    </div>
-    ${lobby || `<section class="section">
+    </div>`}
+    ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
     </section>`}
@@ -2134,9 +2140,9 @@ document.addEventListener('click', async (e) => {
   const cgPlay = e.target.closest('[data-cg-play]');
   if (cgPlay) { playCasino(cgPlay.dataset.cgPlay); return; }
   const cat = e.target.closest('[data-casino-cat]');
-  if (cat) { state.casinoFilter.category = cat.dataset.casinoCat; loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
+  if (cat) { Object.assign(state.casinoFilter, { category: cat.dataset.casinoCat, provider: '' }); loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
   const prov = e.target.closest('[data-casino-prov]');
-  if (prov) { state.casinoFilter.provider = prov.dataset.casinoProv; loadCasino({ reset: true }); return; }
+  if (prov) { Object.assign(state.casinoFilter, { provider: prov.dataset.casinoProv, category: '' }); loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
 
   // Profile: the phone accordion (a tap on the open section closes it), switches and buttons.
   const acc = e.target.closest('[data-pf-acc]');

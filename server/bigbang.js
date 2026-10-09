@@ -159,6 +159,14 @@ export function createBigBang(db, {
       const list = key === 'populares' ? popular : key === 'novos' ? byNewest(all.games) : popular.filter((g) => g.category === key);
       return { key, title, total: list.length, games: list.slice(0, n) };
     }).filter((r) => r.games.length);
+    // Then one row per provider: the providers of the most popular games first.
+    const order = [];
+    for (const g of popular) if (!order.includes(g.providerId)) order.push(g.providerId);
+    for (const id of order) {
+      const list = popular.filter((g) => g.providerId === id);
+      const name = all.providers.find((p) => p.id === id)?.name || list[0]?.provider || id;
+      rows.push({ key: 'provider', provider: id, title: name, total: list.length, games: list.slice(0, n) });
+    }
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, rows };
   }
 

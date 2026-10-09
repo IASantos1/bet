@@ -1164,3 +1164,4 @@ img, video, iframe { max-width: 100%; }
   .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 7 * 14px) / 8); }
   .casino-mode .game-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
+.casino-prov-head { margin-top: 6px; }
