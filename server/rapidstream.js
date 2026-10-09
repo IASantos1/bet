@@ -197,16 +197,34 @@ const listOf = (body) => (Array.isArray(body) ? body : Array.isArray(body?.match
  * Every stream address in an API answer, whatever its shape: any string ending in .m3u8 / .flv
  * (an "url|drm…" one is DRM and skipped), with the referer / user-agent found beside it.
  */
+const STREAM_URL = /^https?:\/\/\S+\.(m3u8|flv)(\?\S*)?$/i;
+
+function unwrapPlayer(u) {
+  let url;
+  try { url = new URL(u); } catch { return null; }
+  if (!url.search) return null;
+  for (const key of ['url', 'src', 'source', 'file', 'stream', 'link']) {
+    const val = url.searchParams.get(key);
+    if (val && STREAM_URL.test(val.trim())) return { url: val.trim(), referer: `${url.origin}/` };
+  }
+  return null;
+}
+
 export function findStreams(body) {
   const out = [];
   const seen = new Set();
   const walk = (v, ctx, depth) => {
     if (depth > 8 || v === null || v === undefined) return;
     if (typeof v === 'string') {
-      const u = v.trim();
-      if (/^https?:\/\/\S+\.(m3u8|flv)(\?\S*)?$/i.test(u) && !seen.has(u)) {
+      let u = v.trim();
+      let referer = ctx.referer;
+      // A player page carrying the stream in its query (…/?url=https://…/playlist.m3u8): play the inner
+      // link and send the player page as referer, as its own player would.
+      const inner = unwrapPlayer(u);
+      if (inner) { referer = referer || inner.referer; u = inner.url; }
+      if (STREAM_URL.test(u) && !seen.has(u)) {
         seen.add(u);
-        out.push({ name: ctx.name || `Servidor ${out.length + 1}`, url: u, type: ctx.referer ? 'referer' : 'direct', header: { referer: ctx.referer || undefined, 'user-agent': ctx.ua || undefined } });
+        out.push({ name: ctx.name || `Servidor ${out.length + 1}`, url: u, type: referer ? 'referer' : 'direct', header: { referer: referer || undefined, 'user-agent': ctx.ua || undefined } });
       }
       return;
     }

@@ -181,6 +181,14 @@ test('admin raw call: any path of the configured host, answered as it comes; odd
   await assert.rejects(rs.raw('/../x'), /caminho/);
 });
 
+test('player page link (?url=…m3u8): the inner playlist is played with the player page as referer', () => {
+  const [s] = findStreams({ url: 'https://football-live-stream.online/?url=https://station1.example.org/live/abc/playlist.m3u8' });
+  assert.equal(s.url, 'https://station1.example.org/live/abc/playlist.m3u8');
+  assert.equal(s.type, 'referer');
+  assert.equal(s.header.referer, 'https://football-live-stream.online/');
+  assert.equal(findStreams({ url: 'https://cdn.example.org/live/x.m3u8?token=1' })[0].type, 'direct');
+});
+
 test('key without list route: video stays off, admin route tool still answers', async () => {
   const rs = createRapidStream({ apiKey: 'k', fetchImpl: async () => Response.json({ result: [] }) });
   assert.equal(rs.enabled, false);
