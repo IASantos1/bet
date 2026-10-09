@@ -528,7 +528,9 @@ export function createApp(db, {
       const r = await rapidStream.streamsFor(ev.home, ev.away);
       if (!r.servers.length) return res.status(404).json({ success: false, error: 'Sem transmissão para este jogo.' });
       // Played through our proxy: the stream hosts refuse other sites (CORS) and some want a referer.
-      res.json({ success: true, servers: r.servers.map((s) => ({ name: s.name, url: videoProxy.sign(s.url, { referer: s.referer, ua: s.ua }) })) });
+      // The ones that answer fastest first; the dead ones are left out (the player starts sooner).
+      const ranked = await rapidStream.rank(r.servers);
+      res.json({ success: true, servers: ranked.map((s) => ({ name: s.name, url: videoProxy.sign(s.url, { referer: s.referer, ua: s.ua }) })) });
     } catch (err) { next(err); }
   });
   // The proxy itself: only addresses we signed, only for a player allowed to watch.

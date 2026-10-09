@@ -2706,6 +2706,7 @@ function loadHlsJs() {
 function stopRapid() {
   const r = state.match.rapid;
   if (!r) return;
+  clearTimeout(r.watchdog);
   try { r.hls?.destroy(); } catch { /* already gone */ }
   state.match.rapid = null;
 }
@@ -2726,7 +2727,10 @@ async function playRapid(el, servers, i) {
   // the next one by itself; the player's own controls have full screen).
   el.innerHTML = '<video playsinline controls autoplay muted></video>';
   const video = el.querySelector('video');
-  const next = () => { if (m.rapid?.i === i && m.streamEl === el) playRapid(el, servers, i + 1); };
+  const next = () => { if (m.rapid?.i === i && m.streamEl === el) { clearTimeout(m.rapid.watchdog); playRapid(el, servers, i + 1); } };
+  // A server that has not started the picture in 12 s gives way to the next one.
+  m.rapid.watchdog = setTimeout(next, 12_000);
+  video.addEventListener('playing', () => clearTimeout(m.rapid?.watchdog), { once: true });
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = servers[i].url;
     video.addEventListener('error', next, { once: true });
@@ -2736,7 +2740,13 @@ async function playRapid(el, servers, i) {
     const Hls = await loadHlsJs();
     if (m.rapid?.i !== i || m.streamEl !== el) return;
     if (!Hls?.isSupported()) throw new Error('hls');
-    const hls = new Hls({ enableWorker: false, lowLatencyMode: true });
+    // Ordinary (not low-latency) live streams: start a few segments behind the edge, give up on a
+    // dead playlist quickly, keep a modest buffer.
+    const hls = new Hls({
+      enableWorker: false, lowLatencyMode: false, liveSyncDurationCount: 3, maxBufferLength: 20,
+      manifestLoadingTimeOut: 8000, manifestLoadingMaxRetry: 1, levelLoadingTimeOut: 8000, levelLoadingMaxRetry: 1,
+      fragLoadingTimeOut: 15000, fragLoadingMaxRetry: 2,
+    });
     m.rapid.hls = hls;
     hls.on(Hls.Events.ERROR, (_ev, data) => { if (data?.fatal) next(); });
     hls.loadSource(servers[i].url);

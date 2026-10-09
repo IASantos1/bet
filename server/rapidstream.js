@@ -54,6 +54,38 @@ export const safeTarget = (u) => {
   } catch { return null; }
 };
 
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const probes = new Map(); // url → { at, ok, ms }
+
+/**
+ * Puts the servers that answer first at the front and drops the ones that do not answer at all:
+ * every playlist is asked for at once (with its own headers), `timeoutMs` at most, remembered a
+ * minute. When none answers, the list stays as it was (the player still tries them).
+ */
+export async function rankServers(servers, { fetchImpl = globalThis.fetch, timeoutMs = 4000 } = {}) {
+  const now = Date.now();
+  const probe = async (s) => {
+    const hit = probes.get(s.url);
+    if (hit && now - hit.at < 60_000) return hit;
+    const t0 = Date.now();
+    let ok = false;
+    try {
+      const res = await fetchImpl(s.url, {
+        headers: { 'User-Agent': s.ua || BROWSER_UA, ...(s.referer ? { Referer: s.referer, Origin: new URL(s.referer).origin } : {}), Accept: '*/*' },
+        redirect: 'follow', signal: AbortSignal.timeout(timeoutMs),
+      });
+      ok = res.ok && (await res.text()).startsWith('#EXTM3U');
+    } catch { ok = false; }
+    const r = { at: Date.now(), ok, ms: Date.now() - t0 };
+    probes.set(s.url, r);
+    if (probes.size > 500) for (const [k, v] of probes) if (Date.now() - v.at > 60_000) probes.delete(k);
+    return r;
+  };
+  const results = await Promise.all(servers.map(probe));
+  const alive = servers.map((s, i) => ({ s, r: results[i] })).filter((x) => x.r.ok).sort((a, b) => a.r.ms - b.r.ms).map((x) => x.s);
+  return alive.length ? alive : servers;
+}
+
 export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 3600, fetchImpl = globalThis.fetch, path = '/api/tv/p' } = {}) {
   const b64 = (buf) => Buffer.from(buf).toString('base64url');
   const sig = (data) => createHmac('sha256', secret).update(data).digest().subarray(0, 18);
@@ -99,7 +131,7 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     try {
       up = await fetchImpl(t.u, {
         headers: {
-          'User-Agent': t.a || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+          'User-Agent': t.a || BROWSER_UA,
           ...(t.r ? { Referer: t.r, Origin: new URL(t.r).origin } : {}),
           Accept: '*/*',
         },
@@ -218,5 +250,5 @@ export function createRapidStream({
     pages: cache.pages, error: cache.error, requestsToday: usage.requests, cacheSeconds,
   });
 
-  return { enabled, liveMatches, findMatch, streamsFor, status };
+  return { enabled, liveMatches, findMatch, streamsFor, status, rank: (servers) => rankServers(servers, { fetchImpl }) };
 }
