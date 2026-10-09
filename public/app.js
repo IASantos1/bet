@@ -398,6 +398,7 @@ function carousel(id, cards) {
 function homePage() {
   const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
   const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
+  if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   const hero = state.user
     ? `<div class="eyebrow">BEM-VINDO DE VOLTA</div><h1>Olá, ${esc(state.user.name.split(' ')[0])}.</h1><p>O seu saldo é <strong>${money(state.user.balance)}</strong>. Escolha um jogo e faça a sua aposta.</p>
        <div class="hero-actions"><a class="primary-btn" href="#/desporto">Explorar desporto</a><a class="outline-btn" href="#/perfil/carteira">Carteira</a></div>`
@@ -405,6 +406,7 @@ function homePage() {
        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
   return `<section class="hero"><div class="hero-copy">${hero}</div></section>
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
+    ${builderSection()}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
       ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
     <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${state.casinoLobby?.rows?.[0]?.games.length ? carousel('homeCasino', state.casinoLobby.rows[0].games.map(lobbyCard)) : `<div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div>`}</section>
@@ -465,7 +467,8 @@ async function loadFeatured() {
   try {
     const f = await api('/api/featured');
     state.featured = { ...f, at: Date.now() };
-    if (currentRoute().page === 'desporto' && !currentRoute().sub) render({ keepScroll: true });
+    const { page, sub } = currentRoute();
+    if ((page === 'desporto' && !sub) || page === 'home') render({ keepScroll: true });
   } catch { /* the board works without it */ } finally { featuredLoading = false; }
 }
 
@@ -1827,6 +1830,8 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 5_000);
   }
   document.body.classList.toggle('immersive', immersive);
+  // The casino has no sports menu nor bet slip: its pages take the whole width.
+  document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
   // Carousels keep their position when the page refreshes itself (odds, live scores).
   const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
   const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();

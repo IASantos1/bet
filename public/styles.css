@@ -1136,3 +1136,22 @@ img, video, iframe { max-width: 100%; }
 .casino-row .car-btn, #homeCasino .car-btn { top: calc(50% - 22px); }
 .link-btn { border: 0; background: none; color: var(--text-2); font-weight: 800; font-size: 12px; padding: 4px 0; cursor: pointer; }
 .link-btn:hover { color: var(--text); }
+
+/* Casino pages: no sports menu (left) nor bet slip (right) on wide screens; the games use the width. */
+@media (min-width: 761px) {
+  .casino-mode .layout { grid-template-columns: minmax(0, 1fr); max-width: 1600px; }
+  .casino-mode .left-sidebar, .casino-mode .betslip { display: none !important; }
+}
+.casino-mode .slip-fab { display: none !important; }
+@media (min-width: 761px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 4 * 14px) / 5); }
+  .casino-mode .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 6 * 14px) / 7); }
+  .casino-mode .game-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
+@media (min-width: 1500px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 7 * 14px) / 8); }
+  .casino-mode .game-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
