@@ -843,6 +843,8 @@ export function createWinHouseFeed(db, {
   // list itself has open prices (a suspended list means a suspended game).
   const liveListPrices = new Map(); // externalId → prices from the last live list
   const livePages = new Map(); // externalId → { at, prices }
+  // A game a player has open is read again once its page is this old (seconds).
+  const LIVE_WATCHED_S = Math.min(liveDetailSeconds, 12);
   const liveFresh = (ext) => { const p = livePages.get(ext); return p && Date.now() - p.at < liveDetailSeconds * 2000 ? p.prices : {}; };
   // Fallback after a restart (deploy): the page markets lived only in memory, so the first list read
   // would drop them until each page was read again. They are taken back from the database instead,
@@ -1255,10 +1257,11 @@ export function createWinHouseFeed(db, {
    * background reads go, or not reached yet) is read now, so every market (goal totals, both teams
    * to score…) is there. At most 30 such reads a minute; one at a time per game.
    */
-  const onDemand = { minute: 0, n: 0, busy: new Map() };
+  const onDemand = { minute: 0, n: 0, liveMinute: 0, live: 0, busy: new Map() };
   async function readPageNow(eventId) {
-    const r = db.prepare("SELECT id, sport, external_id FROM events WHERE id = ? AND source = ? AND status = 'scheduled'").get(Number(eventId), SOURCE);
+    const r = db.prepare("SELECT id, sport, status, external_id, home_score, away_score, live_odds_at FROM events WHERE id = ? AND source = ? AND status IN ('scheduled', 'live')").get(Number(eventId), SOURCE);
     if (!r) return false;
+    if (r.status === 'live') return readLiveNow(r);
     const p = pagePrices.get(r.external_id);
     if (p && Date.now() - p.at < detailRefreshMinutes * 60_000) return false;
     if (onDemand.busy.has(r.id)) return onDemand.busy.get(r.id);
@@ -1267,6 +1270,22 @@ export function createWinHouseFeed(db, {
     if (onDemand.n >= 30) return false;
     onDemand.n += 1;
     const job = readPage(r).then((n) => n !== null).finally(() => onDemand.busy.delete(r.id));
+    onDemand.busy.set(r.id, job);
+    return job;
+  }
+
+  /** A live game on a player's screen: its page when the last read is LIVE_WATCHED_S old (shared cap of 60 a minute). */
+  function readLiveNow(r) {
+    watched.set(r.external_id, Date.now());
+    if (!liveDetailPerCycle || !client.liveEvent || !r.live_odds_at || Date.now() < liveDetailPausedUntil) return false;
+    const p = livePages.get(r.external_id);
+    if (p && !p.restored && Date.now() - p.at < LIVE_WATCHED_S * 1000) return false;
+    if (onDemand.busy.has(r.id)) return onDemand.busy.get(r.id);
+    const minute = Math.floor(Date.now() / 60_000);
+    if (minute !== onDemand.liveMinute) { onDemand.liveMinute = minute; onDemand.live = 0; }
+    if (onDemand.live >= 60) return false;
+    onDemand.live += 1;
+    const job = readLive(r).then((n) => typeof n === 'number' && n !== 404).finally(() => onDemand.busy.delete(r.id));
     onDemand.busy.set(r.id, job);
     return job;
   }
@@ -1332,6 +1351,42 @@ export function createWinHouseFeed(db, {
    * only, least recently read first, at most `liveDetailPerCycle` per run, each every
    * `liveDetailSeconds`. A route that answers 404 to a whole run is paused for 10 minutes.
    */
+  /**
+   * One live game's page → every in-play market written over the list's. The number of markets,
+   * null when it failed, 404 when the route does not exist.
+   */
+  async function readLive(r) {
+    try {
+      const res = await livePage(r.external_id);
+      if (!res.ok) {
+        if (res.status === 404) { livePages.set(r.external_id, { at: Date.now(), prices: {} }); return 404; }
+        throw new Error(res.status === 204 ? 'página sem odds' : `HTTP ${res.status}`);
+      }
+      const { prices, coefs } = bookOf(res.odds, r.sport);
+      tx(db, () => {
+        const row = db.prepare('SELECT status, home_score, away_score, live_odds_at, wh_missing_since FROM events WHERE id = ?').get(r.id);
+        // Ended, suspended or a goal while the page was being read: those prices are stale.
+        if (row?.status !== 'live' || !row.live_odds_at || row.wh_missing_since || row.home_score !== r.home_score || row.away_score !== r.away_score) return;
+        const list = liveListPrices.get(r.external_id) || {};
+        if (!Object.keys(list).length) return;
+        livePages.set(r.external_id, { at: Date.now(), prices });
+        indexCoefs(r.external_id, r.id, coefs);
+        writePrices(r.id, { ...prices, ...list });
+      });
+      return new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
+    } catch (err) {
+      livePages.set(r.external_id, { at: Date.now(), prices: {} }); // retry after liveDetailSeconds
+      log(`WinHouse página ao vivo ${r.external_id}: ${err.message}`);
+      return null;
+    }
+  }
+
+  // Live games someone has open right now (their match page asks every few seconds): read first,
+  // and again as soon as their page is a few seconds old, so all their markets stay on screen.
+  const watched = new Map(); // externalId → last time a player asked
+  const WATCH_MS = 30_000;
+  const isWatched = (ext) => Date.now() - (watched.get(ext) || 0) < WATCH_MS;
+
   async function syncLiveDetails() {
     if (!liveDetailPerCycle || !client.liveEvent) return null;
     const now = Date.now();
@@ -1343,36 +1398,18 @@ export function createWinHouseFeed(db, {
     for (const ext of [...liveListPrices.keys()]) if (!ids.has(ext)) liveListPrices.delete(ext);
     for (const ext of [...eventCoefs.keys()]) if (!ids.has(ext)) dropCoefs(ext);
     for (const id of [...notified.keys()]) if (Date.now() - notified.get(id) > 60_000) notified.delete(id);
-    const due = rows.filter((r) => { const p = livePages.get(r.external_id); return !p || now - p.at >= liveDetailSeconds * 1000; })
-      .sort((a, b) => (livePages.get(a.external_id)?.at ?? 0) - (livePages.get(b.external_id)?.at ?? 0))
+    for (const ext of [...watched.keys()]) if (!isWatched(ext)) watched.delete(ext);
+    const age = (r) => now - (livePages.get(r.external_id)?.at ?? 0);
+    const due = rows.filter((r) => age(r) >= (isWatched(r.external_id) ? LIVE_WATCHED_S : liveDetailSeconds) * 1000)
+      .sort((a, b) => (isWatched(b.external_id) - isWatched(a.external_id)) || (age(b) - age(a)))
       .slice(0, liveDetailPerCycle);
     let read = 0;
     let markets = 0;
     let failed = 0;
     let notFound = 0;
     for (const r of due) {
-      try {
-        const res = await livePage(r.external_id);
-        if (!res.ok) { if (res.status === 404) notFound += 1; throw new Error(res.status === 204 ? 'página sem odds' : `HTTP ${res.status}`); }
-        const { odds } = res;
-        const { prices, coefs } = bookOf(odds, r.sport);
-        read += 1;
-        markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
-        tx(db, () => {
-          const row = db.prepare('SELECT status, home_score, away_score, live_odds_at, wh_missing_since FROM events WHERE id = ?').get(r.id);
-          // Ended, suspended or a goal while the page was being read: those prices are stale.
-          if (row?.status !== 'live' || !row.live_odds_at || row.wh_missing_since || row.home_score !== r.home_score || row.away_score !== r.away_score) return;
-          const list = liveListPrices.get(r.external_id) || {};
-          if (!Object.keys(list).length) return;
-          livePages.set(r.external_id, { at: Date.now(), prices });
-          indexCoefs(r.external_id, r.id, coefs);
-          writePrices(r.id, { ...prices, ...list });
-        });
-      } catch (err) {
-        failed += 1;
-        livePages.set(r.external_id, { at: Date.now(), prices: {} }); // retry after liveDetailSeconds
-        log(`WinHouse página ao vivo ${r.external_id}: ${err.message}`);
-      }
+      const n = await readLive(r);
+      if (n === null || n === 404) { failed += 1; if (n === 404) notFound += 1; } else { read += 1; markets += n; }
     }
     const paused = due.length > 0 && notFound === due.length;
     if (paused) liveDetailPausedUntil = Date.now() + 10 * 60_000;
