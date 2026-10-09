@@ -399,6 +399,12 @@ test('game pages in Albanian (sipër / poshtë, po / jo, tek / çift): goal tota
   assert.deepEqual(extraPrices(odds, { sport: 'futebol' }), {
     'x|1300017~Corners · Total~Mais de (9.5)': 185, 'x|1300017~Corners · Total~Menos de (9.5)': 190,
   });
+  // Lines of our own markets that we do not settle (quarter lines) still show, settled by the operator.
+  const quarter = detailOdds([[o('1.95', 1018, 'sipër', '2.25', 'Total Goals - Over / Under [TG_O/U]'), o('1.85', 1018, 'poshtë', '2.25', 'Total Goals - Over / Under [TG_O/U]')]]);
+  assert.deepEqual(pricesFor(quarter, 'futebol'), {});
+  assert.deepEqual(extraPrices(quarter, { sport: 'futebol' }), {
+    'x|1018~Total Goals - Over / Under~Mais de (2.25)': 195, 'x|1018~Total Goals - Over / Under~Menos de (2.25)': 185,
+  });
 });
 
 test('every other market of a page becomes an operator-settled selection', async () => {

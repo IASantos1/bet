@@ -160,17 +160,19 @@ const clean = (v, max) => String(v ?? '').replace(/[~|\n\r]+/g, ' ').replace(/\s
 const ptWords = (t) => t.replace(WORD_RE, (w) => WORDS[w.toLowerCase()] ?? w);
 
 /**
- * Every market of a game page we do not settle ourselves (for that sport) → operator-settled 'x' selections,
+ * Every market of a game page we do not settle ourselves (for that sport), and the lines of our own
+ * markets we cannot settle (quarter lines), → operator-settled 'x' selections, so every market shows:
  * "x|<marketId>~<market>~<selection>". The market title is the first one the page gives for that
  * id, without the "[CODE]" tag; a line goes next to the selection: "Mais de (8.5)".
  */
-export function extraPrices(odds, { sport = null, limit = 600, ids = null } = {}) {
+export function extraPrices(odds, { sport = null, limit = 3000, ids = null } = {}) {
   const own = new Set(SPORT_MARKETS[sport] || []);
   const out = {};
   const titles = new Map();
   let n = 0;
   for (const o of odds) {
-    if (own.has(o.marketId) || n >= limit) continue;
+    // Our own markets stay ours; only their lines we do not settle (2.25, 1.75…) go to the operator.
+    if ((own.has(o.marketId) && ownKey(o, sport)) || n >= limit) continue;
     const v = x100(o.price);
     if (!v) continue;
     if (!titles.has(o.marketId)) titles.set(o.marketId, clean(String(o.marketName || '').replace(/\s*\[[^\]]*\]/g, ' '), 70) || `Mercado ${o.marketId}`);
