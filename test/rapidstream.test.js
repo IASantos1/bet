@@ -4,7 +4,7 @@ import { openDb } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import express from 'express';
-import { createRapidStream, nameScore, playableServers, createVideoProxy, safeTarget } from '../server/rapidstream.js';
+import { createRapidStream, nameScore, playableServers, createVideoProxy, safeTarget, rankServers } from '../server/rapidstream.js';
 
 const page = (matches, hasNext = false) => ({ matches, pagination: { page: 1, hasNext } });
 const match = (home, away, servers) => ({ match_status: 'live', home_team_name: home, away_team_name: away, league_name: 'Liga', servers });
@@ -67,7 +67,7 @@ test('an API error is reported, not thrown', async () => {
 test('HTTP: /api/live2 needs a signed-in player with balance and a live football game', async () => {
   const db = openDb(':memory:');
   seed(db);
-  const fetchImpl = async () => Response.json(page([match('Lisboa SC', 'Porto Norte', [HLS])]));
+  const fetchImpl = async (url) => (String(url).includes('.m3u8') ? new Response('#EXTM3U\n') : Response.json(page([match('Lisboa SC', 'Porto Norte', [HLS])])));
   const rapidStream = createRapidStream({ apiKey: 'k', fetchImpl });
   const server = createApp(db, { loginAttempts: 1000, registrations: 1000, rapidStream }).listen(0);
   await new Promise((r) => server.once('listening', r));
@@ -132,4 +132,21 @@ test('video proxy: signed addresses only, playlists rewritten, headers sent, seg
     assert.equal((await fetch(base + lines[2].replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')))).status, 403);
     assert.equal(proxy.open(proxy.sign('https://127.0.0.1/x').split('t=')[1]), null);
   } finally { server.close(); }
+});
+
+test('servers are probed at once: the fastest that answers first, the dead ones left out', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const fetchImpl = async (url) => {
+    if (url.includes('dead')) throw new Error('timeout');
+    if (url.includes('slow')) { await wait(60); return new Response('#EXTM3U\n'); }
+    if (url.includes('html')) return new Response('<html>blocked</html>');
+    return new Response('#EXTM3U\n');
+  };
+  const s = (n) => ({ name: n, url: `https://cdn.example.com/${n}-${Math.random()}.m3u8` });
+  const list = [s('slow'), s('dead'), s('html'), s('fast')];
+  const out = await rankServers(list, { fetchImpl });
+  assert.deepEqual(out.map((x) => x.name), ['fast', 'slow']);
+  // None answers: the list is kept as it was.
+  const none = [s('dead'), s('html')];
+  assert.deepEqual((await rankServers(none, { fetchImpl })).map((x) => x.name), ['dead', 'html']);
 });
