@@ -140,7 +140,7 @@ export function createApp(db, {
     res.set({
       'Content-Security-Policy':
         // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
-        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com${rapidStream?.enabled ? ' https:' : ''}; " +
+        `default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com${rapidStream?.enabled ? ' https:' : ''}; ` +
         // Live video (HLS) plays from the stream's own host.
         "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.
@@ -531,7 +531,7 @@ export function createApp(db, {
       // Played through our proxy: the stream hosts refuse other sites (CORS) and some want a referer.
       // The ones that answer fastest first; the dead ones are left out (the player starts sooner).
       const ranked = await rapidStream.rank(r.servers);
-      res.json({ success: true, servers: ranked.map((s) => ({ name: s.name, url: videoProxy.sign(s.url, { referer: s.referer, ua: s.ua }) })) });
+      res.json({ success: true, servers: ranked.map((s) => ({ name: s.name, kind: s.kind, url: videoProxy.sign(s.url, { referer: s.referer, ua: s.ua }) })) });
     } catch (err) { next(err); }
   });
   // The proxy itself: only addresses we signed, only for a player allowed to watch.

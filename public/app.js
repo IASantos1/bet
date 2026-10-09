@@ -2703,11 +2703,28 @@ function loadHlsJs() {
   return hlsLoading;
 }
 
+// FLV servers play with mpegts.js (also loaded only when needed). Phones without MSE (iPhone) skip them.
+let mpegtsLoading = null;
+function loadMpegts() {
+  if (window.mpegts) return Promise.resolve(window.mpegts);
+  if (!mpegtsLoading) {
+    mpegtsLoading = new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/mpegts-1.7.3.min.js';
+      s.onload = () => ok(window.mpegts);
+      s.onerror = () => { mpegtsLoading = null; fail(new Error('mpegts.js')); };
+      document.head.appendChild(s);
+    });
+  }
+  return mpegtsLoading;
+}
+
 function stopRapid() {
   const r = state.match.rapid;
   if (!r) return;
   clearTimeout(r.watchdog);
   try { r.hls?.destroy(); } catch { /* already gone */ }
+  try { r.flv?.destroy(); } catch { /* already gone */ }
   state.match.rapid = null;
 }
 
@@ -2731,6 +2748,20 @@ async function playRapid(el, servers, i) {
   // A server that has not started the picture in 12 s gives way to the next one.
   m.rapid.watchdog = setTimeout(next, 12_000);
   video.addEventListener('playing', () => clearTimeout(m.rapid?.watchdog), { once: true });
+  if (servers[i].kind === 'flv') {
+    try {
+      const mpegts = await loadMpegts();
+      if (m.rapid?.i !== i || m.streamEl !== el) return;
+      if (!mpegts?.isSupported()) throw new Error('mse');
+      const flv = mpegts.createPlayer({ type: 'flv', isLive: true, url: new URL(servers[i].url, location.href).href }, { enableWorker: false, liveBufferLatencyChasing: true });
+      m.rapid.flv = flv;
+      flv.on(mpegts.Events.ERROR, next);
+      flv.attachMediaElement(video);
+      flv.load();
+      flv.play()?.catch?.(() => {});
+    } catch { next(); }
+    return;
+  }
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = servers[i].url;
     video.addEventListener('error', next, { once: true });
