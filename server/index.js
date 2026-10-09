@@ -14,6 +14,7 @@ import { createWinHouseClient, createWinHouseFeed } from './winhouse.js';
 import { createWinHouseTracker } from './whtracker.js';
 import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
+import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
@@ -86,6 +87,9 @@ const winhouseLive = winhouse.enabled && config.winhouse.hls
   ? createWinHouseLive({ client: winhouse, hlsPath: config.winhouse.hlsPath, tvBase: config.winhouse.tvUrl, playerId: config.winhouse.streamPlayer, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 
+// Trial video source (RapidAPI), beside WinHouse's TV and independent of it.
+const rapidStream = config.rapidStream.apiKey ? createRapidStream({ ...config.rapidStream, log: (msg) => console.warn(`[rapidapi] ${msg}`) }) : null;
+
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
 const settlement = createSettlementEngine(db, {
@@ -120,7 +124,7 @@ setInterval(promoJobs, 5 * 60_000).unref();
 const bigbang = createBigBang(db, { ...config.bigbang, log: (m) => console.warn(`[bigbang] ${m}`) });
 if (bigbang.enabled) console.log(`Casino BigBang: chave ${bigbang.sandbox ? 'sandbox (ek_test_)' : 'real'}`);
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, stripe, bigbang }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 

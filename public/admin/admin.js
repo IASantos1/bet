@@ -589,7 +589,14 @@ function adminFeed(f) {
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : `<p class="muted">Bzzoiro desligado (sem <strong>BZZOIRO_API_TOKEN</strong>).</p>`}
   </div>
-  <div class="panel">${winhousePanel(f.winhouse)}</div>`;
+  <div class="panel">${winhousePanel(f.winhouse)}</div>
+  <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
+    <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
+      : 'Defina <strong>RAPIDAPI_KEY</strong> nas Variables do Railway (a chave do RapidAPI) e faça redeploy.'}</p>
+    ${f.rapidStream ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="rapid-test">Testar transmissões</button>
+      <button class="ghost-btn btn-sm" data-action="rapid-test" data-fresh="1">Testar (ler agora, gasta pedidos)</button>
+      <button class="ghost-btn btn-sm" data-action="rapid-copy">Copiar resultado</button></div>
+      <pre class="raw-odds hidden" id="rapidOut"></pre>` : ''}</div>`;
 }
 
 function winhouseFeedInfo(fd) {
@@ -1076,6 +1083,13 @@ document.addEventListener('click', async (e) => {
       toast('Seleção liquidada', `${r.settledBets} aposta(s) processada(s).`);
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; }
+  } else if (action === 'rapid-test') {
+    const box = $('#rapidOut');
+    box.classList.remove('hidden');
+    box.textContent = 'A consultar…';
+    try { box.textContent = JSON.stringify(await api(`/api/admin/rapidstream${actionEl.dataset.fresh ? '?fresh=1' : ''}`), null, 2); } catch (err) { box.textContent = err.message; }
+  } else if (action === 'rapid-copy') {
+    try { await navigator.clipboard.writeText($('#rapidOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'winhouse-copy') {
     try { await navigator.clipboard.writeText($('#whOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'propline-odds') {
