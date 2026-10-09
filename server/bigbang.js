@@ -26,6 +26,19 @@ export function signMove(p, key) {
 }
 
 const TYPE_LABEL = { slot: 'Slots', live: 'Ao Vivo', crash: 'Crash' };
+/**
+ * Games known as hits across the market (first = most popular), for the "Populares" order before
+ * Bet62 has its own numbers; the rounds played here in the last 30 days weigh far more.
+ */
+export const HITS = [
+  'gates of olympus', 'sweet bonanza', 'aviator', 'sugar rush', 'big bass', 'starlight princess', 'fortune tiger', 'book of dead',
+  'wanted dead or a wild', 'the dog house', 'wolf gold', 'fruit party', 'spaceman', 'mines', 'zeus vs hades', 'gates of gatot kaca',
+  'fortune rabbit', 'fortune ox', 'fortune mouse', 'buffalo king', 'madame destiny', 'great rhino', 'john hunter', 'money train',
+  'reactoonz', 'legacy of dead', 'rise of olympus', 'fire in the hole', 'chaos crew', 'le bandit', 'razor shark', 'jammin jars',
+  'roleta', 'roulette', 'blackjack', 'crazy time', 'sweet bonanza candyland', 'mega wheel', 'plinko', 'jetx',
+];
+/** Lobby rows: popular first, then the newest, then each kind of game. */
+const LOBBY = [['populares', 'Populares'], ['novos', 'Novos'], ['Slots', 'Slots'], ['Ao Vivo', 'Casino ao vivo'], ['Crash', 'Crash']];
 const euros = (cents) => (cents / 100).toFixed(2);
 
 export function createBigBang(db, {
@@ -111,12 +124,52 @@ export function createBigBang(db, {
     return { enabled: true, games: catalog.games, providers: catalog.providers, error: catalog.games.length ? null : lastError };
   }
 
-  async function gamesPage({ offset = 0, limit = 24, provider = '', category = '', q = '' } = {}) {
+  // Rounds played per game here in the last 30 days (refreshed every 10 minutes).
+  let plays = { at: 0, map: new Map() };
+  function playsMap() {
+    if (Date.now() - plays.at > 10 * 60_000) {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const rows = db.prepare(`SELECT game_id, COUNT(DISTINCT COALESCE(round_id, transaction_id)) AS n FROM casino_moves
+        WHERE game_id IS NOT NULL AND amount_cents < 0 AND created_at >= ? GROUP BY game_id`).all(since);
+      plays = { at: Date.now(), map: new Map(rows.map((r) => [Number(r.game_id), r.n])) };
+    }
+    return plays.map;
+  }
+  const hitRank = (g) => {
+    const name = g.name.toLowerCase();
+    const i = HITS.findIndex((h) => name.includes(h));
+    return i < 0 ? 0 : HITS.length - i;
+  };
+  /** Most popular first: rounds played here, then the market's hits, then premium games. */
+  function byPopularity(list) {
+    const p = playsMap();
+    const score = (g) => (p.get(g.id) || 0) * 1000 + hitRank(g) * 10 + (g.premium ? 1 : 0);
+    return list.map((g) => [score(g), g]).sort((a, b) => b[0] - a[0] || a[1].id - b[1].id).map(([, g]) => g);
+  }
+  // The provider gives no release date: higher ids are the games it added last.
+  const byNewest = (list) => [...list].sort((a, b) => b.id - a.id);
+
+  /** The casino lobby: each row with its first `n` games (the most popular first). */
+  async function lobby({ n = 10 } = {}) {
+    const all = await games();
+    const popular = byPopularity(all.games);
+    const rows = LOBBY.map(([key, title]) => {
+      const list = key === 'populares' ? popular : key === 'novos' ? byNewest(all.games) : popular.filter((g) => g.category === key);
+      return { key, title, total: list.length, games: list.slice(0, n) };
+    }).filter((r) => r.games.length);
+    return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, rows };
+  }
+
+  async function gamesPage({ offset = 0, limit = 24, provider = '', category = '', q = '', sort = '' } = {}) {
     const all = await games();
     const term = String(q || '').trim().toLowerCase();
-    const list = all.games.filter((g) => (!provider || g.providerId === String(provider))
-      && (!category || g.category === category)
+    // "populares" / "novos" are orders over every game; the other categories are kinds of game.
+    const order = sort || (category === 'novos' ? 'new' : 'popular');
+    const kind = category === 'populares' || category === 'novos' ? '' : category;
+    let list = all.games.filter((g) => (!provider || g.providerId === String(provider))
+      && (!kind || g.category === kind)
       && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term)));
+    list = order === 'new' ? byNewest(list) : byPopularity(list);
     const start = Math.max(0, Number(offset) || 0);
     const size = Math.min(60, Math.max(1, Number(limit) || 24));
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: list.length, offset: start, games: list.slice(start, start + size) };
@@ -131,7 +184,7 @@ export function createBigBang(db, {
   async function related(g, n = 12) {
     await games();
     const same = catalog.games.filter((x) => x.providerId === g.providerId && x.id !== g.id && x.category === g.category);
-    return same.slice(0, n);
+    return byPopularity(same).slice(0, n);
   }
 
   // ---------- players and launch ----------
@@ -235,5 +288,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, games, gamesPage, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync };
+  return { enabled, sandbox, games, gamesPage, lobby, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync };
 }

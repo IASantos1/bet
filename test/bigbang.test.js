@@ -200,3 +200,27 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     db.close();
   }
 });
+
+test('lobby: popular first (rounds played here, then known hits), newest by id, rows per kind; "Ver todos" orders', async () => {
+  const db = openDb(':memory:');
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  let lobby = await bb.lobby({ n: 10 });
+  const row = (key) => lobby.rows.find((r) => r.key === key);
+  assert.deepEqual(lobby.rows.map((r) => r.key), ['populares', 'novos', 'Slots', 'Ao Vivo']);
+  // Nothing played yet: the known hit (roulette) first.
+  assert.equal(row('populares').games[0].id, 9001);
+  assert.deepEqual(row('novos').games.map((g) => g.id), [9001, 4822, 4821]);
+  assert.deepEqual(row('Slots').games.map((g) => g.id), [4821, 4822]);
+  // Rounds played here weigh more than the market's hits.
+  const u = player(db, 20);
+  for (const t of ['a', 'b']) {
+    db.prepare(`INSERT INTO casino_moves (transaction_id, user_id, amount_cents, balance_after_cents, round_id, type, game_id, created_at)
+      VALUES (?, ?, -100, 0, ?, 'round', 4822, ?)`).run(t, u, t, nowIso());
+  }
+  const fresh = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  lobby = await fresh.lobby({ n: 10 });
+  assert.equal(row('populares').games[0].id, 4822);
+  assert.deepEqual((await fresh.gamesPage({ category: 'novos' })).games.map((g) => g.id), [9001, 4822, 4821]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'populares' })).total, 3);
+  assert.deepEqual((await fresh.gamesPage({ category: 'Slots' })).games.map((g) => g.id), [4822, 4821]);
+});

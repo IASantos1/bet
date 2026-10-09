@@ -919,6 +919,14 @@ export function createApp(db, {
     res.json(data);
   }));
 
+  // The lobby (BigBang): rows of games — Populares, Novos, Slots, Ao vivo, Crash — 10 each.
+  app.get('/api/casino/lobby', wrap(async (req, res) => {
+    if (!casinoOn() || !bb) return res.json({ enabled: casinoOn(), rows: [] });
+    const data = await bb.lobby({ n: 10 });
+    if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
+    res.json(data);
+  }));
+
   // One game: its card, games of the same provider and whether the player's free spins work in it.
   app.get('/api/casino/game/:id', wrap(async (req, res) => {
     if (!bb) throw new HttpError(404, 'Jogo não encontrado.');
