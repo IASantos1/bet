@@ -395,16 +395,35 @@ function carousel(id, cards) {
   </div>`;
 }
 
+// The home page's invitation card: a sentence, the link and the code, each with its copy button.
+function affHomeHtml() {
+  const a = state.affHome;
+  if (!a?.enabled || !a.referralUrl || a.uid !== state.user?.id) return '';
+  return `<section class="aff-home">
+    <div class="aff-home-copy"><b>Convide amigos e ganhe ${a.commission.rate}% do primeiro depósito de cada um.</b>
+      <span>Partilhe o seu link ou o seu código. <a href="#/perfil/afiliados">Ver regras e comissões ›</a></span></div>
+    <div class="aff-home-fields">
+      <label><small>Link</small><span class="aff-home-row"><input readonly value="${esc(a.referralUrl)}" aria-label="Link de convite"><button class="primary-btn" data-aff-copy="${esc(a.referralUrl)}" data-aff-label="Link copiado">Copiar</button></span></label>
+      <label class="code"><small>Código</small><span class="aff-home-row"><input readonly value="${esc(a.referralCode)}" aria-label="Código de convite"><button class="outline-btn" data-aff-copy="${esc(a.referralCode)}" data-aff-label="Código copiado">Copiar</button></span></label>
+    </div></section>`;
+}
+async function loadAffHome() {
+  const uid = state.user.id;
+  state.affHome = { uid };
+  try { state.affHome = { ...(await api('/api/affiliates/me')), uid }; } catch { state.affHome = { enabled: false, uid }; }
+  const box = $('#affHome');
+  if (box) box.innerHTML = affHomeHtml();
+}
+
 function homePage() {
   const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
   const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
-  const hero = state.user
-    ? `<div class="eyebrow">BEM-VINDO DE VOLTA</div><h1>Olá, ${esc(state.user.name.split(' ')[0])}.</h1><p>O seu saldo é <strong>${money(state.user.balance)}</strong>. Escolha um jogo e faça a sua aposta.</p>
-       <div class="hero-actions"><a class="primary-btn" href="#/desporto">Explorar desporto</a><a class="outline-btn" href="#/perfil/carteira">Carteira</a></div>`
-    : `<div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
+  // Signed in: the invitation card (link and code to copy) instead of the welcome banner.
+  if (state.user && state.affHome?.uid !== state.user.id) loadAffHome();
+  const hero = state.user ? '' : `<div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
-  return `<section class="hero"><div class="hero-copy">${hero}</div></section>
+  return `${state.user ? `<div id="affHome">${affHomeHtml()}</div>` : `<section class="hero"><div class="hero-copy">${hero}</div></section>`}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
@@ -2184,7 +2203,7 @@ document.addEventListener('click', async (e) => {
   const coDo = e.target.closest('[data-cashout-do]');
   if (coDo) { coDo.disabled = true; coDo.textContent = 'A CONFIRMAR…'; doCashout(Number(coDo.dataset.cashoutDo), Number(coDo.dataset.value)); return; }
   const affCopy = e.target.closest('[data-aff-copy]');
-  if (affCopy) { navigator.clipboard?.writeText(affCopy.dataset.affCopy).then(() => toast('Link copiado', affCopy.dataset.affCopy)).catch(() => {}); return; }
+  if (affCopy) { navigator.clipboard?.writeText(affCopy.dataset.affCopy).then(() => toast(affCopy.dataset.affLabel || 'Link copiado', affCopy.dataset.affCopy)).catch(() => {}); return; }
   const affShare = e.target.closest('[data-aff-share]');
   if (affShare) { navigator.share?.({ title: 'Bet62', text: 'Junta-te a mim na Bet62', url: affShare.dataset.affShare }).catch(() => {}); return; }
   const copy = e.target.closest('[data-copy]');
