@@ -181,11 +181,11 @@ test('admin raw call: any path of the configured host, answered as it comes; odd
   await assert.rejects(rs.raw('/../x'), /caminho/);
 });
 
-test('player page link (?url=…m3u8): the inner playlist is played with the player page as referer', () => {
+test('player page link (?url=…m3u8): the inner playlist is played, without the player page as referer', () => {
   const [s] = findStreams({ url: 'https://football-live-stream.online/?url=https://station1.example.org/live/abc/playlist.m3u8' });
   assert.equal(s.url, 'https://station1.example.org/live/abc/playlist.m3u8');
-  assert.equal(s.type, 'referer');
-  assert.equal(s.header.referer, 'https://football-live-stream.online/');
+  assert.equal(s.type, 'direct', 'the stream host refuses that referer (403)');
+  assert.equal(s.header.referer, undefined);
   assert.equal(findStreams({ url: 'https://cdn.example.org/live/x.m3u8?token=1' })[0].type, 'direct');
 });
 
@@ -240,4 +240,23 @@ test('stream probe (admin): playlist with and without referer, then down to the 
   assert.equal(r.passo2.url, 'https://cdn.example.org/live/x/seg1.ts');
   assert.equal(r.passo2.start, '47401110');
   assert.ok(seen.slice(2).every(([, ref]) => ref === 'https://player.example/'));
+});
+
+test('video proxy: a host refusing the referer (403) is asked again without it', async () => {
+  const seen = [];
+  const fetchImpl = async (url, opts) => {
+    seen.push(opts.headers.Referer || null);
+    return opts.headers.Referer ? new Response('no', { status: 403 }) : new Response(Buffer.from([0x47, 1, 2]), { headers: { 'content-type': 'video/mp2t' } });
+  };
+  const proxy = createVideoProxy({ fetchImpl });
+  const token = new URL(proxy.sign('https://cdn.example.org/seg1.ts', { referer: 'https://player.example/' }), 'http://x').searchParams.get('t');
+  const chunks = [];
+  const res = new (await import('node:stream')).Writable({ write(c, _e, cb) { chunks.push(c); cb(); } });
+  Object.assign(res, { statusCode: 200, set() { return res; }, type() { return res; }, status(c) { res.statusCode = c; return res; }, end: res.end.bind(res) });
+  const done = new Promise((r) => res.on('finish', r));
+  await proxy.handle({ query: { t: token } }, res);
+  await done;
+  assert.deepEqual(seen, ['https://player.example/', null]);
+  assert.equal(res.statusCode, 200);
+  assert.equal(Buffer.concat(chunks).toString('hex'), '470102');
 });

@@ -179,16 +179,19 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 20_000);
     res.on('close', () => ctl.abort());
+    const ask = (referer) => fetchImpl(t.u, {
+      headers: {
+        'User-Agent': t.a || BROWSER_UA,
+        ...(referer ? { Referer: referer, Origin: new URL(referer).origin } : {}),
+        Accept: '*/*',
+      },
+      redirect: 'follow',
+      signal: ctl.signal,
+    });
     try {
-      up = await fetchImpl(t.u, {
-        headers: {
-          'User-Agent': t.a || BROWSER_UA,
-          ...(t.r ? { Referer: t.r, Origin: new URL(t.r).origin } : {}),
-          Accept: '*/*',
-        },
-        redirect: 'follow',
-        signal: ctl.signal,
-      });
+      up = await ask(t.r);
+      // Refused with the referer: some hosts want none at all (asked once more without it).
+      if (t.r && (up.status === 401 || up.status === 403)) up = await ask(null);
     } catch { return res.status(502).end(); } finally { clearTimeout(timer); }
     if (!up.ok || !up.body) return res.status(up.status === 404 ? 404 : 502).end();
     const type = String(up.headers.get('content-type') || '');
@@ -252,7 +255,7 @@ function unwrapPlayer(u) {
   if (!url.search) return null;
   for (const key of ['url', 'src', 'source', 'file', 'stream', 'link']) {
     const val = url.searchParams.get(key);
-    if (val && STREAM_URL.test(val.trim())) return { url: val.trim(), referer: `${url.origin}/` };
+    if (val && STREAM_URL.test(val.trim())) return { url: val.trim() };
   }
   return null;
 }
@@ -266,9 +269,9 @@ export function findStreams(body) {
       let u = v.trim();
       let referer = ctx.referer;
       // A player page carrying the stream in its query (…/?url=https://…/playlist.m3u8): play the inner
-      // link and send the player page as referer, as its own player would.
+      // link. No referer is sent for it: the stream host refuses the player page's own (403).
       const inner = unwrapPlayer(u);
-      if (inner) { referer = referer || inner.referer; u = inner.url; }
+      if (inner) u = inner.url;
       if (STREAM_URL.test(u) && !seen.has(u)) {
         seen.add(u);
         out.push({ name: ctx.name || `Servidor ${out.length + 1}`, url: u, type: referer ? 'referer' : 'direct', header: { referer: referer || undefined, 'user-agent': ctx.ua || undefined } });
