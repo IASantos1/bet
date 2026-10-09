@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
-import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createFeatured } from './featured.js';
@@ -1453,12 +1453,21 @@ export function createApp(db, {
   admin.post('/winhouse/tracker', async (req, res, next) => {
     try {
       if (!winhouseTracker?.enabled) throw new HttpError(409, 'Tracker WinHouse desligado: defina WINHOUSE_BASE_URL (e não WINHOUSE_TRACKER=0).');
-      let gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
-      if (!gameId) {
-        gameId = db.prepare("SELECT external_id FROM events WHERE source = 'winhouse' AND sport = 'futebol' AND status = 'live' ORDER BY start_time LIMIT 1").get()?.external_id ?? null;
-        if (!gameId) throw new HttpError(404, 'Nenhum jogo de futebol ao vivo da WinHouse agora.');
+      const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
+      if (gameId) return res.json(await winhouseTracker.inspect(gameId));
+      // No game given: football games WinHouse has in play right now (a match already over answers
+      // "This match is no longer live"), best first; up to five until one has a tracker.
+      const r = await winhouse.live();
+      const ids = liveGamesByRank(eventsOf(r.body).filter((e) => Number(e.sport_id) === 1 && e.id !== undefined)).map((e) => String(e.id)).slice(0, 5);
+      if (!ids.length) throw new HttpError(404, 'Nenhum jogo de futebol ao vivo na WinHouse agora.');
+      const tried = [];
+      let out = null;
+      for (const id of ids) {
+        out = await winhouseTracker.inspect(id, { listenMs: 4_000 });
+        tried.push({ gameId: id, found: out.widget.found });
+        if (out.widget.found) break;
       }
-      res.json(await winhouseTracker.inspect(gameId));
+      res.json({ ...out, tried });
     } catch (err) { next(err); }
   });
 

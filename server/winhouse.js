@@ -567,12 +567,16 @@ export const footballLeagues = (list) => allowedLeagues(list, FOOTBALL_TREE);
 
 /** Admin sample: a shown sport, not blocked, football first, then the highest league tier. */
 export function bestLiveGame(evs) {
+  return liveGamesByRank(evs)[0] || null;
+}
+/** The live list in the order we would show it: football first, then the biggest leagues. */
+export function liveGamesByRank(evs) {
   const rank = (e) => {
     const sport = SPORTS[Number(e.sport_id)];
     if (!sport || blockedGame(e)) return 1e6;
     return (sport === 'futebol' ? 0 : 100) + leagueTier(sport, e.league || e.league_name || '');
   };
-  return [...evs].sort((a, b) => rank(a) - rank(b))[0] || null;
+  return [...evs].sort((a, b) => rank(a) - rank(b));
 }
 /**
  * True when the game is left out: its sport has a list of competitions and this one is not in it, or
