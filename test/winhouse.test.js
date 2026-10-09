@@ -322,11 +322,12 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
 
   // The feed reads the pages of games starting soon and keeps the lists' prices on top.
   const future = (id, hours) => ({ ...football(id, 0, '', ODD), id, ...when(-hours * 3_600_000), current_minute: '' });
-  const lists = { live: [], pre: [future(10, 3), future(11, 30)], pages: { 10: page } };
+  const lists = { live: [], pre: [future(10, 3), future(11, 50), future(12, 30)], pages: { 10: page, 12: page } };
   const t = setupFeed(lists);
   await t.feed.syncPrematch();
   const d = await t.feed.syncDetails();
-  assert.deepEqual([d.window, d.due, d.read, d.failed], [1, 1, 1, 0]); // game 11 starts in 30 h: outside the window
+  // Football is read up to 48 h ahead (the bet builder cards need its markets): 12 (30 h) yes, 11 (50 h) no.
+  assert.deepEqual([d.window, d.due, d.read, d.failed], [2, 2, 2, 0]);
   const active = (ext) => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(t.row(ext).id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
   const a = active(10);
   assert.equal(a['btts|Y'], 192);
@@ -347,7 +348,7 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
     prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
   };
   const restarted = createWinHouseFeed(t.db, { client: client2, tzOffsetMinutes: 60 });
-  assert.equal(restarted.status().restored.prematch, 2);
+  assert.equal(restarted.status().restored.prematch, 3);
   const saved = lists.pages;
   lists.pages = {};
   await restarted.syncPrematch();

@@ -803,7 +803,7 @@ export function finishVerdict(row) {
 
 export function createWinHouseFeed(db, {
   client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined,
-  detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
+  detailHours = 12, footballDetailHours = 48, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
   futureDays = 0, futureMinutes = 10,
 } = {}) {
   // Per sport, the competitions shown (a sport left undefined shows all of its own).
@@ -1213,9 +1213,12 @@ export function createWinHouseFeed(db, {
    */
   async function syncDetails() {
     const until = new Date(Date.now() + detailHours * 3600_000).toISOString();
+    // Football further ahead: its page brings the goal totals and the other markets that the
+    // "Construa o seu ganho" cards (next 48 h) are made of.
+    const untilFootball = new Date(Date.now() + Math.max(detailHours, footballDetailHours) * 3600_000).toISOString();
     const now = Date.now();
-    const rows = db.prepare(`SELECT id, sport, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND start_time <= ?
-      ORDER BY start_time`).all(SOURCE, nowIso(), until);
+    const rows = db.prepare(`SELECT id, sport, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ?
+      AND (start_time <= ? OR (sport = 'futebol' AND start_time <= ?)) ORDER BY start_time`).all(SOURCE, nowIso(), until, untilFootball);
     for (const ext of [...pagePrices.keys()]) if (!rows.some((r) => r.external_id === ext)) { pagePrices.delete(ext); listPrices.delete(ext); }
     const due = rows.filter((r) => { const p = pagePrices.get(r.external_id); return !p || now - p.at >= detailRefreshMinutes * 60_000; })
       .sort((a, b) => (pagePrices.get(a.external_id)?.at ?? 0) - (pagePrices.get(b.external_id)?.at ?? 0))
