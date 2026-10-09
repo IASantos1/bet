@@ -32,13 +32,35 @@ const TYPE_LABEL = { slot: 'Slots', live: 'Ao Vivo', crash: 'Crash' };
  * Games known as hits across the market (first = most popular), for the "Populares" order before
  * Bet62 has its own numbers; the rounds played here in the last 30 days weigh far more.
  */
+// Sources: search interest in Brazil (Fortune Tiger first since 2023, then Aviator, Fortune Ox, Gates of
+// Olympus, Mines, Sweet Bonanza, Plinko, Spaceman, Fortune Rabbit) and each provider's best-known titles.
 export const HITS = [
-  'gates of olympus', 'sweet bonanza', 'aviator', 'sugar rush', 'big bass', 'starlight princess', 'fortune tiger', 'book of dead',
-  'wanted dead or a wild', 'the dog house', 'wolf gold', 'fruit party', 'spaceman', 'mines', 'zeus vs hades', 'gates of gatot kaca',
-  'fortune rabbit', 'fortune ox', 'fortune mouse', 'buffalo king', 'madame destiny', 'great rhino', 'john hunter', 'money train',
-  'reactoonz', 'legacy of dead', 'rise of olympus', 'fire in the hole', 'chaos crew', 'le bandit', 'razor shark', 'jammin jars',
-  'roleta', 'roulette', 'blackjack', 'crazy time', 'sweet bonanza candyland', 'mega wheel', 'plinko', 'jetx',
+  'fortune tiger', 'aviator', 'gates of olympus', 'sweet bonanza', 'fortune ox', 'mines', 'plinko', 'spaceman', 'fortune rabbit',
+  'sugar rush', 'big bass', 'book of dead', 'starburst', 'crazy time', 'wanted dead or a wild', 'starlight princess', 'fortune mouse',
+  'fortune dragon', 'mahjong ways', 'lightning roulette', 'the dog house', 'wolf gold', 'jetx', 'fire in the hole', 'tombstone',
+  'dead or alive', 'gonzo', 'legacy of dead', 'rise of olympus', 'reactoonz', 'chaos crew', 'le bandit', 'money train', 'razor shark',
+  'jammin jars', 'bonanza', 'elvis frog', 'aloha king elvis', 'zeus vs hades', 'fruit party', 'madame destiny', 'buffalo king',
+  'great rhino', 'john hunter', 'hot hot fruit', 'shining crown', 'burning hot', 'mega wheel', 'monopoly', 'roleta', 'roulette',
+  'blackjack', 'baccarat',
 ];
+
+/**
+ * One provider, however BigBang spells it: "Pragmatic", "PragmaticPlay" and "Pragmatic Play" are one
+ * ("pragmatic"), "PragmaticLive" / "Pragmatic Play Live" another ("pragmaticlive"); "AmusnetLocal" is
+ * "amusnet", "Evolution Gaming" "evolution". Standard and Premium copies of a provider become one.
+ */
+const NOISE = new Set(['play', 'gaming', 'games', 'game', 'local', 'original', 'originals', 'premium', 'standard', 'studio', 'studios', 'entertainment', 'interactive', 'slots']);
+export function providerKey(name) {
+  const words = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const kept = words.filter((w) => !NOISE.has(w));
+  return (kept.length ? kept : words).join('') || 'outros';
+}
+/** The provider's display name among its spellings: the fullest one ("Pragmatic Play" over "Pragmatic"). */
+const displayName = (names) => [...names].map((n) => String(n).replace(/([a-z])([A-Z])/g, '$1 $2').trim())
+  .sort((a, b) => b.split(' ').length - a.split(' ').length || b.length - a.length)[0];
+/** The same game in two copies (Standard / Premium, or two spellings of one provider): one key. */
+const titleKey = (g) => `${g.providerId}|${g.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '')}`;
 /** Lobby rows: popular first, then the newest, then each kind of game. */
 const LOBBY = [['populares', 'Populares'], ['novos', 'Novos'], ['Slots', 'Slots'], ['Ao Vivo', 'Casino ao vivo'], ['Crash', 'Crash']];
 const euros = (cents) => (cents / 100).toFixed(2);
@@ -82,7 +104,7 @@ export function createBigBang(db, {
 
   const gameOut = (g) => ({
     id: g.id, code: g.name, name: g.title || g.name, provider: g.category_title || g.provider || g.category || '',
-    providerId: String(g.category || g.provider || ''), image: g.thumbnail || null,
+    providerId: providerKey(g.category_title || g.provider || g.category), image: g.thumbnail || null,
     category: TYPE_LABEL[g.game_type] || 'Slots', type: g.game_type || 'slot', premium: !!g.is_premium,
   });
 
@@ -96,17 +118,31 @@ export function createBigBang(db, {
       offset += list.length;
       if (!list.length || offset >= total) break;
     }
-    let providers = [];
+    // Every spelling of each provider (its categories and the games' own names), grouped by providerKey.
+    const names = new Map(); // key → Set of spellings
+    const addName = (n) => { if (!n) return; const k = providerKey(n); if (!names.has(k)) names.set(k, new Set()); names.get(k).add(String(n)); };
     try {
       const cats = await call('GET', '/categories');
-      providers = (cats.data || []).map((c) => ({ id: String(c.slug), name: c.name, premium: !!c.premium, maintenance: false }));
+      for (const c of cats.data || []) addName(c.name);
     } catch (err) { log(`bigbang categorias: ${err.message}`); }
-    // Only providers that have games here, in alphabetical order.
-    const withGames = new Set(games.map((g) => g.providerId));
-    providers = providers.filter((p) => withGames.has(p.id));
-    for (const id of withGames) if (!providers.some((p) => p.id === id)) providers.push({ id, name: games.find((g) => g.providerId === id)?.provider || id, maintenance: false });
-    providers.sort((a, b) => a.name.localeCompare(b.name));
-    catalog = { at: Date.now(), games, byId: new Map(games.map((g) => [g.id, g])), providers };
+    for (const g of games) addName(g.provider);
+    // One copy of each game per provider: the one with artwork, then the Standard one (it plays on any plan).
+    const best = new Map();
+    for (const g of games) {
+      const k = titleKey(g);
+      const cur = best.get(k);
+      const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && cur.premium && !g.premium);
+      if (better) best.set(k, g);
+    }
+    const unique = games.filter((g) => best.get(titleKey(g)) === g);
+    // Only providers that have games here, in alphabetical order, under their fullest name.
+    const withGames = new Set(unique.map((g) => g.providerId));
+    const providers = [...withGames].map((id) => ({ id, name: displayName(names.get(id) || [id]), maintenance: false }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const nameOf = new Map(providers.map((p) => [p.id, p.name]));
+    for (const g of games) g.provider = nameOf.get(g.providerId) || g.provider;
+    // Every copy stays reachable by id (a free-spins game, an old link); the lists show one.
+    catalog = { at: Date.now(), games: unique, byId: new Map(games.map((g) => [g.id, g])), providers };
     return catalog;
   }
 
@@ -148,6 +184,21 @@ export function createBigBang(db, {
     const score = (g) => (p.get(g.id) || 0) * 1000 + hitRank(g) * 10 + (g.premium ? 1 : 0);
     return list.map((g) => [score(g), g]).sort((a, b) => b[0] - a[0] || a[1].id - b[1].id).map(([, g]) => g);
   }
+  /**
+   * "Populares" across providers: each provider's games in popularity order, dealt in turns (the
+   * provider of the most popular game first), so one provider never fills the row on its own.
+   */
+  function mixedPopular(list) {
+    const queues = new Map();
+    for (const g of byPopularity(list)) {
+      if (!queues.has(g.providerId)) queues.set(g.providerId, []);
+      queues.get(g.providerId).push(g);
+    }
+    const lanes = [...queues.values()];
+    const out = [];
+    for (let i = 0; out.length < list.length; i++) for (const lane of lanes) if (lane[i]) out.push(lane[i]);
+    return out;
+  }
   // The provider gives no release date: higher ids are the games it added last.
   const byNewest = (list) => [...list].sort((a, b) => b.id - a.id);
 
@@ -156,7 +207,7 @@ export function createBigBang(db, {
     const all = await games();
     const popular = byPopularity(all.games);
     const rows = LOBBY.map(([key, title]) => {
-      const list = key === 'populares' ? popular : key === 'novos' ? byNewest(all.games) : popular.filter((g) => g.category === key);
+      const list = key === 'populares' ? mixedPopular(all.games) : key === 'novos' ? byNewest(all.games) : popular.filter((g) => g.category === key);
       return { key, title, total: list.length, games: list.slice(0, n) };
     }).filter((r) => r.games.length);
     // Then one row per provider: the providers of the most popular games first.
@@ -179,7 +230,7 @@ export function createBigBang(db, {
     let list = all.games.filter((g) => (!provider || g.providerId === String(provider))
       && (!kind || g.category === kind)
       && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term)));
-    list = order === 'new' ? byNewest(list) : byPopularity(list);
+    list = order === 'new' ? byNewest(list) : category === 'populares' ? mixedPopular(list) : byPopularity(list);
     const start = Math.max(0, Number(offset) || 0);
     const size = Math.min(60, Math.max(1, Number(limit) || 24));
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: list.length, offset: start, games: list.slice(start, start + size) };
