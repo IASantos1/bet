@@ -202,7 +202,9 @@ test('"football-live-stream-api" shape: result[] list (live only), links from th
     if (url.includes('/list')) {
       return Response.json({ result: [
         { league: 'Argentine Division 1', home_name: 'Gimnasia La Plata', away_name: 'Atletico Tucuman', status: 'Live', score: '0 - 0', id: '8yomo4h16xykq0j' },
-        { league: 'Liga', home_name: 'Benfica', away_name: 'Porto', status: 'Upcoming', id: 'zzz' },
+        { league: 'Liga', home_name: 'Benfica', away_name: 'Porto', status: 'Upcoming', id: 'zzz', kickoff: new Date(Date.now() + 3600_000).toISOString() },
+        { league: 'Liga', home_name: 'Deportivo Maldonado', away_name: 'Liverpool URU', status: 'Upcoming', id: 'late', kickoff: new Date(Date.now() - 5 * 60_000).toISOString() },
+        { league: 'Liga', home_name: 'Santos', away_name: 'Flamengo', status: 'Finished', id: 'old', kickoff: new Date(Date.now() - 3600_000).toISOString() },
       ] });
     }
     return Response.json({ data: { links: [{ label: 'HD', url: 'https://cdn.example.com/a/index.m3u8', headers: { Referer: 'https://site.example/' } }, { url: 'https://cdn.example.com/b.flv' }, { url: 'https://x.example/c.mpd|drm=1' }] } });
@@ -212,6 +214,7 @@ test('"football-live-stream-api" shape: result[] list (live only), links from th
   assert.deepEqual(r.servers.map((x) => [x.name, x.kind, x.referer]), [['HD', 'hls', 'https://site.example/'], ['Servidor 2', 'flv', null]]);
   assert.equal(calls.filter((u) => u.includes('/stream?id=8yomo4h16xykq0j')).length, 1);
   assert.equal((await rs.streamsFor('Benfica', 'Porto')).servers.length, 0, 'upcoming games are not live');
+  assert.equal((await rs.liveMatches()).matches.map((m) => m.id).join(), '8yomo4h16xykq0j,late', 'kicked off but still "Upcoming" counts; finished does not');
   await rs.streamsFor('Gimnasia La Plata', 'Atl. Tucuman');
   assert.equal(calls.length, 2, 'list and game route served from the cache');
   assert.equal(findStreams({ a: 'nothing here' }).length, 0);

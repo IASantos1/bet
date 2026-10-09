@@ -190,6 +190,14 @@ export function normalizeMatch(m) {
     servers: Array.isArray(m.servers) ? m.servers : [],
   };
 }
+const KICKED_OFF_MS = 10 * 60_000;
+const UNDER_WAY_MS = 3 * 3600_000;
+function isPlaying(m, now = Date.now()) {
+  if (!m.match_status || m.match_status === 'live') return true;
+  if (!/^(upcoming|scheduled|not started|ns)$/.test(m.match_status)) return false;
+  const t = Date.parse(m.kickoff ?? m.start_time ?? '');
+  return Number.isFinite(t) && t <= now + KICKED_OFF_MS && t > now - UNDER_WAY_MS;
+}
 const listOf = (body) => (Array.isArray(body) ? body : Array.isArray(body?.matches) ? body.matches : Array.isArray(body?.result) ? body.result
   : Array.isArray(body?.data) ? body.data : Array.isArray(body?.response) ? body.response : []);
 
@@ -281,8 +289,9 @@ export function createRapidStream({
         for (; n <= maxPages; n++) {
           const body = await page(n);
           pages += 1;
-          // Live ones only (a list with every status gives "Live" / "live" games and the rest).
-          matches.push(...listOf(body).map(normalizeMatch).filter((m) => m && (!m.match_status || m.match_status === 'live')));
+          // Live ones (a list with every status gives "Live" / "live" games and the rest), plus the
+          // "Upcoming" ones whose kick-off has come: the API is late to mark them live.
+          matches.push(...listOf(body).map(normalizeMatch).filter((m) => m && isPlaying(m)));
           if (!paged || !body.pagination?.hasNext) break;
         }
         cache = { at: Date.now(), matches, error: null, pages };
