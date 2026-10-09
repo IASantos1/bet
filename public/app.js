@@ -2729,60 +2729,90 @@ function stopRapid() {
 }
 
 /** Plays server `i` of the list in the box; on a fatal error, the next one. */
-async function playRapid(el, servers, i) {
+async function playRapid(el, servers, i, why = '') {
   const m = state.match;
   stopRapid();
   if (m.streamEl !== el) return;
   if (i >= servers.length) {
     el.className = 'stream-box empty';
-    el.innerHTML = `<span>${ICON_PLAY}</span><p>Nenhum servidor desta transmissão abriu. Tente daqui a pouco.</p>`;
+    // The last server's reason, small: what to tell the support when a stream will not open.
+    el.innerHTML = `<span>${ICON_PLAY}</span><p>Nenhum servidor desta transmissão abriu. Tente daqui a pouco.</p>${why ? `<small class="muted">${esc(why)}</small>` : ''}`;
     return;
   }
-  m.rapid = { servers, i, hls: null };
+  const r = { servers, i, hls: null, why: '', got: false, since: Date.now() };
+  m.rapid = r;
   el.className = 'stream-box rapid';
   // Just the picture: no server buttons or expand square on top (a server that fails gives way to
   // the next one by itself; the player's own controls have full screen).
   el.innerHTML = '<video playsinline controls autoplay muted></video>';
   const video = el.querySelector('video');
-  const next = () => { if (m.rapid?.i === i && m.streamEl === el) { clearTimeout(m.rapid.watchdog); playRapid(el, servers, i + 1); } };
-  // A server that has not started the picture in 12 s gives way to the next one.
-  m.rapid.watchdog = setTimeout(next, 12_000);
-  video.addEventListener('playing', () => clearTimeout(m.rapid?.watchdog), { once: true });
+  const next = (reason) => {
+    if (m.rapid !== r || m.streamEl !== el) return;
+    clearTimeout(r.watchdog);
+    playRapid(el, servers, i + 1, reason || r.why);
+  };
+  // A server with no picture in 12 s gives way to the next one; one whose video is still arriving
+  // (segments loaded) is given up to 40 s on a slow connection.
+  const watch = () => {
+    r.watchdog = setTimeout(() => {
+      if (r.got && Date.now() - r.since < 40_000) return watch();
+      next(r.why || (r.got ? 'o vídeo chega devagar demais' : 'sem resposta do servidor de vídeo'));
+    }, r.got ? 8_000 : 12_000);
+  };
+  watch();
+  // Picture ready (even if the browser holds autoplay back: its play button then starts it).
+  const ok = () => clearTimeout(r.watchdog);
+  video.addEventListener('playing', ok, { once: true });
+  video.addEventListener('loadeddata', ok, { once: true });
   if (servers[i].kind === 'flv') {
     try {
       const mpegts = await loadMpegts();
-      if (m.rapid?.i !== i || m.streamEl !== el) return;
+      if (m.rapid !== r || m.streamEl !== el) return;
       if (!mpegts?.isSupported()) throw new Error('mse');
       const flv = mpegts.createPlayer({ type: 'flv', isLive: true, url: new URL(servers[i].url, location.href).href }, { enableWorker: false, liveBufferLatencyChasing: true });
-      m.rapid.flv = flv;
-      flv.on(mpegts.Events.ERROR, next);
+      r.flv = flv;
+      flv.on(mpegts.Events.ERROR, (type, detail) => next(`flv: ${type} ${detail || ''}`.trim()));
       flv.attachMediaElement(video);
       flv.load();
       flv.play()?.catch?.(() => {});
-    } catch { next(); }
+    } catch (err) { next(`flv: ${err.message}`); }
     return;
   }
-  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+  const loadNative = () => {
     video.src = servers[i].url;
-    video.addEventListener('error', next, { once: true });
-    return;
+    video.addEventListener('error', () => next(`hls nativo: erro ${video.error?.code ?? ''}`.trim()), { once: true });
+  };
+  // Safari / iOS play HLS themselves (well); elsewhere hls.js, even where the browser says it could
+  // (Chrome on Android now does, but chokes on some live streams hls.js plays).
+  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|FxiOS|Edg|Android/.test(navigator.userAgent));
+  if (apple && video.canPlayType('application/vnd.apple.mpegurl')) return loadNative();
+  let Hls = null;
+  try { Hls = await loadHlsJs(); } catch { /* the browser's own HLS, if it has one */ }
+  if (m.rapid !== r || m.streamEl !== el) return;
+  if (!Hls?.isSupported()) {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) return loadNative();
+    return next('este navegador não reproduz HLS');
   }
-  try {
-    const Hls = await loadHlsJs();
-    if (m.rapid?.i !== i || m.streamEl !== el) return;
-    if (!Hls?.isSupported()) throw new Error('hls');
-    // Ordinary (not low-latency) live streams: start a few segments behind the edge, give up on a
-    // dead playlist quickly, keep a modest buffer.
-    const hls = new Hls({
-      enableWorker: false, lowLatencyMode: false, liveSyncDurationCount: 3, maxBufferLength: 20,
-      manifestLoadingTimeOut: 8000, manifestLoadingMaxRetry: 1, levelLoadingTimeOut: 8000, levelLoadingMaxRetry: 1,
-      fragLoadingTimeOut: 15000, fragLoadingMaxRetry: 2,
-    });
-    m.rapid.hls = hls;
-    hls.on(Hls.Events.ERROR, (_ev, data) => { if (data?.fatal) next(); });
-    hls.loadSource(servers[i].url);
-    hls.attachMedia(video);
-  } catch { next(); }
+  // Ordinary (not low-latency) live streams: start a few segments behind the edge, give up on a
+  // dead playlist quickly, keep a modest buffer.
+  const hls = new Hls({
+    enableWorker: false, lowLatencyMode: false, liveSyncDurationCount: 3, maxBufferLength: 20,
+    manifestLoadingTimeOut: 10000, manifestLoadingMaxRetry: 2, levelLoadingTimeOut: 10000, levelLoadingMaxRetry: 2,
+    fragLoadingTimeOut: 20000, fragLoadingMaxRetry: 3,
+  });
+  r.hls = hls;
+  let recovered = false;
+  hls.on(Hls.Events.FRAG_LOADED, () => { r.got = true; });
+  hls.on(Hls.Events.ERROR, (_ev, data) => {
+    const code = data?.response?.code;
+    r.why = `hls: ${data?.details || data?.type || 'erro'}${code ? ` (${code})` : ''}`;
+    if (!data?.fatal) return;
+    // A media error (decoding / buffer) is tried once more before giving up on the server.
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) { recovered = true; hls.recoverMediaError(); return; }
+    next(r.why);
+  });
+  hls.loadSource(servers[i].url);
+  hls.attachMedia(video);
 }
 
 /** The trial source's streams for this match (/api/live2/:id), or why there are none. */
