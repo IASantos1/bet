@@ -148,22 +148,31 @@ export function detailOdds(body) {
   return out;
 }
 
-const WORDS = { over: 'Mais de', under: 'Menos de', yes: 'Sim', no: 'Não', odd: 'Ímpar', even: 'Par', exactly: 'Exatamente', exact: 'Exatamente', draw: 'Empate', neither: 'Nenhum' };
+// The game pages come with their selections in English or in Albanian (sipër / poshtë = over / under,
+// po / jo = yes / no, tek / çift = odd / even, saktë = exactly, skuadra = team): all shown in Portuguese.
+const WORDS = {
+  over: 'Mais de', under: 'Menos de', yes: 'Sim', no: 'Não', odd: 'Ímpar', even: 'Par', exactly: 'Exatamente', exact: 'Exatamente', draw: 'Empate', neither: 'Nenhum',
+  'sipër': 'Mais de', siper: 'Mais de', 'poshtë': 'Menos de', poshte: 'Menos de', po: 'Sim', jo: 'Não', tek: 'Ímpar', 'çift': 'Par', cift: 'Par',
+  'saktë': 'Exatamente', sakte: 'Exatamente', skuadra: 'Equipa', golat: 'golos', gol: 'golo', dhe: 'e', ose: 'ou', 'asnjëri': 'Nenhum', pjesa: 'parte',
+};
+const WORD_RE = new RegExp(`(?<![\\p{L}\\d])(${Object.keys(WORDS).join('|')})(?![\\p{L}\\d])`, 'giu');
 const clean = (v, max) => String(v ?? '').replace(/[~|\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
-const ptWords = (t) => t.replace(/\b(over|under|yes|no|odd|even|exactly|exact|draw|neither)\b/gi, (w) => WORDS[w.toLowerCase()]);
+const ptWords = (t) => t.replace(WORD_RE, (w) => WORDS[w.toLowerCase()] ?? w);
 
 /**
- * Every market of a game page we do not settle ourselves (for that sport) → operator-settled 'x' selections,
+ * Every market of a game page we do not settle ourselves (for that sport), and the lines of our own
+ * markets we cannot settle (quarter lines), → operator-settled 'x' selections, so every market shows:
  * "x|<marketId>~<market>~<selection>". The market title is the first one the page gives for that
  * id, without the "[CODE]" tag; a line goes next to the selection: "Mais de (8.5)".
  */
-export function extraPrices(odds, { sport = null, limit = 600, ids = null } = {}) {
+export function extraPrices(odds, { sport = null, limit = 3000, ids = null } = {}) {
   const own = new Set(SPORT_MARKETS[sport] || []);
   const out = {};
   const titles = new Map();
   let n = 0;
   for (const o of odds) {
-    if (own.has(o.marketId) || n >= limit) continue;
+    // Our own markets stay ours; only their lines we do not settle (2.25, 1.75…) go to the operator.
+    if ((own.has(o.marketId) && ownKey(o, sport)) || n >= limit) continue;
     const v = x100(o.price);
     if (!v) continue;
     if (!titles.has(o.marketId)) titles.set(o.marketId, clean(String(o.marketName || '').replace(/\s*\[[^\]]*\]/g, ' '), 70) || `Mercado ${o.marketId}`);
@@ -587,7 +596,8 @@ const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFin
 // Half or whole line (a whole line voids on a push); quarter lines (2.25) would split the stake: not offered.
 const plainLine = (v) => Number.isFinite(v) && v > 0 && Number.isInteger(v * 2);
 
-const ODD_EVEN = { odd: 'ODD', even: 'EVEN', 'ímpar': 'ODD', impar: 'ODD', par: 'EVEN' };
+const ODD_EVEN = { odd: 'ODD', even: 'EVEN', 'ímpar': 'ODD', impar: 'ODD', par: 'EVEN', tek: 'ODD', 'çift': 'EVEN', cift: 'EVEN' };
+const YES_NO = { yes: 'Y', no: 'N', sim: 'Y', 'não': 'N', nao: 'N', po: 'Y', jo: 'N' };
 
 /**
  * Asian handicap from a game page: the line is the home side's ("1 [-1.5]" and "2 [-1.5]" are
@@ -607,11 +617,11 @@ const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(St
 function overUnder(sel) {
   // "over 2.5", "Mais 2.5", "mais de 2,5", "Acima (2.5)", "2.5 Mais"… (the book answers in Portuguese).
   const s = String(sel).toLowerCase().replace(/[()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
-  const WORD = '(over|under|mais(?: de)?|menos(?: de)?|acima(?: de)?|abaixo(?: de)?|o|u)';
+  const WORD = '(over|under|mais(?: de)?|menos(?: de)?|acima(?: de)?|abaixo(?: de)?|sipër|siper|poshtë|poshte|o|u)';
   let m = new RegExp(`^${WORD}\\s*([\\d.,]+)$`, 'i').exec(s);
   if (!m) { const r = new RegExp(`^([\\d.,]+)\\s*${WORD}$`, 'i').exec(s); if (r) m = [r[0], r[2], r[1]]; }
   if (!m) return null;
-  const side = /^(over|mais|acima|o)/i.test(m[1]) ? 'O' : 'U';
+  const side = /^(over|mais|acima|sip|o)/i.test(m[1]) ? 'O' : 'U';
   const line = Number(m[2].replace(',', '.'));
   return plainLine(line) ? [side, line] : null;
 }
@@ -626,7 +636,7 @@ function ownKey(o, sport) {
     if (o.marketId === 1001) return (c = { 1: '1', x: 'X', 2: '2' }[sel]) ? `1x2|${c}` : null;
     if (o.marketId === 1005) return (c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]) ? `dc|${c}` : null;
     if (o.marketId === 1018) return (c = overUnder(sel)) ? `ou|${c[0]}${c[1]}` : null;
-    if (o.marketId === 1007) return (c = { yes: 'Y', no: 'N', sim: 'Y', 'não': 'N', nao: 'N' }[raw]) ? `btts|${c}` : null;
+    if (o.marketId === 1007) return (c = YES_NO[raw]) ? `btts|${c}` : null;
     if (o.marketId === 1019) return (c = ODD_EVEN[raw]) ? `oe|${c}` : null;
     if (o.marketId === 1011) return (c = asianHandicap(raw, o.special)) ? `hcp|${c}` : null;
     if (o.marketId === 1708) return (c = exactScore(raw)) ? `cs|${c}` : null;
