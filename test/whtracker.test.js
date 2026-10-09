@@ -125,6 +125,14 @@ test('the tracker WebSocket moves the ball every frame; widget-data keeps the re
   const clocks = got.filter((m) => m.type === 'event').map((m) => m.data.clock);
   assert.deepEqual(clocks, ["62'"]);
   assert.deepEqual(got.filter((m) => m.type === 'livedata').map((m) => m.data.x), [50, 60]);
+  // A frame without xy keeps the last real position while the situation is the same (no jump to
+  // the situation's usual spot and back); a new situation without xy moves it to that spot.
+  got.length = 0;
+  sockets[0].frame({ type: 'tracker', ts: 400, situation: 'Home Attack', xy: [0.55, 0.4] });
+  sockets[0].frame({ type: 'tracker', ts: 401, situation: 'Home Attack' });
+  sockets[0].frame({ type: 'tracker', ts: 402, situation: 'Home Attack', xy: [0.57, 0.42] });
+  sockets[0].frame({ type: 'tracker', ts: 403, situation: 'Home Goal Kick' });
+  assert.deepEqual(got.filter((m) => m.type === 'livedata').map((m) => [Math.round(m.data.x), m.data.situation]), [[55, 'attack'], [57, 'attack'], [7, 'goalkick']]);
   stop();
 });
 

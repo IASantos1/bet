@@ -217,6 +217,8 @@ export function normalizeWidgetData(body) {
 }
 
 const HALF_TIME = /half.?time|interval|break|\bht\b/i;
+/** How long a real ball position (xy) stands when the next frames carry none. */
+const XY_HOLD_MS = 5_000;
 
 /**
  * The match clock from the tracker's timer (seconds played): "67'", or "45+2'" / "90+3'" in
@@ -368,9 +370,12 @@ export function createWinHouseTracker(db, {
         try { msg = JSON.parse(typeof m.data === 'string' ? m.data : String(m.data)); } catch { return; }
         const fields = frameFields(msg);
         if (!fields) return;
-        // A frame without xy has no live ball position: drop the previous one (the situation places it).
+        // The tracker sends xy only in some frames. A frame without it keeps the last real position
+        // for a few seconds while the situation is the same (dropping it at once made the ball jump
+        // to the situation's usual spot and back); after that, or on a new situation, that spot places it.
         if (!mergeState(w, fields)) return;
-        if (!('xy' in fields)) delete w.raw.xy;
+        if ('xy' in fields) { w.xyAt = Date.now(); w.xySituation = w.raw.situation; }
+        else if (Date.now() - (w.xyAt || 0) > XY_HOLD_MS || w.raw.situation !== w.xySituation) delete w.raw.xy;
         w.lastFrameAt = Date.now();
         w.frames = (w.frames || 0) + 1;
         try { process(eventId, w); } catch (err) { log(`tracker ws ${w.gameId}: ${err.message}`); }
