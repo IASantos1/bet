@@ -457,6 +457,25 @@ test('live game pages: every in-play market, dropped on a goal or when the list 
   assert.deepEqual(active(), {});
 });
 
+test('a live game a player has open: its page is read at once and kept fresh, ahead of the others', async () => {
+  const o = (odd, mid, opt) => ({ id: 1, odd, market_id: String(mid), market: 'm', market_option: `${opt} `, special_value: null });
+  const page = [[o('1.92', 1007, 'yes'), o('1.76', 1007, 'no')]];
+  const lists = { live: [football(23, 30, '0-0', ODD), football(24, 30, '0-0', ODD)], livePages: { 23: page, 24: page } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const btts = (ext) => t.db.prepare("SELECT odds_x100 FROM selections WHERE event_id = ? AND market = 'btts' AND code = 'Y' AND active = 1").get(t.row(ext).id)?.odds_x100;
+  assert.equal(btts(24), undefined);
+  // The player opens game 24: read now, every market there.
+  assert.equal(await t.feed.readPageNow(t.row(24).id), true);
+  assert.equal(btts(24), 192);
+  // Asked again a moment later: not read twice in a row.
+  assert.equal(await t.feed.readPageNow(t.row(24).id), false);
+  // Background run: game 23 (never read) is due; the watched one is not yet (read seconds ago).
+  const d = await t.feed.syncLiveDetails();
+  assert.equal(d.read, 1);
+  assert.equal(btts(23), 192);
+});
+
 test('a live page route that answers 404 to a whole run is paused', async () => {
   const t = setupFeed({ live: [football(21, 30, '0-0', ODD)] });
   await t.feed.syncLive();
