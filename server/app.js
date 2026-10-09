@@ -1704,6 +1704,8 @@ export function createApp(db, {
         if (req.query.fresh === '1' && covered.length < 5) {
           const r = await rapidStream.streamsFor(e.home, e.away);
           Object.assign(item, { playable: r.servers.length, linkAnswer: r.answer });
+          // The first stream fetched from our server, as the proxy would (status and first bytes).
+          if (r.servers[0] && covered.filter((x) => x.probe).length < 2) item.probe = await rapidStream.probe(r.servers[0]);
         } else Object.assign(item, { playable: playableServers(f.match.servers).length });
         covered.push(item);
       }

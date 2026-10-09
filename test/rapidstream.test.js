@@ -220,3 +220,24 @@ test('"football-live-stream-api" shape: result[] list (live only), links from th
   assert.equal(calls.length, 2, 'list and game route served from the cache');
   assert.equal(findStreams({ a: 'nothing here' }).length, 0);
 });
+
+test('stream probe (admin): playlist with and without referer, then down to the first segment', async () => {
+  const { probeStream } = await import('../server/rapidstream.js');
+  const seen = [];
+  const fetchImpl = async (url, opts) => {
+    seen.push([url, opts.headers.Referer || null]);
+    if (url.endsWith('playlist.m3u8')) {
+      if (!opts.headers.Referer) return new Response('no', { status: 403 });
+      return new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunks.m3u8\n', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
+    if (url.endsWith('chunks.m3u8')) return new Response('#EXTM3U\n#EXTINF:4,\nseg1.ts\n');
+    return new Response(Buffer.from([0x47, 0x40, 0x11, 0x10]), { headers: { 'content-type': 'video/mp2t' } });
+  };
+  const r = await probeStream({ url: 'https://cdn.example.org/live/x/playlist.m3u8', referer: 'https://player.example/' }, { fetchImpl });
+  assert.equal(r.semReferer.status, 403);
+  assert.equal(r.comReferer.status, 200);
+  assert.equal(r.passo1.url, 'https://cdn.example.org/live/x/chunks.m3u8');
+  assert.equal(r.passo2.url, 'https://cdn.example.org/live/x/seg1.ts');
+  assert.equal(r.passo2.start, '47401110');
+  assert.ok(seen.slice(2).every(([, ref]) => ref === 'https://player.example/'));
+});
