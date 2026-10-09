@@ -209,7 +209,9 @@ test('lobby: popular first (rounds played here, then known hits), newest by id, 
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
   let lobby = await bb.lobby({ n: 10 });
   const row = (key) => lobby.rows.find((r) => r.key === key);
-  assert.deepEqual(lobby.rows.map((r) => r.key), ['populares', 'novos', 'Slots', 'Ao Vivo']);
+  assert.deepEqual(lobby.rows.map((r) => r.key), ['populares', 'novos', 'Slots', 'Ao Vivo', 'provider', 'provider']);
+  // One row per provider, the provider of the most popular game first.
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => [r.provider, r.title, r.total]), [['PragmaticLive', 'Pragmatic Live', 1], ['Habanero', 'Habanero', 2]]);
   // Nothing played yet: the known hit (roulette) first.
   assert.equal(row('populares').games[0].id, 9001);
   assert.deepEqual(row('novos').games.map((g) => g.id), [9001, 4822, 4821]);
