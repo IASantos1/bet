@@ -362,6 +362,24 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
   assert.equal(active(10)['btts|Y'], 210);
 });
 
+test('goal totals in Portuguese ("Mais" / "Menos", "mais de 2,5", "Acima (3.5)") are read; a game page is read when a player opens it', async () => {
+  const o = (opt, special, odd = '1.9') => ({ id: 1, odd, market_id: '1018', market: 'Total de Golos [TG_O/U]', market_option: `${opt} `, special_value: special });
+  const page = [[o('Mais', '2.5'), o('Menos', '2.5'), o('mais de 1,5', null), o('menos de 1,5', null), o('Acima (3.5)', null), o('Abaixo (3.5)', null)]];
+  assert.deepEqual(Object.keys(pricesFor(detailOdds(page), 'futebol')).sort(), ['ou|O1.5', 'ou|O2.5', 'ou|O3.5', 'ou|U1.5', 'ou|U2.5', 'ou|U3.5']);
+
+  // A game 5 days ahead: outside the background reads; opening it reads its page once.
+  const far = { ...football(20, 0, '', ODD), id: 20, ...when(-5 * 86_400_000), current_minute: '' };
+  const lists = { live: [], pre: [far], pages: { 20: page } };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  assert.equal((await t.feed.syncDetails()).due, 0);
+  const has = (k) => !!t.db.prepare("SELECT 1 FROM selections WHERE event_id = ? AND market || '|' || code = ? AND active = 1").get(t.row(20).id, k);
+  assert.equal(has('ou|O3.5'), false);
+  assert.equal(await t.feed.readPageNow(t.row(20).id), true);
+  assert.equal(has('ou|O3.5'), true);
+  assert.equal(await t.feed.readPageNow(t.row(20).id), false, 'not read again before the refresh time');
+});
+
 test('every other market of a page becomes an operator-settled selection', async () => {
   const { extraPrices, detailOdds } = await import('../server/winhouse.js');
   const o = (odd, mid, market, opt, special = null) => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });

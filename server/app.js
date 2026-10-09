@@ -414,12 +414,18 @@ export function createApp(db, {
   });
 
   // One match with every market (the match page).
-  app.get('/api/events/:id', (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, 'Evento não encontrado.');
-    const [event] = loadEvents('e.id = ?', [id], 'e.id', 1, { allMarkets: true });
-    if (!event) throw new HttpError(404, 'Evento não encontrado.');
-    res.json({ event });
+  app.get('/api/events/:id', async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) throw new HttpError(404, 'Evento não encontrado.');
+      // A WinHouse game not read lately: its page now (every market), waiting at most 4 s.
+      if (winhouseFeed?.readPageNow) {
+        await Promise.race([winhouseFeed.readPageNow(id).catch(() => false), new Promise((ok) => setTimeout(ok, 4_000).unref())]);
+      }
+      const [event] = loadEvents('e.id = ?', [id], 'e.id', 1, { allMarkets: true });
+      if (!event) throw new HttpError(404, 'Evento não encontrado.');
+      res.json({ event });
+    } catch (err) { next(err); }
   });
 
   const eventRow = (id) => db.prepare('SELECT * FROM events WHERE id = ?').get(Number(id));

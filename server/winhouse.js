@@ -605,7 +605,11 @@ const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(St
 
 /** "over 2.5" / "under 2.5" (also translated wordings) → ['O', 2.5]. */
 function overUnder(sel) {
-  const m = /^(over|under|mais de|menos de|acima de|abaixo de|o|u)\s*([\d.,]+)$/i.exec(String(sel).trim());
+  // "over 2.5", "Mais 2.5", "mais de 2,5", "Acima (2.5)", "2.5 Mais"… (the book answers in Portuguese).
+  const s = String(sel).toLowerCase().replace(/[()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  const WORD = '(over|under|mais(?: de)?|menos(?: de)?|acima(?: de)?|abaixo(?: de)?|o|u)';
+  let m = new RegExp(`^${WORD}\\s*([\\d.,]+)$`, 'i').exec(s);
+  if (!m) { const r = new RegExp(`^([\\d.,]+)\\s*${WORD}$`, 'i').exec(s); if (r) m = [r[0], r[2], r[1]]; }
   if (!m) return null;
   const side = /^(over|mais|acima|o)/i.test(m[1]) ? 'O' : 'U';
   const line = Number(m[2].replace(',', '.'));
@@ -1211,6 +1215,48 @@ export function createWinHouseFeed(db, {
    * read (or read longest ago) first, at most `detailPerCycle` per run, each again after
    * `detailRefreshMinutes`.
    */
+  /** One game's page → its markets (written over the list's). The number of markets, or null when it failed. */
+  async function readPage(r) {
+    try {
+      const res = await client.prematchEvent(r.external_id);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const odds = detailOdds(res.body);
+      const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
+      pagePrices.set(r.external_id, { at: Date.now(), prices });
+      tx(db, () => {
+        const row = db.prepare('SELECT status FROM events WHERE id = ?').get(r.id);
+        if (row?.status !== 'scheduled') return; // started meanwhile: the live list owns it
+        writePrices(r.id, { ...prices, ...(listPrices.get(r.external_id) || {}) });
+      });
+      return new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
+    } catch (err) {
+      pagePrices.set(r.external_id, { at: Date.now() - detailRefreshMinutes * 30_000, prices: pagePrices.get(r.external_id)?.prices || {} }); // retry in half the time
+      log(`WinHouse página ${r.external_id}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * A player opens a game page: a game whose page was not read lately (further ahead than the
+   * background reads go, or not reached yet) is read now, so every market (goal totals, both teams
+   * to score…) is there. At most 30 such reads a minute; one at a time per game.
+   */
+  const onDemand = { minute: 0, n: 0, busy: new Map() };
+  async function readPageNow(eventId) {
+    const r = db.prepare("SELECT id, sport, external_id FROM events WHERE id = ? AND source = ? AND status = 'scheduled'").get(Number(eventId), SOURCE);
+    if (!r) return false;
+    const p = pagePrices.get(r.external_id);
+    if (p && Date.now() - p.at < detailRefreshMinutes * 60_000) return false;
+    if (onDemand.busy.has(r.id)) return onDemand.busy.get(r.id);
+    const minute = Math.floor(Date.now() / 60_000);
+    if (minute !== onDemand.minute) { onDemand.minute = minute; onDemand.n = 0; }
+    if (onDemand.n >= 30) return false;
+    onDemand.n += 1;
+    const job = readPage(r).then((n) => n !== null).finally(() => onDemand.busy.delete(r.id));
+    onDemand.busy.set(r.id, job);
+    return job;
+  }
+
   async function syncDetails() {
     const until = new Date(Date.now() + detailHours * 3600_000).toISOString();
     // Football further ahead: its page brings the goal totals and the other markets that the
@@ -1227,24 +1273,8 @@ export function createWinHouseFeed(db, {
     let markets = 0;
     let failed = 0;
     for (const r of due) {
-      try {
-        const res = await client.prematchEvent(r.external_id);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const odds = detailOdds(res.body);
-        const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
-        pagePrices.set(r.external_id, { at: Date.now(), prices });
-        read += 1;
-        markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
-        tx(db, () => {
-          const row = db.prepare('SELECT status FROM events WHERE id = ?').get(r.id);
-          if (row?.status !== 'scheduled') return; // started meanwhile: the live list owns it
-          writePrices(r.id, { ...prices, ...(listPrices.get(r.external_id) || {}) });
-        });
-      } catch (err) {
-        failed += 1;
-        pagePrices.set(r.external_id, { at: Date.now() - detailRefreshMinutes * 30_000, prices: pagePrices.get(r.external_id)?.prices || {} }); // retry in half the time
-        log(`WinHouse página ${r.external_id}: ${err.message}`);
-      }
+      const n = await readPage(r);
+      if (n === null) failed += 1; else { read += 1; markets += n; }
     }
     state.last.details = { at: nowIso(), due: due.length, read, failed, markets, cached: pagePrices.size, window: rows.length };
     return state.last.details;
@@ -1378,5 +1408,5 @@ export function createWinHouseFeed(db, {
     futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }
