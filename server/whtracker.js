@@ -117,15 +117,29 @@ export function estimatedBall(situation) {
   return { x, y, estimated: true };
 }
 /** timeline / sc entries → [{ minute, type, team, label }]. */
-export function normalizeTimeline(raw) {
+export function normalizeTimeline(raw, { firstHalf = false } = {}) {
   // An object is events grouped by kind ({ GOAL: [{ min, team }] }); plain counts ({ GOAL: [3, 3] }) are not events.
   const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object'
     ? Object.entries(raw).flatMap(([k, v]) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object').map((x) => ({ type: k, ...x })) : []))
     : [];
-  // Added time: the list is in match order, so a minute that drops after one past 45 starts the second half.
-  let half = 1;
-  let prev = 0;
-  return list.map((x) => {
+  // Added time: the list is in match order, so a minute that drops after one past 45 marks the
+  // minutes before it as first-half added time ("45+2'"). Without that drop a 47' or 59' is a
+  // second-half minute; past 90 it is "90+N'".
+  const mins = list.map((x) => {
+    const v = x && typeof x === 'object' ? num(first(x.minute, x.min, x.time, x.timer, x.t)) : null;
+    return v === null ? null : Math.floor(v > 200 ? v / 60 : v);
+  });
+  const firstHalfAdded = new Set();
+  for (let i = 0, prev = 0, start = -1; i < mins.length; i++) {
+    const m = mins[i];
+    if (m === null) continue;
+    if (m > 45 && firstHalf) { firstHalfAdded.add(i); continue; } // still the first half (or half time)
+    if (m > 45 && start < 0) start = i;
+    if (start >= 0 && m < prev && prev > 45) { for (let j = start; j < i; j++) firstHalfAdded.add(j); start = -2; }
+    if (m <= 45 && start >= 0) start = -1;
+    prev = m;
+  }
+  return list.map((x, i) => {
     if (!x || typeof x !== 'object') return null;
     const name = String(first(x.type, x.event, x.name, x.kind, '')).trim();
     if (!name) return null;
@@ -135,13 +149,8 @@ export function normalizeTimeline(raw) {
     const kind = EVENT_TYPES.find(([re]) => re.test(name))?.[1] || name.toLowerCase();
     const cardColor = /red|vermelh/i.test(name) ? 'red' : /yellow|amarel/i.test(name) ? 'yellow' : null;
     const label = String(first(x.text, x.description, name)).trim().slice(0, 80);
-    const min = minute === null ? null : Math.floor(minute > 200 ? minute / 60 : minute);
-    if (min !== null) {
-      if (half === 1 && prev > 45 && min < prev) half = 2;
-      prev = min;
-    }
-    const end = half === 1 ? 45 : 90;
-    const minuteLabel = min === null ? null : min > end ? `${end}+${min - end}'` : `${min}'`;
+    const min = mins[i];
+    const minuteLabel = min === null ? null : firstHalfAdded.has(i) ? `45+${min - 45}'` : min > 90 ? `90+${min - 90}'` : `${min}'`;
     return { minute: min, minuteLabel, type: kind, team, label, card: cardColor };
   }).filter(Boolean);
 }
@@ -191,7 +200,8 @@ export function normalizeWidgetData(body) {
       if (!stats.some((x) => x.key === meta.key)) stats.push({ ...meta, home: h, away: a });
     }
   }
-  const timeline = normalizeTimeline(Array.isArray(d.timeline) && d.timeline.length ? d.timeline : d.sc);
+  const firstHalf = HALF_TIME.test(`${d.status ?? ''} ${d.period ?? ''}`) || /\b(1|first)\b|1st/i.test(String(d.period ?? ''));
+  const timeline = normalizeTimeline(Array.isArray(d.timeline) && d.timeline.length ? d.timeline : d.sc, { firstHalf });
   const timer = num(first(d.timer, d.time));
   const period = first(d.period, null);
   return {
@@ -290,6 +300,26 @@ export function createWinHouseTracker(db, {
 
   const publish = (id, type, data) => bus.emit(`e:${id}`, { type, data });
 
+  /**
+   * Merges a tracker state into a watched match, never going back in time: a state older than the
+   * last one applied (its `ts`, e.g. a cached widget-data answer arriving after newer WebSocket
+   * frames) is dropped, and within one period the timer only moves forward. Returns false when dropped.
+   */
+  function mergeState(w, fields) {
+    const ts = Number(fields.ts);
+    if (Number.isFinite(ts) && ts > 0) {
+      if (w.ts && ts < w.ts) return false;
+      w.ts = ts;
+    }
+    const prev = w.raw || {};
+    const next = { ...prev, ...fields };
+    const t0 = Number(prev.timer);
+    const t1 = Number(next.timer);
+    if (String(prev.period ?? '') === String(next.period ?? '') && Number.isFinite(t0) && Number.isFinite(t1) && t1 < t0) next.timer = prev.timer;
+    w.raw = next;
+    return true;
+  }
+
   /** Publishes what changed in a watched match's tracker state (merged widget-data + ws frames). */
   function process(eventId, w) {
     const s = normalizeWidgetData(w.raw);
@@ -339,7 +369,7 @@ export function createWinHouseTracker(db, {
         const fields = frameFields(msg);
         if (!fields) return;
         // A frame without xy has no live ball position: drop the previous one (the situation places it).
-        w.raw = { ...(w.raw || {}), ...fields };
+        if (!mergeState(w, fields)) return;
         if (!('xy' in fields)) delete w.raw.xy;
         w.lastFrameAt = Date.now();
         w.frames = (w.frames || 0) + 1;
@@ -377,8 +407,7 @@ export function createWinHouseTracker(db, {
       const raw = await rawState(w.gameId);
       w.polledAt = Date.now();
       if (!raw) return;
-      w.raw = { ...(w.raw || {}), ...raw };
-      process(eventId, w);
+      if (mergeState(w, raw)) process(eventId, w);
       if (!w.ws) connect(eventId, w);
     } catch (err) {
       log(`tracker ${w.gameId}: ${err.message}`);
@@ -475,7 +504,8 @@ export function createWinHouseTracker(db, {
   /** The tracker's clock of a watched match ("Intervalo", "45+2'"…) while it is fresh; it knows the period, the live list does not. */
   const clockOf = (eventId) => {
     const w = watched.get(eventId);
-    return w?.last?.clock && Date.now() - (w.lastStateAt || 0) < 30_000 ? w.last.clock : null;
+    // Kept for two minutes: a short gap must not swap to the live list's (later) minute and back.
+    return w?.last?.clock && Date.now() - (w.lastStateAt || 0) < 120_000 ? w.last.clock : null;
   };
 
   return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect, clockOf };
