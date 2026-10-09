@@ -226,6 +226,10 @@ export const config = {
     host: unquote(env.RAPIDAPI_STREAM_HOST) || 'football-live-streaming-api.p.rapidapi.com',
     cacheSeconds: Math.max(30, int(env.RAPIDAPI_STREAM_CACHE_SECONDS, 120)),
     maxPages: Math.min(20, Math.max(1, int(env.RAPIDAPI_STREAM_MAX_PAGES, 5))),
+    // The API's routes: the live list ({page} = page number, if it has pages) and, for an API whose
+    // list carries no links, the route of one game ({id}).
+    listPath: unquote(env.RAPIDAPI_STREAM_LIST_PATH) || '/matches?status=live&page={page}',
+    streamPath: unquote(env.RAPIDAPI_STREAM_PATH),
   },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),

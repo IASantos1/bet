@@ -4,7 +4,7 @@ import { openDb } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import express from 'express';
-import { createRapidStream, nameScore, playableServers, createVideoProxy, safeTarget, rankServers } from '../server/rapidstream.js';
+import { createRapidStream, nameScore, playableServers, createVideoProxy, safeTarget, rankServers, findStreams } from '../server/rapidstream.js';
 
 const page = (matches, hasNext = false) => ({ matches, pagination: { page: 1, hasNext } });
 const match = (home, away, servers) => ({ match_status: 'live', home_team_name: home, away_team_name: away, league_name: 'Liga', servers });
@@ -169,4 +169,36 @@ test('FLV: probed by its signature, streamed through the proxy as one long respo
     assert.equal(res.headers.get('content-type'), 'video/x-flv');
     assert.equal(await res.text(), 'FLV\x01\x05more');
   } finally { server.close(); }
+});
+
+test('admin raw call: any path of the configured host, answered as it comes; odd paths refused', async () => {
+  const seen = [];
+  const rs = createRapidStream({ apiKey: 'k', host: 'other-api.p.rapidapi.com', fetchImpl: async (url, opts) => { seen.push([url, opts.headers['X-RapidAPI-Host']]); return Response.json({ ok: 1 }); } });
+  const r = await rs.raw('/live?x=1');
+  assert.deepEqual([r.status, r.json], [200, { ok: 1 }]);
+  assert.deepEqual(seen[0], ['https://other-api.p.rapidapi.com/live?x=1', 'other-api.p.rapidapi.com']);
+  await assert.rejects(rs.raw('https://evil.example/x'), /caminho/);
+  await assert.rejects(rs.raw('/../x'), /caminho/);
+});
+
+test('"football-live-stream-api" shape: result[] list (live only), links from the game route', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.includes('/list')) {
+      return Response.json({ result: [
+        { league: 'Argentine Division 1', home_name: 'Gimnasia La Plata', away_name: 'Atletico Tucuman', status: 'Live', score: '0 - 0', id: '8yomo4h16xykq0j' },
+        { league: 'Liga', home_name: 'Benfica', away_name: 'Porto', status: 'Upcoming', id: 'zzz' },
+      ] });
+    }
+    return Response.json({ data: { links: [{ label: 'HD', url: 'https://cdn.example.com/a/index.m3u8', headers: { Referer: 'https://site.example/' } }, { url: 'https://cdn.example.com/b.flv' }, { url: 'https://x.example/c.mpd|drm=1' }] } });
+  };
+  const rs = createRapidStream({ apiKey: 'k', host: 'football-live-stream-api.p.rapidapi.com', listPath: '/list', streamPath: '/stream?id={id}', fetchImpl });
+  const r = await rs.streamsFor('Gimnasia y Esgrima La Plata', 'Atletico Tucuman');
+  assert.deepEqual(r.servers.map((x) => [x.name, x.kind, x.referer]), [['HD', 'hls', 'https://site.example/'], ['Servidor 2', 'flv', null]]);
+  assert.equal(calls.filter((u) => u.includes('/stream?id=8yomo4h16xykq0j')).length, 1);
+  assert.equal((await rs.streamsFor('Benfica', 'Porto')).servers.length, 0, 'upcoming games are not live');
+  await rs.streamsFor('Gimnasia La Plata', 'Atl. Tucuman');
+  assert.equal(calls.length, 2, 'list and game route served from the cache');
+  assert.equal(findStreams({ a: 'nothing here' }).length, 0);
 });

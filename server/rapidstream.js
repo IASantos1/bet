@@ -173,20 +173,73 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
   return { sign, open, rewrite, handle };
 }
 
+/**
+ * A listed match in one shape, whatever the API: { home_team_name, away_team_name, league_name,
+ * match_status, id, servers }. Knows the 1xAPI shape (matches[], servers) and the
+ * "football-live-stream-api" shape (result[] with home_name / away_name / status "Live" / id).
+ */
+export function normalizeMatch(m) {
+  if (!m || typeof m !== 'object') return null;
+  const home = m.home_team_name ?? m.home_name ?? m.homeTeam ?? m.home;
+  const away = m.away_team_name ?? m.away_name ?? m.awayTeam ?? m.away;
+  if (!home || !away) return null;
+  return {
+    ...m, home_team_name: String(home), away_team_name: String(away),
+    league_name: String(m.league_name ?? m.league ?? '').trim(),
+    match_status: String(m.match_status ?? m.status ?? '').toLowerCase(),
+    id: m.id ?? m.match_id ?? null,
+    servers: Array.isArray(m.servers) ? m.servers : [],
+  };
+}
+const listOf = (body) => (Array.isArray(body) ? body : Array.isArray(body?.matches) ? body.matches : Array.isArray(body?.result) ? body.result
+  : Array.isArray(body?.data) ? body.data : Array.isArray(body?.response) ? body.response : []);
+
+/**
+ * Every stream address in an API answer, whatever its shape: any string ending in .m3u8 / .flv
+ * (an "url|drm…" one is DRM and skipped), with the referer / user-agent found beside it.
+ */
+export function findStreams(body) {
+  const out = [];
+  const seen = new Set();
+  const walk = (v, ctx, depth) => {
+    if (depth > 8 || v === null || v === undefined) return;
+    if (typeof v === 'string') {
+      const u = v.trim();
+      if (/^https?:\/\/\S+\.(m3u8|flv)(\?\S*)?$/i.test(u) && !seen.has(u)) {
+        seen.add(u);
+        out.push({ name: ctx.name || `Servidor ${out.length + 1}`, url: u, type: ctx.referer ? 'referer' : 'direct', header: { referer: ctx.referer || undefined, 'user-agent': ctx.ua || undefined } });
+      }
+      return;
+    }
+    if (Array.isArray(v)) { for (const x of v) walk(x, ctx, depth + 1); return; }
+    if (typeof v === 'object') {
+      const h = v.header || v.headers || {};
+      const next = {
+        name: typeof v.name === 'string' ? v.name.slice(0, 30) : typeof v.label === 'string' ? v.label.slice(0, 30) : ctx.name,
+        referer: v.referer || v.Referer || h.referer || h.Referer || ctx.referer,
+        ua: v['user-agent'] || v.userAgent || h['user-agent'] || h['User-Agent'] || ctx.ua,
+      };
+      for (const x of Object.values(v)) walk(x, next, depth + 1);
+    }
+  };
+  walk(body, {}, 0);
+  return out;
+}
+
 export function createRapidStream({
   apiKey = '', host = 'football-live-streaming-api.p.rapidapi.com', cacheSeconds = 120, maxPages = 5,
-  fetchImpl = globalThis.fetch, log = () => {},
+  listPath = '/matches?status=live&page={page}', streamPath = '', fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const enabled = !!apiKey;
   let cache = { at: 0, matches: [], error: null, pages: 0 };
   let inflight = null;
   const usage = { requests: 0, day: '' };
 
-  async function page(n) {
+  async function get(path) {
     const day = new Date().toISOString().slice(0, 10);
     if (usage.day !== day) { usage.day = day; usage.requests = 0; }
     usage.requests += 1;
-    const res = await fetchImpl(`https://${host}/matches?status=live&page=${n}`, {
+    const res = await fetchImpl(`https://${host}${path}`, {
       headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': host, Accept: 'application/json' },
       signal: AbortSignal.timeout(15_000),
     });
@@ -194,6 +247,8 @@ export function createRapidStream({
     if (!res.ok) throw new Error(`HTTP ${res.status}${body?.message ? `: ${String(body.message).slice(0, 120)}` : ''}`);
     return body || {};
   }
+  const page = (n) => get(listPath.replace('{page}', String(n)));
+  const paged = listPath.includes('{page}');
 
   /** Every live match the API lists (cached). */
   async function liveMatches({ fresh = false } = {}) {
@@ -208,8 +263,9 @@ export function createRapidStream({
         for (; n <= maxPages; n++) {
           const body = await page(n);
           pages += 1;
-          matches.push(...(Array.isArray(body.matches) ? body.matches : []));
-          if (!body.pagination?.hasNext) break;
+          // Live ones only (a list with every status gives "Live" / "live" games and the rest).
+          matches.push(...listOf(body).map(normalizeMatch).filter((m) => m && (!m.match_status || m.match_status === 'live')));
+          if (!paged || !body.pagination?.hasNext) break;
         }
         cache = { at: Date.now(), matches, error: null, pages };
       } catch (err) {
@@ -244,12 +300,25 @@ export function createRapidStream({
     return best && { ...best, match: { ...best.match, servers } };
   }
 
+  const details = new Map(); // id → { at, servers }
+  async function detailServers(id) {
+    const hit = details.get(id);
+    if (hit && Date.now() - hit.at < cacheSeconds * 1000) return hit.servers;
+    let servers = [];
+    try { servers = findStreams(await get(streamPath.replace('{id}', encodeURIComponent(String(id))))); } catch (err) { log(`RapidAPI streaming ${id}: ${err.message}`); }
+    details.set(id, { at: Date.now(), servers });
+    if (details.size > 300) for (const [k, v] of details) if (Date.now() - v.at > cacheSeconds * 1000) details.delete(k);
+    return servers;
+  }
+
   /** The playable streams for one of our live games: { servers: [{ name, url }], match } or { error }. */
   async function streamsFor(home, away) {
     const c = await liveMatches();
     if (!c.matches.length && c.error) return { error: c.error, servers: [] };
     const found = findMatch(c.matches, home, away);
     if (!found) return { servers: [], error: 'jogo não encontrado na API de transmissões' };
+    // An API that lists games without their links: the game's own route gives them (cached too).
+    if (!found.match.servers.length && streamPath && found.match.id) found.match.servers = await detailServers(found.match.id);
     const servers = playableServers(found.match.servers);
     return {
       servers, score: found.score,
@@ -258,10 +327,29 @@ export function createRapidStream({
     };
   }
 
+  /**
+   * Admin tool: any GET route of the configured API host, answered as it comes (status, JSON or a
+   * slice of the text), to learn a new API's shape from the server (which can reach it).
+   */
+  async function raw(path) {
+    const p = String(path || '/');
+    if (!/^\/[\w\-./?=&%:,+]*$/.test(p) || p.includes('..')) throw new Error('caminho inválido (comece por /)');
+    usage.requests += 1;
+    const t0 = Date.now();
+    const res = await fetchImpl(`https://${host}${p}`, {
+      headers: { 'X-RapidAPI-Key': apiKey, 'X-RapidAPI-Host': host, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* not JSON */ }
+    return { host, path: p, status: res.status, ms: Date.now() - t0, contentType: res.headers.get('content-type'), bytes: text.length, json: json ?? undefined, text: json ? undefined : text.slice(0, 3000) };
+  }
+
   const status = () => ({
     enabled, host, cachedAt: cache.at ? new Date(cache.at).toISOString() : null, matches: cache.matches.length,
     pages: cache.pages, error: cache.error, requestsToday: usage.requests, cacheSeconds,
   });
 
-  return { enabled, liveMatches, findMatch, streamsFor, status, rank: (servers) => rankServers(servers, { fetchImpl }) };
+  return { enabled, liveMatches, findMatch, streamsFor, status, raw, rank: (servers) => rankServers(servers, { fetchImpl }) };
 }

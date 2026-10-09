@@ -592,10 +592,13 @@ function adminFeed(f) {
   <div class="panel">${winhousePanel(f.winhouse)}</div>
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
-      : 'Defina <strong>RAPIDAPI_KEY</strong> nas Variables do Railway (a chave do RapidAPI) e faça redeploy.'}</p>
+      : 'Defina <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI) e <strong>RAPIDAPI_STREAM_HOST</strong> (o host da API, ex.: football-live-stream-api.p.rapidapi.com) nas Variables do Railway e faça redeploy.'}</p>
     ${f.rapidStream ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="rapid-test">Testar transmissões</button>
       <button class="ghost-btn btn-sm" data-action="rapid-test" data-fresh="1">Testar (ler agora, gasta pedidos)</button>
       <button class="ghost-btn btn-sm" data-action="rapid-copy">Copiar resultado</button></div>
+      <div class="form-actions"><label class="field adm-inline">Rota da API <input id="rapidPath" value="/" placeholder="/matches?status=live"></label>
+        <button class="ghost-btn btn-sm" data-action="rapid-raw">Chamar rota</button></div>
+      <p class="muted">Chama essa rota da API configurada (RAPIDAPI_STREAM_HOST) a partir do servidor e mostra a resposta tal como vem. Serve para conhecer uma API nova.</p>
       <pre class="raw-odds hidden" id="rapidOut"></pre>` : ''}</div>`;
 }
 
@@ -1088,6 +1091,11 @@ document.addEventListener('click', async (e) => {
     box.classList.remove('hidden');
     box.textContent = 'A consultar…';
     try { box.textContent = JSON.stringify(await api(`/api/admin/rapidstream${actionEl.dataset.fresh ? '?fresh=1' : ''}`), null, 2); } catch (err) { box.textContent = err.message; }
+  } else if (action === 'rapid-raw') {
+    const box = $('#rapidOut');
+    box.classList.remove('hidden');
+    box.textContent = 'A chamar…';
+    try { box.textContent = JSON.stringify(await api(`/api/admin/rapidstream/raw?path=${encodeURIComponent($('#rapidPath').value || '/')}`), null, 2); } catch (err) { box.textContent = err.message; }
   } else if (action === 'rapid-copy') {
     try { await navigator.clipboard.writeText($('#rapidOut')?.textContent || ''); toast('Copiado'); } catch { toast('Erro', 'Não foi possível copiar automaticamente.', 'error'); }
   } else if (action === 'winhouse-copy') {

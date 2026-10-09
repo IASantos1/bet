@@ -1679,6 +1679,14 @@ export function createApp(db, {
   });
 
   // Trial video source: what the RapidAPI streaming API lists now and which of our live games it covers.
+  // Any route of the configured streaming API, as it answers (to learn a new API's shape).
+  admin.get('/rapidstream/raw', async (req, res, next) => {
+    try {
+      if (!rapidStream?.enabled) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
+      res.json(await rapidStream.raw(String(req.query.path || '/')));
+    } catch (err) { if (/caminho/.test(err.message)) return next(new HttpError(400, err.message)); res.json({ error: err.message }); }
+  });
+
   admin.get('/rapidstream', async (req, res, next) => {
     try {
       if (!rapidStream?.enabled) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
