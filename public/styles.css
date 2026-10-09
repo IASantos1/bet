@@ -1122,3 +1122,36 @@ img, video, iframe { max-width: 100%; }
 .cg-rel-art { aspect-ratio: 2 / 3; }
 #cgRelated .car-track { grid-auto-columns: 130px; }
 .cg-rel-art { position: relative; }
+
+/* Casino lobby: a row of games per section, scrolled sideways; bigger cards. */
+.game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px 14px; }
+@media (max-width: 1250px) { .game-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .game-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; } }
+.casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 3 * 14px) / 4); gap: 14px; }
+@media (min-width: 1100px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 4 * 14px) / 5); } }
+@media (min-width: 1600px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 5 * 14px) / 6); } }
+@media (max-width: 700px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: 40vw; gap: 10px; } }
+.casino-row .game-card .game-art, #homeCasino .game-card .game-art { box-shadow: 0 4px 12px rgba(0, 0, 0, .35); }
+.casino-row .car-track, #homeCasino .car-track { padding: 4px 2px 8px; }
+.casino-row .car-btn, #homeCasino .car-btn { top: calc(50% - 22px); }
+.link-btn { border: 0; background: none; color: var(--text-2); font-weight: 800; font-size: 12px; padding: 4px 0; cursor: pointer; }
+.link-btn:hover { color: var(--text); }
+
+/* Casino pages: no sports menu (left) nor bet slip (right) on wide screens; the games use the width. */
+@media (min-width: 761px) {
+  .casino-mode .layout { grid-template-columns: minmax(0, 1fr); max-width: 1600px; }
+  .casino-mode .left-sidebar, .casino-mode .betslip { display: none !important; }
+}
+.casino-mode .slip-fab { display: none !important; }
+@media (min-width: 761px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 4 * 14px) / 5); }
+  .casino-mode .game-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 6 * 14px) / 7); }
+  .casino-mode .game-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
+@media (min-width: 1500px) {
+  .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 7 * 14px) / 8); }
+  .casino-mode .game-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}

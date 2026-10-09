@@ -101,6 +101,7 @@ function setupFeed(lists) {
     prematch24h: async () => ({ ok: false, status: 500 }),
     prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
     liveEvent: async (id) => (lists.livePages?.[id] ? { ok: true, status: 200, body: lists.livePages[id] } : { ok: false, status: 404 }),
+    tracker: async (id) => (lists.trackers?.[id] ? { ok: true, status: 200, body: lists.trackers[id] } : { ok: false, status: 404 }),
   };
   const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
   const { lastInsertRowid } = db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p@x.pt', 'P', '1990-01-01', 'x', ?)").run(nowIso());
@@ -140,6 +141,32 @@ test('live: in-play prices from the list; a match that leaves it at full time is
   assert.equal(t.betStatus(onAway), 'open');
   const queue = createSettlementEngine(t.db).queue();
   assert.ok(queue.some((q) => q.id === t.row(2).id && /WinHouse/.test(q.reason)));
+});
+
+test('a match flagged for review is settled when the tracker says it is over (score not lower than the last seen)', async () => {
+  const lists = { live: [football(3, 70, '1-0', ODD), football(4, 70, '0-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(3, '1x2', '1');
+  const onDraw = t.bet(4, '1x2', 'X');
+  lists.live = [];
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.ok(t.row(3).review_reason && t.row(4).review_reason);
+  // 3: the tracker still shows the 2nd half; 4: it says full time, 0-0.
+  lists.trackers = { 3: { status: 'inprogress', period: '2', home_score: 1, away_score: 0 }, 4: { status: 'Ended', home_score: 0, away_score: 0 } };
+  const now = Date.now();
+  assert.deepEqual(await t.feed.confirmReviews({ now }), { asked: 2, confirmed: 1 });
+  assert.equal(t.row(4).status, 'finished');
+  assert.equal(t.betStatus(onDraw), 'won');
+  assert.equal(t.row(3).status, 'live');
+  // Asked again only after 5 minutes; a lower score than the last one seen is not trusted.
+  lists.trackers[3] = { status: 'Ended', home_score: 0, away_score: 0 };
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 60_000 }), { asked: 0, confirmed: 0 });
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 6 * 60_000 }), { asked: 1, confirmed: 0 });
+  lists.trackers[3] = { status: 'Ended', home_score: 1, away_score: 0 };
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 12 * 60_000 }), { asked: 1, confirmed: 1 });
+  assert.equal(t.betStatus(onHome), 'won');
 });
 
 test('ice hockey: overtime means a regulation draw — 1X2 settles on it', async () => {
@@ -295,11 +322,12 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
 
   // The feed reads the pages of games starting soon and keeps the lists' prices on top.
   const future = (id, hours) => ({ ...football(id, 0, '', ODD), id, ...when(-hours * 3_600_000), current_minute: '' });
-  const lists = { live: [], pre: [future(10, 3), future(11, 30)], pages: { 10: page } };
+  const lists = { live: [], pre: [future(10, 3), future(11, 50), future(12, 30)], pages: { 10: page, 12: page } };
   const t = setupFeed(lists);
   await t.feed.syncPrematch();
   const d = await t.feed.syncDetails();
-  assert.deepEqual([d.window, d.due, d.read, d.failed], [1, 1, 1, 0]); // game 11 starts in 30 h: outside the window
+  // Football is read up to 48 h ahead (the bet builder cards need its markets): 12 (30 h) yes, 11 (50 h) no.
+  assert.deepEqual([d.window, d.due, d.read, d.failed], [2, 2, 2, 0]);
   const active = (ext) => Object.fromEntries(t.db.prepare('SELECT market, code, odds_x100 FROM selections WHERE event_id = ? AND active = 1').all(t.row(ext).id).map((r) => [`${r.market}|${r.code}`, r.odds_x100]));
   const a = active(10);
   assert.equal(a['btts|Y'], 192);
@@ -320,7 +348,7 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
     prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
   };
   const restarted = createWinHouseFeed(t.db, { client: client2, tzOffsetMinutes: 60 });
-  assert.equal(restarted.status().restored.prematch, 2);
+  assert.equal(restarted.status().restored.prematch, 3);
   const saved = lists.pages;
   lists.pages = {};
   await restarted.syncPrematch();
@@ -332,6 +360,24 @@ test('game pages: every settleable market of a game (lines, handicaps, BTTS, odd
   const again = await restarted.syncDetails();
   assert.equal(again.read, 1);
   assert.equal(active(10)['btts|Y'], 210);
+});
+
+test('goal totals in Portuguese ("Mais" / "Menos", "mais de 2,5", "Acima (3.5)") are read; a game page is read when a player opens it', async () => {
+  const o = (opt, special, odd = '1.9') => ({ id: 1, odd, market_id: '1018', market: 'Total de Golos [TG_O/U]', market_option: `${opt} `, special_value: special });
+  const page = [[o('Mais', '2.5'), o('Menos', '2.5'), o('mais de 1,5', null), o('menos de 1,5', null), o('Acima (3.5)', null), o('Abaixo (3.5)', null)]];
+  assert.deepEqual(Object.keys(pricesFor(detailOdds(page), 'futebol')).sort(), ['ou|O1.5', 'ou|O2.5', 'ou|O3.5', 'ou|U1.5', 'ou|U2.5', 'ou|U3.5']);
+
+  // A game 5 days ahead: outside the background reads; opening it reads its page once.
+  const far = { ...football(20, 0, '', ODD), id: 20, ...when(-5 * 86_400_000), current_minute: '' };
+  const lists = { live: [], pre: [far], pages: { 20: page } };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  assert.equal((await t.feed.syncDetails()).due, 0);
+  const has = (k) => !!t.db.prepare("SELECT 1 FROM selections WHERE event_id = ? AND market || '|' || code = ? AND active = 1").get(t.row(20).id, k);
+  assert.equal(has('ou|O3.5'), false);
+  assert.equal(await t.feed.readPageNow(t.row(20).id), true);
+  assert.equal(has('ou|O3.5'), true);
+  assert.equal(await t.feed.readPageNow(t.row(20).id), false, 'not read again before the refresh time');
 });
 
 test('every other market of a page becomes an operator-settled selection', async () => {

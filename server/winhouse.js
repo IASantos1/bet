@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
+import { normalizeWidgetData } from './whtracker.js';
 
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
@@ -604,7 +605,11 @@ const exactScore = (sel) => { const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(St
 
 /** "over 2.5" / "under 2.5" (also translated wordings) → ['O', 2.5]. */
 function overUnder(sel) {
-  const m = /^(over|under|mais de|menos de|acima de|abaixo de|o|u)\s*([\d.,]+)$/i.exec(String(sel).trim());
+  // "over 2.5", "Mais 2.5", "mais de 2,5", "Acima (2.5)", "2.5 Mais"… (the book answers in Portuguese).
+  const s = String(sel).toLowerCase().replace(/[()[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  const WORD = '(over|under|mais(?: de)?|menos(?: de)?|acima(?: de)?|abaixo(?: de)?|o|u)';
+  let m = new RegExp(`^${WORD}\\s*([\\d.,]+)$`, 'i').exec(s);
+  if (!m) { const r = new RegExp(`^([\\d.,]+)\\s*${WORD}$`, 'i').exec(s); if (r) m = [r[0], r[2], r[1]]; }
   if (!m) return null;
   const side = /^(over|mais|acima|o)/i.test(m[1]) ? 'O' : 'U';
   const line = Number(m[2].replace(',', '.'));
@@ -802,7 +807,7 @@ export function finishVerdict(row) {
 
 export function createWinHouseFeed(db, {
   client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined,
-  detailHours = 12, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
+  detailHours = 12, footballDetailHours = 48, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
   futureDays = 0, futureMinutes = 10,
 } = {}) {
   // Per sport, the competitions shown (a sport left undefined shows all of its own).
@@ -1087,6 +1092,44 @@ export function createWinHouseFeed(db, {
     return { finished, review };
   }
 
+  /**
+   * Matches flagged for review when they left the live list (e.g. before the 88th minute): the
+   * match tracker is asked again (each game at most every 5 minutes, 5 games a run). When it says
+   * the match is over and gives a score not lower than the last one seen, that score settles it.
+   */
+  const TRACKER_ENDED = /\b(ended|finished|full.?time|ft|aet|ap|after (extra|over)time|after penalties|terminad[oa]|final|fim)\b/i;
+  const reviewAsked = new Map();
+  async function confirmReviews({ now = Date.now() } = {}) {
+    if (typeof client.tracker !== 'function') return { asked: 0, confirmed: 0 };
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' AND review_reason IS NOT NULL
+      AND sport IN ('futebol', 'andebol', 'futsal') ORDER BY start_time LIMIT 50`).all(SOURCE);
+    let asked = 0;
+    let confirmed = 0;
+    for (const row of rows) {
+      if (asked >= 5 || now - (reviewAsked.get(row.id) || 0) < 5 * 60_000) continue;
+      reviewAsked.set(row.id, now);
+      asked += 1;
+      let s = null;
+      try {
+        const r = await client.tracker(row.external_id);
+        if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) s = normalizeWidgetData(r.body);
+      } catch { /* asked again in 5 minutes */ }
+      if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) continue;
+      const h = s.homeScore;
+      const a = s.awayScore;
+      if (!Number.isInteger(h) || !Number.isInteger(a) || h < (row.home_score ?? 0) || a < (row.away_score ?? 0)) continue;
+      tx(db, () => {
+        const r = db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, review_reason = NULL,
+            clock = 'Final', updated_at = ? WHERE id = ? AND status = 'live'`).run(h, a, resultCode(h, a), nowIso(), row.id);
+        if (r.changes) settleEvent(db, row.id, { source: 'feed', note: 'WinHouse: resultado final confirmado pelo tracker' });
+      });
+      reviewAsked.delete(row.id);
+      confirmed += 1;
+    }
+    if (confirmed) log(`WinHouse: ${confirmed} jogo(s) em revisão confirmados pelo tracker`);
+    return { asked, confirmed };
+  }
+
   // Future games: each sport's full list, every `futureMinutes` (sooner than prices go stale).
   // `futureDays` may be a function (the admin setting, read on every run).
   const futureDaysNow = () => Math.min(90, Math.max(0, Number(typeof futureDays === 'function' ? futureDays() : futureDays) || 0));
@@ -1172,11 +1215,56 @@ export function createWinHouseFeed(db, {
    * read (or read longest ago) first, at most `detailPerCycle` per run, each again after
    * `detailRefreshMinutes`.
    */
+  /** One game's page → its markets (written over the list's). The number of markets, or null when it failed. */
+  async function readPage(r) {
+    try {
+      const res = await client.prematchEvent(r.external_id);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const odds = detailOdds(res.body);
+      const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
+      pagePrices.set(r.external_id, { at: Date.now(), prices });
+      tx(db, () => {
+        const row = db.prepare('SELECT status FROM events WHERE id = ?').get(r.id);
+        if (row?.status !== 'scheduled') return; // started meanwhile: the live list owns it
+        writePrices(r.id, { ...prices, ...(listPrices.get(r.external_id) || {}) });
+      });
+      return new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
+    } catch (err) {
+      pagePrices.set(r.external_id, { at: Date.now() - detailRefreshMinutes * 30_000, prices: pagePrices.get(r.external_id)?.prices || {} }); // retry in half the time
+      log(`WinHouse página ${r.external_id}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * A player opens a game page: a game whose page was not read lately (further ahead than the
+   * background reads go, or not reached yet) is read now, so every market (goal totals, both teams
+   * to score…) is there. At most 30 such reads a minute; one at a time per game.
+   */
+  const onDemand = { minute: 0, n: 0, busy: new Map() };
+  async function readPageNow(eventId) {
+    const r = db.prepare("SELECT id, sport, external_id FROM events WHERE id = ? AND source = ? AND status = 'scheduled'").get(Number(eventId), SOURCE);
+    if (!r) return false;
+    const p = pagePrices.get(r.external_id);
+    if (p && Date.now() - p.at < detailRefreshMinutes * 60_000) return false;
+    if (onDemand.busy.has(r.id)) return onDemand.busy.get(r.id);
+    const minute = Math.floor(Date.now() / 60_000);
+    if (minute !== onDemand.minute) { onDemand.minute = minute; onDemand.n = 0; }
+    if (onDemand.n >= 30) return false;
+    onDemand.n += 1;
+    const job = readPage(r).then((n) => n !== null).finally(() => onDemand.busy.delete(r.id));
+    onDemand.busy.set(r.id, job);
+    return job;
+  }
+
   async function syncDetails() {
     const until = new Date(Date.now() + detailHours * 3600_000).toISOString();
+    // Football further ahead: its page brings the goal totals and the other markets that the
+    // "Construa o seu ganho" cards (next 48 h) are made of.
+    const untilFootball = new Date(Date.now() + Math.max(detailHours, footballDetailHours) * 3600_000).toISOString();
     const now = Date.now();
-    const rows = db.prepare(`SELECT id, sport, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ? AND start_time <= ?
-      ORDER BY start_time`).all(SOURCE, nowIso(), until);
+    const rows = db.prepare(`SELECT id, sport, external_id FROM events WHERE source = ? AND status = 'scheduled' AND start_time > ?
+      AND (start_time <= ? OR (sport = 'futebol' AND start_time <= ?)) ORDER BY start_time`).all(SOURCE, nowIso(), until, untilFootball);
     for (const ext of [...pagePrices.keys()]) if (!rows.some((r) => r.external_id === ext)) { pagePrices.delete(ext); listPrices.delete(ext); }
     const due = rows.filter((r) => { const p = pagePrices.get(r.external_id); return !p || now - p.at >= detailRefreshMinutes * 60_000; })
       .sort((a, b) => (pagePrices.get(a.external_id)?.at ?? 0) - (pagePrices.get(b.external_id)?.at ?? 0))
@@ -1185,24 +1273,8 @@ export function createWinHouseFeed(db, {
     let markets = 0;
     let failed = 0;
     for (const r of due) {
-      try {
-        const res = await client.prematchEvent(r.external_id);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const odds = detailOdds(res.body);
-        const prices = { ...extraPrices(odds, { sport: r.sport }), ...pricesFor(odds, r.sport) };
-        pagePrices.set(r.external_id, { at: Date.now(), prices });
-        read += 1;
-        markets += new Set(Object.keys(prices).map((k) => k.split('|')[0])).size;
-        tx(db, () => {
-          const row = db.prepare('SELECT status FROM events WHERE id = ?').get(r.id);
-          if (row?.status !== 'scheduled') return; // started meanwhile: the live list owns it
-          writePrices(r.id, { ...prices, ...(listPrices.get(r.external_id) || {}) });
-        });
-      } catch (err) {
-        failed += 1;
-        pagePrices.set(r.external_id, { at: Date.now() - detailRefreshMinutes * 30_000, prices: pagePrices.get(r.external_id)?.prices || {} }); // retry in half the time
-        log(`WinHouse página ${r.external_id}: ${err.message}`);
-      }
+      const n = await readPage(r);
+      if (n === null) failed += 1; else { read += 1; markets += n; }
     }
     state.last.details = { at: nowIso(), due: due.length, read, failed, markets, cached: pagePrices.size, window: rows.length };
     return state.last.details;
@@ -1320,8 +1392,9 @@ export function createWinHouseFeed(db, {
     const details = guard('páginas dos jogos', syncDetails);
     const liveDetails = guard('páginas ao vivo', syncLiveDetails);
     const streams = guard('streams', syncStreams);
+    const reviews = guard('revisão', confirmReviews);
     live().then(pre).then(details).then(liveDetails).then(streams);
-    const timers = [setInterval(streams, 60_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1335,5 +1408,5 @@ export function createWinHouseFeed(db, {
     futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }

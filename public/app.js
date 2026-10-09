@@ -398,6 +398,7 @@ function carousel(id, cards) {
 function homePage() {
   const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
   const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
+  if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   const hero = state.user
     ? `<div class="eyebrow">BEM-VINDO DE VOLTA</div><h1>Olá, ${esc(state.user.name.split(' ')[0])}.</h1><p>O seu saldo é <strong>${money(state.user.balance)}</strong>. Escolha um jogo e faça a sua aposta.</p>
        <div class="hero-actions"><a class="primary-btn" href="#/desporto">Explorar desporto</a><a class="outline-btn" href="#/perfil/carteira">Carteira</a></div>`
@@ -405,9 +406,10 @@ function homePage() {
        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
   return `<section class="hero"><div class="hero-copy">${hero}</div></section>
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
+    ${builderSection()}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
       ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
-    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div><div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div></section>
+    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${state.casinoLobby?.rows?.[0]?.games.length ? carousel('homeCasino', state.casinoLobby.rows[0].games.map(lobbyCard)) : `<div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div>`}</section>
     ${footer()}`;
 }
 
@@ -465,7 +467,8 @@ async function loadFeatured() {
   try {
     const f = await api('/api/featured');
     state.featured = { ...f, at: Date.now() };
-    if (currentRoute().page === 'desporto' && !currentRoute().sub) render({ keepScroll: true });
+    const { page, sub } = currentRoute();
+    if ((page === 'desporto' && !sub) || page === 'home') render({ keepScroll: true });
   } catch { /* the board works without it */ } finally { featuredLoading = false; }
 }
 
@@ -592,6 +595,26 @@ function casinoGameCard(g, i) {
 
 const CASINO_PAGE = 24;
 
+/** A lobby card (BigBang): opens the game's page. */
+const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+    <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
+
+/** The casino's tabs: the lobby, the two orders over every game and each kind of game the lobby has. */
+function casinoTabs(f) {
+  const kinds = (state.casinoLobby?.rows || []).map((r) => [r.key, r.key === 'populares' ? 'Populares' : r.key === 'novos' ? 'Novos' : r.title]);
+  const tabs = state.casino.bigbang && kinds.length ? [['', 'Início'], ...kinds] : [['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']];
+  return tabs.map(([k, l]) => `<button class="casino-tab${f.category === k ? ' active' : ''}" data-casino-cat="${k}">${esc(l)}</button>`).join('');
+}
+
+async function loadCasinoLobby() {
+  try {
+    state.casinoLobby = await api('/api/casino/lobby');
+  } catch { state.casinoLobby = null; }
+  const { page, sub } = currentRoute();
+  if ((page === 'casino' && !sub) || page === 'home') render({ keepScroll: true });
+}
+
 function casinoPage() {
   const c = state.casino;
   if (!c.enabled) {
@@ -609,21 +632,24 @@ function casinoPage() {
       ${footer()}`;
   }
   const more = c.games.length < c.total;
+  // The lobby: a row of 10 games per section (most popular first), each with "Ver todos".
+  const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
+  const lobby = rows.map((r, i) => `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
+      <button class="link-btn" data-casino-cat="${esc(r.key)}">Ver todos (${r.total}) ›</button></div>
+      ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`).join('');
   return `<div class="page-title"><h1>Casino</h1><p>${c.total} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
     <div class="casino-filters">
-      <div class="casino-tabs">
-        ${[['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']].map(([k, l]) => `<button class="casino-tab${f.category === k ? ' active' : ''}" data-casino-cat="${k}">${l}</button>`).join('')}
-      </div>
+      <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
     </div>
     <div class="sport-strip">
       <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
       ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
     </div>
-    <section class="section">
+    ${lobby || `<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
-    </section>
+    </section>`}
     ${footer()}`;
 }
 
@@ -1804,6 +1830,8 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 5_000);
   }
   document.body.classList.toggle('immersive', immersive);
+  // The casino has no sports menu nor bet slip: its pages take the whole width.
+  document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
   // Carousels keep their position when the page refreshes itself (odds, live scores).
   const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
   const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();
@@ -2069,6 +2097,8 @@ document.addEventListener('click', async (e) => {
   // a country above keeps it open).
   if (e.target.closest('#leftSidebar a[href]:not([data-sport-link])')) setSideMenu(false);
 
+  const gameId = e.target.closest('[data-game-id]');
+  if (gameId) { location.hash = `#/casino/jogo/${gameId.dataset.gameId}`; return; }
   const game = e.target.closest('[data-game]');
   if (game && !game.matches('form')) {
     // BigBang: the game's own page first (Jogar / Testar); the older aggregator opens it straight away.
@@ -2098,7 +2128,7 @@ document.addEventListener('click', async (e) => {
   const cgPlay = e.target.closest('[data-cg-play]');
   if (cgPlay) { playCasino(cgPlay.dataset.cgPlay); return; }
   const cat = e.target.closest('[data-casino-cat]');
-  if (cat) { state.casinoFilter.category = cat.dataset.casinoCat; loadCasino({ reset: true }); return; }
+  if (cat) { state.casinoFilter.category = cat.dataset.casinoCat; loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
   const prov = e.target.closest('[data-casino-prov]');
   if (prov) { state.casinoFilter.provider = prov.dataset.casinoProv; loadCasino({ reset: true }); return; }
 
@@ -2946,6 +2976,7 @@ async function init() {
   if (state.user?.casinoActive && !(currentRoute().page === 'casino' && currentRoute().sub === 'jogar')) closeCasino();
   render();
   loadCasino({ reset: true });
+  loadCasinoLobby();
   await refreshEvents();
   loadLeagues();
   setInterval(() => { if (!document.hidden) loadLeagues(); }, 60_000);

@@ -187,6 +187,8 @@ export const config = {
     // WINHOUSE_DETAIL_HOURS, up to WINHOUSE_DETAIL_PER_CYCLE pages a minute, each again after
     // WINHOUSE_DETAIL_REFRESH_MINUTES. WINHOUSE_DETAIL_PER_CYCLE=0 turns it off.
     detailHours: Math.max(1, int(env.WINHOUSE_DETAIL_HOURS, 12)),
+    // Football pages up to WINHOUSE_FOOTBALL_DETAIL_HOURS ahead (the bet builder cards need their markets).
+    footballDetailHours: Math.max(1, int(env.WINHOUSE_FOOTBALL_DETAIL_HOURS, 48)),
     detailPerCycle: Math.max(0, int(env.WINHOUSE_DETAIL_PER_CYCLE, 20)),
     detailRefreshMinutes: Math.max(5, int(env.WINHOUSE_DETAIL_REFRESH_MINUTES, 30)),
     // In play the same from each live game's page: up to WINHOUSE_LIVE_DETAIL_PER_CYCLE pages every
@@ -196,6 +198,9 @@ export const config = {
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
+    // A bet leg still open this long after its game's start (no result came, or nobody decided an
+    // operator market) is voided: the stake goes back instead of the ticket staying open forever.
+    noResultVoidHours: Math.max(12, int(env.NO_RESULT_VOID_HOURS, 72)),
   },
 
   // In-play bets on feed matches are refused when the last live price is older than this.

@@ -108,3 +108,29 @@ test('queue flags overdue and long-running live matches with what is at stake', 
   assert.equal(s.maxLiability, 20);
   db.close();
 });
+
+test('no ticket stays open forever: legs without a result 72 h after the start are voided', () => {
+  const { db, event, bet, balance } = setup();
+  const neverLive = event();
+  const review = event({ status: 'live' });
+  const finished = event();
+  const recent = event();
+  db.prepare("INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, 'x', 'x|1500~Cantos~Mais de (8.5)', 180)").run(finished);
+  bet(neverLive);
+  bet(review);
+  bet(finished, 'x', 'x|1500~Cantos~Mais de (8.5)', 1.8);
+  bet(recent);
+  db.prepare('UPDATE events SET start_time = ? WHERE id IN (?, ?, ?)').run(iso(-73 * H), neverLive, review, finished);
+  db.prepare("UPDATE events SET review_reason = 'WinHouse: saiu do ao vivo ao minuto 80' WHERE id = ?").run(review);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 1, away_score = 0, start_time = ? WHERE id = ?").run(iso(-73 * H), finished);
+  db.prepare('UPDATE events SET start_time = ? WHERE id = ?').run(iso(-10 * H), recent);
+  const engine = createSettlementEngine(db);
+  assert.match(engine.queue().find((q) => q.id === recent).reason, /anulação automática em 62 h/);
+  assert.deepEqual(engine.runOnce(), { settled: 0, voided: 3 });
+  assert.equal(balance(), 9_000, 'three stakes back, the recent one still open');
+  assert.equal(db.prepare('SELECT status FROM events WHERE id = ?').get(neverLive).status, 'cancelled');
+  assert.equal(db.prepare('SELECT status FROM events WHERE id = ?').get(finished).status, 'finished', 'a finished game keeps its result');
+  assert.deepEqual(db.prepare("SELECT status FROM bets ORDER BY id").all().map((b) => b.status), ['void', 'void', 'void', 'open']);
+  assert.deepEqual(engine.runOnce(), { settled: 0, voided: 0 }, 'idempotent');
+  db.close();
+});

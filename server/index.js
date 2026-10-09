@@ -66,7 +66,7 @@ if (propline.enabled) console.log(`[propline] ligado: ${propline.status().sports
 const winhouse = createWinHouseClient({ ...config.winhouse, log: (msg) => console.log(`[winhouse] ${msg}`) });
 // WinHouse as the data source: events, scores, odds and results (Bzzoiro stays off without its token).
 const winhouseFeed = winhouse.enabled && config.winhouse.feed
-  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, blockMinor: config.winhouse.blockMinor, blockLeagues: config.winhouse.blockLeagues, footballLeagues: config.winhouse.footballLeagues, basketballLeagues: config.winhouse.basketballLeagues, tennisLeagues: config.winhouse.tennisLeagues, detailHours: config.winhouse.detailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, futureDays: () => getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays), futureMinutes: config.winhouse.futureMinutes, liveDetailPerCycle: config.winhouse.liveDetailPerCycle, liveDetailSeconds: config.winhouse.liveDetailSeconds, onOdds: (id) => winhouseTracker?.bus.emit(`e:${id}`, { type: 'odds', data: { at: new Date().toISOString() } }), log: (msg) => console.warn(`[winhouse] ${msg}`) })
+  ? createWinHouseFeed(db, { client: winhouse, tzOffsetMinutes: config.winhouse.tzOffsetMinutes, finishConfirmSeconds: config.winhouse.finishConfirmSeconds, blockWomen: config.winhouse.blockWomen, blockYouth: config.winhouse.blockYouth, blockMinor: config.winhouse.blockMinor, blockLeagues: config.winhouse.blockLeagues, footballLeagues: config.winhouse.footballLeagues, basketballLeagues: config.winhouse.basketballLeagues, tennisLeagues: config.winhouse.tennisLeagues, detailHours: config.winhouse.detailHours, footballDetailHours: config.winhouse.footballDetailHours, detailPerCycle: config.winhouse.detailPerCycle, detailRefreshMinutes: config.winhouse.detailRefreshMinutes, futureDays: () => getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays), futureMinutes: config.winhouse.futureMinutes, liveDetailPerCycle: config.winhouse.liveDetailPerCycle, liveDetailSeconds: config.winhouse.liveDetailSeconds, onOdds: (id) => winhouseTracker?.bus.emit(`e:${id}`, { type: 'odds', data: { at: new Date().toISOString() } }), log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 // WinHouse match tracker (football in play): stats, ball and timeline, read only for watched matches.
 const winhouseTracker = winhouse.enabled && config.winhouse.tracker
@@ -90,6 +90,7 @@ const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`
 
 const settlement = createSettlementEngine(db, {
   postponedVoidHours: config.settlement.postponedVoidHours,
+  noResultVoidHours: config.settlement.noResultVoidHours,
   log: (msg) => console.log(`[liquidação] ${msg}`),
 });
 const stopSettlement = settlement.start();

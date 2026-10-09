@@ -6,6 +6,9 @@
 //      (e.g. the process stopped half-way, or a result was set outside the normal paths).
 //   2. Postponed matches — a match the provider reported postponed and that has not been
 //      rescheduled within POSTPONED_VOID_HOURS (default 48 h) is voided: stakes are refunded.
+//   3. No result — a leg still open NO_RESULT_VOID_HOURS (default 72 h) after its game's start
+//      (the feed never gave a final score, or an operator market was never decided) is voided,
+//      so no ticket stays open forever. Until then it waits in the queue with the time left.
 //
 // Needing attention (admin → Liquidação): live for too long, overdue without a result, postponed
 // (with the time left before the automatic void). The operator settles them with a final score or
@@ -14,13 +17,13 @@
 // Results themselves come from the data feed (feed.js) or from the admin panel.
 
 import { nowIso, tx } from './db.js';
-import { settleEvent } from './betting.js';
+import { settleEvent, settleBet } from './betting.js';
 import { splitSpecial } from './markets.js';
 
 const H = 3_600_000;
 
 export function createSettlementEngine(db, {
-  postponedVoidHours = 48, stuckLiveHours = 4, overdueHours = 3, log = () => {},
+  postponedVoidHours = 48, stuckLiveHours = 4, overdueHours = 3, noResultVoidHours = 72, log = () => {},
 } = {}) {
   const state = { lastRun: null, lastResult: null, lastError: null };
 
@@ -44,6 +47,32 @@ export function createSettlementEngine(db, {
       tx(db, () => {
         db.prepare("UPDATE events SET status = 'cancelled', updated_at = ? WHERE id = ?").run(nowIso(), id);
         settleEvent(db, id, { source: 'engine', note: `Adiado há mais de ${postponedVoidHours} h sem nova data — apostas anuladas` });
+      });
+      voided += 1;
+    }
+
+    // No result in time: the game is called off for betting (scheduled / live), or its operator
+    // markets are voided (finished). Settled legs stay as they are.
+    const expired = db.prepare(
+      `SELECT DISTINCT e.id, e.status FROM events e JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
+        WHERE e.start_time <= ? AND e.status IN ('scheduled', 'live', 'finished')`
+    ).all(new Date(now - noResultVoidHours * H).toISOString());
+    for (const { id, status } of expired) {
+      tx(db, () => {
+        const note = `Sem resultado ${noResultVoidHours} h após o início — apostas em aberto anuladas`;
+        if (status !== 'finished') {
+          db.prepare("UPDATE events SET status = 'cancelled', updated_at = ? WHERE id = ?").run(nowIso(), id);
+          settleEvent(db, id, { source: 'engine', note });
+          return;
+        }
+        const legs = db.prepare("SELECT id, bet_id FROM bet_legs WHERE event_id = ? AND status = 'open'").all(id);
+        for (const l of legs) db.prepare("UPDATE bet_legs SET status = 'void' WHERE id = ?").run(l.id);
+        const betIds = [...new Set(legs.map((l) => l.bet_id))];
+        let paid = 0;
+        for (const b of betIds) paid += settleBet(db, b);
+        const ev = db.prepare('SELECT home_score, away_score FROM events WHERE id = ?').get(id);
+        db.prepare(`INSERT INTO settlements (event_id, action, home_score, away_score, bets_settled, payout_cents, source, user_id, note, created_at)
+          VALUES (?, 'void', ?, ?, ?, ?, 'engine', NULL, ?, ?)`).run(id, ev.home_score, ev.away_score, betIds.length, paid, `${note} (outros mercados)`, nowIso());
       });
       voided += 1;
     }
@@ -88,6 +117,10 @@ export function createSettlementEngine(db, {
         reason = `Adiado — anulação automática em ${Math.ceil(left / H)} h se não tiver nova data`;
       } else if (e.status === 'live') reason = `Ao vivo há mais de ${stuckLiveHours} h sem resultado`;
       else reason = `Devia ter começado há mais de ${overdueHours} h e não tem resultado`;
+      if (e.open_bets && !e.postponed_at) {
+        const left = new Date(e.start_time).getTime() + noResultVoidHours * H - now;
+        if (left > 0) reason += ` · anulação automática em ${Math.ceil(left / H)} h se não for decidido`;
+      }
       return {
         id: e.id, home: e.home, away: e.away, competition: e.competition, startTime: e.start_time, status: e.status,
         source: e.source, homeScore: e.home_score, awayScore: e.away_score, reason,
@@ -108,7 +141,7 @@ export function createSettlementEngine(db, {
       openBets: open.n, openStake: open.s / 100, maxLiability: open.p / 100,
       settledToday: settledToday.n, stakesSettledToday: settledToday.s / 100, paidToday: settledToday.p / 100,
       marginToday: (settledToday.s - settledToday.p) / 100,
-      lastRun: state.lastRun, lastResult: state.lastResult, postponedVoidHours,
+      lastRun: state.lastRun, lastResult: state.lastResult, postponedVoidHours, noResultVoidHours,
     };
   }
 
