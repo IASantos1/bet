@@ -1693,7 +1693,8 @@ export function createApp(db, {
     try {
       if (!rapidStream?.enabled) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
       const c = await rapidStream.liveMatches({ fresh: req.query.fresh === '1' });
-      const ours = db.prepare("SELECT id, home, away FROM events WHERE status = 'live' AND sport = 'futebol'").all();
+      // Live on the site: not the ones that already left WinHouse's live list (waiting to be settled).
+      const ours = db.prepare("SELECT id, home, away FROM events WHERE status = 'live' AND sport = 'futebol' AND wh_missing_since IS NULL").all();
       const covered = [];
       for (const e of ours) {
         const f = rapidStream.findMatch(c.matches, e.home, e.away);
