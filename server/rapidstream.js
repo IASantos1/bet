@@ -186,8 +186,10 @@ export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 2000
         return { buf: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'video/mp2t' };
       } catch { return null; }
     })();
-    const entry = { promise: p, done: null };
-    p.then((v) => { entry.done = v; if (!v && st.segs.get(url) === entry) { st.segs.delete(url); bySegment.delete(url); } });
+    // A segment that failed here stays listed (the playlist never shrinks under the player, which
+    // Safari takes for a broken stream); the proxy then asks the host for it directly.
+    const entry = { promise: p, done: null, settled: false };
+    p.then((v) => { entry.done = v; entry.settled = true; });
     return entry;
   }
 
@@ -236,7 +238,7 @@ export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 2000
       await Promise.race([Promise.all(all), new Promise((r) => { setTimeout(r, 6000).unref?.(); })]);
       st.served = true;
     }
-    const ready = new Set(st.list.filter((u) => st.segs.get(u)?.done));
+    const ready = new Set(st.list.filter((u) => st.segs.get(u)?.settled));
     if (!ready.size) return null;
     // Header lines as they are; each segment with its own tags, up to the first one not here yet.
     const out = [];
@@ -261,7 +263,7 @@ export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 2000
     const e = st?.segs.get(url);
     if (!e) return null;
     st.lastAsk = Date.now();
-    return e.done || (await e.promise);
+    return e.settled ? e.done : await e.promise;
   }
 
   const status = () => ({ streams: streams.size, segments: [...streams.values()].reduce((n, st) => n + [...st.segs.values()].filter((e) => e.done).length, 0) });

@@ -2778,21 +2778,38 @@ async function playRapid(el, servers, i, why = '') {
     } catch (err) { next(`flv: ${err.message}`); }
     return;
   }
-  const loadNative = () => {
+  let Hls = null;
+  const startHlsJs = () => startHlsJsFor(m, el, r, video, Hls, next);
+  const hlsJs = async () => {
+    try { Hls = Hls || await loadHlsJs(); } catch { /* none */ }
+    return m.rapid === r && m.streamEl === el && !!Hls?.isSupported();
+  };
+  const loadNative = (thenHlsJs) => {
     video.src = servers[i].url;
-    video.addEventListener('error', () => next(`hls nativo: erro ${video.error?.code ?? ''}`.trim()), { once: true });
+    video.addEventListener('error', async () => {
+      const why = `hls nativo: erro ${video.error?.code ?? ''}`.trim();
+      // The device's own player could not (e.g. decode error 3): hls.js on the same server next,
+      // where the device has it (iOS 17+), before giving up on the server.
+      if (thenHlsJs && m.rapid === r && await hlsJs()) { r.why = why; video.removeAttribute('src'); video.load(); return startHlsJs(); }
+      next(why);
+    }, { once: true });
   };
   // Safari / iOS play HLS themselves (well); elsewhere hls.js, even where the browser says it could
   // (Chrome on Android now does, but chokes on some live streams hls.js plays).
   const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|FxiOS|Edg|Android/.test(navigator.userAgent));
-  if (apple && video.canPlayType('application/vnd.apple.mpegurl')) return loadNative();
-  let Hls = null;
-  try { Hls = await loadHlsJs(); } catch { /* the browser's own HLS, if it has one */ }
-  if (m.rapid !== r || m.streamEl !== el) return;
-  if (!Hls?.isSupported()) {
-    if (video.canPlayType('application/vnd.apple.mpegurl')) return loadNative();
+  if (apple && video.canPlayType('application/vnd.apple.mpegurl')) return loadNative(true);
+  if (!(await hlsJs())) {
+    if (m.rapid !== r || m.streamEl !== el) return;
+    if (video.canPlayType('application/vnd.apple.mpegurl')) return loadNative(false);
     return next('este navegador não reproduz HLS');
   }
+  startHlsJs();
+}
+
+/** hls.js for server `r.i` in `video` (the one place the stream is wired to it). */
+function startHlsJsFor(m, el, r, video, Hls, next) {
+  const servers = r.servers;
+  const i = r.i;
   // Ordinary (not low-latency) live streams: start a few segments behind the edge, give up on a
   // dead playlist quickly, keep a modest buffer.
   const hls = new Hls({

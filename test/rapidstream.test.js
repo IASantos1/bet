@@ -300,3 +300,18 @@ test('stream relay: a master playlist is left to the proxy', async () => {
   assert.equal(relay.status().streams, 0);
   relay.stop();
 });
+
+test('stream relay: a segment that failed stays listed (no shrinking playlist); the proxy fetches it itself', async () => {
+  const { createStreamRelay } = await import('../server/rapidstream.js');
+  const fetchImpl = async (url) => {
+    if (url.endsWith('.m3u8')) return new Response('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\na.ts\n#EXTINF:2,\nb.ts\n#EXTINF:2,\nc.ts\n');
+    if (url.endsWith('b.ts')) return new Response('down', { status: 500 });
+    return new Response(Buffer.from('ok'));
+  };
+  const relay = createStreamRelay({ fetchImpl, everyMs: 1000 });
+  const pl = await relay.playlist('https://cdn.example.org/p.m3u8', {});
+  assert.match(pl.text, /a\.ts\n#EXTINF:2,\nb\.ts\n#EXTINF:2,\nc\.ts\n$/);
+  assert.equal(await relay.segment('https://cdn.example.org/b.ts'), null);
+  assert.equal((await relay.segment('https://cdn.example.org/c.ts')).buf.toString(), 'ok');
+  relay.stop();
+});
