@@ -52,7 +52,11 @@ export function builderConflict(legs) {
 const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 const shuffle = (arr, rng) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
-export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng = Math.random, now = () => Date.now() } = {}) {
+/**
+ * `prefetch(eventIds)`: asks the data feed for those games' full markets (their pages); used when the
+ * board does not fill six builder cards, so the next draw (a minute later) has more to choose from.
+ */
+export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng = Math.random, now = () => Date.now(), prefetch = null } = {}) {
   let cache = null; // { at, builders, accas } — selection ids only; prices and labels are read fresh
 
   const upcoming = (fromMs, untilMs) => db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
@@ -65,6 +69,7 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
     // The next 48 hours first; later games (up to 4 days) only when those do not fill six cards.
     const football = (from, until) => shuffle(upcoming(from, until).filter((e) => e.sport === 'futebol'), rng);
     const events = [...football(t + 10 * 60_000, t + 48 * 3600_000), ...football(t + 48 * 3600_000 - 1, t + 4 * 86_400_000)];
+    const lacking = []; // games with a result to bet on but without their page's markets yet
     for (const e of events) {
       if (out.length >= 6) break;
       const sels = selectionsOf(e.id);
@@ -72,6 +77,7 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
       const results = sels.filter((s) => s.market === '1x2' && s.odds_x100 <= 500);
       const goals = sels.filter((s) => s.market === 'ou' && GOAL_LINES.has(s.code));
       const seconds = SECOND.map((m) => ({ m, sels: sels.filter(m.match) })).filter((x) => x.sels.length);
+      if (results.length && (!goals.length || !seconds.length)) lacking.push(e.id);
       if (!results.length || !goals.length || !seconds.length) continue;
       for (let tries = 0; tries < 6; tries++) {
         const second = pick(seconds, rng);
@@ -82,6 +88,9 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
         const legs = [result, pick(options, rng), pick(goals, rng)];
         if (!builderConflict(legs)) { out.push({ eventId: e.id, legs: legs.map((l) => l.id), second: second.m.name }); break; }
       }
+    }
+    if (out.length < 6 && prefetch && lacking.length) {
+      try { prefetch(lacking.slice(0, 12)); } catch { /* the next draw tries again */ }
     }
     return out;
   }

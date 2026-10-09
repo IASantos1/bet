@@ -368,7 +368,10 @@ export function createApp(db, {
   const horizonMs = (min) => Math.max(min, futureDays()) * 86_400_000;
 
   // Ready-made bets for the sports page: bet builders and four-leg multiples (featured.js).
-  const featured = createFeatured(db);
+  const featured = createFeatured(db, {
+    // Fewer than six builder cards: the candidate games' pages are read now (their goal totals etc.).
+    prefetch: winhouseFeed?.readPageNow ? (ids) => { for (const id of ids) winhouseFeed.readPageNow(id).catch(() => {}); } : null,
+  });
   app.get('/api/featured', (_req, res) => res.json(featured.get()));
 
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).

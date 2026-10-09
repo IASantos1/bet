@@ -160,3 +160,21 @@ test('featured: a short draw (board still filling after a restart) is redrawn af
   t += 40_000;
   assert.equal(f.get().builders.length, 6);
 });
+
+test('featured: fewer than six builder cards asks for the pages of the games without goal totals', () => {
+  const db = openDb(':memory:');
+  const full = addEvent(db, { home: 'A', away: 'B' });
+  const bare = [1, 2, 3].map((i) => {
+    const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, created_at, updated_at)
+      VALUES ('futebol', 'Liga', ?, ?, ?, 'scheduled', ?, ?)`).run(`C${i}`, `D${i}`, new Date(Date.now() + 3 * 3600_000).toISOString(), nowIso(), nowIso()).lastInsertRowid);
+    // Only the list's markets: result and double chance, no goal totals yet.
+    for (const [m, c, o] of [['1x2', '1', 150], ['1x2', 'X', 380], ['1x2', '2', 600], ['dc', '1X', 110]]) {
+      db.prepare('INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)').run(id, m, c, o);
+    }
+    return id;
+  });
+  const asked = [];
+  const f = createFeatured(db, { rng: seeded(3), prefetch: (ids) => asked.push(...ids) }).get();
+  assert.deepEqual(f.builders.map((b) => b.eventId), [full]);
+  assert.deepEqual(asked.sort(), bare.sort());
+});
