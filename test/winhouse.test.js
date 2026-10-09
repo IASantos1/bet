@@ -380,6 +380,27 @@ test('goal totals in Portuguese ("Mais" / "Menos", "mais de 2,5", "Acima (3.5)")
   assert.equal(await t.feed.readPageNow(t.row(20).id), false, 'not read again before the refresh time');
 });
 
+test('game pages in Albanian (sipër / poshtë, po / jo, tek / çift): goal totals, both teams to score, odd / even and team totals are read', async () => {
+  const { extraPrices } = await import('../server/winhouse.js');
+  const o = (odd, mid, opt, special = null, market = 'm') => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });
+  const page = [
+    [o('1.62', 1018, 'sipër', '2.5'), o('2.25', 1018, 'poshtë', '2.5'), o('1.20', 1018, 'sipër', '1.5'), o('4.10', 1018, 'poshtë', '1.5')],
+    [o('1.80', 1007, 'po'), o('1.95', 1007, 'jo')],
+    [o('1.90', 1019, 'tek'), o('1.88', 1019, 'çift')],
+    [o('1.70', 1725, 'sipër', '1.5'), o('2.05', 1725, 'poshtë', '1.5')],
+    [o('1.85', 1300017, 'sipër', '9.5', 'Corners · Total [Corners_·_Total]'), o('1.90', 1300017, 'poshtë', '9.5', 'Corners · Total [Corners_·_Total]')],
+  ];
+  const odds = detailOdds(page);
+  assert.deepEqual(pricesFor(odds, 'futebol'), {
+    'ou|O2.5': 162, 'ou|U2.5': 225, 'ou|O1.5': 120, 'ou|U1.5': 410, 'btts|Y': 180, 'btts|N': 195, 'oe|ODD': 190, 'oe|EVEN': 188,
+    'tou|1O1.5': 170, 'tou|1U1.5': 205,
+  });
+  // The other markets show in Portuguese.
+  assert.deepEqual(extraPrices(odds, { sport: 'futebol' }), {
+    'x|1300017~Corners · Total~Mais de (9.5)': 185, 'x|1300017~Corners · Total~Menos de (9.5)': 190,
+  });
+});
+
 test('every other market of a page becomes an operator-settled selection', async () => {
   const { extraPrices, detailOdds } = await import('../server/winhouse.js');
   const o = (odd, mid, market, opt, special = null) => ({ id: 1, odd, market_id: String(mid), market, market_option: `${opt} `, special_value: special });
