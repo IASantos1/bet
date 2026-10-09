@@ -976,11 +976,11 @@ export function createApp(db, {
         const s = spinsRow(db, Number(req.body.freeSpins), u.id);
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
         if (!JSON.parse(s.games || '[]').includes(g.id)) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
-        const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), username: `${u.name} (FS)`, returnUrl });
+        const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl });
         return res.json({ url, freeSpins: { id: s.id, balance: cents(s.balance_cents) }, balance: cents(u.balance_cents) });
       }
       if (u.balance_cents <= 0) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
-      const url = await bb.launch({ gameId: g.id, token: playerToken(u.id), username: u.name, returnUrl });
+      const url = await bb.launch({ gameId: g.id, token: playerToken(u.id), returnUrl });
       return res.json({ url, balance: cents(u.balance_cents) });
     }
     if (!req.user) throw new HttpError(401, 'Inicie sessão para continuar.');
@@ -1402,7 +1402,7 @@ export function createApp(db, {
       return res.json({
         bigbang: true, enabled: true, sandbox: bb.sandbox, games: all.games.length, providers: all.providers.length, error: all.error,
         bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
-        callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` },
+        callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(),
       });
     }
     if (!casinoOn()) {

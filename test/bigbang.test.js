@@ -44,8 +44,10 @@ const move = (username, amount, txId, extra = {}) => {
 const bal = (db, id) => db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(id).balance_cents;
 
 test('tokens and signature: HMAC over username + amount (shortest JS form) + game + category + transaction id', () => {
-  assert.equal(playerToken(7), 'bet62_7');
-  assert.equal(playerToken(7, 3), 'bet62_7_fs3');
+  assert.equal(playerToken(7), 'b62_7');
+  assert.equal(playerToken(7, 3), 'b62_7_fs3');
+  assert.deepEqual(parseToken('b62_7_fs3'), { userId: 7, spinsId: 3 });
+  // Players created before (display name as username) are still understood.
   assert.deepEqual(parseToken('bet62_7_fs3'), { userId: 7, spinsId: 3 });
   assert.equal(parseToken('other_7'), null);
   const p = { username: 'player_42', amount: -2.5, game: 'SGHotHotFruit', game_category: 'Habanero', transaction_id: '66a3' };
@@ -178,18 +180,19 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     assert.equal(d.body.user.bonus, 0);
     const real = await call('POST', '/api/casino/launch', { gameId: 4822 });
     const uid = db.prepare("SELECT id FROM users WHERE email = 'rui@example.com'").get().id;
-    assert.equal(real.body.url, `https://g/real/4822/bet62_${uid}`);
-    assert.ok(fake.calls.some((c) => c.path.endsWith('/users/create') && c.body.user_token === `bet62_${uid}`));
+    assert.equal(real.body.url, `https://g/real/4822/b62_${uid}`);
+    // The username at BigBang is the token itself: the wallet callbacks name the player by it.
+    assert.ok(fake.calls.some((c) => c.path.endsWith('/users/create') && c.body.user_token === `b62_${uid}` && c.body.username === `b62_${uid}`));
     const promos = await call('GET', '/api/promotions');
     const fsId = promos.body.mine.activeSpins.id;
     assert.equal(promos.body.mine.activeSpins.spins, 10);
     assert.equal((await call('POST', '/api/casino/launch', { gameId: 4821, freeSpins: fsId })).status, 400); // not eligible
     const fsl = await call('POST', '/api/casino/launch', { gameId: 4822, freeSpins: fsId });
-    assert.equal(fsl.body.url, `https://g/real/4822/bet62_${uid}_fs${fsId}`);
+    assert.equal(fsl.body.url, `https://g/real/4822/b62_${uid}_fs${fsId}`);
     // The wallet callbacks, as BigBang calls them.
-    const u = await (await fetch(`${base}/api/casino/bb/user?username=bet62_${uid}`)).json();
+    const u = await (await fetch(`${base}/api/casino/bb/user?username=b62_${uid}`)).json();
     assert.equal(u.balance, '20.00');
-    const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`bet62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
+    const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
     assert.equal((await res.json()).balance, '5.00');
     // The player ends the free spins: €5 − €2 = €3 of winnings.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
