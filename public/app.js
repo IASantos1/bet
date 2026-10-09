@@ -2810,11 +2810,11 @@ async function playRapid(el, servers, i, why = '') {
 function startHlsJsFor(m, el, r, video, Hls, next) {
   const servers = r.servers;
   const i = r.i;
-  // Ordinary (not low-latency) live streams: 8 s behind the edge (counted in seconds: these hosts
-  // declare 6 s segments but send 2 s ones), sped up a little (1.1×) when it falls further behind;
-  // give up on a dead playlist quickly, keep a modest buffer.
+  // Ordinary (not low-latency) live streams: 14 s behind the edge (counted in seconds: these hosts
+  // declare 6 s segments but send 2 s ones). Closer than that the player ran dry and stuttered;
+  // no speeding up (it ate the buffer). Give up on a dead playlist quickly, keep 30 s of buffer.
   const hls = new Hls({
-    enableWorker: false, lowLatencyMode: false, liveSyncDuration: 8, liveMaxLatencyDuration: 24, maxLiveSyncPlaybackRate: 1.1, maxBufferLength: 20,
+    enableWorker: false, lowLatencyMode: false, liveSyncDuration: 14, liveMaxLatencyDuration: 45, maxBufferLength: 30, backBufferLength: 30,
     manifestLoadingTimeOut: 10000, manifestLoadingMaxRetry: 2, levelLoadingTimeOut: 10000, levelLoadingMaxRetry: 4,
     fragLoadingTimeOut: 20000, fragLoadingMaxRetry: 4,
   });

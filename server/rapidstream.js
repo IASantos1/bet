@@ -133,7 +133,7 @@ export async function probeStream(server, { fetchImpl = globalThis.fetch, timeou
 }
 
 // ---------- the relay: our server keeps the stream a few seconds ahead ----------
-// While someone watches, the stream's media playlist is read every 2 s and its new segments are
+// While someone watches, the stream's media playlist is read every second and its new segments are
 // fetched at once and kept in memory: the player gets both straight from us, so the host's slow
 // moments (a playlist late by a few seconds) no longer reach it. One fetch per segment however many
 // watch. A stream nobody asked for in a minute is dropped; at most `maxStreams` at a time.
@@ -161,7 +161,7 @@ export function mediaSegments(text, base) {
   return out;
 }
 
-export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 2000, idleMs = 60_000, maxStreams = 12 } = {}) {
+export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 1000, idleMs = 60_000, maxStreams = 12 } = {}) {
   const streams = new Map(); // playlist url → stream
   const bySegment = new Map(); // segment url → stream
 
