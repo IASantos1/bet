@@ -433,9 +433,10 @@ export function createApp(db, {
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id)) throw new HttpError(404, 'Evento não encontrado.');
-      // A WinHouse game not read lately: its page now (every market), waiting at most 4 s.
+      // A WinHouse game not read yet: its page now (every market), waiting at most 2.5 s; one read
+      // before is refreshed in the background without holding the answer.
       if (winhouseFeed?.readPageNow) {
-        await Promise.race([winhouseFeed.readPageNow(id).catch(() => false), new Promise((ok) => setTimeout(ok, 4_000).unref())]);
+        await Promise.race([winhouseFeed.readPageNow(id).catch(() => false), new Promise((ok) => setTimeout(ok, 2_500).unref())]);
       }
       const [event] = loadEvents('e.id = ?', [id], 'e.id', 1, { allMarkets: true });
       if (!event) throw new HttpError(404, 'Evento não encontrado.');
