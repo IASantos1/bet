@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS transactions (
   id                  INTEGER PRIMARY KEY,
   user_id             INTEGER NOT NULL REFERENCES users(id),
-  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback', 'casino_bet', 'casino_win', 'free_spin_win', 'cashout')),
+  type                TEXT    NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'withdrawal_refund', 'bet', 'payout', 'refund', 'casino_out', 'casino_in', 'admin_credit', 'admin_debit', 'bonus_convert', 'chargeback', 'casino_bet', 'casino_win', 'free_spin_win', 'cashout', 'affiliate_commission', 'affiliate_reversal')),
   amount_cents        INTEGER NOT NULL,
   balance_after_cents INTEGER NOT NULL,
   description         TEXT    NOT NULL,
@@ -284,6 +284,74 @@ CREATE TABLE IF NOT EXISTS settlements (
   created_at   TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_settlements_event ON settlements(event_id);
+
+-- Affiliate programme (affiliates.js). One profile per player: the referral code is the server's.
+CREATE TABLE IF NOT EXISTS affiliate_profiles (
+  id                          INTEGER PRIMARY KEY,
+  user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  referral_code               TEXT    NOT NULL UNIQUE,
+  status                      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended', 'blocked')),
+  admin_status                TEXT    CHECK (admin_status IN ('suspended', 'blocked')),
+  admin_reason                TEXT,
+  first_qualifying_deposit_at TEXT,
+  clicks                      INTEGER NOT NULL DEFAULT 0,
+  created_at                  TEXT    NOT NULL,
+  updated_at                  TEXT    NOT NULL
+);
+
+-- Who brought each player: one attribution per referred player, never replaced by a later link.
+CREATE TABLE IF NOT EXISTS referral_attributions (
+  id                INTEGER PRIMARY KEY,
+  affiliate_user_id INTEGER NOT NULL REFERENCES users(id),
+  referred_user_id  INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  referral_code     TEXT    NOT NULL,
+  source            TEXT    NOT NULL DEFAULT 'link',
+  ip_hash           TEXT,
+  status            TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'qualified', 'rejected')),
+  reason            TEXT,
+  attributed_at     TEXT    NOT NULL,
+  CHECK (affiliate_user_id <> referred_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_referrals_affiliate ON referral_attributions(affiliate_user_id, attributed_at);
+
+-- One commission per referred player and per deposit, in cents; paid through the wallet ledger.
+CREATE TABLE IF NOT EXISTS affiliate_commissions (
+  id                  INTEGER PRIMARY KEY,
+  affiliate_user_id   INTEGER NOT NULL REFERENCES users(id),
+  referred_user_id    INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  deposit_tx_id       INTEGER NOT NULL UNIQUE REFERENCES transactions(id),
+  deposit_ref         TEXT    NOT NULL UNIQUE,
+  deposit_cents       INTEGER NOT NULL CHECK (deposit_cents > 0),
+  rate_bps            INTEGER NOT NULL CHECK (rate_bps BETWEEN 0 AND 10000),
+  commission_cents    INTEGER NOT NULL CHECK (commission_cents >= 0),
+  status              TEXT    NOT NULL CHECK (status IN ('pending', 'approved', 'paid', 'reversed', 'rejected')),
+  review_reason       TEXT,
+  approved_by         INTEGER REFERENCES users(id),
+  approved_at         TEXT,
+  paid_by             INTEGER REFERENCES users(id),
+  paid_at             TEXT,
+  payout_tx_id        INTEGER REFERENCES transactions(id),
+  reversed_cents      INTEGER NOT NULL DEFAULT 0,
+  created_at          TEXT    NOT NULL,
+  updated_at          TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aff_comm_affiliate ON affiliate_commissions(affiliate_user_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_aff_comm_status ON affiliate_commissions(status, created_at);
+
+-- Audit trail of the programme (append-only: the triggers refuse changes and deletions).
+CREATE TABLE IF NOT EXISTS affiliate_audit (
+  id            INTEGER PRIMARY KEY,
+  actor_user_id INTEGER,
+  action        TEXT    NOT NULL,
+  entity_type   TEXT    NOT NULL,
+  entity_id     TEXT,
+  result        TEXT    NOT NULL,
+  metadata      TEXT,
+  created_at    TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aff_audit_entity ON affiliate_audit(entity_type, entity_id);
+CREATE TRIGGER IF NOT EXISTS affiliate_audit_no_update BEFORE UPDATE ON affiliate_audit BEGIN SELECT RAISE(ABORT, 'affiliate_audit is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS affiliate_audit_no_delete BEFORE DELETE ON affiliate_audit BEGIN SELECT RAISE(ABORT, 'affiliate_audit is append-only'); END;
 `;
 
 export function openDb(file) {
@@ -398,6 +466,8 @@ function migrate(db) {
   // Active sessions list: which browser / device opened each one.
   const sessCols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
   if (!sessCols.has('user_agent')) db.exec('ALTER TABLE sessions ADD COLUMN user_agent TEXT');
+  // A hash of the address a session was opened from (affiliate fraud signals; never the address itself).
+  if (!sessCols.has('ip_hash')) db.exec('ALTER TABLE sessions ADD COLUMN ip_hash TEXT');
 
   // Ledger types for casino transfers and admin adjustments. SQLite cannot alter a CHECK, so older databases get the
   // table rebuilt with the same rows.
@@ -406,7 +476,7 @@ function migrate(db) {
   const betsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bets'").get()?.sql || '';
   if (betsSql && (!betsSql.includes("'builder'") || !betsSql.includes("'cashout'"))) rebuildKeeping(db, 'bets');
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
-  if (!txSql.includes("'cashout'")) {
+  if (!txSql.includes("'affiliate_commission'")) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }

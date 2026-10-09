@@ -923,6 +923,7 @@ const PROFILE_SECTIONS = [
   { id: 'carteira', icon: '💶', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
   { id: 'apostas', icon: '🎟️', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
   { id: 'promocoes', icon: '🎁', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
+  { id: 'afiliados', icon: '🤝', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
   { id: 'verificacao', icon: '🛡️', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
   { id: 'seguranca', icon: '🔑', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
   { id: 'preferencias', icon: '⚙️', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
@@ -973,6 +974,7 @@ function profileSection(id) {
     case 'carteira': return walletView();
     case 'apostas': return betsView();
     case 'promocoes': return myPromosView();
+    case 'afiliados': setTimeout(loadAffiliates); return '<div id="affBox"><div class="loading">A carregar…</div></div>';
     case 'verificacao': setTimeout(loadKyc); return '<div id="kycBox"><div class="loading">A carregar…</div></div>';
     case 'seguranca': return securityView();
     case 'preferencias': return preferencesView();
@@ -1137,6 +1139,62 @@ const deviceName = (ua) => {
   const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
   return `${br} · ${os}`;
 };
+
+// ---------- affiliate programme ----------
+
+const AFF_STATE = {
+  active: ['verified', 'Ativo'], pending: ['', 'Pendente de ativação'], suspended_balance: ['warn', 'Suspenso (saldo)'],
+  suspended: ['warn', 'Suspenso'], blocked: ['bad', 'Bloqueado'],
+};
+const COMMISSION_LABEL = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga', reversed: 'Revertida', rejected: 'Rejeitada' };
+const REFERRAL_LABEL = { pending: 'Registado', qualified: 'Qualificado', rejected: 'Não elegível' };
+
+async function loadAffiliates() {
+  let me; let stats; let refs; let coms;
+  try {
+    [me, stats, refs, coms] = await Promise.all([
+      api('/api/affiliates/me'), api('/api/affiliates/me/stats'), api('/api/affiliates/me/referrals?size=20'), api('/api/affiliates/me/commissions'),
+    ]);
+  } catch (err) { toast('Erro', err.message, 'error'); return; }
+  const box = $('#affBox');
+  if (!box) return;
+  if (!me.enabled) { box.innerHTML = '<div class="notice">O programa de afiliados ainda não está disponível. Avisaremos quando abrir.</div>'; return; }
+  const [cls, label] = AFF_STATE[me.status] || ['', me.status];
+  const a = me.activation;
+  const check = (ok, text) => `<li class="${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${text}</li>`;
+  // Each status apart: what is under review is not money the player has.
+  const sums = ['pending', 'approved', 'paid', 'reversed'].map((k) => `<div class="aff-sum"><small>${COMMISSION_LABEL[k]}</small><b>${money(Number(stats.commissions[k].amount))}</b><span>${stats.commissions[k].count}</span></div>`).join('');
+  box.innerHTML = `
+    <div class="aff-link">
+      <small>O seu link de convite</small>
+      <div class="aff-url"><input readonly value="${esc(me.referralUrl)}" aria-label="Link de convite"><button class="primary-btn" data-aff-copy="${esc(me.referralUrl)}">Copiar</button>${navigator.share ? `<button class="outline-btn" data-aff-share="${esc(me.referralUrl)}">Partilhar</button>` : ''}</div>
+      <div class="aff-code">Código: <b>${esc(me.referralCode)}</b> <span class="pf-badge ${cls}">${label}</span></div>
+      ${me.reason ? `<p class="muted small">${esc(me.reason)}</p>` : ''}
+    </div>
+    <h4 class="aff-h">Ativação</h4>
+    <ul class="aff-checks">
+      ${check(a.hasQualifyingDeposit, `Depósito próprio confirmado de pelo menos ${money(Number(a.minimumDeposit))}`)}
+      ${check(Number(a.eligibleBalance) >= Number(a.minimumBalance), `Saldo elegível de pelo menos ${money(Number(a.minimumBalance))} (atual: ${money(Number(a.eligibleBalance))}; sem bónus nem comissões)`)}
+      ${check(!['suspended', 'blocked'].includes(me.status), 'Conta de afiliado sem suspensões')}
+    </ul>
+    <h4 class="aff-h">Resumo</h4>
+    <div class="aff-sums">${sums}</div>
+    <p class="muted small">${stats.clicks} visitas ao link · ${stats.referrals} registos · ${stats.qualified} qualificados</p>
+    <h4 class="aff-h">Convidados</h4>
+    ${refs.items.length ? `<div class="pf-list">${refs.items.map((r) => `<div class="pf-row"><div><b>${esc(r.name)}</b><small>${esc(fmtDateTime(r.registeredAt))}</small></div>
+      <span class="pf-badge">${r.commissionStatus ? COMMISSION_LABEL[r.commissionStatus] : REFERRAL_LABEL[r.status] || r.status}</span></div>`).join('')}</div>
+      ${refs.total > refs.items.length ? `<p class="muted small">A mostrar ${refs.items.length} de ${refs.total}.</p>` : ''}` : '<p class="muted small">Ainda não tem convidados.</p>'}
+    <h4 class="aff-h">Comissões</h4>
+    ${coms.items.length ? `<div class="pf-list">${coms.items.map((c) => `<div class="pf-row"><div><b>${money(Number(c.amount))} <small style="display:inline">(${c.rate}% de ${money(Number(c.deposit))})</small></b>
+      <small>${esc(fmtDateTime(c.createdAt))}${c.reason && c.status !== 'paid' ? ` · ${esc(c.reason)}` : ''}</small></div><span class="pf-badge ${c.status === 'paid' ? 'verified' : ''}">${COMMISSION_LABEL[c.status] || c.status}</span></div>`).join('')}</div>` : '<p class="muted small">Ainda sem comissões.</p>'}
+    <details class="aff-rules"><summary>Regras do programa</summary><ul>
+      <li>Recebe ${me.commission.rate}% do <b>primeiro depósito elegível e confirmado</b> de cada convidado, uma única vez por convidado.</li>
+      <li>Depósitos seguintes do mesmo convidado não geram comissão.</li>
+      <li>Para ganhar, precisa de um depósito próprio confirmado de ${money(Number(a.minimumDeposit))} e de manter ${money(Number(a.minimumBalance))} de saldo elegível (bónus, free bets e comissões não contam).</li>
+      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. As comissões podem ser analisadas, e são revertidas se o depósito de origem for reembolsado ou contestado.</li>
+      <li>Um convidado fica associado ao primeiro código com que se registou; isso não muda depois.</li>
+    </ul></details>`;
+}
 
 async function loadSessions() {
   let r;
@@ -1952,7 +2010,7 @@ const formHandlers = {
     const d = formData(form);
     const { user } = await api('/api/auth/register', {
       method: 'POST',
-      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, password: d.password, acceptTerms: form.acceptTerms.checked },
+      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, password: d.password, acceptTerms: form.acceptTerms.checked, ref: referralCode() || undefined },
     });
     state.user = user;
     closeModal();
@@ -2125,6 +2183,10 @@ document.addEventListener('click', async (e) => {
   if (e.target.closest('[data-cashout-cancel]')) { state.cashoutConfirm = null; $('#betsList').innerHTML = myBetsHtml(); return; }
   const coDo = e.target.closest('[data-cashout-do]');
   if (coDo) { coDo.disabled = true; coDo.textContent = 'A CONFIRMAR…'; doCashout(Number(coDo.dataset.cashoutDo), Number(coDo.dataset.value)); return; }
+  const affCopy = e.target.closest('[data-aff-copy]');
+  if (affCopy) { navigator.clipboard?.writeText(affCopy.dataset.affCopy).then(() => toast('Link copiado', affCopy.dataset.affCopy)).catch(() => {}); return; }
+  const affShare = e.target.closest('[data-aff-share]');
+  if (affShare) { navigator.share?.({ title: 'Bet62', text: 'Junta-te a mim na Bet62', url: affShare.dataset.affShare }).catch(() => {}); return; }
   const copy = e.target.closest('[data-copy]');
   if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Referência copiada', copy.dataset.copy)).catch(() => {}); return; }
   const walletTab = e.target.closest('[data-wallet-tab]');
@@ -2974,7 +3036,20 @@ function updateTennisCourt() {
   ball.style.top = home ? (deuce ? '70%' : '30%') : (deuce ? '30%' : '70%');
 }
 
+// A referral link (bet62.plus/GAB052 → /?ref=GAB052): the code is kept for the registration (the
+// server also keeps it in a cookie and decides), the address is cleaned and the sign-up form opens.
+const REF_KEY = 'b62_ref';
+function referralCode() { try { return sessionStorage.getItem(REF_KEY) || ''; } catch { return ''; } }
+function captureReferral() {
+  const code = new URLSearchParams(location.search).get('ref');
+  if (!code || !/^[A-Za-z]{3}\d{3}$/.test(code)) return false;
+  try { sessionStorage.setItem(REF_KEY, code.toUpperCase()); } catch { /* private mode */ }
+  history.replaceState(null, '', location.pathname + location.hash);
+  return true;
+}
+
 async function init() {
+  const referred = captureReferral();
   bindChrome();
   autoMode();
   renderSlip();
@@ -2991,6 +3066,7 @@ async function init() {
   // A game left open when the tab was closed: bring that balance back now.
   if (state.user?.casinoActive && !(currentRoute().page === 'casino' && currentRoute().sub === 'jogar')) closeCasino();
   render();
+  if (referred && !state.user) openAuth('register');
   loadCasino({ reset: true });
   loadCasinoLobby();
   await refreshEvents();

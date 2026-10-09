@@ -1165,3 +1165,23 @@ img, video, iframe { max-width: 100%; }
   .casino-mode .game-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
 .casino-prov-head { margin-top: 6px; }
+
+/* Affiliate programme (profile) */
+.pf-badge.warn { color: #f0b54a; border-color: rgba(240, 181, 74, .45); background: rgba(240, 181, 74, .12); }
+.pf-badge.bad { color: #ef6b6b; border-color: rgba(239, 107, 107, .45); background: rgba(239, 107, 107, .12); }
+.aff-link { padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.aff-link > small { color: var(--text-3); font-size: 12px; }
+.aff-url { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.aff-url input { flex: 1 1 200px; min-width: 0; font-weight: 600; font-size: 14px; color: var(--text); background: var(--dim); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.aff-code { margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 13.5px; flex-wrap: wrap; }
+.aff-h { margin: 18px 0 8px; font-size: 14px; }
+.aff-checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 13px; color: var(--text-3); }
+.aff-checks li.ok { color: var(--up); }
+.aff-sums { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.aff-sum { padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; display: grid; gap: 2px; }
+.aff-sum small { color: var(--text-3); font-size: 11.5px; }
+.aff-sum b { font-size: 16px; }
+.aff-sum span { color: var(--text-3); font-size: 11.5px; }
+.aff-rules { margin-top: 16px; font-size: 13px; }
+.aff-rules summary { cursor: pointer; font-weight: 600; }
+.aff-rules ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--text-3); }

@@ -219,6 +219,8 @@ export const config = {
   // times this factor (the house margin). CASHOUT=0 turns cash out off.
   // Defaults; the admin changes them in Admin → Apostas (saved in the settings table).
   cashout: { enabled: env.CASHOUT !== '0', factor: Math.min(1, Math.max(0.5, Number(env.CASHOUT_FACTOR) || 0.95)) },
+  // The site's public address (https://bet62.plus) for referral links; else the request's host.
+  publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).
   supportEmail: String(env.SUPPORT_EMAIL || '').trim(),
   supportPhone: String(env.SUPPORT_PHONE || '').trim(),

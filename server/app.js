@@ -28,6 +28,11 @@ import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
+import {
+  CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
+  affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
+  payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
+} from './affiliates.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -43,6 +48,8 @@ const INDEX_HTML = readPublic('index.html')
 // The administration is a separate page at /admin, with its own login.
 const ADMIN_HTML = readPublic('admin/index.html').replace(/(\/(?:admin\/admin|styles)\.(?:js|css))"/g, `$1?v=${APP_VERSION}"`);
 const COOKIE = 'cb_session';
+const REF_COOKIE = 'b62_ref'; // the referral code a visitor arrived with (affiliates)
+const REF_DAYS = 30;
 const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -243,8 +250,8 @@ export function createApp(db, {
     const token = newSessionToken();
     const expires = new Date(Date.now() + config.sessionDays * 86_400_000);
     db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(nowIso());
-    db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at, user_agent) VALUES (?, ?, ?, ?, ?)')
-      .run(hashToken(token), userId, expires.toISOString(), nowIso(), String(req?.get?.('user-agent') || '').slice(0, 200) || null);
+    db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at, created_at, user_agent, ip_hash) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(hashToken(token), userId, expires.toISOString(), nowIso(), String(req?.get?.('user-agent') || '').slice(0, 200) || null, ipHash(req?.ip));
     res.cookie(COOKIE, token, {
       httpOnly: true, sameSite: 'lax', secure: config.isProduction, expires, path: '/',
     });
@@ -568,6 +575,14 @@ export function createApp(db, {
     const { lastInsertRowid } = db.prepare(
       'INSERT INTO users (email, name, birthdate, phone, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(email, name, birthdate, phone, hashPassword(password), nowIso());
+    // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
+    // once, on the server; a bad or unknown code never stops the registration.
+    const refCode = str(req.body.ref, 12) || parseCookies(req.headers.cookie)[REF_COOKIE] || '';
+    if (refCode) {
+      try { attribute(db, { referredUserId: Number(lastInsertRowid), code: refCode, ip: req.ip, source: req.body.ref ? 'link' : 'cookie' }); }
+      catch (err) { console.warn(`[afiliados] atribuição: ${err.message}`); }
+      res.clearCookie(REF_COOKIE, { path: '/' });
+    }
     startSession(res, Number(lastInsertRowid), req);
     res.status(201).json({ user: userOut(userById(Number(lastInsertRowid))) });
   });
@@ -774,12 +789,57 @@ export function createApp(db, {
     const granted = tx(db, () => {
       postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`);
       const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
-      return onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', choice: promo });
+      const bonus = onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', choice: promo });
+      // Demonstration money never earns a commission unless the operator counts it (test servers).
+      onReferredDeposit(db, { userId: req.user.id, amountCents: amount, txId, ref: `demo:${txId}`, demo: true });
+      return bonus;
     });
     const u = userById(req.user.id);
     const bonus = !granted ? null : granted.kind === 'casinoFs' ? { name: CAMPAIGN_NAMES.casinoFs, amount: granted.value_cents / 100, spins: granted.spins } : bonusView(granted);
     res.status(201).json({ balance: cents(u.balance_cents), bonus, user: userOut(u) });
   }
+
+  // ---------- affiliate programme ----------
+
+  // The player's referral link, activation, summary and history (affiliates.js decides everything).
+  const affLimiter = createRateLimiter({ windowMs: 60_000, max: 60 });
+  const clickLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 5 });
+  const countClick = (req, code) => {
+    // One click per visitor and code per hour; never the affiliate's own link counted by bots in a loop.
+    if (!clickLimiter(`${req.ip}|${code}`)) return false;
+    return db.prepare('UPDATE affiliate_profiles SET clicks = clicks + 1 WHERE referral_code = ?').run(code).changes > 0;
+  };
+  const affGuard = (req, _res, next) => {
+    if (!affLimiter(`${req.ip}|${req.user?.id || ''}`)) return next(new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.'));
+    next();
+  };
+  app.get('/api/affiliates/me', requireUser, affGuard, (req, res) => res.json(affiliateView(db, req.user.id, { baseUrl: siteUrl(req) })));
+  // Recomputes the activation now (after a deposit, the page asks again).
+  app.post('/api/affiliates/me/activate', requireUser, affGuard, (req, res) => {
+    refreshProfile(db, req.user.id, { actor: req.user.id });
+    res.json(affiliateView(db, req.user.id, { baseUrl: siteUrl(req) }));
+  });
+  app.get('/api/affiliates/me/stats', requireUser, affGuard, (req, res) => res.json(affiliateStats(db, req.user.id)));
+  app.get('/api/affiliates/me/referrals', requireUser, affGuard, (req, res) => {
+    res.json(affiliateReferrals(db, req.user.id, { page: req.query.page, size: req.query.size }));
+  });
+  const COMMISSION_STATES = ['pending', 'approved', 'paid', 'reversed', 'rejected'];
+  app.get('/api/affiliates/me/commissions', requireUser, affGuard, (req, res) => {
+    const status = COMMISSION_STATES.includes(req.query.status) ? req.query.status : null;
+    res.json({ items: affiliateCommissions(db, req.user.id, { status }) });
+  });
+  app.get('/api/affiliates/me/payouts', requireUser, affGuard, (req, res) => {
+    res.json({ items: affiliateCommissions(db, req.user.id, { status: 'paid' }) });
+  });
+  // A visit through a link the page caught (?ref=CODE): counted, rate-limited, nothing attributed yet.
+  app.post('/api/affiliates/track', (req, res) => {
+    const code = normalizeCode(req.body?.code);
+    if (!affLimiter(`track|${req.ip}`)) throw new HttpError(429, 'Demasiados pedidos.');
+    if (!affiliateConfig(db).enabled || !CODE_RE.test(code) || !profileByCode(db, code)) return res.json({ ok: false });
+    countClick(req, code);
+    res.cookie(REF_COOKIE, code, { httpOnly: true, sameSite: 'lax', secure: config.isProduction, maxAge: REF_DAYS * 86_400_000, path: '/' });
+    res.json({ ok: true });
+  });
 
   // ---------- promotions ----------
 
@@ -1550,6 +1610,40 @@ export function createApp(db, {
     } catch (err) { next(err); }
   });
 
+  // ---------- affiliates (admin) ----------
+
+  const reasonOf = (req) => str(req.body?.reason, 300);
+  admin.get('/affiliates', (req, res) => {
+    res.json({ config: affiliateConfig(db), affiliates: adminAffiliates(db, { q: str(req.query.q, 80) }), reconciliation: reconcile(db) });
+  });
+  admin.put('/affiliates/config', (req, res) => {
+    res.json({ config: saveAffiliateConfig(db, req.body?.config || {}, { actor: req.user.id, reason: reasonOf(req) }) });
+  });
+  admin.post('/affiliates/:userId/status', (req, res) => {
+    const r = setAffiliateStatus(db, Number(req.params.userId), { actor: req.user.id, status: str(req.body?.status, 20), reason: reasonOf(req) });
+    res.json({ profile: r.profile, eligibility: r.eligibility });
+  });
+  admin.get('/affiliates/commissions', (req, res) => {
+    const status = COMMISSION_STATES.includes(req.query.status) ? req.query.status : '';
+    res.json({ items: adminCommissions(db, { status }) });
+  });
+  admin.post('/affiliates/commissions/:id/review', (req, res) => {
+    res.json({ commission: reviewCommission(db, req.params.id, { actor: req.user.id, decision: str(req.body?.decision, 10), reason: reasonOf(req) }) });
+  });
+  admin.post('/affiliates/commissions/:id/payout', (req, res) => {
+    res.json({ commission: payCommission(db, req.params.id, { actor: req.user.id }) });
+  });
+  admin.post('/affiliates/commissions/:id/reverse', (req, res) => {
+    res.json({ commission: reverseCommission(db, req.params.id, { actor: req.user.id, reason: reasonOf(req) }) });
+  });
+  admin.get('/affiliates/audit', (req, res) => res.json({ items: adminAudit(db, { limit: req.query.limit }) }));
+  // Reconciliation, and recovery of commissions a failed hook left behind.
+  admin.post('/affiliates/recover', (req, res) => {
+    const r = recover(db);
+    affiliateAudit(db, { actor: req.user.id, action: 'recover.run', entityType: 'system', result: 'ok', meta: r });
+    res.json({ ...r, reconciliation: reconcile(db) });
+  });
+
   app.use('/api/admin', admin);
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Recurso não encontrado.')));
@@ -1562,6 +1656,16 @@ export function createApp(db, {
   });
   app.get(['/admin', '/admin/', '/admin/index.html', '/administrador'], (_req, res) => {
     res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' }).type('html').send(ADMIN_HTML);
+  });
+  // Referral links: bet62.plus/GAB052 → the site, with the code kept for the registration.
+  app.get('/:code', (req, res, next) => {
+    const code = normalizeCode(req.params.code);
+    if (!CODE_RE.test(code)) return next();
+    if (affiliateConfig(db).enabled && profileByCode(db, code)) {
+      countClick(req, code);
+      res.cookie(REF_COOKIE, code, { httpOnly: true, sameSite: 'lax', secure: config.isProduction, maxAge: REF_DAYS * 86_400_000, path: '/' });
+    }
+    res.redirect(302, `/?ref=${encodeURIComponent(code)}`);
   });
   app.use(express.static(PUBLIC_DIR, {
     index: 'index.html',
