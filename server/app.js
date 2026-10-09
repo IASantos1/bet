@@ -28,7 +28,7 @@ import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
-import { playableServers, createVideoProxy } from './rapidstream.js';
+import { playableServers, createVideoProxy, createStreamRelay } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
@@ -536,7 +536,10 @@ export function createApp(db, {
     } catch (err) { next(err); }
   });
   // The proxy itself: only addresses we signed, only for a player allowed to watch.
-  const videoProxy = createVideoProxy();
+  // Our server keeps each watched stream a few seconds ahead (the host's slow moments do not reach
+  // the player, and many viewers of one game cost one fetch per segment).
+  const streamRelay = rapidStream?.enabled ? createStreamRelay() : null;
+  const videoProxy = createVideoProxy({ relay: streamRelay });
   app.get('/api/tv/p', (req, res, next) => {
     if (!rapidStream?.enabled) return res.status(404).end();
     if (videoGate(req)) return res.status(403).end();
@@ -1710,7 +1713,7 @@ export function createApp(db, {
         covered.push(item);
       }
       res.json({
-        status: rapidStream.status(), ourLive: ours.length, covered,
+        status: { ...rapidStream.status(), relay: streamRelay?.status() ?? null }, ourLive: ours.length, covered,
         // Our live games by name, to compare with the API's list when nothing is covered.
         ourGames: ours.slice(0, 40).map((e) => `${e.home} × ${e.away}`),
         sample: c.matches.slice(0, 15).map((m) => ({ game: `${m.home_team_name} × ${m.away_team_name}`, league: m.league_name, status: m.match_status,

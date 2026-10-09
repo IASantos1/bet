@@ -132,7 +132,144 @@ export async function probeStream(server, { fetchImpl = globalThis.fetch, timeou
   return out;
 }
 
-export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 3600, fetchImpl = globalThis.fetch, path = '/api/tv/p' } = {}) {
+// ---------- the relay: our server keeps the stream a few seconds ahead ----------
+// While someone watches, the stream's media playlist is read every 2 s and its new segments are
+// fetched at once and kept in memory: the player gets both straight from us, so the host's slow
+// moments (a playlist late by a few seconds) no longer reach it. One fetch per segment however many
+// watch. A stream nobody asked for in a minute is dropped; at most `maxStreams` at a time.
+
+const HEADERS = (hdr, referer) => ({
+  'User-Agent': hdr.ua || BROWSER_UA,
+  ...(referer ? { Referer: referer, Origin: new URL(referer).origin } : {}),
+  Accept: '*/*',
+});
+
+const SEGMENT_TAG = /^#EXT(INF|-X-(DISCONTINUITY|PROGRAM-DATE-TIME|KEY|MAP|BYTERANGE|GAP))\b/;
+
+/** Segment addresses of a media playlist, in order (none for a master playlist). */
+export function mediaSegments(text, base) {
+  const out = [];
+  const lines = String(text).split(/\r?\n/);
+  let inf = false;
+  for (const line of lines) {
+    if (line.startsWith('#EXTINF')) inf = true;
+    else if (line.trim() && !line.startsWith('#')) {
+      if (inf) { try { out.push(new URL(line.trim(), base).href); } catch { /* skipped */ } }
+      inf = false;
+    }
+  }
+  return out;
+}
+
+export function createStreamRelay({ fetchImpl = globalThis.fetch, everyMs = 2000, idleMs = 60_000, maxStreams = 12 } = {}) {
+  const streams = new Map(); // playlist url → stream
+  const bySegment = new Map(); // segment url → stream
+
+  async function ask(url, hdr, timeoutMs) {
+    const go = (referer) => fetchImpl(url, { headers: HEADERS(hdr, referer), redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+    let res = await go(hdr.referer);
+    if (hdr.referer && (res.status === 401 || res.status === 403)) res = await go(null);
+    return res;
+  }
+
+  function drop(st) {
+    clearTimeout(st.timer);
+    streams.delete(st.url);
+    for (const u of st.segs.keys()) if (bySegment.get(u) === st) bySegment.delete(u);
+  }
+
+  function fetchSegment(st, url) {
+    const p = (async () => {
+      try {
+        const res = await ask(url, st.hdr, 20_000);
+        if (!res.ok) return null;
+        return { buf: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'video/mp2t' };
+      } catch { return null; }
+    })();
+    const entry = { promise: p, done: null };
+    p.then((v) => { entry.done = v; if (!v && st.segs.get(url) === entry) { st.segs.delete(url); bySegment.delete(url); } });
+    return entry;
+  }
+
+  async function refresh(st) {
+    try {
+      const res = await ask(st.url, st.hdr, 8000);
+      const text = res.ok ? await res.text() : '';
+      if (text.startsWith('#EXTM3U')) {
+        const base = res.url || st.url;
+        const list = mediaSegments(text, base);
+        if (!list.length) { st.master = true; } else {
+          st.text = text; st.base = base; st.list = list; st.at = Date.now();
+          for (const u of list) {
+            if (!st.segs.has(u) && safeTarget(u)) { st.segs.set(u, fetchSegment(st, u)); bySegment.set(u, st); }
+          }
+          // Segments that left the playlist are let go (memory stays at one playlist's worth).
+          const keep = new Set(list);
+          for (const u of [...st.segs.keys()]) if (!keep.has(u)) { st.segs.delete(u); if (bySegment.get(u) === st) bySegment.delete(u); }
+        }
+      }
+    } catch { /* tried again on the next round */ }
+    if (st.master || Date.now() - st.lastAsk > idleMs) { if (!st.master) drop(st); return; }
+    st.timer = setTimeout(() => { st.round = refresh(st); }, everyMs);
+    st.timer.unref?.();
+  }
+
+  /**
+   * The media playlist from the relay, cut before its first segment not yet here (the player never
+   * waits on the host for one); null when this is no media playlist or the relay cannot help.
+   */
+  async function playlist(url, hdr) {
+    let st = streams.get(url);
+    if (!st) {
+      if (streams.size >= maxStreams) return null;
+      st = { url, hdr, segs: new Map(), lastAsk: Date.now(), at: 0, list: [], text: '', base: url, master: false, timer: null };
+      streams.set(url, st);
+      st.round = refresh(st);
+    }
+    st.lastAsk = Date.now();
+    if (!st.at) await st.round;
+    if (st.master || !st.at || Date.now() - st.at > 20_000) { if (st.master) streams.delete(url); return null; }
+    // At the start the playlist's segments are worth waiting for (6 s at most): the player then
+    // starts with a full window rather than one segment.
+    if (!st.served) {
+      const all = st.list.map((u) => st.segs.get(u)?.promise).filter(Boolean);
+      await Promise.race([Promise.all(all), new Promise((r) => { setTimeout(r, 6000).unref?.(); })]);
+      st.served = true;
+    }
+    const ready = new Set(st.list.filter((u) => st.segs.get(u)?.done));
+    if (!ready.size) return null;
+    // Header lines as they are; each segment with its own tags, up to the first one not here yet.
+    const out = [];
+    let pending = [];
+    for (const line of st.text.split(/\r?\n/)) {
+      if (line.trim() && !line.startsWith('#')) {
+        let abs = null;
+        try { abs = new URL(line.trim(), st.base).href; } catch { /* skipped */ }
+        if (!abs || !ready.has(abs)) break;
+        out.push(...pending, line);
+        pending = [];
+      } else if (SEGMENT_TAG.test(line)) pending.push(line);
+      else if (line.trim()) out.push(line);
+    }
+    if (!out.some((l) => l.trim() && !l.startsWith('#'))) return null;
+    return { text: out.join('\n') + '\n', base: st.base };
+  }
+
+  /** A segment the relay holds (waiting for one on its way); null when it has none. */
+  async function segment(url) {
+    const st = bySegment.get(url);
+    const e = st?.segs.get(url);
+    if (!e) return null;
+    st.lastAsk = Date.now();
+    return e.done || (await e.promise);
+  }
+
+  const status = () => ({ streams: streams.size, segments: [...streams.values()].reduce((n, st) => n + [...st.segs.values()].filter((e) => e.done).length, 0) });
+  const stop = () => { for (const st of [...streams.values()]) drop(st); };
+  return { playlist, segment, status, stop };
+}
+
+export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 3600, fetchImpl = globalThis.fetch, path = '/api/tv/p', relay = null } = {}) {
   const b64 = (buf) => Buffer.from(buf).toString('base64url');
   const sig = (data) => createHmac('sha256', secret).update(data).digest().subarray(0, 18);
 
@@ -173,6 +310,18 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     const t = open(req.query.t);
     if (!t) return res.status(403).end();
     const hdr = { referer: t.r || null, ua: t.a || null };
+    // The relay's copy first (playlist and segments kept a few seconds ahead); the host otherwise.
+    if (relay) {
+      try {
+        if (/\.m3u8$/i.test(new URL(t.u).pathname)) {
+          const pl = await relay.playlist(t.u, hdr);
+          if (pl) return res.set('Cache-Control', 'no-store').type('application/vnd.apple.mpegurl').send(rewrite(pl.text, pl.base, hdr));
+        } else {
+          const seg = await relay.segment(t.u);
+          if (seg) return res.set('Cache-Control', 'no-store').type(seg.type).set('Content-Length', String(seg.buf.length)).send(seg.buf);
+        }
+      } catch { /* the host directly */ }
+    }
     let up;
     // 20 s for the stream host to answer; after that the body flows for as long as it lasts (an FLV
     // stream is one long response). Closing the player stops it.
