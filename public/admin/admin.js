@@ -592,7 +592,7 @@ function adminFeed(f) {
   <div class="panel">${winhousePanel(f.winhouse)}</div>
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
-      : 'Defina <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI) e <strong>RAPIDAPI_STREAM_HOST</strong> (o host da API, ex.: football-live-stream-api.p.rapidapi.com) nas Variables do Railway e faça redeploy.'}</p>
+      : 'Defina nas Variables do Railway <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI), <strong>RAPIDAPI_STREAM_LIST_PATH</strong> (a rota da lista de jogos) e <strong>RAPIDAPI_STREAM_PATH</strong> (a rota de um jogo, com {id}) e faça redeploy. O host por omissão é football-live-stream-api.p.rapidapi.com (RAPIDAPI_STREAM_HOST para outro).'}</p>
     ${f.rapidStream ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="rapid-test">Testar transmissões</button>
       <button class="ghost-btn btn-sm" data-action="rapid-test" data-fresh="1">Testar (ler agora, gasta pedidos)</button>
       <button class="ghost-btn btn-sm" data-action="rapid-copy">Copiar resultado</button></div>

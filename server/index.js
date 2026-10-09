@@ -88,7 +88,7 @@ const winhouseLive = winhouse.enabled && config.winhouse.hls
   : null;
 
 // Trial video source (RapidAPI), beside WinHouse's TV and independent of it.
-const rapidStream = config.rapidStream.apiKey ? createRapidStream({ ...config.rapidStream, log: (msg) => console.warn(`[rapidapi] ${msg}`) }) : null;
+const rapidStream = config.rapidStream.apiKey && config.rapidStream.listPath ? createRapidStream({ ...config.rapidStream, log: (msg) => console.warn(`[rapidapi] ${msg}`) }) : null;
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 

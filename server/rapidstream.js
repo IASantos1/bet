@@ -1,12 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-// Second source of live football video, on trial beside WinHouse's own TV: the "Football Live
-// Streaming API" on RapidAPI (GET /matches?status=live → matches, each with its stream servers).
-// Read only when a player opens a live match (never in the background), kept for `cacheSeconds`
-// so the daily quota is not spent on every page view. A match is ours when both team names agree.
-// Only streams a browser can play by itself are offered: HTTPS HLS (.m3u8) without a referer or
-// DRM (those need headers a browser cannot send, i.e. a proxy).
+// Second source of live football video, on trial beside WinHouse's own TV: a RapidAPI streaming API
+// set in the Variables (RAPIDAPI_STREAM_HOST, its list route and the route of one game). Read only
+// when a player opens a live match (never in the background), kept for `cacheSeconds` so the daily
+// quota is not spent on every page view. A match is ours when both team names agree. HLS / FLV
+// streams play through our own proxy (it sends the referer a browser cannot); DRM is left out.
 
 const STOP = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'fk', 'sk', 'if', 'bk', 'club', 'de', 'the', 'and', 'u19', 'u20', 'u21', 'u23', 'ii', 'b']);
 /** "Sporting CP" → ['sporting', 'cp']: lower case, no accents, no club suffixes. */
@@ -175,8 +174,8 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
 
 /**
  * A listed match in one shape, whatever the API: { home_team_name, away_team_name, league_name,
- * match_status, id, servers }. Knows the 1xAPI shape (matches[], servers) and the
- * "football-live-stream-api" shape (result[] with home_name / away_name / status "Live" / id).
+ * match_status, id, servers }: the "football-live-stream-api" shape (result[] with home_name /
+ * away_name / status "Live" / id) and the usual home_team_name / match_status spellings.
  */
 export function normalizeMatch(m) {
   if (!m || typeof m !== 'object') return null;
@@ -227,10 +226,11 @@ export function findStreams(body) {
 }
 
 export function createRapidStream({
-  apiKey = '', host = 'football-live-streaming-api.p.rapidapi.com', cacheSeconds = 120, maxPages = 5,
-  listPath = '/matches?status=live&page={page}', streamPath = '', fetchImpl = globalThis.fetch, log = () => {},
+  apiKey = '', host = 'football-live-stream-api.p.rapidapi.com', cacheSeconds = 120, maxPages = 5,
+  listPath = '', streamPath = '', fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
-  const enabled = !!apiKey;
+  // Both the key and the list route are needed (no route is assumed for an unknown API).
+  const enabled = !!apiKey && !!listPath;
   let cache = { at: 0, matches: [], error: null, pages: 0 };
   let inflight = null;
   const usage = { requests: 0, day: '' };
@@ -252,7 +252,7 @@ export function createRapidStream({
 
   /** Every live match the API lists (cached). */
   async function liveMatches({ fresh = false } = {}) {
-    if (!enabled) return { matches: [], error: 'RAPIDAPI_KEY em falta' };
+    if (!enabled) return { matches: [], error: 'RAPIDAPI_KEY ou RAPIDAPI_STREAM_LIST_PATH em falta' };
     if (!fresh && Date.now() - cache.at < cacheSeconds * 1000) return cache;
     if (inflight) return inflight;
     inflight = (async () => {

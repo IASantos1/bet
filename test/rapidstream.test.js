@@ -40,7 +40,7 @@ test('live matches: all pages read once, cached, matched to our game in either o
     const n = Number(new URL(url).searchParams.get('page'));
     return Response.json(n === 1 ? page([match('Benfica', 'Porto', [HLS])], true) : page([match('Gil Vicente FC', 'Moreirense', [HLS])]));
   };
-  const rs = createRapidStream({ apiKey: 'k', fetchImpl });
+  const rs = createRapidStream({ apiKey: 'k', listPath: '/matches?page={page}', fetchImpl });
   const r = await rs.streamsFor('Moreirense', 'Gil Vicente');
   assert.deepEqual(r.servers.map((s) => s.url), [HLS.url]);
   assert.equal(calls.length, 2);
@@ -53,13 +53,13 @@ test('live matches: all pages read once, cached, matched to our game in either o
 test('the same game listed twice: the servers of both listings are offered', async () => {
   const two = { ...HLS, name: 'Server 2', url: 'https://cdn.example.com/live/b.m3u8' };
   const fetchImpl = async () => Response.json(page([match('Gimnasia La Plata', 'Atl. Tucuman', [HLS]), match('Gimnasia La Plata', 'Atletico Tucuman', [HLS, two])]));
-  const rs = createRapidStream({ apiKey: 'k', fetchImpl });
+  const rs = createRapidStream({ apiKey: 'k', listPath: '/matches?page={page}', fetchImpl });
   const r = await rs.streamsFor('Gimnasia y Esgrima La Plata', 'Atletico Tucuman');
   assert.deepEqual(r.servers.map((s) => s.url), [HLS.url, two.url]);
 });
 
 test('an API error is reported, not thrown', async () => {
-  const rs = createRapidStream({ apiKey: 'k', fetchImpl: async () => Response.json({ message: 'You are not subscribed' }, { status: 403 }) });
+  const rs = createRapidStream({ apiKey: 'k', listPath: '/matches?page={page}', fetchImpl: async () => Response.json({ message: 'You are not subscribed' }, { status: 403 }) });
   const r = await rs.streamsFor('A', 'B');
   assert.match(r.error, /403/);
 });
@@ -68,7 +68,7 @@ test('HTTP: /api/live2 needs a signed-in player with balance and a live football
   const db = openDb(':memory:');
   seed(db);
   const fetchImpl = async (url) => (String(url).includes('.m3u8') ? new Response('#EXTM3U\n') : Response.json(page([match('Lisboa SC', 'Porto Norte', [HLS])])));
-  const rapidStream = createRapidStream({ apiKey: 'k', fetchImpl });
+  const rapidStream = createRapidStream({ apiKey: 'k', listPath: '/matches?page={page}', fetchImpl });
   const server = createApp(db, { loginAttempts: 1000, registrations: 1000, rapidStream }).listen(0);
   await new Promise((r) => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -173,7 +173,7 @@ test('FLV: probed by its signature, streamed through the proxy as one long respo
 
 test('admin raw call: any path of the configured host, answered as it comes; odd paths refused', async () => {
   const seen = [];
-  const rs = createRapidStream({ apiKey: 'k', host: 'other-api.p.rapidapi.com', fetchImpl: async (url, opts) => { seen.push([url, opts.headers['X-RapidAPI-Host']]); return Response.json({ ok: 1 }); } });
+  const rs = createRapidStream({ apiKey: 'k', listPath: '/l', host: 'other-api.p.rapidapi.com', fetchImpl: async (url, opts) => { seen.push([url, opts.headers['X-RapidAPI-Host']]); return Response.json({ ok: 1 }); } });
   const r = await rs.raw('/live?x=1');
   assert.deepEqual([r.status, r.json], [200, { ok: 1 }]);
   assert.deepEqual(seen[0], ['https://other-api.p.rapidapi.com/live?x=1', 'other-api.p.rapidapi.com']);
