@@ -2150,8 +2150,6 @@ document.addEventListener('click', async (e) => {
   if (liveTv) { state.liveTv = !state.liveTv; render({ keepScroll: true }); return; }
   const liveSport = e.target.closest('[data-live-sport]');
   if (liveSport) { state.liveSport = liveSport.dataset.liveSport; render({ keepScroll: true }); return; }
-  const rapidSrv = e.target.closest('[data-rapid-srv]');
-  if (rapidSrv) { const r = state.match.rapid; if (r) playRapid(state.match.streamEl, r.servers, Number(rapidSrv.dataset.rapidSrv)); return; }
   const matchView = e.target.closest('[data-match-view]');
   if (matchView) { state.match.view = matchView.dataset.matchView; render({ keepScroll: true }); return; }
   const expand = e.target.closest('[data-expand]');
@@ -2724,8 +2722,9 @@ async function playRapid(el, servers, i) {
   }
   m.rapid = { servers, i, hls: null };
   el.className = 'stream-box rapid';
-  el.innerHTML = `${expandBtn()}<video playsinline controls autoplay muted></video>
-    ${servers.length > 1 ? `<div class="rapid-servers">${servers.map((s, k) => `<button class="${k === i ? 'active' : ''}" data-rapid-srv="${k}">${esc(s.name)}</button>`).join('')}</div>` : ''}`;
+  // Just the picture: no server buttons or expand square on top (a server that fails gives way to
+  // the next one by itself; the player's own controls have full screen).
+  el.innerHTML = '<video playsinline controls autoplay muted></video>';
   const video = el.querySelector('video');
   const next = () => { if (m.rapid?.i === i && m.streamEl === el) playRapid(el, servers, i + 1); };
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
