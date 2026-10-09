@@ -637,7 +637,7 @@ function adminSettlement({ summary: s, queue, history }) {
   const last = s.lastRun ? `Última verificação automática: ${fmtDateTime(s.lastRun)}${s.lastResult ? ` (${s.lastResult.settled} liquidados, ${s.lastResult.voided} anulados)` : ''}` : 'A verificação automática ainda não correu.';
   return `<div class="panel">
       <div class="section-head"><h2>Liquidação de mercados</h2><button class="primary-btn btn-sm" data-action="settlement-run">Executar liquidação agora</button></div>
-      <p class="muted">Todos os mercados (1X2, dupla hipótese, empate anula, mais/menos golos e ambas marcam) são liquidados pelo resultado do tempo regulamentar assim que o jogo termina. Jogos cancelados são anulados (odd 1.00); jogos adiados sem nova data são anulados após ${s.postponedVoidHours} h. ${esc(last)}</p>
+      <p class="muted">Todos os mercados (1X2, dupla hipótese, empate anula, mais/menos golos e ambas marcam) são liquidados pelo resultado do tempo regulamentar assim que o jogo termina. Jogos cancelados são anulados (odd 1.00); jogos adiados sem nova data são anulados após ${s.postponedVoidHours} h. Um bilhete nunca fica preso: o que continuar em aberto ${s.noResultVoidHours ?? 72} h depois do início do jogo (sem resultado do fornecedor ou mercado por decidir) é anulado e a aposta devolvida. ${esc(last)}</p>
       <div class="stat-grid">${stats}</div></div>
     <div class="section-head"><h2>A precisar de decisão</h2></div>${queueHtml}
     <div class="section-head"><h2>Histórico</h2></div>${historyHtml}`;

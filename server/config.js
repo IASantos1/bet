@@ -196,6 +196,9 @@ export const config = {
   },
   settlement: {
     postponedVoidHours: int(env.POSTPONED_VOID_HOURS, 48),
+    // A bet leg still open this long after its game's start (no result came, or nobody decided an
+    // operator market) is voided: the stake goes back instead of the ticket staying open forever.
+    noResultVoidHours: Math.max(12, int(env.NO_RESULT_VOID_HOURS, 72)),
   },
 
   // In-play bets on feed matches are refused when the last live price is older than this.

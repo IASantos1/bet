@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
+import { normalizeWidgetData } from './whtracker.js';
 
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
@@ -1087,6 +1088,44 @@ export function createWinHouseFeed(db, {
     return { finished, review };
   }
 
+  /**
+   * Matches flagged for review when they left the live list (e.g. before the 88th minute): the
+   * match tracker is asked again (each game at most every 5 minutes, 5 games a run). When it says
+   * the match is over and gives a score not lower than the last one seen, that score settles it.
+   */
+  const TRACKER_ENDED = /\b(ended|finished|full.?time|ft|aet|ap|after (extra|over)time|after penalties|terminad[oa]|final|fim)\b/i;
+  const reviewAsked = new Map();
+  async function confirmReviews({ now = Date.now() } = {}) {
+    if (typeof client.tracker !== 'function') return { asked: 0, confirmed: 0 };
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' AND review_reason IS NOT NULL
+      AND sport IN ('futebol', 'andebol', 'futsal') ORDER BY start_time LIMIT 50`).all(SOURCE);
+    let asked = 0;
+    let confirmed = 0;
+    for (const row of rows) {
+      if (asked >= 5 || now - (reviewAsked.get(row.id) || 0) < 5 * 60_000) continue;
+      reviewAsked.set(row.id, now);
+      asked += 1;
+      let s = null;
+      try {
+        const r = await client.tracker(row.external_id);
+        if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) s = normalizeWidgetData(r.body);
+      } catch { /* asked again in 5 minutes */ }
+      if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) continue;
+      const h = s.homeScore;
+      const a = s.awayScore;
+      if (!Number.isInteger(h) || !Number.isInteger(a) || h < (row.home_score ?? 0) || a < (row.away_score ?? 0)) continue;
+      tx(db, () => {
+        const r = db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, review_reason = NULL,
+            clock = 'Final', updated_at = ? WHERE id = ? AND status = 'live'`).run(h, a, resultCode(h, a), nowIso(), row.id);
+        if (r.changes) settleEvent(db, row.id, { source: 'feed', note: 'WinHouse: resultado final confirmado pelo tracker' });
+      });
+      reviewAsked.delete(row.id);
+      confirmed += 1;
+    }
+    if (confirmed) log(`WinHouse: ${confirmed} jogo(s) em revisão confirmados pelo tracker`);
+    return { asked, confirmed };
+  }
+
   // Future games: each sport's full list, every `futureMinutes` (sooner than prices go stale).
   // `futureDays` may be a function (the admin setting, read on every run).
   const futureDaysNow = () => Math.min(90, Math.max(0, Number(typeof futureDays === 'function' ? futureDays() : futureDays) || 0));
@@ -1320,8 +1359,9 @@ export function createWinHouseFeed(db, {
     const details = guard('páginas dos jogos', syncDetails);
     const liveDetails = guard('páginas ao vivo', syncLiveDetails);
     const streams = guard('streams', syncStreams);
+    const reviews = guard('revisão', confirmReviews);
     live().then(pre).then(details).then(liveDetails).then(streams);
-    const timers = [setInterval(streams, 60_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1335,5 +1375,5 @@ export function createWinHouseFeed(db, {
     futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
   });
 
-  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+  return { enabled: state.enabled, syncLive, syncPrematch, syncDetails, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }

@@ -101,6 +101,7 @@ function setupFeed(lists) {
     prematch24h: async () => ({ ok: false, status: 500 }),
     prematchEvent: async (id) => (lists.pages?.[id] ? { ok: true, status: 200, body: lists.pages[id] } : { ok: false, status: 404 }),
     liveEvent: async (id) => (lists.livePages?.[id] ? { ok: true, status: 200, body: lists.livePages[id] } : { ok: false, status: 404 }),
+    tracker: async (id) => (lists.trackers?.[id] ? { ok: true, status: 200, body: lists.trackers[id] } : { ok: false, status: 404 }),
   };
   const feed = createWinHouseFeed(db, { client, tzOffsetMinutes: 60, finishConfirmSeconds: 0 });
   const { lastInsertRowid } = db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p@x.pt', 'P', '1990-01-01', 'x', ?)").run(nowIso());
@@ -140,6 +141,32 @@ test('live: in-play prices from the list; a match that leaves it at full time is
   assert.equal(t.betStatus(onAway), 'open');
   const queue = createSettlementEngine(t.db).queue();
   assert.ok(queue.some((q) => q.id === t.row(2).id && /WinHouse/.test(q.reason)));
+});
+
+test('a match flagged for review is settled when the tracker says it is over (score not lower than the last seen)', async () => {
+  const lists = { live: [football(3, 70, '1-0', ODD), football(4, 70, '0-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(3, '1x2', '1');
+  const onDraw = t.bet(4, '1x2', 'X');
+  lists.live = [];
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.ok(t.row(3).review_reason && t.row(4).review_reason);
+  // 3: the tracker still shows the 2nd half; 4: it says full time, 0-0.
+  lists.trackers = { 3: { status: 'inprogress', period: '2', home_score: 1, away_score: 0 }, 4: { status: 'Ended', home_score: 0, away_score: 0 } };
+  const now = Date.now();
+  assert.deepEqual(await t.feed.confirmReviews({ now }), { asked: 2, confirmed: 1 });
+  assert.equal(t.row(4).status, 'finished');
+  assert.equal(t.betStatus(onDraw), 'won');
+  assert.equal(t.row(3).status, 'live');
+  // Asked again only after 5 minutes; a lower score than the last one seen is not trusted.
+  lists.trackers[3] = { status: 'Ended', home_score: 0, away_score: 0 };
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 60_000 }), { asked: 0, confirmed: 0 });
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 6 * 60_000 }), { asked: 1, confirmed: 0 });
+  lists.trackers[3] = { status: 'Ended', home_score: 1, away_score: 0 };
+  assert.deepEqual(await t.feed.confirmReviews({ now: now + 12 * 60_000 }), { asked: 1, confirmed: 1 });
+  assert.equal(t.betStatus(onHome), 'won');
 });
 
 test('ice hockey: overtime means a regulation draw — 1X2 settles on it', async () => {
