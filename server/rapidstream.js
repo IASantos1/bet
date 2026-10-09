@@ -177,7 +177,8 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     // 20 s for the stream host to answer; after that the body flows for as long as it lasts (an FLV
     // stream is one long response). Closing the player stops it.
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 20_000);
+    // A playlist is small: 8 s, so the player's own retry comes sooner than its 10 s timeout.
+    const timer = setTimeout(() => ctl.abort(), /\.m3u8(\?|$)/i.test(t.u) ? 8_000 : 20_000);
     res.on('close', () => ctl.abort());
     const ask = (referer) => fetchImpl(t.u, {
       headers: {

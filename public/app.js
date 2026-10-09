@@ -2797,18 +2797,29 @@ async function playRapid(el, servers, i, why = '') {
   // dead playlist quickly, keep a modest buffer.
   const hls = new Hls({
     enableWorker: false, lowLatencyMode: false, liveSyncDurationCount: 3, maxBufferLength: 20,
-    manifestLoadingTimeOut: 10000, manifestLoadingMaxRetry: 2, levelLoadingTimeOut: 10000, levelLoadingMaxRetry: 2,
-    fragLoadingTimeOut: 20000, fragLoadingMaxRetry: 3,
+    manifestLoadingTimeOut: 10000, manifestLoadingMaxRetry: 2, levelLoadingTimeOut: 10000, levelLoadingMaxRetry: 4,
+    fragLoadingTimeOut: 20000, fragLoadingMaxRetry: 4,
   });
   r.hls = hls;
   let recovered = false;
-  hls.on(Hls.Events.FRAG_LOADED, () => { r.got = true; });
+  let netTries = 0;
+  // Data flowing again: the stream host's hiccup is over.
+  const flowing = () => { r.got = true; netTries = 0; };
+  hls.on(Hls.Events.FRAG_LOADED, flowing);
+  hls.on(Hls.Events.LEVEL_LOADED, () => { netTries = 0; });
   hls.on(Hls.Events.ERROR, (_ev, data) => {
     const code = data?.response?.code;
     r.why = `hls: ${data?.details || data?.type || 'erro'}${code ? ` (${code})` : ''}`;
     if (!data?.fatal) return;
     // A media error (decoding / buffer) is tried once more before giving up on the server.
     if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !recovered) { recovered = true; hls.recoverMediaError(); return; }
+    // The stream host slow to give the next playlist / segment (it happens mid-match): load again,
+    // waiting a little longer each time, rather than dropping a stream that was playing.
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && r.got && netTries < 6) {
+      netTries += 1;
+      setTimeout(() => { if (m.rapid === r && m.streamEl === el) hls.startLoad(); }, 1500 * netTries);
+      return;
+    }
     next(r.why);
   });
   hls.loadSource(servers[i].url);
