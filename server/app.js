@@ -28,6 +28,7 @@ import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
+import { playableServers } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
@@ -126,7 +127,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, stripe = null, bigbang = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -139,7 +140,9 @@ export function createApp(db, {
     res.set({
       'Content-Security-Policy':
         // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
-        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com; " +
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com${rapidStream?.enabled ? ' https:' : ''}; " +
+        // Live video (HLS) plays from the stream's own host.
+        "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.
         `frame-src https:${config.isProduction ? '' : ' http:'}; ` +
         "manifest-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
@@ -362,6 +365,8 @@ export function createApp(db, {
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
       supportEmail: config.supportEmail || undefined, supportPhone: config.supportPhone || undefined,
       sports: SPORTS, version: APP_VERSION,
+      // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.
+      rapidStream: !!rapidStream?.enabled,
     });
   });
 
@@ -506,6 +511,23 @@ export function createApp(db, {
       const s = await winhouseLive.getLiveStream(row.external_id);
       if (s.error) return res.status(404).json({ success: false, event_id: Number(row.external_id), error: s.error });
       res.json({ success: true, ...videoOut(row, s) });
+    } catch (err) { next(err); }
+  });
+
+  // Trial: live football video from the RapidAPI streaming API, matched to our game by team names.
+  // The same gate as WinHouse's TV (signed in, money in the wallet); WinHouse's TV is not touched.
+  app.get('/api/live2/:eventId', async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-store');
+      const gate = videoGate(req);
+      if (gate) return res.status(gate.status).json({ success: false, reason: gate.reason, error: gate.error });
+      if (!liveVideoLimiter(req.ip)) throw new HttpError(429, 'Demasiados pedidos. Tente daqui a pouco.');
+      if (!rapidStream?.enabled) return res.status(404).json({ success: false, error: 'Transmissões desligadas.' });
+      const ev = eventRow(req.params.eventId);
+      if (!ev || ev.status !== 'live' || ev.sport !== 'futebol') return res.status(404).json({ success: false, error: 'Jogo não está ao vivo.' });
+      const r = await rapidStream.streamsFor(ev.home, ev.away);
+      if (!r.servers.length) return res.status(404).json({ success: false, error: 'Sem transmissão para este jogo.' });
+      res.json({ success: true, servers: r.servers });
     } catch (err) { next(err); }
   });
 
@@ -1485,6 +1507,7 @@ export function createApp(db, {
       propline: propline ? propline.status() : { enabled: false, keySet: false },
       requestBudget: providerSummary()[0] || null,
       winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null },
+      rapidStream: !!rapidStream?.enabled,
     });
   });
 
@@ -1642,6 +1665,25 @@ export function createApp(db, {
     const r = recover(db);
     affiliateAudit(db, { actor: req.user.id, action: 'recover.run', entityType: 'system', result: 'ok', meta: r });
     res.json({ ...r, reconciliation: reconcile(db) });
+  });
+
+  // Trial video source: what the RapidAPI streaming API lists now and which of our live games it covers.
+  admin.get('/rapidstream', async (req, res, next) => {
+    try {
+      if (!rapidStream?.enabled) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
+      const c = await rapidStream.liveMatches({ fresh: req.query.fresh === '1' });
+      const ours = db.prepare("SELECT id, home, away FROM events WHERE status = 'live' AND sport = 'futebol'").all();
+      const covered = [];
+      for (const e of ours) {
+        const f = rapidStream.findMatch(c.matches, e.home, e.away);
+        if (f) covered.push({ id: e.id, game: `${e.home} × ${e.away}`, api: `${f.match.home_team_name} × ${f.match.away_team_name}`, score: Math.round(f.score * 100) / 100, playable: playableServers(f.match.servers).length, servers: (f.match.servers || []).length });
+      }
+      res.json({
+        status: rapidStream.status(), ourLive: ours.length, covered,
+        sample: c.matches.slice(0, 15).map((m) => ({ game: `${m.home_team_name} × ${m.away_team_name}`, league: m.league_name, status: m.match_status,
+          servers: (m.servers || []).map((v) => ({ name: v.name, type: v.type, https: /^https:/.test(String(v.url || '')), hls: /\.m3u8/i.test(String(v.url || '')), referer: !!v.header?.referer })) })),
+      });
+    } catch (err) { next(err); }
   });
 
   app.use('/api/admin', admin);

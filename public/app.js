@@ -2150,6 +2150,8 @@ document.addEventListener('click', async (e) => {
   if (liveTv) { state.liveTv = !state.liveTv; render({ keepScroll: true }); return; }
   const liveSport = e.target.closest('[data-live-sport]');
   if (liveSport) { state.liveSport = liveSport.dataset.liveSport; render({ keepScroll: true }); return; }
+  const rapidSrv = e.target.closest('[data-rapid-srv]');
+  if (rapidSrv) { const r = state.match.rapid; if (r) playRapid(state.match.streamEl, r.servers, Number(rapidSrv.dataset.rapidSrv)); return; }
   const matchView = e.target.closest('[data-match-view]');
   if (matchView) { state.match.view = matchView.dataset.matchView; render({ keepScroll: true }); return; }
   const expand = e.target.closest('[data-expand]');
@@ -2466,6 +2468,7 @@ function leaveMatch() {
   const m = state.match;
   m.es?.close();
   clearInterval(m.timer);
+  stopRapid();
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
@@ -2619,7 +2622,7 @@ function matchPage(sub) {
       <div id="trackerInline" class="tracker-inline"></div>
     </section>
     ${live ? `<div class="match-views">
-      <button class="${m.view === 'stream' ? 'active' : ''}${e.stream ? '' : ' none'}" data-match-view="stream" title="${e.stream ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
+      <button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
       ${e.liveTracker || e.sport === 'tenis' ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
     </div>` : ''}
     <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
@@ -2675,9 +2678,92 @@ const streamLockHtml = (l) => `<span>${ICON_TV}</span><p><strong>${l.text}</stro
 
 /** The match's live video box: locked, or waiting for WinHouse's player address (loadStream). */
 function streamBox(e) {
-  const lock = e.stream ? streamLock() : null;
+  const lock = hasTv(e) ? streamLock() : null;
   if (lock) return `<div class="stream-box empty locked">${streamLockHtml(lock)}</div>`;
-  return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${e.stream ? 'A abrir a transmissão…' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
+  return `<div class="stream-box empty"><span>${ICON_PLAY}</span><p>${hasTv(e) ? 'A abrir a transmissão…' : 'Sem transmissão ao vivo para este jogo.'}</p></div>`;
+}
+
+/**
+ * Whether a live match may have video: WinHouse says so (e.stream), or, on trial, the RapidAPI
+ * streaming source is on and it is football (whether that source has the game is asked on opening).
+ */
+const hasTv = (e) => !!e && (!!e.stream || (!!state.config?.rapidStream && e.sport === 'futebol' && e.status === 'live'));
+
+// ---- trial video source (RapidAPI): HTTPS HLS streams played here with hls.js (Safari plays HLS itself) ----
+let hlsLoading = null;
+function loadHlsJs() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (!hlsLoading) {
+    hlsLoading = new Promise((ok, fail) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/hls-1.5.20.min.js';
+      s.onload = () => ok(window.Hls);
+      s.onerror = () => { hlsLoading = null; fail(new Error('hls.js')); };
+      document.head.appendChild(s);
+    });
+  }
+  return hlsLoading;
+}
+
+function stopRapid() {
+  const r = state.match.rapid;
+  if (!r) return;
+  try { r.hls?.destroy(); } catch { /* already gone */ }
+  state.match.rapid = null;
+}
+
+/** Plays server `i` of the list in the box; on a fatal error, the next one. */
+async function playRapid(el, servers, i) {
+  const m = state.match;
+  stopRapid();
+  if (m.streamEl !== el) return;
+  if (i >= servers.length) {
+    el.className = 'stream-box empty';
+    el.innerHTML = `<span>${ICON_PLAY}</span><p>Nenhum servidor desta transmissão abriu. Tente daqui a pouco.</p>`;
+    return;
+  }
+  m.rapid = { servers, i, hls: null };
+  el.className = 'stream-box rapid';
+  el.innerHTML = `${expandBtn()}<video playsinline controls autoplay muted></video>
+    ${servers.length > 1 ? `<div class="rapid-servers">${servers.map((s, k) => `<button class="${k === i ? 'active' : ''}" data-rapid-srv="${k}">${esc(s.name)}</button>`).join('')}</div>` : ''}`;
+  const video = el.querySelector('video');
+  const next = () => { if (m.rapid?.i === i && m.streamEl === el) playRapid(el, servers, i + 1); };
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = servers[i].url;
+    video.addEventListener('error', next, { once: true });
+    return;
+  }
+  try {
+    const Hls = await loadHlsJs();
+    if (m.rapid?.i !== i || m.streamEl !== el) return;
+    if (!Hls?.isSupported()) throw new Error('hls');
+    const hls = new Hls({ enableWorker: false, lowLatencyMode: true });
+    m.rapid.hls = hls;
+    hls.on(Hls.Events.ERROR, (_ev, data) => { if (data?.fatal) next(); });
+    hls.loadSource(servers[i].url);
+    hls.attachMedia(video);
+  } catch { next(); }
+}
+
+/** The trial source's streams for this match (/api/live2/:id), or why there are none. */
+async function loadRapid(e, el) {
+  const m = state.match;
+  try {
+    const r = await api(`/api/live2/${e.id}`);
+    if (m.streamEl !== el) return;
+    if (!r.servers?.length) throw new Error('none');
+    playRapid(el, r.servers, 0);
+  } catch (err) {
+    if (m.streamEl !== el) return;
+    const reason = err.data?.reason;
+    if (reason === 'login' || reason === 'balance') {
+      el.className = 'stream-box empty locked';
+      el.innerHTML = streamLockHtml(reason === 'login' ? { text: 'Inicie sessão para ver a transmissão ao vivo.', btn: '<button class="primary-btn" data-action="login">Entrar</button>' } : { text: 'Saldo insuficiente. Deposite para ver a transmissão ao vivo.', btn: '<a class="primary-btn" href="#/perfil/carteira">Depositar</a>' });
+      return;
+    }
+    const p = el.querySelector('p');
+    if (p) p.textContent = err.status === 404 ? 'Sem transmissão ao vivo para este jogo.' : 'Transmissão indisponível de momento. Tente daqui a pouco.';
+  }
 }
 
 const streamFrame = (url) => `${expandBtn()}<iframe src="${esc(url)}" title="Transmissão ao vivo" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe>`;
@@ -2888,18 +2974,21 @@ function mountLiveWidget() {
   // Live video chosen: it takes the tracker's place (beside the slip on wide screens, in the header on phones).
   if (e?.status === 'live' && m.view === 'stream') {
     // Signing in, or the balance crossing zero, opens or closes the player.
-    const lock = e.stream ? streamLock() : null;
-    const key = `${e.id}|${!!e.stream}|${lock ? lock.text : 'open'}`;
+    const lock = hasTv(e) ? streamLock() : null;
+    const key = `${e.id}|${hasTv(e)}|${lock ? lock.text : 'open'}`;
     if (!m.streamEl || m.streamKey !== key) {
+      stopRapid();
       const holder = document.createElement('div');
       holder.innerHTML = streamBox(e);
       m.streamEl = holder.firstElementChild;
       m.streamKey = key;
-      if (e.stream && !lock) loadStream(e, m.streamEl);
+      if (hasTv(e) && !lock) (e.stream ? loadStream : loadRapid)(e, m.streamEl);
     }
     if (slot && m.streamEl.parentElement !== slot) slot.replaceChildren(m.streamEl);
     return;
   }
+  // Leaving the video: the trial player stops (no stream left downloading in the background).
+  if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
   const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
   if (!kind) {
     m.widget?.remove();
