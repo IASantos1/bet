@@ -15,8 +15,10 @@ import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
 import { spinsMove, spinsRow } from './promotions.js';
 
-const TOKEN = /^bet62_(\d+)(?:_fs(\d+))?$/;
-export const playerToken = (userId, spinsId = null) => `bet62_${userId}${spinsId ? `_fs${spinsId}` : ''}`;
+// The player's id at BigBang, also sent as its username (the callbacks name the player by username).
+// "bet62_…" players were created with the display name as username: still understood, no longer made.
+const TOKEN = /^(?:b62|bet62)_(\d+)(?:_fs(\d+))?$/;
+export const playerToken = (userId, spinsId = null) => `b62_${userId}${spinsId ? `_fs${spinsId}` : ''}`;
 export const parseToken = (t) => { const m = TOKEN.exec(String(t || '')); return m ? { userId: Number(m[1]), spinsId: m[2] ? Number(m[2]) : null } : null; };
 
 /** balance_change signature: HMAC-SHA256(username + amount + game + game_category + transaction_id, API key), hex. */
@@ -189,18 +191,19 @@ export function createBigBang(db, {
 
   // ---------- players and launch ----------
 
-  async function ensurePlayer(token, username) {
+  async function ensurePlayer(token) {
     if (players.has(token)) return;
-    await call('POST', '/users/create', { user_token: token, username: username || token, country: 'PT' });
+    // username = the token: BigBang's wallet callbacks identify the player by it.
+    await call('POST', '/users/create', { user_token: token, username: token, country: 'PT' });
     players.add(token);
   }
 
   /** A game URL: demo (no account, virtual money) or real (the player's token: account or free spins). */
-  async function launch({ gameId, token = null, demo = false, returnUrl = '', username = '' }) {
+  async function launch({ gameId, token = null, demo = false, returnUrl = '' }) {
     const body = { game_id: Number(gameId), language: 'pt', return_url: returnUrl || undefined };
     if (demo) body.demo = true;
     else {
-      await ensurePlayer(token, username);
+      await ensurePlayer(token);
       body.user_token = token;
     }
     const r = await call('POST', '/games/launch', body);
@@ -212,8 +215,18 @@ export function createBigBang(db, {
 
   const userRow = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 
+  // The last wallet callbacks received (admin → Casino): empty means BigBang is not calling us.
+  const callLog = [];
+  const logCall = (kind, username, r, extra = '') => {
+    callLog.unshift({ at: nowIso(), kind, username: String(username || '').slice(0, 60), status: r.status, detail: r.body.error || extra || `saldo ${r.body.balance}` });
+    callLog.length = Math.min(callLog.length, 30);
+    if (r.status !== 200) log(`bigbang ${kind} ${username}: ${r.status} ${r.body.error}`);
+    return r;
+  };
+
   /** user_data: the balance of a token (account: the real balance; free spins: their own balance). */
-  function walletUser(username) {
+  function walletUser(username) { return logCall('user_data', username, walletUserOf(username)); }
+  function walletUserOf(username) {
     const t = parseToken(username);
     const u = t && userRow(t.userId);
     if (!u) return { status: 404, body: { error: 'unknown user' } };
@@ -233,7 +246,8 @@ export function createBigBang(db, {
   };
 
   /** balance_change: one bet / win, applied once (transaction_id); returns { status, body }. */
-  function walletChange(p) {
+  function walletChange(p) { return logCall('balance_change', p?.username, walletChangeOf(p), p?.amount !== undefined ? `${p.amount}` : ''); }
+  function walletChangeOf(p) {
     if (!enabled) return { status: 503, body: { error: 'casino disabled' } };
     if (!p || typeof p !== 'object' || !verify(p)) return { status: 401, body: { error: 'invalid signature' } };
     if (p.sandbox) return { status: 200, body: { status: 'ok', balance: '100000.00' } }; // test key: never real money
@@ -288,5 +302,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, games, gamesPage, lobby, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync };
+  return { enabled, sandbox, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync };
 }
