@@ -1569,7 +1569,8 @@ function reconcileSlip() {
 // ---------- free bets in the slip ----------
 
 /** The player's free bets that can be used now (the server re-checks everything when the bet is placed). */
-const usableFreebets = () => (state.promos?.freebets || []).filter((f) => f.status === 'active' && Date.parse(f.expiresAt) > Date.now());
+const usableFreebets = () => (state.promos?.freebets || []).filter((f) => f.status === 'active' && Date.parse(f.expiresAt) > Date.now())
+  .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
 /** The free bet chosen in the slip, when the slip is one bet (a multiple, a builder or a single pick). */
 function chosenFreebet() {
   if (!state.freebetId || !state.user) return null;
@@ -1582,10 +1583,15 @@ function freebetUi() {
   const oneBet = state.builder || state.mode === 'multiple' || state.slip.length === 1;
   const show = !!state.user && list.length > 0 && oneBet;
   $('#freebetPick').classList.toggle('hidden', !show);
-  if (show) {
-    $('#freebetSel').innerHTML = `<option value="">Não usar</option>${list.map((f) => `<option value="${f.id}"${f.id === state.freebetId ? ' selected' : ''}>${money(f.amount)} · até ${esc(new Date(f.expiresAt).toLocaleDateString('pt-PT'))}${f.minOdds > 1 ? ` · odd mín. ${fmtOdds(f.minOdds)}` : ''}</option>`).join('')}`;
-  }
   const fb = chosenFreebet();
+  // The switch: left real money, right the free bet (the one that expires first).
+  const sw = $('#fbSwitch');
+  sw.classList.toggle('on', !!fb);
+  sw.setAttribute('aria-checked', fb ? 'true' : 'false');
+  const next = fb || list[0];
+  $('#fbInfo').textContent = !show ? '' : fb
+    ? `Freebet de ${money(fb.amount)} · válida até ${new Date(fb.expiresAt).toLocaleDateString('pt-PT')}${fb.minOdds > 1 ? ` · odd mín. ${fmtOdds(fb.minOdds)}` : ''}. Só os ganhos são pagos.`
+    : list.length > 1 ? `Tem ${list.length} freebets disponíveis. Deslize para usar.` : `Tem uma freebet de ${money(next.amount)} disponível. Deslize para usar.`;
   $('#stake').disabled = !!fb;
   $$('.quick-stakes button').forEach((b) => { b.disabled = !!fb; });
   if (fb) $('#stake').value = fb.amount;
@@ -2328,7 +2334,11 @@ function bindChrome() {
   }));
   $$('.quick-stakes button').forEach((b) => b.addEventListener('click', () => { $('#stake').value = b.dataset.stake; renderSlip(); }));
   $('#balanceBtn').addEventListener('click', () => openWalletModal('deposit'));
-  $('#freebetSel').addEventListener('change', (e) => { state.freebetId = Number(e.target.value) || null; renderSlip(); });
+  $('#fbSwitch').addEventListener('click', () => {
+    // Real money ↔ free bet: the one that expires first, or the next one when the player switches again.
+    state.freebetId = chosenFreebet() ? null : usableFreebets()[0]?.id ?? null;
+    renderSlip();
+  });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
