@@ -260,3 +260,43 @@ test('video proxy: a host refusing the referer (403) is asked again without it',
   assert.equal(res.statusCode, 200);
   assert.equal(Buffer.concat(chunks).toString('hex'), '470102');
 });
+
+test('stream relay: playlist and segments served from our copy, fetched once whoever asks', async () => {
+  const { createStreamRelay, mediaSegments } = await import('../server/rapidstream.js');
+  let seq = 10;
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.endsWith('playlist.m3u8')) {
+      const segs = [seq, seq + 1, seq + 2].map((n) => `#EXTINF:2.000,\nseg-${n}.ts`).join('\n');
+      return new Response(`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:${seq}\n${segs}\n`, { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
+    return new Response(Buffer.from(url.slice(-9)), { headers: { 'content-type': 'video/mp2t' } });
+  };
+  const url = 'https://cdn.example.org/live/x/playlist.m3u8';
+  assert.deepEqual(mediaSegments('#EXTM3U\n#EXTINF:2,\na.ts\n#EXT-X-STREAM-INF:B=1\nb.m3u8\n', url), ['https://cdn.example.org/live/x/a.ts']);
+  const relay = createStreamRelay({ fetchImpl, everyMs: 50, idleMs: 300 });
+  const pl = await relay.playlist(url, {});
+  assert.match(pl.text, /#EXT-X-MEDIA-SEQUENCE:10\n#EXTINF:2.000,\nseg-10.ts\n#EXTINF:2.000,\nseg-11.ts\n#EXTINF:2.000,\nseg-12.ts\n$/);
+  const seg = await relay.segment('https://cdn.example.org/live/x/seg-11.ts');
+  assert.equal(seg.buf.toString(), 'seg-11.ts');
+  await relay.segment('https://cdn.example.org/live/x/seg-11.ts');
+  assert.equal(asked.filter((u) => u.endsWith('seg-11.ts')).length, 1, 'one fetch per segment');
+  // The live window moves on: the relay follows it by itself.
+  seq = 11;
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(asked.some((u) => u.endsWith('seg-13.ts')), 'new segment fetched ahead of the player');
+  assert.equal(await relay.segment('https://cdn.example.org/live/x/seg-10.ts'), null, 'gone from the playlist, let go');
+  // Nobody asks: the relay stops.
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(relay.status().streams, 0);
+  relay.stop();
+});
+
+test('stream relay: a master playlist is left to the proxy', async () => {
+  const { createStreamRelay } = await import('../server/rapidstream.js');
+  const relay = createStreamRelay({ fetchImpl: async () => new Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchunks.m3u8\n'), everyMs: 50 });
+  assert.equal(await relay.playlist('https://cdn.example.org/m.m3u8', {}), null);
+  assert.equal(relay.status().streams, 0);
+  relay.stop();
+});
