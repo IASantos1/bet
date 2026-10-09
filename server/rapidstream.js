@@ -93,6 +93,45 @@ export async function rankServers(servers, { fetchImpl = globalThis.fetch, timeo
   return alive.length ? alive : servers;
 }
 
+/**
+ * Admin diagnosis of one stream, from our server (as the proxy would fetch it): the playlist with and
+ * without the referer, then down the playlist to its first segment, with the first bytes of each.
+ */
+export async function probeStream(server, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+  const get = async (url, referer) => {
+    const t0 = Date.now();
+    try {
+      const res = await fetchImpl(url, {
+        headers: { 'User-Agent': server.ua || BROWSER_UA, ...(referer ? { Referer: referer, Origin: new URL(referer).origin } : {}), Accept: '*/*' },
+        redirect: 'follow', signal: AbortSignal.timeout(timeoutMs),
+      });
+      const buf = Buffer.from(await res.arrayBuffer());
+      return { status: res.status, type: res.headers.get('content-type'), bytes: buf.length, ms: Date.now() - t0, url: res.url || url, buf };
+    } catch (err) { return { error: err.name === 'TimeoutError' ? 'sem resposta' : err.message, ms: Date.now() - t0 }; }
+  };
+  const show = (r) => (r.buf ? { status: r.status, type: r.type, bytes: r.bytes, ms: r.ms, start: /^#EXTM3U/.test(r.buf.toString('latin1', 0, 7)) ? r.buf.toString('utf8', 0, 400) : r.buf.subarray(0, 16).toString('hex') } : r);
+  const firstUri = (text, base) => {
+    const line = String(text).split(/\r?\n/).find((l) => l.trim() && !l.startsWith('#'));
+    try { return line ? new URL(line.trim(), base).href : null; } catch { return null; }
+  };
+  const out = { url: server.url, referer: server.referer || null };
+  if (!safeTarget(server.url)) return { ...out, error: 'endereço recusado' };
+  const plain = await get(server.url, null);
+  out.semReferer = show(plain);
+  const withRef = server.referer ? await get(server.url, server.referer) : plain;
+  if (server.referer) out.comReferer = show(withRef);
+  let cur = withRef.buf && withRef.status < 400 ? withRef : plain;
+  // Down the playlists (a master names a media playlist) to the first segment.
+  for (let depth = 0; depth < 3 && cur.buf && cur.buf.toString('latin1', 0, 7) === '#EXTM3U'; depth += 1) {
+    const next = firstUri(cur.buf.toString('utf8'), cur.url);
+    if (!next || !safeTarget(next)) break;
+    const r = await get(next, server.referer);
+    out[`passo${depth + 1}`] = { url: next.slice(0, 200), ...show(r) };
+    cur = r;
+  }
+  return out;
+}
+
 export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 3600, fetchImpl = globalThis.fetch, path = '/api/tv/p' } = {}) {
   const b64 = (buf) => Buffer.from(buf).toString('base64url');
   const sig = (data) => createHmac('sha256', secret).update(data).digest().subarray(0, 18);
@@ -385,5 +424,5 @@ export function createRapidStream({
     pages: cache.pages, error: cache.error, requestsToday: usage.requests, cacheSeconds,
   });
 
-  return { enabled, liveMatches, findMatch, streamsFor, status, raw, rank: (servers) => rankServers(servers, { fetchImpl }) };
+  return { enabled, liveMatches, findMatch, streamsFor, status, raw, rank: (servers) => rankServers(servers, { fetchImpl }), probe: (server) => probeStream(server, { fetchImpl }) };
 }
