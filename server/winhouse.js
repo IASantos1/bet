@@ -1280,14 +1280,16 @@ export function createWinHouseFeed(db, {
     if (!liveDetailPerCycle || !client.liveEvent || !r.live_odds_at || Date.now() < liveDetailPausedUntil) return false;
     const p = livePages.get(r.external_id);
     if (p && !p.restored && Date.now() - p.at < LIVE_WATCHED_S * 1000) return false;
-    if (onDemand.busy.has(r.id)) return onDemand.busy.get(r.id);
+    if (onDemand.busy.has(r.id)) return p && !p.restored ? false : onDemand.busy.get(r.id);
     const minute = Math.floor(Date.now() / 60_000);
     if (minute !== onDemand.liveMinute) { onDemand.liveMinute = minute; onDemand.live = 0; }
     if (onDemand.live >= 60) return false;
     onDemand.live += 1;
     const job = readLive(r).then((n) => typeof n === 'number' && n !== 404).finally(() => onDemand.busy.delete(r.id));
     onDemand.busy.set(r.id, job);
-    return job;
+    // Read before: the refresh runs in the background and the page answers at once with what is
+    // there (its next poll, seconds later, gets the fresh markets). Only a first read is waited for.
+    return p && !p.restored ? false : job;
   }
 
   async function syncDetails() {
