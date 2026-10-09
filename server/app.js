@@ -28,7 +28,7 @@ import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
-import { playableServers } from './rapidstream.js';
+import { playableServers, createVideoProxy } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
@@ -527,8 +527,16 @@ export function createApp(db, {
       if (!ev || ev.status !== 'live' || ev.sport !== 'futebol') return res.status(404).json({ success: false, error: 'Jogo não está ao vivo.' });
       const r = await rapidStream.streamsFor(ev.home, ev.away);
       if (!r.servers.length) return res.status(404).json({ success: false, error: 'Sem transmissão para este jogo.' });
-      res.json({ success: true, servers: r.servers });
+      // Played through our proxy: the stream hosts refuse other sites (CORS) and some want a referer.
+      res.json({ success: true, servers: r.servers.map((s) => ({ name: s.name, url: videoProxy.sign(s.url, { referer: s.referer, ua: s.ua }) })) });
     } catch (err) { next(err); }
+  });
+  // The proxy itself: only addresses we signed, only for a player allowed to watch.
+  const videoProxy = createVideoProxy();
+  app.get('/api/tv/p', (req, res, next) => {
+    if (!rapidStream?.enabled) return res.status(404).end();
+    if (videoGate(req)) return res.status(403).end();
+    videoProxy.handle(req, res).catch(next);
   });
 
   // Every game in play here with video right now (the /ajax/streams list), with its HLS address.

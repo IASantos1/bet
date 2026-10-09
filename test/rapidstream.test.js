@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
-import { createRapidStream, nameScore, playableServers } from '../server/rapidstream.js';
+import express from 'express';
+import { createRapidStream, nameScore, playableServers, createVideoProxy, safeTarget } from '../server/rapidstream.js';
 
 const page = (matches, hasNext = false) => ({ matches, pagination: { page: 1, hasNext } });
 const match = (home, away, servers) => ({ match_status: 'live', home_team_name: home, away_team_name: away, league_name: 'Liga', servers });
@@ -17,15 +18,18 @@ test('team names: accents, club suffixes and short forms agree; other teams do n
   assert.equal(nameScore('Benfica', 'Porto'), 0);
 });
 
-test('only HTTPS HLS without referer or DRM is offered to the browser', () => {
+test('HLS servers are offered (direct first, referer ones too), never DRM, FLV or local hosts', () => {
   const out = playableServers([
     HLS,
     { name: 'Server 2', url: 'https://cdn.example.com/a.mpd|drmScheme=clearkey', type: 'drm' },
     { name: 'Server 3', url: 'https://cdn.example.com/b.m3u8', header: { referer: 'https://x/' }, type: 'referer' },
     { name: 'Server 4', url: 'http://cdn.example.com/c.m3u8', type: 'direct' },
     { name: 'Server 5', url: 'https://cdn.example.com/d.flv', type: 'direct' },
+    { name: 'Server 6', url: 'https://127.0.0.1/e.m3u8', type: 'direct' },
   ]);
-  assert.deepEqual(out, [{ name: 'Server 1', url: HLS.url }]);
+  assert.deepEqual(out.map((s) => [s.name, s.referer]), [['Server 1', null], ['Server 4', null], ['Server 3', 'https://x/']]);
+  assert.equal(safeTarget('https://192.168.1.1/a'), null);
+  assert.equal(safeTarget('https://fcbarcelona.com/a.m3u8')?.hostname, 'fcbarcelona.com');
 });
 
 test('live matches: all pages read once, cached, matched to our game in either order', async () => {
@@ -38,7 +42,7 @@ test('live matches: all pages read once, cached, matched to our game in either o
   };
   const rs = createRapidStream({ apiKey: 'k', fetchImpl });
   const r = await rs.streamsFor('Moreirense', 'Gil Vicente');
-  assert.deepEqual(r.servers, [{ name: 'Server 1', url: HLS.url }]);
+  assert.deepEqual(r.servers.map((s) => s.url), [HLS.url]);
   assert.equal(calls.length, 2);
   await rs.streamsFor('Benfica', 'Porto');
   assert.equal(calls.length, 2, 'served from the cache');
@@ -86,8 +90,46 @@ test('HTTP: /api/live2 needs a signed-in player with balance and a live football
     assert.equal((await call('GET', `/api/live2/${live.id}`)).body.reason, 'balance');
     db.prepare("UPDATE users SET balance_cents = 1000 WHERE email = 'ana@example.com'").run();
     const ok = await call('GET', `/api/live2/${live.id}`);
-    assert.deepEqual(ok.body, { success: true, servers: [{ name: 'Server 1', url: HLS.url }] });
+    assert.equal(ok.body.servers.length, 1);
+    assert.match(ok.body.servers[0].url, /^\/api\/tv\/p\?t=/);
+    // The proxy: refused without a valid token; with one, refused to a signed-out visitor.
+    assert.equal((await call('GET', '/api/tv/p?t=bad.sig')).status, 403);
     const other = db.prepare("SELECT id FROM events WHERE status = 'live' AND sport = 'futebol' AND home <> 'Lisboa SC'").get();
     if (other) assert.equal((await call('GET', `/api/live2/${other.id}`)).status, 404);
+  } finally { server.close(); }
+});
+
+test('video proxy: signed addresses only, playlists rewritten, headers sent, segments passed through', async () => {
+  const seen = [];
+  const fetchImpl = async (url, opts) => {
+    seen.push({ url, referer: opts.headers.Referer });
+    if (url.endsWith('.m3u8')) {
+      return new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\nseg1.ts\nhttp://other.example.org/seg2.ts\nhttps://10.0.0.1/x.ts\n', { headers: { 'content-type': 'application/vnd.apple.mpegurl' } });
+    }
+    return new Response(Buffer.from('TSDATA'), { headers: { 'content-type': 'video/mp2t' } });
+  };
+  const proxy = createVideoProxy({ fetchImpl });
+  const app = express();
+  app.get('/api/tv/p', (req, res) => proxy.handle(req, res));
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const start = proxy.sign('https://cdn.example.com/live/index.m3u8', { referer: 'https://portal.example.com/' });
+    const list = await (await fetch(base + start)).text();
+    const lines = list.split('\n');
+    assert.equal(lines[0], '#EXTM3U');
+    assert.match(lines[1], /URI="\/api\/tv\/p\?t=/);
+    assert.match(lines[2], /^\/api\/tv\/p\?t=/);
+    assert.match(lines[3], /^\/api\/tv\/p\?t=/);
+    assert.equal(lines[4], '', 'a private address is dropped');
+    assert.equal(seen[0].referer, 'https://portal.example.com/');
+    const seg = await fetch(base + lines[2]);
+    assert.equal(await seg.text(), 'TSDATA');
+    assert.equal(seen[1].url, 'https://cdn.example.com/live/seg1.ts');
+    assert.equal(seen[1].referer, 'https://portal.example.com/', 'the referer rides along');
+    // A token changed by hand is refused.
+    assert.equal((await fetch(base + lines[2].replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')))).status, 403);
+    assert.equal(proxy.open(proxy.sign('https://127.0.0.1/x').split('t=')[1]), null);
   } finally { server.close(); }
 });
