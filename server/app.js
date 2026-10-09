@@ -1698,7 +1698,14 @@ export function createApp(db, {
       const covered = [];
       for (const e of ours) {
         const f = rapidStream.findMatch(c.matches, e.home, e.away);
-        if (f) covered.push({ id: e.id, game: `${e.home} × ${e.away}`, api: `${f.match.home_team_name} × ${f.match.away_team_name}`, score: Math.round(f.score * 100) / 100, playable: playableServers(f.match.servers).length, servers: (f.match.servers || []).length });
+        if (!f) continue;
+        const item = { id: e.id, game: `${e.home} × ${e.away}`, api: `${f.match.home_team_name} × ${f.match.away_team_name}`, apiId: f.match.id, score: Math.round(f.score * 100) / 100 };
+        // "Ler agora": the game's own route is asked too (as when a player opens it), a few games at most.
+        if (req.query.fresh === '1' && covered.length < 5) {
+          const r = await rapidStream.streamsFor(e.home, e.away);
+          Object.assign(item, { playable: r.servers.length, linkAnswer: r.answer });
+        } else Object.assign(item, { playable: playableServers(f.match.servers).length });
+        covered.push(item);
       }
       res.json({
         status: rapidStream.status(), ourLive: ours.length, covered,
