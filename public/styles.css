@@ -400,9 +400,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .stream-box iframe { width: 100%; height: 100%; border: 0; display: block; }
 .stream-box video { width: 100%; height: 100%; display: block; background: #000; object-fit: contain; }
 .stream-box:fullscreen video, .stream-box.expanded video { flex: 1; min-height: 0; }
-.rapid-servers { position: absolute; left: 8px; top: 8px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 2; }
-.rapid-servers button { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .25); background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer; }
-.rapid-servers button.active { background: var(--accent, #67788c); border-color: transparent; }
 .stream-box.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--dim); }
 .stream-box.empty svg { width: 34px; height: 34px; color: var(--text-4); }
 /* Live page: TV switch (games with video only) on the title line, sports under it. */
