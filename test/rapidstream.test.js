@@ -181,6 +181,12 @@ test('admin raw call: any path of the configured host, answered as it comes; odd
   await assert.rejects(rs.raw('/../x'), /caminho/);
 });
 
+test('key without list route: video stays off, admin route tool still answers', async () => {
+  const rs = createRapidStream({ apiKey: 'k', fetchImpl: async () => Response.json({ result: [] }) });
+  assert.equal(rs.enabled, false);
+  assert.equal((await rs.raw('/link/abc')).status, 200);
+});
+
 test('"football-live-stream-api" shape: result[] list (live only), links from the game route', async () => {
   const calls = [];
   const fetchImpl = async (url) => {

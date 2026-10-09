@@ -367,6 +367,7 @@ export function createApp(db, {
       sports: SPORTS, version: APP_VERSION,
       // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.
       rapidStream: !!rapidStream?.enabled,
+      rapidKey: !!rapidStream,
     });
   });
 
@@ -1519,6 +1520,7 @@ export function createApp(db, {
       requestBudget: providerSummary()[0] || null,
       winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null },
       rapidStream: !!rapidStream?.enabled,
+      rapidKey: !!rapidStream,
     });
   });
 
@@ -1682,7 +1684,7 @@ export function createApp(db, {
   // Any route of the configured streaming API, as it answers (to learn a new API's shape).
   admin.get('/rapidstream/raw', async (req, res, next) => {
     try {
-      if (!rapidStream?.enabled) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
+      if (!rapidStream) return res.json({ enabled: false, hint: 'Defina RAPIDAPI_KEY nas Variables do Railway e faça redeploy.' });
       res.json(await rapidStream.raw(String(req.query.path || '/')));
     } catch (err) { if (/caminho/.test(err.message)) return next(new HttpError(400, err.message)); res.json({ error: err.message }); }
   });

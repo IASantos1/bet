@@ -593,10 +593,10 @@ function adminFeed(f) {
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
       : 'Defina nas Variables do Railway <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI), <strong>RAPIDAPI_STREAM_LIST_PATH</strong> (a rota da lista de jogos) e <strong>RAPIDAPI_STREAM_PATH</strong> (a rota de um jogo, com {id}) e faça redeploy. O host por omissão é football-live-stream-api.p.rapidapi.com (RAPIDAPI_STREAM_HOST para outro).'}</p>
-    ${f.rapidStream ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="rapid-test">Testar transmissões</button>
-      <button class="ghost-btn btn-sm" data-action="rapid-test" data-fresh="1">Testar (ler agora, gasta pedidos)</button>
+    ${f.rapidKey ? `<div class="form-actions">${f.rapidStream ? `<button class="ghost-btn btn-sm" data-action="rapid-test">Testar transmissões</button>
+      <button class="ghost-btn btn-sm" data-action="rapid-test" data-fresh="1">Testar (ler agora, gasta pedidos)</button>` : '<span class="muted">Chave definida; falta a rota da lista. Use "Chamar rota" para a encontrar.</span>'}
       <button class="ghost-btn btn-sm" data-action="rapid-copy">Copiar resultado</button></div>
-      <div class="form-actions"><label class="field adm-inline">Rota da API <input id="rapidPath" value="/" placeholder="/matches?status=live"></label>
+      <div class="form-actions"><label class="field adm-inline">Rota da API <input id="rapidPath" value="/" placeholder="/link/{id do jogo}"></label>
         <button class="ghost-btn btn-sm" data-action="rapid-raw">Chamar rota</button></div>
       <p class="muted">Chama essa rota da API configurada (RAPIDAPI_STREAM_HOST) a partir do servidor e mostra a resposta tal como vem. Serve para conhecer uma API nova.</p>
       <pre class="raw-odds hidden" id="rapidOut"></pre>` : ''}</div>`;
