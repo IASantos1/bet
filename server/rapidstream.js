@@ -24,17 +24,19 @@ export function nameScore(a, b) {
 }
 
 /**
- * The servers we can play: HTTPS HLS (.m3u8) without DRM. Direct ones first; the ones that need a
- * referer go through our proxy like the rest (it sends the headers a browser cannot).
+ * The servers we can play: HLS (.m3u8) and FLV (.flv), never DRM. Every one goes through our proxy
+ * (it sends the referer / user-agent a browser cannot, and the hosts refuse other sites' pages).
  */
 export function playableServers(servers) {
+  const kindOf = (u) => (/^https?:\/\/[^\s|"'<>]+\.m3u8(\?[^\s|"'<>]*)?$/i.test(u) ? 'hls' : /^https?:\/\/[^\s|"'<>]+\.flv(\?[^\s|"'<>]*)?$/i.test(u) ? 'flv' : null);
+  // HLS before FLV (it plays on every device), direct before referer.
+  const rank = (s) => (kindOf(s.url) === 'flv' ? 2 : 0) + (s.header?.referer ? 1 : 0);
   return (Array.isArray(servers) ? servers : [])
-    .filter((s) => s && typeof s.url === 'string' && /^https?:\/\/[^\s|"'<>]+\.m3u8(\?[^\s|"'<>]*)?$/i.test(s.url)
-      && s.type !== 'drm' && safeTarget(s.url))
-    .sort((a, b) => (a.header?.referer ? 1 : 0) - (b.header?.referer ? 1 : 0))
-    .slice(0, 6)
+    .filter((s) => s && typeof s.url === 'string' && kindOf(s.url) && s.type !== 'drm' && safeTarget(s.url))
+    .sort((a, b) => rank(a) - rank(b))
+    .slice(0, 8)
     .map((s, i) => ({
-      name: String(s.name || `Servidor ${i + 1}`).slice(0, 30), url: s.url,
+      name: String(s.name || `Servidor ${i + 1}`).slice(0, 30), url: s.url, kind: kindOf(s.url),
       referer: typeof s.header?.referer === 'string' ? s.header.referer.slice(0, 300) : null,
       ua: typeof s.header?.['user-agent'] === 'string' ? s.header['user-agent'].slice(0, 300) : null,
     }));
@@ -74,7 +76,13 @@ export async function rankServers(servers, { fetchImpl = globalThis.fetch, timeo
         headers: { 'User-Agent': s.ua || BROWSER_UA, ...(s.referer ? { Referer: s.referer, Origin: new URL(s.referer).origin } : {}), Accept: '*/*' },
         redirect: 'follow', signal: AbortSignal.timeout(timeoutMs),
       });
-      ok = res.ok && (await res.text()).startsWith('#EXTM3U');
+      if (s.kind === 'flv') {
+        // A live FLV never ends: only its first bytes ("FLV" signature) are read.
+        const reader = res.ok && res.body ? res.body.getReader() : null;
+        const first = reader ? await reader.read() : null;
+        ok = !!first?.value && Buffer.from(first.value.subarray(0, 3)).toString('latin1') === 'FLV';
+        reader?.cancel().catch(() => {});
+      } else ok = res.ok && (await res.text()).startsWith('#EXTM3U');
     } catch { ok = false; }
     const r = { at: Date.now(), ok, ms: Date.now() - t0 };
     probes.set(s.url, r);
@@ -128,6 +136,11 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     if (!t) return res.status(403).end();
     const hdr = { referer: t.r || null, ua: t.a || null };
     let up;
+    // 20 s for the stream host to answer; after that the body flows for as long as it lasts (an FLV
+    // stream is one long response). Closing the player stops it.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20_000);
+    res.on('close', () => ctl.abort());
     try {
       up = await fetchImpl(t.u, {
         headers: {
@@ -136,9 +149,9 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
           Accept: '*/*',
         },
         redirect: 'follow',
-        signal: AbortSignal.timeout(20_000),
+        signal: ctl.signal,
       });
-    } catch { return res.status(502).end(); }
+    } catch { return res.status(502).end(); } finally { clearTimeout(timer); }
     if (!up.ok || !up.body) return res.status(up.status === 404 ? 404 : 502).end();
     const type = String(up.headers.get('content-type') || '');
     const playlist = /mpegurl/i.test(type) || /\.m3u8$/i.test(new URL(up.url || t.u).pathname);
@@ -152,7 +165,7 @@ export function createVideoProxy({ secret = randomBytes(32), ttlSeconds = 4 * 36
     const len = up.headers.get('content-length');
     if (len) res.set('Content-Length', len);
     const body = Readable.fromWeb(up.body);
-    req.on('close', () => body.destroy());
+    res.on('close', () => body.destroy());
     body.on('error', () => res.destroy());
     body.pipe(res);
   }

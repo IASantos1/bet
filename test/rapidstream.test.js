@@ -18,7 +18,7 @@ test('team names: accents, club suffixes and short forms agree; other teams do n
   assert.equal(nameScore('Benfica', 'Porto'), 0);
 });
 
-test('HLS servers are offered (direct first, referer ones too), never DRM, FLV or local hosts', () => {
+test('HLS then FLV servers are offered (direct first, referer ones too), never DRM or local hosts', () => {
   const out = playableServers([
     HLS,
     { name: 'Server 2', url: 'https://cdn.example.com/a.mpd|drmScheme=clearkey', type: 'drm' },
@@ -27,7 +27,7 @@ test('HLS servers are offered (direct first, referer ones too), never DRM, FLV o
     { name: 'Server 5', url: 'https://cdn.example.com/d.flv', type: 'direct' },
     { name: 'Server 6', url: 'https://127.0.0.1/e.m3u8', type: 'direct' },
   ]);
-  assert.deepEqual(out.map((s) => [s.name, s.referer]), [['Server 1', null], ['Server 4', null], ['Server 3', 'https://x/']]);
+  assert.deepEqual(out.map((s) => [s.name, s.kind, s.referer]), [['Server 1', 'hls', null], ['Server 4', 'hls', null], ['Server 3', 'hls', 'https://x/'], ['Server 5', 'flv', null]]);
   assert.equal(safeTarget('https://192.168.1.1/a'), null);
   assert.equal(safeTarget('https://fcbarcelona.com/a.m3u8')?.hostname, 'fcbarcelona.com');
 });
@@ -85,6 +85,9 @@ test('HTTP: /api/live2 needs a signed-in player with balance and a live football
     const cfg = await call('GET', '/api/config');
     assert.equal(cfg.body.rapidStream, true);
     assert.match(cfg.csp, /media-src 'self' https: blob:/);
+    // Stripe's API stays allowed, and no unexpanded template text reaches the header.
+    assert.match(cfg.csp, /connect-src 'self' https:\/\/api\.stripe\.com https:;/);
+    assert.doesNotMatch(cfg.csp, /\$\{/);
     assert.equal((await call('GET', `/api/live2/${live.id}`)).status, 401);
     await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true });
     assert.equal((await call('GET', `/api/live2/${live.id}`)).body.reason, 'balance');
@@ -149,4 +152,21 @@ test('servers are probed at once: the fastest that answers first, the dead ones 
   // None answers: the list is kept as it was.
   const none = [s('dead'), s('html')];
   assert.deepEqual((await rankServers(none, { fetchImpl })).map((x) => x.name), ['dead', 'html']);
+});
+
+test('FLV: probed by its signature, streamed through the proxy as one long response', async () => {
+  const flvBody = () => new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('FLV\x01\x05')); c.enqueue(new TextEncoder().encode('more')); c.close(); } });
+  const fetchImpl = async (url) => (url.includes('good') ? new Response(flvBody(), { headers: { 'content-type': 'video/x-flv' } }) : new Response('<html>no</html>'));
+  const list = [{ name: 'bad', kind: 'flv', url: 'https://cdn.example.com/bad.flv' }, { name: 'good', kind: 'flv', url: 'https://cdn.example.com/good.flv' }];
+  assert.deepEqual((await rankServers(list, { fetchImpl })).map((x) => x.name), ['good']);
+  const proxy = createVideoProxy({ fetchImpl });
+  const app = express();
+  app.get('/api/tv/p', (req, res) => proxy.handle(req, res));
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}${proxy.sign('https://cdn.example.com/good.flv')}`);
+    assert.equal(res.headers.get('content-type'), 'video/x-flv');
+    assert.equal(await res.text(), 'FLV\x01\x05more');
+  } finally { server.close(); }
 });
