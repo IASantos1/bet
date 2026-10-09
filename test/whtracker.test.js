@@ -116,6 +116,23 @@ test('the tracker WebSocket moves the ball every frame; widget-data keeps the re
   sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.75, 0.05] });
   const balls = got.filter((m) => m.type === 'livedata').map((m) => [m.data.x, m.data.y, m.data.situation]);
   assert.deepEqual(balls, [[70, 24, 'dangerous_attack'], [75, 5, 'dangerous_attack']]);
+  // Never back in time: a newer frame (ts 200, 62'), then an older state (ts 100, 61') is dropped,
+  // and a frame with an older timer in the same period keeps the clock where it was.
+  got.length = 0;
+  sockets[0].frame({ type: 'tracker', ts: 200, period: 'Second Half', timer: 3720, xy: [0.5, 0.5] });
+  sockets[0].frame({ type: 'tracker', ts: 100, period: 'Second Half', timer: 3660, xy: [0.1, 0.1] });
+  sockets[0].frame({ type: 'tracker', ts: 300, period: 'Second Half', timer: 3700, xy: [0.6, 0.5] });
+  const clocks = got.filter((m) => m.type === 'event').map((m) => m.data.clock);
+  assert.deepEqual(clocks, ["62'"]);
+  assert.deepEqual(got.filter((m) => m.type === 'livedata').map((m) => m.data.x), [50, 60]);
+  // A frame without xy keeps the last real position while the situation is the same (no jump to
+  // the situation's usual spot and back); a new situation without xy moves it to that spot.
+  got.length = 0;
+  sockets[0].frame({ type: 'tracker', ts: 400, situation: 'Home Attack', xy: [0.55, 0.4] });
+  sockets[0].frame({ type: 'tracker', ts: 401, situation: 'Home Attack' });
+  sockets[0].frame({ type: 'tracker', ts: 402, situation: 'Home Attack', xy: [0.57, 0.42] });
+  sockets[0].frame({ type: 'tracker', ts: 403, situation: 'Home Goal Kick' });
+  assert.deepEqual(got.filter((m) => m.type === 'livedata').map((m) => [Math.round(m.data.x), m.data.situation]), [[55, 'attack'], [57, 'attack'], [7, 'goalkick']]);
   stop();
 });
 
@@ -203,4 +220,16 @@ test('half time: ball on the centre spot, "Intervalo"; added time of the first h
   // In the second half: 46' after 48' starts the half; 92' is 90+2.
   const t = normalizeWidgetData({ period: 'Second Half', timer: 5520, timeline: [{ type: 'goal', min: 48 }, { type: 'goal', min: 46 }, { type: 'goal', min: 92 }] });
   assert.deepEqual(t.timeline.map((a) => a.minuteLabel), ["45+3'", "46'", "90+2'"]);
+});
+
+test('timeline in the second half without a drop: 47\' and 59\' are second-half minutes, not 45+N', async () => {
+  const { normalizeWidgetData } = await import('../server/whtracker.js');
+  const s = normalizeWidgetData({
+    period: 'Second Half', timer: 3742,
+    timeline: [24, 33, 38, 47, 59].map((min, i) => ({ type: 'goal', min, team: i === 1 ? 'away' : 'home', text: 'Goal' })),
+  });
+  assert.deepEqual(s.timeline.map((a) => a.minuteLabel), ["24'", "33'", "38'", "47'", "59'"]);
+  // While the first half is still on, a minute past 45 is its added time.
+  const f = normalizeWidgetData({ period: 'First Half', timer: 2830, timeline: [{ type: 'goal', min: 46 }] });
+  assert.deepEqual(f.timeline.map((a) => a.minuteLabel), ["45+1'"]);
 });
