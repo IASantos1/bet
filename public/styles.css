@@ -622,16 +622,17 @@ body.no-scroll { overflow: hidden; }
 .trk-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; user-select: none; font-weight: 900; font-style: italic; font-size: 40px; font-size: 19cqw; letter-spacing: -.02em; line-height: 1; color: #ffffff38; }
 .trk-mark span { color: #0d111440; }
 /* The 3D clips (goal, corner) over the pitch; a tap closes them. */
-/* The 3D pitch (public/trk3d.js): its canvas fills the pitch box; the 2D drawing steps aside. */
-.trk-3d { position: absolute; inset: 0; z-index: 1; display: none; overflow: hidden; }
-.trk.is3d .trk-3d { display: block; }
+/* The football pitch is 3D (public/trk3d.js): its canvas fills the pitch box; the 2D drawing is hidden. */
+.trk-3d { position: absolute; inset: 0; z-index: 1; overflow: hidden; }
 .trk-3d canvas { display: block; width: 100%; height: 100%; }
-.trk.is3d .trk-pitch { border-color: transparent; background: #0b1626; }
-.trk.is3d .trk-pitch > i, .trk.is3d .trk-arrow, .trk.is3d .trk-goal, .trk.is3d .trk-trails, .trk.is3d .trk-ball, .trk.is3d .trk-mark { display: none; }
-.trk.is3d .trk-badge { transition: none; transform: translate(-50%, calc(-100% - 6px)); }
-.trk.is3d .trk-turf { background: #0b1626; }
-.trk-mode { position: absolute; left: 6px; bottom: 6px; z-index: 7; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid #ffffff33; background: #0b0e12b3; color: #fff; font-size: 11px; font-weight: 800; }
-.trk-mode[hidden] { display: none; }
+.trk[data-kind="football"] .trk-pitch { border-color: transparent; background: #0b1626; }
+.trk[data-kind="football"] .trk-turf { background: #0b1626; }
+.trk[data-kind="football"] .trk-pitch > i, .trk[data-kind="football"] .trk-arrow, .trk[data-kind="football"] .trk-goal,
+.trk[data-kind="football"] .trk-trails, .trk[data-kind="football"] .trk-ball, .trk[data-kind="football"] .trk-mark { display: none; }
+.trk[data-kind="football"] .trk-badge { transition: none; transform: translate(-50%, calc(-100% - 6px)); }
+.trk-3d-off { display: none; position: absolute; inset: 0; z-index: 2; margin: 0; place-items: center; text-align: center; padding: 12px; color: #cfd6dd; font-size: 12px; font-weight: 700; }
+.trk.no3d .trk-3d-off { display: grid; }
+.trk.no3d .trk-badge { display: none; }
 .trk-clip { position: absolute; inset: 0; z-index: 8; background: #0d1114; opacity: 0; visibility: hidden; cursor: pointer; transition: opacity .25s, visibility 0s .25s; }
 .trk-clip.on { opacity: 1; visibility: visible; transition: opacity .25s; }
 .trk-clip video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }

@@ -50,7 +50,3 @@ export function fovFor(aspect, baseFov = 40) {
   const h = 2 * Math.atan(Math.tan((baseFov * Math.PI) / 360) * (16 / 9));
   return Math.min(75, (2 * Math.atan(Math.tan(h / 2) / a) * 180) / Math.PI);
 }
-
-/** Whether the 3D pitch is wanted: on unless the viewer chose 2D (kept in localStorage). */
-export const PREF_KEY = 'b62_trk3d';
-export const wants3D = (stored) => stored !== '0';

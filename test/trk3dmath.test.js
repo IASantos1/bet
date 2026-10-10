@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PITCH, pitchPoint, flightHeight, zoneStyle, qualityTier, fovFor, wants3D } from '../public/trk3dmath.js';
+import { PITCH, pitchPoint, flightHeight, zoneStyle, qualityTier, fovFor } from '../public/trk3dmath.js';
 
 test('a tracker fix lands on the 3D pitch: corners, centre, the goal mouth beyond the line', () => {
   assert.deepEqual(pitchPoint(50, 50), { x: 0, z: 0 });
@@ -43,10 +43,4 @@ test('camera: the horizontal view of a 16:9 frame is kept in narrower boxes', ()
   const h = (fov, a) => 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * a);
   assert.ok(Math.abs(h(narrow, 1.55) - h(40, 16 / 9)) < 1e-9);
   assert.ok(fovFor(0.6) <= 75);
-});
-
-test('3D unless the viewer chose 2D', () => {
-  assert.equal(wants3D(null), true);
-  assert.equal(wants3D('1'), true);
-  assert.equal(wants3D('0'), false);
 });

@@ -1,7 +1,7 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
 import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, createClipGate, createCornerWatch } from './trkclips.js';
-import { qualityTier, wants3D, PREF_KEY as PITCH3D_KEY } from './trk3dmath.js';
+import { qualityTier } from './trk3dmath.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -2195,7 +2195,6 @@ document.addEventListener('click', async (e) => {
   if (matchView) { state.match.view = matchView.dataset.matchView; render({ keepScroll: true }); return; }
   const expand = e.target.closest('[data-expand]');
   if (expand) { toggleExpand(expand.closest('.trk, .stream-box')); return; }
-  if (e.target.closest('[data-trk-mode]')) { togglePitchMode(); return; }
   const marketCatBtn = e.target.closest('[data-market-cat]');
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
 
@@ -3106,7 +3105,7 @@ function footballWidget(e) {
       <div class="trk-3d" id="trk3dHost"></div>
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
-      <button class="trk-mode" data-trk-mode title="Mudar entre campo 3D e 2D" aria-label="Mudar entre campo 3D e 2D">3D</button>
+      <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p>
       <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video></div>
     </div></div>
     <p class="trk-note" id="trkNote"></p>
@@ -3175,22 +3174,21 @@ function mountLiveWidget() {
 }
 
 // ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------
-const readPref = () => { try { return localStorage.getItem(PITCH3D_KEY); } catch { return null; } };
-const writePref = (v) => { try { localStorage.setItem(PITCH3D_KEY, v); } catch { /* private mode */ } };
+// The football tracker is 3D only (the 2D drawing is hidden and not driven); a device that cannot
+// draw it gets a short note in its place, the statistics and actions below stay.
 let pitch3dModule = null;
-let pitch3dFailed = false; // no WebGL (or the module did not load): the 2D pitch stays
+let pitch3dFailed = false;
 
-/** The 3D pitch in the football widget, unless the viewer chose 2D or the device cannot draw it. */
 function ensure3D() {
   const m = state.match;
   const w = m.widget;
-  const btn = w && $('[data-trk-mode]', w);
-  if (btn) btn.hidden = pitch3dFailed;
-  if (!w || m.widgetKind !== 'football' || m.pitch3d || m.pitch3dLoading || pitch3dFailed || !wants3D(readPref())) return;
+  if (!w || m.widgetKind !== 'football') return;
+  w.classList.toggle('no3d', pitch3dFailed);
+  if (m.pitch3d || m.pitch3dLoading || pitch3dFailed) return;
   m.pitch3dLoading = true;
   (pitch3dModule ||= import('./trk3d.js')).then(({ createPitch3D }) => {
     m.pitch3dLoading = false;
-    if (m.widget !== w || m.pitch3d || !wants3D(readPref())) return;
+    if (m.widget !== w || m.pitch3d) return;
     const badge = $('#trkBadge', w);
     const quality = qualityTier({
       coarse: !!window.matchMedia?.('(pointer: coarse)').matches, width: window.innerWidth,
@@ -3200,33 +3198,20 @@ function ensure3D() {
       quality,
       // The label follows the ball as the camera sees it.
       onFrame: ({ x, y }) => {
-        if (!w.classList.contains('is3d')) return;
         badge.style.left = `${Math.min(80, Math.max(20, x))}%`;
         badge.style.top = `${Math.min(96, Math.max(26, y))}%`;
       },
     });
-    if (!pitch) { pitch3dFailed = true; if (btn) btn.hidden = true; return; }
+    if (!pitch) { pitch3dFailed = true; w.classList.add('no3d'); return; }
     m.pitch3d = pitch;
-    w.classList.add('is3d');
-    if (btn) btn.textContent = '2D';
     updateTracker({ instant: true });
-  }).catch(() => { m.pitch3dLoading = false; pitch3dFailed = true; pitch3dModule = null; if (btn) btn.hidden = true; });
+  }).catch(() => { m.pitch3dLoading = false; pitch3dFailed = true; pitch3dModule = null; w.classList.add('no3d'); });
 }
 
 function drop3D() {
   const m = state.match;
   m.pitch3d?.destroy();
   m.pitch3d = null;
-  m.widget?.classList.remove('is3d');
-  const btn = m.widget && $('[data-trk-mode]', m.widget);
-  if (btn) btn.textContent = '3D';
-}
-
-/** The 2D / 3D button: the choice is kept for the next matches. */
-function togglePitchMode() {
-  const on = !!state.match.pitch3d;
-  writePref(on ? '0' : '1');
-  if (on) { drop3D(); updateTracker({ instant: true }); } else ensure3D();
 }
 
 function afterMatchRender() {
