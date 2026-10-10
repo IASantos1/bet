@@ -1035,6 +1035,7 @@ export function createWinHouseFeed(db, {
   }
 
   const liveRaw = new Map(); // WinHouse game id → its entry of the last live list (no odds)
+  let liveListAt = null; // when that list was read
   /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
   async function syncLive() {
     const r = await client.live();
@@ -1048,6 +1049,7 @@ export function createWinHouseFeed(db, {
     let open = 0;
     // Each game's entry as WinHouse sent it (without its odds), for the admin's "WinHouse data".
     liveRaw.clear();
+    liveListAt = nowIso();
     for (const raw of items) {
       if (raw?.id !== undefined) { const { odd: _odd, ...fields } = raw; liveRaw.set(String(raw.id), fields); }
       let ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
@@ -1484,5 +1486,9 @@ export function createWinHouseFeed(db, {
     futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
   });
 
-  return { enabled: state.enabled, rawLive: (ext) => liveRaw.get(String(ext)) || null, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+  return {
+    enabled: state.enabled, rawLive: (ext) => liveRaw.get(String(ext)) || null,
+    /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
+    rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
+    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }

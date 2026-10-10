@@ -1182,7 +1182,11 @@ export function createApp(db, {
       ]);
       const text = JSON.stringify({
         gameId, status: ev.status,
-        listaAoVivo: winhouseFeed?.rawLive?.(gameId) || (ev.status === 'live' ? 'ainda não visto na lista ao vivo (espere 15 s)' : 'jogo não está ao vivo'),
+        listaAoVivo: winhouseFeed?.rawLive?.(gameId) || (!winhouseFeed?.liveListAt?.() ? 'a lista ao vivo ainda não foi lida (espere 15 s)'
+          : ev.wh_missing_since ? `o jogo saiu da lista ao vivo da WinHouse em ${ev.wh_missing_since} (terminou ou parou)` : 'o jogo não está na lista ao vivo da WinHouse'),
+        // When this game is not in play there, another of the same sport that is (its whole entry).
+        outroJogoAoVivo: winhouseFeed?.rawLive?.(gameId) ? undefined : winhouseFeed?.rawLiveOfSport?.(ev.sport) || `nenhum jogo de ${ev.sport} na lista ao vivo da WinHouse agora`,
+        listaLidaEm: winhouseFeed?.liveListAt?.() || null,
         paginaAoVivo: page?.liveAttempt ? { keys: page.liveAttempt.keys, sample: page.liveAttempt.sample } : page?.erro ? page : { keys: page?.keys, sample: page?.sample },
         tracker,
       }, null, 2);

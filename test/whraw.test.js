@@ -12,7 +12,11 @@ test('admin: a WinHouse game shows its gameId and everything WinHouse sends for 
   const asked = [];
   const app = createApp(db, {
     winhouse: { enabled: true, markets: async (o) => { asked.push(o); return { liveAttempt: { keys: ['score'], sample: '{"score":"15:30"}' } }; } },
-    winhouseFeed: { rawLive: (g) => (g === '777' ? { id: 777, result: '1-0', current_minute: '2 set', score_info: '15:30' } : null) },
+    winhouseFeed: {
+      rawLive: (g) => (g === '777' ? { id: 777, result: '1-0', current_minute: '2 set', score_info: '15:30' } : null),
+      rawLiveOfSport: (sp) => (sp === 'tenis' ? { id: 888, sport_id: 5, result: '0-1' } : null),
+      liveListAt: () => '2026-10-10T13:00:00.000Z',
+    },
     winhouseTracker: { enabled: true, inspect: async (g) => ({ gameId: g, ok: true }) },
   });
   const server = app.listen(0);
@@ -31,6 +35,13 @@ test('admin: a WinHouse game shows its gameId and everything WinHouse sends for 
     assert.deepEqual(data.paginaAoVivo, { keys: ['score'], sample: '{"score":"15:30"}' });
     assert.deepEqual(data.tracker, { gameId: '777', ok: true });
     assert.deepEqual(asked, [{ gameId: '777', live: true }]);
+    assert.equal(data.outroJogoAoVivo, undefined);
+    // A game already gone from WinHouse's live list: said so, with another tennis game that is in it.
+    const gone = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, wh_missing_since, created_at, updated_at)
+      VALUES ('tenis', 'ATP. Shanghai', 'C', 'D', ?, 'live', 'winhouse', '999', '2026-10-10T12:50:00.000Z', ?, ?)`).run(nowIso(), nowIso(), nowIso()).lastInsertRowid);
+    const other = JSON.parse((await get(`/api/admin/events/${gone}/winhouse-raw`)).body.raw);
+    assert.match(other.listaAoVivo, /saiu da lista ao vivo/);
+    assert.deepEqual(other.outroJogoAoVivo, { id: 888, sport_id: 5, result: '0-1' });
     // A game from another source has no WinHouse data.
     const manual = db.prepare("SELECT id FROM events WHERE source = 'manual' LIMIT 1").get();
     if (manual) assert.equal((await get(`/api/admin/events/${manual.id}/winhouse-raw`)).status, 409);
