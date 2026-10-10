@@ -409,6 +409,12 @@ function migrate(db) {
 
   // Markets beyond 1X2: selections gain a market column (the table is rebuilt, keeping ids so
   // bet legs stay linked) and bet legs record the market they were placed on.
+  // Casino free spins as a value in euros played at each game's own spin bet: what the spins won
+  // (paid as real money when they end) and each game's bet, kept apart from the value left to play.
+  const fsCols = new Set(db.prepare('PRAGMA table_info(casino_spins)').all().map((c) => c.name));
+  if (!fsCols.has('won_cents')) db.exec('ALTER TABLE casino_spins ADD COLUMN won_cents INTEGER');
+  if (!fsCols.has('game_bets')) db.exec('ALTER TABLE casino_spins ADD COLUMN game_bets TEXT');
+
   const selCols = new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name));
   if (!selCols.has('market')) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)

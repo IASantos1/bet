@@ -5,7 +5,7 @@ import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { postTransaction } from '../server/wallet.js';
 import { createBigBang, signMove, playerToken, parseToken } from '../server/bigbang.js';
-import { onDeposit, savePromoConfig, expireDue, playerPromos } from '../server/promotions.js';
+import { onDeposit, savePromoConfig, expireDue, playerPromos, promoConfig } from '../server/promotions.js';
 
 const KEY = 'live_key_123';
 
@@ -89,42 +89,63 @@ test('seamless wallet: balance read, bets and wins applied once per transaction,
   assert.equal(bb.walletChange(move(name, -1, 't8')).body.error, 'self-excluded');
 });
 
-test('free spins: chosen on the deposit by tier, played only in eligible games, winnings above the value paid as real money', () => {
+test('free spins: a value in euros by deposit tier, each spin at the game\'s own bet, winnings paid as real money', () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
-  savePromoConfig(db, { casinoFs: { games: '4822, 4821' } });
+  savePromoConfig(db, { casinoFs: { games: '4822:0.10, 4821:0.20' } });
+  assert.deepEqual(promoConfig(db).casinoFs.gameBets, { 4822: 0.1, 4821: 0.2 });
   const u = player(db);
-  // €60 → the €50 tier: 25 spins × €0.20 = €5.
-  tx(db, () => postTransaction(db, u, 6000, 'deposit', 'd'));
-  const s = tx(db, () => onDeposit(db, { userId: u, amountCents: 6000, ref: 'pi_fs', choice: 'casino' }));
-  assert.equal(s.spins, 25);
+  // €10 → €5 in free spins.
+  tx(db, () => postTransaction(db, u, 1000, 'deposit', 'd'));
+  const s = tx(db, () => onDeposit(db, { userId: u, amountCents: 1000, ref: 'pi_fs', choice: 'casino' }));
   assert.equal(s.value_cents, 500);
+  assert.equal(s.spins, 25); // at the usual €0.20
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM bonuses').get().n, 0); // the player chose the casino: no sports bonus
   // Once per deposit; one casino campaign at a time.
-  assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 6000, ref: 'pi_fs', choice: 'casino' })), null);
+  assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 1000, ref: 'pi_fs', choice: 'casino' })), null);
   tx(db, () => postTransaction(db, u, 2000, 'deposit', 'd2'));
   assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 2000, ref: 'pi_fs2', choice: 'casino' })), null);
   const fs = playerToken(u, s.id);
   assert.equal(bb.walletUser(fs).body.balance, '5.00');
-  // A game outside the list: refused.
-  assert.equal(bb.walletChange(move(fs, -1, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
-  // Played: −1, +4 → €8 on the free-spins balance; the real balance untouched.
-  bb.walletChange(move(fs, -1, 'f1'));
-  bb.walletChange(move(fs, 4, 'f2'));
-  assert.equal(bb.walletUser(fs).body.balance, '8.00');
-  assert.equal(bal(db, u), 8000);
-  // The player ends them: €8 − €5 given = €3 of winnings paid in real money.
-  const r = tx(db, () => playerPromos(db, u));
-  assert.equal(r.activeSpins.winnings, 3);
-  // Expiry pays the winnings and removes the rest.
-  tx(db, () => expireDue(db, new Date(Date.now() + 8 * 86_400_000).toISOString()));
-  assert.equal(bal(db, u), 8300);
-  assert.equal(db.prepare('SELECT status, paid_cents FROM casino_spins WHERE id = ?').get(s.id).status, 'expired');
+  // A game outside the list, or a bet above the game's spin: refused.
+  assert.equal(bb.walletChange(move(fs, -0.2, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
+  assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /each spin is €0.20/);
+  assert.match(bb.walletChange(move(fs, -0.2, 'f0c', { game_id: 4822 })).body.error, /each spin is €0.10/);
+  // A spin at €0.20 that wins €1.50: €4.80 left to play, €1.50 won (shown together in the game).
+  bb.walletChange(move(fs, -0.2, 'f1'));
+  bb.walletChange(move(fs, 1.5, 'f2'));
+  assert.equal(bb.walletUser(fs).body.balance, '6.30');
+  // A spin at €0.10 in the other game.
+  bb.walletChange(move(fs, -0.1, 'f3', { game_id: 4822 }));
+  assert.equal(bal(db, u), 3000); // the real balance untouched while they run
+  let mine = tx(db, () => playerPromos(db, u)).activeSpins;
+  assert.deepEqual([mine.left, mine.winnings], [4.7, 1.5]);
+  // The winnings are never played again: a spin needs value left, not winnings.
+  db.prepare('UPDATE casino_spins SET balance_cents = 10 WHERE id = ?').run(s.id);
+  bb.walletChange(move(fs, -0.1, 'f4', { game_id: 4822 })); // the last €0.10: they end, €1.50 paid as real money
+  assert.equal(db.prepare('SELECT status, paid_cents FROM casino_spins WHERE id = ?').get(s.id).paid_cents, 150);
+  assert.equal(bal(db, u), 3150);
   assert.equal(bb.walletUser(fs).body.balance, '0.00');
   // A late win of a round open when they ended: paid as winnings.
-  bb.walletChange(move(fs, 1, 'f3'));
-  assert.equal(bal(db, u), 8400);
-  assert.equal(bb.walletChange(move(fs, -1, 'f4')).status, 400);
+  bb.walletChange(move(fs, 1, 'f5'));
+  assert.equal(bal(db, u), 3250);
+  assert.equal(bb.walletChange(move(fs, -0.2, 'f6')).status, 400);
+});
+
+test('free spins: expiry pays what they won and drops the value not played', () => {
+  const db = openDb(':memory:');
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  savePromoConfig(db, { casinoFs: { games: '4821' } });
+  const u = player(db);
+  tx(db, () => postTransaction(db, u, 2000, 'deposit', 'd'));
+  const s = tx(db, () => onDeposit(db, { userId: u, amountCents: 2000, ref: 'pi', choice: 'casino' }));
+  assert.equal(s.value_cents, 1000); // €20 → €10
+  const fs = playerToken(u, s.id);
+  bb.walletChange(move(fs, -0.2, 'e1')); // the default €0.20
+  bb.walletChange(move(fs, 2, 'e2'));
+  tx(db, () => expireDue(db, new Date(Date.now() + 8 * 86_400_000).toISOString()));
+  assert.equal(db.prepare('SELECT status FROM casino_spins WHERE id = ?').get(s.id).status, 'expired');
+  assert.equal(bal(db, u), 2200);
 });
 
 test('free spins: none below the first tier, none without eligible games; the €100 cap; never cumulative with the sports bonus', () => {
@@ -138,7 +159,7 @@ test('free spins: none below the first tier, none without eligible games; the �
   assert.equal(tx(db, () => onDeposit(db, { userId: v, amountCents: 900, ref: 'b', choice: 'casino' })), null); // below €10
   const w = player(db);
   tx(db, () => postTransaction(db, w, 50000, 'deposit', 'd'));
-  assert.equal(tx(db, () => onDeposit(db, { userId: w, amountCents: 50000, ref: 'c', choice: 'casino' })).spins, 50); // €500 counts as €100
+  assert.equal(tx(db, () => onDeposit(db, { userId: w, amountCents: 50000, ref: 'c', choice: 'casino' })).value_cents, 5000); // €500 counts as €100 → €50
   assert.throws(() => savePromoConfig(db, { casinoFs: { tiers: '10:x' } }), /escalões/);
 });
 
@@ -176,7 +197,7 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     assert.equal(empty.body.needsDeposit, true);
     savePromoConfig(db, { casinoFs: { games: [4822] } });
     const d = await call('POST', '/api/wallet/deposit', { amount: 20, method: 'mbway', promo: 'casino' });
-    assert.equal(d.body.bonus.spins, 10);
+    assert.equal(d.body.bonus.amount, 10); // €20 → €10 in free spins
     assert.equal(d.body.user.bonus, 0);
     const real = await call('POST', '/api/casino/launch', { gameId: 4822 });
     const uid = db.prepare("SELECT id FROM users WHERE email = 'rui@example.com'").get().id;
@@ -185,7 +206,7 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     assert.ok(fake.calls.some((c) => c.path.endsWith('/users/create') && c.body.user_token === `b62_${uid}` && c.body.username === `b62_${uid}`));
     const promos = await call('GET', '/api/promotions');
     const fsId = promos.body.mine.activeSpins.id;
-    assert.equal(promos.body.mine.activeSpins.spins, 10);
+    assert.equal(promos.body.mine.activeSpins.left, 10);
     assert.equal((await call('POST', '/api/casino/launch', { gameId: 4821, freeSpins: fsId })).status, 400); // not eligible
     const fsl = await call('POST', '/api/casino/launch', { gameId: 4822, freeSpins: fsId });
     assert.equal(fsl.body.url, `https://g/real/4822/b62_${uid}_fs${fsId}`);
@@ -193,8 +214,8 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     const u = await (await fetch(`${base}/api/casino/bb/user?username=b62_${uid}`)).json();
     assert.equal(u.balance, '20.00');
     const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
-    assert.equal((await res.json()).balance, '5.00');
-    // The player ends the free spins: €5 − €2 = €3 of winnings.
+    assert.equal((await res.json()).balance, '13.00'); // €10 to play + €3 won
+    // The player ends the free spins: the €3 won is paid.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
     assert.equal(claim.body.paid, 3);
     assert.equal(claim.body.user.balance, 23);
