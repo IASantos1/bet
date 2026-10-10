@@ -1,6 +1,7 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
 import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, createClipGate, createCornerWatch } from './trkclips.js';
+import { qualityTier } from './trk3dmath.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -2508,6 +2509,7 @@ function leaveMatch() {
   clearInterval(m.timer);
   stopRapid();
   clearTimeout(m.clipTimer);
+  drop3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
@@ -3100,8 +3102,10 @@ function footballWidget(e) {
       ${flags}
       <div class="trk-goal l"><i></i></div><div class="trk-goal r"><i></i></div>
       <div class="trk-trails" id="trkTrails"></div>
+      <div class="trk-3d" id="trk3dHost"></div>
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
+      <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p>
       <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video></div>
     </div></div>
     <p class="trk-note" id="trkNote"></p>
@@ -3150,12 +3154,14 @@ function mountLiveWidget() {
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
   const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
   if (!kind) {
+    drop3D();
     m.widget?.remove();
     m.widget = null;
     if (m.streamEl?.parentElement) m.streamEl.remove();
     return;
   }
   if (!m.widget || m.widgetKind !== kind) {
+    drop3D();
     m.widget?.remove();
     const holder = document.createElement('div');
     holder.innerHTML = kind === 'football' ? footballWidget(e) : tennisWidget(e);
@@ -3164,7 +3170,48 @@ function mountLiveWidget() {
     if (kind === 'football') warmClips();
   }
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
-  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); } else updateTennisCourt();
+  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); } else updateTennisCourt();
+}
+
+// ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------
+// The football tracker is 3D only (the 2D drawing is hidden and not driven); a device that cannot
+// draw it gets a short note in its place, the statistics and actions below stay.
+let pitch3dModule = null;
+let pitch3dFailed = false;
+
+function ensure3D() {
+  const m = state.match;
+  const w = m.widget;
+  if (!w || m.widgetKind !== 'football') return;
+  w.classList.toggle('no3d', pitch3dFailed);
+  if (m.pitch3d || m.pitch3dLoading || pitch3dFailed) return;
+  m.pitch3dLoading = true;
+  (pitch3dModule ||= import('./trk3d.js')).then(({ createPitch3D }) => {
+    m.pitch3dLoading = false;
+    if (m.widget !== w || m.pitch3d) return;
+    const badge = $('#trkBadge', w);
+    const quality = qualityTier({
+      coarse: !!window.matchMedia?.('(pointer: coarse)').matches, width: window.innerWidth,
+      cores: navigator.hardwareConcurrency || 4, saveData: !!navigator.connection?.saveData, memory: navigator.deviceMemory || 4,
+    });
+    const pitch = createPitch3D($('#trk3dHost', w), {
+      quality,
+      // The label follows the ball as the camera sees it.
+      onFrame: ({ x, y }) => {
+        badge.style.left = `${Math.min(80, Math.max(20, x))}%`;
+        badge.style.top = `${Math.min(96, Math.max(26, y))}%`;
+      },
+    });
+    if (!pitch) { pitch3dFailed = true; w.classList.add('no3d'); return; }
+    m.pitch3d = pitch;
+    updateTracker({ instant: true });
+  }).catch(() => { m.pitch3dLoading = false; pitch3dFailed = true; pitch3dModule = null; w.classList.add('no3d'); });
+}
+
+function drop3D() {
+  const m = state.match;
+  m.pitch3d?.destroy();
+  m.pitch3d = null;
 }
 
 function afterMatchRender() {
@@ -3194,10 +3241,12 @@ function updateTracker({ instant = false } = {}) {
   const ball = $('#trkBall', w);
   const arrow = $('#trkArrow', w);
   const badge = $('#trkBadge', w);
+  const p3 = m.pitch3d;
   if (!b || b.x === undefined || b.x === null) {
     ball.classList.add('idle');
     arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
     badge.classList.remove('on');
+    p3?.setBall({ hidden: true });
     return;
   }
   // After a goal's clip: the ball back on the centre spot for the kick-off (no "GOLO!" left on the
@@ -3216,6 +3265,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeText', w).textContent = 'Pontapé de saída';
     badge.style.left = '50%';
     badge.style.top = '30%';
+    p3?.setBall({ x: 50, y: 50, side: ko || 'home', resting: true, instant: true });
     m.prevBall = null;
     return;
   }
@@ -3232,6 +3282,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeText', w).textContent = 'Intervalo';
     badge.style.left = '50%';
     badge.style.top = '30%';
+    p3?.setBall({ x: 50, y: 50, resting: true, instant: true });
     m.prevBall = null;
     return;
   }
@@ -3250,6 +3301,7 @@ function updateTracker({ instant = false } = {}) {
   const body = dir === 1 ? Math.max(near, b.x - 6) : Math.min(near, b.x + 6);
   arrow.style.clipPath = `polygon(${near}% 0%, ${body}% 0%, ${b.x}% 50%, ${body}% 100%, ${near}% 100%)`;
   arrow.className = `trk-arrow ${side} ${tier}`;
+  p3?.setBall({ x: b.x, y: b.y, side, tier, situation: b.situation, instant });
 
   // Situation badge floating near the ball.
   badge.classList.add('on');
