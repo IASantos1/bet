@@ -687,7 +687,13 @@ test('basketball and tennis lists: only the listed competitions; a listed women\
   assert.ok(!blockedGame({ sport_id: 5, league: 'WTA. Beijing', home_team: 'Swiatek I.', away_team: 'Gauff C.' }, block));
   assert.ok(!blockedGame({ sport_id: 5, league: 'World Tennis. Maanshan. Women. Doubles' }, block));
   assert.ok(!blockedGame({ sport_id: 5, league: 'world tennis darwin' }, block));
-  assert.ok(blockedGame({ sport_id: 5, league: 'ATP. Challenger. Lyon' }, block));
+  // Every ATP, WTA and Challenger tournament (singles, doubles, qualifying); other ITF events stay out.
+  assert.ok(!blockedGame({ sport_id: 5, league: 'ATP. Challenger. Lyon' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'ATP. Shanghai. Doubles', home_team: 'A/B', away_team: 'C/D' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'WTA. Wuhan. Qualification', home_team: 'Ruse E.', away_team: 'Kenin S.' }, block));
+  assert.ok(!blockedGame({ sport_id: 5, league: 'WTA. Challenger. Samsun' }, block));
+  assert.ok(blockedGame({ sport_id: 5, league: 'World Tennis. Lexington' }, block));
+  assert.ok(blockedGame({ sport_id: 5, league: 'UTR Pro Tennis Series' }, block));
   assert.ok(blockedGame({ sport_id: 1, league: 'Club Friendlies', home_team: 'Arsenal Women', away_team: 'Chelsea Women' }, block)); // teams still count
   assert.ok(!blockedGame({ sport_id: 4, league: 'Russia. KHL' }, block)); // sports without a list: all
   assert.equal(allowedLeagues('*', TENNIS_TREE), null);

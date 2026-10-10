@@ -241,7 +241,7 @@ Object.assign(COUNTRY_FLAG, {
   montenegro: 'me', nicaragua: 'ni', nigeria: 'ng', 'new zealand': 'nz', panama: 'pa', singapore: 'sg', thailand: 'th',
   tanzania: 'tz', tunisia: 'tn', uzbekistan: 'uz', vietnam: 'vn',
 });
-const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐' };
+const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐', atp: '🎾', wta: '🎾', challengers: '🎾' };
 // Sidebar countries in Portuguese (the league tree names them in English, as the provider does).
 const COUNTRY_PT = {
   germany: 'Alemanha', angola: 'Angola', 'saudi arabia': 'Arábia Saudita', argentina: 'Argentina', australia: 'Austrália',
@@ -468,8 +468,10 @@ const emptyEvents = () => `<div class="panel empty">${state.eventsLoaded ? 'Sem 
 /** One league (from the sidebar): all its games of the next month, live first. */
 function leaguePage(name) {
   // The sport whose sidebar tree lists this league (football when the tree is not loaded yet).
-  const [sport, country] = Object.entries(state.leagueTree || {}).map(([sp, tree]) => [sp, tree.find((c) => c.leagues.some((l) => l.name === name))?.country])
-    .find(([, c]) => c) || ['futebol', null];
+  const [sport, country, label] = Object.entries(state.leagueTree || {}).map(([sp, tree]) => {
+    const group = tree.find((c) => c.leagues.some((l) => l.name === name));
+    return [sp, group?.country, group?.leagues.find((l) => l.name === name)?.label];
+  }).find(([, c]) => c) || ['futebol', null, null];
   const v = state.leagueView;
   if (!v || v.name !== name || v.sport !== sport || Date.now() - v.at > 30_000) {
     const keep = v?.name === name && v.sport === sport ? v.events : null;
@@ -483,7 +485,7 @@ function leaguePage(name) {
   const events = state.leagueView.events;
   const live = (events || []).filter((e) => e.status === 'live');
   const next = (events || []).filter((e) => e.status !== 'live');
-  return `<div class="page-title"><h1>${esc(leagueShort(name))}</h1><p>${esc(country || SPORT_META[sport]?.name || 'Futebol')} · jogos ao vivo e do próximo mês.</p></div>
+  return `<div class="page-title"><h1>${esc(label || leagueShort(name))}</h1><p>${esc(countryLabel(country) || SPORT_META[sport]?.name || 'Futebol')} · jogos ao vivo e do próximo mês.</p></div>
     <div class="sport-strip"><a class="sport-pill" href="#/desporto">‹ Todo o desporto</a></div>
     ${events === null ? '<div class="loading">A carregar…</div>' : !events.length ? '<div class="panel empty">Sem jogos desta liga com odds de momento.</div>'
       : `${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao vivo</h2></div>${groupByCompetition(live)}</section>` : ''}
@@ -1883,14 +1885,15 @@ function sideTree(sport) {
   if (!tree || !state.sideOpen[sport]) return '';
   const { page, sub, rest } = currentRoute();
   const current = page === 'desporto' && sub === 'liga' ? decodeURIComponent(rest) : null;
-  const sorted = [...tree].sort((a, b) => countryLabel(a.country).localeCompare(countryLabel(b.country), 'pt'));
+  // Tennis tours (ATP, WTA, Challengers) keep the server's order, ahead of the countries.
+  const sorted = [...tree.filter((c) => c.tour), ...tree.filter((c) => !c.tour).sort((a, b) => countryLabel(a.country).localeCompare(countryLabel(b.country), 'pt'))];
   return `<div class="side-tree">${sorted.map(({ country, leagues }) => {
     const total = leagues.reduce((n, l) => n + l.count, 0);
     const open = state.sideOpen[`${sport}|${country}`] || leagues.some((l) => l.name === current);
     return `<button class="side-country${open ? ' open' : ''}${total ? '' : ' none'}" data-side-country="${esc(`${sport}|${country}`)}">
         <i class="caret">${open ? '▾' : '▸'}</i>${countryFlag(country)}${esc(countryLabel(country))}<b>${total || ''}</b></button>
       ${open ? leagues.map((l) => `<a class="side-league${l.name === current ? ' active' : ''}${l.count ? '' : ' none'}" href="#/desporto/liga/${encodeURIComponent(l.name)}">
-        ${esc(leagueShort(l.name))}<b>${l.count || ''}</b></a>`).join('') : ''}`;
+        ${l.flag ? `<img class="side-flag small" src="https://flagcdn.com/w40/${esc(l.flag)}.png" alt="" loading="lazy">` : ''}${esc(l.label || leagueShort(l.name))}<b>${l.count || ''}</b></a>`).join('') : ''}`;
   }).join('')}</div>`;
 }
 

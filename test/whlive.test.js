@@ -95,9 +95,9 @@ test('GET /api/live/:eventId: only WinHouse games in play here; our id or the Wi
 
 test('sidebar leagues: countries with open games per league; one league of the next month', async () => {
   const db = openDb(':memory:');
-  const add = (competition, status, days = 1) => {
+  const add = (competition, status, days = 1, sport = 'futebol') => {
     const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
-      VALUES ('futebol', ?, 'A', 'B', ?, ?, 'winhouse', ?, ?, ?)`).run(competition, new Date(Date.now() + days * 86_400_000).toISOString(), status, String(Math.random()), nowIso(), nowIso()).lastInsertRowid);
+      VALUES (?, ?, 'A', 'B', ?, ?, 'winhouse', ?, ?, ?)`).run(sport, competition, new Date(Date.now() + days * 86_400_000).toISOString(), status, String(Math.random()), nowIso(), nowIso()).lastInsertRowid);
     db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, '1x2', '1', 150, 1)").run(id);
     return id;
   };
@@ -107,6 +107,10 @@ test('sidebar leagues: countries with open games per league; one league of the n
   add('Spain. La Liga', 'scheduled', 2);
   add('Angola. Girabola', 'scheduled', 3); // a covered country's first division, not in the fixed tree
   add('Spain. Segunda Division', 'scheduled', 3);
+  add('WTA. Beijing. Doubles', 'scheduled', 1, 'tenis');
+  add('ATP. Challenger. Braga', 'live', 0, 'tenis');
+  add('ATP. Shanghai', 'scheduled', 1, 'tenis');
+  add('ATP. Challenger. Antofagasta', 'scheduled', 1, 'tenis');
   const server = createApp(db).listen(0);
   await new Promise((r) => server.once('listening', r));
   const get = async (p) => (await fetch(`http://127.0.0.1:${server.address().port}${p}`)).json();
@@ -119,7 +123,12 @@ test('sidebar leagues: countries with open games per league; one league of the n
     assert.equal(leagues.futebol.find((c) => c.country === 'Spain').leagues.find((l) => l.name === 'Spain. Segunda Division').count, 1);
     // Basketball and tennis have their trees too.
     assert.ok(leagues.basquetebol.find((c) => c.country === 'United States').leagues.some((l) => l.name === 'NBA'));
-    assert.ok(leagues.tenis.find((c) => c.country === 'China').leagues.some((l) => l.name === 'WTA. Beijing'));
+    assert.ok(leagues.tenis.find((c) => c.country === 'China').leagues.some((l) => l.name === 'World Tennis. Luan'));
+    // Tennis: the tours first (ATP, WTA, Challengers), each tournament named and flagged the house way.
+    assert.deepEqual(leagues.tenis.slice(0, 3).map((c) => c.country), ['ATP', 'WTA', 'Challengers']);
+    assert.deepEqual(leagues.tenis[0].leagues, [{ name: 'ATP. Shanghai', count: 1, label: 'Shanghai ATP', flag: 'cn' }]);
+    assert.deepEqual(leagues.tenis[1].leagues, [{ name: 'WTA. Beijing. Doubles', count: 1, label: 'Pequim WTA - Pares', flag: 'cn' }]);
+    assert.deepEqual(leagues.tenis[2].leagues.map((l) => l.label), ['Antofagasta Challenger', 'Braga Challenger']);
     const { events } = await get(`/api/events?competition=${encodeURIComponent('England. Premier League')}`);
     assert.equal(events.length, 2);
     assert.ok(events.some((e) => e.id === later));
