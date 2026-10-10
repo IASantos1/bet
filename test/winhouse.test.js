@@ -844,3 +844,68 @@ test('football divisions: first and second division of every covered country, wh
   assert.equal(d('Mongolia. Premier League'), null);
   assert.ok(DIVISION_COUNTRIES.length >= 80);
 });
+
+test('a game listed live under a new id takes over its pre-match row: the bets on it go live and are settled', async () => {
+  const pre = { ...football(20, 0, '', ODD), ...when(-30 * 60_000), current_minute: '', name: 'Genk - Kortrijk', home_team: 'Genk', away_team: 'Kortrijk' };
+  const lists = { live: [], pre: [pre] };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  const onHome = t.bet(20, '1x2', '1');
+  const id = t.row(20).id;
+  // Kick-off: WinHouse lists it in play as game 99 (names written a little differently).
+  lists.live = [{ ...football(99, 5, '1-0', ODD), name: 'GENK - Kortrijk', home_team: 'GENK', away_team: 'Kortrijk ' }];
+  await t.feed.syncLive();
+  assert.equal(t.row(99).id, id);                         // the same row, no copy
+  assert.equal(t.row(99).status, 'live');
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE source = 'winhouse'").get().n, 1);
+  lists.live = [{ ...lists.live[0], ...football(99, 91, '2-0', ODD), home_team: 'GENK', away_team: 'Kortrijk ' }];
+  await t.feed.syncLive();
+  lists.live = [];
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.equal(t.row(99).status, 'finished');
+  assert.equal(t.betStatus(onHome), 'won');
+});
+
+test('another game of the same teams far from the kick-off, or a different pairing, is not taken over', async () => {
+  const lists = { live: [], pre: [{ ...football(30, 0, '', ODD), ...when(-30 * 60_000), current_minute: '' }] };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  const r = t.row(30);
+  lists.live = [{ ...football(31, 5, '0-0', ODD), home_team: 'Other FC', name: 'Other FC - X' }];
+  await t.feed.syncLive();
+  assert.equal(t.row(30).id, r.id);
+  assert.equal(t.row(30).status, 'scheduled');
+  assert.notEqual(t.row(31).id, r.id);
+});
+
+test('bets stuck on a pre-match row whose match ran live as a second row: settled by its result, or moved onto it while in play', async () => {
+  const lists = { live: [], pre: [
+    { ...football(40, 0, '', ODD), ...when(-30 * 60_000), current_minute: '', home_team: 'Club Brugge', away_team: 'Genk', name: 'Club Brugge - Genk' },
+    { ...football(41, 0, '', ODD), ...when(-30 * 60_000), current_minute: '', home_team: 'Flandria', away_team: 'Defensores', name: 'Flandria - Defensores' },
+  ] };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  const onBrugge = t.bet(40, '1x2', '1');
+  const onFlandria = t.bet(41, '1x2', '2');
+  // As before the fix: both kicked off two hours ago, and the live list made second rows of them.
+  const ago = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  t.db.prepare("UPDATE events SET start_time = ? WHERE source = 'winhouse'").run(ago);
+  const copy = (ext, home, away, status, h, a) => t.db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score,
+      clock, source, external_id, created_at, updated_at) VALUES ('futebol', 'X', ?, ?, ?, ?, ?, ?, ?, 'winhouse', ?, ?, ?)`)
+    .run(home, away, ago, status, h, a, status === 'live' ? "75'" : 'Final', ext, ago, ago);
+  copy('140', 'CLUB BRUGGE', 'Genk', 'finished', 3, 1);
+  copy('141', 'Flandria', 'Defensores', 'live', 0, 1);
+  lists.live = [{ ...football(141, 76, '0-1', ODD), home_team: 'Flandria', away_team: 'Defensores', name: 'Flandria - Defensores' }];
+  await t.feed.syncLive();
+  // Finished copy: its 3-1 settles the bet on the pre-match row.
+  assert.equal(t.row(40).status, 'finished');
+  assert.equal(t.betStatus(onBrugge), 'won');
+  // Copy still in play: the row with the bet takes its id and goes on live; the copy is dropped.
+  assert.equal(t.row(141).status, 'live');
+  assert.equal(t.row(141).home, 'Flandria');
+  assert.equal(t.betStatus(onFlandria), 'open');
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE external_id = '141'").get().n, 1);
+  const bettedRow = t.db.prepare('SELECT event_id FROM bet_legs WHERE bet_id = ?').get(onFlandria).event_id;
+  assert.equal(t.row(141).id, bettedRow);
+});
