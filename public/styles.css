@@ -625,8 +625,8 @@ body.no-scroll { overflow: hidden; }
 /* The football pitch is 3D (public/trk3d.js): its canvas fills the pitch box; the 2D drawing is hidden. */
 .trk-3d { position: absolute; inset: 0; z-index: 1; overflow: hidden; }
 .trk-3d canvas { display: block; width: 100%; height: 100%; }
-.trk[data-kind="football"] .trk-pitch { border-color: transparent; background: #0b1626; }
-.trk[data-kind="football"] .trk-turf { background: #0b1626; }
+.trk[data-kind="football"] .trk-pitch { border: 0; background: #0b1626; }
+.trk[data-kind="football"] .trk-turf { background: #0b1626; padding: 0; }
 .trk[data-kind="football"] .trk-pitch > i, .trk[data-kind="football"] .trk-arrow, .trk[data-kind="football"] .trk-goal,
 .trk[data-kind="football"] .trk-trails, .trk[data-kind="football"] .trk-ball, .trk[data-kind="football"] .trk-mark { display: none; }
 .trk[data-kind="football"] .trk-badge { transition: none; transform: translate(-50%, calc(-100% - 6px)); }

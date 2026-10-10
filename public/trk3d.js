@@ -55,7 +55,8 @@ function buildStadium(scene, q) {
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = q.aniso;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(L + 2 * AX, W + 2 * AZ), new THREE.MeshLambertMaterial({ map: tex }));
     ground.rotation.x = -Math.PI / 2; scene.add(ground);
-    const apron = new THREE.Mesh(new THREE.PlaneGeometry(300, 260), new THREE.MeshLambertMaterial({ color: 0x2b3038 }));
+    // grass all round (the open side's foreground is grass, not concrete)
+    const apron = new THREE.Mesh(new THREE.PlaneGeometry(300, 260), new THREE.MeshLambertMaterial({ color: 0x2f7d49 }));
     apron.rotation.x = -Math.PI / 2; apron.position.y = -0.02; scene.add(apron); }
 
   // goals and corner flags
