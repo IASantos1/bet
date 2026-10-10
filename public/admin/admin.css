@@ -82,3 +82,15 @@
 .adm-switch input { width: 17px; height: 17px; accent-color: var(--up); }
 .promo-camp h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .adm-grid .field.wide { grid-column: 1 / -1; }
+
+/* KYC: the documents a player sent, with their picture, for the administrator to validate. */
+.kyc-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.kyc-doc { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line, #2a3340); border-radius: 10px; }
+.kyc-doc.pending { border-color: rgba(226, 179, 60, .6); }
+.kyc-doc.approved { border-color: rgba(81, 197, 128, .6); }
+.kyc-doc.rejected { border-color: rgba(233, 90, 116, .6); }
+.kyc-img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #0b0f14; border-radius: 6px; }
+.kyc-pdf { display: block; padding: 28px 10px; text-align: center; border: 1px dashed var(--line, #2a3340); border-radius: 6px; }
+.kyc-meta { display: flex; flex-direction: column; gap: 3px; }
+.kyc-meta .pill { align-self: flex-start; }
+.ok-text { color: #51c580; }

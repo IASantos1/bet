@@ -1308,9 +1308,14 @@ function depositFormHtml() {
 
 function withdrawFormHtml() {
   const c = state.config || {};
-  return `<div class="pf-note warn">Mínimo €${c.minWithdraw ?? 10}. Transferência bancária para uma conta em seu nome, em 2 a 5 dias úteis.</div>
+  const min = c.minWithdraw ?? 20;
+  const instant = c.instantWithdraw ?? 200;
+  setTimeout(withdrawGate);
+  return `<div class="pf-note warn">Mínimo €${min}. De €${min} a €${instant}: levantamento instantâneo. Acima de €${instant}: processado em 24 a 72 horas.
+      Transferência bancária para uma conta em seu nome. Para levantar é necessário ter a identidade verificada e vencer uma aposta depois do último depósito.</div>
+    <div id="withdrawGate"></div>
     <form data-form="withdraw"><div class="form-grid">
-      <div class="field"><label>Valor (mín. €${c.minWithdraw ?? 10})</label><input name="amount" type="number" min="${c.minWithdraw ?? 10}" step="0.01" required inputmode="decimal"></div>
+      <div class="field"><label>Valor (mín. €${min})</label><input name="amount" type="number" min="${min}" step="0.01" required inputmode="decimal"></div>
       <div class="field"><label>IBAN</label><input name="iban" required placeholder="PT50 0000 0000 0000 0000 0000 0" value="${esc(state.user.iban || '')}"></div>
     </div><div class="form-actions"><button class="outline-btn">Pedir levantamento</button></div></form>`;
 }
@@ -2149,6 +2154,8 @@ const formHandlers = {
     try {
       res = await api('/api/wallet/withdraw', { method: 'POST', body: { amount: d.amount, iban: d.iban } });
     } catch (err) {
+      // Not allowed yet (identity not verified, no bet won since the last deposit…): said in a notification.
+      if (err.data?.code) { toast('Levantamento indisponível', err.message, 'error'); withdrawGate(); return; }
       // A deposit bonus is running: withdrawing cancels it, so the player confirms first.
       if (!err.data?.bonusActive || !confirm(`${err.message}\n\nContinuar com o levantamento?`)) throw err;
       res = await api('/api/wallet/withdraw', { method: 'POST', body: { amount: d.amount, iban: d.iban, forfeitBonus: true } });
@@ -2157,7 +2164,8 @@ const formHandlers = {
     state.user.balance = res.balance;
     form.reset();
     if (form.closest('#modal')) closeModal();
-    toast('Levantamento pedido', 'O pedido será analisado pela equipa.');
+    toast(res.instant ? 'Levantamento aprovado' : 'Levantamento pedido',
+      res.instant ? 'Levantamento instantâneo: a transferência segue para o seu IBAN.' : 'Acima de €' + ((state.config || {}).instantWithdraw ?? 200) + ': processado pela equipa em 24 a 72 horas.');
     updateHeader(); loadWallet();
   },
 };
@@ -2402,6 +2410,19 @@ document.addEventListener('change', (e) => { if (e.target.closest('form[data-for
 
 // What the deposit typed would earn (decided again by the server when the payment is confirmed).
 let offerTimer = null;
+/** Why the player cannot withdraw yet (the wallet's withdraw form): a notice, and the button off. */
+async function withdrawGate() {
+  const box = $('#withdrawGate');
+  if (!box || !state.user) return;
+  let g;
+  try { g = await api('/api/wallet/withdraw/eligibility'); } catch { return; }
+  const box2 = $('#withdrawGate');
+  if (!box2) return;
+  const button = box2.parentElement?.querySelector('form[data-form="withdraw"] button');
+  if (button) button.disabled = !g.eligible;
+  box2.innerHTML = g.eligible ? '' : `<div class="pf-note bad"><b>Levantamento indisponível.</b> ${esc(g.message)}${g.code === 'KYC_REQUIRED' ? ' <a href="#/perfil/verificacao" data-action="close-modal">Verificar identidade</a>' : ''}</div>`;
+}
+
 function depositOffer() {
   clearTimeout(offerTimer);
   offerTimer = setTimeout(async () => {

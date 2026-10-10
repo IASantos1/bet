@@ -246,8 +246,10 @@ export const config = {
     maxStakeCents: int(env.MAX_STAKE_CENTS, 100_000), // €1.000
     maxPayoutCents: int(env.MAX_PAYOUT_CENTS, 5_000_000), // €50.000
     maxSelections: 20,
-    minDepositCents: int(env.MIN_DEPOSIT_CENTS, 500), // €5
+    minDepositCents: int(env.MIN_DEPOSIT_CENTS, 1_000), // €10
     maxDepositCents: int(env.MAX_DEPOSIT_CENTS, 500_000), // €5.000
-    minWithdrawCents: int(env.MIN_WITHDRAW_CENTS, 1_000), // €10
+    minWithdrawCents: int(env.MIN_WITHDRAW_CENTS, 2_000), // €20
+    // Up to this a withdrawal is approved at once; above it the team decides (24–72 h).
+    instantWithdrawCents: int(env.INSTANT_WITHDRAW_CENTS, 20_000), // €200
   },
 };
