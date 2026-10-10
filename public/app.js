@@ -3061,6 +3061,7 @@ function footballWidget(e) {
       <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
       <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
     <div class="trk-turf"><div class="trk-pitch" id="trkPitch">
+      <div class="trk-mark" aria-hidden="true">BET<span>62</span></div>
       <div class="trk-arrow" id="trkArrow"></div>
       <i class="trk-half"></i><i class="trk-circle"></i><i class="trk-spot"></i>
       <i class="trk-box l"></i><i class="trk-box r"></i><i class="trk-six l"></i><i class="trk-six r"></i>

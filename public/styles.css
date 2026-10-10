@@ -616,6 +616,10 @@ body.no-scroll { overflow: hidden; }
 .trk-turf { padding: 9px 12px; background: repeating-linear-gradient(90deg, #146030 0, #146030 8%, #17693a 8%, #17693a 16%); }
 .trk-pitch { position: relative; width: 100%; aspect-ratio: 1.55 / 1; border: 2px solid #ffffffbf; background: radial-gradient(ellipse at 50% 0%, #ffffff14, transparent 55%), repeating-linear-gradient(90deg, #1c8a44 0, #1c8a44 8%, #22964c 8%, #22964c 16%); }
 .trk-pitch > i { position: absolute; display: block; }
+/* The house mark, large and see-through, across the middle of the pitch (under the lines and the play). */
+.trk-pitch { container-type: inline-size; }
+.trk-mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; user-select: none; font-weight: 900; font-style: italic; font-size: 40px; font-size: 19cqw; letter-spacing: -.02em; line-height: 1; color: #ffffff38; }
+.trk-mark span { color: #0d111440; }
 .trk-half { top: 0; bottom: 0; left: 50%; width: 2px; background: #ffffffb8; transform: translateX(-50%); }
 .trk-circle { width: 17.4%; aspect-ratio: 1; top: 50%; left: 50%; border: 2px solid #ffffffb8; border-radius: 50%; transform: translate(-50%, -50%); }
 .trk-spot { width: 5px; height: 5px; top: 50%; left: 50%; background: #fff; border-radius: 50%; transform: translate(-50%, -50%); }
