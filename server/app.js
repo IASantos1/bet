@@ -328,6 +328,8 @@ export function createApp(db, {
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
         tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
+        // Red cards of each side in play (none: null).
+        redCards: e.status === 'live' && (e.red_home || e.red_away) ? { home: e.red_home || 0, away: e.red_away || 0 } : null,
         liveTracker: e.status === 'live' && (e.source === 'bzzoiro' || (e.source === 'winhouse' && e.sport === 'futebol' && !!winhouseTracker?.enabled)),
         // Live video on WinHouse for this game (the TV filter and the play button).
         stream: e.status === 'live' && e.source === 'winhouse' && !!winhouseFeed?.streamOf?.(e.external_id).has,

@@ -172,6 +172,13 @@ export function tennisOf(sc) {
 const TENNIS_SC = /^(t|s\d+|points)$/i;
 
 /** widget-data → the match state the site uses. */
+/** Each side's red cards from a tracker state's statistics: { home, away }, or null when not given. */
+export function redCardsOf(stats) {
+  const r = (stats || []).find((x) => x.key === 'red_cards');
+  const n = (v) => (Number.isInteger(Number(v)) && Number(v) >= 0 ? Number(v) : null);
+  return r && n(r.home) !== null && n(r.away) !== null ? { home: n(r.home), away: n(r.away) } : null;
+}
+
 export function normalizeWidgetData(body) {
   const d = body && typeof body === 'object' ? (body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? { ...body, ...body.data } : body) : {};
   const stats = normalizeStats(first(d.stats, d.statistics));
@@ -354,6 +361,9 @@ export function createWinHouseTracker(db, {
     const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live };
     const evKey = JSON.stringify(ev);
     if (evKey !== w.lastEvent) { w.lastEvent = evKey; publish(eventId, 'event', ev); }
+    // A watched match keeps its red cards on the event at once (the lists show them).
+    const red = redCardsOf(s.stats);
+    if (red) db.prepare('UPDATE events SET red_home = ?, red_away = ?, cards_at = ? WHERE id = ?').run(red.home, red.away, new Date().toISOString(), eventId);
     if (s.ball || s.situation) {
       const side = s.situation?.side || 'home';
       // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.

@@ -286,9 +286,9 @@ function matchCard(e) {
   return `<article class="match-card clickable" data-open="${e.id}">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? (e.sport === 'tenis' ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e)) : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
-      <div class="team">${sideBadge(e, 'home')}${esc(e.home)}</div>
+      <div class="team">${sideBadge(e, 'home')}${esc(e.home)}${redCard(e, 'home')}</div>
       <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
-      <div class="team">${sideBadge(e, 'away')}${esc(e.away)}</div>
+      <div class="team">${sideBadge(e, 'away')}${esc(e.away)}${redCard(e, 'away')}</div>
     </div>
     ${oddsButtons(e)}
   </article>`;
@@ -316,6 +316,12 @@ function tennisSide(e, side) {
   return `<span class="tn-line">${t.server === side ? '<i class="tn-serve" title="Ao serviço"></i>' : ''}<b>${side === 'home' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>${cur ? `<em>${cur[i]}</em>` : ''}${pts ? `<strong>${esc(pts[i])}</strong>` : ''}</span>`;
 }
 
+/** A side's red cards in play: a small red card with how many (nothing when none). */
+function redCard(e, side) {
+  const n = Number(e.redCards?.[side]) || 0;
+  return n > 0 ? ` <i class="red-card" title="${n} ${n === 1 ? 'cartão vermelho' : 'cartões vermelhos'}">${n}</i>` : '';
+}
+
 function liveCard(e) {
   if (e.sport === 'tenis') {
     return `<article class="live-card clickable" data-open="${e.id}">
@@ -326,7 +332,7 @@ function liveCard(e) {
   }
   return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
-    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span><b>${e.awayScore ?? 0}</b></div></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}${redCard(e, 'home')}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}${redCard(e, 'away')}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
 }
@@ -341,8 +347,8 @@ function eventRow(e) {
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
-      <div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${score('h')}</div>
-      <div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${score('a')}</div>
+      <div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}${redCard(e, 'home')}</span>${score('h')}</div>
+      <div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}${redCard(e, 'away')}</span>${score('a')}</div>
     </div>
     ${oddsButtons(e)}
   </div>`;
@@ -2701,9 +2707,9 @@ function matchPage(sub) {
     <section class="match-hero">
       <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : SPORT_META[e.sport]?.icon || '⚽'} ${esc(e.competition)}</div>
       <div class="match-teams">
-        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
+        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
-        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
+        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${redCard(e, 'away')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
       <div id="trackerInline" class="tracker-inline"></div>
     </section>

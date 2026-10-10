@@ -909,3 +909,18 @@ test('bets stuck on a pre-match row whose match ran live as a second row: settle
   const bettedRow = t.db.prepare('SELECT event_id FROM bet_legs WHERE bet_id = ?').get(onFlandria).event_id;
   assert.equal(t.row(141).id, bettedRow);
 });
+
+test('red cards of the matches in play: read from each game\'s tracker, shown on the event', async () => {
+  const lists = { live: [football(50, 64, '0-0', ODD), football(51, 30, '1-0', ODD, { name: 'Genk - Kortrijk', home_team: 'Genk', away_team: 'Kortrijk' })],
+    trackers: { 50: { red: [1, 0], on_target: [2, 3] }, 51: { on_target: [1, 1] } } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const r = await t.feed.readCards();
+  assert.deepEqual(r, { asked: 2, updated: 1 });
+  assert.deepEqual([t.row(50).red_home, t.row(50).red_away], [1, 0]);
+  assert.equal(t.row(51).red_home, null);                     // the tracker says nothing about cards
+  assert.deepEqual(await t.feed.readCards(), { asked: 0, updated: 0 }); // each game once a minute
+  lists.trackers[50] = { red: '2:1' };
+  await t.feed.readCards({ now: Date.now() + 61_000 });
+  assert.deepEqual([t.row(50).red_home, t.row(50).red_away], [2, 1]);
+});
