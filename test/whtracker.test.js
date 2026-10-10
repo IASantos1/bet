@@ -275,3 +275,10 @@ test('tennis: the tracker gives sets, games of each set and the point; the page 
   assert.deepEqual(JSON.parse(row.live_detail), { set: 2, point: '15-0', server: null, sets: [[4, 6], [5, 6]] });
   db.close();
 });
+
+test('red cards from a tracker state: each side, or null when the tracker gives none', async () => {
+  const { redCardsOf } = await import('../server/whtracker.js');
+  assert.deepEqual(redCardsOf(normalizeWidgetData({ red: [0, 1] }).stats), { home: 0, away: 1 });
+  assert.deepEqual(redCardsOf(normalizeWidgetData({ sc: { RED_CARD: [2, 0] } }).stats), { home: 2, away: 0 });
+  assert.equal(redCardsOf(normalizeWidgetData({ on_target: [1, 1] }).stats), null);
+});
