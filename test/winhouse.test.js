@@ -657,7 +657,9 @@ test('football league list: only the listed competitions (names compared loosely
   assert.ok(leagues.has(leagueKey('England. Premier League')));
   assert.ok(!blockedGame({ sport_id: 1, league: 'england premier league' }, { leagues }));
   assert.ok(!blockedGame({ sport_id: 1, league: 'UEFA Champions League' }, { leagues }));
-  assert.ok(blockedGame({ sport_id: 1, league: 'Egypt. Second Division' }, { leagues }));
+  assert.ok(!blockedGame({ sport_id: 1, league: 'Egypt. Second Division' }, { leagues })); // a covered country's second division
+  assert.ok(blockedGame({ sport_id: 1, league: 'Egypt. Third Division' }, { leagues }));
+  assert.ok(blockedGame({ sport_id: 1, league: 'Mongolia. Premier League' }, { leagues })); // a country not covered
   assert.ok(!blockedGame({ sport_id: 2, league: 'Egypt. Super League' }, { leagues })); // other sports untouched
   assert.equal(footballLeagues('*'), null);
   assert.deepEqual([...footballLeagues('Spain. La Liga; Italy. Serie A')], ['spainlaliga', 'italyseriea']);
@@ -783,4 +785,28 @@ test('a finished match that WinHouse reports at 0 minutes keeps its last clock a
   await feed.syncLive();
   row = db.prepare("SELECT * FROM events WHERE external_id = '77'").get();
   assert.deepEqual([row.status, row.home_score, row.away_score], ['finished', 6, 1]);
+});
+
+test('football divisions: first and second division of every covered country, whatever the name; third tiers and cups out', async () => {
+  const { divisionOf, DIVISION_COUNTRIES } = await import('../server/footballdivisions.js');
+  const d = (n) => { const x = divisionOf(n); return x && `${x.country}/${x.division}`; };
+  assert.equal(d('England. Premier League'), 'England/1');
+  assert.equal(d('England. Championship'), 'England/2');
+  assert.equal(d('England. League One'), null);
+  assert.equal(d('Germany. 2. Bundesliga'), 'Germany/2');
+  assert.equal(d('Spain. Segunda Division'), 'Spain/2');
+  assert.equal(d('Saudi Arabia. Pro League'), 'Saudi Arabia/1');
+  assert.equal(d('Angola. Girabola'), 'Angola/1');
+  assert.equal(d('Czech Republic. Chance Liga'), 'Czech Republic/1');
+  assert.equal(d('Mexico. Liga MX. Apertura'), 'Mexico/1');
+  assert.equal(d('Argentina. Primera Division. Clausura'), 'Argentina/1');
+  assert.equal(d('Northern Ireland. Premiership'), 'Northern Ireland/1');
+  assert.equal(d('Ireland. Premier Division'), 'Ireland/1');
+  assert.equal(d('South Korea. K League 2'), 'South Korea/2');
+  assert.equal(d('Vietnam. V.League 1'), 'Vietnam/1');
+  assert.equal(d('Faroe Islands. Premier League'), 'Faroe Islands/1');
+  assert.equal(d('Uzbekistan. Pro League'), 'Uzbekistan/2');
+  assert.equal(d('Spain. Copa del Rey'), null);
+  assert.equal(d('Mongolia. Premier League'), null);
+  assert.ok(DIVISION_COUNTRIES.length >= 80);
 });

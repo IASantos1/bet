@@ -232,7 +232,36 @@ const COUNTRY_FLAG = {
   ukraine: 'ua', russia: 'ru', china: 'cn', 'saudi arabia': 'sa', egypt: 'eg', morocco: 'ma', bolivia: 'bo',
   venezuela: 've', iceland: 'is', hungary: 'hu', slovakia: 'sk', slovenia: 'si', bulgaria: 'bg', cyprus: 'cy', qatar: 'qa',
 };
+Object.assign(COUNTRY_FLAG, {
+  angola: 'ao', bahrain: 'bh', belarus: 'by', 'bosnia and herzegovina': 'ba', kazakhstan: 'kz', 'costa rica': 'cr', estonia: 'ee',
+  georgia: 'ge', guatemala: 'gt', honduras: 'hn', 'faroe islands': 'fo', india: 'in', indonesia: 'id', iran: 'ir',
+  'northern ireland': 'gb-nir', jamaica: 'jm', jordan: 'jo', kuwait: 'kw', luxembourg: 'lu', 'north macedonia': 'mk',
+  montenegro: 'me', nicaragua: 'ni', nigeria: 'ng', 'new zealand': 'nz', panama: 'pa', singapore: 'sg', thailand: 'th',
+  tanzania: 'tz', tunisia: 'tn', uzbekistan: 'uz', vietnam: 'vn',
+});
 const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐' };
+// Sidebar countries in Portuguese (the league tree names them in English, as the provider does).
+const COUNTRY_PT = {
+  germany: 'Alemanha', angola: 'Angola', 'saudi arabia': 'Arábia Saudita', argentina: 'Argentina', australia: 'Austrália',
+  austria: 'Áustria', bahrain: 'Bahrein', belgium: 'Bélgica', belarus: 'Bielorrússia', 'bosnia and herzegovina': 'Bósnia e Herzegovina',
+  brazil: 'Brasil', bulgaria: 'Bulgária', canada: 'Canadá', kazakhstan: 'Cazaquistão', 'czech republic': 'Chéquia', chile: 'Chile',
+  china: 'China', cyprus: 'Chipre', colombia: 'Colômbia', 'south korea': 'Coreia do Sul', 'costa rica': 'Costa Rica',
+  croatia: 'Croácia', denmark: 'Dinamarca', egypt: 'Egipto', ecuador: 'Equador', scotland: 'Escócia', slovakia: 'Eslováquia',
+  slovenia: 'Eslovénia', spain: 'Espanha', 'united states': 'Estados Unidos da América', estonia: 'Estónia', europe: 'Europa',
+  finland: 'Finlândia', france: 'França', georgia: 'Geórgia', greece: 'Grécia', guatemala: 'Guatemala', honduras: 'Honduras',
+  hungary: 'Hungria', 'faroe islands': 'Ilhas Faroé', india: 'Índia', indonesia: 'Indonésia', england: 'Inglaterra',
+  world: 'Internacional', iran: 'Irão', ireland: 'Irlanda', 'northern ireland': 'Irlanda do Norte', iceland: 'Islândia',
+  israel: 'Israel', italy: 'Itália', jamaica: 'Jamaica', japan: 'Japão', jordan: 'Jordânia', kuwait: 'Kuwait',
+  luxembourg: 'Luxemburgo', 'north macedonia': 'Macedónia do Norte', morocco: 'Marrocos', mexico: 'México',
+  montenegro: 'Montenegro', nicaragua: 'Nicarágua', nigeria: 'Nigéria', norway: 'Noruega', 'new zealand': 'Nova Zelândia',
+  wales: 'País de Gales', netherlands: 'Países Baixos', panama: 'Panamá', paraguay: 'Paraguai', peru: 'Peru', poland: 'Polónia',
+  portugal: 'Portugal', qatar: 'Qatar', romania: 'Roménia', serbia: 'Sérvia', singapore: 'Singapura', sweden: 'Suécia',
+  switzerland: 'Suíça', thailand: 'Tailândia', tanzania: 'Tanzânia', tunisia: 'Tunísia', turkey: 'Turquia', ukraine: 'Ucrânia',
+  uruguay: 'Uruguai', uzbekistan: 'Uzbequistão', venezuela: 'Venezuela', vietnam: 'Vietname', africa: 'África',
+  'south america': 'América do Sul', 'north america': 'América do Norte', asia: 'Ásia', russia: 'Rússia', bolivia: 'Bolívia',
+  philippines: 'Filipinas', rwanda: 'Ruanda',
+};
+const countryLabel = (country) => COUNTRY_PT[String(country || '').toLowerCase().trim()] || country;
 
 /** A round flag for a sidebar country (or a globe for a continent / world competitions). */
 function countryFlag(country) {
@@ -1852,11 +1881,12 @@ function sideTree(sport) {
   if (!tree || !state.sideOpen[sport]) return '';
   const { page, sub, rest } = currentRoute();
   const current = page === 'desporto' && sub === 'liga' ? decodeURIComponent(rest) : null;
-  return `<div class="side-tree">${tree.map(({ country, leagues }) => {
+  const sorted = [...tree].sort((a, b) => countryLabel(a.country).localeCompare(countryLabel(b.country), 'pt'));
+  return `<div class="side-tree">${sorted.map(({ country, leagues }) => {
     const total = leagues.reduce((n, l) => n + l.count, 0);
     const open = state.sideOpen[`${sport}|${country}`] || leagues.some((l) => l.name === current);
     return `<button class="side-country${open ? ' open' : ''}${total ? '' : ' none'}" data-side-country="${esc(`${sport}|${country}`)}">
-        <i class="caret">${open ? '▾' : '▸'}</i>${countryFlag(country)}${esc(country)}<b>${total || ''}</b></button>
+        <i class="caret">${open ? '▾' : '▸'}</i>${countryFlag(country)}${esc(countryLabel(country))}<b>${total || ''}</b></button>
       ${open ? leagues.map((l) => `<a class="side-league${l.name === current ? ' active' : ''}${l.count ? '' : ' none'}" href="#/desporto/liga/${encodeURIComponent(l.name)}">
         ${esc(leagueShort(l.name))}<b>${l.count || ''}</b></a>`).join('') : ''}`;
   }).join('')}</div>`;
