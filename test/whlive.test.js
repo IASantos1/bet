@@ -111,6 +111,9 @@ test('sidebar leagues: countries with open games per league; one league of the n
   add('ATP. Challenger. Braga', 'live', 0, 'tenis');
   add('ATP. Shanghai', 'scheduled', 1, 'tenis');
   add('ATP. Challenger. Antofagasta', 'scheduled', 1, 'tenis');
+  add('Lithuania. LKL', 'scheduled', 1, 'basquetebol');
+  add('Sweden. SHL', 'scheduled', 1, 'hoquei');
+  add('KHL', 'live', 0, 'hoquei');
   const server = createApp(db).listen(0);
   await new Promise((r) => server.once('listening', r));
   const get = async (p) => (await fetch(`http://127.0.0.1:${server.address().port}${p}`)).json();
@@ -124,6 +127,10 @@ test('sidebar leagues: countries with open games per league; one league of the n
     // Basketball and tennis have their trees too.
     assert.ok(leagues.basquetebol.find((c) => c.country === 'United States').leagues.some((l) => l.name === 'NBA'));
     assert.ok(leagues.tenis.find((c) => c.country === 'China').leagues.some((l) => l.name === 'World Tennis. Luan'));
+    // Basketball and ice hockey: every league of the covered countries, under its country.
+    assert.deepEqual(leagues.basquetebol.find((c) => c.country === 'Lithuania').leagues, [{ name: 'Lithuania. LKL', count: 1 }]);
+    assert.deepEqual(leagues.hoquei.map((c) => c.country), ['Russia', 'Sweden']);
+    assert.deepEqual(leagues.hoquei[0].leagues, [{ name: 'KHL', count: 1 }]);
     // Tennis: the tours first (ATP, WTA, Challengers), each tournament named and flagged the house way.
     assert.deepEqual(leagues.tenis.slice(0, 3).map((c) => c.country), ['ATP', 'WTA', 'Challengers']);
     assert.deepEqual(leagues.tenis[0].leagues, [{ name: 'ATP. Shanghai', count: 1, label: 'Shanghai ATP', flag: 'cn' }]);
