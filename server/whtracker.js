@@ -155,6 +155,22 @@ export function normalizeTimeline(raw, { firstHalf = false } = {}) {
   }).filter(Boolean);
 }
 
+/**
+ * Tennis in the tracker's sc: T = sets won, S1, S2… = games of each set, POINTS = the game in
+ * play ("15", "40", "A"…). → { setScore: [h, a], sets: [[h, a], …], point: "15-0" }, or null.
+ */
+export function tennisOf(sc) {
+  if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return null;
+  const sets = Object.keys(sc).filter((k) => /^s\d+$/i.test(k)).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
+    .map((k) => pair(sc[k])).filter(([h, a]) => h !== null && a !== null);
+  const [th, ta] = pair(sc.T ?? sc.t);
+  const raw = Array.isArray(sc.POINTS ?? sc.points) ? (sc.POINTS ?? sc.points).map((p) => String(p ?? '').trim().toUpperCase()) : null;
+  const point = raw && raw.length >= 2 && raw[0] !== '' && raw[1] !== '' ? `${raw[0] === 'AD' ? 'A' : raw[0]}-${raw[1] === 'AD' ? 'A' : raw[1]}` : null;
+  if (!sets.length && th === null && !point) return null;
+  return { setScore: th !== null && ta !== null ? [th, ta] : null, sets, point };
+}
+const TENNIS_SC = /^(t|s\d+|points)$/i;
+
 /** widget-data → the match state the site uses. */
 export function normalizeWidgetData(body) {
   const d = body && typeof body === 'object' ? (body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? { ...body, ...body.data } : body) : {};
@@ -191,6 +207,7 @@ export function normalizeWidgetData(body) {
   { const [h, a] = pair(d.h1); if (h !== null && a !== null) halfTime = { home: h, away: a }; }
   if (d.sc && typeof d.sc === 'object' && !Array.isArray(d.sc)) {
     for (const [k, v] of Object.entries(d.sc)) {
+      if (TENNIS_SC.test(k)) continue; // tennis score (see tennisOf), not a statistic
       const [h, a] = pair(v);
       if (h === null || a === null) continue;
       if (/^h(alf)?1$|^ht$/i.test(k)) { halfTime = { home: h, away: a }; continue; }
@@ -201,7 +218,7 @@ export function normalizeWidgetData(body) {
     }
   }
   const firstHalf = HALF_TIME.test(`${d.status ?? ''} ${d.period ?? ''}`) || /\b(1|first)\b|1st/i.test(String(d.period ?? ''));
-  const timeline = normalizeTimeline(Array.isArray(d.timeline) && d.timeline.length ? d.timeline : d.sc, { firstHalf });
+  const timeline = normalizeTimeline(Array.isArray(d.timeline) && d.timeline.length ? d.timeline : tennisOf(d.sc) ? [] : d.sc, { firstHalf });
   const timer = num(first(d.timer, d.time));
   const period = first(d.period, null);
   return {
@@ -213,10 +230,14 @@ export function normalizeWidgetData(body) {
     matchLength: num(d.match_length), injuryTime: num(d.injury_time),
     homeName: first(d.home_name, null), awayName: first(d.away_name, null),
     stats, situation, ball, timeline,
+    tennis: tennisOf(d.sc),
   };
 }
 
 const HALF_TIME = /half.?time|interval|break|\bht\b/i;
+// The tracker's tennis statistics → the keys the match page labels.
+const TENNIS_STATS = [[/^aces$/i, 'aces'], [/double/i, 'double_faults'], [/^1st serve %/i, 'first_serve_pct'], [/1st serve/i, 'first_serve_won_pct'],
+  [/2nd serve/i, 'second_serve_won_pct'], [/break point/i, 'break_points_won_pct'], [/^breaks$/i, 'breaks'], [/own serve/i, 'service_points_won']];
 /** How long a real ball position (xy) stands when the next frames carry none. */
 const XY_HOLD_MS = 5_000;
 
@@ -327,7 +348,8 @@ export function createWinHouseTracker(db, {
     const s = normalizeWidgetData(w.raw);
     w.last = s;
     w.lastStateAt = Date.now();
-    const row = db.prepare('SELECT home_score, away_score, clock FROM events WHERE id = ?').get(eventId);
+    const row = db.prepare('SELECT home_score, away_score, clock, status FROM events WHERE id = ?').get(eventId);
+    if (s.tennis) { processTennis(eventId, w, s, row); return; }
     const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
     const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live };
     const evKey = JSON.stringify(ev);
@@ -352,6 +374,33 @@ export function createWinHouseTracker(db, {
       w.actions = w.actions.slice(-15);
       publish(eventId, 'action', a);
     }
+  }
+
+  /**
+   * Tennis: sets, the games of each set and the point in play, in the shape the page's tennis board
+   * reads (the same as the point-by-point feed's); kept on the event too, so the lists show the sets.
+   * The tracker does not say who serves.
+   */
+  function processTennis(eventId, w, s, row) {
+    const t = s.tennis;
+    const setsText = t.sets.map(([h, a]) => `${h}-${a}`).join(', ');
+    const clock = setsText.slice(0, 60) || row?.clock || null;
+    const [home, away] = t.setScore || [row?.home_score ?? 0, row?.away_score ?? 0];
+    const stats = { home: {}, away: {} };
+    for (const x of s.stats) {
+      const key = TENNIS_STATS.find(([re]) => re.test(x.label))?.[1];
+      if (key) { stats.home[key] = x.home; stats.away[key] = x.away; }
+    }
+    const ev = { homeScore: home, awayScore: away, clock, sets: t.sets, point: t.point, server: null, stats };
+    const evKey = JSON.stringify(ev);
+    if (evKey === w.lastEvent) return;
+    w.lastEvent = evKey;
+    w.eventData = ev;
+    if (row?.status === 'live') {
+      db.prepare('UPDATE events SET clock = ?, live_detail = ? WHERE id = ?')
+        .run(clock, JSON.stringify({ set: t.sets.length || null, point: t.point, server: null, sets: t.sets }), eventId);
+    }
+    publish(eventId, 'event', ev);
   }
 
   const wsLive = (w) => w.ws && Date.now() - (w.lastFrameAt || 0) < 10_000;
@@ -437,7 +486,7 @@ export function createWinHouseTracker(db, {
 
   const snapshot = (eventId) => {
     const w = watched.get(eventId);
-    return { event: null, livedata: w?.livedata ? [w.livedata] : [], actions: w?.actions || [] };
+    return { event: w?.eventData || null, livedata: w?.livedata ? [w.livedata] : [], actions: w?.actions || [] };
   };
 
   /** Statistics and timeline for the match page (same shape as the other providers). */
@@ -510,7 +559,8 @@ export function createWinHouseTracker(db, {
   const clockOf = (eventId) => {
     const w = watched.get(eventId);
     // Kept for two minutes: a short gap must not swap to the live list's (later) minute and back.
-    return w?.last?.clock && Date.now() - (w.lastStateAt || 0) < 120_000 ? w.last.clock : null;
+    // Tennis has no minutes: its clock is the sets, kept on the event itself.
+    return w?.last?.clock && !w.last.tennis && Date.now() - (w.lastStateAt || 0) < 120_000 ? w.last.clock : null;
   };
 
   return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect, clockOf };
