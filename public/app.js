@@ -1,7 +1,7 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
 import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, createClipGate, createCornerWatch } from './trkclips.js';
-import { qualityTier } from './trk3dmath.js';
+import { qualityTier, zoneTier, DANGER } from './trk3dmath.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -3223,8 +3223,6 @@ function afterMatchRender() {
   mountLiveWidget();
 }
 
-const DANGER = new Set(['dangerous_attack', 'corner', 'goal', 'freekick', 'shotoffwoodwork', 'goalkeeper_saved']);
-
 function updateTracker({ instant = false } = {}) {
   const m = state.match;
   const w = m.widget;
@@ -3294,7 +3292,7 @@ function updateTracker({ instant = false } = {}) {
   const side = b.side === 'away' ? 'away' : 'home';
   const danger = DANGER.has(b.situation);
   const depth = side === 'home' ? b.x : 100 - b.x;
-  const tier = danger ? 'danger' : depth > 60 ? 'attacking' : 'neutral';
+  const tier = zoneTier(b.situation, depth);
   const near = side === 'home' ? 0 : 100;
   const dir = b.x >= near ? 1 : -1;
   const body = dir === 1 ? Math.max(near, b.x - 6) : Math.min(near, b.x + 6);

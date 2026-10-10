@@ -24,11 +24,39 @@ export function flightHeight(from, to, situation) {
   return 0;
 }
 
-/** The attacking zone's look for a tier (as the 2D arrow's): colour, opacity, and whether it pulses. */
+/** Situations that make the play dangerous (red, pulsing arrow; the label glows). */
+export const DANGER = new Set(['dangerous_attack', 'corner', 'goal', 'freekick', 'shotoffwoodwork', 'goalkeeper_saved']);
+
+/**
+ * The arrow's tier for a situation: dangerous attack (and set pieces near goal) 'danger', an attack
+ * — or the ball deep in the opponent's half — 'attacking', plain possession 'neutral'.
+ * `depth` is how far (%) the side in possession has the ball from its own goal line.
+ */
+export function zoneTier(situation, depth) {
+  if (DANGER.has(situation)) return 'danger';
+  if (situation === 'attack' || depth > 60) return 'attacking';
+  return 'neutral';
+}
+
+/**
+ * The attacking arrow's look for a tier: colour, opacity, and whether it pulses. Possession is a
+ * clear white so the arrow never fades into the grass; attack orange; dangerous attack red.
+ */
 export function zoneStyle(tier) {
-  if (tier === 'danger') return { color: 0xd20a0a, opacity: 0.38, pulse: true };
-  if (tier === 'attacking') return { color: 0xdc8228, opacity: 0.3, pulse: false };
-  return { color: 0x6b6b6b, opacity: 0.22, pulse: false };
+  if (tier === 'danger') return { color: 0xe01010, opacity: 0.5, pulse: true };
+  if (tier === 'attacking') return { color: 0xff8a1e, opacity: 0.42, pulse: false };
+  return { color: 0xffffff, opacity: 0.3, pulse: false };
+}
+
+/**
+ * The arrow's outline (m, flat on the pitch): from its own goal line (x = 0) the full width of the
+ * pitch to the ball at x = `len`, the last `tip` metres narrowing to a point on the halfway line
+ * across — as the 2D pitch's arrow. A short arrow is all tip.
+ */
+export function arrowShape(len, width, tip = 6.3) {
+  const l = Math.max(0.5, len);
+  const body = Math.max(0, l - tip);
+  return [[0, -width / 2], [body, -width / 2], [l, 0], [body, width / 2], [0, width / 2]];
 }
 
 /**
@@ -49,4 +77,24 @@ export function fovFor(aspect, baseFov = 40) {
   if (a >= 16 / 9) return baseFov;
   const h = 2 * Math.atan(Math.tan((baseFov * Math.PI) / 360) * (16 / 9));
   return Math.min(75, (2 * Math.atan(Math.tan(h / 2) / a) * 180) / Math.PI);
+}
+
+const inOut = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+const out = (k) => 1 - (1 - k) ** 2;
+/**
+ * Where the ball is at `k` (0..1) of a glide from `from` (x, y, z — it may start in the air) to
+ * `to` (x, z, on the grass at height `ground`). A glide from rest eases in and out; one that takes
+ * over a glide still under way (`moving`) keeps its speed and only eases out, so a new fix never
+ * makes the ball stop and restart. In the air (`air` m at the top) it flies at an even pace, and a
+ * ball caught mid-flight comes down smoothly instead of dropping to the grass.
+ */
+export function glidePoint({ from, to, air = 0, moving = false }, k, ground = 0) {
+  const t = Math.max(0, Math.min(1, k));
+  const e = air ? t : moving ? out(t) : inOut(t);
+  const lift = Math.max(0, (from.y ?? ground) - ground) * (1 - e);
+  return {
+    x: from.x + (to.x - from.x) * e,
+    y: ground + lift + (air ? Math.sin(Math.PI * e) * air : 0),
+    z: from.z + (to.z - from.z) * e,
+  };
 }

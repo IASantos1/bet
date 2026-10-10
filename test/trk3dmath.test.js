@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PITCH, pitchPoint, flightHeight, zoneStyle, qualityTier, fovFor } from '../public/trk3dmath.js';
+import { PITCH, pitchPoint, flightHeight, zoneStyle, zoneTier, arrowShape, qualityTier, fovFor, glidePoint } from '../public/trk3dmath.js';
 
 test('a tracker fix lands on the 3D pitch: corners, centre, the goal mouth beyond the line', () => {
   assert.deepEqual(pitchPoint(50, 50), { x: 0, z: 0 });
@@ -20,10 +20,11 @@ test('flight: short passes on the grass, long balls and set pieces in the air (n
   assert.equal(flightHeight(a, { x: 100, z: 60 }, 'corner'), 9);
 });
 
-test('zone like the 2D arrow: grey, orange when attacking, pulsing red in danger', () => {
-  assert.equal(zoneStyle('neutral').color, 0x6b6b6b);
-  assert.equal(zoneStyle('attacking').color, 0xdc8228);
-  assert.deepEqual([zoneStyle('danger').color, zoneStyle('danger').pulse], [0xd20a0a, true]);
+test('arrow look: white in possession, orange when attacking, pulsing red in danger', () => {
+  assert.equal(zoneStyle('neutral').color, 0xffffff);                 // possession: visible on the grass
+  assert.ok(zoneStyle('neutral').opacity >= 0.3);
+  assert.equal(zoneStyle('attacking').color, 0xff8a1e);
+  assert.deepEqual([zoneStyle('danger').color, zoneStyle('danger').pulse], [0xe01010, true]);
 });
 
 test('quality: phones, small screens, few cores and data saver draw less', () => {
@@ -43,4 +44,33 @@ test('camera: the horizontal view of a 16:9 frame is kept in narrower boxes', ()
   const h = (fov, a) => 2 * Math.atan(Math.tan((fov * Math.PI) / 360) * a);
   assert.ok(Math.abs(h(narrow, 1.55) - h(40, 16 / 9)) < 1e-9);
   assert.ok(fovFor(0.6) <= 75);
+});
+
+test('glide: from the start (in the air too) to the spot on the grass, never stopping on a new fix', () => {
+  const g = { from: { x: 0, y: 5, z: 0 }, to: { x: 20, z: 10 } };
+  assert.deepEqual(glidePoint(g, 0, 1), { x: 0, y: 5, z: 0 });            // starts where the ball is, height kept
+  assert.deepEqual(glidePoint(g, 1, 1), { x: 20, y: 1, z: 10 });          // lands on the grass
+  assert.ok(glidePoint(g, 0.5, 1).y > 1 && glidePoint(g, 0.5, 1).y < 5);  // comes down smoothly
+  assert.deepEqual(glidePoint(g, 7, 1), glidePoint(g, 1, 1));             // clamped
+  const flat = { from: { x: 0, y: 1, z: 0 }, to: { x: 10, z: 0 } };
+  assert.ok(glidePoint({ ...flat, moving: true }, 0.1, 1).x > 1.5);         // carries on at speed
+  assert.ok(glidePoint(flat, 0.1, 1).x < 0.3);                              // from rest it eases in
+  assert.ok(glidePoint({ ...flat, air: 6 }, 0.5, 1).y === 7);               // a long ball at the top
+});
+
+test('arrow: possession, attack and dangerous attack each have their own look, wherever the ball is', () => {
+  assert.equal(zoneTier('possession', 30), 'neutral');
+  assert.equal(zoneTier('safe', 20), 'neutral');
+  assert.equal(zoneTier('attack', 40), 'attacking');        // an attack in its own half too
+  assert.equal(zoneTier('possession', 70), 'attacking');    // deep in the other half
+  assert.equal(zoneTier('dangerous_attack', 50), 'danger');
+  assert.equal(zoneTier('corner', 99), 'danger');
+  assert.equal(zoneTier(undefined, 10), 'neutral');
+});
+
+test('arrow outline: full width from the goal line, a point at the ball', () => {
+  assert.deepEqual(arrowShape(50, 68), [[0, -34], [43.7, -34], [50, 0], [43.7, 34], [0, 34]]);
+  const short = arrowShape(3, 68);                          // all tip
+  assert.deepEqual([short[1][0], short[2][0]], [0, 3]);
+  assert.equal(arrowShape(-4, 68)[2][0], 0.5);              // never empty
 });
