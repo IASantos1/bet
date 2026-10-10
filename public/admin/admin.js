@@ -314,13 +314,36 @@ function userDetailView(d) {
     <div class="panel"><h3>Movimentos da carteira</h3>${d.transactions.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th class="num">Valor</th><th class="num">Saldo</th></tr></thead><tbody>${d.transactions.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${TX_LABEL[t.type] || t.type}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td><td class="num">${money(t.balanceAfter)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem movimentos.</p>'}</div>`;
 }
 
-function betCard(b, { showUser = false } = {}) {
-  return `<div class="bet-card">
+function betCard(b, { showUser = false, settle = false } = {}) {
+  // Manual settlement (Apostas tab): each open leg gets a result to pick.
+  const manual = settle && b.status === 'open';
+  const legPick = (l) => (manual && l.status === 'open' ? `<select class="leg-pick" data-leg="${l.id}" aria-label="Resultado da seleção">
+      <option value="">— Resultado —</option><option value="won">Ganha</option><option value="lost">Perdida</option><option value="void">Anulada</option></select>` : '');
+  return `<div class="bet-card" data-bet="${b.id}">
     <div class="bet-card-head"><span>#${b.id} · ${b.type === 'multiple' ? `Múltipla (${b.legs.length})` : b.type === 'builder' ? `Criador de apostas (${b.legs.length})` : 'Simples'} · ${esc(fmtDateTime(b.createdAt))}${showUser ? ` · ${esc(b.email)}` : ''}</span><span class="pill ${b.status}">${STATUS_LABEL[b.status]}</span></div>
-    ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${esc(l.marketName && l.market !== '1x2' ? `${l.marketName}: ` : '')}${esc(l.label || CODE_LABEL[l.code])}${l.score ? ` · ${esc(l.score)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span></div></div>`).join('')}
+    ${b.legs.map((l) => `<div class="bet-leg"><div>${esc(l.match)}<small>${esc(l.competition)} · ${esc(l.marketName && l.market !== '1x2' ? `${l.marketName}: ` : '')}${esc(l.label || CODE_LABEL[l.code])}${l.score ? ` · ${esc(l.score)}` : ''}${l.eventStatus ? ` · evento ${esc(STATUS_LABEL[l.eventStatus] || l.eventStatus)}` : ''}</small></div><div class="num"><b class="gold">${fmtOdds(l.odds)}</b><br><span class="pill ${l.status}">${STATUS_LABEL[l.status]}</span>${legPick(l)}</div></div>`).join('')}
     <div class="bet-card-foot"><span>Aposta <strong>${money(b.stake)}</strong></span><span>Cotação <strong>${fmtOdds(b.totalOdds)}</strong></span>
       <span>${b.status === 'open' ? 'Retorno potencial' : 'Pago'} <strong class="${b.status === 'won' ? 'green' : ''}">${money(b.status === 'open' ? b.potential : b.payout)}</strong></span></div>
+    ${b.manual ? `<small class="muted">Liquidado manualmente em ${esc(fmtDateTime(b.manual.at))}${b.manual.note ? ` · ${esc(b.manual.note)}` : ''}</small>` : ''}
+    ${manual ? `<div class="form-actions bet-settle">
+      <button class="primary-btn btn-sm" data-action="bet-settle" data-id="${b.id}">Liquidar com os resultados escolhidos</button>
+      <button class="ghost-btn btn-sm" data-action="bet-settle-all" data-id="${b.id}" data-result="won">Bilhete ganho</button>
+      <button class="ghost-btn btn-sm" data-action="bet-settle-all" data-id="${b.id}" data-result="lost">Bilhete perdido</button>
+      <button class="danger-btn btn-sm" data-action="bet-settle-all" data-id="${b.id}" data-result="void">Anular (devolver aposta)</button>
+    </div>` : ''}
   </div>`;
+}
+
+/** Sends a manual settlement: { legId: 'won' | 'lost' | 'void' } for the ticket's open legs. */
+async function settleTicket(id, legs, label) {
+  if (!Object.keys(legs).length) { toast('Escolha um resultado', 'Defina o resultado de pelo menos uma seleção.', 'error'); return; }
+  const note = prompt(`${label}\n\nMotivo (opcional, fica registado):`, '');
+  if (note === null) return;
+  try {
+    const r = await api(`/api/admin/bets/${id}/settle`, { method: 'POST', body: { legs, note } });
+    toast(`Bilhete #${id}`, r.status === 'open' ? 'Resultados guardados; ainda há seleções em aberto.' : `${STATUS_LABEL[r.status]}${r.paid ? ` · pago ${money(r.paid)}` : ''}`);
+    loadTab();
+  } catch (err) { toast('Erro', err.message, 'error'); }
 }
 
 // ---------- login ----------
@@ -427,8 +450,11 @@ async function loadTab() {
           <td>${w.status === 'pending' ? `<div class="form-actions"><button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button><button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>` : esc(fmtDateTime(w.decidedAt))}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="panel empty">Sem pedidos de levantamento.</div>';
     } else if (tab === 'apostas') {
-      const [{ bets }, co] = await Promise.all([api('/api/admin/bets'), api('/api/admin/cashout')]);
-      main.innerHTML = cashoutPanel(co) + (bets.length ? bets.map((b) => betCard(b, { showUser: true })).join('') : '<div class="panel empty">Sem apostas.</div>');
+      const onlyOpen = state.betsFilter === 'open';
+      const [{ bets }, co] = await Promise.all([api(`/api/admin/bets${onlyOpen ? '?status=open' : ''}`), api('/api/admin/cashout')]);
+      const filter = `<div class="form-actions bets-filter"><button class="${onlyOpen ? 'ghost-btn' : 'primary-btn'} btn-sm" data-action="bets-filter" data-filter="all">Todas</button>
+        <button class="${onlyOpen ? 'primary-btn' : 'ghost-btn'} btn-sm" data-action="bets-filter" data-filter="open">Em aberto (liquidar manualmente)</button></div>`;
+      main.innerHTML = cashoutPanel(co) + filter + (bets.length ? bets.map((b) => betCard(b, { showUser: true, settle: true })).join('') : `<div class="panel empty">${onlyOpen ? 'Sem bilhetes em aberto.' : 'Sem apostas.'}</div>`);
     } else if (tab === 'utilizadores') {
       if (state.userDetail) {
         main.innerHTML = userDetailView(await api(`/api/admin/users/${state.userDetail}`));
@@ -1171,6 +1197,19 @@ document.addEventListener('click', async (e) => {
       toast('Sincronização concluída');
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
+  } else if (action === 'bets-filter') {
+    state.betsFilter = actionEl.dataset.filter;
+    loadTab();
+  } else if (action === 'bet-settle') {
+    const card = actionEl.closest('.bet-card');
+    const legs = Object.fromEntries([...card.querySelectorAll('.leg-pick')].filter((s) => s.value).map((s) => [s.dataset.leg, s.value]));
+    await settleTicket(actionEl.dataset.id, legs, `Liquidar o bilhete #${actionEl.dataset.id} com os resultados escolhidos? O pagamento é feito de imediato.`);
+  } else if (action === 'bet-settle-all') {
+    const card = actionEl.closest('.bet-card');
+    const r = actionEl.dataset.result;
+    const legs = Object.fromEntries([...card.querySelectorAll('.leg-pick')].map((s) => [s.dataset.leg, r]));
+    const what = { won: 'GANHO (todas as seleções em aberto ganhas, o prémio é pago)', lost: 'PERDIDO', void: 'ANULADO (a aposta é devolvida)' }[r];
+    await settleTicket(actionEl.dataset.id, legs, `Marcar o bilhete #${actionEl.dataset.id} como ${what}?`);
   } else if (action === 'wd-approve' || action === 'wd-reject') {
     const verb = action === 'wd-approve' ? 'approve' : 'reject';
     if (!confirm(verb === 'approve' ? 'Aprovar este levantamento (confirmando que a transferência foi feita)?' : 'Rejeitar e devolver o valor ao jogador?')) return;
