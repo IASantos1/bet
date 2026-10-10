@@ -619,10 +619,10 @@ const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
     <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
 
-/** The casino's tabs: the lobby, the two orders over every game and each kind of game the lobby has. */
+/** The casino's tabs: the lobby, then the house tabs that have games (Populares, Novos Jogos, Slots…). */
 function casinoTabs(f) {
-  const kinds = (state.casinoLobby?.rows || []).filter((r) => r.key !== 'provider').map((r) => [r.key, r.key === 'populares' ? 'Populares' : r.key === 'novos' ? 'Novos' : r.title]);
-  const tabs = state.casino.bigbang && kinds.length ? [['', 'Início'], ...kinds] : [['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']];
+  const cats = (state.casinoLobby?.categories || []).map((c) => [c.key, c.label]);
+  const tabs = state.casino.bigbang && cats.length ? [['', 'Início'], ...cats] : [['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']];
   return tabs.map(([k, l]) => `<button class="casino-tab${f.category === k && !f.provider ? ' active' : ''}" data-casino-cat="${k}">${esc(l)}</button>`).join('');
 }
 
@@ -651,26 +651,31 @@ function casinoPage() {
       ${footer()}`;
   }
   const more = c.games.length < c.total;
-  // The lobby: a row of 10 games per section (most popular first), then one row per provider,
-  // each with "Ver mais" (every game of that section / provider).
+  // The lobby: the featured games all at once (a grid), then one row per provider in the house
+  // order (Pragmatic Play, Evolution, Playtech…), each with "Ver mais" (every game of that provider).
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
-  const lobby = rows.map((r, i) => `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
+  const lobby = rows.map((r, i) => (r.layout === 'grid'
+    ? `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2></div>
+      <div class="game-grid grid">${r.games.map(lobbyCard).join('')}</div></section>`
+    : `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
       ${r.key === 'provider' ? `<button class="link-btn" data-casino-prov="${esc(r.provider)}">Ver mais (${r.total}) ›</button>`
         : `<button class="link-btn" data-casino-cat="${esc(r.key)}">Ver mais (${r.total}) ›</button>`}</div>
-      ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`).join('');
-  // One provider open ("Ver mais"): its name and the way back to the lobby.
+      ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`)).join('');
+  // One provider or one tab open: its name, how many games and the way back to the lobby.
   const prov = c.bigbang && f.provider ? c.providers.find((p) => String(p.id) === f.provider) : null;
-  const provHead = prov ? `<div class="section-head casino-prov-head"><h2>${esc(prov.name)} <small class="muted">· ${c.total} jogos</small></h2>
+  const cat = c.bigbang && !prov && f.category ? (state.casinoLobby?.categories || []).find((x) => x.key === f.category) : null;
+  const head = prov?.name || cat?.label;
+  const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
   return `<div class="page-title"><h1>Casino</h1><p>${state.casinoLobby?.total || c.total} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
     <div class="casino-filters">
       <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
     </div>
-    ${c.bigbang ? '' : `<div class="sport-strip">
+    <div class="sport-strip casino-provs">
       <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
       ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
-    </div>`}
+    </div>
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}

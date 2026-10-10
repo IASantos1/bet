@@ -491,8 +491,10 @@ export function createRapidStream({
         cache = { at: Date.now(), matches, error: null, pages };
       } catch (err) {
         log(`RapidAPI streaming: ${err.message}`);
-        // Keep what we had; try again in a quarter of the cache time.
-        cache = { ...cache, at: Date.now() - cacheSeconds * 750, error: err.message };
+        // Keep what we had; try again in a quarter of the cache time, or in 15 minutes when the
+        // plan's quota is spent (HTTP 429: asking again only wastes requests).
+        const wait = /HTTP 429/.test(err.message) ? 15 * 60_000 : cacheSeconds * 250;
+        cache = { ...cache, at: Date.now() - cacheSeconds * 1000 + wait, error: err.message };
       } finally { inflight = null; }
       return cache;
     })();
@@ -524,7 +526,10 @@ export function createRapidStream({
   const details = new Map(); // id → { at, servers }
   async function detailServers(id) {
     const hit = details.get(id);
-    if (hit && Date.now() - hit.at < cacheSeconds * 1000) return hit.servers;
+    // A game's stream address holds for the whole match: one with servers is kept 30 min (the daily
+    // quota of the API's plan is small); one without is asked again after `cacheSeconds`.
+    const keepMs = hit?.servers?.length ? Math.max(cacheSeconds * 1000, 30 * 60_000) : cacheSeconds * 1000;
+    if (hit && Date.now() - hit.at < keepMs) return hit.servers;
     let servers = [];
     let answer = null;
     try {
@@ -533,7 +538,7 @@ export function createRapidStream({
       servers = findStreams(body);
     } catch (err) { answer = `erro: ${err.message}`; log(`RapidAPI streaming ${id}: ${err.message}`); }
     details.set(id, { at: Date.now(), servers, answer });
-    if (details.size > 300) for (const [k, v] of details) if (Date.now() - v.at > cacheSeconds * 1000) details.delete(k);
+    if (details.size > 300) for (const [k, v] of details) if (Date.now() - v.at > 30 * 60_000) details.delete(k);
     return servers;
   }
 

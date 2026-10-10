@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb, nowIso, tx } from '../server/db.js';
+import { openDb, nowIso, tx, setSetting } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { postTransaction } from '../server/wallet.js';
@@ -204,18 +204,20 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
   }
 });
 
-test('lobby: popular first (rounds played here, then known hits), newest by id, rows per kind; "Ver todos" orders', async () => {
+test('lobby: featured block first, then providers in the house order; tabs with counts; popular / newest orders', async () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
   let lobby = await bb.lobby({ n: 10 });
   const row = (key) => lobby.rows.find((r) => r.key === key);
-  assert.deepEqual(lobby.rows.map((r) => r.key), ['populares', 'novos', 'Slots', 'Ao Vivo', 'provider', 'provider']);
-  // One row per provider, the provider of the most popular game first (Hot Hot Fruit is a known hit).
+  assert.deepEqual(lobby.rows.map((r) => r.key), ['destaques', 'provider', 'provider']);
+  // None of the 30 featured titles is here: the block fills with the most popular, providers in turns.
+  assert.equal(row('destaques').layout, 'grid');
+  assert.deepEqual(row('destaques').games.map((g) => g.id), [4821, 9001, 4822]);
+  // Neither provider is in the house list: alphabetical.
   assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => [r.provider, r.title, r.total]), [['habanero', 'Habanero', 2], ['pragmaticlive', 'Pragmatic Live', 1]]);
-  // Nothing played yet: the known hits first, one provider after the other.
-  assert.deepEqual(row('populares').games.map((g) => g.id), [4821, 9001, 4822]);
-  assert.deepEqual(row('novos').games.map((g) => g.id), [9001, 4822, 4821]);
-  assert.deepEqual(row('Slots').games.map((g) => g.id), [4821, 4822]);
+  // Tabs in the house order, the empty ones left out.
+  assert.deepEqual(lobby.categories.map((c) => [c.key, c.total]), [['populares', 3], ['novos', 3], ['slots', 2], ['ao-vivo', 1], ['roleta', 1]]);
+  assert.equal(lobby.categories[1].label, 'Novos Jogos');
   // Rounds played here weigh more than the market's hits.
   const u = player(db, 20);
   for (const t of ['a', 'b']) {
@@ -224,12 +226,49 @@ test('lobby: popular first (rounds played here, then known hits), newest by id, 
   }
   const fresh = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
   lobby = await fresh.lobby({ n: 10 });
-  assert.equal(row('populares').games[0].id, 4822);
+  assert.equal(row('destaques').games[0].id, 4822);
   assert.deepEqual((await fresh.gamesPage({ category: 'novos' })).games.map((g) => g.id), [9001, 4822, 4821]);
   assert.deepEqual((await fresh.gamesPage({ category: 'populares' })).total, 3);
-  assert.deepEqual((await fresh.gamesPage({ category: 'Slots' })).games.map((g) => g.id), [4822, 4821]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'slots' })).games.map((g) => g.id), [4822, 4821]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'roleta' })).games.map((g) => g.id), [9001]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'Slots' })).games.map((g) => g.id), [4822, 4821], 'the old kind names still filter');
+  // Exclusive games: the ones the operator lists (setting casino.exclusive).
+  setSetting(db, 'casino.exclusive', [4821]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'exclusivos' })).games.map((g) => g.id), [4821]);
+  assert.ok((await fresh.lobby()).categories.some((c) => c.key === 'exclusivos'));
 });
 
+test('lobby: the featured titles in their order (exact title, named provider), live tables by kind; house provider order', async () => {
+  const g = (id, title, prov, extra = {}) => ({ id, name: `g${id}`, title, provider: prov, category: prov, category_title: prov, thumbnail: `https://x/${id}.webp`, game_type: 'slot', is_premium: false, ...extra });
+  const games = [
+    g(1, 'Sweet Bonanza', 'Pragmatic'), g(2, 'Gates of Olympus 1000', 'Pragmatic'), g(3, 'Gates of Olympus', 'Pragmatic'),
+    g(4, 'Aviator', 'Spribe', { game_type: 'crash' }), g(5, 'European Roulette', 'Evolution', { game_type: 'live' }),
+    g(6, "Gonzo's Quest™", 'NetEnt'), g(7, 'Book of Dead', "Play'n GO"), g(8, 'Fortune Tiger', 'PG Soft'),
+    g(9, 'Blackjack Classic', 'Evolution', { game_type: 'live' }), g(10, 'Crazy Time', 'Evolution', { game_type: 'live' }),
+    g(11, 'Big Bass Splash', 'Reel Kingdom'), g(12, 'Big Bass Splash', 'Pragmatic'), g(13, 'Mega Moolah', 'Microgaming'),
+  ];
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    const json = (data) => ({ ok: true, status: 200, json: async () => data });
+    if (u.pathname.endsWith('/games')) return json({ success: true, data: games, pagination: { total: games.length } });
+    if (u.pathname.endsWith('/categories')) return json({ success: true, data: [] });
+    return { ok: false, status: 404, json: async () => ({ success: false }) };
+  };
+  const bb = createBigBang(openDb(':memory:'), { apiKey: KEY, fetchImpl });
+  const lobby = await bb.lobby({ n: 5 });
+  const featured = lobby.rows[0].games.map((x) => x.name);
+  // The house list's order first (Gates of Olympus, Sweet Bonanza, Gates of Olympus 1000, Big Bass Splash, …),
+  // then the most popular of the rest (Fortune Tiger) to fill the block.
+  assert.deepEqual(featured.slice(0, 10), ['Gates of Olympus', 'Sweet Bonanza', 'Gates of Olympus 1000', 'Big Bass Splash', 'Book of Dead',
+    "Gonzo's Quest™", 'Aviator', 'Crazy Time', 'European Roulette', 'Blackjack Classic']);
+  assert.ok(featured.includes('Mega Moolah') && featured.includes('Fortune Tiger'));
+  assert.equal(new Set(featured).size, featured.length, 'no game twice');
+  // Big Bass Splash once (Pragmatic Play comes before Reel Kingdom in the house order).
+  assert.equal(lobby.rows[0].games.find((x) => x.name === 'Big Bass Splash').id, 12);
+  assert.equal((await bb.games()).games.filter((x) => x.name === 'Big Bass Splash').length, 1);
+  // Providers: Pragmatic Play, Evolution, Games Global (Microgaming), Play'n GO, NetEnt, Spribe, then PG Soft.
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft']);
+});
 
 test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic Play), Live apart, no duplicate games; Populares mixes providers', async () => {
   const { providerKey } = await import('../server/bigbang.js');
@@ -253,7 +292,7 @@ test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic P
   };
   const bb = createBigBang(openDb(':memory:'), { apiKey: KEY, fetchImpl });
   const all = await bb.games();
-  assert.deepEqual(all.providers.map((p) => p.name), ['PG Soft', 'Pragmatic Play', 'Pragmatic Play Live', 'Spribe']);
+  assert.deepEqual(all.providers.map((p) => p.name), ['Pragmatic Play', 'Spribe', 'PG Soft', 'Pragmatic Play Live']);
   // Gates of Olympus once (the Standard copy), every Pragmatic game under "Pragmatic Play".
   assert.deepEqual(all.games.map((x) => x.id).sort(), [1, 3, 4, 5, 6, 7, 8]);
   assert.ok(all.games.filter((x) => x.providerId === providerKey('Pragmatic')).every((x) => x.provider === 'Pragmatic Play'));
@@ -261,8 +300,8 @@ test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic P
   const page = await bb.gamesPage({ provider: providerKey('Pragmatic') });
   assert.deepEqual(page.games.map((x) => x.id).sort(), [1, 3, 4]);
   // Populares: the providers take turns (Fortune Tiger, Aviator, Gates of Olympus, Mega Roulette, Fortune Ox, Sweet Bonanza…).
-  const lobby = await bb.lobby({ n: 5 });
-  const pop = lobby.rows.find((r) => r.key === 'populares').games;
+  const pop = (await bb.gamesPage({ category: 'populares', limit: 5 })).games;
   assert.deepEqual(pop.map((x) => x.name), ['Fortune Tiger', 'Aviator', 'Gates of Olympus', 'Mega Roulette', 'Fortune Ox']);
-  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['PG Soft', 'Spribe', 'Pragmatic Play', 'Pragmatic Play Live']);
+  const lobby = await bb.lobby({ n: 5 });
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Spribe', 'PG Soft', 'Pragmatic Play Live']);
 });
