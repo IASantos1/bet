@@ -630,6 +630,9 @@ body.no-scroll { overflow: hidden; }
 .trk[data-kind="football"] .trk-pitch > i, .trk[data-kind="football"] .trk-arrow, .trk[data-kind="football"] .trk-goal,
 .trk[data-kind="football"] .trk-trails, .trk[data-kind="football"] .trk-ball, .trk[data-kind="football"] .trk-mark { display: none; }
 .trk[data-kind="football"] .trk-badge { transition: none; transform: translate(-50%, calc(-100% - 6px)); }
+/* Whole screen: the 3D stadium takes all of it (the camera adapts to any shape). */
+.trk[data-kind="football"]:fullscreen .trk-turf, .trk.expanded[data-kind="football"] .trk-turf { width: 100%; flex: 1; display: flex; min-height: 0; }
+.trk[data-kind="football"]:fullscreen .trk-pitch, .trk.expanded[data-kind="football"] .trk-pitch { flex: 1; aspect-ratio: auto; height: auto; }
 .trk-3d-off { display: none; position: absolute; inset: 0; z-index: 2; margin: 0; place-items: center; text-align: center; padding: 12px; color: #cfd6dd; font-size: 12px; font-weight: 700; }
 .trk.no3d .trk-3d-off { display: grid; }
 .trk.no3d .trk-badge { display: none; }
