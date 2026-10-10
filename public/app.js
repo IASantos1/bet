@@ -1,6 +1,6 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
-import { CLIPS, clipFormat, scorer, situationClip, createClipGate, createCornerWatch } from './trkclips.js';
+import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, createClipGate, createCornerWatch } from './trkclips.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -2505,7 +2505,7 @@ function leaveMatch() {
   clearInterval(m.timer);
   stopRapid();
   clearTimeout(m.clipTimer);
-  Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null });
+  Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
@@ -2560,6 +2560,12 @@ function startMatchStream(id) {
     const before = m.ball;
     pushBall(d);
     if (d.situation !== 'goal') m.kickoff = null;
+    // The goal celebration holds until the game goes again.
+    const hold = m.clipHold;
+    if (hold) {
+      if (d.situation === 'goal') hold.sawGoal = true;
+      else if (restartSeen(hold, d.situation, Date.now())) hold.release();
+    }
     updateTracker();
     // A goal, or a corner being taken (the kick, not the award): the 3D clip over the pitch.
     m.cornerWatch ||= createCornerWatch();
@@ -3307,19 +3313,27 @@ function noteScore(d, { quiet = false } = {}) {
   if (who) celebrateGoal(who);
 }
 
-/** The goal clip, then the pitch waits for the kick-off (the side that conceded) until new data comes. */
+/**
+ * The goal clip, held on its celebration until the tracker shows the game going again; then the 2D
+ * pitch shows play as it is (or, when the hold ran out with the tracker still on "goal", the ball on
+ * the centre spot for the kick-off of the side that conceded).
+ */
 function celebrateGoal(side) {
   const m = state.match;
   const kickoff = side === 'home' ? 'away' : side === 'away' ? 'home' : null;
-  playClip('goal', { onEnd: () => { m.kickoff = { side: kickoff }; updateTracker({ instant: true }); } });
+  playClip('goal', {
+    hold: true,
+    onEnd: () => { if (m.ball?.situation === 'goal') { m.kickoff = { side: kickoff }; updateTracker({ instant: true }); } },
+  });
 }
 
 /**
  * Plays one clip over the pitch and goes back to the 2D view when it ends. Skipped (straight to
- * `onEnd`) when nobody would see it: tab hidden, video view open, reduced motion, no codec. A clip that does
- * not start within 3 s (slow network, autoplay refused) is dropped; a tap closes it.
+ * `onEnd`) when nobody would see it: tab hidden, video view open, reduced motion, no codec. A clip that
+ * does not start within 3 s (slow network, autoplay refused) is dropped; a tap closes it. With `hold`,
+ * the end of the clip repeats until `m.clipHold.release()` (the game going again) or GOAL_HOLD.maxMs.
  */
-function playClip(kind, { onEnd } = {}) {
+function playClip(kind, { onEnd, hold = false } = {}) {
   const m = state.match;
   const clip = CLIPS[kind];
   m.clipGate ||= createClipGate();
@@ -3332,26 +3346,40 @@ function playClip(kind, { onEnd } = {}) {
     onEnd?.();
     return;
   }
-  m.clipGate.start(kind, clip.ms + 4500);
+  m.clipGate.start(kind, hold ? GOAL_HOLD.maxMs : clip.ms + 4500);
   clearTimeout(m.clipTimer);
   const token = {};
   m.clipToken = token;
+  // While held: did the game go again before the clip got to its end?
+  m.clipHold = hold ? { since: Date.now(), sawGoal: false, restarted: false, release: () => { if (m.clipHold?.ended) finish(); else if (m.clipHold) m.clipHold.restarted = true; } } : null;
   const finish = () => {
     if (m.clipToken !== token) return;
     m.clipToken = null;
+    m.clipHold = null;
     clearTimeout(m.clipTimer);
     m.clipGate?.stop();
     box.classList.remove('on');
     video.pause();
     onEnd?.();
   };
-  video.onended = finish;
-  video.onerror = finish;
-  video.onplaying = () => {
+  video.onended = () => {
     if (m.clipToken !== token) return;
+    const h = m.clipHold;
+    if (!h || h.restarted) { finish(); return; }
+    // Held: the celebration repeats (or rests on its last frame if the browser will not replay).
+    h.ended = true;
+    video.currentTime = GOAL_HOLD.loopFrom;
+    video.play()?.catch?.(() => {});
+  };
+  video.onerror = finish;
+  // (the box may still be showing a clip this one cut short: started is per clip)
+  let started = false;
+  video.onplaying = () => {
+    if (m.clipToken !== token || started) return;
+    started = true;
     box.classList.add('on');
     clearTimeout(m.clipTimer);
-    m.clipTimer = setTimeout(finish, clip.ms + 1500);
+    m.clipTimer = setTimeout(finish, hold ? GOAL_HOLD.maxMs : clip.ms + 1500);
   };
   box.onclick = finish;
   m.clipTimer = setTimeout(finish, 3000);
