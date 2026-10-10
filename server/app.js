@@ -1158,12 +1158,16 @@ export function createApp(db, {
     });
   });
 
+  // Events: those open, and the ones that ended in the last 12 hours (to correct a result); older
+  // ones are in Liquidação when they still need a decision.
+  const RECENT_ENDED_MS = 12 * 3_600_000;
   admin.get('/events', (_req, res) => {
-    const events = loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [new Date(Date.now() - 3 * 86_400_000).toISOString()],
+    const since = new Date(Date.now() - RECENT_ENDED_MS).toISOString();
+    const events = loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [since],
       "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500);
     // The provider's own game number (WinHouse's gameId for its diagnostics).
     const ext = new Map(db.prepare('SELECT id, external_id FROM events WHERE external_id IS NOT NULL AND (status IN (\'scheduled\', \'live\') OR updated_at > ?)')
-      .all(new Date(Date.now() - 3 * 86_400_000).toISOString()).map((r) => [r.id, r.external_id]));
+      .all(since).map((r) => [r.id, r.external_id]));
     res.json({ events: events.map((e) => ({ ...e, externalId: ext.get(e.id) ?? null })) });
   });
 

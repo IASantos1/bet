@@ -162,6 +162,7 @@ test('a match in review with no bets is closed an hour after it left the live li
   assert.equal(t.row(5).status, 'finished');
   assert.equal(t.row(5).clock, 'Final');
   assert.equal(t.row(5).review_reason, null);
+  assert.equal(t.row(5).updated_at, t.row(5).wh_missing_since); // dated when it really ended
   assert.equal(t.row(6).status, 'live');
   assert.ok(t.row(6).review_reason);
   assert.equal(t.betStatus(onSix), 'open');
