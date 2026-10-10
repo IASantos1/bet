@@ -10,6 +10,8 @@
 // A sandbox key (ek_test_…) works the same; its callbacks carry "sandbox": true and never move
 // real money (BigBang plays them with a virtual balance).
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { CATEGORIES, categoryOf, dropCrossDuplicates, featuredGames, houseNames, sortProviders, titleKey as nameKey } from './casinolobby.js';
+import { getSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
@@ -59,10 +61,10 @@ export function providerKey(name) {
 /** The provider's display name among its spellings: the fullest one ("Pragmatic Play" over "Pragmatic"). */
 const displayName = (names) => [...names].map((n) => String(n).replace(/([a-z])([A-Z])/g, '$1 $2').trim())
   .sort((a, b) => b.split(' ').length - a.split(' ').length || b.length - a.length)[0];
-/** The same game in two copies (Standard / Premium, or two spellings of one provider): one key. */
-const titleKey = (g) => `${g.providerId}|${g.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '')}`;
-/** Lobby rows: popular first, then the newest, then each kind of game. */
-const LOBBY = [['populares', 'Populares'], ['novos', 'Novos'], ['Slots', 'Slots'], ['Ao Vivo', 'Casino ao vivo'], ['Crash', 'Crash']];
+/** The same game in two copies (Standard / Premium, "™", or two spellings of one provider): one key. */
+const titleKey = (g) => `${g.providerId}|${nameKey(g.name)}`;
+/** The lobby's first block: the featured games, filled up with the most popular to this many. */
+const FEATURED_COUNT = 30;
 const euros = (cents) => (cents / 100).toFixed(2);
 
 export function createBigBang(db, {
@@ -134,15 +136,17 @@ export function createBigBang(db, {
       const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && cur.premium && !g.premium);
       if (better) best.set(k, g);
     }
-    const unique = games.filter((g) => best.get(titleKey(g)) === g);
-    // Only providers that have games here, in alphabetical order, under their fullest name.
-    const withGames = new Set(unique.map((g) => g.providerId));
-    const providers = [...withGames].map((id) => ({ id, name: displayName(names.get(id) || [id]), maintenance: false }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Only providers that have games here, under their fullest name: the house order first
+    // (Pragmatic Play, Evolution, Playtech…), then the others alphabetically.
+    const withGames = new Set(games.filter((g) => best.get(titleKey(g)) === g).map((g) => g.providerId));
+    const providers = sortProviders(houseNames([...withGames].map((id) => ({ id, name: displayName(names.get(id) || [id]), maintenance: false }))));
     const nameOf = new Map(providers.map((p) => [p.id, p.name]));
     for (const g of games) g.provider = nameOf.get(g.providerId) || g.provider;
+    // Then one copy of a slot across providers too (a studio's games listed under its parent as well).
+    const unique = dropCrossDuplicates(games.filter((g) => best.get(titleKey(g)) === g));
     // Every copy stays reachable by id (a free-spins game, an old link); the lists show one.
-    catalog = { at: Date.now(), games: unique, byId: new Map(games.map((g) => [g.id, g])), providers };
+    const shown = new Set(unique.map((g) => g.providerId));
+    catalog = { at: Date.now(), games: unique, byId: new Map(games.map((g) => [g.id, g])), providers: providers.filter((p) => shown.has(p.id)) };
     return catalog;
   }
 
@@ -202,34 +206,51 @@ export function createBigBang(db, {
   // The provider gives no release date: higher ids are the games it added last.
   const byNewest = (list) => [...list].sort((a, b) => b.id - a.id);
 
-  /** The casino lobby: each row with its first `n` games (the most popular first). */
+  /** Games marked as Bet62's own (setting casino.exclusive: a list of game ids). */
+  const ctx = () => ({ exclusive: new Set((getSetting(db, 'casino.exclusive', []) || []).map(Number)) });
+
+  /** The games of one tab: populares / novos are orders over every game, the others filters. */
+  function inCategory(list, key, c = ctx()) {
+    const cat = categoryOf(key);
+    if (cat?.[2]) return list.filter((g) => cat[2](g, c));
+    // The older kind names ("Slots", "Ao Vivo", "Crash") still filter by kind.
+    if (key && !cat) return list.filter((g) => g.category === key);
+    return list;
+  }
+
+  /**
+   * The casino lobby: first the featured games (all shown at once), then one row per provider in the
+   * house order (Pragmatic Play, Evolution, Playtech…) with its `n` most popular games, and the tabs
+   * with how many games each has (the empty ones are left out).
+   */
   async function lobby({ n = 10 } = {}) {
     const all = await games();
     const popular = byPopularity(all.games);
-    const rows = LOBBY.map(([key, title]) => {
-      const list = key === 'populares' ? mixedPopular(all.games) : key === 'novos' ? byNewest(all.games) : popular.filter((g) => g.category === key);
-      return { key, title, total: list.length, games: list.slice(0, n) };
-    }).filter((r) => r.games.length);
-    // Then one row per provider: the providers of the most popular games first.
-    const order = [];
-    for (const g of popular) if (!order.includes(g.providerId)) order.push(g.providerId);
-    for (const id of order) {
-      const list = popular.filter((g) => g.providerId === id);
-      const name = all.providers.find((p) => p.id === id)?.name || list[0]?.provider || id;
-      rows.push({ key: 'provider', provider: id, title: name, total: list.length, games: list.slice(0, n) });
+    const featured = featuredGames(popular);
+    if (featured.length < FEATURED_COUNT) {
+      const taken = new Set(featured.map((g) => g.id));
+      for (const g of mixedPopular(all.games)) {
+        if (featured.length >= FEATURED_COUNT) break;
+        if (!taken.has(g.id)) { featured.push(g); taken.add(g.id); }
+      }
     }
-    return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, rows };
+    const rows = featured.length ? [{ key: 'destaques', title: 'Em destaque', layout: 'grid', total: featured.length, games: featured }] : [];
+    for (const p of all.providers) {
+      const list = popular.filter((g) => g.providerId === p.id);
+      if (list.length) rows.push({ key: 'provider', provider: p.id, title: p.name, total: list.length, games: list.slice(0, n) });
+    }
+    const c = ctx();
+    const categories = CATEGORIES.map(([key, label]) => ({ key, label, total: inCategory(all.games, key, c).length })).filter((x) => x.total);
+    return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, categories, rows };
   }
 
   async function gamesPage({ offset = 0, limit = 24, provider = '', category = '', q = '', sort = '' } = {}) {
     const all = await games();
     const term = String(q || '').trim().toLowerCase();
-    // "populares" / "novos" are orders over every game; the other categories are kinds of game.
+    // "populares" / "novos" are orders over every game; the other tabs filter.
     const order = sort || (category === 'novos' ? 'new' : 'popular');
-    const kind = category === 'populares' || category === 'novos' ? '' : category;
-    let list = all.games.filter((g) => (!provider || g.providerId === String(provider))
-      && (!kind || g.category === kind)
-      && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term)));
+    let list = inCategory(all.games.filter((g) => (!provider || g.providerId === String(provider))
+      && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term))), category);
     list = order === 'new' ? byNewest(list) : category === 'populares' ? mixedPopular(list) : byPopularity(list);
     const start = Math.max(0, Number(offset) || 0);
     const size = Math.min(60, Math.max(1, Number(limit) || 24));
