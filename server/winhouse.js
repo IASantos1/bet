@@ -789,6 +789,8 @@ export function estimateOffset(items, now = Date.now()) {
 }
 
 // Sports whose clock counts up through the match.
+/** How long a match in review with no bets waits, gone from the live list, before it is closed. */
+const STALE_CLOSE_MS = 60 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
 
 const clockText = (sport, minutes, raw) => {
@@ -1101,11 +1103,15 @@ export function createWinHouseFeed(db, {
     return state.last.live;
   }
 
-  /** Matches no longer in the live list: wait finishConfirmSeconds, then settle or flag. */
+  /**
+   * Matches no longer in the live list: wait finishConfirmSeconds, then settle or flag; a flagged one
+   * with no bets is closed STALE_CLOSE_MS after it left (it would otherwise stay "live" for days).
+   */
   function finishMissing(seen) {
     const now = Date.now();
     let finished = 0;
     let review = 0;
+    let closed = 0;
     for (const row of db.prepare("SELECT * FROM events WHERE source = ? AND status = 'live'").all(SOURCE)) {
       if (seen.has(row.external_id)) continue;
       if (!row.wh_missing_since) {
@@ -1115,7 +1121,20 @@ export function createWinHouseFeed(db, {
         });
         continue;
       }
-      if (now - new Date(row.wh_missing_since).getTime() < finishConfirmSeconds * 1000 || row.review_reason) continue;
+      const gone = now - new Date(row.wh_missing_since).getTime();
+      if (gone < finishConfirmSeconds * 1000) continue;
+      if (row.review_reason) {
+        // In review, with no bet on it, an hour after it left: nothing to decide — it is closed on the
+        // last score seen (a match with bets stays for the operator, or its own automatic void).
+        if (gone >= STALE_CLOSE_MS && !db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(row.id)) {
+          const h = row.home_score;
+          const a = row.away_score;
+          db.prepare(`UPDATE events SET status = 'finished', result = ?, review_reason = NULL, clock = 'Final', updated_at = ? WHERE id = ? AND status = 'live'`)
+            .run(Number.isInteger(h) && Number.isInteger(a) ? resultCode(h, a) : null, nowIso(), row.id);
+          closed += 1;
+        }
+        continue;
+      }
       const v = finishVerdict(row);
       tx(db, () => {
         if (v.review) {
@@ -1130,7 +1149,8 @@ export function createWinHouseFeed(db, {
         finished += 1;
       });
     }
-    return { finished, review };
+    if (closed) log(`WinHouse: ${closed} jogo(s) sem apostas fechados (saíram do ao vivo sem resultado claro)`);
+    return { finished, review, closed };
   }
 
   /**

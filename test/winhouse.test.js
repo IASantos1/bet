@@ -143,6 +143,30 @@ test('live: in-play prices from the list; a match that leaves it at full time is
   assert.ok(queue.some((q) => q.id === t.row(2).id && /WinHouse/.test(q.reason)));
 });
 
+test('a match in review with no bets is closed an hour after it left the live list; one with bets waits for the operator', async () => {
+  const lists = { live: [football(5, 30, '0-0', ODD), football(6, 30, '1-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onSix = t.bet(6, '1x2', '1');
+  lists.live = [];
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.ok(t.row(5).review_reason && t.row(6).review_reason);
+  assert.equal(t.row(5).status, 'live');
+  // Less than an hour gone: still waiting.
+  t.db.prepare("UPDATE events SET wh_missing_since = ? WHERE source = 'winhouse'").run(new Date(Date.now() - 50 * 60_000).toISOString());
+  assert.equal((await t.feed.syncLive()).closed, 0);
+  // Over an hour (games of the day before): the one without bets is closed on its last score.
+  t.db.prepare("UPDATE events SET wh_missing_since = ? WHERE source = 'winhouse'").run(new Date(Date.now() - 26 * 3_600_000).toISOString());
+  assert.equal((await t.feed.syncLive()).closed, 1);
+  assert.equal(t.row(5).status, 'finished');
+  assert.equal(t.row(5).clock, 'Final');
+  assert.equal(t.row(5).review_reason, null);
+  assert.equal(t.row(6).status, 'live');
+  assert.ok(t.row(6).review_reason);
+  assert.equal(t.betStatus(onSix), 'open');
+});
+
 test('a match flagged for review is settled when the tracker says it is over (score not lower than the last seen)', async () => {
   const lists = { live: [football(3, 70, '1-0', ODD), football(4, 70, '0-0', ODD)] };
   const t = setupFeed(lists);
