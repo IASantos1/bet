@@ -1,5 +1,7 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
+import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate } from './trkclips.js';
+
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
   basquetebol: { name: 'Basquetebol', icon: '🏀' },
@@ -2502,6 +2504,8 @@ function leaveMatch() {
   m.es?.close();
   clearInterval(m.timer);
   stopRapid();
+  clearTimeout(m.clipTimer);
+  Object.assign(m, { score: null, kickoff: null, cornerTurn: 0, clipGate: null, clipToken: null, clipTimer: null });
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
@@ -2513,6 +2517,7 @@ async function loadMatch(id, { quiet = false } = {}) {
     if (state.match.id !== id) return;
     const wasLive = state.match.data?.status === 'live';
     state.match.data = event;
+    noteScore(event);
     if (event.status !== 'scheduled') loadMatchExtras(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
@@ -2540,27 +2545,37 @@ function startMatchStream(id) {
   const on = (type, fn) => es.addEventListener(type, (ev) => { try { fn(JSON.parse(ev.data)); } catch { /* bad frame */ } });
   on('snapshot', (s) => {
     m.streaming = !!s.following;
-    if (s.event) applyLiveEvent(s.event);
+    if (s.event) applyLiveEvent(s.event, { quiet: true });
     for (const d of s.livedata || []) pushBall(d);
     m.prevBall = null;
     m.actions = (s.actions || []).slice(-15);
     updateTracker();
     updateActionsList();
   });
-  on('event', applyLiveEvent);
-  on('livedata', (d) => { pushBall(d); updateTracker(); });
+  on('event', (e) => applyLiveEvent(e));
+  on('livedata', (d) => {
+    const before = m.ball;
+    pushBall(d);
+    if (d.situation !== 'goal') m.kickoff = null;
+    updateTracker();
+    // A corner being taken, or a goal: the 3D clip over the pitch.
+    const clip = situationClip(before, d);
+    if (clip === 'corner') playClip(cornerClip(m.ball, m.cornerTurn++));
+    else if (clip === 'goal') celebrateGoal(d.side);
+  });
   on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); });
   on('odds', () => loadMatch(id, { quiet: true }));
   // No stream (match not covered by the live socket): the page keeps polling instead.
   es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.es = null; };
 }
 
-function applyLiveEvent(e) {
+function applyLiveEvent(e, { quiet = false } = {}) {
   const d = state.match.data;
   if (!d) return;
   const scored = d.homeScore !== e.homeScore || d.awayScore !== e.awayScore;
   d.homeScore = e.homeScore;
   d.awayScore = e.awayScore;
+  noteScore(d, { quiet });
   d.clock = e.clock || d.clock;
   if (e.server) d.server = e.server;
   state.match.live = e.stats || state.match.live;
@@ -3071,6 +3086,7 @@ function footballWidget(e) {
       <div class="trk-trails" id="trkTrails"></div>
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
+      <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video></div>
     </div></div>
     <p class="trk-note" id="trkNote"></p>
     <div class="trk-actions" id="trackerActions"></div>
@@ -3129,6 +3145,7 @@ function mountLiveWidget() {
     holder.innerHTML = kind === 'football' ? footballWidget(e) : tennisWidget(e);
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
+    if (kind === 'football') warmClips();
   }
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
   if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); } else updateTennisCourt();
@@ -3165,6 +3182,25 @@ function updateTracker({ instant = false } = {}) {
     ball.classList.add('idle');
     arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
     badge.classList.remove('on');
+    return;
+  }
+  // After a goal's clip: the ball back on the centre spot for the kick-off (no "GOLO!" left on the
+  // pitch while the tracker has nothing newer to say).
+  if (b.situation === 'goal' && m.kickoff) {
+    ball.classList.remove('idle');
+    ball.classList.add('instant', 'resting');
+    ball.style.left = '50%';
+    ball.style.top = '50%';
+    arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
+    const ko = m.kickoff.side;
+    badge.classList.toggle('on', !!ko);
+    badge.classList.toggle('away', ko === 'away');
+    badge.classList.remove('hot');
+    $('#trkBadgeTeam', w).textContent = ko === 'away' ? e.away : ko === 'home' ? e.home : '';
+    $('#trkBadgeText', w).textContent = 'Pontapé de saída';
+    badge.style.left = '50%';
+    badge.style.top = '30%';
+    m.prevBall = null;
     return;
   }
   // Half time: the ball rests on the centre spot, no arrow, no trail; the badge says "Intervalo".
@@ -3229,6 +3265,97 @@ function updateTracker({ instant = false } = {}) {
     }
   }
   m.prevBall = null;
+}
+
+// ---------- 3D clips over the mini-pitch (goal celebration, corner) ----------
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** The clips are fetched once, in the background, when a live mini-pitch first opens (not on data saver). */
+let clipsWarm = false;
+let clipExt;
+const clipExtension = () => {
+  if (clipExt === undefined) {
+    const probe = document.createElement('video');
+    clipExt = typeof probe.canPlayType === 'function' ? clipFormat((t) => probe.canPlayType(t)) : null;
+  }
+  return clipExt;
+};
+function warmClips() {
+  if (clipsWarm || navigator.connection?.saveData || !clipExtension()) return;
+  clipsWarm = true;
+  for (const { src } of Object.values(CLIPS)) {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = `${src}.${clipExtension()}`;
+    document.head.append(link);
+  }
+}
+
+/**
+ * Score seen on the match page: a goal starts the celebration. The highest score seen per side is
+ * kept, so the polled score and the live one disagreeing for a moment never celebrate a goal twice.
+ */
+function noteScore(d, { quiet = false } = {}) {
+  const m = state.match;
+  const now = { home: Number(d.homeScore) || 0, away: Number(d.awayScore) || 0 };
+  const who = quiet || d.status !== 'live' || !d.liveTracker ? null : scorer(m.score, now);
+  m.score = m.score ? { home: Math.max(m.score.home, now.home), away: Math.max(m.score.away, now.away) } : now;
+  if (who) celebrateGoal(who);
+}
+
+/** The goal clip, then the pitch waits for the kick-off (the side that conceded) until new data comes. */
+function celebrateGoal(side) {
+  const m = state.match;
+  const kickoff = side === 'home' ? 'away' : side === 'away' ? 'home' : null;
+  playClip('goal', { onEnd: () => { m.kickoff = { side: kickoff }; updateTracker({ instant: true }); } });
+}
+
+/**
+ * Plays one clip over the pitch and goes back to the 2D view when it ends. Skipped (straight to
+ * `onEnd`) when nobody would see it: tab hidden, video view open, reduced motion, no codec. A clip that does
+ * not start within 3 s (slow network, autoplay refused) is dropped; a tap closes it.
+ */
+function playClip(kind, { onEnd } = {}) {
+  const m = state.match;
+  const clip = CLIPS[kind];
+  m.clipGate ||= createClipGate();
+  if (!clip || !m.clipGate.want(kind)) return;
+  const w = m.widget;
+  const box = w && $('#trkClip', w);
+  const video = w && $('#trkClipVideo', w);
+  if (!video || m.widgetKind !== 'football' || !w.isConnected || document.hidden || reducedMotion() || !clipExtension()) {
+    m.clipGate.start(kind, 0);
+    onEnd?.();
+    return;
+  }
+  m.clipGate.start(kind, clip.ms + 4500);
+  clearTimeout(m.clipTimer);
+  const token = {};
+  m.clipToken = token;
+  const finish = () => {
+    if (m.clipToken !== token) return;
+    m.clipToken = null;
+    clearTimeout(m.clipTimer);
+    m.clipGate?.stop();
+    box.classList.remove('on');
+    video.pause();
+    onEnd?.();
+  };
+  video.onended = finish;
+  video.onerror = finish;
+  video.onplaying = () => {
+    if (m.clipToken !== token) return;
+    box.classList.add('on');
+    clearTimeout(m.clipTimer);
+    m.clipTimer = setTimeout(finish, clip.ms + 1500);
+  };
+  box.onclick = finish;
+  m.clipTimer = setTimeout(finish, 3000);
+  video.muted = true;
+  const src = `${clip.src}.${clipExtension()}`;
+  if (video.getAttribute('src') !== src) video.src = src;
+  else video.currentTime = 0;
+  video.play()?.catch?.(finish);
 }
 
 function updateActionsList() {
