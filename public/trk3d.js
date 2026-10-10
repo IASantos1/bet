@@ -32,7 +32,7 @@ function buildStadium(scene, q) {
   const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(-40, 90, 60); scene.add(key);
 
   // pitch: stripes and lines on a canvas
-  { const PX = q.px, AX = 14, AZ = 12;
+  { const PX = q.px, AX = 14, AZ = 40; // striped grass far beyond the lines (the open side is all grass)
     const cw = Math.round((L + 2 * AX) * PX), ch = Math.round((W + 2 * AZ) * PX);
     const c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
     const X = (x) => (x + HL + AX) * PX, Z = (z) => (z + HW + AZ) * PX;
