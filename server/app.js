@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
+import { divisionOf } from './footballdivisions.js';
 import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
@@ -397,8 +398,34 @@ export function createApp(db, {
     const out = {};
     for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {
       const counts = new Map();
-      for (const e of openFixtures(sport)) counts.set(leagueKey(e.competition), (counts.get(leagueKey(e.competition)) || 0) + 1);
-      out[sport] = tree.map(([country, leagues]) => ({ country, leagues: leagues.map((name) => ({ name, count: counts.get(leagueKey(name)) || 0 })) }));
+      const named = new Map(); // key → the name as the games carry it
+      for (const e of openFixtures(sport)) {
+        const k = leagueKey(e.competition);
+        counts.set(k, (counts.get(k) || 0) + 1);
+        if (!named.has(k)) named.set(k, e.competition);
+      }
+      const list = tree.map(([country, leagues]) => ({ country, leagues: leagues.map((name) => ({ name, count: counts.get(leagueKey(name)) || 0 })) }));
+      if (sport === 'futebol') {
+        // Each covered country's first and second division with games open, under its country
+        // (first division first), whatever WinHouse calls the league.
+        const listed = new Set(tree.flatMap(([, leagues]) => leagues.map(leagueKey)));
+        const extra = new Map();
+        for (const [k, name] of named) {
+          const d = listed.has(k) ? null : divisionOf(name);
+          if (!d) continue;
+          if (!extra.has(d.country)) extra.set(d.country, []);
+          extra.get(d.country).push({ name, count: counts.get(k), division: d.division });
+        }
+        for (const [country, leagues] of extra) {
+          leagues.sort((a, b) => a.division - b.division || a.name.localeCompare(b.name));
+          const clean = leagues.map(({ name, count }) => ({ name, count }));
+          const have = list.find((c) => c.country === country);
+          if (have) have.leagues.push(...clean);
+          else list.push({ country, leagues: clean });
+        }
+        list.sort((a, b) => a.country.localeCompare(b.country));
+      }
+      out[sport] = list;
     }
     res.json({ leagues: out });
   });

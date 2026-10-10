@@ -1,3 +1,4 @@
+import { divisionOf } from './footballdivisions.js';
 import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
@@ -555,12 +556,21 @@ export const TENNIS_TREE = [
 export const LEAGUE_TREES = { futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
-/** A list of competitions (names separated by ; or new lines) → the allowed ones (Set of keys); empty = the tree's, "*" = all (null). */
+/** The tree's competitions plus, for football, every covered country's first and second division. */
+class LeagueSet extends Set {
+  has(k) { return super.has(k) || !!divisionOf(k); }
+}
+/**
+ * A list of competitions (names separated by ; or new lines) → the allowed ones (Set of keys); "*" =
+ * all (null). Empty = the tree's, and for football also the first and second division of every
+ * covered country (footballdivisions.js), whatever WinHouse calls them.
+ */
 export function allowedLeagues(list, tree = FOOTBALL_TREE) {
   const text = String(list ?? '').trim();
   if (text === '*' || /^(all|todas|todos)$/i.test(text)) return null;
   const names = text ? text.split(/[;\n]|,(?!\s*\d)/).map((t) => t.trim()).filter(Boolean) : tree.flatMap(([, leagues]) => leagues);
-  return new Set(names.map(leagueKey));
+  const keys = names.map(leagueKey);
+  return !text && tree === FOOTBALL_TREE ? new LeagueSet(keys) : new Set(keys);
 }
 /** WINHOUSE_FOOTBALL_LEAGUES → the allowed football competitions (Set of keys), or null for all. */
 export const footballLeagues = (list) => allowedLeagues(list, FOOTBALL_TREE);

@@ -105,6 +105,8 @@ test('sidebar leagues: countries with open games per league; one league of the n
   const later = add('england premier league', 'scheduled', 20); // 20 days away: outside the board, inside the league page
   add('England. Premier League', 'scheduled', 40); // beyond a month
   add('Spain. La Liga', 'scheduled', 2);
+  add('Angola. Girabola', 'scheduled', 3); // a covered country's first division, not in the fixed tree
+  add('Spain. Segunda Division', 'scheduled', 3);
   const server = createApp(db).listen(0);
   await new Promise((r) => server.once('listening', r));
   const get = async (p) => (await fetch(`http://127.0.0.1:${server.address().port}${p}`)).json();
@@ -113,6 +115,8 @@ test('sidebar leagues: countries with open games per league; one league of the n
     const england = leagues.futebol.find((c) => c.country === 'England');
     assert.equal(england.leagues.find((l) => l.name === 'England. Premier League').count, 2);
     assert.equal(leagues.futebol.find((c) => c.country === 'Spain').leagues.find((l) => l.name === 'Spain. La Liga').count, 1);
+    assert.deepEqual(leagues.futebol.find((c) => c.country === 'Angola').leagues, [{ name: 'Angola. Girabola', count: 1 }]);
+    assert.equal(leagues.futebol.find((c) => c.country === 'Spain').leagues.find((l) => l.name === 'Spain. Segunda Division').count, 1);
     // Basketball and tennis have their trees too.
     assert.ok(leagues.basquetebol.find((c) => c.country === 'United States').leagues.some((l) => l.name === 'NBA'));
     assert.ok(leagues.tenis.find((c) => c.country === 'China').leagues.some((l) => l.name === 'WTA. Beijing'));
