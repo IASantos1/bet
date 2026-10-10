@@ -54,6 +54,22 @@ export function situationClip(prev, next) {
   return s === 'goal' || s === 'corner' ? s : null;
 }
 
+/**
+ * After the goal clip the celebration stays on the pitch (its last 1.3 s — "GOLO!", the crowd —
+ * on repeat) until the tracker shows the game going again; never longer than `maxMs`.
+ */
+export const GOAL_HOLD = { loopFrom: 2.6, maxMs: 180_000, staleMs: 20_000 };
+
+/**
+ * While the goal clip holds: does this tracker frame show the game going again (kick-off,
+ * possession…)? A frame says so once the tracker itself has said "goal" since the celebration began;
+ * when only the score told us, its frames lag behind, so for `staleMs` they are not believed.
+ */
+export function restartSeen(hold, situation, now) {
+  if (!hold || !situation || situation === 'goal') return false;
+  return hold.sawGoal || now - hold.since >= GOAL_HOLD.staleMs;
+}
+
 export const GOAL_GAP_MS = 45_000;   // one celebration per goal (the score and the situation both say it)
 export const CORNER_GAP_MS = 15_000; // one corner clip per corner (the situation repeats every second)
 

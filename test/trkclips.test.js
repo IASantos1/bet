@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';
-import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate, createCornerWatch, GOAL_GAP_MS, CORNER_GAP_MS, CORNER_WAIT_MS } from '../public/trkclips.js';
+import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate, createCornerWatch, restartSeen, GOAL_HOLD, GOAL_GAP_MS, CORNER_GAP_MS, CORNER_WAIT_MS } from '../public/trkclips.js';
 
 test('the clips are in public/media and small enough for a phone', () => {
   for (const { src } of Object.values(CLIPS)) {
@@ -113,4 +113,17 @@ test('corner watch: never taken (half time, too long, reset by a goal) plays not
   w.reset();
   assert.equal(w.pending, false);
   assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40 }), null);
+});
+
+test('goal hold: the celebration stays until the tracker shows the game going again', () => {
+  const hold = { since: 0, sawGoal: true };
+  assert.equal(restartSeen(hold, 'goal', 5000), false);          // still the goal
+  assert.equal(restartSeen(hold, null, 5000), false);            // no situation: nothing new
+  assert.equal(restartSeen(hold, 'possession', 5000), true);     // kick-off taken
+  assert.equal(restartSeen(null, 'possession', 5000), false);
+  // only the score said "goal": the tracker's lagging frames are not believed for a while
+  const byScore = { since: 0, sawGoal: false };
+  assert.equal(restartSeen(byScore, 'dangerous_attack', 3000), false);
+  assert.equal(restartSeen(byScore, 'possession', GOAL_HOLD.staleMs), true);
+  assert.ok(GOAL_HOLD.loopFrom < CLIPS.goal.ms / 1000);
 });
