@@ -1023,7 +1023,7 @@ export function createApp(db, {
     if (!bets.length) return [];
     const ids = bets.map((b) => b.id);
     const legs = db.prepare(
-      `SELECT l.bet_id, l.event_id, l.market, l.code, l.odds_x100, l.status, e.sport, e.home, e.away, e.competition, e.home_score, e.away_score,
+      `SELECT l.id, l.bet_id, l.event_id, l.market, l.code, l.odds_x100, l.status, e.sport, e.home, e.away, e.competition, e.home_score, e.away_score,
               e.status AS event_status, e.start_time, e.clock, e.source
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
@@ -1031,9 +1031,9 @@ export function createApp(db, {
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       freebet: cents(b.freebet_stake_cents || 0), bonusStake: cents(b.bonus_stake_cents || 0), protected: !!b.protected,
-      ref: `BT62-${String(b.id).padStart(6, '0')}`,
+      ref: `BT62-${String(b.id).padStart(6, '0')}`, manual: b.manual_at ? { at: b.manual_at, note: b.manual_note } : null,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
+        id: l.id, match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
@@ -1577,12 +1577,44 @@ export function createApp(db, {
     res.send(Buffer.from(d.data));
   });
 
-  admin.get('/bets', (_req, res) => {
+  admin.get('/bets', (req, res) => {
+    // ?status=open: the tickets still waiting (oldest first: the ones the settlement may have missed).
+    const open = req.query.status === 'open';
     const bets = db.prepare(
-      'SELECT b.*, u.email FROM bets b JOIN users u ON u.id = b.user_id ORDER BY b.id DESC LIMIT 100'
+      `SELECT b.*, u.email FROM bets b JOIN users u ON u.id = b.user_id ${open ? "WHERE b.status = 'open'" : ''} ORDER BY b.id ${open ? 'ASC' : 'DESC'} LIMIT ${open ? 300 : 100}`
     ).all();
     const emails = new Map(bets.map((b) => [b.id, b.email]));
     res.json({ bets: withLegs(bets).map((b) => ({ ...b, email: emails.get(b.id) })) });
+  });
+
+  /**
+   * A ticket settled by hand, when the automatic settlement fails: each open leg decided (won /
+   * lost / void), then the ticket is paid as it would have been (settleBet: real money, bonus or
+   * free bet back where they came from). Legs left open keep the ticket open.
+   */
+  admin.post('/bets/:id/settle', (req, res) => {
+    const decisions = req.body?.legs && typeof req.body.legs === 'object' ? req.body.legs : {};
+    const note = str(req.body?.note, 200) || null;
+    const out = tx(db, () => {
+      const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(Number(req.params.id));
+      if (!bet) throw new HttpError(404, 'Bilhete não encontrado.');
+      if (bet.status !== 'open') throw new HttpError(409, 'Este bilhete já está liquidado.');
+      const legs = db.prepare("SELECT id FROM bet_legs WHERE bet_id = ? AND status = 'open'").all(bet.id);
+      let decided = 0;
+      for (const l of legs) {
+        const v = decisions[l.id];
+        if (v === undefined || v === null || v === '') continue;
+        if (!['won', 'lost', 'void'].includes(v)) throw new HttpError(400, 'Resultado inválido (ganha, perdida ou anulada).');
+        db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?').run(v, l.id);
+        decided += 1;
+      }
+      if (!decided) throw new HttpError(400, 'Escolha o resultado de pelo menos uma seleção.');
+      db.prepare('UPDATE bets SET manual_by = ?, manual_at = ?, manual_note = ? WHERE id = ?').run(req.user.id, nowIso(), note, bet.id);
+      const paid = settleBet(db, bet.id);
+      const after = db.prepare('SELECT status FROM bets WHERE id = ?').get(bet.id);
+      return { status: after.status, paid: cents(paid), decided };
+    });
+    res.json(out);
   });
 
   admin.post('/casino/test', wrap(async (_req, res) => {

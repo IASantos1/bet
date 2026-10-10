@@ -447,3 +447,39 @@ test('profile: KYC upload checks type and size and puts the account in review', 
   assert.equal(k.body.documents[0].kind, 'Documento (frente)');
   assert.equal(k.body.documents[0].status, 'pending');
 });
+
+test('admin settles a ticket by hand: each open leg decided, paid as the automatic settlement would', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer(50);
+  const a = await createEvent(adm);
+  const b = await createEvent(adm, { 1: 1.5, X: 3, 2: 4 });
+  const r = await p('POST', '/api/bets', { mode: 'multiple', stake: 10, selections: [{ selectionId: sel(a, '1').id, odds: 2 }, { selectionId: sel(b, '1').id, odds: 1.5 }] });
+  assert.equal(r.status, 201);
+  const open = (await adm('GET', '/api/admin/bets?status=open')).body.bets;
+  const t = open.find((x) => x.legs.length === 2 && x.status === 'open');
+  const [l1, l2] = t.legs;
+  // Nothing chosen: refused.
+  assert.equal((await adm('POST', `/api/admin/bets/${t.id}/settle`, { legs: {} })).status, 400);
+  assert.equal((await adm('POST', `/api/admin/bets/${t.id}/settle`, { legs: { [l1.id]: 'maybe' } })).status, 400);
+  // One leg decided: the ticket stays open.
+  let s = await adm('POST', `/api/admin/bets/${t.id}/settle`, { legs: { [l1.id]: 'won' }, note: 'resultado confirmado no site oficial' });
+  assert.deepEqual([s.status, s.body.status], [200, 'open']);
+  // The other one void: won at 2.00 only → €20 paid.
+  s = await adm('POST', `/api/admin/bets/${t.id}/settle`, { legs: { [l2.id]: 'void' } });
+  assert.deepEqual([s.body.status, s.body.paid], ['won', 20]);
+  assert.equal((await p('GET', '/api/wallet')).body.balance, 60);
+  // Already settled: refused; the ticket says it was settled by hand.
+  assert.equal((await adm('POST', `/api/admin/bets/${t.id}/settle`, { legs: { [l2.id]: 'lost' } })).status, 409);
+  const after = (await adm('GET', '/api/admin/bets')).body.bets.find((x) => x.id === t.id);
+  assert.ok(after.manual?.at);
+  // A whole ticket voided: the stake goes back.
+  const c = await createEvent(adm);
+  const r2 = await p('POST', '/api/bets', { mode: 'single', stake: 5, selections: [{ selectionId: sel(c, 'X').id, odds: 3 }] });
+  assert.equal(r2.status, 201);
+  const t2 = (await adm('GET', '/api/admin/bets?status=open')).body.bets.find((x) => x.legs[0].eventId === c.id);
+  s = await adm('POST', `/api/admin/bets/${t2.id}/settle`, { legs: { [t2.legs[0].id]: 'void' } });
+  assert.equal(s.body.status, 'void');
+  assert.equal((await p('GET', '/api/wallet')).body.balance, 60);
+  // Players cannot.
+  assert.equal((await p('POST', `/api/admin/bets/${t2.id}/settle`, { legs: {} })).status, 403);
+});

@@ -416,6 +416,12 @@ function migrate(db) {
   if (!fsCols.has('game_bets')) db.exec('ALTER TABLE casino_spins ADD COLUMN game_bets TEXT');
   if (!fsCols.has('spins_left')) db.exec('ALTER TABLE casino_spins ADD COLUMN spins_left INTEGER');
 
+  // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
+  const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
+  for (const [c, type] of [['manual_by', 'INTEGER'], ['manual_at', 'TEXT'], ['manual_note', 'TEXT']]) {
+    if (!manualCols.has(c)) db.exec(`ALTER TABLE bets ADD COLUMN ${c} ${type}`);
+  }
+
   const selCols = new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name));
   if (!selCols.has('market')) {
     rebuild(db, 'selections', `INSERT INTO selections (id, event_id, market, code, odds_x100, active)

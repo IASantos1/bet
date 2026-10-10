@@ -94,3 +94,8 @@
 .kyc-meta { display: flex; flex-direction: column; gap: 3px; }
 .kyc-meta .pill { align-self: flex-start; }
 .ok-text { color: #51c580; }
+
+/* Manual settlement of a ticket (Apostas tab). */
+.leg-pick { display: block; margin-top: 6px; padding: 4px 6px; border-radius: 6px; background: #0f141b; color: inherit; border: 1px solid var(--line, #2a3340); font-size: 12px; }
+.bet-settle { margin-top: 10px; flex-wrap: wrap; }
+.bets-filter { margin: 0 0 12px; }
