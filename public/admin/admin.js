@@ -254,16 +254,41 @@ function userPromosPanel(d) {
     <p class="muted">Limites do jogador: ${LIM.map(([k, l]) => `${l} ${lim[k] === null ? '—' : money(lim[k])}`).join(' · ')}</p></div>`;
 }
 
+/** Players whose identity documents wait for validation (top of the players tab). */
+function kycPendingPanel(list = []) {
+  if (!list.length) return '<div class="panel"><h3>Verificações KYC pendentes</h3><p class="muted">Nenhum documento à espera de validação.</p></div>';
+  return `<div class="panel kyc-queue"><h3>Verificações KYC pendentes <span class="pill pending">${list.length}</span></h3>
+    <div class="table-wrap"><table><thead><tr><th>Jogador</th><th>Email</th><th>Enviado</th><th></th></tr></thead><tbody>
+    ${list.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(fmtDateTime(u.kycSentAt))}</td>
+      <td><button class="primary-btn btn-sm" data-action="user-detail" data-id="${u.id}">Ver documentos</button></td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+/** One identity document: its picture (or the PDF to open), and Validar / Rejeitar. */
+function kycDocCard(x) {
+  const file = `/api/admin/kyc/${x.id}/file`;
+  const preview = /^image\//.test(x.mimeType || '')
+    ? `<a href="${file}" target="_blank" rel="noopener"><img class="kyc-img" src="${file}" alt="${esc(x.kind)}" loading="lazy"></a>`
+    : `<a class="kyc-pdf" href="${file}" target="_blank" rel="noopener">📄 Abrir ${esc(x.fileName)}</a>`;
+  return `<div class="kyc-doc ${x.status}">
+    ${preview}
+    <div class="kyc-meta"><b>${esc(x.kind)}</b><small class="muted">${esc(x.fileName)} · ${Math.round(x.size / 1024)} KB · enviado ${esc(fmtDateTime(x.createdAt))}</small>
+      <span class="pill ${x.status}">${KYC_LABEL[x.status] || x.status}</span>${x.reviewedAt ? ` <small class="muted">decidido ${esc(fmtDateTime(x.reviewedAt))}</small>` : ''}</div>
+    <div class="form-actions"><button class="primary-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="approved"${x.status === 'approved' ? ' disabled' : ''}>Validar</button>
+      <button class="danger-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="rejected"${x.status === 'rejected' ? ' disabled' : ''}>Rejeitar</button></div>
+  </div>`;
+}
+
 function userDetailView(d) {
   const u = d.user;
   const deposits = d.transactions.filter((t) => t.type === 'deposit');
   const docs = d.documents.length
-    ? `<div class="table-wrap"><table><thead><tr><th>Documento</th><th>Ficheiro</th><th>Enviado</th><th>Estado</th><th></th></tr></thead><tbody>
-      ${d.documents.map((x) => `<tr><td>${esc(x.kind)}</td><td><a href="/api/admin/kyc/${x.id}/file" target="_blank" rel="noopener">${esc(x.fileName)}</a> <small class="muted">${Math.round(x.size / 1024)} KB</small></td>
-        <td>${esc(fmtDateTime(x.createdAt))}</td><td><span class="pill ${x.status}">${KYC_LABEL[x.status] || x.status}</span></td>
-        <td><div class="form-actions"><button class="primary-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="approved">Validar</button><button class="danger-btn btn-sm" data-action="kyc-doc" data-doc="${x.id}" data-status="rejected">Rejeitar</button></div></td></tr>`).join('')}
-      </tbody></table></div>`
+    ? `<div class="kyc-docs">${d.documents.map(kycDocCard).join('')}</div>
+      <div class="form-actions"><button class="primary-btn btn-sm" data-action="kyc-account" data-id="${u.id}" data-status="approved">Aprovar verificação da conta</button>
+        <button class="danger-btn btn-sm" data-action="kyc-account" data-id="${u.id}" data-status="rejected">Rejeitar verificação da conta</button></div>`
     : '<p class="muted">O jogador ainda não enviou documentos.</p>';
+  const wd = d.withdraw;
+  const canWithdraw = wd ? `<p class="${wd.eligible ? 'ok-text' : 'muted'}">Levantamentos: ${wd.eligible ? 'desbloqueados' : esc(wd.message)}</p>` : '';
   return `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="user-back">‹ Utilizadores</button></div>
     <div class="panel"><h3>${esc(u.name)} ${u.banned ? '<span class="pill lost">Banido</span>' : ''}</h3>
       <p>${esc(u.email)}${u.phone ? ` · ${esc(u.phone)}` : ''} · nascido em ${esc(u.birthdate || '—')} · registo ${esc(fmtDateTime(u.createdAt))}</p>
@@ -279,7 +304,7 @@ function userDetailView(d) {
       </div>
     </div>
     ${userPromosPanel(d)}
-    <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}</div>
+    <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}${canWithdraw}</div>
     <div class="panel"><h3>Apostas <small class="muted">${d.bets.length}</small></h3>${d.bets.length ? d.bets.map((b) => betCard(b)).join('') : '<p class="muted">Sem apostas.</p>'}</div>
     <div class="panel"><h3>Depósitos <small class="muted">${deposits.length}</small></h3>${deposits.length ? `<div class="table-wrap"><table><tbody>${deposits.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem depósitos.</p>'}</div>
     <div class="panel"><h3>Levantamentos <small class="muted">${d.withdrawals.length}</small></h3>${d.withdrawals.length ? `<div class="table-wrap"><table><tbody>${d.withdrawals.map((w) => `<tr><td>${esc(fmtDateTime(w.createdAt))}</td><td>${esc(w.iban)}</td><td><span class="pill ${w.status}">${STATUS_LABEL[w.status] || w.status}</span></td><td class="num">${money(w.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem levantamentos.</p>'}</div>
@@ -405,8 +430,8 @@ async function loadTab() {
       if (state.userDetail) {
         main.innerHTML = userDetailView(await api(`/api/admin/users/${state.userDetail}`));
       } else {
-        const { users } = await api('/api/admin/users');
-        main.innerHTML = usersTable(users);
+        const { users, kycPending } = await api('/api/admin/users');
+        main.innerHTML = kycPendingPanel(kycPending) + usersTable(users);
       }
     } else {
       const { events } = await api('/api/admin/events');
@@ -961,6 +986,16 @@ document.addEventListener('click', async (e) => {
     try {
       await api(`/api/admin/users/${actionEl.dataset.id}/promo-block`, { method: 'POST', body: { blocked, reason } });
       toast('Feito', blocked ? 'Promoções bloqueadas e as ativas canceladas.' : 'Promoções desbloqueadas.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'kyc-account') {
+    const ok = actionEl.dataset.status === 'approved';
+    if (!confirm(ok ? 'Aprovar a verificação de identidade desta conta? Os levantamentos ficam desbloqueados (se tiver vencido uma aposta).' : 'Rejeitar a verificação desta conta? O jogador terá de enviar novos documentos.')) return;
+    try {
+      await api(`/api/admin/users/${actionEl.dataset.id}/kyc`, { method: 'POST', body: { status: actionEl.dataset.status } });
+      toast('Feito', ok ? 'Conta verificada.' : 'Verificação rejeitada.');
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;

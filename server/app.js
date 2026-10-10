@@ -25,6 +25,7 @@ import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
+import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
@@ -364,7 +365,7 @@ export function createApp(db, {
       paymentsMode: config.paymentsMode,
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
-      maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents),
+      maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents), instantWithdraw: cents(limits.instantWithdrawCents),
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
       supportEmail: config.supportEmail || undefined, supportPhone: config.supportPhone || undefined,
       sports: SPORTS, version: APP_VERSION,
@@ -954,9 +955,14 @@ export function createApp(db, {
     res.json({ limits: limitsView(setLimits(db, req.user, req.body || {})) });
   });
 
+  // Whether the player may withdraw now (the form shows why not before they try).
+  app.get('/api/wallet/withdraw/eligibility', requireUser, (req, res) => res.json(withdrawEligibility(db, req.user)));
+
   app.post('/api/wallet/withdraw', requireUser, reclaimCasino, (req, res) => {
     const amount = parseEuros(req.body.amount, 'Valor do levantamento');
     if (amount < config.limits.minWithdrawCents) throw new HttpError(400, `Levantamento mínimo: €${cents(config.limits.minWithdrawCents)}.`);
+    const can = withdrawEligibility(db, req.user);
+    if (!can.eligible) throw new HttpError(403, can.message, { code: can.code });
     const iban = str(req.body.iban, 60).replace(/\s+/g, '').toUpperCase();
     if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) throw new HttpError(400, 'IBAN inválido.');
     // Withdrawing while a deposit bonus runs gives the bonus up (the player is asked first).
@@ -964,14 +970,17 @@ export function createApp(db, {
     if (running && req.body.forfeitBonus !== true) {
       throw new HttpError(409, `Tem o ${CAMPAIGN_NAMES[running.kind]} ativo (€${cents(running.balance_cents).toFixed(2)} de bónus). Ao levantar, o bónus é cancelado.`, { bonusActive: true });
     }
+    // Up to the instant limit it is approved at once; above it the team decides within 24–72 h.
+    const instant = instantWithdrawal(amount, config.limits.instantWithdrawCents);
     const balance = tx(db, () => {
       if (running) cancelBonus(db, running.id, 'levantamento pedido com o bónus ativo');
+      const now = nowIso();
       const { lastInsertRowid } = db.prepare(
-        'INSERT INTO withdrawals (user_id, amount_cents, iban, created_at) VALUES (?, ?, ?, ?)'
-      ).run(req.user.id, amount, iban, nowIso());
-      return postTransaction(db, req.user.id, -amount, 'withdrawal', 'Pedido de levantamento', `withdrawal:${lastInsertRowid}`);
+        'INSERT INTO withdrawals (user_id, amount_cents, iban, status, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(req.user.id, amount, iban, instant ? 'approved' : 'pending', now, instant ? now : null);
+      return postTransaction(db, req.user.id, -amount, 'withdrawal', instant ? 'Levantamento instantâneo' : 'Pedido de levantamento', `withdrawal:${lastInsertRowid}`);
     });
-    res.status(201).json({ balance: cents(balance) });
+    res.status(201).json({ balance: cents(balance), status: instant ? 'approved' : 'pending', instant });
   });
 
   // ---------- bets ----------
@@ -1404,7 +1413,14 @@ export function createApp(db, {
       `SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets
          FROM users u ORDER BY u.id DESC LIMIT 200`
     ).all();
-    res.json({ users: rows.map((u) => ({ ...userOut(u), bets: u.bets })) });
+    // Identity documents waiting for the administrator: shown first, whenever they were sent.
+    const kycPending = db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets,
+        (SELECT MAX(created_at) FROM kyc_documents d WHERE d.user_id = u.id AND d.status = 'pending') AS sent_at
+      FROM users u WHERE EXISTS (SELECT 1 FROM kyc_documents d WHERE d.user_id = u.id AND d.status = 'pending') ORDER BY sent_at`).all();
+    res.json({
+      users: rows.map((u) => ({ ...userOut(u), bets: u.bets })),
+      kycPending: kycPending.map((u) => ({ ...userOut(u), bets: u.bets, kycSentAt: u.sent_at })),
+    });
   });
 
   // ---------- one player: wallet, free bets, ban, details and identity documents ----------
@@ -1514,6 +1530,7 @@ export function createApp(db, {
     const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = ?').get(u.id, type).s);
     res.json({
       user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked }, bets, transactions: txs, withdrawals, documents,
+      withdraw: withdrawEligibility(db, u),
       promotions: playerPromos(db, u.id), limits: limitsView(currentLimits(db, u)),
       totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout') },
     });

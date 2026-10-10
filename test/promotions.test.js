@@ -275,6 +275,10 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     assert.equal(mine.body.mine.active[0].rolloverTarget, 400);
     assert.equal(mine.body.campaigns.length, 5);
     // Withdrawal: asked first (409), then the bonus is cancelled and the real money withdrawn.
+    // (Identity verified and a bet won since the deposit: the withdrawal rules are met.)
+    const rui = db.prepare("SELECT id FROM users WHERE email = 'rui@example.com'").get().id;
+    db.prepare("UPDATE users SET kyc_status = 'approved' WHERE id = ?").run(rui);
+    db.prepare("INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, status, created_at) VALUES (?, 'single', 100, 2, 200, 'won', ?)").run(rui, new Date().toISOString());
     const w = await call('POST', '/api/wallet/withdraw', { amount: 20, iban: 'PT50000201231234567890154' });
     assert.equal(w.status, 409);
     assert.equal(w.body.bonusActive, true);

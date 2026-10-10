@@ -236,27 +236,75 @@ test('changed odds are refused with the current price; suspended markets are clo
 test('stake limits and insufficient balance', async () => {
   const adm = await adminClient();
   const ev = await createEvent(adm);
-  const p = await newPlayer(5);
+  const p = await newPlayer(10);
   const pick = [{ selectionId: sel(ev, '1').id, odds: 2 }];
   assert.equal((await p('POST', '/api/bets', { mode: 'single', stake: 0.5, selections: pick })).status, 400);
-  const r = await p('POST', '/api/bets', { mode: 'single', stake: 10, selections: pick });
+  const r = await p('POST', '/api/bets', { mode: 'single', stake: 20, selections: pick });
   assert.equal(r.status, 400);
   assert.match(r.body.error, /Saldo insuficiente/);
-  assert.equal((await p('GET', '/api/wallet')).body.balance, 5);
+  assert.equal((await p('GET', '/api/wallet')).body.balance, 10);
 });
 
-test('withdrawal: debited on request, refunded on rejection', async () => {
+test('deposit at least €10; withdrawal from €20, only with the identity verified and a bet won after the last deposit', async () => {
   const adm = await adminClient();
   const p = await newPlayer(100);
-  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 30, iban: 'PT50 0002 0123 1234 5678 9015 4' })).status, 201);
-  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 20, iban: 'invalido' })).status, 400);
-  assert.equal((await p('GET', '/api/wallet')).body.balance, 70);
-
+  const iban = 'PT50 0002 0123 1234 5678 9015 4';
+  const me = (await p('GET', '/api/me')).body.user;
+  const winBet = async () => {
+    const ev = await createEvent(adm);
+    assert.equal((await p('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: sel(ev, '1').id, odds: 2 }] })).status, 201);
+    assert.equal((await adm('POST', `/api/admin/events/${ev.id}/result`, { homeScore: 1, awayScore: 0 })).status, 200);
+  };
+  assert.equal((await p('POST', '/api/wallet/deposit', { amount: 5, method: 'mbway', bonus: false })).status, 400);
+  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 15, iban })).status, 400); // under €20
+  // Identity not verified yet.
+  let r = await p('POST', '/api/wallet/withdraw', { amount: 30, iban });
+  assert.equal(r.status, 403);
+  assert.equal(r.body.code, 'KYC_REQUIRED');
+  assert.equal((await p('GET', '/api/wallet/withdraw/eligibility')).body.code, 'KYC_REQUIRED');
+  assert.equal((await adm('POST', `/api/admin/users/${me.id}/kyc`, { status: 'approved' })).status, 200);
+  // Verified, but no bet won since the deposit.
+  r = await p('POST', '/api/wallet/withdraw', { amount: 30, iban });
+  assert.equal(r.status, 403);
+  assert.equal(r.body.code, 'BET_REQUIRED');
+  assert.match(r.body.error, /vencer uma aposta/);
+  await winBet(); // 100 − 10 + 20 = 110
+  assert.equal((await p('GET', '/api/wallet/withdraw/eligibility')).body.eligible, true);
+  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 30, iban: 'invalido' })).status, 400);
+  // €20–€200: approved at once.
+  r = await p('POST', '/api/wallet/withdraw', { amount: 30, iban });
+  assert.equal(r.status, 201);
+  assert.deepEqual([r.body.status, r.body.instant, r.body.balance], ['approved', true, 80]);
+  // A new deposit: a bet must be won again before withdrawing.
+  assert.equal((await p('POST', '/api/wallet/deposit', { amount: 300, method: 'mbway', bonus: false })).status, 201);
+  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 30, iban })).body.code, 'BET_REQUIRED');
+  await winBet(); // 380 + 10 = 390
+  // Above €200: for the team (24–72 h), one at a time.
+  r = await p('POST', '/api/wallet/withdraw', { amount: 250, iban });
+  assert.deepEqual([r.status, r.body.status, r.body.instant], [201, 'pending', false]);
+  assert.equal((await p('POST', '/api/wallet/withdraw', { amount: 20, iban })).body.code, 'WITHDRAWAL_ALREADY_OPEN');
+  assert.equal((await p('GET', '/api/wallet')).body.balance, 140);
   const list = (await adm('GET', '/api/admin/withdrawals')).body.withdrawals;
-  const w = list.find((x) => x.status === 'pending');
+  const w = list.find((x) => x.status === 'pending' && x.amount === 250);
   assert.equal((await adm('POST', `/api/admin/withdrawals/${w.id}/reject`, {})).status, 200);
   assert.equal((await adm('POST', `/api/admin/withdrawals/${w.id}/approve`, {})).status, 409);
-  assert.equal((await p('GET', '/api/wallet')).body.balance, 100);
+  assert.equal((await p('GET', '/api/wallet')).body.balance, 390);
+});
+
+test('admin KYC: pending documents listed first, each one validated from the player detail', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer();
+  const me = (await p('GET', '/api/me')).body.user;
+  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex').toString('base64');
+  assert.equal((await p('POST', '/api/me/kyc', { kind: 'id_front', mimeType: 'image/png', fileName: 'cc.png', data: png })).status, 201);
+  const users = (await adm('GET', '/api/admin/users')).body;
+  assert.ok(users.kycPending.some((u) => u.id === me.id && u.kycSentAt));
+  const detail = (await adm('GET', `/api/admin/users/${me.id}`)).body;
+  assert.equal(detail.documents[0].mimeType, 'image/png');
+  assert.equal(detail.withdraw.code, 'KYC_REQUIRED');
+  assert.equal((await adm('POST', `/api/admin/kyc/${detail.documents[0].id}`, { status: 'approved' })).status, 200);
+  assert.equal((await p('GET', '/api/me')).body.user.kycStatus, 'approved');
+  assert.ok(!(await adm('GET', '/api/admin/users')).body.kycPending.some((u) => u.id === me.id));
 });
 
 test('self-exclusion blocks bets and deposits', async () => {
