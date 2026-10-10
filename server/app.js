@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
+import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
 import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
@@ -424,6 +425,19 @@ export function createApp(db, {
           else list.push({ country, leagues: clean });
         }
         list.sort((a, b) => a.country.localeCompare(b.country));
+      }
+      if (sport === 'tenis') {
+        // The tours first (ATP, WTA, Challengers, in that order), each tournament with games open
+        // as "Pequim WTA - Pares" and its host country's flag; then the listed ones by country.
+        const listed = new Set(tree.flatMap(([, leagues]) => leagues.map(leagueKey)));
+        const groups = new Map(TOUR_GROUPS.map((g) => [g, []]));
+        for (const [k, name] of named) {
+          const t = listed.has(k) ? null : tourOf(name);
+          if (t) groups.get(t.group).push({ name, count: counts.get(k), label: tourLabel(name), flag: t.country });
+        }
+        const tours = [...groups].filter(([, leagues]) => leagues.length)
+          .map(([country, leagues]) => ({ country, tour: true, leagues: leagues.sort((a, b) => a.label.localeCompare(b.label, 'pt')) }));
+        list.unshift(...tours);
       }
       out[sport] = list;
     }

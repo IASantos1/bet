@@ -1,4 +1,5 @@
 import { divisionOf } from './footballdivisions.js';
+import { tourOf } from './tennistours.js';
 import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
@@ -535,7 +536,8 @@ export const FOOTBALL_TREE = [
 ];
 export const FOOTBALL_LEAGUES = FOOTBALL_TREE.flatMap(([, leagues]) => leagues);
 // Basketball and tennis: only these competitions too (WINHOUSE_BASKETBALL_LEAGUES / WINHOUSE_TENNIS_LEAGUES
-// replace the lists, "*" = all). Tennis tournaments change every week: the list needs keeping up to date.
+// replace the lists, "*" = all). Tennis also takes every ATP / WTA / Challenger tournament on its own
+// (tennistours.js); the list below adds ITF ones by name (they change every week).
 export const BASKETBALL_TREE = [
   ['Europe', ['ABA League', 'Euroleague']],
   ['France', ['France. LNB']],
@@ -547,7 +549,7 @@ export const BASKETBALL_TREE = [
 ];
 export const TENNIS_TREE = [
   ['Australia', ['World Tennis. Darwin', 'World Tennis. Darwin. Doubles', 'World Tennis. Wagga Wagga. Women', 'World Tennis. Wagga Wagga. Women. Doubles']],
-  ['China', ['World Tennis. Luan', 'World Tennis. Luan. Doubles', 'World Tennis. Maanshan. Women', 'World Tennis. Maanshan. Women. Doubles', 'WTA. Beijing']],
+  ['China', ['World Tennis. Luan', 'World Tennis. Luan. Doubles', 'World Tennis. Maanshan. Women', 'World Tennis. Maanshan. Women. Doubles']],
   ['Egypt', ['World Tennis. Sharm El Sheikh', 'World Tennis. Sharm El Sheikh. Doubles', 'World Tennis. Sharm El Sheikh. Women']],
   ['Rwanda', ['World Tennis. Kigali']],
   ['Tunisia', ['World Tennis. Monastir 2', 'World Tennis. Monastir 2. Doubles', 'World Tennis. Monastir. Women']],
@@ -560,17 +562,24 @@ export const leagueKey = (name) => String(name || '').toLowerCase().normalize('N
 class LeagueSet extends Set {
   has(k) { return super.has(k) || !!divisionOf(k); }
 }
+/** The tree's competitions plus every ATP, WTA and Challenger tournament (singles, doubles, qualifying). */
+class TourSet extends Set {
+  has(k) { return super.has(k) || !!tourOf(k); }
+}
 /**
  * A list of competitions (names separated by ; or new lines) → the allowed ones (Set of keys); "*" =
  * all (null). Empty = the tree's, and for football also the first and second division of every
- * covered country (footballdivisions.js), whatever WinHouse calls them.
+ * covered country (footballdivisions.js), for tennis every ATP / WTA / Challenger tournament
+ * (tennistours.js), whatever WinHouse calls them.
  */
 export function allowedLeagues(list, tree = FOOTBALL_TREE) {
   const text = String(list ?? '').trim();
   if (text === '*' || /^(all|todas|todos)$/i.test(text)) return null;
   const names = text ? text.split(/[;\n]|,(?!\s*\d)/).map((t) => t.trim()).filter(Boolean) : tree.flatMap(([, leagues]) => leagues);
   const keys = names.map(leagueKey);
-  return !text && tree === FOOTBALL_TREE ? new LeagueSet(keys) : new Set(keys);
+  if (!text && tree === FOOTBALL_TREE) return new LeagueSet(keys);
+  if (!text && tree === TENNIS_TREE) return new TourSet(keys);
+  return new Set(keys);
 }
 /** WINHOUSE_FOOTBALL_LEAGUES → the allowed football competitions (Set of keys), or null for all. */
 export const footballLeagues = (list) => allowedLeagues(list, FOOTBALL_TREE);
