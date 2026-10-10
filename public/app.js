@@ -837,7 +837,7 @@ function casinoGamePage(id) {
         <div class="cg-provider">${esc(g.provider)}</div>
         <p class="cg-tags">${tags.map(esc).join(', ')}</p>
         <div class="cg-actions">
-          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${money(fs.balance)} disponível</small></button>` : ''}
+          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fs.spinsLeft} ${fs.spinsLeft === 1 ? 'rodada' : 'rodadas'} de ${money(fs.spinValue)}</small></button>` : ''}
           <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
           <button class="cg-btn demo" data-cg-play="demo">Testar</button>
         </div>
@@ -922,7 +922,7 @@ function campaignCard(c) {
     cashback: ['SEMANAL', `Cashback ${c.percent}% até ${money(c.max)}`, `Sobre as perdas líquidas da semana (mín. ${money(c.minLoss)}), creditado à segunda-feira.`,
       [`Rollover ${c.rolloverMult}×`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Free bets, bónus e apostas anuladas não contam']],
     casinoFs: ['CASINO', 'Free Spins no depósito', `Escolha "Free Spins casino" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${n} rodadas`).join(' · ')}.`,
-      [`${money(c.spinValue)} por rodada`, `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Os ganhos acima do valor das rodadas passam a saldo real', 'Não acumula com o bónus de desporto no mesmo depósito']],
+      ['Cada rodada à aposta do jogo (ex.: €0,20 ou €0,10)', `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Tudo o que ganhar com as Free Spins passa a saldo real', 'Não acumula com o bónus de desporto no mesmo depósito']],
   }[c.id];
   if (!info) return '';
   const [eyebrow, title, text, terms] = info;
@@ -944,9 +944,9 @@ function bonusCard(b) {
 /** Active casino free spins: their balance, the games they work in, and ending them (winnings paid). */
 function spinsCard(f) {
   return `<div class="bonus-card">
-    <div class="bonus-head"><strong>🎰 Free Spins casino · ${f.spins} × ${money(f.spinValue)}</strong><span class="pf-badge verified">Ativas</span></div>
-    <div class="bonus-nums"><div><small>Saldo de Free Spins</small><b>${money(f.balance)}</b></div><div><small>Valor oferecido</small><b>${money(f.value)}</b></div><div><small>Ganhos</small><b class="green">${money(f.winnings)}</b></div></div>
-    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))}</small>
+    <div class="bonus-head"><strong>🎰 Free Spins casino · ${f.spins} rodadas</strong><span class="pf-badge verified">Ativas</span></div>
+    <div class="bonus-nums"><div><small>Rodadas por jogar</small><b>${f.spinsLeft} de ${f.spins}</b></div><div><small>Ganhos (saldo real)</small><b class="green">${money(f.winnings)}</b></div></div>
+    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>${g.bet ? ` (${money(g.bet)}/rodada)` : ''}`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · os ganhos passam a saldo real quando terminarem</small>
     <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar e receber ganhos (${money(f.winnings)})</button></div>
   </div>`;
 }
@@ -2151,7 +2151,7 @@ const formHandlers = {
     }
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
     if (form.closest('#modal')) closeModal();
-    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${res.bonus.spins ? `${res.bonus.spins} rodadas (${money(res.bonus.amount)})` : money(res.bonus.amount)}` : ''}`);
+    toast('Depósito efetuado', `Novo saldo: ${money(res.balance)}${res.bonus ? ` · ${res.bonus.name}: ${res.bonus.spins ? `${res.bonus.spins} rodadas grátis` : money(res.bonus.amount)}` : ''}`);
     updateHeader(); loadWallet(); loadPromos();
   },
   async withdraw(form) {
@@ -2340,7 +2340,7 @@ document.addEventListener('click', async (e) => {
     location.hash = '#/';
     render();
   } else if (action === 'fs-claim') {
-    if (!confirm('Terminar as Free Spins? Os ganhos acima do valor oferecido passam a saldo real; o resto das rodadas deixa de estar disponível.')) return;
+    if (!confirm('Terminar as Free Spins? Os ganhos passam a saldo real; as rodadas por jogar deixam de estar disponíveis.')) return;
     try {
       const r = await api(`/api/me/free-spins/${actionEl.dataset.id}/claim`, { method: 'POST', body: {} });
       state.user = r.user;
@@ -2440,7 +2440,7 @@ function depositOffer() {
     try {
       const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}&promo=${promo}`);
       box.innerHTML = o.spins > 0
-        ? `<div class="offer ok">🎰 ${esc(o.name)}: <b>${o.spins} rodadas de ${money(o.spinValue)}</b> (${money(o.bonus)}) após a confirmação do pagamento.</div>`
+        ? `<div class="offer ok">🎰 ${esc(o.name)}: <b>${o.spins} rodadas grátis</b> após a confirmação do pagamento. Os ganhos passam a saldo real.</div>`
         : o.bonus > 0
           ? `<div class="offer ok">🎁 ${esc(o.name)}: <b>+${money(o.bonus)}</b> em saldo de bónus após a confirmação do pagamento.</div>`
           : `<small class="muted">${esc(o.name)}: ${esc(o.reason || 'não aplicável')}.</small>`;

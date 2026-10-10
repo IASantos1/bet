@@ -15,7 +15,7 @@ import { getSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
-import { spinsMove, spinsRow } from './promotions.js';
+import { spinsMove, spinsRow, spinsBalance } from './promotions.js';
 
 // The player's id at BigBang, also sent as its username (the callbacks name the player by username).
 // "bet62_…" players were created with the display name as username: still understood, no longer made.
@@ -314,7 +314,7 @@ export function createBigBang(db, {
     if (t.spinsId) {
       const s = spinsRow(db, t.spinsId, u.id);
       if (!s) return { status: 404, body: { error: 'unknown user' } };
-      cents = s.status === 'active' && s.expires_at > nowIso() ? s.balance_cents : 0;
+      cents = s.status === 'active' && s.expires_at > nowIso() ? spinsBalance(s) : 0;
     }
     return { status: 200, body: { username, balance: euros(cents), currency: 'EUR' } };
   }
