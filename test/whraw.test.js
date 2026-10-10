@@ -26,8 +26,15 @@ test('admin: a WinHouse game shows its gameId and everything WinHouse sends for 
     const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@classicbet.local', password: 'admin12345' }) });
     const Cookie = login.headers.get('set-cookie').split(';')[0];
     const get = async (p) => { const r = await fetch(base + p, { headers: { Cookie } }); return { status: r.status, body: await r.json() }; };
+    // An event that ended two days ago is no longer in the list; one that ended an hour ago still is.
+    const ended = (ago) => Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+      VALUES ('tenis', 'ATP. Shanghai', 'E', 'F', ?, 'finished', 'winhouse', ?, ?, ?)`).run(nowIso(), String(ago), nowIso(), new Date(Date.now() - ago).toISOString()).lastInsertRowid);
+    const old = ended(2 * 86_400_000);
+    const recent = ended(3_600_000);
     const { body } = await get('/api/admin/events');
     assert.equal(body.events.find((e) => e.id === id).externalId, '777');
+    assert.ok(!body.events.some((e) => e.id === old));
+    assert.ok(body.events.some((e) => e.id === recent));
     const raw = await get(`/api/admin/events/${id}/winhouse-raw`);
     assert.equal(raw.status, 200);
     const data = JSON.parse(raw.body.raw);

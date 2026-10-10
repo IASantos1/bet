@@ -1129,8 +1129,9 @@ export function createWinHouseFeed(db, {
         if (gone >= STALE_CLOSE_MS && !db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(row.id)) {
           const h = row.home_score;
           const a = row.away_score;
+          // Dated when it left the list (when it really ended), so old ones drop out of the recent lists at once.
           db.prepare(`UPDATE events SET status = 'finished', result = ?, review_reason = NULL, clock = 'Final', updated_at = ? WHERE id = ? AND status = 'live'`)
-            .run(Number.isInteger(h) && Number.isInteger(a) ? resultCode(h, a) : null, nowIso(), row.id);
+            .run(Number.isInteger(h) && Number.isInteger(a) ? resultCode(h, a) : null, row.wh_missing_since, row.id);
           closed += 1;
         }
         continue;
