@@ -1096,8 +1096,8 @@ export function createApp(db, {
     if (!g) throw new HttpError(404, 'Jogo não encontrado.');
     const s = req.user ? db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' AND expires_at > ? ORDER BY id LIMIT 1").get(req.user.id, nowIso()) : null;
     const eligible = !!s && JSON.parse(s.games || '[]').includes(g.id);
-    // The spin bet of this game (€0.20, €0.10…), the value left to play and what the spins have won.
-    res.json({ game: g, related: await bb.related(g), freeSpins: s ? { id: s.id, eligible, balance: cents(spinsBalance(s)), left: cents(s.balance_cents), won: cents(s.won_cents || 0), spins: s.spins, spinValue: cents(eligible ? spinBet(s, g.id) : s.spin_value_cents) } : null });
+    // The spins left, the bet each is played at in this game (€0.20, €0.10…) and what they have won.
+    res.json({ game: g, related: await bb.related(g), freeSpins: s ? { id: s.id, eligible, balance: cents(spinsBalance(s)), spinsLeft: s.spins_left ?? s.spins, won: cents(s.won_cents || 0), spins: s.spins, spinValue: cents(eligible ? spinBet(s, g.id) : s.spin_value_cents) } : null });
   }));
 
   // One wallet: the balance shown while playing is the casino balance (the ClassicBet part is 0).

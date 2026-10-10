@@ -108,7 +108,7 @@ const PROMO_FIELDS = {
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
   reload: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
-  casinoFs: [['tiers', 'Escalões (depósito € : valor em Free Spins €)', 'tiers'], ['spinValue', 'Valor por rodada padrão (€)'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
+  casinoFs: [['tiers', 'Escalões (depósito € : rodadas)', 'tiers'], ['spinValue', 'Valor por rodada padrão (€)'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
     ['maxClaims', 'Máximo de utilizações por jogador', 'opt'], ['games', 'Jogos elegíveis e valor por rodada (ID:€, separados por vírgula)', 'games']],
   firstBet: [['minStake', 'Aposta mínima (€)'], ['minOdds', 'Odd mínima'], ['maxRefund', 'Reembolso máximo em free bet (€)'], ['validityDays', 'Validade da free bet (dias)']],
   cashback: [['percent', 'Cashback (%)'], ['minLoss', 'Perda líquida mínima (€)'], ['max', 'Cashback máximo (€/semana)'], ['rolloverMult', 'Rollover (×)'], ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)']],
@@ -160,8 +160,8 @@ function adminPromos(d) {
     </form>
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>
     <div class="panel"><h3>Free bets</h3>${freebets}</div>
-    <div class="panel"><h3>Free Spins casino</h3>${d.spins?.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th class="num">Valor</th><th class="num">Por jogar</th><th class="num">Ganhos</th><th class="num">Ganhos pagos</th><th>Expira</th><th>Estado</th></tr></thead><tbody>
-      ${d.spins.map((x) => `<tr><td>${x.id}</td><td>${esc(x.user)}</td><td class="num">${money(x.value)}</td><td class="num">${money(x.left)}</td><td class="num">${money(x.winnings)}</td><td class="num">${money(x.paid)}</td>
+    <div class="panel"><h3>Free Spins casino</h3>${d.spins?.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Rodadas</th><th class="num">Valor</th><th class="num">Ganhos</th><th class="num">Ganhos pagos</th><th>Expira</th><th>Estado</th></tr></thead><tbody>
+      ${d.spins.map((x) => `<tr><td>${x.id}</td><td>${esc(x.user)}</td><td>${x.spinsLeft} de ${x.spins}</td><td class="num">${money(x.value)}</td><td class="num">${money(x.winnings)}</td><td class="num">${money(x.paid)}</td>
         <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.status === 'active' ? 'open' : 'void'}">${({ active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' })[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Sem Free Spins atribuídas.</p>'}</div>
     <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;

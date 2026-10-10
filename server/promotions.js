@@ -26,8 +26,8 @@ export const PROMO_DEFAULTS = {
   },
   firstBet: { active: true, startAt: null, endAt: null, minStake: 5, minOdds: 1.5, maxRefund: 10, validityDays: 7 },
   cashback: { active: true, startAt: null, endAt: null, percent: 5, minLoss: 20, max: 25, rolloverMult: 3, minOdds: 1.5, validityDays: 7 },
-  // Casino free spins on a deposit: [deposit from €, free spins value €] (€10 → €5), played only in
-  // `games` (BigBang ids), each spin at the game's own bet (gameBets { id: € }, else spinValue €).
+  // Casino free spins on a deposit: [deposit from €, spins] (€10 → 5 spins, worth 5 × spinValue to us),
+  // played only in `games` (BigBang ids), each spin at the game's own bet (gameBets { id: € }, else spinValue €).
   casinoFs: {
     active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], spinValue: 0.2,
     validityDays: 7, maxDeposit: 100, maxClaims: null, games: [], gameBets: {},
@@ -55,12 +55,12 @@ const NUM = {
   validityDays: [1, 365], maxCountStake: [0, 100_000, true], maxCountPct: [0, 100, true], minStake: [0, 100_000],
   maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000], spinValue: [0.01, 100], maxDeposit: [1, 100_000], maxClaims: [1, 1000, true],
 };
-/** "10:5, 20:10" or [[10, 5], …] → sorted [[deposit €, free spins value €], …]. */
+/** "10:5, 20:10" or [[10, 5], …] → sorted [[deposit €, spins], …]. */
 function parseTiers(v) {
-  const pairs = Array.isArray(v) ? v : String(v || '').split(/[;\n]|,(?!\d)/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>]+/).map((n) => n.trim().replace(',', '.')));
-  const out = pairs.map(([d, n]) => [Number(d), Math.round(Number(n) * 100) / 100]);
-  if (!out.length || out.some(([d, n]) => !Number.isFinite(d) || d <= 0 || !Number.isFinite(n) || n <= 0 || n > 10_000)) {
-    throw new HttpError(400, 'Free Spins: escalões inválidos (depósito € : valor em Free Spins €, ex.: 10:5, 20:10, 50:25, 100:50).');
+  const pairs = Array.isArray(v) ? v : String(v || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>-]+/).map((n) => n.trim()));
+  const out = pairs.map(([d, n]) => [Number(d), Math.round(Number(n))]);
+  if (!out.length || out.some(([d, n]) => !Number.isFinite(d) || d <= 0 || !Number.isInteger(n) || n <= 0 || n > 1000)) {
+    throw new HttpError(400, 'Free Spins: escalões inválidos (depósito € : rodadas, ex.: 10:5, 20:10, 50:25, 100:50).');
   }
   return out.sort((a, b) => a[0] - b[0]);
 }
@@ -292,9 +292,8 @@ export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = 
   const counted = Math.min(amountCents, c100(c.maxDeposit));
   const tier = [...c.tiers].reverse().find(([min]) => counted >= c100(min));
   if (!tier) return { ...out, reason: `depósito mínimo €${c.tiers[0][0]}`, minDeposit: c.tiers[0][0] };
-  const valueCents = Math.round(tier[1] * 100);
-  // How many spins that is at the usual bet (each game plays at its own: €0.10 doubles them).
-  return { ...out, spins: Math.floor(valueCents / c100(c.spinValue)), valueCents, minDeposit: c.tiers[0][0] };
+  // The player sees spins; to us they are worth spins × the spin value (5 × €0.20 = €1).
+  return { ...out, spins: tier[1], valueCents: Math.round(tier[1] * c100(c.spinValue)), minDeposit: c.tiers[0][0] };
 }
 
 function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
@@ -302,12 +301,12 @@ function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
   if (!offer.spins) { log(db, userId, 'casinoFs', ref, 'refused', offer.reason); return null; }
   const c = promoConfig(db).casinoFs;
   const bets = Object.fromEntries(c.games.map((g) => [g, c100(c.gameBets?.[g] ?? c.spinValue)]));
-  const r = db.prepare(`INSERT OR IGNORE INTO casino_spins (user_id, ref, spins, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, deposit_cents, expires_at, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`).run(userId, ref, offer.spins, c100(c.spinValue), offer.valueCents, offer.valueCents, JSON.stringify(c.games), JSON.stringify(bets), amountCents,
+  const r = db.prepare(`INSERT OR IGNORE INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, deposit_cents, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`).run(userId, ref, offer.spins, offer.spins, c100(c.spinValue), offer.valueCents, offer.valueCents, JSON.stringify(c.games), JSON.stringify(bets), amountCents,
     new Date(Date.parse(now) + c.validityDays * DAY).toISOString(), now);
   if (!r.changes) return null;
   const id = Number(r.lastInsertRowid);
-  ledger(db, { userId, type: 'free_spin_credit', amount: offer.valueCents, balanceAfter: offer.valueCents, description: `€${(offer.valueCents / 100).toFixed(2)} em Free Spins creditados`, ref: `fs:${id}` });
+  ledger(db, { userId, type: 'free_spin_credit', amount: offer.valueCents, balanceAfter: offer.valueCents, description: `${offer.spins} Free Spins creditadas (€${(offer.valueCents / 100).toFixed(2)})`, ref: `fs:${id}` });
   log(db, userId, 'casinoFs', ref, 'granted');
   return { kind: 'casinoFs', ...db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id) };
 }
@@ -316,9 +315,9 @@ const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { ret
 const spinBets = (s) => { try { return JSON.parse(s.game_bets || '{}') || {}; } catch { return {}; } };
 /** The bet (cents) one spin of this game is played at. */
 export const spinBet = (s, gameId) => Number(spinBets(s)[gameId]) || s.spin_value_cents;
-/** Grants made as a value to play (won_cents kept apart); older ones mixed winnings into the balance. */
-const asValue = (s) => s.won_cents !== null && s.won_cents !== undefined;
-/** What the casino shows for the free spins: the value left to play plus what they have won. */
+/** Grants counted in spins (won_cents kept apart); older ones mixed winnings into the balance. */
+const asValue = (s) => s.spins_left !== null && s.spins_left !== undefined;
+/** What the casino shows for the free spins: the spins left (at the spin value) plus what they have won. */
 export const spinsBalance = (s) => (asValue(s) ? s.balance_cents + s.won_cents : s.balance_cents);
 
 /**
@@ -377,9 +376,9 @@ export function spinsMove(db, user, spinsId, move) {
 }
 
 /**
- * A move on free spins given as a value: each spin is played at the game's own bet (€0.20, €0.10…)
- * out of the value left; what they win is kept apart, never played again, and paid as real money
- * when the free spins end (the value used up, expired, or ended by the player).
+ * A move on free spins counted in spins: each bet is one spin, at most the game's own bet (€0.20,
+ * €0.10…); what they win is kept apart, never played again, and paid as real money when the free
+ * spins end (all spins played, expired, or ended by the player).
  */
 function spinValueMove(db, user, s, move) {
   const shown = () => spinsBalance(spinsRow(db, s.id, user.id));
@@ -389,8 +388,8 @@ function spinValueMove(db, user, s, move) {
     if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: spinsBalance(s) };
     const bet = spinBet(s, move.gameId);
     if (stake > bet) return { error: `free spins: each spin is €${(bet / 100).toFixed(2)}`, balance: spinsBalance(s) };
-    if (stake > s.balance_cents) return { error: 'free spins used up', balance: spinsBalance(s) };
-    db.prepare('UPDATE casino_spins SET balance_cents = balance_cents - ? WHERE id = ?').run(stake, s.id);
+    if (s.spins_left < 1) return { error: 'free spins used up', balance: spinsBalance(s) };
+    db.prepare('UPDATE casino_spins SET spins_left = spins_left - 1, balance_cents = (spins_left - 1) * spin_value_cents WHERE id = ?').run(s.id);
   } else if (move.cents > 0) {
     db.prepare('UPDATE casino_spins SET won_cents = won_cents + ? WHERE id = ?').run(move.cents, s.id);
   }
@@ -399,9 +398,8 @@ function spinValueMove(db, user, s, move) {
     ledger(db, { userId: user.id, type: move.cents < 0 ? 'free_spin_used' : 'free_spin_win', amount: move.cents, balanceAfter: spinsBalance(now),
       description: `Free Spins · ${move.game}`, ref: move.txId });
   }
-  // Not enough left for one more spin in any of its games, and the round over: they end, winnings paid.
-  const smallest = Math.min(...spinGames(now).map((g) => spinBet(now, g)));
-  if (now.balance_cents < smallest && move.roundEnd !== 0) closeSpins(db, now, 'closed', 'Free Spins utilizadas');
+  // Every spin played and the round over: they end, winnings paid.
+  if (now.spins_left < 1 && move.roundEnd !== 0) closeSpins(db, now, 'closed', 'Free Spins utilizadas');
   return { balance: shown() };
 }
 
@@ -415,8 +413,8 @@ export function claimSpins(db, userId, spinsId) {
 
 export const spinsView = (s, gameName = () => null) => ({
   id: s.id, status: s.status, spins: s.spins, spinValue: s.spin_value_cents / 100, value: s.value_cents / 100, balance: spinsBalance(s) / 100,
-  // The value still to play, and what the spins have won (paid as real money when they end).
-  left: (asValue(s) ? s.balance_cents : Math.min(s.balance_cents, s.value_cents)) / 100,
+  // The spins still to play (what the player sees), and what they have won (real money when they end).
+  spinsLeft: asValue(s) ? s.spins_left : Math.floor(Math.min(s.balance_cents, s.value_cents) / s.spin_value_cents),
   winnings: (asValue(s) ? s.won_cents : Math.max(0, s.balance_cents - s.value_cents)) / 100, paid: s.paid_cents / 100, expiresAt: s.expires_at, createdAt: s.created_at,
   endedAt: s.ended_at, reason: s.cancel_reason, games: spinGames(s).map((id) => ({ id, name: gameName(id), bet: spinBet(s, id) / 100 })),
 });
