@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, statSync } from 'node:fs';
-import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate, GOAL_GAP_MS, CORNER_GAP_MS } from '../public/trkclips.js';
+import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate, createCornerWatch, GOAL_GAP_MS, CORNER_GAP_MS, CORNER_WAIT_MS } from '../public/trkclips.js';
 
 test('the clips are in public/media and small enough for a phone', () => {
   for (const { src } of Object.values(CLIPS)) {
@@ -68,4 +68,49 @@ test('clip gate: once per happening, a goal takes over a corner, a corner never 
   assert.ok(!g.want('goal'));             // the score confirming the same goal
   t = 1000 + GOAL_GAP_MS;
   assert.ok(g.want('goal'));
+});
+
+test('corner watch: nothing when the corner is awarded, the clip when it is taken', () => {
+  let t = 0;
+  const w = createCornerWatch(() => t);
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 60 }), null);
+  assert.equal(w.frame({ side: 'home', situation: 'corner', x: 99, y: 97 }), null); // awarded
+  t = 4000;
+  assert.equal(w.frame({ side: 'home', situation: 'corner', x: 99, y: 97 }), null); // waiting for the kick
+  t = 9000;
+  assert.equal(w.frame({ side: 'home', situation: 'dangerous_attack', x: 90, y: 50 }), 'corner-right'); // taken
+  assert.equal(w.frame({ side: 'home', situation: 'shot', x: 92, y: 48 }), null); // once
+});
+
+test('corner watch: a real fix leaving the flag while it still says "corner" is the kick', () => {
+  const w = createCornerWatch(() => 0);
+  assert.equal(w.frame({ side: 'away', situation: 'corner', x: 1, y: 3 }), null);
+  assert.equal(w.frame({ side: 'away', situation: 'corner', x: 2, y: 4 }), null);   // the taker places the ball
+  assert.equal(w.frame({ side: 'away', situation: 'corner', x: 12, y: 45 }), 'corner-right');
+});
+
+test('corner watch: a guessed spot alternates sides and a later real fix at the flag decides it', () => {
+  const w = createCornerWatch(() => 0);
+  w.frame({ side: 'home', situation: 'corner', x: 98, y: 4, estimated: true });
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40, estimated: true }), 'corner-right');
+  w.frame({ side: 'home', situation: 'corner', x: 98, y: 4, estimated: true });
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40, estimated: true }), 'corner-left');
+  w.frame({ side: 'home', situation: 'corner', x: 98, y: 4, estimated: true });
+  w.frame({ side: 'home', situation: 'corner', x: 99, y: 96 }); // real: bottom flag
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40 }), 'corner-right');
+});
+
+test('corner watch: never taken (half time, too long, reset by a goal) plays nothing', () => {
+  let t = 0;
+  const w = createCornerWatch(() => t);
+  w.frame({ side: 'home', situation: 'corner', x: 99, y: 3 });
+  assert.equal(w.frame({ side: null, situation: 'halftime', x: 50, y: 50 }), null);
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40 }), null);
+  w.frame({ side: 'home', situation: 'corner', x: 99, y: 3 });
+  t = CORNER_WAIT_MS + 1;
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40 }), null);
+  w.frame({ side: 'home', situation: 'corner', x: 99, y: 3 });
+  w.reset();
+  assert.equal(w.pending, false);
+  assert.equal(w.frame({ side: 'home', situation: 'attack', x: 80, y: 40 }), null);
 });
