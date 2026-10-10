@@ -805,7 +805,10 @@ test('football divisions: first and second division of every covered country, wh
   assert.equal(d('South Korea. K League 2'), 'South Korea/2');
   assert.equal(d('Vietnam. V.League 1'), 'Vietnam/1');
   assert.equal(d('Faroe Islands. Premier League'), 'Faroe Islands/1');
-  assert.equal(d('Uzbekistan. Pro League'), 'Uzbekistan/2');
+  assert.equal(d('Uzbekistan. Pro League'), null, 'smaller leagues: first division only');
+  assert.equal(d('Uzbekistan. Super League'), 'Uzbekistan/1');
+  assert.equal(d('Saudi Arabia. First Division'), null, 'Middle East: first division only');
+  assert.equal(d('Qatar. Stars League'), 'Qatar/1');
   assert.equal(d('Spain. Copa del Rey'), null);
   assert.equal(d('Mongolia. Premier League'), null);
   assert.ok(DIVISION_COUNTRIES.length >= 80);

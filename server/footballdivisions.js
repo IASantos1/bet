@@ -100,10 +100,24 @@ const D = [
   ['Vietnam', ['vietnam'], ['vleague1', 'vleague', 'vleague1'], ['vleague2', 'firstdivision']],
 ];
 
+/**
+ * Only the first division: the Middle East and the smaller leagues (the second division of these
+ * draws little betting). Every other covered country keeps its first and second division.
+ */
+export const FIRST_ONLY = new Set([
+  // Middle East
+  'Saudi Arabia', 'Bahrain', 'Iran', 'Israel', 'Jordan', 'Kuwait', 'Qatar',
+  // smaller leagues
+  'Angola', 'Belarus', 'Bosnia and Herzegovina', 'Bulgaria', 'Kazakhstan', 'Cyprus', 'Costa Rica', 'Estonia', 'Faroe Islands',
+  'Georgia', 'Guatemala', 'Honduras', 'Iceland', 'India', 'Indonesia', 'Jamaica', 'Luxembourg', 'North Macedonia', 'Montenegro',
+  'Nicaragua', 'Nigeria', 'New Zealand', 'Northern Ireland', 'Wales', 'Panama', 'Singapore', 'Slovenia', 'Tanzania', 'Thailand',
+  'Tunisia', 'Uzbekistan', 'Venezuela', 'Vietnam',
+]);
+
 const rules = D.map(([country, aliases, first, second]) => ({
   country,
   aliases,
-  tiers: [first, second].map((names) => (names.length ? new RegExp(`^(${[...new Set(names)].join('|')})${STAGE}$`) : null)),
+  tiers: [first, FIRST_ONLY.has(country) ? [] : second].map((names) => (names.length ? new RegExp(`^(${[...new Set(names)].join('|')})${STAGE}$`) : null)),
 }));
 
 /** The countries covered, as the sidebar shows them. */
