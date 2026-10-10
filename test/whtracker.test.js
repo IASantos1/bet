@@ -233,3 +233,45 @@ test('timeline in the second half without a drop: 47\' and 59\' are second-half 
   const f = normalizeWidgetData({ period: 'First Half', timer: 2830, timeline: [{ type: 'goal', min: 46 }] });
   assert.deepEqual(f.timeline.map((a) => a.minuteLabel), ["45+1'"]);
 });
+
+test('tennis: the tracker gives sets, games of each set and the point; the page gets them as its tennis board', async () => {
+  const { tennisOf } = await import('../server/whtracker.js');
+  // As WinHouse sent it for Baez - Vacherot (ATP Shanghai), 2nd set.
+  const real = { success: true, event_id: 's9-99.760296431', ts: 1791641222908, sc: { T: [0, 1], S1: [4, 6], S2: [5, 6], POINTS: ['15', '0'] },
+    home_score: 0, away_score: 1, status: 'live', period: '2nd set', timer: 2391,
+    stats: { Aces: [3, 13], 'Double Faults': [0, 1], '1st Serve %': [74, 62], 'Win % 1st Serve': [61, 81], 'Win % 2nd Serve': [67, 64], 'Break Point %': [33, 67], Breaks: [1, 2], 'Points on Own Serve': [36, 43] },
+    timeline: [], home_name: 'Sebastian Baez', away_name: 'Valentin Vacherot', plus: null, pitch: 'v1' };
+  assert.deepEqual(tennisOf(real.sc), { setScore: [0, 1], sets: [[4, 6], [5, 6]], point: '15-0' });
+  assert.equal(tennisOf({ T: [1, 1], S1: [6, 4], S2: [3, 6], S3: [5, 5], POINTS: ['40', 'AD'] }).point, '40-A');
+  assert.equal(tennisOf({ GOAL: [1, 0] }), null);
+  const s = normalizeWidgetData(real);
+  assert.ok(!s.stats.some((x) => /^(t|s1|s2|points)$/.test(x.key))); // the score is not a statistic
+  assert.deepEqual(s.timeline, []);
+
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, source, external_id, created_at, updated_at)
+    VALUES ('tenis', 'ATP. Shanghai', 'Sebastian Baez', 'Valentin Vacherot', ?, 'live', 0, 1, 'winhouse', '759804436', ?, ?)`).run(ts, ts, ts).lastInsertRowid);
+  const client = {
+    enabled: true,
+    widget: async () => ({ ok: true, status: 200, body: null, text: '<script>src="/widget-data?event_id=E1&api_key=K1"</script>' }),
+    widgetData: async () => ({ ok: true, status: 200, body: real }),
+  };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000 });
+  const got = [];
+  t.bus.on(`e:${id}`, (m) => got.push(m));
+  const stop = t.follow(id, '759804436');
+  await new Promise((r) => setTimeout(r, 20));
+  stop();
+  assert.deepEqual(got.map((m) => m.type), ['event']); // no ball, no timeline for tennis
+  const ev = got[0].data;
+  assert.deepEqual([ev.homeScore, ev.awayScore, ev.clock, ev.point, ev.server], [0, 1, '4-6, 5-6', '15-0', null]);
+  assert.deepEqual(ev.sets, [[4, 6], [5, 6]]);
+  assert.deepEqual(ev.stats.home, { aces: 3, double_faults: 0, first_serve_pct: 74, first_serve_won_pct: 61, second_serve_won_pct: 67, break_points_won_pct: 33, breaks: 1, service_points_won: 36 });
+  assert.deepEqual(t.snapshot(id).event, ev); // a page opened later gets it at once
+  assert.equal(t.clockOf(id), null); // no "39'" for tennis
+  const row = db.prepare('SELECT clock, live_detail FROM events WHERE id = ?').get(id);
+  assert.equal(row.clock, '4-6, 5-6');
+  assert.deepEqual(JSON.parse(row.live_detail), { set: 2, point: '15-0', server: null, sets: [[4, 6], [5, 6]] });
+  db.close();
+});

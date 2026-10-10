@@ -609,7 +609,8 @@ export function createApp(db, {
   // Server-sent events for a live match: score/clock/stats, ball position, actions and odds changes.
   app.get('/api/events/:id/live', (req, res) => {
     const ev = eventRow(req.params.id);
-    const tracker = ev?.source === 'winhouse' && ev.sport === 'futebol' && winhouseTracker?.enabled ? winhouseTracker : null;
+    // WinHouse: its tracker for football (ball, situation, stats) and tennis (sets, games, points).
+    const tracker = ev?.source === 'winhouse' && (ev.sport === 'futebol' || ev.sport === 'tenis') && winhouseTracker?.enabled ? winhouseTracker : null;
     const socket = ev?.source === 'bzzoiro' ? liveSocket : ev?.source === TENNIS_SOURCE ? tennisLive : tracker;
     if (!ev || ev.status !== 'live' || !socket) return res.status(204).end();
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });

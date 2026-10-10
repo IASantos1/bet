@@ -1078,7 +1078,8 @@ export function createWinHouseFeed(db, {
           const overtime = row.sport === 'hoquei' && minutes !== null && minutes >= 60 && !row.wh_overtime;
           db.prepare(`UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = COALESCE(?, wh_minute),
               wh_seen_at = ?, wh_missing_since = NULL, review_reason = NULL, postponed_at = NULL, updated_at = ? WHERE id = ?`)
-            .run(home, away, clockText(row.sport, minutes, ev.clockRaw), minutes, nowIso(), nowIso(), row.id);
+            // Tennis has no clock: the sets the tracker wrote (when someone watches the match) stay.
+            .run(home, away, row.sport === 'tenis' ? row.clock : clockText(row.sport, minutes, ev.clockRaw), minutes, nowIso(), nowIso(), row.id);
           if (overtime) {
             const tie = Math.min(home, away);
             db.prepare('UPDATE events SET wh_overtime = 1, reg_home_score = ?, reg_away_score = ? WHERE id = ?').run(tie, tie, row.id);

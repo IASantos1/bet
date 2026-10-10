@@ -2519,6 +2519,8 @@ async function loadMatch(id, { quiet = false } = {}) {
     const { event } = await api(`/api/events/${id}`);
     if (state.match.id !== id) return;
     const wasLive = state.match.data?.status === 'live';
+    // Tennis: the live board (sets, point) from the stream stays when the polled event has none yet.
+    if (event.sport === 'tenis' && !event.tennis && state.match.data?.id === event.id && state.match.data.tennis) event.tennis = state.match.data.tennis;
     state.match.data = event;
     noteScore(event);
     if (event.status !== 'scheduled') loadMatchExtras(id);
@@ -3071,6 +3073,7 @@ function sportStatsView(e) {
 const TENNIS_STAT = {
   aces: 'Ases', double_faults: 'Duplas faltas', first_serve_pct: '1.º serviço (%)', first_serve_won_pct: 'Pontos ganhos no 1.º serviço (%)',
   second_serve_won_pct: 'Pontos ganhos no 2.º serviço (%)', break_points_saved_pct: 'Break points salvos (%)',
+  break_points_won_pct: 'Break points convertidos (%)', breaks: 'Breaks', service_points_won: 'Pontos ganhos no serviço',
 };
 
 // ---------- live widget: football mini-pitch / tennis court ----------
