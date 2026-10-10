@@ -257,6 +257,29 @@ function userPromosPanel(d) {
     <p class="muted">Limites do jogador: ${LIM.map(([k, l]) => `${l} ${lim[k] === null ? '—' : money(lim[k])}`).join(' · ')}</p></div>`;
 }
 
+/** Bringing the players of the previous platform (Bet62Novo): a dry run first, then the import. */
+let novoReport = null;
+function novoPanel() {
+  const r = novoReport;
+  const out = r ? `<div class="table-wrap"><table><tbody>
+      <tr><td>${r.dryRun ? '<b>Simulação</b> (nada foi gravado)' : '<b>Importação concluída</b>'}</td><td></td></tr>
+      <tr><td>Jogadores no Bet62Novo</td><td class="num">${r.players}</td></tr>
+      <tr><td>${r.dryRun ? 'Seriam importados' : 'Importados'}</td><td class="num">${r.imported}</td></tr>
+      <tr><td>Já importados antes</td><td class="num">${r.alreadyImported}</td></tr>
+      <tr><td>Saldo real transferido</td><td class="num">${money(r.balance)}</td></tr>
+      <tr><td>Free bets transferidas</td><td class="num">${money(r.freebets)}</td></tr>
+      <tr><td>Documentos KYC</td><td class="num">${r.documents}</td></tr>
+      <tr><td>Levantamentos (pendentes)</td><td class="num">${r.withdrawals} (${r.pendingWithdrawals})</td></tr>
+      <tr><td>Apostas ainda pendentes no Bet62Novo</td><td class="num">${r.pendingBets}${r.pendingBets ? ' ⚠️ liquide-as lá antes' : ''}</td></tr>
+    </tbody></table></div>
+    ${r.skipped.length ? `<p class="muted">Não importados (${r.skipped.length}): ${r.skipped.slice(0, 30).map((s) => `${esc(s.email || `#${s.id}`)} — ${esc(s.reason)}`).join(' · ')}${r.skipped.length > 30 ? ' …' : ''}</p>` : ''}` : '';
+  return `<div class="panel"><h3>Migração do Bet62Novo</h3>
+    <p class="muted">Traz os jogadores da plataforma anterior: contas (entram com a mesma palavra-passe), saldo real, free bets, KYC e levantamentos.
+      O Bet62Novo só é lido. Precisa da variável BET62NOVO_DATABASE_URL no Railway. Faça primeiro a simulação e confira os totais.</p>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="novo-import" data-dry="1">Simular importação</button>
+      <button class="danger-btn btn-sm" data-action="novo-import" data-dry="0">Importar agora</button></div>${out}</div>`;
+}
+
 /** Players whose identity documents wait for validation (top of the players tab). */
 function kycPendingPanel(list = []) {
   if (!list.length) return '<div class="panel"><h3>Verificações KYC pendentes</h3><p class="muted">Nenhum documento à espera de validação.</p></div>';
@@ -460,7 +483,7 @@ async function loadTab() {
         main.innerHTML = userDetailView(await api(`/api/admin/users/${state.userDetail}`));
       } else {
         const { users, kycPending } = await api('/api/admin/users');
-        main.innerHTML = kycPendingPanel(kycPending) + usersTable(users);
+        main.innerHTML = kycPendingPanel(kycPending) + usersTable(users) + novoPanel();
       }
     } else {
       const { events } = await api('/api/admin/events');
@@ -1195,6 +1218,16 @@ document.addEventListener('click', async (e) => {
     try {
       await api('/api/admin/feed/sync', { method: 'POST', body: {} });
       toast('Sincronização concluída');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'novo-import') {
+    const dry = actionEl.dataset.dry === '1';
+    if (!dry && !confirm('Importar agora os jogadores do Bet62Novo? Ponha o Bet62Novo em manutenção antes (sem novos depósitos nem apostas).')) return;
+    actionEl.disabled = true;
+    actionEl.textContent = dry ? 'A simular…' : 'A importar…';
+    try {
+      novoReport = (await api('/api/admin/import-novo', { method: 'POST', body: { dryRun: dry } })).report;
+      toast(dry ? 'Simulação concluída' : 'Importação concluída', `${novoReport.imported} jogador(es)`);
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
   } else if (action === 'bets-filter') {

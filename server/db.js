@@ -463,6 +463,10 @@ function migrate(db) {
   // Promotions: blocked by the administrator (abuse); responsible-gaming limits (JSON, see limits.js).
   if (!userCols.has('promo_blocked')) db.exec('ALTER TABLE users ADD COLUMN promo_blocked INTEGER NOT NULL DEFAULT 0');
   if (!userCols.has('limits')) db.exec('ALTER TABLE users ADD COLUMN limits TEXT');
+  // Players brought from the previous platform (Bet62Novo): their id there (a second import skips
+  // them), and whether they had won a bet after their last deposit there (the withdrawal rule).
+  if (!userCols.has('novo_id')) db.exec('ALTER TABLE users ADD COLUMN novo_id INTEGER');
+  if (!userCols.has('novo_can_withdraw')) db.exec('ALTER TABLE users ADD COLUMN novo_can_withdraw INTEGER NOT NULL DEFAULT 0');
   // How each bet was paid for (real / bonus / free bet) and what of its payout was real money.
   const betCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
   for (const [c, type] of [['real_stake_cents', 'INTEGER'], ['bonus_stake_cents', 'INTEGER NOT NULL DEFAULT 0'], ['freebet_stake_cents', 'INTEGER NOT NULL DEFAULT 0'],
