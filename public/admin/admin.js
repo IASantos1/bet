@@ -459,8 +459,9 @@ function adminEventCard(e) {
   const oddInput = (code) => `<div class="field"><span>Odd ${code}</span><input name="odd${code}" value="${odd(code)?.active ? fmtOdds(odd(code).odds) : ''}" inputmode="decimal" ${closed ? 'disabled' : ''} placeholder="—"></div>`;
   return `<form class="admin-event" data-form="admin-event" data-id="${e.id}" data-featured="${e.featured ? 1 : 0}">
     <div class="admin-event-head"><div><strong>${esc(e.home)} vs ${esc(e.away)}</strong><div class="muted">${esc(SPORT_META[e.sport]?.name || e.sport)} · ${esc(e.competition)} · ${esc(fmtDateTime(e.startTime))}</div></div>
-      <div><span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
-    ${e.source && e.source !== 'manual' ? `<div class="admin-actions">${e.source !== 'bzzoiro' ? `<button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button>` : ''}
+      <div>${e.source === 'winhouse' && e.externalId ? `<span class="pill" title="gameId na WinHouse">WinHouse #${esc(e.externalId)}</span> ` : ''}<span class="pill ${e.status}">${STATUS_LABEL[e.status]}</span>${suspended && !closed ? ' <span class="pill lost">Suspenso</span>' : ''}${e.featured ? ' <span class="pill void">Destaque</span>' : ''}${e.source && e.source !== 'manual' ? ' <span class="pill">Importado</span>' : ''}</div></div>
+    ${e.source && e.source !== 'manual' ? `<div class="admin-actions">${e.source === 'winhouse' ? `<button type="button" class="ghost-btn btn-sm" data-action="winhouse-raw" data-id="${e.id}">Ver dados WinHouse</button>`
+      : e.source !== 'bzzoiro' ? `<button type="button" class="ghost-btn btn-sm" data-action="provider-odds" data-id="${e.id}">Ver odds do fornecedor</button>` : ''}
       <button type="button" class="ghost-btn btn-sm" data-action="propline-odds" data-id="${e.id}">Ver odds PropLine</button></div><pre class="raw-odds hidden" id="rawOdds${e.id}"></pre>` : ''}
     <div class="admin-grid">
       <div class="field"><span>Casa</span><input name="homeScore" type="number" min="0" value="${e.homeScore ?? ''}" ${closed ? 'disabled' : ''}></div>
@@ -1019,6 +1020,16 @@ document.addEventListener('click', async (e) => {
       box.textContent = `Estado: ${r.status} · mercado ao vivo aberto desde: ${r.liveOddsAt || '—'}\n\n${r.raw}`;
       box.classList.remove('hidden');
     } catch (err) { toast('Erro', err.message, 'error'); }
+  } else if (action === 'winhouse-raw') {
+    const box = $(`#rawOdds${actionEl.dataset.id}`);
+    actionEl.disabled = true;
+    try {
+      const r = await api(`/api/admin/events/${actionEl.dataset.id}/winhouse-raw`);
+      box.textContent = r.raw;
+      box.classList.remove('hidden');
+      try { await navigator.clipboard.writeText(r.raw); toast('Dados WinHouse copiados', 'Cole-os na conversa.'); } catch { /* the text stays on screen to copy */ }
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
   } else if (action === 'winhouse-future') {
     const days = Number($('#whFutureDays')?.value);
     actionEl.disabled = true;
