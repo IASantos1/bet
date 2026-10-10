@@ -1,5 +1,6 @@
 import { divisionOf } from './footballdivisions.js';
 import { tourOf } from './tennistours.js';
+import { leagueCountry } from './countryleagues.js';
 import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
@@ -554,8 +555,10 @@ export const TENNIS_TREE = [
   ['Rwanda', ['World Tennis. Kigali']],
   ['Tunisia', ['World Tennis. Monastir 2', 'World Tennis. Monastir 2. Doubles', 'World Tennis. Monastir. Women']],
 ];
+// Ice hockey: no list by name; every league of the covered countries (countryleagues.js).
+export const HOCKEY_TREE = [];
 /** The sidebar's country → leagues trees, per sport. */
-export const LEAGUE_TREES = { futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE };
+export const LEAGUE_TREES = { futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE, hoquei: HOCKEY_TREE };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
 /** The tree's competitions plus, for football, every covered country's first and second division. */
@@ -565,6 +568,15 @@ class LeagueSet extends Set {
 /** The tree's competitions plus every ATP, WTA and Challenger tournament (singles, doubles, qualifying). */
 class TourSet extends Set {
   has(k) { return super.has(k) || !!tourOf(k); }
+}
+/**
+ * The tree's competitions plus every league of the sport's covered countries (basketball, ice
+ * hockey). Only the ones listed by name count as picked on purpose (see blockedGame).
+ */
+class CountrySet extends Set {
+  constructor(sport, keys) { super(keys); this.sport = sport; }
+  has(k) { return super.has(k) || !!leagueCountry(this.sport, k); }
+  listed(k) { return super.has(k); }
 }
 /**
  * A list of competitions (names separated by ; or new lines) → the allowed ones (Set of keys); "*" =
@@ -579,6 +591,8 @@ export function allowedLeagues(list, tree = FOOTBALL_TREE) {
   const keys = names.map(leagueKey);
   if (!text && tree === FOOTBALL_TREE) return new LeagueSet(keys);
   if (!text && tree === TENNIS_TREE) return new TourSet(keys);
+  if (!text && tree === BASKETBALL_TREE) return new CountrySet('basquetebol', keys);
+  if (!text && tree === HOCKEY_TREE) return new CountrySet('hoquei', keys);
   return new Set(keys);
 }
 /** WINHOUSE_FOOTBALL_LEAGUES → the allowed football competitions (Set of keys), or null for all. */
@@ -607,9 +621,12 @@ export function blockedGame(ev, { women = true, youth = true, minor = true, extr
   const text = [ev?.league, ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ');
   const sport = ev?.sport || SPORTS[Number(ev?.sport_id)];
   const allow = leagues instanceof Set ? (sport === 'futebol' ? leagues : null) : leagues?.[sport] || null;
-  if (allow && !allow.has(leagueKey(ev?.league))) return true;
+  const k = leagueKey(ev?.league);
+  if (allow && !allow.has(k)) return true;
   // Listed: the competition's own name does not count for the women's filter (the teams still do).
-  const womenText = allow ? [ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ') : text;
+  // A league taken in only for its country is not "listed": "Germany. BBL Women" stays out.
+  const listed = allow && (typeof allow.listed !== 'function' || allow.listed(k));
+  const womenText = listed ? [ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ') : text;
   return (women && WOMEN.test(womenText)) || (youth && YOUTH.test(text))
     || (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text))))
     || (!!extra && extra.test(text));
@@ -846,12 +863,12 @@ export function finishVerdict(row) {
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined,
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined, hockeyLeagues = undefined,
   detailHours = 12, footballDetailHours = 48, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
   futureDays = 0, futureMinutes = 10,
 } = {}) {
   // Per sport, the competitions shown (a sport left undefined shows all of its own).
-  const allow = Object.fromEntries(Object.entries({ futebol: allowLeagues, basquetebol: basketballLeagues, tenis: tennisLeagues })
+  const allow = Object.fromEntries(Object.entries({ futebol: allowLeagues, basquetebol: basketballLeagues, tenis: tennisLeagues, hoquei: hockeyLeagues })
     .filter(([, list]) => list !== undefined).map(([sp, list]) => [sp, allowedLeagues(list, LEAGUE_TREES[sp])]));
   const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues), leagues: Object.keys(allow).length ? allow : null };
   const state = {

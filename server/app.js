@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
+import { COUNTRY_SPORTS, leagueCountry } from './countryleagues.js';
 import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
 import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
@@ -406,13 +407,15 @@ export function createApp(db, {
         if (!named.has(k)) named.set(k, e.competition);
       }
       const list = tree.map(([country, leagues]) => ({ country, leagues: leagues.map((name) => ({ name, count: counts.get(leagueKey(name)) || 0 })) }));
-      if (sport === 'futebol') {
-        // Each covered country's first and second division with games open, under its country
-        // (first division first), whatever WinHouse calls the league.
+      if (sport === 'futebol' || COUNTRY_SPORTS.includes(sport)) {
+        // Football: each covered country's first and second division with games open, under its
+        // country (first division first), whatever WinHouse calls the league. Basketball and ice
+        // hockey: every league of the covered countries with games open.
         const listed = new Set(tree.flatMap(([, leagues]) => leagues.map(leagueKey)));
+        const classify = sport === 'futebol' ? divisionOf : (name) => { const country = leagueCountry(sport, name); return country && { country, division: 1 }; };
         const extra = new Map();
         for (const [k, name] of named) {
-          const d = listed.has(k) ? null : divisionOf(name);
+          const d = listed.has(k) ? null : classify(name);
           if (!d) continue;
           if (!extra.has(d.country)) extra.set(d.country, []);
           extra.get(d.country).push({ name, count: counts.get(k), division: d.division });

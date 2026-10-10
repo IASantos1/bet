@@ -180,9 +180,10 @@ export const config = {
     blockLeagues: env.WINHOUSE_BLOCK_LEAGUES || '',
     // Football competitions shown (names separated by ; or new lines); empty = the built-in list, * = all.
     footballLeagues: env.WINHOUSE_FOOTBALL_LEAGUES || '',
-    // The same for basketball and tennis (the sidebar's leagues); * = all.
+    // The same for basketball, tennis and ice hockey (the sidebar's leagues); * = all.
     basketballLeagues: env.WINHOUSE_BASKETBALL_LEAGUES || '',
     tennisLeagues: env.WINHOUSE_TENNIS_LEAGUES || '',
+    hockeyLeagues: env.WINHOUSE_HOCKEY_LEAGUES || '',
     // Every market of a game is read from its own page: games starting in the next
     // WINHOUSE_DETAIL_HOURS, up to WINHOUSE_DETAIL_PER_CYCLE pages a minute, each again after
     // WINHOUSE_DETAIL_REFRESH_MINUTES. WINHOUSE_DETAIL_PER_CYCLE=0 turns it off.
