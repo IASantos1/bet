@@ -789,6 +789,11 @@ export function estimateOffset(items, now = Date.now()) {
 }
 
 // Sports whose clock counts up through the match.
+/** Team names compared loosely: case, accents, punctuation and spacing aside. */
+export const teamKey = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+export const sameTeam = (a, b) => !!teamKey(a) && teamKey(a) === teamKey(b);
+/** How far apart the live and pre-match kick-off of one game may be. */
+const TWIN_WINDOW_MS = 3 * 60 * 60_000;
 /** How long a match in review with no bets waits, gone from the live list, before it is closed. */
 const STALE_CLOSE_MS = 60 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
@@ -1036,6 +1041,65 @@ export function createWinHouseFeed(db, {
     return db.prepare('SELECT * FROM events WHERE id = ?').get(Number(lastInsertRowid));
   }
 
+  /**
+   * A game WinHouse lists in play under a new id (not the pre-match one): the pre-match row of the
+   * same sport, the same teams and about the same kick-off takes that id, so the bets on it follow
+   * the match live and are settled (instead of a second, bet-less copy going live).
+   */
+  const twinOf = db.prepare(`SELECT * FROM events WHERE source = ? AND sport = ? AND status = 'scheduled'
+    AND start_time BETWEEN ? AND ? ORDER BY start_time`);
+  function adoptTwin(ev) {
+    const at = new Date(ev.startTime).getTime();
+    const near = twinOf.all(SOURCE, ev.sport, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
+      .filter((r) => sameTeam(r.home, ev.home) && sameTeam(r.away, ev.away));
+    if (near.length !== 1) return null;
+    db.prepare('UPDATE events SET external_id = ?, updated_at = ? WHERE id = ?').run(ev.externalId, nowIso(), near[0].id);
+    log(`WinHouse: ${ev.home} - ${ev.away} ao vivo com outro id (${near[0].external_id} → ${ev.externalId})`);
+    return findEvent.get(SOURCE, ev.externalId);
+  }
+
+  /**
+   * Pre-match rows with bets that never went live (the match ran under another id, as a second row):
+   * when that copy has finished, its result settles the bets; while it is still in play and nobody
+   * bet on it, the row with the bets takes its place (its id, score, clock), and the copy is dropped.
+   */
+  const overdueWithBets = db.prepare(`SELECT * FROM events e WHERE source = ? AND status = 'scheduled' AND start_time BETWEEN ? AND ?
+    AND EXISTS (SELECT 1 FROM bet_legs l WHERE l.event_id = e.id AND l.status = 'open')`);
+  const copiesOf = db.prepare(`SELECT * FROM events WHERE source = ? AND sport = ? AND id <> ? AND status IN ('live', 'finished')
+    AND start_time BETWEEN ? AND ?`);
+  function mergeTwins(now = Date.now()) {
+    let merged = 0;
+    for (const row of overdueWithBets.all(SOURCE, new Date(now - 72 * 3_600_000).toISOString(), new Date(now - 10 * 60_000).toISOString())) {
+      const at = new Date(row.start_time).getTime();
+      const twins = copiesOf.all(SOURCE, row.sport, row.id, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
+        .filter((t) => sameTeam(t.home, row.home) && sameTeam(t.away, row.away));
+      if (twins.length !== 1) continue;
+      const t = twins[0];
+      try {
+        tx(db, () => {
+          if (t.status === 'finished') {
+            if (!Number.isInteger(t.home_score) || !Number.isInteger(t.away_score)) return;
+            db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, reg_home_score = ?, reg_away_score = ?, result = ?,
+                clock = 'Final', updated_at = ? WHERE id = ? AND status = 'scheduled'`)
+              .run(t.home_score, t.away_score, t.reg_home_score, t.reg_away_score, t.result || resultCode(t.home_score, t.away_score), nowIso(), row.id);
+            settleEvent(db, row.id, { source: 'feed', note: `WinHouse: resultado do mesmo jogo ao vivo (id ${t.external_id})` });
+          } else {
+            if (db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(t.id)) return; // it finishes first, then settles this one
+            db.prepare("UPDATE events SET external_id = ?, status = 'cancelled', updated_at = ? WHERE id = ?").run(`${t.external_id}:dup${t.id}`, nowIso(), t.id);
+            db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(t.id);
+            db.prepare(`UPDATE events SET external_id = ?, status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = ?, wh_seen_at = ?,
+                wh_missing_since = ?, review_reason = ?, wh_overtime = ?, reg_home_score = ?, reg_away_score = ?, score_at = ?, updated_at = ? WHERE id = ?`)
+              .run(t.external_id, t.home_score, t.away_score, t.clock, t.wh_minute, t.wh_seen_at, t.wh_missing_since, t.review_reason,
+                t.wh_overtime, t.reg_home_score, t.reg_away_score, t.score_at, nowIso(), row.id);
+          }
+          merged += 1;
+        });
+      } catch (err) { log(`WinHouse: juntar ${row.id} com ${t.id}: ${err.message}`); }
+    }
+    if (merged) log(`WinHouse: ${merged} jogo(s) com apostas ligados ao mesmo jogo ao vivo com outro id`);
+    return merged;
+  }
+
   const liveRaw = new Map(); // WinHouse game id → its entry of the last live list (no odds)
   let liveListAt = null; // when that list was read
   /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
@@ -1043,6 +1107,7 @@ export function createWinHouseFeed(db, {
     const r = await client.live();
     if (!r.ok) throw new Error(`livegames HTTP ${r.status}`);
     const items = eventsOf(r.body);
+    mergeTwins();
     if (!Number.isFinite(tzOffsetMinutes)) {
       const est = estimateOffset(items);
       if (est !== null) { state.offset = est; state.offsetSource = 'estimado pelo ao vivo'; }
@@ -1067,7 +1132,7 @@ export function createWinHouseFeed(db, {
         tx(db, () => {
           let row = findEvent.get(SOURCE, ev.externalId);
           if (row && (row.status === 'finished' || row.status === 'cancelled')) return;
-          if (!row) row = insert(ev, 'live');
+          if (!row) row = adoptTwin(ev) || insert(ev, 'live');
           const home = ev.homeScore ?? row.home_score ?? 0;
           const away = ev.awayScore ?? row.away_score ?? 0;
           const scoreChanged = row.status === 'live' && (row.home_score !== home || row.away_score !== away);
