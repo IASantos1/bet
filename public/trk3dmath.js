@@ -24,11 +24,39 @@ export function flightHeight(from, to, situation) {
   return 0;
 }
 
-/** The attacking zone's look for a tier (as the 2D arrow's): colour, opacity, and whether it pulses. */
+/** Situations that make the play dangerous (red, pulsing arrow; the label glows). */
+export const DANGER = new Set(['dangerous_attack', 'corner', 'goal', 'freekick', 'shotoffwoodwork', 'goalkeeper_saved']);
+
+/**
+ * The arrow's tier for a situation: dangerous attack (and set pieces near goal) 'danger', an attack
+ * — or the ball deep in the opponent's half — 'attacking', plain possession 'neutral'.
+ * `depth` is how far (%) the side in possession has the ball from its own goal line.
+ */
+export function zoneTier(situation, depth) {
+  if (DANGER.has(situation)) return 'danger';
+  if (situation === 'attack' || depth > 60) return 'attacking';
+  return 'neutral';
+}
+
+/**
+ * The attacking arrow's look for a tier: colour, opacity, and whether it pulses. Possession is a
+ * clear white so the arrow never fades into the grass; attack orange; dangerous attack red.
+ */
 export function zoneStyle(tier) {
-  if (tier === 'danger') return { color: 0xd20a0a, opacity: 0.38, pulse: true };
-  if (tier === 'attacking') return { color: 0xdc8228, opacity: 0.3, pulse: false };
-  return { color: 0x6b6b6b, opacity: 0.22, pulse: false };
+  if (tier === 'danger') return { color: 0xe01010, opacity: 0.5, pulse: true };
+  if (tier === 'attacking') return { color: 0xff8a1e, opacity: 0.42, pulse: false };
+  return { color: 0xffffff, opacity: 0.3, pulse: false };
+}
+
+/**
+ * The arrow's outline (m, flat on the pitch): from its own goal line (x = 0) the full width of the
+ * pitch to the ball at x = `len`, the last `tip` metres narrowing to a point on the halfway line
+ * across — as the 2D pitch's arrow. A short arrow is all tip.
+ */
+export function arrowShape(len, width, tip = 6.3) {
+  const l = Math.max(0.5, len);
+  const body = Math.max(0, l - tip);
+  return [[0, -width / 2], [body, -width / 2], [l, 0], [body, width / 2], [0, width / 2]];
 }
 
 /**

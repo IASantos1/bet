@@ -7,7 +7,7 @@
 // has no WebGL: the page then keeps the 2D pitch.
 
 import * as THREE from './vendor/three-0.169.0.module.min.js';
-import { PITCH, pitchPoint, flightHeight, zoneStyle, fovFor, glidePoint } from './trk3dmath.js';
+import { PITCH, pitchPoint, flightHeight, zoneStyle, arrowShape, fovFor, glidePoint } from './trk3dmath.js';
 
 const { L, W } = PITCH;
 const HL = L / 2, HW = W / 2;
@@ -213,10 +213,20 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
   shadow.rotation.x = -Math.PI / 2;
   scene.add(ball, shadow);
   const zoneTex = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 2; const g = c.getContext('2d');
-    const gr = g.createLinearGradient(0, 0, 128, 0); gr.addColorStop(0, 'rgba(255,255,255,0.15)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
+    const gr = g.createLinearGradient(0, 0, 128, 0); gr.addColorStop(0, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
     g.fillStyle = gr; g.fillRect(0, 0, 128, 2); return new THREE.CanvasTexture(c); })();
-  const zone = new THREE.Mesh(new THREE.PlaneGeometry(1, W), new THREE.MeshBasicMaterial({ map: zoneTex, transparent: true, depthWrite: false }));
-  zone.rotation.x = -Math.PI / 2; zone.position.y = 0.04; scene.add(zone);
+  const zone = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ map: zoneTex, transparent: true, depthWrite: false, toneMapped: false }));
+  zone.rotation.x = -Math.PI / 2; zone.position.y = 0.04; zone.renderOrder = 1; scene.add(zone);
+  let zoneLen = -1;
+  /** The arrow's outline for this length, the texture's fade running from the goal line to the tip. */
+  function shapeZone(len) {
+    if (Math.abs(len - zoneLen) < 0.05) return;
+    zoneLen = len;
+    const geo = new THREE.ShapeGeometry(new THREE.Shape(arrowShape(len, W).map(([x, y]) => new THREE.Vector2(x, y))));
+    const p = geo.attributes.position, uv = geo.attributes.uv;
+    for (let j = 0; j < p.count; j++) uv.setXY(j, p.getX(j) / Math.max(0.5, len), 0.5);
+    zone.geometry.dispose(); zone.geometry = geo;
+  }
   const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, toneMapped: false });
   let trail = null;
 
@@ -257,7 +267,7 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
     const from = side === 'away' ? HL : -HL;
     const len = Math.max(0.5, Math.abs(pos.x - from));
     zone.visible = true;
-    zone.scale.x = len; zone.position.x = (from + pos.x) / 2; zone.rotation.z = side === 'away' ? Math.PI : 0;
+    shapeZone(len); zone.position.x = from; zone.rotation.z = side === 'away' ? Math.PI : 0;
     zone.material.color.setHex(s.color);
     zone.material.opacity = s.pulse ? s.opacity * (0.75 + 0.25 * Math.sin(now / 140)) : s.opacity;
     return s.pulse;
