@@ -3089,7 +3089,7 @@ const BALL_SVG = `<svg viewBox="0 0 64 64" class="trk-ball-svg" aria-hidden="tru
 
 function footballWidget(e) {
   const flags = ['tl', 'tr', 'bl', 'br'].map((c) => `<i class="trk-corner c-${c}"></i><i class="trk-flag f-${c}"></i>`).join('');
-  return `<div class="trk" data-kind="football">${expandBtn()}
+  return `<div class="trk" data-kind="football">
     <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(e.home)}</span>
       <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
       <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
@@ -3109,7 +3109,6 @@ function footballWidget(e) {
       <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video></div>
     </div></div>
     <p class="trk-note" id="trkNote"></p>
-    <div class="trk-actions" id="trackerActions"></div>
   </div>`;
 }
 

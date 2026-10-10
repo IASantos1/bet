@@ -19,7 +19,8 @@ function seeded(seed) { let x = seed; return () => { x = (x * 1664525 + 10139042
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 /** The stadium (built once per pitch). `q` = quality settings. */
-function buildStadium(scene, q) {
+function buildStadium(scene, q, maxAniso = 4) {
+  q = { ...q, aniso: Math.min(q.aniso, maxAniso) };
   const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const rnd = seeded(62);
   // sky
@@ -37,7 +38,7 @@ function buildStadium(scene, q) {
     const c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
     const X = (x) => (x + HL + AX) * PX, Z = (z) => (z + HW + AZ) * PX;
     for (let i = 0; i < 18; i++) { g.fillStyle = i % 2 ? '#3a8d55' : '#337f4c'; g.fillRect(i * cw / 18, 0, cw / 18 + 1, ch); }
-    for (let i = 0; i < cw * ch / 40; i++) { g.fillStyle = `rgba(${rnd() < .5 ? '0,0,0' : '255,255,255'},${rnd() * 0.045})`; g.fillRect(rnd() * cw, rnd() * ch, 2, 2); }
+    for (let i = 0, n = Math.min(70000, cw * ch / 40); i < n; i++) { g.fillStyle = `rgba(${rnd() < .5 ? '0,0,0' : '255,255,255'},${rnd() * 0.045})`; g.fillRect(rnd() * cw, rnd() * ch, 2, 2); }
     g.strokeStyle = 'rgba(255,255,255,.93)'; g.lineWidth = Math.max(1.5, 0.14 * PX);
     const line = (x1, z1, x2, z2) => { g.beginPath(); g.moveTo(X(x1), Z(z1)); g.lineTo(X(x2), Z(z2)); g.stroke(); };
     const rect = (x1, z1, x2, z2) => g.strokeRect(X(x1), Z(z1), (x2 - x1) * PX, (z2 - z1) * PX);
@@ -53,6 +54,7 @@ function buildStadium(scene, q) {
       arc(gx - s * 11, 0, 9.15, s < 0 ? -a : Math.PI - a, s < 0 ? a : Math.PI + a);
     }
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = q.aniso;
+    tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(L + 2 * AX, W + 2 * AZ), new THREE.MeshLambertMaterial({ map: tex }));
     ground.rotation.x = -Math.PI / 2; scene.add(ground);
     // grass all round (the open side's foreground is grass, not concrete)
@@ -147,10 +149,10 @@ function buildStadium(scene, q) {
     scene.add(body, head); }
 
   // BET62 boards along the stands (none on the open side)
-  { const c = document.createElement('canvas'); c.width = 512; c.height = 64; const g = c.getContext('2d');
-    g.fillStyle = '#10161d'; g.fillRect(0, 0, 512, 64); g.font = 'italic 900 40px Arial'; g.textBaseline = 'middle';
+  { const c = document.createElement('canvas'); c.width = 1024; c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = '#10161d'; g.fillRect(0, 0, 1024, 128); g.font = 'italic 900 80px Arial'; g.textBaseline = 'middle';
     const wb = g.measureText('BET').width, w6 = g.measureText('62').width;
-    for (let i = 0; i < 2; i++) { const x = i * 256 + (256 - wb - w6) / 2; g.fillStyle = '#fff'; g.fillText('BET', x, 34); g.fillStyle = '#9fb2c8'; g.fillText('62', x + wb, 34); g.fillStyle = '#42946b'; g.fillRect(i * 256 + 2, 10, 4, 44); }
+    for (let i = 0; i < 2; i++) { const x = i * 512 + (512 - wb - w6) / 2; g.fillStyle = '#fff'; g.fillText('BET', x, 68); g.fillStyle = '#9fb2c8'; g.fillText('62', x + wb, 68); g.fillStyle = '#42946b'; g.fillRect(i * 512 + 4, 20, 8, 88); }
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = THREE.RepeatWrapping;
     const board = (len, x, z, ry) => {
       const t = tex.clone(); t.needsUpdate = true; t.repeat.set(len / 14, 1);
@@ -174,9 +176,11 @@ function buildStadium(scene, q) {
  * `onFrame({ x, y, visible })` gets, on every drawn frame, where the ball's label goes (in % of the box).
  */
 export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {}) {
+  // Sharp on every screen: drawn at the screen's full pixel density (up to 3×, retina / 4K) with
+  // antialiasing and fine textures; phones keep a lighter crowd. It draws only while the ball moves.
   const q = quality === 'low'
-    ? { rows: 12, fill: 0.6, spacing: 0.75, px: 9, aniso: 2, curve: 10, dpr: 1.25, aa: false }
-    : { rows: 20, fill: 0.85, spacing: 0.62, px: 16, aniso: 8, curve: 18, dpr: 2, aa: true };
+    ? { rows: 14, fill: 0.7, spacing: 0.7, px: 16, aniso: 16, curve: 14, dpr: 3, aa: true }
+    : { rows: 20, fill: 0.85, spacing: 0.62, px: 22, aniso: 16, curve: 20, dpr: 3, aa: true };
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: q.aa, powerPreference: 'low-power' });
@@ -192,7 +196,7 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
   host.append(canvas);
 
   const scene = new THREE.Scene();
-  buildStadium(scene, q);
+  buildStadium(scene, q, renderer.capabilities.getMaxAnisotropy());
   const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.5, 600);
   // TV camera above the open side, steep enough that the pitch fills the box with the stands behind it.
   camera.position.set(0, 60, HW + 64);
@@ -200,12 +204,12 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
 
   // the ball, its shadow, the trail and the attacking zone
   const ballTex = (() => {
-    const c = document.createElement('canvas'); c.width = 128; c.height = 64; const g = c.getContext('2d');
-    g.fillStyle = '#f4f6f8'; g.fillRect(0, 0, 128, 64); g.fillStyle = '#15191d';
-    for (const [x, y] of [[16, 32], [48, 14], [48, 50], [80, 32], [112, 14], [112, 50]]) { g.beginPath(); for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 - Math.PI / 2; g.lineTo(x + 8 * Math.cos(a), y + 8 * Math.sin(a)); } g.fill(); }
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+    g.fillStyle = '#f4f6f8'; g.fillRect(0, 0, 512, 256); g.fillStyle = '#15191d';
+    for (const [x, y] of [[64, 128], [192, 56], [192, 200], [320, 128], [448, 56], [448, 200]]) { g.beginPath(); for (let k = 0; k < 5; k++) { const a = k * 2 * Math.PI / 5 - Math.PI / 2; g.lineTo(x + 32 * Math.cos(a), y + 32 * Math.sin(a)); } g.fill(); }
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 24, 16), new THREE.MeshLambertMaterial({ map: ballTex }));
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 40, 28), new THREE.MeshLambertMaterial({ map: ballTex }));
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(BR * 1.1, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2;
   scene.add(ball, shadow);
