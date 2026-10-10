@@ -21,7 +21,10 @@ export function withdrawEligibility(db, user) {
   if (kyc !== 'approved') return { eligible: false, code: 'KYC_REQUIRED', message: KYC_MESSAGE[kyc] || KYC_MESSAGE.not_submitted };
   const lastDeposit = db.prepare("SELECT MAX(created_at) AS at FROM transactions WHERE user_id = ? AND type = 'deposit'").get(user.id).at;
   const won = db.prepare(`SELECT 1 FROM bets WHERE user_id = ? AND status = 'won' AND created_at >= ? LIMIT 1`).get(user.id, lastDeposit || '');
-  if (!won) {
+  // Brought from the previous platform having won a bet after their last deposit there, and no
+  // deposit here since: the rule is already met.
+  const metBefore = !lastDeposit && !!user.novo_can_withdraw;
+  if (!won && !metBefore) {
     return {
       eligible: false, code: 'BET_REQUIRED',
       message: lastDeposit

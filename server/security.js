@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 
 const SCRYPT = { N: 16384, r: 8, p: 1 };
 
@@ -8,7 +9,13 @@ export function hashPassword(password) {
   return `scrypt$${salt.toString('base64')}$${key.toString('base64')}`;
 }
 
+/** A password hash from the previous platform (Bet62Novo: bcrypt), kept until the player signs in. */
+export const isLegacyHash = (stored) => /^\$2[aby]\$\d{2}\$/.test(String(stored || ''));
+
 export function verifyPassword(password, stored) {
+  if (isLegacyHash(stored)) {
+    try { return bcrypt.compareSync(String(password), String(stored)); } catch { return false; }
+  }
   const [alg, salt, key] = String(stored || '').split('$');
   if (alg !== 'scrypt' || !salt || !key) return false;
   const expected = Buffer.from(key, 'base64');
