@@ -44,3 +44,29 @@ test('the feed shows those leagues and leaves out the rest, women\'s leagues of 
   // A list set by the operator still replaces it.
   assert.equal(blockedGame(game(4, 'Finland. Liiga'), { leagues: { hoquei: allowedLeagues('Sweden. SHL', HOCKEY_TREE) } }), true);
 });
+
+test('volleyball, handball and futsal: their covered countries, filtered as basketball', () => {
+  assert.equal(leagueCountry('voleibol', 'Italy. SuperLega'), 'Italy');
+  assert.equal(leagueCountry('voleibol', 'Netherlands. Eredivisie'), 'Netherlands');
+  assert.equal(leagueCountry('voleibol', 'CEV Champions League'), 'Europe');
+  assert.equal(leagueCountry('voleibol', 'Greece. A1'), null);
+  assert.equal(leagueCountry('andebol', 'Germany. Bundesliga'), 'Germany');
+  assert.equal(leagueCountry('andebol', 'Norway. Eliteserien'), 'Norway');
+  assert.equal(leagueCountry('andebol', 'EHF Champions League'), 'Europe');
+  assert.equal(leagueCountry('andebol', 'Italy. Serie A'), null);
+  assert.equal(leagueCountry('futsal', 'Brazil. Liga Futsal'), 'Brazil');
+  assert.equal(leagueCountry('futsal', 'Portugal. Liga Placard'), 'Portugal');
+  assert.equal(leagueCountry('futsal', 'Russia. Superleague'), null);
+  const block = { leagues: { voleibol: allowedLeagues('', [], 'voleibol') } };
+  assert.equal(blockedGame({ sport_id: 23, league: 'Poland. PlusLiga', name: 'A - B' }, block), false);
+  assert.equal(blockedGame({ sport_id: 23, league: 'Greece. A1', name: 'A - B' }, block), true);
+});
+
+test('badminton, table tennis and darts: every tournament, under its host country or Internacional', () => {
+  assert.equal(leagueCountry('badminton', 'Arctic Open'), 'Finland');
+  assert.equal(leagueCountry('badminton', 'Arctic Open. Mixed Doubles'), 'Finland');
+  assert.equal(leagueCountry('tenismesa', 'WTT. China Smash'), 'China');
+  assert.equal(leagueCountry('dardos', 'Swiss Darts Trophy'), 'Switzerland');
+  assert.equal(leagueCountry('dardos', 'Premier League Darts'), 'World');
+  assert.equal(leagueCountry('tenismesa', 'Fukuoka Open'), 'World');      // no stray "uk"
+});
