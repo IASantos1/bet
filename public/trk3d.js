@@ -7,7 +7,7 @@
 // has no WebGL: the page then keeps the 2D pitch.
 
 import * as THREE from './vendor/three-0.169.0.module.min.js';
-import { PITCH, pitchPoint, flightHeight, zoneStyle, fovFor } from './trk3dmath.js';
+import { PITCH, pitchPoint, flightHeight, zoneStyle, fovFor, glidePoint } from './trk3dmath.js';
 
 const { L, W } = PITCH;
 const HL = L / 2, HW = W / 2;
@@ -16,7 +16,6 @@ const TRAIL_MS = 1400;  // how long a trail stays after the ball arrives
 const BR = 1.35;        // the ball, drawn bigger than life so it reads in a small box
 
 function seeded(seed) { let x = seed; return () => { x = (x * 1664525 + 1013904223) % 4294967296; return x / 4294967296; }; }
-const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 /** The stadium (built once per pitch). `q` = quality settings. */
 function buildStadium(scene, q, maxAniso = 4) {
@@ -223,7 +222,9 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
 
   // motion state
   const pos = new THREE.Vector3(0, BR, 0);
-  let move = null; // { from, to, air, at, hot }
+  let move = null; // { from, to, air, moving, at, hot }
+  let target = null; // the spot the last fix asked for (a repeat of it changes nothing)
+  const roll = new THREE.Quaternion(), axis = new THREE.Vector3();
   let zoneState = { side: 'home', tier: 'neutral', hidden: true };
   let hidden = true;
   let raf = 0;
@@ -248,12 +249,7 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
     trail = new THREE.Mesh(geo, trailMat); scene.add(trail);
     return true;
   }
-  function pointOf(m, k) {
-    const e = m.air ? k : ease(k);
-    const p = m.from.clone().lerp(m.to, e);
-    p.y = BR + (m.air ? Math.sin(Math.PI * e) * m.air : 0);
-    return p;
-  }
+  function pointOf(m, k) { const p = glidePoint(m, k, BR); return new THREE.Vector3(p.x, p.y, p.z); }
   function styleZone(now) {
     const { side, tier } = zoneState;
     if (zoneState.hidden || hidden) { zone.visible = false; return false; }
@@ -273,8 +269,11 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
     let busy = false;
     if (move) {
       const k = Math.min(1, (now - move.at) / MOVE_MS);
-      pos.copy(pointOf(move, k));
-      ball.rotation.x -= 0.25 * (1 - k); ball.rotation.z += 0.08 * (1 - k);
+      const next = pointOf(move, k);
+      // it rolls the way it goes, by as much as it travelled
+      const dx = next.x - pos.x, dz = next.z - pos.z, d = Math.hypot(dx, dz);
+      if (d > 1e-4) { roll.setFromAxisAngle(axis.set(dz / d, 0, -dx / d), d / BR); ball.quaternion.premultiply(roll); }
+      pos.copy(next);
       busy = k < 1;
     }
     ball.visible = shadow.visible = !hidden;
@@ -308,16 +307,22 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
   return {
     /** A tracker fix: glide there (or jump with `instant`); `hidden` when there is no position. */
     setBall({ x, y, side = 'home', tier = 'neutral', situation = null, instant = false, resting = false, hidden: hide = false }) {
+      const wasHidden = hidden;
       hidden = !!hide;
       zoneState = { side, tier, hidden: hidden || resting };
-      if (!hidden) {
-        const p = pitchPoint(x, y);
-        const to = new THREE.Vector3(p.x, BR, p.z);
-        if (instant || to.distanceTo(pos) < 0.2) { move = null; pos.copy(to); }
-        else {
-          const from = pos.clone(); from.y = BR;
-          move = { from, to, air: flightHeight({ x: from.x, z: from.z }, p, situation), at: performance.now(), hot: tier === 'danger' };
-        }
+      if (hidden) { target = null; schedule(); return; }
+      const p = pitchPoint(x, y);
+      const to = new THREE.Vector3(p.x, BR, p.z);
+      // The same spot again (a page refresh, a new situation for the same fix): the glide under way
+      // and its trail go on untouched; only the zone follows.
+      if (target && !wasHidden && to.distanceTo(target) < 0.2) { schedule(); return; }
+      target = to;
+      const now = performance.now();
+      if (instant || wasHidden || to.distanceTo(pos) < 0.2) { move = null; pos.copy(to); }
+      else {
+        // from where the ball is now, its height included, keeping its pace if it was still going
+        const moving = !!move && now - move.at < MOVE_MS;
+        move = { from: pos.clone(), to, air: flightHeight({ x: pos.x, z: pos.z }, p, situation), moving, at: now, hot: tier === 'danger' };
       }
       schedule();
     },

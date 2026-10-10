@@ -50,3 +50,23 @@ export function fovFor(aspect, baseFov = 40) {
   const h = 2 * Math.atan(Math.tan((baseFov * Math.PI) / 360) * (16 / 9));
   return Math.min(75, (2 * Math.atan(Math.tan(h / 2) / a) * 180) / Math.PI);
 }
+
+const inOut = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+const out = (k) => 1 - (1 - k) ** 2;
+/**
+ * Where the ball is at `k` (0..1) of a glide from `from` (x, y, z — it may start in the air) to
+ * `to` (x, z, on the grass at height `ground`). A glide from rest eases in and out; one that takes
+ * over a glide still under way (`moving`) keeps its speed and only eases out, so a new fix never
+ * makes the ball stop and restart. In the air (`air` m at the top) it flies at an even pace, and a
+ * ball caught mid-flight comes down smoothly instead of dropping to the grass.
+ */
+export function glidePoint({ from, to, air = 0, moving = false }, k, ground = 0) {
+  const t = Math.max(0, Math.min(1, k));
+  const e = air ? t : moving ? out(t) : inOut(t);
+  const lift = Math.max(0, (from.y ?? ground) - ground) * (1 - e);
+  return {
+    x: from.x + (to.x - from.x) * e,
+    y: ground + lift + (air ? Math.sin(Math.PI * e) * air : 0),
+    z: from.z + (to.z - from.z) * e,
+  };
+}
