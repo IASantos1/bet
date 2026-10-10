@@ -25,6 +25,7 @@ import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
+import { compression, staticText } from './compress.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
@@ -136,6 +137,8 @@ export function createApp(db, {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  // Every whole answer (API, pages) compressed for the browsers that take it.
+  app.use(compression());
 
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: loginAttempts });
   const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: registrations });
@@ -1877,6 +1880,8 @@ export function createApp(db, {
     }
     res.redirect(302, `/?ref=${encodeURIComponent(code)}`);
   });
+  // Scripts, styles and SVG: from memory, compressed once, kept a year when versioned (?v=).
+  app.use(staticText(PUBLIC_DIR));
   app.use(express.static(PUBLIC_DIR, {
     index: 'index.html',
     setHeaders(res, file) {

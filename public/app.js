@@ -93,13 +93,42 @@ function loadBuilder() {
   try { const v = JSON.parse(localStorage.getItem('bet62_builder') || 'null'); return v && Array.isArray(v.legs) ? v : null; } catch { return null; }
 }
 
-async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(path, {
-    method,
-    credentials: 'same-origin',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+// The same read asked twice at once (a poll and a render) goes to the server once.
+const inflight = new Map();
+/**
+ * One API call. A read gives up after `timeoutMs` and, when the network failed (not the server),
+ * is tried once more; a write is never repeated (it could be applied twice).
+ */
+function api(path, { method = 'GET', body, timeoutMs = method === 'GET' ? 15_000 : 30_000 } = {}) {
+  if (method !== 'GET') return apiOnce(path, { method, body, timeoutMs });
+  if (inflight.has(path)) return inflight.get(path);
+  const p = apiOnce(path, { method, timeoutMs })
+    .catch((err) => (err.network ? new Promise((r) => setTimeout(r, 600)).then(() => apiOnce(path, { method, timeoutMs })) : Promise.reject(err)))
+    .finally(() => inflight.delete(path));
+  inflight.set(path, p);
+  return p;
+}
+
+async function apiOnce(path, { method = 'GET', body, timeoutMs = 15_000 } = {}) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: ctl?.signal,
+    });
+  } catch (cause) {
+    const err = new Error(ctl?.signal.aborted ? 'O servidor demorou demasiado a responder. Tente novamente.' : 'Sem ligação. Verifique a internet e tente novamente.');
+    err.network = true;
+    err.cause = cause;
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
   if (!res.ok) {
@@ -2497,6 +2526,15 @@ function bindChrome() {
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
+  // A game touched (or hovered): its page starts loading before the tap ends.
+  const ahead = (ev) => { const id = Number(ev.target.closest?.('[data-open]')?.dataset.open); if (id > 0 && state.match.id !== id) prefetchMatch(id); };
+  document.addEventListener('pointerdown', ahead, { passive: true });
+  // With a mouse, only a game the pointer rests on (not every card it crosses).
+  let hover = null;
+  document.addEventListener('mouseover', (ev) => {
+    clearTimeout(hover);
+    hover = setTimeout(() => ahead(ev), 150);
+  }, { passive: true });
   // Phone / installed app: the page never zooms (Safari ignores user-scalable=no, so pinches are stopped here;
   // double taps are stopped by touch-action in the CSS, focusing a field by 16px text).
   document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -2543,9 +2581,37 @@ function leaveMatch() {
   $('#sideTracker')?.replaceChildren();
 }
 
+// A match page read ahead: when the finger touches a game (or the mouse rests on it), its page is
+// already on its way, so opening it shows everything at once. Kept a few seconds only.
+const prefetched = new Map(); // id → { at, promise }
+function prefetchMatch(id) {
+  const hit = prefetched.get(id);
+  if (hit && Date.now() - hit.at < 8_000) return;
+  const promise = api(`/api/events/${id}`);
+  promise.catch(() => prefetched.delete(id));
+  prefetched.set(id, { at: Date.now(), promise });
+  if (prefetched.size > 20) prefetched.delete(prefetched.keys().next().value);
+}
+function takePrefetched(id) {
+  const hit = prefetched.get(id);
+  prefetched.delete(id);
+  return hit && Date.now() - hit.at < 8_000 ? hit.promise : null;
+}
+
+/**
+ * The match page before its own answer arrives: the game as the lists already have it (teams,
+ * score, clock, main market), so the page shows at once; the full page replaces it in a moment.
+ */
+function matchFromList(id) {
+  const e = state.events.find((x) => x.id === id);
+  if (!e) return null;
+  const main = e.selections[0]?.market || '1x2';
+  return { ...e, partial: true, markets: e.selections.length ? [{ market: main, name: main === 'ml' ? 'Vencedor' : 'Resultado final', selections: e.selections }] : [] };
+}
+
 async function loadMatch(id, { quiet = false } = {}) {
   try {
-    const { event } = await api(`/api/events/${id}`);
+    const { event } = await (takePrefetched(id) || api(`/api/events/${id}`));
     if (state.match.id !== id) return;
     const wasLive = state.match.data?.status === 'live';
     // Tennis: the live board (sets, point) from the stream stays when the polled event has none yet.
@@ -2679,6 +2745,7 @@ function matchPage(sub) {
   if (m.id !== id) {
     leaveMatch();
     m.id = id;
+    m.data = matchFromList(id);
     setTimeout(() => loadMatch(id));
     // Markets and score keep refreshing while the page is open (the stream adds real time on top).
     m.timer = setInterval(() => {
@@ -2991,6 +3058,8 @@ async function loadStream(e, el) {
 }
 
 function marketsView(e) {
+  // The page as the list had it: its main market now, the others in a moment.
+  if (e.partial) return `${e.markets.length ? marketBlocks(e, e.markets) : ''}<div class="panel empty loading-more">A carregar todos os mercados…</div>`;
   if (!e.markets?.length) {
     return `<div class="panel empty">${e.status === 'live' ? '<span class="odds-state suspended">Suspenso</span>' : 'Ainda não há mercados para este jogo.'}</div>`;
   }
