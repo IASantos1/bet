@@ -240,7 +240,7 @@ Object.assign(COUNTRY_FLAG, {
   georgia: 'ge', guatemala: 'gt', honduras: 'hn', 'faroe islands': 'fo', india: 'in', indonesia: 'id', iran: 'ir',
   'northern ireland': 'gb-nir', jamaica: 'jm', jordan: 'jo', kuwait: 'kw', luxembourg: 'lu', 'north macedonia': 'mk',
   montenegro: 'me', nicaragua: 'ni', nigeria: 'ng', 'new zealand': 'nz', panama: 'pa', singapore: 'sg', thailand: 'th',
-  tanzania: 'tz', tunisia: 'tn', uzbekistan: 'uz', vietnam: 'vn', philippines: 'ph', lithuania: 'lt', rwanda: 'rw',
+  tanzania: 'tz', tunisia: 'tn', uzbekistan: 'uz', vietnam: 'vn', philippines: 'ph', lithuania: 'lt', rwanda: 'rw', malaysia: 'my', 'hong kong': 'hk', 'chinese taipei': 'tw', macau: 'mo',
 });
 const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐', atp: '🎾', wta: '🎾', challengers: '🎾' };
 // Sidebar countries in Portuguese (the league tree names them in English, as the provider does).
@@ -262,7 +262,7 @@ const COUNTRY_PT = {
   switzerland: 'Suíça', thailand: 'Tailândia', tanzania: 'Tanzânia', tunisia: 'Tunísia', turkey: 'Turquia', ukraine: 'Ucrânia',
   uruguay: 'Uruguai', uzbekistan: 'Uzbequistão', venezuela: 'Venezuela', vietnam: 'Vietname', africa: 'África',
   'south america': 'América do Sul', 'north america': 'América do Norte', asia: 'Ásia', russia: 'Rússia', bolivia: 'Bolívia',
-  philippines: 'Filipinas', rwanda: 'Ruanda', lithuania: 'Lituânia',
+  philippines: 'Filipinas', rwanda: 'Ruanda', lithuania: 'Lituânia', malaysia: 'Malásia', 'hong kong': 'Hong Kong', 'chinese taipei': 'Taipé Chinesa', macau: 'Macau',
 };
 const countryLabel = (country) => COUNTRY_PT[String(country || '').toLowerCase().trim()] || country;
 
