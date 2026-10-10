@@ -1,6 +1,7 @@
 // The short 3D clips the football mini-pitch plays over itself: the goal celebration when a team
 // scores, and the corner (from the flag, right or left of the goal, until the cross drops into the
-// box) when a corner is taken. Pure rules here (what to play, when); the page does the playing.
+// box) at the moment the corner is taken — not when it is awarded. Pure rules here (what to play,
+// when); the page does the playing.
 
 export const CLIPS = {
   goal: { src: '/media/trk-golo', ms: 3900 },
@@ -46,7 +47,7 @@ export function cornerClip(ball, turn = 0) {
   return turn % 2 ? 'corner-left' : 'corner-right';
 }
 
-/** A tracker frame that starts a clip: the situation turning into a goal or a corner. */
+/** A tracker frame that starts a clip: the situation turning into a goal (or a corner being awarded). */
 export function situationClip(prev, next) {
   const s = next?.situation;
   if (!s || s === prev?.situation) return null;
@@ -78,5 +79,41 @@ export function createClipGate(now = () => Date.now()) {
     },
     stop() { playing = null; },
     get playing() { return playing && playing.until > now() ? playing.kind : null; },
+  };
+}
+
+export const CORNER_WAIT_MS = 90_000; // a corner not seen taken by then (data gap, half time) plays nothing
+const atFlag = (b) => (b.x < 8 || b.x > 92) && (b.y < 10 || b.y > 90);
+const moved = (a, b) => Math.hypot(b.x - a.x, (b.y - a.y) / 1.55) > 12; // % of the pitch length
+
+/**
+ * Follows a corner from the moment it is awarded to the kick, frame by frame. A corner is taken
+ * when the tracker moves on from it (attack, dangerous attack, shot, clearance…) or, while it still
+ * says "corner", when a real fix shows the ball gone from the flag. `frame(ball)` gives the corner
+ * clip at that moment (the flag right or left of the goal, as the ball stood), else null.
+ */
+export function createCornerWatch(now = () => Date.now()) {
+  let pending = null; // { side, clip, at, spot }
+  let turn = 0;
+  const take = () => { const { clip } = pending; pending = null; return clip; };
+  return {
+    frame(b) {
+      const s = b?.situation;
+      if (s === 'corner') {
+        const real = !b.estimated && Number.isFinite(b.x) && Number.isFinite(b.y);
+        if (!pending || pending.side !== b.side) {
+          pending = { side: b.side, clip: cornerClip(b, turn++), at: now(), spot: real && atFlag(b) ? { x: b.x, y: b.y } : null };
+        } else if (real && !pending.spot && atFlag(b)) {
+          pending.spot = { x: b.x, y: b.y };
+          pending.clip = cornerClip(b);
+        } else if (real && pending.spot && moved(pending.spot, b)) return take();
+        return null;
+      }
+      if (!pending) return null;
+      if (!s || s === 'halftime' || now() - pending.at > CORNER_WAIT_MS) { pending = null; return null; }
+      return take();
+    },
+    reset() { pending = null; },
+    get pending() { return !!pending; },
   };
 }

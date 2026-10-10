@@ -1,6 +1,6 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
-import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate } from './trkclips.js';
+import { CLIPS, clipFormat, scorer, situationClip, createClipGate, createCornerWatch } from './trkclips.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -2505,7 +2505,7 @@ function leaveMatch() {
   clearInterval(m.timer);
   stopRapid();
   clearTimeout(m.clipTimer);
-  Object.assign(m, { score: null, kickoff: null, cornerTurn: 0, clipGate: null, clipToken: null, clipTimer: null });
+  Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null });
   Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
@@ -2547,6 +2547,9 @@ function startMatchStream(id) {
     m.streaming = !!s.following;
     if (s.event) applyLiveEvent(s.event, { quiet: true });
     for (const d of s.livedata || []) pushBall(d);
+    // Opened during a corner: its kick still plays the clip (older frames never do).
+    m.cornerWatch = createCornerWatch();
+    if (m.ball?.situation === 'corner') m.cornerWatch.frame(m.ball);
     m.prevBall = null;
     m.actions = (s.actions || []).slice(-15);
     updateTracker();
@@ -2558,10 +2561,11 @@ function startMatchStream(id) {
     pushBall(d);
     if (d.situation !== 'goal') m.kickoff = null;
     updateTracker();
-    // A corner being taken, or a goal: the 3D clip over the pitch.
-    const clip = situationClip(before, d);
-    if (clip === 'corner') playClip(cornerClip(m.ball, m.cornerTurn++));
-    else if (clip === 'goal') celebrateGoal(d.side);
+    // A goal, or a corner being taken (the kick, not the award): the 3D clip over the pitch.
+    m.cornerWatch ||= createCornerWatch();
+    if (situationClip(before, d) === 'goal') { m.cornerWatch.reset(); celebrateGoal(d.side); return; }
+    const corner = m.cornerWatch.frame(m.ball);
+    if (corner) playClip(corner);
   });
   on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); });
   on('odds', () => loadMatch(id, { quiet: true }));
