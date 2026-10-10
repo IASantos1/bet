@@ -1159,8 +1159,35 @@ export function createApp(db, {
   });
 
   admin.get('/events', (_req, res) => {
-    res.json({ events: loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [new Date(Date.now() - 3 * 86_400_000).toISOString()],
-      "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500) });
+    const events = loadEvents("e.status IN ('scheduled', 'live') OR e.updated_at > ?", [new Date(Date.now() - 3 * 86_400_000).toISOString()],
+      "CASE e.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, e.start_time ASC", 500);
+    // The provider's own game number (WinHouse's gameId for its diagnostics).
+    const ext = new Map(db.prepare('SELECT id, external_id FROM events WHERE external_id IS NOT NULL AND (status IN (\'scheduled\', \'live\') OR updated_at > ?)')
+      .all(new Date(Date.now() - 3 * 86_400_000).toISOString()).map((r) => [r.id, r.external_id]));
+    res.json({ events: events.map((e) => ({ ...e, externalId: ext.get(e.id) ?? null })) });
+  });
+
+  // Diagnostics: everything WinHouse sends for one game — its entry in the live list (score, clock
+  // and whatever other fields it has, e.g. tennis points), its live page and its tracker.
+  admin.get('/events/:id/winhouse-raw', async (req, res, next) => {
+    try {
+      const ev = eventRow(req.params.id);
+      if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      if (ev.source !== WH_SOURCE || !winhouse?.enabled) throw new HttpError(409, 'Evento sem dados da WinHouse.');
+      const gameId = String(ev.external_id);
+      const settle = async (fn) => { try { return await fn(); } catch (err) { return { erro: err.message }; } };
+      const [page, tracker] = await Promise.all([
+        settle(() => winhouse.markets({ gameId, live: ev.status === 'live' })),
+        winhouseTracker?.enabled ? settle(() => winhouseTracker.inspect(gameId)) : { erro: 'Tracker WinHouse desligado.' },
+      ]);
+      const text = JSON.stringify({
+        gameId, status: ev.status,
+        listaAoVivo: winhouseFeed?.rawLive?.(gameId) || (ev.status === 'live' ? 'ainda não visto na lista ao vivo (espere 15 s)' : 'jogo não está ao vivo'),
+        paginaAoVivo: page?.liveAttempt ? { keys: page.liveAttempt.keys, sample: page.liveAttempt.sample } : page?.erro ? page : { keys: page?.keys, sample: page?.sample },
+        tracker,
+      }, null, 2);
+      res.json({ raw: text.length > 40_000 ? `${text.slice(0, 40_000)}\n…` : text });
+    } catch (err) { next(err); }
   });
 
   // Market catalogue: what the provider really returns, sampled on real games of each sport.
