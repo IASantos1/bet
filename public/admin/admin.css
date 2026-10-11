@@ -99,3 +99,7 @@
 .leg-pick { display: block; margin-top: 6px; padding: 4px 6px; border-radius: 6px; background: #0f141b; color: inherit; border: 1px solid var(--line, #2a3340); font-size: 12px; }
 .bet-settle { margin-top: 10px; flex-wrap: wrap; }
 .bets-filter { margin: 0 0 12px; }
+/* Telegram: the post's text spans the form. */
+.form-grid .field.wide { grid-column: 1 / -1; }
+.field textarea { width: 100%; border: 1px solid var(--border); background: var(--dim); color: #fff; border-radius: 6px; padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
+.field textarea:focus { border-color: #8d252b; }

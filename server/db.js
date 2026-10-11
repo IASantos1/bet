@@ -338,6 +338,38 @@ CREATE TABLE IF NOT EXISTS affiliate_commissions (
 CREATE INDEX IF NOT EXISTS idx_aff_comm_affiliate ON affiliate_commissions(affiliate_user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_aff_comm_status ON affiliate_commissions(status, created_at);
 
+-- Telegram channel (telegram.js): the administrator's posts, one row per attempt (sent or failed).
+CREATE TABLE IF NOT EXISTS telegram_posts (
+  id          INTEGER PRIMARY KEY,
+  type        TEXT    NOT NULL,
+  title       TEXT    NOT NULL,
+  body        TEXT    NOT NULL,
+  cta_text    TEXT,
+  cta_url     TEXT,
+  status      TEXT    NOT NULL,
+  message_id  TEXT,
+  error       TEXT,
+  created_by  TEXT,
+  created_at  TEXT    NOT NULL,
+  sent_at     TEXT
+);
+-- The games posted automatically, followed until deleted: sent → live → finished → deleted
+-- (or failed, tried again later). One message per game.
+CREATE TABLE IF NOT EXISTS telegram_promos (
+  id          INTEGER PRIMARY KEY,
+  event_id    INTEGER NOT NULL,
+  tier        TEXT,
+  status      TEXT    NOT NULL,
+  message_id  TEXT,
+  error       TEXT,
+  signature   TEXT,
+  edited_at   TEXT,
+  finished_at TEXT,
+  delete_at   TEXT,
+  created_at  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_promos_status ON telegram_promos(status);
+
 -- Audit trail of the programme (append-only: the triggers refuse changes and deletions).
 CREATE TABLE IF NOT EXISTS affiliate_audit (
   id            INTEGER PRIMARY KEY,

@@ -133,7 +133,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -1646,6 +1646,47 @@ export function createApp(db, {
       importing = false;
       await pg?.end().catch(() => {});
     }
+  }));
+
+  // ---------- Telegram channel ----------
+
+  /** The bot's state, the admin's posts and the games posted automatically (newest first). */
+  admin.get('/telegram', (_req, res) => {
+    const promos = db.prepare(`SELECT p.*, e.home, e.away, e.competition, e.start_time FROM telegram_promos p LEFT JOIN events e ON e.id = p.event_id
+      ORDER BY p.id DESC LIMIT 50`).all();
+    res.json({
+      status: telegram ? telegram.status() : { enabled: false },
+      posts: db.prepare('SELECT * FROM telegram_posts ORDER BY id DESC LIMIT 50').all(),
+      promos: promos.map((p) => ({ id: p.id, eventId: p.event_id, game: p.home ? `${p.home} - ${p.away}` : `#${p.event_id}`, competition: p.competition, startTime: p.start_time,
+        tier: p.tier, status: p.status, error: p.error, createdAt: p.created_at })),
+    });
+  });
+
+  /** Publishes a post now: { type: custom | promotion | bet_ticket, title, body, ctaText?, ctaUrl? }. */
+  admin.post('/telegram/posts', wrap(async (req, res) => {
+    if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
+    const b = req.body || {};
+    const type = ['custom', 'promotion', 'bet_ticket'].includes(b.type) ? b.type : null;
+    const title = str(b.title, 200);
+    const body = str(b.body, 3500);
+    const ctaText = str(b.ctaText, 60);
+    const ctaUrl = str(b.ctaUrl, 500);
+    if (!type) throw new HttpError(400, 'Tipo inválido.');
+    if (!title || !body) throw new HttpError(400, 'Título e texto são obrigatórios.');
+    if (ctaText && !/^https:\/\//.test(ctaUrl)) throw new HttpError(400, 'O botão precisa de um link https://.');
+    const r = await telegram.publish({ type, title, body, ctaText, ctaUrl, by: req.user.email });
+    if (!r.ok) throw new HttpError(502, `Telegram: ${r.error}`);
+    res.status(201).json({ id: r.id, messageId: r.messageId });
+  }));
+
+  /** Automatic posts on / off, or the next game posted now (whatever the gap). */
+  admin.post('/telegram/auto', (req, res) => {
+    setSetting(db, 'telegram.auto', req.body?.on !== false);
+    res.json({ status: telegram ? telegram.status() : { enabled: false } });
+  });
+  admin.post('/telegram/promote', wrap(async (_req, res) => {
+    if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
+    res.json(await telegram.promoteNext({ force: true }));
   }));
 
   admin.post('/casino/test', wrap(async (_req, res) => {

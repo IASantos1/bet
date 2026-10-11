@@ -18,6 +18,7 @@ import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
+import { createTelegram } from './telegram.js';
 
 const db = openDb(config.dbPath);
 if (!config.dbPersistent) {
@@ -126,7 +127,12 @@ setInterval(promoJobs, 5 * 60_000).unref();
 const bigbang = createBigBang(db, { ...config.bigbang, log: (m) => console.warn(`[bigbang] ${m}`) });
 if (bigbang.enabled) console.log(`Casino BigBang: chave ${bigbang.sandbox ? 'sandbox (ek_test_)' : 'real'}`);
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang }).listen(config.port, () => {
+// Telegram channel: the admin's posts, and the big games posted and followed automatically.
+const telegram = createTelegram(db, { ...config.telegram, publicUrl: config.publicUrl, log: (m) => console.warn(`[telegram] ${m}`) });
+const stopTelegram = telegram.start();
+if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, publicação automática ${telegram.status().auto && config.telegram.production ? 'ligada' : 'desligada'}`);
+
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
@@ -138,6 +144,7 @@ const shutdown = () => {
   stopSettlement();
   stopPropline();
   stopWinhouse();
+  stopTelegram();
   liveSocket?.stop();
   server.close(() => {
     db.close();
