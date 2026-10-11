@@ -120,17 +120,16 @@ h1, h2, h3 { margin-top: 0; }
 .bet-footer { border-top: 1px solid var(--line); padding-top: 13px; }
 .bet-summary { display: flex; justify-content: space-between; margin: 8px 0; color: #9ca5b0; }
 .bet-summary strong { color: #fff; }
-.slip-boost { margin: 6px 0; padding: 6px 10px; border-radius: 8px; background: rgba(240, 180, 41, .08); border: 1px solid rgba(240, 180, 41, .25); }
-.slip-boost .bet-summary { margin: 2px 0; color: #f0c45a; }
-.slip-boost small { display: block; color: #c9b27a; font-size: 12px; line-height: 1.35; }
-.boost-steps { display: flex; gap: 4px; margin: 6px 0; }
-.boost-steps span { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 4px 0; border-radius: 6px; background: rgba(255, 255, 255, .06); border: 1px solid transparent; transition: background .25s, border-color .25s; }
-.boost-steps span b { font-size: 12px; color: #8f8670; }
-.boost-steps span em { font-style: normal; font-size: 10px; color: #7d8590; }
-.boost-steps span.next { border-color: rgba(240, 180, 41, .45); }
-.boost-steps span.on { background: linear-gradient(180deg, #f0b429, #d9861a); }
-.boost-steps span.on b, .boost-steps span.on em { color: #1a1206; }
-.slip-boost .bet-summary small.muted { font-size: 11px; }
+.slip-boost { margin: 10px 0; padding: 12px 14px 10px; border-radius: 10px; background: #252b33; border: 1px solid #333a43; }
+.boost-head { font-size: 13px; font-weight: 700; color: #d5dae0; margin-bottom: 8px; }
+.boost-scale { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #7d8590; }
+.boost-scale span.on { color: #f0b429; }
+.boost-scale.pct { margin-top: 4px; }
+.boost-line { position: relative; height: 6px; margin: 4px 0 0; border-radius: 3px; background: #161a1f; overflow: hidden; }
+.boost-line i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: linear-gradient(90deg, #f0b429, #ff7a18); transition: width .35s ease; }
+.boost-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 8px; border-top: 1px solid #333a43; font-size: 13px; color: #c3c9d0; }
+.boost-foot b { color: #fff; }
+.boost-foot b .gold { color: #f0b429; }
 .stake-label { display: block; color: #8e97a3; font-size: 11px; margin: 13px 0 8px; }
 .stake-input { display: flex; background: var(--row-hover); border: 1px solid var(--line); border-radius: 6px; margin-top: 5px; }
 .stake-input span { padding: 10px; color: #9ba3ad; }

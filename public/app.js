@@ -1795,7 +1795,8 @@ function slipTotals() {
   }
   if (fb && items.length === 1) return { stake, total: stake, odds: null, potential: net(Math.min(stake * items[0].odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
   const potential = items.reduce((a, s) => a + Math.min(stake * s.odds, state.config?.maxPayout ?? Infinity), 0);
-  return { stake, total: stake * items.length, odds: null, potential };
+  // One pick: the boost box already shows how many more make a boosted multiple.
+  return { stake, total: stake * items.length, odds: null, potential, boost: items.length === 1 && !fb ? multipleBoost(items) : null, boostAmount: 0 };
 }
 
 /**
@@ -1812,17 +1813,35 @@ function multipleBoost(items) {
   return { pct, count, minOdds: c.minOdds, max: c.maxBoost, next: nxt ? { n: nxt[0], pct: nxt[1], more: nxt[0] - count } : null };
 }
 
-/** The boost line of the slip: what this multiple gets, and how many picks the next step needs. */
+/**
+ * The boost box of the slip: "add N more events for X%", a line filling up with the picks (the
+ * picks each step needs above it, its % below) and the boost of this multiple.
+ */
 function renderBoost(t) {
   const el = $('#slipBoost');
-  const b = state.mode === 'multiple' && !state.builder ? t.boost : null;
-  el.classList.toggle('hidden', !b || (!b.pct && !b.next));
+  const b = !state.builder && (state.mode === 'multiple' || state.slip.length === 1) ? t.boost : null;
+  el.classList.toggle('hidden', !b);
   if (!b) return;
-  // The steps, lit once reached: how many picks each needs and the % it gives.
-  const bar = `<div class="boost-steps">${state.config.accaBoost.tiers.map(([n, p]) => `<span class="${b.count >= n ? 'on' : b.next?.n === n ? 'next' : ''}"><b>+${p}%</b><em>${n} sel.</em></span>`).join('')}</div>`;
-  const head = `<div class="bet-summary"><span>🚀 Boost de múltipla ${b.pct ? `<b>+${b.pct}%</b>` : ''} <small class="muted">· ${b.count} ${b.count === 1 ? 'seleção conta' : 'seleções contam'}</small></span>${b.pct ? `<strong class="gold">+${money(t.boostAmount)}</strong>` : ''}</div>`;
-  const next = b.next ? `<small>Mais ${b.next.more} ${b.next.more === 1 ? 'seleção' : 'seleções'} (odd ≥ ${fmtOdds(b.minOdds)}) e o boost passa a <b>+${b.next.pct}%</b>.</small>` : '<small>Boost máximo atingido! 🔥</small>';
-  el.innerHTML = head + bar + next;
+  const tiers = state.config.accaBoost.tiers;
+  const head = b.next
+    ? `Adicione mais ${b.next.more} ${b.next.more === 1 ? 'evento' : 'eventos'} para um bónus de ganho de ${b.next.pct}%`
+    : `Bónus máximo de ${b.pct}% atingido 🔥`;
+  el.innerHTML = `<div class="boost-head">${esc(head)}</div>
+    <div class="boost-scale">${tiers.map(([n]) => `<span class="${b.count >= n ? 'on' : ''}">${n}</span>`).join('')}</div>
+    <div class="boost-line"><i></i></div>
+    <div class="boost-scale pct">${tiers.map(([n, p]) => `<span class="${b.count >= n ? 'on' : ''}">${p}%</span>`).join('')}</div>
+    <div class="boost-foot"><span>Bónus</span><b><span class="gold">${b.pct}%</span> = ${money(t.boostAmount || 0)}</b></div>`;
+  // The line reaches each step's mark as its picks are added (the CSP refuses style="", the CSSOM is fine).
+  const last = tiers.length - 1;
+  const at = (i) => (last ? i / last : 1);
+  let fill = 0;
+  if (b.count >= tiers[last][0]) fill = 1;
+  else if (b.count < tiers[0][0]) fill = (b.count / tiers[0][0]) * 0.04;
+  else {
+    const i = tiers.findIndex(([n], k) => b.count >= n && b.count < tiers[k + 1][0]);
+    fill = at(i) + ((b.count - tiers[i][0]) / (tiers[i + 1][0] - tiers[i][0])) * (at(i + 1) - at(i));
+  }
+  $('.boost-line i', el).style.width = `${Math.max(fill, b.count ? 0.03 : 0) * 100}%`;
 }
 
 function renderBuilderSlip() {
