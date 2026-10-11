@@ -20,6 +20,8 @@ const API = 'https://api.telegram.org';
 export const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const fold = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** The same game listed twice (another id, another time): its teams, compared loosely. */
+const teamsKey = (home, away) => `${fold(home).replace(/[^a-z0-9]/g, '')}|${fold(away).replace(/[^a-z0-9]/g, '')}`;
 
 // ---------- which games are promoted (Bet62Novo's list) ----------
 
@@ -204,9 +206,13 @@ export function formatTicket(ev, prices, url) {
   const lines = [`⚽ <b>${escapeHtml(ev.home)} x ${escapeHtml(ev.away)}</b>`, `🏟️ <i>${escapeHtml(ev.competition)}</i>`, '', kickoff(ev.start_time)];
   const keyboard = [];
   const flag = (n) => (teamFlag(n) ? `${teamFlag(n)} ` : '');
-  const row1 = [['1', `${flag(ev.home)}${ev.home}`], ['X', 'Empate'], ['2', `${flag(ev.away)}${ev.away}`]]
-    .filter(([c]) => prices[`1x2|${c}`]).map(([c, label]) => ({ text: `${label} ${odd(prices[`1x2|${c}`])}`, url }));
-  if (row1.length) { lines.push('', '🏆 <b>RESULTADO FINAL</b>'); keyboard.push(row1); }
+  // Three buttons share a row: a team's name would cut the price off on a phone ("Modena…"), so
+  // the buttons say 1 / X / 2 and the text says who is who.
+  const row1 = ['1', 'X', '2'].filter((c) => prices[`1x2|${c}`]).map((c) => ({ text: `${c} · ${odd(prices[`1x2|${c}`])}`, url }));
+  if (row1.length) {
+    lines.push('', '🏆 <b>RESULTADO FINAL</b>', `1 = ${flag(ev.home)}${escapeHtml(ev.home)} · X = Empate · 2 = ${flag(ev.away)}${escapeHtml(ev.away)}`);
+    keyboard.push(row1);
+  }
   const row2 = [['Y', '✅ Sim'], ['N', '❌ Não']].filter(([c]) => prices[`btts|${c}`]).map(([c, label]) => ({ text: `${label} ${odd(prices[`btts|${c}`])}`, url }));
   if (row2.length) { lines.push('', '⚽ <b>AMBAS MARCAM</b>'); keyboard.push(row2); }
   keyboard.push([{ text: '🔥 APOSTAR AGORA', url }]);
@@ -328,6 +334,23 @@ export function createTelegram(db, {
     .all(id).map((s) => [`${s.market}|${s.code}`, s.odds_x100]));
   const autoOn = () => auto && getSetting(db, 'telegram.auto', true) !== false;
 
+  // Games listed twice by the feed (another id, another start time): the copy already in play or
+  // over, within 12 h of this one, is the real one.
+  const nearGames = db.prepare(`SELECT id, home, away, status, home_score, away_score, clock, competition, start_time FROM events
+    WHERE sport = 'futebol' AND id != ? AND start_time BETWEEN ? AND ?`);
+  function twinsOf(ev) {
+    const t = new Date(ev.start_time).getTime();
+    const key = teamsKey(ev.home, ev.away);
+    return nearGames.all(ev.id, new Date(t - 12 * 3_600_000).toISOString(), new Date(t + 12 * 3_600_000).toISOString())
+      .filter((r) => teamsKey(r.home, r.away) === key);
+  }
+  /** A game whose copy is already in play / over, or already posted, is not posted again. */
+  function alreadyCovered(ev) {
+    const twins = twinsOf(ev);
+    return twins.some((r) => r.status === 'live' || r.status === 'finished')
+      || twins.some((r) => db.prepare("SELECT 1 FROM telegram_promos WHERE event_id = ? AND status != 'failed'").get(r.id));
+  }
+
   /**
    * One automatic post at most: when the last one is `gapMinutes` old, the promoted game starting
    * soonest (within 24 h) that was never posted, with its 1X2 open.
@@ -345,7 +368,7 @@ export function createTelegram(db, {
       ORDER BY e.start_time, e.id`).all(new Date(now).toISOString(), new Date(now + 24 * 3_600_000).toISOString());
     let ev = null;
     let tier = null;
-    for (const r of rows) { if ((tier = promoTier(r.competition, r.home, r.away))) { ev = r; break; } }
+    for (const r of rows) { if ((tier = promoTier(r.competition, r.home, r.away)) && !alreadyCovered(r)) { ev = r; break; } }
     if (!ev) return { action: 'skipped', reason: 'no_candidates' };
     const prices = pricesOf(ev.id);
     if (!prices['1x2|1'] || !prices['1x2|2']) return { action: 'skipped', reason: 'no_candidates' };
@@ -367,10 +390,15 @@ export function createTelegram(db, {
       db.prepare("UPDATE telegram_promos SET status = 'deleted' WHERE id = ?").run(p.id);
       out.deleted += 1;
     }
-    const active = db.prepare(`SELECT p.*, e.home, e.away, e.competition, e.status AS ev_status, e.home_score, e.away_score, e.clock
+    const active = db.prepare(`SELECT p.*, e.home, e.away, e.competition, e.start_time, e.status AS ev_status, e.home_score, e.away_score, e.clock
       FROM telegram_promos p LEFT JOIN events e ON e.id = p.event_id WHERE p.status IN ('sent', 'live')`).all();
     for (const p of active) {
       if (!p.message_id) continue;
+      // The posted row still waits while its copy (listed again by the feed) is played: follow the copy.
+      if (p.ev_status === 'scheduled') {
+        const twin = twinsOf({ id: p.event_id, home: p.home, away: p.away, start_time: p.start_time }).find((r) => r.status === 'live' || r.status === 'finished');
+        if (twin) Object.assign(p, { ev_status: twin.status, home_score: twin.home_score, away_score: twin.away_score, clock: twin.clock });
+      }
       const ev = { home: p.home, away: p.away, competition: p.competition, status: p.ev_status, home_score: p.home_score, away_score: p.away_score, clock: p.clock };
       if (!p.ev_status || p.ev_status === 'finished' || p.ev_status === 'cancelled') {
         if (!p.ev_status || (await edit(p.message_id, formatFinished(ev), { removeKeyboard: true })).ok) {
@@ -408,7 +436,8 @@ export function createTelegram(db, {
         WHERE e.sport = 'futebol' AND e.status = 'scheduled' AND e.start_time > ? AND e.start_time <= ?
           AND s.market = '1x2' AND s.code IN ('1', '2') AND s.active = 1 AND s.odds_x100 BETWEEN ? AND ?`)
       .all(new Date(now + 30 * 60_000).toISOString(), new Date(now + c.hours * 3_600_000).toISOString(), Math.round(c.minOdds * 100), Math.round(c.maxOdds * 100))
-      .filter((r) => !used.has(r.event_id) && !EXCLUDED.test(`${r.competition} ${r.home} ${r.away}`) && !PLAYER_PROP.test(r.competition));
+      .filter((r) => !used.has(r.event_id) && !EXCLUDED.test(`${r.competition} ${r.home} ${r.away}`) && !PLAYER_PROP.test(r.competition)
+        && !twinsOf({ id: r.event_id, home: r.home, away: r.away, start_time: r.start_time }).some((t) => t.status === 'live' || t.status === 'finished'));
     // One pick per game (its favourite), the promoted leagues first, at random within each group.
     const best = new Map();
     for (const r of rows) if (!best.has(r.event_id) || r.odds_x100 < best.get(r.event_id).odds_x100) best.set(r.event_id, r);
