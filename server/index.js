@@ -96,6 +96,7 @@ const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`
 const settlement = createSettlementEngine(db, {
   postponedVoidHours: config.settlement.postponedVoidHours,
   noResultVoidHours: config.settlement.noResultVoidHours,
+  specialVoidHours: config.settlement.specialVoidHours,
   log: (msg) => console.log(`[liquidação] ${msg}`),
 });
 const stopSettlement = settlement.start();

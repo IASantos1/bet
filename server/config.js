@@ -205,6 +205,8 @@ export const config = {
     // A bet leg still open this long after its game's start (no result came, or nobody decided an
     // operator market) is voided: the stake goes back instead of the ticket staying open forever.
     noResultVoidHours: Math.max(12, int(env.NO_RESULT_VOID_HOURS, 72)),
+    // Provider markets ('x') that cannot be read automatically: voided this long after the match ended.
+    specialVoidHours: Math.max(1, int(env.SPECIAL_VOID_HOURS, 2)),
   },
 
   // In-play bets on feed matches are refused when the last live price is older than this.
