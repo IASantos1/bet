@@ -924,3 +924,20 @@ test('red cards of the matches in play: read from each game\'s tracker, shown on
   await t.feed.readCards({ now: Date.now() + 61_000 });
   assert.deepEqual([t.row(50).red_home, t.row(50).red_away], [2, 1]);
 });
+
+test('tennis in play: every game\'s point and sets read from its tracker, for the event cards', async () => {
+  const odd = '975315002|1.31|1|1016|Vencedor do jogo [Match_Winner],975316091|3.44|2|1016|Vencedor do jogo [Match_Winner]';
+  const tennis = (id, home) => ({ id, sport_id: 5, league: 'ATP. Tokyo', name: `${home} - B`, home_team: home, away_team: 'B', ...when(-3_600_000), odd, result: '1-0', current_minute: '' });
+  const lists = { live: [tennis(60, 'A'), tennis(61, 'C')],
+    trackers: { 60: { sc: { T: [1, 0], S1: [6, 4], S2: [2, 3], POINTS: ['30', '40'] } }, 61: { sc: { T: [1, 0], S1: [6, 2], S2: [0, 0], POINTS: ['AD', '40'] } } } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  assert.deepEqual(await t.feed.readTennis(), { asked: 2, updated: 2 });
+  const d = JSON.parse(t.row(60).live_detail);
+  assert.deepEqual([d.point, d.sets, d.set], ['30-40', [[6, 4], [2, 3]], 2]);
+  assert.equal(JSON.parse(t.row(61).live_detail).point, 'A-40');
+  assert.deepEqual(await t.feed.readTennis(), { asked: 0, updated: 0 }); // each game every 10 s
+  lists.trackers[60].sc.POINTS = ['40', '40'];
+  assert.deepEqual(await t.feed.readTennis({ now: Date.now() + 11_000 }), { asked: 2, updated: 1 });
+  assert.equal(JSON.parse(t.row(60).live_detail).point, '40-40');
+});
