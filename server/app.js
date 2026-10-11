@@ -1721,6 +1721,13 @@ export function createApp(db, {
     res.json(await telegram.promoteNext({ force: true }));
   }));
 
+  /** Games hidden from the casino: names or ids, one per line (or comma-separated). */
+  admin.post('/casino/hidden', (req, res) => {
+    const list = [...new Set(String(req.body?.hidden || '').split(/[\n,;]+/).map((x) => x.trim().slice(0, 120)).filter(Boolean))].slice(0, 500);
+    setSetting(db, 'casino.hidden', list);
+    res.json({ hidden: list });
+  });
+
   admin.post('/casino/test', wrap(async (_req, res) => {
     if (bb) return res.json({ steps: (await bb.diagnose()).steps });
     if (!casino) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Casino não inicializado.' }] });
@@ -1735,7 +1742,7 @@ export function createApp(db, {
       return res.json({
         bigbang: true, enabled: true, sandbox: bb.sandbox, games: all.games.length, providers: all.providers.length, error: all.error,
         bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
-        callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(),
+        callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
       });
     }
     if (!casinoOn()) {

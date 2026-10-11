@@ -30,6 +30,8 @@ export function signMove(p, key) {
 }
 
 const TYPE_LABEL = { slot: 'Slots', live: 'Ao Vivo', crash: 'Crash' };
+/** Hidden until the operator changes the list (admin → Casino). */
+export const HIDDEN_DEFAULT = ['Berry Berry Bonanza', 'Divine 9'];
 /**
  * Games known as hits across the market (first = most popular), for the "Populares" order before
  * Bet62 has its own numbers; the rounds played here in the last 30 days weigh far more.
@@ -163,8 +165,17 @@ export function createBigBang(db, {
         catalog.at = Date.now() - ttl + 60_000; // try again in a minute
       }
     }
-    return { enabled: true, games: catalog.games, providers: catalog.providers, error: catalog.games.length ? null : lastError };
+    const h = hidden();
+    const list = h.size ? catalog.games.filter((g) => shown(g, h)) : catalog.games;
+    return { enabled: true, games: list, providers: catalog.providers, error: catalog.games.length ? null : lastError };
   }
+
+  /** Games the operator hides from the casino (setting casino.hidden: ids or names). */
+  function hidden() {
+    const list = getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [];
+    return new Set(list.map((x) => (/^\d+$/.test(String(x).trim()) ? `#${String(x).trim()}` : nameKey(x))).filter((k) => k && k !== '#'));
+  }
+  const shown = (g, h) => !h.has(`#${g.id}`) && !h.has(nameKey(g.name));
 
   // Rounds played per game here in the last 30 days (refreshed every 10 minutes).
   let plays = { at: 0, map: new Map() };
@@ -259,13 +270,15 @@ export function createBigBang(db, {
 
   async function game(id) {
     await games();
-    return catalog.byId.get(Number(id)) || null;
+    const g = catalog.byId.get(Number(id));
+    return g && shown(g, hidden()) ? g : null;
   }
 
   /** Games of the same provider (the detail page's "Do mesmo estilo"). */
   async function related(g, n = 12) {
     await games();
-    const same = catalog.games.filter((x) => x.providerId === g.providerId && x.id !== g.id && x.category === g.category);
+    const h = hidden();
+    const same = catalog.games.filter((x) => x.providerId === g.providerId && x.id !== g.id && x.category === g.category && shown(x, h));
     return byPopularity(same).slice(0, n);
   }
 
@@ -382,5 +395,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync };
+  return { enabled, sandbox, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
