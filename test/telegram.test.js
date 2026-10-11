@@ -50,7 +50,8 @@ test('telegram: one game at a time, the soonest first; buttons open the game her
   assert.equal(sent.body.chat_id, '@bet62');
   assert.match(sent.body.text, /Arsenal x Chelsea/);
   assert.deepEqual(sent.body.reply_markup.inline_keyboard.map((row) => row.map((b) => b.text)),
-    [['Arsenal 2.10', 'Empate 3.30', 'Chelsea 3.40'], ['✅ Sim 1.75', '❌ Não 2.00'], ['🔥 APOSTAR AGORA']]);
+    [['1 · 2.10', 'X · 3.30', '2 · 3.40'], ['✅ Sim 1.75', '❌ Não 2.00'], ['🔥 APOSTAR AGORA']]);
+  assert.match(sent.body.text, /1 = Arsenal · X = Empate · 2 = Chelsea/);
   assert.equal(sent.body.reply_markup.inline_keyboard[0][0].url, `https://bet62.plus/#/jogo/${soon}`);
   // The next one waits for the gap; forced from the admin it goes now.
   assert.deepEqual(await tg.promoteNext(), { action: 'skipped', reason: 'too_soon' });
@@ -141,4 +142,20 @@ test('suggested tickets: posted once per configured time, and a won ticket shows
   db.prepare("UPDATE events SET status = 'finished', result = '1' WHERE id IN (?, ?)").run(x, y);
   await tg.followTickets();
   assert.match(calls.at(-1).body.text, /BILHETE GANHO!<\/b> 48,00 €/);  // 20 € × 1.50 × 1.60
+});
+
+test('telegram: a game listed twice (another id, another time) is not posted again, and the post follows the copy in play', async () => {
+  const { db, tg, calls, event } = setup();
+  const posted = event('Italy. Serie B', 'Modena', 'Hellas Verona', 0.6);
+  await tg.promoteNext();
+  // The feed lists it again, 1 h later, while the first row goes on as scheduled and the copy plays.
+  const copy = event('Italy. Serie B', 'MODENA', 'Hellas Verona', 1.6);
+  assert.equal((await tg.promoteNext({ force: true })).reason, 'no_candidates'); // already posted under the other id
+  db.prepare("UPDATE events SET status = 'live', home_score = 1, away_score = 0, clock = ? WHERE id = ?").run("22'", copy);
+  assert.equal((await tg.followGames()).edited, 1);
+  assert.match(calls.at(-1).body.text, /AO VIVO[\s\S]*22'[\s\S]*1 - 0/);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 2, away_score = 0 WHERE id = ?").run(copy);
+  assert.equal((await tg.followGames()).finished, 1);
+  assert.match(calls.at(-1).body.text, /Modena 2 x 0 Hellas Verona/);
+  void posted;
 });
