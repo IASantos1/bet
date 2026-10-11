@@ -616,6 +616,27 @@ function addAcca(i) {
   toast('Adicionado ao boletim', `Múltipla de ${a.legs.length} seleções`);
 }
 
+/**
+ * A ticket shared from the Telegram channel (#/bilhete/12-34-56): its picks go into the slip at
+ * the current prices (a closed one, or a game already started, is left out), then the sports page.
+ */
+async function openSharedTicket(ids) {
+  location.replace('#/desporto');
+  try {
+    const { legs, missing } = await api(`/api/slip-legs?ids=${encodeURIComponent(ids)}`);
+    if (!legs.length) { toast('Bilhete', 'Os jogos deste bilhete já começaram ou as odds fecharam.'); return; }
+    state.builder = null;
+    const events = new Set(legs.map((l) => l.eventId));
+    state.slip = state.slip.filter((s) => !events.has(s.eventId));
+    for (const l of legs) {
+      state.slip.push({ selectionId: l.selectionId, eventId: l.eventId, market: l.market, marketName: l.marketName, code: l.code, label: l.label, odds: l.odds, match: `${l.home} vs ${l.away}`, competition: l.competition });
+    }
+    state.mode = state.slip.length >= 2 ? 'multiple' : 'single';
+    saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
+    toast('Bilhete adicionado ao boletim', missing ? `${legs.length} seleções (${missing} já não disponível)` : `${legs.length} seleções`);
+  } catch (err) { toast('Bilhete', err.message, 'error'); }
+}
+
 // A leg the others make certain (double chance covering the result) counts as 1.00, as on the server.
 const impliedLeg = (l, legs) => l.market === 'dc' && legs.some((r) => r.market === '1x2' && String(l.code).includes(r.code));
 const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * (impliedLeg(l, b.legs) ? 1 : l.odds), 1) * (state.config?.builderFactor ?? 1) * 100) / 100;
@@ -1984,6 +2005,7 @@ function currentRoute() {
 
 function render({ keepScroll = false } = {}) {
   const { page, sub, rest } = currentRoute();
+  if (page === 'bilhete') { openSharedTicket(sub); return; }
   const pages = {
     home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: () => (sub === 'jogo' && rest ? casinoGamePage(Number(rest)) : casinoPage()),
     promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub), apostas: myBetsPage,
