@@ -212,6 +212,10 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     assert.equal(u.balance, '20.00');
     const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
     assert.equal((await res.json()).balance, '5.00'); // 10 spins × €0.20 + €3 won
+    // The previous platform's callback paths answer the same.
+    assert.equal((await (await fetch(`${base}/api/casino/bigbang/user-data?username=b62_${uid}`)).json()).balance, '20.00');
+    const res2 = await fetch(`${base}/api/casino/bigbang/balance-change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 0, 'cb2', { game_id: 4822 })) });
+    assert.equal((await res2.json()).balance, '5.00');
     // The player ends the free spins: the €3 won is paid.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
     assert.equal(claim.body.paid, 3);

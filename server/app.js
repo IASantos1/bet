@@ -1055,13 +1055,15 @@ export function createApp(db, {
 
   // BigBang seamless wallet: the provider reads the balance and sends each bet / win (server to
   // server, signed with our API key; checked in bigbang.js). Configure both URLs on the key in
-  // BigBang's dashboard: <site>/api/casino/bb/user and <site>/api/casino/bb/balance.
-  app.get('/api/casino/bb/user', (req, res) => {
+  // BigBang's dashboard: <site>/api/casino/bb/user and <site>/api/casino/bb/balance. The previous
+  // platform's paths (/api/casino/bigbang/user-data, /balance-change) answer too: a key whose URLs
+  // still name them keeps working once its domain points here.
+  app.get(['/api/casino/bb/user', '/api/casino/bigbang/user-data'], (req, res) => {
     if (!bigbang?.enabled) return res.status(503).json({ error: 'casino disabled' });
     const r = bigbang.walletUser(str(req.query.username, 80));
     res.status(r.status).json(r.body);
   });
-  app.post('/api/casino/bb/balance', (req, res) => {
+  app.post(['/api/casino/bb/balance', '/api/casino/bigbang/balance-change'], (req, res) => {
     if (!bigbang?.enabled) return res.status(503).json({ error: 'casino disabled' });
     const r = bigbang.walletChange(req.body);
     if (r.status !== 200) console.warn(`bigbang balance_change ${req.body?.transaction_id}: ${r.body.error}`);
