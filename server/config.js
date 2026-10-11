@@ -237,6 +237,19 @@ export const config = {
     listPath: unquote(env.RAPIDAPI_STREAM_LIST_PATH),
     streamPath: unquote(env.RAPIDAPI_STREAM_PATH),
   },
+  // Telegram channel (telegram.js): the bot (@BotFather) and the channel it posts to, as an
+  // administrator. Automatic posts only in Railway's production environment (a PR preview has the
+  // same variables); TELEGRAM_AUTO=0 turns them off. Minutes between automatic posts, how long a
+  // finished game's message stays, seconds between edits of a game in play.
+  telegram: {
+    token: unquote(env.TELEGRAM_BOT_TOKEN),
+    channel: unquote(env.TELEGRAM_CHANNEL_ID),
+    auto: env.TELEGRAM_AUTO !== '0' && String(env.TELEGRAM_AUTO || '').toLowerCase() !== 'false',
+    production: !env.RAILWAY_ENVIRONMENT_NAME || String(env.RAILWAY_ENVIRONMENT_NAME).trim().toLowerCase() === 'production',
+    gapMinutes: Math.max(1, int(env.TELEGRAM_GAP_MINUTES, 10)),
+    deleteMinutes: Math.max(1, int(env.TELEGRAM_DELETE_MINUTES, 10)),
+    editSeconds: Math.max(5, int(env.TELEGRAM_EDIT_SECONDS, 30)),
+  },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).

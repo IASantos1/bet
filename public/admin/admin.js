@@ -21,6 +21,7 @@ const TABS = [
   { id: 'utilizadores', label: 'Utilizadores', icon: '👥', section: 'Operações' },
   { id: 'promocoes', label: 'Promoções', icon: '🎁', section: 'Operações' },
   { id: 'afiliados', label: 'Afiliados', icon: '🤝', section: 'Operações' },
+  { id: 'telegram', label: 'Telegram', icon: '📣', section: 'Operações' },
   { id: 'novo', label: 'Novo evento', icon: '➕', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: '📡', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: '🎰', section: 'Avançado' },
@@ -280,6 +281,43 @@ function novoPanel() {
       <button class="danger-btn btn-sm" data-action="novo-import" data-dry="0">Importar agora</button></div>${out}</div>`;
 }
 
+/** Telegram channel: the bot's state, a post to publish, the history and the games posted automatically. */
+const TG_TYPE = { custom: 'Publicação', promotion: '🎁 Promoção', bet_ticket: '🎟️ Bilhete' };
+const TG_PROMO = { sent: ['open', 'Pré-jogo'], live: ['won', 'Ao vivo'], finished: ['void', 'Finalizado'], deleted: ['void', 'Apagado'], failed: ['lost', 'Falhou'] };
+const TG_REASON = { too_soon: 'à espera do intervalo entre publicações', no_candidates: 'nenhum jogo das ligas escolhidas nas próximas 24 h', auto_off: 'publicação automática desligada', no_public_url: 'falta PUBLIC_URL (o endereço do site, para os botões)', telegram_not_configured: 'Telegram não configurado' };
+function adminTelegram({ status: st, posts = [], promos = [] }) {
+  if (!st.enabled) {
+    return `<div class="panel"><h3>Telegram</h3><p class="muted">Não configurado. No Railway, defina <b>TELEGRAM_BOT_TOKEN</b> (o bot criado no @BotFather)
+      e <b>TELEGRAM_CHANNEL_ID</b> (@canal ou o id -100… de um canal privado). O bot tem de ser administrador do canal, com permissão para publicar.</p></div>`;
+  }
+  const last = st.lastTick?.result;
+  const lastText = st.lastTick ? (st.lastTick.error ? `erro: ${st.lastTick.error}` : last?.action === 'posted' ? `publicou o jogo #${last.eventId} (${last.status === 'sent' ? 'enviado' : `falhou: ${last.error || ''}`})` : TG_REASON[last?.reason] || last?.reason || '—') : 'ainda não correu';
+  return `<div class="panel"><h3>Canal ${esc(st.channel)}</h3>
+    <p class="muted">Publicação automática: um jogo de futebol das ligas principais de cada vez (no mínimo ${st.gapMinutes} min entre jogos), com as odds 1X2 e Ambas marcam em botões que abrem o jogo no site.
+      A mesma mensagem passa a <b>AO VIVO</b> com o resultado, a <b>FINALIZADO</b> no fim, e é apagada ${st.deleteMinutes} min depois.</p>
+    ${st.production ? '' : '<p class="muted">⚠️ Este não é o ambiente de produção do Railway: a publicação automática não corre aqui.</p>'}
+    <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="tg-auto"${st.auto ? ' checked' : ''}> Publicação automática</label>
+      <button class="ghost-btn btn-sm" data-action="tg-promote">Publicar o próximo jogo agora</button></div>
+    <p class="muted">Última verificação: ${esc(lastText)}${st.lastTick ? ` (${fmtDateTime(st.lastTick.at)})` : ''}</p></div>
+  <form class="panel" data-form="tg-post"><h3>Nova publicação</h3>
+    <div class="form-grid">
+      <div class="field"><label>Tipo</label><select name="type">${Object.entries(TG_TYPE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field"><label>Título</label><input name="title" required maxlength="200"></div>
+      <div class="field wide"><label>Texto</label><textarea name="body" required rows="5" maxlength="3500"></textarea></div>
+      <div class="field"><label>Botão (opcional)</label><input name="ctaText" maxlength="60" placeholder="APOSTAR AGORA"></div>
+      <div class="field"><label>Link do botão</label><input name="ctaUrl" type="url" placeholder="https://…"></div>
+    </div>
+    <div class="form-actions"><button class="primary-btn">Publicar no Telegram</button></div></form>
+  <div class="panel"><h3>Jogos publicados automaticamente</h3>${promos.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Competição</th><th>Início</th><th>Estado</th><th>Publicado</th></tr></thead><tbody>
+    ${promos.map((p) => `<tr><td>${esc(p.game)}</td><td>${esc(p.competition || '')}${p.tier ? ` <small class="muted">(${esc(p.tier)})</small>` : ''}</td><td>${fmtDateTime(p.startTime)}</td>
+      <td><span class="pill ${(TG_PROMO[p.status] || ['void'])[0]}">${(TG_PROMO[p.status] || [0, p.status])[1]}</span>${p.error ? `<br><small class="muted">${esc(p.error)}</small>` : ''}</td><td>${fmtDateTime(p.createdAt)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda nenhum.</p>'}</div>
+  <div class="panel"><h3>Publicações</h3>${posts.length ? `<div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Título</th><th>Por</th><th>Estado</th><th>Data</th></tr></thead><tbody>
+    ${posts.map((p) => `<tr><td>${TG_TYPE[p.type] || esc(p.type)}</td><td>${esc(p.title)}</td><td>${esc(p.created_by || '')}</td>
+      <td><span class="pill ${p.status === 'sent' ? 'won' : 'lost'}">${p.status === 'sent' ? 'Enviada' : 'Falhou'}</span>${p.error ? `<br><small class="muted">${esc(p.error)}</small>` : ''}</td><td>${fmtDateTime(p.created_at)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda nenhuma.</p>'}</div>`;
+}
+
 /** Players whose identity documents wait for validation (top of the players tab). */
 function kycPendingPanel(list = []) {
   if (!list.length) return '<div class="panel"><h3>Verificações KYC pendentes</h3><p class="muted">Nenhum documento à espera de validação.</p></div>';
@@ -461,6 +499,7 @@ async function loadTab() {
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
+    else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
     else if (tab === 'afiliados') {
       const [a, c, l] = await Promise.all([api(`/api/admin/affiliates?q=${encodeURIComponent(state.affQ || '')}`), api('/api/admin/affiliates/commissions'), api('/api/admin/affiliates/audit')]);
       main.innerHTML = adminAffiliates(a, c, l);
@@ -887,6 +926,12 @@ const handlers = {
     }
     loadTab();
   },
+  async 'tg-post'(form) {
+    const d = formData(form);
+    await api('/api/admin/telegram/posts', { method: 'POST', body: { type: d.type, title: d.title, body: d.body, ctaText: d.ctaText, ctaUrl: d.ctaUrl } });
+    toast('Publicado no Telegram');
+    loadTab();
+  },
   async 'admin-new'(form) {
     const d = formData(form);
     await api('/api/admin/events', {
@@ -1218,6 +1263,20 @@ document.addEventListener('click', async (e) => {
     try {
       await api('/api/admin/feed/sync', { method: 'POST', body: {} });
       toast('Sincronização concluída');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'tg-auto') {
+    try {
+      await api('/api/admin/telegram/auto', { method: 'POST', body: { on: actionEl.checked } });
+      toast(actionEl.checked ? 'Publicação automática ligada' : 'Publicação automática desligada');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'tg-promote') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/telegram/promote', { method: 'POST', body: {} });
+      if (r.action === 'posted') toast(r.status === 'sent' ? 'Jogo publicado' : 'Falhou', r.error || '', r.status === 'sent' ? undefined : 'error');
+      else toast('Nada publicado', TG_REASON[r.reason] || r.reason);
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
   } else if (action === 'novo-import') {
