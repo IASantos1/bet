@@ -1826,11 +1826,11 @@ function renderBoost(t) {
   const head = b.next
     ? `Adicione mais ${b.next.more} ${b.next.more === 1 ? 'evento' : 'eventos'} para um bónus de ganho de ${b.next.pct}%`
     : `Bónus máximo de ${b.pct}% atingido 🔥`;
-  el.innerHTML = `<div class="boost-head">${esc(head)}</div>
+  el.innerHTML = `<div class="boost-head">🚀 ${esc(head)}</div>
     <div class="boost-scale">${tiers.map(([n]) => `<span class="${b.count >= n ? 'on' : ''}">${n}</span>`).join('')}</div>
     <div class="boost-line"><i></i></div>
     <div class="boost-scale pct">${tiers.map(([n, p]) => `<span class="${b.count >= n ? 'on' : ''}">${p}%</span>`).join('')}</div>
-    <div class="boost-foot"><span>Bónus</span><b><span class="gold">${b.pct}%</span> = ${money(t.boostAmount || 0)}</b></div>`;
+    <div class="boost-foot"><span>🚀 Boost de múltipla</span><b><span class="boost-pct">${b.pct}%</span> = ${money(t.boostAmount || 0)}</b></div>`;
   // The line reaches each step's mark as its picks are added (the CSP refuses style="", the CSSOM is fine).
   const last = tiers.length - 1;
   const at = (i) => (last ? i / last : 1);
