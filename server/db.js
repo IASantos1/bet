@@ -466,6 +466,10 @@ function migrate(db) {
 
   // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
   const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
+  // Multiple boost (promotions.js accaBoost): the % promised when placed, and what it paid.
+  for (const [c, type] of [['boost_pct', 'INTEGER NOT NULL DEFAULT 0'], ['boost_cents', 'INTEGER NOT NULL DEFAULT 0']]) {
+    if (!manualCols.has(c)) db.exec(`ALTER TABLE bets ADD COLUMN ${c} ${type}`);
+  }
   for (const [c, type] of [['manual_by', 'INTEGER'], ['manual_at', 'TEXT'], ['manual_note', 'TEXT']]) {
     if (!manualCols.has(c)) db.exec(`ALTER TABLE bets ADD COLUMN ${c} ${type}`);
   }

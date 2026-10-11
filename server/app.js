@@ -17,7 +17,7 @@ import {
 } from './security.js';
 import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
-  promoConfig, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
+  promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
   casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet,
 } from './promotions.js';
@@ -373,6 +373,8 @@ export function createApp(db, {
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents), instantWithdraw: cents(limits.instantWithdrawCents),
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
+      // The multiple boost the slip shows (null while the campaign is off).
+      accaBoost: (() => { const c = promoConfig(db).accaBoost; return campaignOpen(c) ? { tiers: c.tiers, minOdds: c.minOdds, maxBoost: c.maxBoost } : null; })(),
       supportEmail: config.supportEmail || undefined, supportPhone: config.supportPhone || undefined,
       sports: SPORTS, version: APP_VERSION,
       // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.
@@ -1052,6 +1054,7 @@ export function createApp(db, {
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
       freebet: cents(b.freebet_stake_cents || 0), bonusStake: cents(b.bonus_stake_cents || 0), protected: !!b.protected,
       ref: `BT62-${String(b.id).padStart(6, '0')}`, manual: b.manual_at ? { at: b.manual_at, note: b.manual_note } : null,
+      boostPct: b.boost_pct || 0, boost: cents(b.boost_cents || 0),
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
         id: l.id, match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,

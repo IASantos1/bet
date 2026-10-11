@@ -3,7 +3,8 @@ import { nowIso } from './db.js';
 import { HttpError } from './security.js';
 import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
-import { fundBet, protects, settleFunds } from './promotions.js';
+import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
+import { postTransaction } from './wallet.js';
 import { checkBet } from './limits.js';
 
 export { resultCode };
@@ -114,6 +115,11 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null 
     const fund = fundBet(db, user, { betId, stakeCents, totalOdds, freebetId, label });
     const isProtected = !freebetId && protects(db, user, { realCents: fund.real, stakeCents, totalOdds });
     setFunding.run(fund.real, fund.bonus, fund.freebet, fund.bonusId, fund.freebetId, isProtected ? 1 : 0, betId);
+    // Multiple boost: real-money multiples only (not a free bet, not bonus money).
+    if (mode === 'multiple' && !fund.freebet && !fund.bonus) {
+      const pct = boostPct(db, prices, now);
+      if (pct) db.prepare('UPDATE bets SET boost_pct = ? WHERE id = ?').run(pct, betId);
+    }
     betIds.push(betId);
   }
   return betIds;
@@ -155,7 +161,24 @@ export function settleBet(db, betId) {
   const paid = bet.freebet_stake_cents ? Math.max(0, payoutCents - bet.freebet_stake_cents) : payoutCents;
   db.prepare("UPDATE bets SET status = 'won', payout_cents = ?, settled_at = ? WHERE id = ?").run(paid, now, betId);
   settleFunds(db, bet, 'won', payoutCents);
-  return paid;
+  return paid + payBoost(db, bet, won, payoutCents);
+}
+
+/**
+ * The multiple boost on a won bet: its % on the winnings (payout less stake), at most what was
+ * promised when placed and what the selections still count (a void one drops out), capped at
+ * maxBoost €. Paid in real money. Returns the amount.
+ */
+function payBoost(db, bet, won, payoutCents) {
+  if (!bet.boost_pct) return 0;
+  const c = promoConfig(db).accaBoost;
+  const pct = Math.min(bet.boost_pct, boostFor(c, won.filter((l) => l.odds_x100 >= Math.round(c.minOdds * 100)).length));
+  const amount = Math.min(Math.floor(((payoutCents - bet.stake_cents) * pct) / 100), Math.round(c.maxBoost * 100));
+  if (amount <= 0) return 0;
+  postTransaction(db, bet.user_id, amount, 'payout', `Boost de múltipla +${pct}% (aposta #${bet.id})`, `boost:${bet.id}`);
+  db.prepare('UPDATE bets SET boost_cents = ?, payout_cents = payout_cents + ?, real_payout_cents = COALESCE(real_payout_cents, 0) + ? WHERE id = ?')
+    .run(amount, amount, amount, bet.id);
+  return amount;
 }
 
 /**

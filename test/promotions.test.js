@@ -273,7 +273,7 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     assert.equal(d.body.user.balance, 40);
     const mine = await call('GET', '/api/promotions');
     assert.equal(mine.body.mine.active[0].rolloverTarget, 400);
-    assert.equal(mine.body.campaigns.length, 5);
+    assert.equal(mine.body.campaigns.length, 6);
     // Withdrawal: asked first (409), then the bonus is cancelled and the real money withdrawn.
     // (Identity verified and a bet won since the deposit: the withdrawal rules are met.)
     const rui = db.prepare("SELECT id FROM users WHERE email = 'rui@example.com'").get().id;
@@ -308,4 +308,42 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     server.close();
     db.close();
   }
+});
+
+test('multiple boost: % by selections (4 → 5%, 8 → 10%…), on the winnings, real money only; a void leg drops out', () => {
+  const db = setup();
+  const u = player(db);
+  deposit(db, u, 100, { optIn: false });
+  const multi = (n, odds = 150) => {
+    const ms = Array.from({ length: n }, () => match(db, odds));
+    const [id] = tx(db, () => placeBets(db, user(db, u), { mode: 'multiple', stakeCents: 1000, picks: ms.map((m) => ({ selectionId: m.home, odds: odds / 100 })) }));
+    return { id, ms, row: () => db.prepare('SELECT * FROM bets WHERE id = ?').get(id) };
+  };
+  assert.equal(multi(3).row().boost_pct, 0);                 // below the first tier
+  assert.equal(multi(4).row().boost_pct, 5);
+  assert.equal(multi(8).row().boost_pct, 10);
+  assert.equal(multi(4, 110).row().boost_pct, 0);            // selections under the minimum odds do not count
+  // A won 4-fold at 1.50: €10 → €50.62 (odds 5.0625); boost 5% of the €40.62 winnings = €2.03.
+  const w = multi(4);
+  const before = balance(db, u);
+  for (const m of w.ms) finish(db, m, 1, 0);
+  const r = w.row();
+  assert.equal(r.status, 'won');
+  assert.equal(r.boost_cents, 203);
+  assert.equal(r.payout_cents, 5062 + 203);
+  assert.equal(balance(db, u) - before, 5062 + 203);
+  assert.ok(db.prepare("SELECT 1 FROM transactions WHERE ref = ? AND description LIKE 'Boost de múltipla +5%%'").get(`boost:${w.id}`));
+  // One leg void: 3 selections left, under the first tier → no boost.
+  const v = multi(4);
+  tx(db, () => { db.prepare("UPDATE events SET status = 'cancelled' WHERE id = ?").run(v.ms[0].id); settleEvent(db, v.ms[0].id); });
+  for (const m of v.ms.slice(1)) finish(db, m, 1, 0);
+  assert.equal(v.row().status, 'won');
+  assert.equal(v.row().boost_cents, 0);
+  // Switched off in the admin: no boost on new bets.
+  savePromoConfig(db, { accaBoost: { active: false } });
+  assert.equal(multi(4).row().boost_pct, 0);
+  // Tiers from the admin form ("selections:%").
+  savePromoConfig(db, { accaBoost: { active: true, tiers: '4:5, 8:10, 12:15, 17:20, 20:25' } });
+  assert.equal(multi(4).row().boost_pct, 5);
+  assert.throws(() => savePromoConfig(db, { accaBoost: { tiers: '4:abc' } }), /escalões inválidos/);
 });

@@ -964,6 +964,8 @@ function campaignCard(c) {
       [`Rollover ${c.rolloverMult}× (${base})`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Não acumula com o bónus de boas-vindas']],
     cashback: ['SEMANAL', `Cashback ${c.percent}% até ${money(c.max)}`, `Sobre as perdas líquidas da semana (mín. ${money(c.minLoss)}), creditado à segunda-feira.`,
       [`Rollover ${c.rolloverMult}×`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Free bets, bónus e apostas anuladas não contam']],
+    accaBoost: ['MÚLTIPLAS', `Boost até +${Math.max(0, ...(c.tiers || []).map(([, p]) => p))}% nos ganhos`, `Quanto mais seleções na múltipla, maior o boost: ${(c.tiers || []).map(([n, p]) => `${n} seleções → +${p}%`).join(' · ')}.`,
+      [`Cada seleção com odd ≥ ${fmtOdds(c.minOdds)}`, 'O boost é sobre os ganhos (retorno menos a aposta) e é pago em saldo real', `Até ${money(c.maxBoost)} por aposta`, 'Só apostas com saldo real (não free bets nem bónus)', 'Uma seleção anulada deixa de contar para o boost']],
     casinoFs: ['CASINO', 'Free Spins no depósito', `Escolha "Free Spins casino" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${n} rodadas`).join(' · ')}.`,
       ['Cada rodada à aposta do jogo (ex.: €0,20 ou €0,10)', `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Tudo o que ganhar com as Free Spins passa a saldo real', 'Não acumula com o bónus de desporto no mesmo depósito']],
   }[c.id];
@@ -1631,7 +1633,7 @@ function ticketCard(b) {
   const profit = b.status === 'open' ? null : (b.freebet ? b.payout : b.payout - b.stake);
   return `<div class="ticket ${cls}">
     <div class="tk-head"><div><strong>${kind}</strong>${dots}</div><span class="tk-badge ${cls}">${badge}</span></div>
-    ${b.freebet || b.bonusStake || b.protected ? `<div class="bet-tags">${b.freebet ? '<span class="pill open">🎁 Free bet</span>' : ''}${b.bonusStake ? `<span class="pill open">${money(b.bonusStake)} com bónus</span>` : ''}${b.protected ? '<span class="pill open">🛡️ Primeira aposta protegida</span>' : ''}</div>` : ''}
+    ${b.freebet || b.bonusStake || b.protected || b.boostPct ? `<div class="bet-tags">${b.freebet ? '<span class="pill open">🎁 Free bet</span>' : ''}${b.bonusStake ? `<span class="pill open">${money(b.bonusStake)} com bónus</span>` : ''}${b.protected ? '<span class="pill open">🛡️ Primeira aposta protegida</span>' : ''}${b.boostPct ? `<span class="pill open">🚀 Boost +${b.boostPct}%${b.boost ? ` · ${money(b.boost)}` : ''}</span>` : ''}</div>` : ''}
     <div class="tk-legs">${legs}</div>
     <div class="tk-sum">
       <div><span>Aposta</span><b>${money(b.stake)}${b.freebet ? ' (free bet)' : ''}</b></div>
@@ -1785,14 +1787,44 @@ function slipTotals() {
   }
   if (state.mode === 'multiple') {
     const odds = items.reduce((a, s) => a * s.odds, 1);
-    return { stake, total: stake, odds, potential: net(Math.min(stake * odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
+    const base = Math.min(stake * odds, state.config?.maxPayout ?? Infinity);
+    // Multiple boost (not with a free bet): its % of the winnings, paid on top.
+    const boost = fb ? null : multipleBoost(items);
+    const extra = boost?.pct ? Math.min(Math.floor((base - stake) * boost.pct) / 100, boost.max) : 0;
+    return { stake, total: stake, odds, potential: net(base) + extra, freebet: fb, boost, boostAmount: extra };
   }
   if (fb && items.length === 1) return { stake, total: stake, odds: null, potential: net(Math.min(stake * items[0].odds, state.config?.maxPayout ?? Infinity)), freebet: fb };
   const potential = items.reduce((a, s) => a + Math.min(stake * s.odds, state.config?.maxPayout ?? Infinity), 0);
   return { stake, total: stake * items.length, odds: null, potential };
 }
 
+/**
+ * The multiple boost for these picks: { pct, count, next: { n, pct, more } | null, minOdds, max }, or
+ * null while the campaign is off. Only picks priced at minOdds or more count.
+ */
+function multipleBoost(items) {
+  const c = state.config?.accaBoost;
+  if (!c?.tiers?.length) return null;
+  const count = items.filter((s) => s.odds >= c.minOdds).length;
+  let pct = 0;
+  for (const [n, p] of c.tiers) if (count >= n) pct = p;
+  const nxt = c.tiers.find(([n]) => n > count);
+  return { pct, count, minOdds: c.minOdds, max: c.maxBoost, next: nxt ? { n: nxt[0], pct: nxt[1], more: nxt[0] - count } : null };
+}
+
+/** The boost line of the slip: what this multiple gets, and how many picks the next step needs. */
+function renderBoost(t) {
+  const el = $('#slipBoost');
+  const b = state.mode === 'multiple' && !state.builder ? t.boost : null;
+  el.classList.toggle('hidden', !b || (!b.pct && !b.next));
+  if (!b) return;
+  const now = b.pct ? `<div class="bet-summary"><span>🚀 Boost de múltipla <b>+${b.pct}%</b></span><strong class="gold">+${money(t.boostAmount)}</strong></div>` : '';
+  const next = b.next ? `<small>Mais ${b.next.more} ${b.next.more === 1 ? 'seleção' : 'seleções'} (odd ≥ ${fmtOdds(b.minOdds)}) e o boost passa a <b>+${b.next.pct}%</b>.</small>` : '';
+  el.innerHTML = now + next;
+}
+
 function renderBuilderSlip() {
+  $('#slipBoost').classList.add('hidden');
   const b = state.builder;
   const n = b.legs.length;
   $('#betCount').textContent = 'Criador de apostas';
@@ -1845,6 +1877,7 @@ function renderSlip() {
   $('#stakeLabel').textContent = state.mode === 'multiple' ? 'Valor da aposta' : 'Valor por aposta';
   $('#totalStake').textContent = money(t.total);
   $('#potential').textContent = money(t.potential);
+  renderBoost(t);
 
   const changed = state.slip.some((s) => s.newOdds);
   const closed = state.slip.some((s) => s.closed);
