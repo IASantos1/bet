@@ -659,7 +659,11 @@ function adminCasino(c) {
         ${c.calls.map((x) => `<tr><td>${esc(fmtDateTime(x.at))}</td><td>${esc(x.kind)}</td><td><code>${esc(x.username)}</code></td><td><span class="pill ${x.status === 200 ? 'won' : 'lost'}">${x.status}</span></td><td>${esc(x.detail)}</td></tr>`).join('')}
       </tbody></table></div>`
         : '<div class="notice">Ainda não chegou nenhuma chamada desde o último arranque do servidor. Se um jogo diz "Insufficient Balance", o BigBang não está a chamar estes URLs: confirme no Painel BigBang que a chave está em <strong>carteira integrada (seamless)</strong> com os dois URLs acima.</div>'}
-      ${test}</div>`;
+      ${test}</div>
+    <form class="panel" data-form="casino-hidden"><h3>Jogos escondidos</h3>
+      <p class="muted">Jogos que não aparecem no casino (lobby, pesquisa, fornecedores e "do mesmo estilo"). Um por linha: o nome do jogo como aparece no site, ou o ID (está no URL: #/casino/jogo/ID).</p>
+      <div class="field"><textarea name="hidden" rows="5">${esc((c.hidden || []).join('\n'))}</textarea></div>
+      <div class="form-actions"><button class="primary-btn">Guardar</button></div></form>`;
   }
   if (!c.enabled) {
     return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
@@ -949,6 +953,11 @@ const handlers = {
       const r = await api(`/api/admin/events/${id}/result`, { method: 'POST', body: { homeScore: Number(d.homeScore), awayScore: Number(d.awayScore) } });
       toast('Evento liquidado', `${r.settledBets} aposta(s) processada(s).`);
     }
+    loadTab();
+  },
+  async 'casino-hidden'(form) {
+    const r = await api('/api/admin/casino/hidden', { method: 'POST', body: { hidden: form.hidden.value } });
+    toast('Jogos escondidos guardados', `${r.hidden.length} jogo(s)`);
     loadTab();
   },
   async 'tg-tickets'(form) {

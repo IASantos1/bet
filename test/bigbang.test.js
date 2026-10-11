@@ -327,3 +327,15 @@ test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic P
   const lobby = await bb.lobby({ n: 5 });
   assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Spribe', 'PG Soft', 'Pragmatic Play Live']);
 });
+
+test('hidden games: by name or id, out of the lists, the game page and "do mesmo estilo"', async () => {
+  const db = openDb(':memory:');
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  assert.equal((await bb.games()).games.length, 3);                   // the default names are not in this catalogue
+  setSetting(db, 'casino.hidden', ['hot hot fruit', '9001']);
+  assert.deepEqual((await bb.games()).games.map((g) => g.id), [4822]);
+  assert.equal(await bb.game(4821), null);
+  assert.equal(await bb.game(9001), null);
+  assert.equal((await bb.related(await bb.game(4822))).length, 0);
+  assert.equal((await bb.gamesPage({})).total, 1);
+});

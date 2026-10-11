@@ -17,11 +17,6 @@ const SPORT_META = {
   badminton: { name: 'Badminton', icon: '🏸' },
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
-const GAMES = [
-  ['Royal Fortune', 'Slots', '🎰'], ['Neon Roulette', 'Roleta', '🎡'], ['Blackjack Pro', 'Blackjack', '🃏'],
-  ['Golden Baccarat', 'Bacará', '♠️'], ['Mega Fruits', 'Slots', '🍒'], ['Live Roulette', 'Ao Vivo', '🎯'],
-  ['Diamond 7s', 'Slots', '💎'], ['Dragon Tiger', 'Ao Vivo', '🐉'], ['Fancy Cards', 'Casino', '🂡'], ['Wild Crown', 'Novos', '👑'],
-];
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
   casino_out: 'Para o casino', casino_in: 'Do casino',
@@ -495,7 +490,7 @@ function homePage() {
     ${builderSection()}
     <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
       ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
-    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${state.casinoLobby?.rows?.[0]?.games.length ? carousel('homeCasino', state.casinoLobby.rows[0].games.map(lobbyCard)) : `<div class="game-grid grid">${state.casino.enabled && state.casino.games.length ? state.casino.games.slice(0, 5).map(casinoGameCard).join('') : GAMES.slice(0, 5).map(gameCard).join('')}</div>`}</section>
+    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${state.casinoLobby?.rows?.[0]?.games.length ? carousel('homeCasino', state.casinoLobby.rows[0].games.map(lobbyCard)) : state.casino.enabled && state.casino.games.length ? `<div class="game-grid grid">${state.casino.games.slice(0, 5).map(casinoGameCard).join('')}</div>` : '<p class="muted">Os jogos do casino aparecem aqui em breve.</p>'}</section>
     ${footer()}`;
 }
 
@@ -694,7 +689,6 @@ function livePage() {
     ${footer()}`;
 }
 
-const gameCard = (g) => `<button class="game-card" data-action="game"><div class="game-art">${g[2]}</div><div class="game-info"><strong>${esc(g[0])}</strong><small>${esc(g[1])}</small></div></button>`;
 
 function casinoGameCard(g, i) {
   return `<button class="game-card" data-game="${i}">
@@ -729,7 +723,6 @@ function casinoPage() {
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
-      <section class="section"><div class="section-head"><h2>Catálogo</h2><span>${GAMES.length} jogos</span></div><div class="game-grid grid">${GAMES.map(gameCard).join('')}</div></section>
       ${footer()}`;
   }
   const f = state.casinoFilter;
@@ -2377,7 +2370,6 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
-  else if (action === 'game') toast('Casino em integração', 'Os jogos ficam disponíveis com a ligação ao fornecedor de casino.');
   else if (action === 'car-prev' || action === 'car-next') {
     const track = $(`#${actionEl.dataset.target} .car-track`);
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
