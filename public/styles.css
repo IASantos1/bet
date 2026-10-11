@@ -120,6 +120,16 @@ h1, h2, h3 { margin-top: 0; }
 .bet-footer { border-top: 1px solid var(--line); padding-top: 13px; }
 .bet-summary { display: flex; justify-content: space-between; margin: 8px 0; color: #9ca5b0; }
 .bet-summary strong { color: #fff; }
+.slip-boost { margin: 10px 0; padding: 12px 14px 10px; border-radius: 10px; background: #252b33; border: 1px solid #333a43; }
+.boost-head { font-size: 13px; font-weight: 700; color: #d5dae0; margin-bottom: 8px; }
+.boost-scale { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #7d8590; }
+.boost-scale span.on { color: #f0b429; }
+.boost-scale.pct { margin-top: 4px; }
+.boost-line { position: relative; height: 6px; margin: 4px 0 0; border-radius: 3px; background: #161a1f; overflow: hidden; }
+.boost-line i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: linear-gradient(90deg, #f0b429, #ff7a18); transition: width .35s ease; }
+.boost-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 8px; border-top: 1px solid #333a43; font-size: 13px; color: #c3c9d0; }
+.boost-foot b { color: #fff; }
+.boost-foot .boost-pct { color: #f0b429; }
 .stake-label { display: block; color: #8e97a3; font-size: 11px; margin: 13px 0 8px; }
 .stake-input { display: flex; background: var(--row-hover); border: 1px solid var(--line); border-radius: 6px; margin-top: 5px; }
 .stake-input span { padding: 10px; color: #9ba3ad; }

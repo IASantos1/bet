@@ -28,13 +28,17 @@ export const PROMO_DEFAULTS = {
   cashback: { active: true, startAt: null, endAt: null, percent: 5, minLoss: 20, max: 25, rolloverMult: 3, minOdds: 1.5, validityDays: 7 },
   // Casino free spins on a deposit: [deposit from €, spins] (€10 → 5 spins, worth 5 × spinValue to us),
   // played only in `games` (BigBang ids), each spin at the game's own bet (gameBets { id: € }, else spinValue €).
+  // Multiple boost: extra winnings on a multiple by its number of selections ([selections, %]), each
+  // selection priced at least minOdds; paid in real money, at most maxBoost € per bet. Real-money
+  // multiples only (no free bet, no bonus money).
+  accaBoost: { active: true, startAt: null, endAt: null, tiers: [[4, 5], [8, 10], [12, 15], [17, 20]], minOdds: 1.2, maxBoost: 500 },
   casinoFs: {
     active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], spinValue: 0.2,
     validityDays: 7, maxDeposit: 100, maxClaims: null, games: [], gameBets: {},
   },
 };
 
-export const CAMPAIGN_NAMES = { welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', casinoFs: 'Free Spins casino' };
+export const CAMPAIGN_NAMES = { accaBoost: 'Boost de múltiplas', welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', casinoFs: 'Free Spins casino' };
 const DEPOSIT_KINDS = ['welcome', 'reload'];
 const DAY = 86_400_000;
 const c100 = (euros) => Math.round(Number(euros) * 100);
@@ -53,7 +57,7 @@ export function promoConfig(db) {
 const NUM = {
   percent: [1, 500], minDeposit: [0, 100_000], maxBonus: [0, 100_000], rolloverMult: [0, 100], minOdds: [1, 100],
   validityDays: [1, 365], maxCountStake: [0, 100_000, true], maxCountPct: [0, 100, true], minStake: [0, 100_000],
-  maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000], spinValue: [0.01, 100], maxDeposit: [1, 100_000], maxClaims: [1, 1000, true],
+  maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000], spinValue: [0.01, 100], maxDeposit: [1, 100_000], maxClaims: [1, 1000, true], maxBoost: [0, 1_000_000],
 };
 /** "10:5, 20:10" or [[10, 5], …] → sorted [[deposit €, spins], …]. */
 function parseTiers(v) {
@@ -85,6 +89,15 @@ export function parseGames(v) {
   }
   return { games, gameBets };
 }
+/** "4:5, 8:10" or [[4, 5], …] → sorted [[selections, %], …] (the multiple boost). */
+function parseBoostTiers(v) {
+  const pairs = Array.isArray(v) ? v : String(v || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>-]+/).map((n) => n.trim()));
+  const out = pairs.map(([d, n]) => [Math.round(Number(d)), Number(String(n).replace(',', '.'))]);
+  if (!out.length || out.some(([d, n]) => !Number.isInteger(d) || d < 2 || d > 100 || !Number.isFinite(n) || n <= 0 || n > 100)) {
+    throw new HttpError(400, 'Boost de múltiplas: escalões inválidos (seleções : %, ex.: 4:5, 8:10, 12:15, 17:20).');
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
 const isoOrNull = (v) => {
   if (v === null || v === undefined || v === '') return null;
   const t = new Date(v);
@@ -106,7 +119,7 @@ export function savePromoConfig(db, input) {
       else if (f === 'startAt' || f === 'endAt') c[f] = isoOrNull(v);
       else if (f === 'rolloverBase') c[f] = v === 'bonus' ? 'bonus' : 'deposit_bonus';
       else if (f === 'methods') c[f] = (Array.isArray(v) ? v : []).filter((m) => ['mbway', 'multibanco', 'cartao', 'demo'].includes(m));
-      else if (f === 'tiers') c[f] = parseTiers(v);
+      else if (f === 'tiers') c[f] = k === 'accaBoost' ? parseBoostTiers(v) : parseTiers(v);
       else if (f === 'games') Object.assign(c, parseGames(v));
       else if (f === 'gameBets') continue; // comes with games ("id:bet")
       else if (NUM[f]) {
@@ -126,6 +139,19 @@ export function savePromoConfig(db, input) {
 
 /** ACTIVE and inside its period. */
 export const campaignOpen = (c, now = nowIso()) => !!c?.active && (!c.startAt || now >= c.startAt) && (!c.endAt || now < c.endAt);
+
+/** The multiple boost's % for this many selections priced at minOdds or more (0 below the first tier). */
+export function boostFor(cfg, count) {
+  let pct = 0;
+  for (const [n, p] of cfg.tiers) if (count >= n) pct = p;
+  return pct;
+}
+/** The boost a multiple gets, from its selections' prices (x100); 0 when the campaign is closed. */
+export function boostPct(db, oddsX100List, now = nowIso()) {
+  const c = promoConfig(db).accaBoost;
+  if (!campaignOpen(c, now)) return 0;
+  return boostFor(c, oddsX100List.filter((o) => o >= Math.round(c.minOdds * 100)).length);
+}
 
 // ---------- weeks (Europe/Lisbon, Monday to Sunday) ----------
 
@@ -697,6 +723,8 @@ export function publicCampaigns(db, now = nowIso()) {
       rolloverMult: r.rolloverMult, rolloverBase: r.rolloverBase, minOdds: r.minOdds, validityDays: r.validityDays, endAt: r.endAt },
     { id: 'cashback', name: CAMPAIGN_NAMES.cashback, open: campaignOpen(cb, now), percent: cb.percent, minLoss: cb.minLoss, max: cb.max,
       rolloverMult: cb.rolloverMult, minOdds: cb.minOdds, validityDays: cb.validityDays, endAt: cb.endAt },
+    { id: 'accaBoost', name: CAMPAIGN_NAMES.accaBoost, open: campaignOpen(cfg.accaBoost, now), tiers: cfg.accaBoost.tiers, minOdds: cfg.accaBoost.minOdds,
+      maxBoost: cfg.accaBoost.maxBoost, endAt: cfg.accaBoost.endAt },
     { id: 'casinoFs', name: CAMPAIGN_NAMES.casinoFs, open: campaignOpen(cfg.casinoFs, now) && cfg.casinoFs.games.length > 0, tiers: cfg.casinoFs.tiers,
       spinValue: cfg.casinoFs.spinValue, validityDays: cfg.casinoFs.validityDays, maxDeposit: cfg.casinoFs.maxDeposit, games: cfg.casinoFs.games.length, endAt: cfg.casinoFs.endAt },
   ];
