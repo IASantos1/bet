@@ -1258,7 +1258,7 @@ export function createWinHouseFeed(db, {
   async function readCards({ now = Date.now(), cardsPerCycle = 12, everyMs = 60_000 } = {}) {
     if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
     const due = new Date(now - everyMs).toISOString();
-    const rows = db.prepare(`SELECT id, external_id, sport, live_detail FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal', 'tenis')
+    const rows = db.prepare(`SELECT id, external_id, sport FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
       AND (cards_at IS NULL OR cards_at < ?) ORDER BY COALESCE(cards_at, '') LIMIT ?`).all(SOURCE, due, cardsPerCycle);
     let updated = 0;
     for (const row of rows) {
@@ -1267,14 +1267,9 @@ export function createWinHouseFeed(db, {
         const r = await client.tracker(row.external_id);
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
           const s = normalizeWidgetData(r.body);
-          red = row.sport === 'tenis' ? null : redCardsOf(s.stats);
-          if (s.halfTime && row.sport !== 'tenis') {
+          red = redCardsOf(s.stats);
+          if (s.halfTime) {
             db.prepare('UPDATE events SET period_scores = ? WHERE id = ?').run(JSON.stringify([[s.halfTime.home, s.halfTime.away]]), row.id);
-          }
-          if (row.sport === 'tenis' && s.tennis?.sets?.length) {
-            let d = {};
-            try { d = JSON.parse(row.live_detail || '{}') || {}; } catch { /* none */ }
-            db.prepare('UPDATE events SET live_detail = ? WHERE id = ?').run(JSON.stringify({ ...d, set: s.tennis.sets.length, sets: s.tennis.sets, point: s.tennis.point ?? d.point ?? null }), row.id);
           }
         }
       } catch { /* asked again next minute */ }
@@ -1283,6 +1278,42 @@ export function createWinHouseFeed(db, {
         updated += 1;
       } else db.prepare('UPDATE events SET cards_at = ? WHERE id = ?').run(nowIso(), row.id);
     }
+    return { asked: rows.length, updated };
+  }
+
+  /**
+   * Tennis in play, every game (not only the watched ones): the point (15 / 30 / 40 / AD) and each
+   * set's games from its tracker, so every event card shows them; the live list only has the sets
+   * won. Each game read about every `everyMs` (the ones read longest ago first, `perRun` a run,
+   * `parallel` at a time). The sets also settle the set markets when the match ends.
+   */
+  const tennisReadAt = new Map(); // event id → when its tracker was last read (ms)
+  async function readTennis({ now = Date.now(), perRun = 12, parallel = 4, everyMs = 10_000 } = {}) {
+    if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
+    const all = db.prepare(`SELECT id, external_id, live_detail FROM events WHERE source = ? AND status = 'live' AND sport = 'tenis'`).all(SOURCE);
+    const live = new Set(all.map((r) => r.id));
+    for (const id of tennisReadAt.keys()) if (!live.has(id)) tennisReadAt.delete(id);
+    const rows = all.filter((r) => now - (tennisReadAt.get(r.id) || 0) >= everyMs)
+      .sort((a, b) => (tennisReadAt.get(a.id) || 0) - (tennisReadAt.get(b.id) || 0))
+      .slice(0, perRun);
+    let updated = 0;
+    const one = async (row) => {
+      tennisReadAt.set(row.id, now);
+      try {
+        const r = await client.tracker(row.external_id);
+        if (!r?.ok || !r.body || typeof r.body !== 'object' || Array.isArray(r.body)) return;
+        const t = normalizeWidgetData(r.body).tennis;
+        if (!t || (!t.sets?.length && !t.point)) return;
+        let d = {};
+        try { d = JSON.parse(row.live_detail || '{}') || {}; } catch { /* none */ }
+        const sets = t.sets?.length ? t.sets : d.sets || [];
+        const next = JSON.stringify({ ...d, set: sets.length || d.set || 1, sets, point: t.point ?? d.point ?? null });
+        if (next === row.live_detail) return;
+        db.prepare("UPDATE events SET live_detail = ? WHERE id = ? AND status = 'live'").run(next, row.id);
+        updated += 1;
+      } catch { /* asked again next run */ }
+    };
+    for (let i = 0; i < rows.length; i += parallel) await Promise.all(rows.slice(i, i + parallel).map(one));
     return { asked: rows.length, updated };
   }
 
@@ -1620,8 +1651,9 @@ export function createWinHouseFeed(db, {
     const streams = guard('streams', syncStreams);
     const reviews = guard('revisão', confirmReviews);
     const cards = guard('cartões', readCards);
+    const tennis = guard('pontos do ténis', readTennis);
     live().then(pre).then(details).then(liveDetails).then(streams);
-    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(cards, 20_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(cards, 20_000), setInterval(tennis, 3_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1639,5 +1671,5 @@ export function createWinHouseFeed(db, {
     enabled: state.enabled, rawLive: (ext) => liveRaw.get(String(ext)) || null,
     /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
     rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
-    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, readCards, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }
