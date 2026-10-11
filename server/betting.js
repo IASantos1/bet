@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { legOutcome, resultCode, PERIOD_MARKETS } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds } from './promotions.js';
 import { checkBet } from './limits.js';
@@ -165,19 +165,45 @@ export function settleBet(db, betId) {
  */
 const parsePeriodScores = (v) => { try { const p = JSON.parse(v || 'null'); return Array.isArray(p) ? p : null; } catch { return null; } };
 
+/**
+ * The score of each period, from what the event knows: its period scores; for tennis the games of
+ * each set (kept in live_detail by the tracker); for football the half-time score with the second
+ * half worked out from the final one.
+ */
+export function periodsOf(ev) {
+  let periods = parsePeriodScores(ev.period_scores);
+  if (!periods?.length && ev.sport === 'tenis') {
+    try { const d = JSON.parse(ev.live_detail || 'null'); if (Array.isArray(d?.sets) && d.sets.length) periods = d.sets; } catch { /* none */ }
+  }
+  if (periods?.length === 1 && ['futebol', 'futsal', 'andebol'].includes(ev.sport) && ev.status === 'finished'
+    && Number.isInteger(ev.home_score) && Number.isInteger(ev.away_score)) {
+    const [h1, a1] = periods[0];
+    if (ev.home_score >= h1 && ev.away_score >= a1) periods = [periods[0], [ev.home_score - h1, ev.away_score - a1]];
+  }
+  return periods;
+}
+
 export function settleEvent(db, eventId, { source = 'engine', userId = null, note = null } = {}) {
-  const ev = db.prepare('SELECT status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores FROM events WHERE id = ?').get(eventId);
+  const ev = db.prepare('SELECT sport, home, away, status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores, live_detail FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
   const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
   const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
+  const periods = periodsOf(ev);
   for (const leg of legs) {
+    // The provider's own markets: read when they are a period's winner / total, else they wait.
+    if (leg.market === 'x') {
+      const out = ev.status === 'cancelled' ? 'void'
+        : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away });
+      if (out) setLeg.run(out, leg.id);
+      continue;
+    }
     // Regulation-time markets use the regulation score where the sport has one (ice hockey).
     const reg = leg.market !== 'ml' && ev.reg_home_score !== null && ev.reg_away_score !== null;
     // After a retirement only the winner stands; totals and handicaps are void.
     // (period markets: a set completed before the retirement stands, the others are void)
     const status = ev.status === 'cancelled' || (ev.retired && !['1x2', 'ml'].includes(leg.market) && !PERIOD_MARKETS.has(leg.market)) ? 'void'
       : legOutcome(leg.market, leg.code, reg ? ev.reg_home_score : ev.home_score, reg ? ev.reg_away_score : ev.away_score,
-        { homeGames: ev.home_games, awayGames: ev.away_games, periods: parsePeriodScores(ev.period_scores) });
+        { homeGames: ev.home_games, awayGames: ev.away_games, periods });
     setLeg.run(status, leg.id);
   }
   const betIds = [...new Set(legs.map((l) => l.bet_id))];

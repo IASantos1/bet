@@ -6,7 +6,10 @@
 //      (e.g. the process stopped half-way, or a result was set outside the normal paths).
 //   2. Postponed matches — a match the provider reported postponed and that has not been
 //      rescheduled within POSTPONED_VOID_HOURS (default 48 h) is voided: stakes are refunded.
-//   3. No result — a leg still open NO_RESULT_VOID_HOURS (default 72 h) after its game's start
+//   3. Provider markets ('x') on a finished match — read automatically when they are a period's
+//      winner or total (betting.js); the ones that cannot be read are voided SPECIAL_VOID_HOURS
+//      (default 2 h) after the match ended, so no ticket waits on them.
+//   4. No result — a leg still open NO_RESULT_VOID_HOURS (default 72 h) after its game's start
 //      (the feed never gave a final score, or an operator market was never decided) is voided,
 //      so no ticket stays open forever. Until then it waits in the queue with the time left.
 //
@@ -23,7 +26,7 @@ import { splitSpecial } from './markets.js';
 const H = 3_600_000;
 
 export function createSettlementEngine(db, {
-  postponedVoidHours = 48, stuckLiveHours = 4, overdueHours = 3, noResultVoidHours = 72, log = () => {},
+  postponedVoidHours = 48, stuckLiveHours = 4, overdueHours = 3, noResultVoidHours = 72, specialVoidHours = 2, log = () => {},
 } = {}) {
   const state = { lastRun: null, lastResult: null, lastError: null };
 
@@ -38,6 +41,28 @@ export function createSettlementEngine(db, {
     ).all();
     for (const { id } of pending) {
       settled += tx(db, () => settleEvent(db, id, { source: 'engine', note: 'Liquidação de segurança (apostas em aberto)' })) > 0 ? 1 : 0;
+    }
+
+    // Provider markets still open on a match that ended a while ago: read once more, else voided.
+    const specials = db.prepare(
+      `SELECT DISTINCT e.id FROM events e JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
+        WHERE e.status = 'finished' AND l.market = 'x' AND e.updated_at <= ?`
+    ).all(new Date(now - specialVoidHours * H).toISOString());
+    for (const { id } of specials) {
+      tx(db, () => {
+        settleEvent(db, id, { source: 'engine', note: 'Mercados especiais lidos automaticamente' });
+        const legs = db.prepare("SELECT id, bet_id FROM bet_legs WHERE event_id = ? AND market = 'x' AND status = 'open'").all(id);
+        if (!legs.length) return;
+        for (const l of legs) db.prepare("UPDATE bet_legs SET status = 'void' WHERE id = ?").run(l.id);
+        const betIds = [...new Set(legs.map((l) => l.bet_id))];
+        let paid = 0;
+        for (const b of betIds) paid += settleBet(db, b);
+        const ev = db.prepare('SELECT home_score, away_score FROM events WHERE id = ?').get(id);
+        db.prepare(`INSERT INTO settlements (event_id, action, home_score, away_score, bets_settled, payout_cents, source, user_id, note, created_at)
+          VALUES (?, 'void', ?, ?, ?, ?, 'engine', NULL, ?, ?)`).run(id, ev.home_score, ev.away_score, betIds.length, paid,
+          `Mercados especiais sem resultado do fornecedor ${specialVoidHours} h depois do fim — anulados (odd 1.00)`, nowIso());
+        voided += 1;
+      });
     }
 
     const stale = db.prepare(

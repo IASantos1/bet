@@ -13,7 +13,7 @@ import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createFeatured } from './featured.js';
 import {
-  HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword,
+  HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
 } from './security.js';
 import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
@@ -26,6 +26,7 @@ import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, 
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
 import { compression, staticText } from './compress.js';
+import { importNovo, connectNovo } from './importnovo.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
@@ -681,8 +682,11 @@ export function createApp(db, {
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     // The administrator's password is stored trimmed; a phone keyboard may add a trailing space.
-    const ok = user && (verifyPassword(password, user.password_hash) || (password.trim() !== password && verifyPassword(password.trim(), user.password_hash)));
-    if (!ok) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
+    const used = user && (verifyPassword(password, user.password_hash) ? password
+      : password.trim() !== password && verifyPassword(password.trim(), user.password_hash) ? password.trim() : null);
+    if (used === null || !user) throw new HttpError(401, 'Email ou palavra-passe incorretos.');
+    // A player brought from the previous platform: the old hash (bcrypt) is replaced by ours now.
+    if (isLegacyHash(user.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(used), user.id);
     if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
     startSession(res, user.id, req);
     res.json({ user: userOut(user) });
@@ -1619,6 +1623,28 @@ export function createApp(db, {
     });
     res.json(out);
   });
+
+  /**
+   * Players of the previous platform (Bet62Novo), from its database (BET62NOVO_DATABASE_URL, its
+   * public URL): { dryRun: true } only reports what would be brought; false brings them.
+   */
+  let importing = false;
+  admin.post('/import-novo', wrap(async (req, res) => {
+    const url = String(process.env.BET62NOVO_DATABASE_URL || '').trim();
+    if (!url) throw new HttpError(409, 'Falta a variável BET62NOVO_DATABASE_URL no Railway (o endereço público da base de dados do Bet62Novo).');
+    if (importing) throw new HttpError(409, 'Já está uma importação a decorrer.');
+    importing = true;
+    let pg;
+    try {
+      try { pg = await connectNovo(url); } catch (err) { throw new HttpError(502, `Não foi possível ligar à base de dados do Bet62Novo: ${err.message}`); }
+      const report = await importNovo(db, pg, { dryRun: req.body?.dryRun !== false });
+      if (!report.dryRun) console.warn(`[import-novo] ${report.imported} jogadores importados por ${req.user.email}`);
+      res.json({ report });
+    } finally {
+      importing = false;
+      await pg?.end().catch(() => {});
+    }
+  }));
 
   admin.post('/casino/test', wrap(async (_req, res) => {
     if (bb) return res.json({ steps: (await bb.diagnose()).steps });

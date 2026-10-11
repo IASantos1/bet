@@ -134,3 +134,42 @@ test('no ticket stays open forever: legs without a result 72 h after the start a
   assert.deepEqual(engine.runOnce(), { settled: 0, voided: 0 }, 'idempotent');
   db.close();
 });
+
+test('provider markets: a set / half winner or total read from the period scores; the unreadable ones voided 2 h after the end', async () => {
+  const { specialOutcome } = await import('../server/markets.js');
+  // Pure reading.
+  const sets = [[4, 6], [6, 3], [3, 6]];
+  assert.equal(specialOutcome('11~1.º set - Vencedor~2', { periods: sets }), 'won');
+  assert.equal(specialOutcome('11~1.º set - Vencedor~1', { periods: sets }), 'lost');
+  assert.equal(specialOutcome('12~2.º set - Total de jogos~Mais (8.5)', { periods: sets }), 'won');
+  assert.equal(specialOutcome('13~1st half winner~X', { periods: [[1, 1], [0, 2]] }), 'won');
+  assert.equal(specialOutcome('14~2.º tempo - Total~Menos (1.5)', { periods: [[1, 1], [0, 2]] }), 'lost');
+  assert.equal(specialOutcome('15~Vencedor~Casa', { home: 2, away: 1, homeName: 'Casa' }), 'won');
+  assert.equal(specialOutcome('11~1.º set - Vencedor~2', { periods: null }), null); // no set scores: waits
+  assert.equal(specialOutcome('16~Marcador do primeiro golo~Ronaldo', {}), null);    // cannot be read
+
+  const { db, event, bet, balance } = setup();
+  const add = (id, code) => db.prepare("INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, 'x', ?, 134)").run(id, code);
+  // Tennis: the tracker kept each set's games; the "1.º set - Vencedor 2" ticket wins at the end.
+  const t = event();
+  db.prepare("UPDATE events SET sport = 'tenis' WHERE id = ?").run(t);
+  add(t, '11~1.º set - Vencedor~2');
+  bet(t, 'x', '11~1.º set - Vencedor~2', 1.34);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 1, away_score = 2, live_detail = ? WHERE id = ?").run(JSON.stringify({ sets }), t);
+  tx(db, () => settleEvent(db, t, { source: 'feed' }));
+  assert.equal(balance(), 10_000 - 1_000 + 1_340);
+  // Football: a market nobody can read waits, then is voided (stake back) 2 h after the end.
+  const f = event();
+  add(f, '16~Marcador do primeiro golo~Ronaldo');
+  bet(f, 'x', '16~Marcador do primeiro golo~Ronaldo', 1.34);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 1, away_score = 0, updated_at = ? WHERE id = ?").run(iso(-1 * H), f);
+  tx(db, () => settleEvent(db, f, { source: 'feed' }));
+  const engine = createSettlementEngine(db);
+  engine.runOnce();
+  assert.equal(db.prepare("SELECT status FROM bets ORDER BY id DESC").get().status, 'open'); // only 1 h ago
+  db.prepare('UPDATE events SET updated_at = ? WHERE id = ?').run(iso(-3 * H), f);
+  engine.runOnce();
+  assert.equal(db.prepare("SELECT status FROM bets ORDER BY id DESC").get().status, 'void');
+  assert.equal(balance(), 10_000 - 1_000 + 1_340);
+  db.close();
+});

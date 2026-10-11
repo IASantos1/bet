@@ -1250,21 +1250,33 @@ export function createWinHouseFeed(db, {
    * the match is over and gives a score not lower than the last one seen, that score settles it.
    */
   /**
-   * Red cards of the matches in play, for the event cards: each live football / futsal game's
-   * tracker is read about once a minute (the ones read longest ago first, `cardsPerCycle` a run).
-   * A watched match is kept fresh by the tracker itself.
+   * What the tracker knows of the matches in play, for every game (not only the watched ones), each
+   * read about once a minute (the ones read longest ago first, `cardsPerCycle` a run): red cards
+   * (event cards), the half-time score (football) and each set's games (tennis), which settle the
+   * period markets ("1.º set - Vencedor", "1.º tempo - Total"…) when the match ends.
    */
   async function readCards({ now = Date.now(), cardsPerCycle = 12, everyMs = 60_000 } = {}) {
     if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
     const due = new Date(now - everyMs).toISOString();
-    const rows = db.prepare(`SELECT id, external_id FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
+    const rows = db.prepare(`SELECT id, external_id, sport, live_detail FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal', 'tenis')
       AND (cards_at IS NULL OR cards_at < ?) ORDER BY COALESCE(cards_at, '') LIMIT ?`).all(SOURCE, due, cardsPerCycle);
     let updated = 0;
     for (const row of rows) {
       let red = null;
       try {
         const r = await client.tracker(row.external_id);
-        if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) red = redCardsOf(normalizeWidgetData(r.body).stats);
+        if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
+          const s = normalizeWidgetData(r.body);
+          red = row.sport === 'tenis' ? null : redCardsOf(s.stats);
+          if (s.halfTime && row.sport !== 'tenis') {
+            db.prepare('UPDATE events SET period_scores = ? WHERE id = ?').run(JSON.stringify([[s.halfTime.home, s.halfTime.away]]), row.id);
+          }
+          if (row.sport === 'tenis' && s.tennis?.sets?.length) {
+            let d = {};
+            try { d = JSON.parse(row.live_detail || '{}') || {}; } catch { /* none */ }
+            db.prepare('UPDATE events SET live_detail = ? WHERE id = ?').run(JSON.stringify({ ...d, set: s.tennis.sets.length, sets: s.tennis.sets, point: s.tennis.point ?? d.point ?? null }), row.id);
+          }
+        }
       } catch { /* asked again next minute */ }
       if (red) {
         db.prepare('UPDATE events SET red_home = ?, red_away = ?, cards_at = ? WHERE id = ?').run(red.home, red.away, nowIso(), row.id);

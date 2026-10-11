@@ -184,3 +184,40 @@ export function splitSpecial(code) {
   const m = /^(\d{1,12})~([^~]+)~([^~]+)$/.exec(String(code || ''));
   return m ? { id: Number(m[1]), group: m[2], label: m[3] } : null;
 }
+
+const plain = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+const PERIOD_WORD = /(\d+)\s*\.?\s*[ºo°]?\s*(?:set|tempo|parte|periodo|quarto|period|half|quarter|mapa|map)\b/;
+const FIRST_WORD = /\b(primeiro|primeira|1st|first)\s+(set|tempo|parte|periodo|quarto|period|half|quarter|mapa|map)\b/;
+const SECOND_WORD = /\b(segundo|segunda|2nd|second)\s+(set|tempo|parte|periodo|quarto|period|half|quarter|mapa|map)\b/;
+
+/**
+ * A provider market ('x') read automatically when it is a period's winner or total ("1.º set -
+ * Vencedor" → "2", "2.º tempo - Total" → "Mais (1.5)") or the match winner, from the period
+ * scores (`periods`: [[home, away], …]) or the final score. 'won' | 'lost' | 'void', or null when
+ * it cannot be read (it waits; the settlement engine voids it after a while).
+ */
+export function specialOutcome(code, { periods = null, home = null, away = null, homeName = '', awayName = '' } = {}) {
+  const sp = splitSpecial(code);
+  if (!sp) return null;
+  const g = plain(sp.group);
+  const l = plain(sp.label);
+  const n = PERIOD_WORD.exec(g)?.[1] || (FIRST_WORD.test(g) ? '1' : SECOND_WORD.test(g) ? '2' : null);
+  let score = null;
+  if (n) score = Array.isArray(periods) ? periods[Number(n) - 1] : null;
+  else if (/^(vencedor|vencedor do jogo|resultado final|1x2|winner|match winner)$/.test(g)) score = [home, away];
+  if (!score || !Number.isInteger(score[0]) || !Number.isInteger(score[1])) return null;
+  const [h, a] = score;
+  if (/(vencedor|resultado|1x2|winner|ganha)/.test(g) && !/(total|handicap|mais|menos|over|under)/.test(g)) {
+    const side = ['1', 'casa', 'home', plain(homeName)].includes(l) ? '1' : ['x', 'empate', 'draw'].includes(l) ? 'X'
+      : ['2', 'fora', 'away', plain(awayName)].includes(l) ? '2' : null;
+    if (!side) return null;
+    return side === resultCode(h, a) ? 'won' : 'lost';
+  }
+  const ou = /\b(mais|over|acima|menos|under|abaixo)\b\D*(\d+(?:[.,]\d+)?)/.exec(l);
+  if (/(total|mais|menos|over|under)/.test(g) && ou) {
+    const line = Number(ou[2].replace(',', '.'));
+    if (!Number.isFinite(line)) return null;
+    return overUnder(`${/^(mais|over|acima)$/.test(ou[1]) ? 'O' : 'U'}${line}`, h + a);
+  }
+  return null;
+}
