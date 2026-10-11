@@ -1818,9 +1818,11 @@ function renderBoost(t) {
   const b = state.mode === 'multiple' && !state.builder ? t.boost : null;
   el.classList.toggle('hidden', !b || (!b.pct && !b.next));
   if (!b) return;
-  const now = b.pct ? `<div class="bet-summary"><span>🚀 Boost de múltipla <b>+${b.pct}%</b></span><strong class="gold">+${money(t.boostAmount)}</strong></div>` : '';
-  const next = b.next ? `<small>Mais ${b.next.more} ${b.next.more === 1 ? 'seleção' : 'seleções'} (odd ≥ ${fmtOdds(b.minOdds)}) e o boost passa a <b>+${b.next.pct}%</b>.</small>` : '';
-  el.innerHTML = now + next;
+  // The steps, lit once reached: how many picks each needs and the % it gives.
+  const bar = `<div class="boost-steps">${state.config.accaBoost.tiers.map(([n, p]) => `<span class="${b.count >= n ? 'on' : b.next?.n === n ? 'next' : ''}"><b>+${p}%</b><em>${n} sel.</em></span>`).join('')}</div>`;
+  const head = `<div class="bet-summary"><span>🚀 Boost de múltipla ${b.pct ? `<b>+${b.pct}%</b>` : ''} <small class="muted">· ${b.count} ${b.count === 1 ? 'seleção conta' : 'seleções contam'}</small></span>${b.pct ? `<strong class="gold">+${money(t.boostAmount)}</strong>` : ''}</div>`;
+  const next = b.next ? `<small>Mais ${b.next.more} ${b.next.more === 1 ? 'seleção' : 'seleções'} (odd ≥ ${fmtOdds(b.minOdds)}) e o boost passa a <b>+${b.next.pct}%</b>.</small>` : '<small>Boost máximo atingido! 🔥</small>';
+  el.innerHTML = head + bar + next;
 }
 
 function renderBuilderSlip() {
