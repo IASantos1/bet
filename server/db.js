@@ -369,6 +369,22 @@ CREATE TABLE IF NOT EXISTS telegram_promos (
   created_at  TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_telegram_promos_status ON telegram_promos(status);
+-- Suggested tickets (telegram.js): a multiple drawn from the day's games, posted to the channel only
+-- (no bet is placed). legs: JSON [{ selectionId, eventId, code, odds, home, away, competition, startTime }].
+CREATE TABLE IF NOT EXISTS telegram_tickets (
+  id          INTEGER PRIMARY KEY,
+  slot        TEXT,
+  legs        TEXT    NOT NULL,
+  odds_x100   INTEGER NOT NULL,
+  stake_cents INTEGER NOT NULL,
+  status      TEXT    NOT NULL,
+  message_id  TEXT,
+  error       TEXT,
+  signature   TEXT,
+  created_at  TEXT    NOT NULL,
+  settled_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_tickets_slot ON telegram_tickets(slot);
 
 -- Audit trail of the programme (append-only: the triggers refuse changes and deletions).
 CREATE TABLE IF NOT EXISTS affiliate_audit (

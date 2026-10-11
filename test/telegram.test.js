@@ -92,3 +92,53 @@ test('telegram: admin posts are kept with their outcome; not configured, nothing
   assert.equal((await off.promoteNext()).reason, 'telegram_not_configured');
   assert.equal(formatTicket({ home: 'A', away: 'B', competition: 'C', start_time: new Date().toISOString() }, {}, 'u').keyboard.length, 1);
 });
+
+test('suggested tickets: favourites in the odds range, from different games, posted with stake and return; no bet is placed', async () => {
+  const { db, tg, calls, event } = setup();
+  setSetting(db, 'telegram.tickets', { on: true, times: ['00:00'], legs: 3, minOdds: 1.4, maxOdds: 1.7, stake: 10, hours: 12 });
+  const a = event('England. Premier League', 'Arsenal', 'Chelsea', 2, { 1: 150, X: 400, 2: 600 });
+  const b = event('Spain. LaLiga', 'Real Madrid', 'Getafe', 3, { 1: 160, X: 380, 2: 550 });
+  const c = event('Italy. Serie A', 'Lecce', 'Inter', 4, { 1: 500, X: 380, 2: 155 });
+  event('Germany. Bundesliga', 'Bayern', 'Bochum', 5, { 1: 110, X: 900, 2: 2000 }); // too short a price
+  event('France. Ligue 1', 'Lyon', 'Nice', 0.2, { 1: 150, X: 400, 2: 600 });           // starts too soon
+  const r = await tg.postTicket({ rng: () => 0 });
+  assert.equal(r.status, 'sent');
+  const msg = calls.at(-1).body;
+  assert.match(msg.text, /BILHETE DO DIA[\s\S]*Arsenal x Chelsea[\s\S]*Vitória Arsenal — <b>1.50<\/b>[\s\S]*Vitória Inter — <b>1.55<\/b>/);
+  assert.match(msg.text, /Odd total: <b>3.72<\/b>[\s\S]*Aposta: 10,00 € ➜ 💰 Retorno: <b>37,20 €<\/b>/);
+  const t = db.prepare('SELECT * FROM telegram_tickets').get();
+  const ids = JSON.parse(t.legs).map((l) => l.selectionId);
+  assert.equal(msg.reply_markup.inline_keyboard[0][0].url, `https://bet62.plus/#/bilhete/${ids.join('-')}`);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM bets').get().n, 0);
+  // The same games are not used again the same day.
+  assert.equal((await tg.postTicket()).reason, 'not_enough_games');
+  // Followed: one game won, then one lost → the ticket is lost and marked.
+  db.prepare("UPDATE events SET status = 'finished', result = '1' WHERE id = ?").run(a);
+  assert.equal((await tg.followTickets()).edited, 1);
+  assert.match(calls.at(-1).body.text, /✅ ⚽ <b>Arsenal x Chelsea/);
+  assert.deepEqual(calls.at(-1).body.reply_markup, { inline_keyboard: [] }); // a game started: the button goes
+  db.prepare("UPDATE events SET status = 'finished', result = 'X' WHERE id = ?").run(b);
+  await tg.followTickets();
+  assert.match(calls.at(-1).body.text, /❌ ⚽ <b>Real Madrid x Getafe[\s\S]*Bilhete perdido/);
+  assert.equal(db.prepare('SELECT status FROM telegram_tickets WHERE id = ?').get(t.id).status, 'lost');
+  assert.equal((await tg.followTickets()).edited, 0);
+  void c;
+});
+
+test('suggested tickets: posted once per configured time, and a won ticket shows what it paid', async () => {
+  const { db, tg, calls, event } = setup();
+  const x = event('England. Premier League', 'A1', 'B1', 2, { 1: 150, X: 400, 2: 600 });
+  const y = event('Spain. LaLiga', 'A2', 'B2', 3, { 1: 160, X: 380, 2: 550 });
+  setSetting(db, 'telegram.tickets', { on: true, times: ['00:00', '23:59'], legs: 2, minOdds: 1.4, maxOdds: 1.7, stake: 20, hours: 12 });
+  const { lisbonNow } = await import('../server/telegram.js');
+  const now = Date.now();
+  const { time } = lisbonNow(now);
+  setSetting(db, 'telegram.tickets', { on: true, times: [time], legs: 2, minOdds: 1.4, maxOdds: 1.7, stake: 20, hours: 12 });
+  assert.equal((await tg.ticketsDue({ now })).status, 'sent');
+  assert.equal((await tg.ticketsDue({ now })).reason, 'not_time');      // that slot is done
+  setSetting(db, 'telegram.tickets', { on: false, times: [time] });
+  assert.equal((await tg.ticketsDue({ now })).reason, 'tickets_off');
+  db.prepare("UPDATE events SET status = 'finished', result = '1' WHERE id IN (?, ?)").run(x, y);
+  await tg.followTickets();
+  assert.match(calls.at(-1).body.text, /BILHETE GANHO!<\/b> 48,00 €/);  // 20 € × 1.50 × 1.60
+});

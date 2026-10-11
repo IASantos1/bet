@@ -285,7 +285,31 @@ function novoPanel() {
 const TG_TYPE = { custom: 'Publicação', promotion: '🎁 Promoção', bet_ticket: '🎟️ Bilhete' };
 const TG_PROMO = { sent: ['open', 'Pré-jogo'], live: ['won', 'Ao vivo'], finished: ['void', 'Finalizado'], deleted: ['void', 'Apagado'], failed: ['lost', 'Falhou'] };
 const TG_REASON = { too_soon: 'à espera do intervalo entre publicações', no_candidates: 'nenhum jogo das ligas escolhidas nas próximas 24 h', auto_off: 'publicação automática desligada', no_public_url: 'falta PUBLIC_URL (o endereço do site, para os botões)', telegram_not_configured: 'Telegram não configurado' };
-function adminTelegram({ status: st, posts = [], promos = [] }) {
+const TG_TICKET = { sent: ['open', 'Em jogo'], won: ['won', 'Ganho'], lost: ['lost', 'Perdido'], void: ['void', 'Anulado'], failed: ['lost', 'Falhou'] };
+const TG_TICKET_REASON = { not_enough_games: 'não há jogos suficientes com essas odds na janela escolhida', tickets_off: 'bilhetes desligados', not_time: 'fora dos horários' };
+function ticketsPanel(c, tickets) {
+  return `<form class="panel" data-form="tg-tickets"><h3>Bilhetes sugeridos (só para o Telegram)</h3>
+    <p class="muted">Nos horários escolhidos (hora de Lisboa) é montada uma múltipla com os favoritos de jogos de futebol diferentes, das ligas principais primeiro,
+      com uma aposta de exemplo e o retorno. <b>Não é feita nenhuma aposta</b>: é só publicado. O botão do Telegram põe as seleções no boletim do site.
+      A mensagem marca depois cada jogo ✅ / ❌ e o resultado do bilhete.</p>
+    <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="on"${c.on ? ' checked' : ''}> Publicar automaticamente nos horários</label></div>
+    <div class="form-grid three">
+      <div class="field"><label>Horários (HH:MM, separados por vírgula)</label><input name="times" value="${esc(c.times.join(', '))}" placeholder="12:00, 18:00"></div>
+      <div class="field"><label>Jogos por bilhete</label><input name="legs" type="number" min="2" max="8" value="${c.legs}"></div>
+      <div class="field"><label>Odd mínima por jogo</label><input name="minOdds" inputmode="decimal" value="${c.minOdds}"></div>
+      <div class="field"><label>Odd máxima por jogo</label><input name="maxOdds" inputmode="decimal" value="${c.maxOdds}"></div>
+      <div class="field"><label>Aposta de exemplo (€)</label><input name="stake" inputmode="decimal" value="${c.stake}"></div>
+      <div class="field"><label>Jogos a começar nas próximas (horas)</label><input name="hours" type="number" min="1" max="48" value="${c.hours}"></div>
+    </div>
+    <div class="form-actions"><button class="primary-btn">Guardar</button><button type="button" class="ghost-btn" data-action="tg-ticket">Gerar e publicar um bilhete agora</button></div>
+    ${tickets.length ? `<div class="table-wrap"><table><thead><tr><th>Publicado</th><th>Jogos</th><th>Odd</th><th>Aposta → retorno</th><th>Estado</th></tr></thead><tbody>
+      ${tickets.map((t) => `<tr><td>${fmtDateTime(t.createdAt)}${t.slot ? `<br><small class="muted">${esc(t.slot)}</small>` : ''}</td>
+        <td>${t.legs.length ? t.legs.map((l) => `${esc(l.home)} x ${esc(l.away)} <small class="muted">(${l.code === '1' ? '1' : l.code === '2' ? '2' : 'X'} · ${fmtOdds(l.odds)})</small>`).join('<br>') : '—'}</td>
+        <td class="num">${t.odds ? fmtOdds(t.odds) : '—'}</td><td class="num">${t.stake ? `${money(t.stake)} → ${money(t.stake * t.odds)}` : '—'}</td>
+        <td><span class="pill ${(TG_TICKET[t.status] || ['void'])[0]}">${(TG_TICKET[t.status] || [0, t.status])[1]}</span>${t.error ? `<br><small class="muted">${esc(t.error)}</small>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda nenhum bilhete.</p>'}</form>`;
+}
+function adminTelegram({ status: st, posts = [], promos = [], tickets = [] }) {
   if (!st.enabled) {
     return `<div class="panel"><h3>Telegram</h3><p class="muted">Não configurado. No Railway, defina <b>TELEGRAM_BOT_TOKEN</b> (o bot criado no @BotFather)
       e <b>TELEGRAM_CHANNEL_ID</b> (@canal ou o id -100… de um canal privado). O bot tem de ser administrador do canal, com permissão para publicar.</p></div>`;
@@ -299,6 +323,7 @@ function adminTelegram({ status: st, posts = [], promos = [] }) {
     <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="tg-auto"${st.auto ? ' checked' : ''}> Publicação automática</label>
       <button class="ghost-btn btn-sm" data-action="tg-promote">Publicar o próximo jogo agora</button></div>
     <p class="muted">Última verificação: ${esc(lastText)}${st.lastTick ? ` (${fmtDateTime(st.lastTick.at)})` : ''}</p></div>
+  ${ticketsPanel(st.tickets, tickets)}
   <form class="panel" data-form="tg-post"><h3>Nova publicação</h3>
     <div class="form-grid">
       <div class="field"><label>Tipo</label><select name="type">${Object.entries(TG_TYPE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
@@ -926,6 +951,12 @@ const handlers = {
     }
     loadTab();
   },
+  async 'tg-tickets'(form) {
+    const d = formData(form);
+    await api('/api/admin/telegram/tickets/config', { method: 'POST', body: { on: form.on.checked, times: d.times, legs: d.legs, minOdds: d.minOdds, maxOdds: d.maxOdds, stake: d.stake, hours: d.hours } });
+    toast('Bilhetes sugeridos guardados');
+    loadTab();
+  },
   async 'tg-post'(form) {
     const d = formData(form);
     await api('/api/admin/telegram/posts', { method: 'POST', body: { type: d.type, title: d.title, body: d.body, ctaText: d.ctaText, ctaUrl: d.ctaUrl } });
@@ -1269,6 +1300,14 @@ document.addEventListener('click', async (e) => {
     try {
       await api('/api/admin/telegram/auto', { method: 'POST', body: { on: actionEl.checked } });
       toast(actionEl.checked ? 'Publicação automática ligada' : 'Publicação automática desligada');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'tg-ticket') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/telegram/tickets/post', { method: 'POST', body: {} });
+      if (r.action === 'posted') toast(r.status === 'sent' ? 'Bilhete publicado' : 'Falhou', r.error || '', r.status === 'sent' ? undefined : 'error');
+      else toast('Nada publicado', TG_TICKET_REASON[r.reason] || TG_REASON[r.reason] || r.reason);
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
   } else if (action === 'tg-promote') {

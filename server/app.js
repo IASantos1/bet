@@ -397,6 +397,19 @@ export function createApp(db, {
   });
   app.get('/api/featured', (_req, res) => res.json(featured.get()));
 
+  // A shared ticket (the Telegram button #/bilhete/1-2-3): its picks with current prices, for the
+  // slip; a closed pick or a game already started is left out.
+  app.get('/api/slip-legs', (req, res) => {
+    const ids = String(req.query.ids || '').split(/[-,]/).map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 20);
+    const rows = ids.length ? db.prepare(`SELECT s.id, s.market, s.code, s.odds_x100, s.active, e.id AS event_id, e.competition, e.home, e.away, e.start_time, e.status
+      FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+    const open = rows.filter((r) => r.active && r.status === 'scheduled' && new Date(r.start_time).getTime() > Date.now());
+    res.json({ legs: open.map((r) => ({
+      selectionId: r.id, eventId: r.event_id, market: r.market, code: r.code, odds: r.odds_x100 / 100, marketName: MARKETS[r.market]?.name || r.market,
+      label: selectionLabel(r.market, r.code, r.home, r.away), home: r.home, away: r.away, competition: r.competition,
+    })), missing: ids.length - open.length });
+  });
+
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
   const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
     AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
@@ -1657,6 +1670,8 @@ export function createApp(db, {
     res.json({
       status: telegram ? telegram.status() : { enabled: false },
       posts: db.prepare('SELECT * FROM telegram_posts ORDER BY id DESC LIMIT 50').all(),
+      tickets: db.prepare("SELECT * FROM telegram_tickets WHERE legs != '[]' OR error IS NOT NULL ORDER BY id DESC LIMIT 30").all()
+        .map((t) => ({ id: t.id, slot: t.slot, legs: JSON.parse(t.legs), odds: t.odds_x100 / 100, stake: t.stake_cents / 100, status: t.status, error: t.error, createdAt: t.created_at })),
       promos: promos.map((p) => ({ id: p.id, eventId: p.event_id, game: p.home ? `${p.home} - ${p.away}` : `#${p.event_id}`, competition: p.competition, startTime: p.start_time,
         tier: p.tier, status: p.status, error: p.error, createdAt: p.created_at })),
     });
@@ -1684,6 +1699,23 @@ export function createApp(db, {
     setSetting(db, 'telegram.auto', req.body?.on !== false);
     res.json({ status: telegram ? telegram.status() : { enabled: false } });
   });
+  /** Suggested tickets: { on, times: ['12:00', …], legs, minOdds, maxOdds, stake, hours }. */
+  admin.post('/telegram/tickets/config', (req, res) => {
+    const b = req.body || {};
+    const num = (v, min, max) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n >= min && n <= max ? n : null; };
+    const times = String(Array.isArray(b.times) ? b.times.join(',') : b.times || '').split(/[,;\s]+/).filter(Boolean);
+    if (times.some((t) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(t))) throw new HttpError(400, 'Horários no formato HH:MM, separados por vírgulas (ex.: 12:00, 18:00).');
+    const c = { on: b.on === true, times: [...new Set(times)].sort().slice(0, 12), legs: num(b.legs, 2, 8), minOdds: num(b.minOdds, 1.01, 20), maxOdds: num(b.maxOdds, 1.01, 50), stake: num(b.stake, 1, 10_000), hours: num(b.hours, 1, 48) };
+    if ([c.legs, c.minOdds, c.maxOdds, c.stake, c.hours].includes(null)) throw new HttpError(400, 'Valores inválidos: jogos 2–8, odds entre 1.01 e 50, aposta 1–10000 €, janela 1–48 h.');
+    if (c.minOdds > c.maxOdds) throw new HttpError(400, 'A odd mínima não pode ser maior que a máxima.');
+    c.legs = Math.round(c.legs);
+    setSetting(db, 'telegram.tickets', c);
+    res.json({ tickets: c });
+  });
+  admin.post('/telegram/tickets/post', wrap(async (_req, res) => {
+    if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
+    res.json(await telegram.postTicket());
+  }));
   admin.post('/telegram/promote', wrap(async (_req, res) => {
     if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
     res.json(await telegram.promoteNext({ force: true }));
