@@ -1,6 +1,6 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
-import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, createClipGate, createCornerWatch } from './trkclips.js';
+import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, marketsReopened, createClipGate, createCornerWatch } from './trkclips.js';
 import { qualityTier, zoneTier, DANGER } from './trk3dmath.js';
 
 const SPORT_META = {
@@ -2623,7 +2623,7 @@ const SITUATION_LABEL = {
   dangerous_attack: 'Ataque perigoso', attack: 'Ataque', possession: 'Posse de bola', safe: 'Posse segura',
   goal: 'GOLO!', corner: 'Canto', freekick: 'Livre', throwin: 'Lançamento lateral', offside: 'Fora de jogo',
   goalkeeper_saved: 'Defesa do guarda-redes', shotoffwoodwork: 'Bola no ferro',
-  goalkick: 'Pontapé de baliza', penalty: 'Penálti', shot: 'Remate', halftime: 'Intervalo',
+  goalkick: 'Pontapé de baliza', penalty: 'Penálti', shot: 'Remate', halftime: 'Intervalo', var: 'Revisão VAR',
 };
 const INCIDENT_ICON = { goal: '⚽', yellow: '🟨', red: '🟥', sub: '🔁', var: '📺' };
 const ACTION_LABEL = {
@@ -2686,6 +2686,9 @@ async function loadMatch(id, { quiet = false } = {}) {
     if (event.sport === 'tenis' && !event.tennis && state.match.data?.id === event.id && state.match.data.tennis) event.tennis = state.match.data.tennis;
     state.match.data = event;
     noteScore(event);
+    // The goal held on the pitch until betting opens again (the goal suspended it).
+    const open = [...(event.selections || []), ...(event.markets || []).flatMap((x) => x.selections || [])].some((x) => x.active);
+    if (state.match.clipHold && marketsReopened(state.match.clipHold, open)) state.match.clipHold.release();
     if (event.status !== 'scheduled') loadMatchExtras(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
@@ -2732,7 +2735,8 @@ function startMatchStream(id) {
     const hold = m.clipHold;
     if (hold) {
       if (d.situation === 'goal') hold.sawGoal = true;
-      else if (restartSeen(hold, d.situation, Date.now())) hold.release();
+      hold.var?.(d.situation === 'var');
+      if (restartSeen(hold, d.situation, Date.now())) hold.release();
     }
     updateTracker();
     // A goal, or a corner being taken (the kick, not the award): the 3D clip over the pitch.
@@ -3270,7 +3274,8 @@ function footballWidget(e) {
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
       <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p>
-      <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video></div>
+      <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video>
+        <div class="trk-clip-goal"><b id="trkClipLabel">GOLO!</b><span>BET62</span></div></div>
     </div></div>
     <p class="trk-note" id="trkNote"></p>
   </div>`;
@@ -3549,8 +3554,10 @@ function celebrateGoal(side) {
 /**
  * Plays one clip over the pitch and goes back to the 2D view when it ends. Skipped (straight to
  * `onEnd`) when nobody would see it: tab hidden, video view open, reduced motion, no codec. A clip that
- * does not start within 3 s (slow network, autoplay refused) is dropped; a tap closes it. With `hold`,
- * the end of the clip repeats until `m.clipHold.release()` (the game going again) or GOAL_HOLD.maxMs.
+ * does not start within 3 s (slow network, autoplay refused) is dropped; a tap closes it. With `hold`
+ * (the goal), the clip stops on the ball resting in the net with a "GOLO!" moving over it — no replay —
+ * until `m.clipHold.release()` (markets open again, the game going again) or GOAL_HOLD.maxMs; a VAR
+ * review keeps it and says so.
  */
 function playClip(kind, { onEnd, hold = false } = {}) {
   const m = state.match;
@@ -3569,27 +3576,36 @@ function playClip(kind, { onEnd, hold = false } = {}) {
   clearTimeout(m.clipTimer);
   const token = {};
   m.clipToken = token;
-  // While held: did the game go again before the clip got to its end?
-  m.clipHold = hold ? { since: Date.now(), sawGoal: false, restarted: false, release: () => { if (m.clipHold?.ended) finish(); else if (m.clipHold) m.clipHold.restarted = true; } } : null;
+  const label = $('#trkClipLabel', w);
+  box.classList.remove('held', 'var');
+  // Held: frozen once the ball is in the net; released early the clip just plays to its end.
+  m.clipHold = hold ? {
+    since: Date.now(), sawGoal: false, restarted: false, frozen: false,
+    release: () => { if (m.clipHold?.frozen) finish(); else if (m.clipHold) m.clipHold.restarted = true; },
+    var: (on) => { box.classList.toggle('var', on); if (label) label.textContent = on ? 'REVISÃO VAR' : 'GOLO!'; },
+  } : null;
   const finish = () => {
     if (m.clipToken !== token) return;
     m.clipToken = null;
     m.clipHold = null;
     clearTimeout(m.clipTimer);
     m.clipGate?.stop();
-    box.classList.remove('on');
+    box.classList.remove('on', 'held', 'var');
+    video.ontimeupdate = null;
     video.pause();
     onEnd?.();
   };
-  video.onended = () => {
-    if (m.clipToken !== token) return;
+  video.ontimeupdate = () => {
     const h = m.clipHold;
-    if (!h || h.restarted) { finish(); return; }
-    // Held: the celebration repeats (or rests on its last frame if the browser will not replay).
-    h.ended = true;
-    video.currentTime = GOAL_HOLD.loopFrom;
-    video.play()?.catch?.(() => {});
+    if (m.clipToken !== token || !h || h.frozen || h.restarted || video.currentTime < GOAL_HOLD.freezeAt - 0.25) return;
+    // The ball at rest in the net, before the clip's own text: the picture stops, our "GOLO!" moves.
+    h.frozen = true;
+    video.pause();
+    video.currentTime = GOAL_HOLD.freezeAt;
+    if (label) label.textContent = 'GOLO!';
+    box.classList.add('held');
   };
+  video.onended = () => { if (m.clipToken === token && !m.clipHold?.frozen) finish(); };
   video.onerror = finish;
   // (the box may still be showing a clip this one cut short: started is per clip)
   let started = false;

@@ -55,10 +55,11 @@ export function situationClip(prev, next) {
 }
 
 /**
- * After the goal clip the celebration stays on the pitch (its last 1.3 s — "GOLO!", the crowd —
- * on repeat) until the tracker shows the game going again; never longer than `maxMs`.
+ * After the goal the clip stops on the ball resting in the net (`freezeAt` s, before the clip's own
+ * text) with a "GOLO!" that moves over it, until the markets open again or the tracker shows the
+ * game going again; never longer than `maxMs`. A VAR review keeps it, saying so.
  */
-export const GOAL_HOLD = { loopFrom: 2.6, maxMs: 180_000, staleMs: 20_000 };
+export const GOAL_HOLD = { freezeAt: 2.2, maxMs: 20_000, staleMs: 12_000 };
 
 /**
  * While the goal clip holds: does this tracker frame show the game going again (kick-off,
@@ -66,8 +67,18 @@ export const GOAL_HOLD = { loopFrom: 2.6, maxMs: 180_000, staleMs: 20_000 };
  * when only the score told us, its frames lag behind, so for `staleMs` they are not believed.
  */
 export function restartSeen(hold, situation, now) {
-  if (!hold || !situation || situation === 'goal') return false;
+  if (!hold || !situation || situation === 'goal' || situation === 'var') return false;
   return hold.sawGoal || now - hold.since >= GOAL_HOLD.staleMs;
+}
+
+/**
+ * While the goal holds: are the markets open again after the goal closed them? The book suspends
+ * on a goal; once it was seen closed, the first open price means play (and betting) goes on.
+ */
+export function marketsReopened(hold, open) {
+  if (!hold) return false;
+  if (!open) { hold.sawClosed = true; return false; }
+  return !!hold.sawClosed;
 }
 
 export const GOAL_GAP_MS = 45_000;   // one celebration per goal (the score and the situation both say it)

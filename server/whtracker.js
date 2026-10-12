@@ -81,7 +81,7 @@ export function normalizeStats(raw) {
 }
 
 const SITUATIONS = [
-  [/dangerous/i, 'dangerous_attack'], [/goal ?kick/i, 'goalkick'], [/\bgoal\b/i, 'goal'], [/corner/i, 'corner'],
+  [/\bvar\b|video assist/i, 'var'], [/dangerous/i, 'dangerous_attack'], [/goal ?kick/i, 'goalkick'], [/\bgoal\b/i, 'goal'], [/corner/i, 'corner'],
   [/free ?kick/i, 'freekick'], [/throw/i, 'throwin'], [/penalt/i, 'penalty'], [/offside/i, 'offside'],
   [/shot|attempt/i, 'shot'], [/safe/i, 'safe'], [/attack/i, 'attack'], [/possession/i, 'possession'],
 ];
