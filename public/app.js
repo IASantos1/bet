@@ -457,16 +457,23 @@ function carousel(id, cards) {
   </div>`;
 }
 
-// The home page's invitation card: a sentence, the link and the code, each with its copy button.
+// The home page's invitation banner: the offer, three steps and the link to copy or share.
 function affHomeHtml() {
   const a = state.affHome;
   if (!a?.enabled || !a.referralUrl || a.uid !== state.user?.id) return '';
+  const url = esc(a.referralUrl);
+  const wa = `https://wa.me/?text=${encodeURIComponent(`Aposta comigo na Bet62: ${a.referralUrl}`)}`;
   return `<section class="aff-home">
-    <div class="aff-home-copy"><b>Convide amigos e ganhe ${a.commission.rate}% do primeiro depósito de cada um.</b>
-      <span>Partilhe o seu link ou o seu código. <a href="#/perfil/afiliados">Ver regras e comissões ›</a></span></div>
-    <div class="aff-home-fields">
-      <label><small>Link</small><span class="aff-home-row"><input readonly value="${esc(a.referralUrl)}" aria-label="Link de convite"><button class="primary-btn" data-aff-copy="${esc(a.referralUrl)}" data-aff-label="Link copiado">Copiar</button></span></label>
-      <label class="code"><small>Código</small><span class="aff-home-row"><input readonly value="${esc(a.referralCode)}" aria-label="Código de convite"><button class="outline-btn" data-aff-copy="${esc(a.referralCode)}" data-aff-label="Código copiado">Copiar</button></span></label>
+    <div class="aff-home-top">
+      <div class="aff-home-badge"><b>${a.commission.rate}%</b><small>por amigo</small></div>
+      <div class="aff-home-copy"><span class="aff-home-eyebrow">🎁 Programa de convites</span>
+        <b>Convide amigos e ganhe ${a.commission.rate}% do primeiro depósito de cada um.</b>
+        <a href="#/perfil/afiliados">Ver regras e comissões ›</a></div>
+    </div>
+    <ol class="aff-home-steps"><li><i>1</i>Partilhe o seu link</li><li><i>2</i>O amigo regista-se e deposita</li><li><i>3</i>Recebe ${a.commission.rate}% em saldo</li></ol>
+    <div class="aff-home-row"><input readonly value="${url}" aria-label="Link de convite">
+      <button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
+      ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : `<a class="aff-btn share" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`}
     </div></section>`;
 }
 async function loadAffHome() {
