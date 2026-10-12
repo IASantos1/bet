@@ -848,7 +848,24 @@ async function refreshCasinoBalance() {
 
 // ---------- one game's page (BigBang): Jogar, Testar, Free Spins ----------
 
+/**
+ * The game servers' connection opened ahead (DNS, TLS) while the player looks at the game page, so
+ * "Jogar" starts loading at once; then the origin of each game opened, for the next one.
+ */
+const warmOrigins = new Set();
+function warmOrigin(url) {
+  let origin;
+  try { origin = new URL(url).origin; } catch { return; }
+  if (warmOrigins.has(origin)) return;
+  warmOrigins.add(origin);
+  const link = document.createElement('link');
+  link.rel = 'preconnect';
+  link.href = origin;
+  document.head.append(link);
+}
+
 function casinoGamePage(id) {
+  warmOrigin('https://bigbangcasino.bet');
   if (state.casinoGame?.id !== id) {
     state.casinoGame = { id, data: null };
     api(`/api/casino/game/${id}`).then((d) => {
@@ -902,6 +919,7 @@ async function playCasino(mode) {
   try {
     const r = await api('/api/casino/launch', { method: 'POST', body: { gameId: g.id, demo: mode === 'demo', freeSpins: mode === 'fs' ? d.freeSpins?.id : undefined } });
     if (!state.casinoSession) return;
+    warmOrigin(r.url);
     state.casinoSession.url = r.url;
     if (r.freeSpins) state.casinoSession.fsBalance = r.freeSpins.balance;
     if (currentRoute().sub === 'jogar') render({ keepScroll: true });
@@ -2141,8 +2159,17 @@ async function refreshMe() {
  * everything fresh at once instead of waiting for the next poll, so old data never stays on screen.
  */
 let lastResume = 0;
+/**
+ * A casino game is open full screen. The sports board, the leagues and the account are not
+ * refreshed meanwhile: on phones (and Safari) the game's frame shares the page's thread, and
+ * fetching and redrawing them every few seconds made the games stutter. Only the balance is kept fresh.
+ */
+const playingCasino = () => { const r = currentRoute(); return r.page === 'casino' && r.sub === 'jogar' && !!state.casinoSession; };
+
 async function resume() {
   if (document.hidden || Date.now() - lastResume < 2000) return;
+  // Back from the game's frame (a click outside it focuses the page): only the balance.
+  if (playingCasino()) { refreshCasinoBalance(); return; }
   lastResume = Date.now();
   try {
     const c = await api('/api/config');
@@ -3700,16 +3727,16 @@ async function init() {
   loadCasinoLobby();
   await refreshEvents();
   loadLeagues();
-  setInterval(() => { if (!document.hidden) loadLeagues(); }, 60_000);
+  setInterval(() => { if (!document.hidden && !playingCasino()) loadLeagues(); }, 60_000);
   // My bets: scores, clocks and cash-out values kept fresh while the tickets are on screen.
   setInterval(() => {
     const { page, sub } = currentRoute();
     if (!document.hidden && state.user && (page === 'apostas' || (page === 'perfil' && sub === 'apostas'))) loadBets({ quiet: true });
   }, 10_000);
   // Live events refresh every 10s; the rest of the board rides along.
-  setInterval(() => { if (!document.hidden) refreshEvents(); }, 5_000);
+  setInterval(() => { if (!document.hidden && !playingCasino()) refreshEvents(); }, 5_000);
   // Keep the balance fresh (settlements and admin credits happen server-side).
-  setInterval(() => { if (!document.hidden && state.user) refreshMe(); }, 20_000);
+  setInterval(() => { if (!document.hidden && state.user && !playingCasino()) refreshMe(); }, 20_000);
   // Back to the page: refresh everything right away (hidden tab, reopened app, back/forward cache).
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
