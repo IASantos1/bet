@@ -373,3 +373,58 @@ test('demo: live tables and Premium games are real-money only (no "Testar")', as
     assert.match((await r.json()).error, /só com dinheiro real/);
   } finally { server.close(); }
 });
+
+test('split: slots from Palace (Transfer mode), live tables from BigBang; Premium copies preferred on request', async () => {
+  const { setSetting: set } = await import('../server/db.js');
+  const { palaceId } = await import('../server/bigbang.js');
+  const db = openDb(':memory:');
+  const palaceGames = [
+    { providerId: 7, provider: 'Pragmatic Play', code: 'vs10bbbonus', name: 'Big Bass Bonanza', image: 'https://p/bbb.png', category: 'Slots' },
+    { providerId: 8, provider: 'Evolution', code: 'roulette', name: 'Roleta Palace', image: null, category: 'Ao Vivo' },
+  ];
+  let split = false;
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl, palace: async () => palaceGames, split: () => split });
+  assert.deepEqual((await bb.games()).games.map((g) => g.id).sort(), [4821, 4822, 9001]);
+  split = true;
+  bb.reload();
+  const ids = (await bb.games()).games.map((g) => g.id);
+  assert.ok(ids.includes(9001));                                     // BigBang live table kept
+  assert.ok(!ids.includes(4821));                                    // BigBang slots gone
+  assert.ok(ids.includes(palaceId(7, 'vs10bbbonus')));               // Palace slot in
+  assert.ok(!ids.includes(palaceId(8, 'roulette')));                 // Palace live left out
+  const g = await bb.game(palaceId(7, 'vs10bbbonus'));
+  assert.deepEqual([g.source, g.demo, g.palace], ['palace', false, { providerId: 7, code: 'vs10bbbonus' }]);
+  // Launch: Palace's Transfer mode (the balance moves there), and back on close.
+  const moves = [];
+  const casino = { enabled: true, enterGame: async (u, a) => { moves.push(['in', u.id, a]); return { url: 'https://palace/game', casinoCents: 2000 }; },
+    leaveGame: async (u) => { moves.push(['out', u.id]); return 2000; }, casinoBalanceCents: async () => 2000, syncBack: async () => 0 };
+  const uid = player(db, 20);
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run((await import('../server/security.js')).hashPassword('segredo123'), uid);
+  const email = db.prepare('SELECT email FROM users WHERE id = ?').get(uid).email;
+  const server = createApp(db, { bigbang: bb, casino, loginAttempts: 100 }).listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'segredo123' }) });
+    const cookie = login.headers.get('set-cookie')?.split(';')[0];
+    const call = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+    const r = await call('/api/casino/launch', { gameId: palaceId(7, 'vs10bbbonus') });
+    assert.deepEqual([r.status, r.j.url, r.j.transfer], [200, 'https://palace/game', true]);
+    assert.deepEqual(moves[0][2], { providerId: 7, gameCode: 'vs10bbbonus', returnUrl: `${base}/casino-return.html` });
+    assert.equal((await call('/api/casino/launch', { gameId: palaceId(7, 'vs10bbbonus'), demo: true })).status, 400);
+    db.prepare('UPDATE users SET casino_active = 1 WHERE id = ?').run(uid);
+    await call('/api/casino/close', {});
+    assert.deepEqual(moves[1], ['out', uid]);
+  } finally { server.close(); }
+  // Premium preferred: the original copy instead of the Standard one.
+  const both = [
+    { id: 1, name: 'BigBassSplash', title: 'Big Bass Splash', provider: 'Pragmatic', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: 'https://x/a.webp', game_type: 'slot', is_premium: false },
+    { id: 2, name: 'vs10txbigbass', title: 'Big Bass Splash', provider: 'Pragmatic Play', category: 'PragmaticPlay', category_title: 'Pragmatic Play', thumbnail: 'https://x/b.webp', game_type: 'slot', is_premium: true },
+  ];
+  const fetchBoth = async (url) => ({ ok: true, status: 200, json: async () => (url.includes('/games') ? { success: true, data: both, pagination: { total: 2 } } : { success: true, data: [] }) });
+  const db2 = openDb(':memory:');
+  const bb2 = createBigBang(db2, { apiKey: KEY, fetchImpl: fetchBoth });
+  assert.deepEqual((await bb2.games()).games.map((x) => x.id), [1]);   // Standard by default
+  set(db2, 'casino.premium', true);
+  bb2.reload();
+  assert.deepEqual((await bb2.games()).games.map((x) => x.id), [2]);   // the original
+});

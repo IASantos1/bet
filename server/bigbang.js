@@ -69,8 +69,20 @@ const titleKey = (g) => `${g.providerId}|${nameKey(g.name)}`;
 const FEATURED_COUNT = 30;
 const euros = (cents) => (cents / 100).toFixed(2);
 
+/** A Palace game's id here: a number of its own range (BigBang's ids are far below), stable per game. */
+export function palaceId(providerId, code) {
+  let h = 2166136261;
+  for (const ch of `${providerId}:${code}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return 1_000_000_000 + (h % 1_000_000_000);
+}
+
+/**
+ * `palace` (optional): () => the other aggregator's games (casino.js, Transfer mode); while `split()`
+ * says so, the slots come from it and BigBang keeps only the live tables.
+ */
 export function createBigBang(db, {
   apiKey = '', baseUrl = 'https://api.bigbangcasino.bet/api/v1', fetchImpl = globalThis.fetch, log = () => {}, cacheMs = 30 * 60_000,
+  palace = null, split = () => false, preferPremium = () => getSetting(db, 'casino.premium', false) === true,
 } = {}) {
   const key = String(apiKey || '').trim();
   const enabled = !!key;
@@ -124,6 +136,22 @@ export function createBigBang(db, {
       offset += list.length;
       if (!list.length || offset >= total) break;
     }
+    // Split: BigBang only for the live tables, the slots (and the rest) from Palace.
+    if (split() && palace) {
+      const live = games.filter((g) => g.type === 'live');
+      games.length = 0;
+      games.push(...live);
+      try {
+        for (const p of await palace()) {
+          if (p.category === 'Ao Vivo') continue;
+          games.push({
+            id: palaceId(p.providerId, p.code), code: p.code, name: p.name, provider: p.provider, providerId: providerKey(p.provider),
+            image: p.image || null, category: 'Slots', type: 'slot', premium: false, demo: false,
+            source: 'palace', palace: { providerId: p.providerId, code: p.code },
+          });
+        }
+      } catch (err) { log(`palace catálogo: ${err.message}`); }
+    }
     // Every spelling of each provider (its categories and the games' own names), grouped by providerKey.
     const names = new Map(); // key → Set of spellings
     const addName = (n) => { if (!n) return; const k = providerKey(n); if (!names.has(k)) names.set(k, new Set()); names.get(k).add(String(n)); };
@@ -132,12 +160,15 @@ export function createBigBang(db, {
       for (const c of cats.data || []) addName(c.name);
     } catch (err) { log(`bigbang categorias: ${err.message}`); }
     for (const g of games) addName(g.provider);
-    // One copy of each game per provider: the one with artwork, then the Standard one (it plays on any plan).
+    // One copy of each game per provider: the one with artwork, then the Standard one (BigBang's own
+    // engine, plays on any plan) — or, when the admin prefers them, the Premium one (the provider's
+    // original game; needs BigBang's prepaid balance, higher GGR rate).
+    const premiumFirst = preferPremium();
     const best = new Map();
     for (const g of games) {
       const k = titleKey(g);
       const cur = best.get(k);
-      const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && cur.premium && !g.premium);
+      const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && cur.premium !== g.premium && g.premium === premiumFirst);
       if (better) best.set(k, g);
     }
     // Only providers that have games here, under their fullest name: the house order first
@@ -414,5 +445,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
