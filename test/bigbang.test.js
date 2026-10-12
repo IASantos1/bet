@@ -360,3 +360,16 @@ test('launch speed: the demo URL is reused, a player created once is remembered 
   await bb2.launch({ gameId: 4821, token: 'b62_7' });
   assert.deepEqual(api.calls.slice(before).map((c) => c.path.split('/').pop()), ['launch']);
 });
+
+test('demo: live tables and Premium games are real-money only (no "Testar")', async () => {
+  const db = openDb(':memory:');
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  assert.equal((await bb.game(4821)).demo, true);   // a slot
+  assert.equal((await bb.game(9001)).demo, false);  // a live table
+  const server = createApp(db, { bigbang: bb }).listen(0);
+  try {
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/api/casino/launch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gameId: 9001, demo: true }) });
+    assert.equal(r.status, 400);
+    assert.match((await r.json()).error, /só com dinheiro real/);
+  } finally { server.close(); }
+});

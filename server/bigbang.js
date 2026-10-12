@@ -110,6 +110,8 @@ export function createBigBang(db, {
     id: g.id, code: g.name, name: g.title || g.name, provider: g.category_title || g.provider || g.category || '',
     providerId: providerKey(g.category_title || g.provider || g.category), image: g.thumbnail || null,
     category: TYPE_LABEL[g.game_type] || 'Slots', type: g.game_type || 'slot', premium: !!g.is_premium,
+    // BigBang: live tables and Premium games are real-money only ("Demo not available").
+    demo: !g.is_premium && g.game_type !== 'live',
   });
 
   async function loadCatalog() {
