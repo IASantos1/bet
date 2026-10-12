@@ -655,6 +655,11 @@ function adminCasino(c) {
       <p class="muted">O saldo nunca sai da Bet62: o BigBang pede o saldo e envia cada aposta/ganho assinados com a chave (HMAC), aplicados uma única vez por transação.
         ${c.sandbox ? 'Chave de teste (ek_test_): os jogos correm com saldo virtual e nenhum dinheiro real é movido.' : ''}
         Para mudar de chave (teste ↔ real) altere <strong>BIGBANG_API_KEY</strong> no Railway.</p>
+      ${c.serverDelay ? `<h3>Rapidez do servidor (cada rodada passa por aqui 2 vezes)</h3>
+        <div class="stat-grid"><div class="stat"><small>Atraso típico</small><strong>${c.serverDelay.p50} ms</strong></div>
+          <div class="stat"><small>Atraso nos piores 1%</small><strong class="${c.serverDelay.p99 > 200 ? 'red' : ''}">${c.serverDelay.p99} ms</strong></div>
+          <div class="stat"><small>Pior momento</small><strong class="${c.serverDelay.max > 1000 ? 'red' : ''}">${c.serverDelay.max} ms</strong></div></div>
+        <p class="muted">Último minuto. Abaixo de ~100 ms nos piores 1% o servidor não atrasa os jogos; acima de 200 ms, os jogos podem encravar por espera do servidor (não do fornecedor).</p>` : ''}
       <h3>Últimas chamadas do BigBang à carteira</h3>
       ${c.calls?.length ? `<div class="table-wrap"><table><thead><tr><th>Hora</th><th>Chamada</th><th>Jogador</th><th>Estado</th><th>Detalhe</th></tr></thead><tbody>
         ${c.calls.map((x) => `<tr><td>${esc(fmtDateTime(x.at))}</td><td>${esc(x.kind)}</td><td><code>${esc(x.username)}</code></td><td><span class="pill ${x.status === 200 ? 'won' : 'lost'}">${x.status}</span></td><td>${esc(x.detail)}</td></tr>`).join('')}

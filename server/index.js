@@ -19,8 +19,10 @@ import { createStripe } from './stripe.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
+import { startLoopDelay } from './loopdelay.js';
 
 const db = openDb(config.dbPath);
+startLoopDelay();
 if (!config.dbPersistent) {
   console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `
     + 'Crie um Volume no Railway (Settings → Volumes) para guardar saldos, apostas e utilizadores.');
@@ -132,7 +134,7 @@ const telegram = createTelegram(db, { ...config.telegram, publicUrl: config.publ
 const stopTelegram = telegram.start();
 if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, publicação automática ${telegram.status().auto && config.telegram.production ? 'ligada' : 'desligada'}`);
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram }).listen(config.port, () => {
+const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, boardCacheMs: 2000 }).listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 

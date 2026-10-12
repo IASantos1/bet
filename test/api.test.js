@@ -483,3 +483,17 @@ test('admin settles a ticket by hand: each open leg decided, paid as the automat
   // Players cannot.
   assert.equal((await p('POST', `/api/admin/bets/${t2.id}/settle`, { legs: {} })).status, 403);
 });
+
+test('board cache: with boardCacheMs the list is built once and shared for that long', async () => {
+  const db2 = openDb(':memory:');
+  seed(db2, () => {}, { sampleEvents: true });
+  const s = createApp(db2, { boardCacheMs: 60_000 }).listen(0);
+  try {
+    const b = `http://127.0.0.1:${s.address().port}`;
+    const first = await (await fetch(`${b}/api/events`)).json();
+    db2.prepare("UPDATE events SET status = 'cancelled'").run();
+    const again = await (await fetch(`${b}/api/events`)).json();
+    assert.equal(again.events.length, first.events.length);   // the shared copy
+    assert.ok(first.events.length > 0);
+  } finally { s.close(); db2.close(); }
+});

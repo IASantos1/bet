@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import { loopDelay } from './loopdelay.js';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
@@ -133,7 +134,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -469,6 +470,23 @@ export function createApp(db, {
     res.json({ leagues: out });
   });
 
+  // The board is the same for everyone and every open page asks for it every 5 s: built once per
+  // `boardCacheMs` and shared, so many visitors never keep the server busy (the casino's wallet
+  // calls wait on it). Off unless asked (index.js).
+  const boardCache = new Map(); // url → { at, body }
+  if (boardCacheMs > 0) {
+    app.get('/api/events', (req, res, next) => {
+      const hit = boardCache.get(req.originalUrl);
+      if (hit && Date.now() - hit.at < boardCacheMs) return res.type('json').send(hit.body);
+      res.json = (data) => {
+        if (boardCache.size > 200) boardCache.clear();
+        const body = JSON.stringify(data);
+        boardCache.set(req.originalUrl, { at: Date.now(), body });
+        return res.type('json').send(body);
+      };
+      next();
+    });
+  }
   app.get('/api/events', (req, res) => {
     const now = nowIso();
     // One league (sidebar): all its games of the next month, names compared loosely.
@@ -1746,6 +1764,7 @@ export function createApp(db, {
         bigbang: true, enabled: true, sandbox: bb.sandbox, games: all.games.length, providers: all.providers.length, error: all.error,
         bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
         callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
+        serverDelay: loopDelay(),
       });
     }
     if (!casinoOn()) {
