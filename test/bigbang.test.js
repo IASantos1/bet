@@ -381,6 +381,8 @@ test('split: slots from Palace (Transfer mode), live tables from BigBang; Premiu
   const palaceGames = [
     { providerId: 7, provider: 'Pragmatic Play', code: 'vs10bbbonus', name: 'Big Bass Bonanza', image: 'https://p/bbb.png', category: 'Slots' },
     { providerId: 8, provider: 'Evolution', code: 'roulette', name: 'Roleta Palace', image: null, category: 'Ao Vivo' },
+    { providerId: 9, provider: 'Habanero', code: 'hhf', name: 'Hot Hot Fruit', image: 'https://p/hhf-square.png', category: 'Slots' },
+    { providerId: 10, provider: 'HB Games', code: 'hhf2', name: 'Hot Hot Fruit™', image: 'https://p/hhf2.png', category: 'Slots' },
   ];
   let split = false;
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl, palace: async () => palaceGames, split: () => split });
@@ -394,6 +396,11 @@ test('split: slots from Palace (Transfer mode), live tables from BigBang; Premiu
   assert.ok(!ids.includes(palaceId(8, 'roulette')));                 // Palace live left out
   const g = await bb.game(palaceId(7, 'vs10bbbonus'));
   assert.deepEqual([g.source, g.demo, g.palace], ['palace', false, { providerId: 7, code: 'vs10bbbonus' }]);
+  // Artwork: BigBang's tall picture of the same game when there is one; else Palace's, shown whole.
+  assert.deepEqual([g.image, g.fit], ['https://p/bbb.png', true]);
+  const hhf = await bb.game(palaceId(9, 'hhf'));
+  assert.deepEqual([hhf.image, hhf.fit], ['https://x/hhf.webp', false]);
+  assert.equal((await bb.game(palaceId(10, 'hhf2'))).image, 'https://x/hhf.webp');   // provider spelled apart
   // Launch: Palace's Transfer mode (the balance moves there), and back on close.
   const moves = [];
   const casino = { enabled: true, enterGame: async (u, a) => { moves.push(['in', u.id, a]); return { url: 'https://palace/game', casinoCents: 2000 }; },
