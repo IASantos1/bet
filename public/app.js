@@ -914,7 +914,7 @@ function casinoGamePage(id) {
           ${g.demo !== false ? '<button class="cg-btn demo" data-cg-play="demo">Testar</button>' : ''}
         </div>
         ${fs && !fs.eligible ? '<p class="cg-note">As suas Free Spins são válidas noutros jogos — veja-os em <a href="#/promocoes">Promoções</a>.</p>' : ''}
-        <p class="cg-note">${g.demo !== false ? 'Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.' : 'Este jogo (ao vivo / Premium) é só com dinheiro real: não tem modo demonstração.'}</p>
+        ${g.demo !== false ? '<p class="cg-note">Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.</p>' : ''}
       </div>
       ${d.related.length ? `<section class="section"><div class="section-head"><h2>Do mesmo estilo</h2></div>${carousel('cgRelated', d.related.map(rel))}</section>` : ''}
     </div>${footer()}`;
