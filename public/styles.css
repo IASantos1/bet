@@ -649,6 +649,14 @@ body.no-scroll { overflow: hidden; }
 .trk-clip { position: absolute; inset: 0; z-index: 8; background: #0d1114; opacity: 0; visibility: hidden; cursor: pointer; transition: opacity .25s, visibility 0s .25s; }
 .trk-clip.on { opacity: 1; visibility: visible; transition: opacity .25s; }
 .trk-clip video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.trk-clip-goal { position: absolute; left: 0; right: 0; top: 30%; display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0; pointer-events: none; }
+.trk-clip.held .trk-clip-goal { opacity: 1; transition: opacity .2s; }
+.trk-clip-goal b { font: italic 900 clamp(34px, 9vw, 64px)/1 system-ui, sans-serif; color: #fff; letter-spacing: 1px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .35), 0 0 18px rgba(0, 0, 0, .45); animation: trkGoalPulse 1.1s ease-in-out infinite; }
+.trk-clip-goal span { padding: 3px 10px; border-radius: 6px; background: rgba(13, 17, 20, .82); color: #fff; font: italic 900 13px/1.2 system-ui, sans-serif; }
+.trk-clip.var .trk-clip-goal b { color: #ffd36b; font-size: clamp(24px, 6vw, 44px); animation-duration: 1.6s; }
+@keyframes trkGoalPulse { 0%, 100% { transform: scale(1) rotate(-2deg); } 50% { transform: scale(1.12) rotate(2deg); } }
+@media (prefers-reduced-motion: reduce) { .trk-clip-goal b { animation: none; } }
 .trk-half { top: 0; bottom: 0; left: 50%; width: 2px; background: #ffffffb8; transform: translateX(-50%); }
 .trk-circle { width: 17.4%; aspect-ratio: 1; top: 50%; left: 50%; border: 2px solid #ffffffb8; border-radius: 50%; transform: translate(-50%, -50%); }
 .trk-spot { width: 5px; height: 5px; top: 50%; left: 50%; background: #fff; border-radius: 50%; transform: translate(-50%, -50%); }
