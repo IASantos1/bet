@@ -126,7 +126,12 @@ const promoJobs = () => {
 setTimeout(promoJobs, 15_000).unref();
 setInterval(promoJobs, 5 * 60_000).unref();
 
-const bigbang = createBigBang(db, { ...config.bigbang, log: (m) => console.warn(`[bigbang] ${m}`) });
+// BigBang; with Palace configured, the admin can give the slots to Palace and keep BigBang for live tables.
+const bigbang = createBigBang(db, {
+  ...config.bigbang, log: (m) => console.warn(`[bigbang] ${m}`),
+  palace: casino.enabled ? async () => (await casino.games()).games : null,
+  split: () => casino.enabled && getSetting(db, 'casino.split', false) === true,
+});
 if (bigbang.enabled) console.log(`Casino BigBang: chave ${bigbang.sandbox ? 'sandbox (ek_test_)' : 'real'}`);
 
 // Telegram channel: the admin's posts, and the big games posted and followed automatically.

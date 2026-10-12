@@ -647,6 +647,16 @@ function adminCasino(c) {
       <div class="stat-grid"><div class="stat"><small>Jogos</small><strong>${c.games}</strong></div><div class="stat"><small>Fornecedores</small><strong>${c.providers}</strong></div>
         <div class="stat"><small>Apostado (dinheiro real)</small><strong>${money(c.bets)}</strong></div><div class="stat"><small>Ganhos pagos</small><strong>${money(c.wins)}</strong></div>
         <div class="stat"><small>GGR</small><strong>${money(c.bets - c.wins)}</strong></div><div class="stat"><small>Ganhos de Free Spins pagos</small><strong>${money(c.freeSpinWins)}</strong></div></div>
+      <h3>Quem fornece os jogos</h3>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-split"${c.split ? ' checked' : ''}${c.palace?.configured ? '' : ' disabled'}>
+        Slots pela Palace · jogos ao vivo pela BigBang</label>
+        ${c.palace?.configured ? '<button class="ghost-btn btn-sm" data-action="palace-test">Testar Palace</button>' : ''}</div>
+      <p class="muted">${c.palace?.configured
+    ? (c.split ? 'Ativo: os slots vêm da Palace (o saldo passa para a Palace enquanto o jogo está aberto e volta ao sair) e a BigBang fica só com as mesas ao vivo.' : 'Desligado: todos os jogos vêm da BigBang.')
+    : `A Palace não está configurada: defina <strong>CASINO_API_URL</strong> ${c.palace?.urlSet ? '✔' : '✘'} e <strong>CASINO_API_TOKEN</strong> ${c.palace?.tokenSet ? '✔' : '✘'} no Railway.`}</p>
+      <div id="palaceTest"></div>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
+      <p class="muted">Quando o mesmo jogo existe nas duas versões: <b>Standard</b> é o motor próprio da BigBang (cópia, funciona em qualquer plano); <b>Premium</b> é o jogo original do fornecedor (precisa de saldo pré-pago na conta BigBang e paga uma % de GGR mais alta). Os Premium não têm modo demonstração.</p>
       <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
       <div class="table-wrap"><table><tbody>
         <tr><td><strong>user_data</strong> (GET)</td><td><code>${esc(c.callbacks.userData)}</code></td></tr>
@@ -1314,6 +1324,29 @@ document.addEventListener('click', async (e) => {
       toast('Sincronização concluída');
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
+  } else if (action === 'casino-split') {
+    const on = actionEl.checked;
+    if (on && !confirm('Passar os slots para a Palace? A BigBang fica só com os jogos ao vivo.')) { actionEl.checked = false; return; }
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/mode', { method: 'POST', body: { split: on } });
+      toast(on ? 'Slots pela Palace' : 'Tudo pela BigBang', `${r.games} jogos no casino${r.error ? ` · ${r.error}` : ''}`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'casino-premium') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/premium', { method: 'POST', body: { on: actionEl.checked } });
+      toast(r.premium ? 'Versões Premium (originais)' : 'Versões Standard', `${r.premiumGames} jogos Premium de ${r.games}`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'palace-test') {
+    actionEl.disabled = true;
+    try {
+      const { steps } = await api('/api/admin/casino/palace-test', { method: 'POST', body: {} });
+      $('#palaceTest').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
   } else if (action === 'tg-auto') {
     try {
       await api('/api/admin/telegram/auto', { method: 'POST', body: { on: actionEl.checked } });

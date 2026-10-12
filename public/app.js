@@ -934,6 +934,8 @@ async function playCasino(mode) {
     if (!state.casinoSession) return;
     warmOrigin(r.url);
     state.casinoSession.url = r.url;
+    // A Palace slot (Transfer mode): the balance is in that casino until the game closes.
+    if (r.transfer && state.user) { state.user.casinoActive = true; state.user.balance = r.balance; updateHeader(); }
     // Never covered for long: a game whose page does not report loading shows itself anyway.
     setTimeout(uncoverGame, 20_000);
     if (r.freeSpins) state.casinoSession.fsBalance = r.freeSpins.balance;

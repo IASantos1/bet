@@ -1148,8 +1148,11 @@ export function createApp(db, {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
     if (bb) {
       // Seamless: the money never leaves Bet62. A free-spins game shows the free-spins balance.
+      // A Palace slot open (Transfer mode): the balance is in that casino meanwhile.
       const s = req.query.fs ? spinsRow(db, Number(req.query.fs), req.user.id) : null;
-      return res.json({ balance: cents(userById(req.user.id).balance_cents), freeSpins: s ? cents(s.status === 'active' ? s.balance_cents : 0) : null, inCasino: false });
+      const u = userById(req.user.id);
+      const away = u.casino_active && casino?.enabled ? await casino.casinoBalanceCents(u) : 0;
+      return res.json({ balance: cents(u.balance_cents + away), freeSpins: s ? cents(s.status === 'active' ? s.balance_cents : 0) : null, inCasino: !!u.casino_active });
     }
     const u = userById(req.user.id);
     const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
@@ -1172,6 +1175,17 @@ export function createApp(db, {
       const g = await bb.game(req.body.gameId);
       if (!g) throw new HttpError(404, 'Jogo não encontrado.');
       const returnUrl = `${origin}/casino-return.html`;
+      // A Palace slot (split mode): Transfer mode — the balance goes into that casino while it plays.
+      if (g.source === 'palace') {
+        if (req.body.demo) throw new HttpError(400, 'Este jogo não tem modo demonstração.');
+        if (req.body.freeSpins) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
+        if (!req.user) throw new HttpError(401, 'Inicie sessão para jogar com dinheiro real.');
+        if (!casino?.enabled) throw new HttpError(503, 'Casino Palace não configurado.');
+        const pu = userById(req.user.id);
+        if (pu.balance_cents <= 0 && !pu.casino_active) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
+        const { url, casinoCents } = await casino.enterGame(pu, { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl });
+        return res.json({ url, balance: cents(casinoCents), transfer: true });
+      }
       if (req.body.demo) {
         if (g.demo === false) throw new HttpError(400, 'Este jogo é só com dinheiro real (ao vivo / Premium): não tem modo demonstração.');
         return res.json({ url: await bb.launch({ gameId: g.id, demo: true, returnUrl }), demo: true });
@@ -1201,7 +1215,8 @@ export function createApp(db, {
 
   // Leaving the game: the balance comes back to the ClassicBet wallet.
   app.post('/api/casino/close', requireUser, wrap(async (req, res) => {
-    if (!casinoOn() || bb) return res.json({ amount: 0, balance: cents(userById(req.user.id).balance_cents) });
+    // BigBang never holds the balance; a Palace game (alone, or in split mode) does while open.
+    if (!casino?.enabled || !userById(req.user.id).casino_active) return res.json({ amount: 0, balance: cents(userById(req.user.id).balance_cents) });
     const amountCents = await casino.leaveGame(req.user);
     res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents) });
   }));
@@ -1752,6 +1767,27 @@ export function createApp(db, {
     res.json(await telegram.promoteNext({ force: true }));
   }));
 
+  /** Who serves the slots: BigBang (everything) or Palace (slots) + BigBang (live tables). */
+  admin.post('/casino/mode', wrap(async (req, res) => {
+    const on = req.body?.split === true;
+    if (on && !casino?.enabled) throw new HttpError(409, 'A Palace não está configurada: defina CASINO_API_URL e CASINO_API_TOKEN no Railway.');
+    setSetting(db, 'casino.split', on);
+    bb?.reload();
+    const all = bb ? await bb.games() : null;
+    res.json({ split: on, games: all?.games.length ?? 0, error: all?.error || null });
+  }));
+  /** Standard (BigBang's own engines) or Premium (the providers' original games) when both exist. */
+  admin.post('/casino/premium', wrap(async (req, res) => {
+    setSetting(db, 'casino.premium', req.body?.on === true);
+    bb?.reload();
+    const all = bb ? await bb.games() : null;
+    res.json({ premium: req.body?.on === true, games: all?.games.length ?? 0, premiumGames: all?.games.filter((g) => g.premium).length ?? 0 });
+  }));
+  admin.post('/casino/palace-test', wrap(async (_req, res) => {
+    if (!casino?.enabled) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.' }] });
+    res.json({ steps: await casino.diagnose() });
+  }));
+
   /** Games hidden from the casino: names or ids, one per line (or comma-separated). */
   admin.post('/casino/hidden', (req, res) => {
     const list = [...new Set(String(req.body?.hidden || '').split(/[\n,;]+/).map((x) => x.trim().slice(0, 120)).filter(Boolean))].slice(0, 500);
@@ -1775,6 +1811,9 @@ export function createApp(db, {
         bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
         callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
         serverDelay: loopDelay(),
+        // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
+        premium: getSetting(db, 'casino.premium', false) === true,
+        split: !!getSetting(db, 'casino.split', false), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token },
       });
     }
     if (!casinoOn()) {
