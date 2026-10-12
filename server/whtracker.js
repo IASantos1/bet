@@ -9,6 +9,7 @@
 // 2D tracker, actions list and statistics work unchanged: 'event', 'livedata', 'action'.
 
 import { EventEmitter } from 'node:events';
+import { getSetting, setSetting, nowIso } from './db.js';
 
 const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
 const num = (v) => { const n = Number(String(v ?? '').replace('%', '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
@@ -78,6 +79,24 @@ export function normalizeStats(raw) {
     for (const [name, v] of Object.entries(raw)) add(name, v);
   }
   return rows;
+}
+
+/**
+ * Does WinHouse send VAR reviews? Nobody has seen one yet: every tracker answer read (the watched
+ * games' frames, every live game's minute read) is checked for VAR, and the first ones seen are kept
+ * (setting winhouse.varSeen, admin → Dados ao vivo) with the text around it, to map them then.
+ */
+const VAR_RE = /\bVAR\b|video.?assistant|"var(_[a-z]+)?"/;
+export function spotVar(db, text, info = {}) {
+  const t = String(text || '');
+  const m = VAR_RE.exec(t);
+  if (!m || !db) return false;
+  const seen = getSetting(db, 'winhouse.varSeen', []) || [];
+  if (seen.length >= 20) return true;
+  const sample = t.slice(Math.max(0, m.index - 300), m.index + 300);
+  if (seen.some((x) => x.sample === sample)) return true;
+  setSetting(db, 'winhouse.varSeen', [...seen, { at: nowIso(), ...info, sample }]);
+  return true;
 }
 
 const SITUATIONS = [
@@ -426,7 +445,9 @@ export function createWinHouseTracker(db, {
       const opened = Date.now();
       sock.onmessage = (m) => {
         let msg = null;
-        try { msg = JSON.parse(typeof m.data === 'string' ? m.data : String(m.data)); } catch { return; }
+        const text = typeof m.data === 'string' ? m.data : String(m.data);
+        try { msg = JSON.parse(text); } catch { return; }
+        spotVar(db, text, { gameId: w.gameId, eventId, via: 'ws' });
         const fields = frameFields(msg);
         if (!fields) return;
         // The tracker sends xy only in some frames. A frame without it keeps the last real position

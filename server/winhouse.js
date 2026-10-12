@@ -5,7 +5,7 @@ import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
-import { normalizeWidgetData, redCardsOf } from './whtracker.js';
+import { normalizeWidgetData, redCardsOf, spotVar } from './whtracker.js';
 
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
@@ -305,11 +305,17 @@ export function createWinHouseClient({
     };
     // Where the known routes are mentioned, with the text around them (how the iframe builds its URLs).
     const hits = [];
+    // Does the book's tracker know VAR reviews? Every mention in its docs and scripts, with the text around it.
+    const varHits = [];
     const KEYWORDS = /livegames|prematchgame|livegame|liveevent|live_game|liveodds|live-odds|gameodds|getgame|event_odds|ws-widget|widget-data|socket\.io|sockjs|signalr/gi;
     const scan = (text, where) => {
       for (const m of text.matchAll(/["'`](\/?(?:ajax|api|ws-|widget|socket|live|game|event|odds|sport)[A-Za-z0-9_\-./{}$:?=&+]*)["'`]/gi)) add(m[1], where);
       for (const m of text.matchAll(/\/ajax\/[A-Za-z0-9_\-/]+/g)) add(m[0], where);
       for (const m of text.matchAll(/wss?:\/\/[A-Za-z0-9_\-./]+(?:\/[A-Za-z0-9_\-./?=&{}$]*)?/g)) add(m[0], where);
+      for (const m of text.matchAll(/\bVAR\b|video.?assistant|var_?(?:review|check|decision)/g)) {
+        if (varHits.length >= 30) break;
+        varHits.push({ where, around: text.slice(Math.max(0, m.index - 150), m.index + 200).replace(/\s+/g, ' ') });
+      }
       for (const m of text.matchAll(KEYWORDS)) {
         if (hits.length >= 40) break;
         hits.push({ where, around: text.slice(Math.max(0, m.index - 120), m.index + 160).replace(/\s+/g, ' ') });
@@ -383,6 +389,7 @@ export function createWinHouseClient({
     return {
       at: new Date().toISOString(), baseUrl: base, visited, links: [...links].slice(0, 60), scriptsFound: seen.size - pagesRead,
       docRoutes: [...docRoutes].slice(0, 200),
+      varHits,
       routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
       docs,
       // The token swap first (it is what the live video is missing).
@@ -1266,6 +1273,7 @@ export function createWinHouseFeed(db, {
       try {
         const r = await client.tracker(row.external_id);
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
+          spotVar(db, JSON.stringify(r.body), { gameId: row.external_id, eventId: row.id, via: 'tracker' });
           const s = normalizeWidgetData(r.body);
           red = redCardsOf(s.stats);
           if (s.halfTime) {

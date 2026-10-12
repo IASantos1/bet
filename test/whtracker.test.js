@@ -282,3 +282,16 @@ test('red cards from a tracker state: each side, or null when the tracker gives 
   assert.deepEqual(redCardsOf(normalizeWidgetData({ sc: { RED_CARD: [2, 0] } }).stats), { home: 2, away: 0 });
   assert.equal(redCardsOf(normalizeWidgetData({ on_target: [1, 1] }).stats), null);
 });
+
+test('VAR watch: a tracker answer mentioning VAR is kept (once per sample), other text is not', async () => {
+  const { spotVar } = await import('../server/whtracker.js');
+  const { openDb, getSetting } = await import('../server/db.js');
+  const db = openDb(':memory:');
+  assert.equal(spotVar(db, JSON.stringify({ situation: 'Home Attack', variant: 2 }), { gameId: '1' }), false);
+  assert.equal(spotVar(db, JSON.stringify({ situation: 'VAR - Possible Penalty' }), { gameId: '2', via: 'ws' }), true);
+  assert.equal(spotVar(db, JSON.stringify({ situation: 'VAR - Possible Penalty' }), { gameId: '2', via: 'ws' }), true);
+  assert.equal(spotVar(db, JSON.stringify({ timeline: [{ type: 'var', text: 'Goal under review' }] }), { gameId: '3' }), true); // a 'var' event in the timeline
+  assert.equal(spotVar(db, JSON.stringify({ var: { status: 'checking' } }), { gameId: '4' }), true);
+  const seen = getSetting(db, 'winhouse.varSeen', []);
+  assert.deepEqual(seen.map((x) => x.gameId), ['2', '3', '4']);
+});
