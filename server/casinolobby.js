@@ -155,6 +155,7 @@ export function dropCrossDuplicates(games) {
     const rb = providerRank(b.provider, b.providerId);
     if (ra !== rb) return ra < rb;
     if (!!a.image !== !!b.image) return !!a.image;
+    if (!!a.fit !== !!b.fit) return !a.fit; // portrait artwork over a landscape picture
     return a.id < b.id;
   };
   for (const g of games) {

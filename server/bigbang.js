@@ -155,7 +155,7 @@ export function createBigBang(db, {
           const tall = art.get(titleKey({ providerId, name: p.name })) || art.get(nameKey(p.name));
           games.push({
             id: palaceId(p.providerId, p.code), code: p.code, name: p.name, provider: p.provider, providerId,
-            // Palace's own picture is not portrait: shown whole (fitted), not cropped by the card.
+            // Palace's own picture is not portrait (it fills the tall card cropped); a twin with portrait art wins.
             image: tall || p.image || null, fit: !tall && !!p.image, category: 'Slots', type: 'slot', premium: false, demo: false,
             source: 'palace', palace: { providerId: p.providerId, code: p.code },
           });
@@ -178,7 +178,8 @@ export function createBigBang(db, {
     for (const g of games) {
       const k = titleKey(g);
       const cur = best.get(k);
-      const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && cur.premium !== g.premium && g.premium === premiumFirst);
+      const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && !!cur.fit && !g.fit)
+        || (!!g.image === !!cur.image && !!cur.fit === !!g.fit && cur.premium !== g.premium && g.premium === premiumFirst);
       if (better) best.set(k, g);
     }
     // Only providers that have games here, under their fullest name: the house order first
