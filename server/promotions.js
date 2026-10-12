@@ -341,9 +341,11 @@ function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
  * Free spins given by the administrator (tests, support): `spins` at `spinValueCents` each, in the
  * games of the Free Spins campaign, valid `days`. One grant active per player, as on a deposit.
  */
-export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, ref, note = null }) {
-  const c = promoConfig(db).casinoFs;
-  if (!c.games.length) throw new HttpError(400, 'Configure primeiro os jogos das Free Spins em Promoções → Free Spins casino.');
+export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, ref, note = null, games = null }) {
+  // The games picked in the modal, else the campaign's.
+  const picked = (Array.isArray(games) ? games : []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  const c = { games: picked.length ? [...new Set(picked)] : promoConfig(db).casinoFs.games };
+  if (!c.games.length) throw new HttpError(400, 'Escolha pelo menos um jogo para as Free Spins.');
   if (activeSpins(db, userId)) throw new HttpError(409, 'Este jogador já tem Free Spins ativas.');
   const n = Math.round(Number(spins));
   if (!Number.isInteger(n) || n < 1 || n > 500) throw new HttpError(400, 'Número de rodadas inválido (1 a 500).');

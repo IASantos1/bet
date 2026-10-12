@@ -1610,7 +1610,7 @@ export function createApp(db, {
     const u = playerRow(req.params.id);
     const s = tx(db, () => grantAdminSpins(db, u.id, {
       spins: req.body?.spins, spinValueCents: parseEuros(req.body?.spinValue ?? 0.2, 'Valor por rodada'), days: req.body?.days,
-      ref: `admin:${req.user.id}:${Date.now()}:${u.id}:fs`, note: req.body?.note ? str(req.body.note, 120) : null,
+      ref: `admin:${req.user.id}:${Date.now()}:${u.id}:fs`, note: req.body?.note ? str(req.body.note, 120) : null, games: req.body?.games,
     }));
     res.json({ ok: true, freeSpins: spinsView(s) });
   });
