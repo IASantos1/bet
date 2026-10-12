@@ -59,6 +59,21 @@ export const config = {
     currency: (env.STRIPE_CURRENCY || 'eur').trim().toLowerCase(),
   },
 
+  // Revolut Business: withdrawals paid to the player's IBAN (the same variables as Bet62Novo).
+  // Off until REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER, REVOLUT_PRIVATE_KEY, REVOLUT_REFRESH_TOKEN and
+  // REVOLUT_PAYOUT_ACCOUNT_ID are all set. From AUTO_MIN to AUTO_MAX (€) a withdrawal is paid at once.
+  revolut: {
+    environment: (env.REVOLUT_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
+    clientId: unquote(env.REVOLUT_CLIENT_ID),
+    issuer: unquote(env.REVOLUT_JWT_ISSUER),
+    privateKey: unquote(env.REVOLUT_PRIVATE_KEY),
+    refreshToken: unquote(env.REVOLUT_REFRESH_TOKEN),
+    accountId: unquote(env.REVOLUT_PAYOUT_ACCOUNT_ID),
+    webhookSecret: unquote(env.REVOLUT_WEBHOOK_SIGNING_SECRET),
+    autoMinCents: Math.round((Number(env.REVOLUT_AUTO_PAYOUT_MIN) || 20) * 100),
+    autoMaxCents: Math.round((Number(env.REVOLUT_AUTO_PAYOUT_MAX) || 200) * 100),
+  },
+
   // Football data feed (sports.bzzoiro.com). Disabled while no token is set.
   feed: {
     token: (env.BZZOIRO_API_TOKEN || '').trim(),

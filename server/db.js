@@ -511,6 +511,12 @@ function migrate(db) {
   // Casino (aggregator Agent API): the player's code there.
   const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
+  // Withdrawals paid through Revolut: where the payout is (processing / paid / failed), its
+  // Revolut transaction and why it failed.
+  const wdCols = new Set(db.prepare('PRAGMA table_info(withdrawals)').all().map((c) => c.name));
+  for (const [c, type] of [['payout_status', 'TEXT'], ['payout_ref', 'TEXT'], ['payout_error', 'TEXT'], ['paid_at', 'TEXT']]) {
+    if (!wdCols.has(c)) db.exec(`ALTER TABLE withdrawals ADD COLUMN ${c} ${type}`);
+  }
   if (!userCols.has('casino_fs_code')) db.exec('ALTER TABLE users ADD COLUMN casino_fs_code INTEGER');
   // Single wallet: 1 while the player's balance is in the casino (a game is open).
   if (!userCols.has('casino_active')) db.exec('ALTER TABLE users ADD COLUMN casino_active INTEGER NOT NULL DEFAULT 0');

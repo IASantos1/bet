@@ -616,12 +616,21 @@ async function loadTab() {
       main.innerHTML = adminAffiliates(a, c, l);
     }
     else if (tab === 'levantamentos') {
-      const { withdrawals } = await api('/api/admin/withdrawals');
-      main.innerHTML = withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
+      const { withdrawals, revolut: rv } = await api('/api/admin/withdrawals');
+      state.revolutOn = !!rv?.configured;
+      const rvPanel = `<div class="panel rv-panel"><h3>Revolut Business ${rv?.configured ? `<span class="pill won">LIGADA · ${rv.environment === 'production' ? 'produção' : 'sandbox'}</span>` : '<span class="pill void">NÃO CONFIGURADA</span>'}</h3>
+        <p class="muted">${rv?.configured
+          ? `Levantamentos de ${money(rv.autoMin)} a ${money(rv.autoMax)} são pagos automaticamente para o IBAN do jogador. Os restantes ficam aqui: “Aprovar e pagar” envia pela Revolut. ${rv.webhook ? 'Webhook configurado.' : '⚠ Falta REVOLUT_WEBHOOK_SIGNING_SECRET: o estado “Pago” só chega pelo webhook.'}`
+          : 'Defina no Railway → Variables: REVOLUT_ENVIRONMENT, REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER, REVOLUT_PRIVATE_KEY, REVOLUT_REFRESH_TOKEN, REVOLUT_PAYOUT_ACCOUNT_ID e REVOLUT_WEBHOOK_SIGNING_SECRET (as mesmas do Bet62Novo). Enquanto não estiver ligada, aprove só depois de fazer a transferência à mão.'}</p></div>`;
+      const payout = (w) => (w.payout === 'paid' ? '<span class="pill won">Pago (Revolut)</span>' : w.payout === 'processing' ? '<span class="pill open">A pagar (Revolut)</span>'
+        : w.payout === 'failed' ? `<span class="pill lost">Revolut falhou</span><br><small class="muted">${esc(w.payoutError || '')}</small>` : '');
+      const acts = (w) => (w.status === 'pending' ? `<div class="form-actions">${state.revolutOn ? `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar e pagar</button><button class="ghost-btn btn-sm" data-action="wd-manual" data-id="${w.id}">Pago à mão</button>` : `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button>`}<button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>`
+        : w.status === 'approved' && state.revolutOn && !w.payout ? `<button class="ghost-btn btn-sm" data-action="wd-pay" data-id="${w.id}">Pagar pela Revolut</button>` : esc(fmtDateTime(w.decidedAt)));
+      main.innerHTML = rvPanel + (withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
         ${withdrawals.map((w) => `<tr><td>${esc(fmtDateTime(w.createdAt))}</td><td>${esc(w.user)}<br><small class="muted">${esc(w.email)}</small></td><td>${esc(w.iban)}</td><td class="num">${money(w.amount)}</td>
-          <td><span class="pill ${w.status}">${STATUS_LABEL[w.status]}</span></td>
-          <td>${w.status === 'pending' ? `<div class="form-actions"><button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button><button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>` : esc(fmtDateTime(w.decidedAt))}</td></tr>`).join('')}
-      </tbody></table></div>` : '<div class="panel empty">Sem pedidos de levantamento.</div>';
+          <td><span class="pill ${w.status}">${STATUS_LABEL[w.status]}</span> ${payout(w)}</td>
+          <td>${acts(w)}</td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="panel empty">Sem pedidos de levantamento.</div>');
     } else if (tab === 'apostas') {
       const onlyOpen = state.betsFilter === 'open';
       const [{ bets }, co] = await Promise.all([api(`/api/admin/bets${onlyOpen ? '?status=open' : ''}`), api('/api/admin/cashout')]);
@@ -1535,14 +1544,20 @@ document.addEventListener('click', async (e) => {
     const legs = Object.fromEntries([...card.querySelectorAll('.leg-pick')].map((s) => [s.dataset.leg, r]));
     const what = { won: 'GANHO (todas as seleções em aberto ganhas, o prémio é pago)', lost: 'PERDIDO', void: 'ANULADO (a aposta é devolvida)' }[r];
     await settleTicket(actionEl.dataset.id, legs, `Marcar o bilhete #${actionEl.dataset.id} como ${what}?`);
-  } else if (action === 'wd-approve' || action === 'wd-reject') {
-    const verb = action === 'wd-approve' ? 'approve' : 'reject';
-    if (!confirm(verb === 'approve' ? 'Aprovar este levantamento (confirmando que a transferência foi feita)?' : 'Rejeitar e devolver o valor ao jogador?')) return;
+  } else if (['wd-approve', 'wd-reject', 'wd-manual', 'wd-pay'].includes(action)) {
+    const verb = { 'wd-approve': 'approve', 'wd-manual': 'approve', 'wd-reject': 'reject', 'wd-pay': 'pay' }[action];
+    const ask = {
+      'wd-approve': state.revolutOn ? 'Aprovar e enviar o pagamento pela Revolut para o IBAN do jogador?' : 'Aprovar este levantamento (confirmando que a transferência foi feita)?',
+      'wd-manual': 'Aprovar sem a Revolut (confirmando que a transferência foi feita à mão)?',
+      'wd-reject': 'Rejeitar e devolver o valor ao jogador?',
+      'wd-pay': 'Enviar agora este levantamento pela Revolut?',
+    }[action];
+    if (!confirm(ask)) return;
     try {
-      await api(`/api/admin/withdrawals/${actionEl.dataset.id}/${verb}`, { method: 'POST', body: {} });
-      toast(verb === 'approve' ? 'Levantamento aprovado' : 'Levantamento rejeitado');
+      const r = await api(`/api/admin/withdrawals/${actionEl.dataset.id}/${verb}`, { method: 'POST', body: action === 'wd-manual' ? { manual: true } : {} });
+      toast(verb === 'reject' ? 'Levantamento rejeitado' : r.payout === 'paid' ? 'Pago pela Revolut' : r.payout ? 'Enviado para a Revolut' : 'Levantamento aprovado');
       loadTab();
-    } catch (err) { toast('Erro', err.message, 'error'); }
+    } catch (err) { toast('Erro', err.message, 'error'); loadTab(); }
   }
 });
 
