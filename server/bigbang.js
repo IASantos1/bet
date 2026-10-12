@@ -140,15 +140,19 @@ export function createBigBang(db, {
     if (split() && palace) {
       const live = games.filter((g) => g.type === 'live');
       // BigBang's portrait artwork (made for these tall cards) for the same game, when it has one.
+      // Matched by provider and title, else by title alone (the provider may be spelled apart).
       const art = new Map();
-      for (const g of games) if (g.image && !art.has(titleKey(g))) art.set(titleKey(g), g.image);
+      for (const g of games) {
+        if (!g.image) continue;
+        for (const k of [titleKey(g), nameKey(g.name)]) if (!art.has(k)) art.set(k, g.image);
+      }
       games.length = 0;
       games.push(...live);
       try {
         for (const p of await palace()) {
           if (p.category === 'Ao Vivo') continue;
           const providerId = providerKey(p.provider);
-          const tall = art.get(titleKey({ providerId, name: p.name }));
+          const tall = art.get(titleKey({ providerId, name: p.name })) || art.get(nameKey(p.name));
           games.push({
             id: palaceId(p.providerId, p.code), code: p.code, name: p.name, provider: p.provider, providerId,
             // Palace's own picture is not portrait: shown whole (fitted), not cropped by the card.
