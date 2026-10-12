@@ -117,6 +117,12 @@ const PROMO_FIELDS = {
 };
 const localDT = (iso) => (iso ? toLocalInput(iso) : '');
 
+const fsChip = (id, name, bet, missing = false) => `<span class="fs-chip${missing ? ' missing' : ''}" data-id="${id}">${esc(name)}${bet ? ` · €${bet}` : ''}${missing ? ' (não encontrado)' : ''}
+  <button type="button" data-action="fs-game-remove" data-id="${id}" aria-label="Retirar">×</button></span>`;
+/** The free-spins games input: "id[:€], …" as a list of [id, bet]. */
+const fsTokens = () => String($('#fsGamesInput')?.value || '').split(/[\s,;]+/).filter(Boolean).map((t) => t.split(':'));
+const fsWrite = (tokens) => { $('#fsGamesInput').value = tokens.map(([id, bet]) => (bet ? `${id}:${bet}` : id)).join(', '); };
+
 function adminPromos(d) {
   const c = d.config;
   const field = (camp, [k, label, type]) => {
@@ -124,7 +130,12 @@ function adminPromos(d) {
     if (type === 'tiers') return `<label class="field">${esc(label)}<input name="${camp}.${k}" value="${esc(v.map(([d, n]) => `${d}:${n}`).join(', '))}" required></label>`;
     if (type === 'games') {
       const bets = c[camp].gameBets || {};
-      return `<label class="field wide">${esc(label)}<input name="${camp}.${k}" value="${esc(v.map((id) => (bets[id] ? `${id}:${bets[id]}` : String(id))).join(', '))}" placeholder="ex.: 4821:0.20, 4822:0.10"><small class="muted">${v.length ? `${v.length} jogo(s)` : 'Sem jogos: a campanha não fica disponível.'} Cada rodada é jogada ao valor indicado (sem valor: o padrão). Os IDs aparecem no URL da página do jogo (#/casino/jogo/ID).</small></label>`;
+      const names = new Map((d.fsGames || []).map((g) => [g.id, g]));
+      return `<div class="field wide"><span>Jogos das Free Spins — o jogador escolhe 1 (recomendado: 5)</span>
+        <div class="fs-chips" id="fsChips">${v.map((id) => fsChip(id, names.get(id)?.name || `Jogo ${id}`, bets[id], names.get(id)?.found === false)).join('') || '<small class="muted">Sem jogos: a campanha não fica disponível.</small>'}</div>
+        <div class="fs-search"><input id="fsGameSearch" placeholder="Procurar jogo para juntar (ex.: Big Bass, Gates of Olympus)…" autocomplete="off"><div class="fs-results" id="fsGameResults"></div></div>
+        <label class="field">${esc(label)}<input name="${camp}.${k}" id="fsGamesInput" value="${esc(v.map((id) => (bets[id] ? `${id}:${bets[id]}` : String(id))).join(', '))}" placeholder="ex.: 4821:0.20, 4822:0.10"></label>
+        <small class="muted">Cada rodada é jogada ao valor indicado (ID:€; sem valor: o padrão). Jogos da Palace (slots) ou da BigBang.</small></div>`;
     }
     if (type === 'base') return `<label class="field">${esc(label)}<select name="${camp}.${k}"><option value="deposit_bonus"${v !== 'bonus' ? ' selected' : ''}>Depósito + bónus</option><option value="bonus"${v === 'bonus' ? ' selected' : ''}>Só o bónus</option></select></label>`;
     return `<label class="field">${esc(label)}<input name="${camp}.${k}" type="number" step="0.01" value="${v ?? ''}"${type === 'opt' ? ' placeholder="sem limite"' : ' required'}></label>`;
@@ -1116,6 +1127,25 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;
   }
+  if (action === 'fs-game-add') {
+    const id = actionEl.dataset.id;
+    const tokens = fsTokens();
+    if (!tokens.some(([x]) => x === id)) {
+      fsWrite([...tokens, [id]]);
+      const chips = $('#fsChips');
+      if (!chips.querySelector('.fs-chip')) chips.innerHTML = '';
+      chips.insertAdjacentHTML('beforeend', fsChip(id, actionEl.dataset.name));
+    }
+    $('#fsGameResults').innerHTML = '';
+    $('#fsGameSearch').value = '';
+    return;
+  }
+  if (action === 'fs-game-remove') {
+    const id = actionEl.dataset.id;
+    fsWrite(fsTokens().filter(([x]) => x !== id));
+    actionEl.closest('.fs-chip')?.remove();
+    return;
+  }
   if (action === 'bonus-cancel') {
     const reason = prompt('Motivo do cancelamento (fica registado; ex.: fraude confirmada, conta duplicada, violação dos termos):');
     if (reason === null) return;
@@ -1401,6 +1431,24 @@ document.addEventListener('click', async (e) => {
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
+});
+
+// Free-spins games: searched by name in the casino catalogue.
+let fsSearchTimer = null;
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'fsGameSearch') return;
+  clearTimeout(fsSearchTimer);
+  const q = e.target.value.trim();
+  fsSearchTimer = setTimeout(async () => {
+    const box = $('#fsGameResults');
+    if (!box) return;
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    try {
+      const r = await api(`/api/casino/games?limit=8&q=${encodeURIComponent(q)}`);
+      box.innerHTML = r.games.length ? r.games.map((g) => `<button type="button" class="fs-result" data-action="fs-game-add" data-id="${g.id}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)}${g.type === 'live' ? ' · ao vivo' : ''}</small></button>`).join('')
+        : '<small class="muted">Nenhum jogo encontrado.</small>';
+    } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
+  }, 250);
 });
 
 window.addEventListener('hashchange', () => { if (state.user && location.hash.slice(1) !== state.tab) go(location.hash.slice(1)); });

@@ -20,7 +20,7 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
-  casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet,
+  casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance,
 } from './promotions.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
@@ -284,6 +284,32 @@ export function createApp(db, {
       next(err instanceof HttpError ? err : new HttpError(502, `Não foi possível recuperar o saldo do casino: ${err.message}`));
     }
   };
+
+  // ---------- free spins on the Palace casino ----------
+  // Their money sits on the player's free-spins account there; this reads it back into the grant,
+  // and ends the grant (taking that money back first) when asked, when it is played out or expired.
+  const activeSpinsOf = (userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
+  async function settlePalaceSpins(s, { end = false, status = 'closed', reason = null } = {}) {
+    if (!s || s.status !== 'active' || s.palace_cents === null || s.palace_cents === undefined || !casino?.enabled) return 0;
+    const u = userById(s.user_id);
+    const expired = s.expires_at <= nowIso();
+    const left = await casino.fsBalanceCents(u);
+    const bet = spinBet(s, s.chosen_game);
+    if (!end && !expired && left >= bet) { tx(db, () => palaceSpinsBalance(db, s, left)); return 0; }
+    const back = await casino.fsWithdrawAll(u);
+    const why = expired ? ['expired', 'prazo terminado'] : end ? [status, reason] : ['closed', 'Free Spins utilizadas'];
+    return tx(db, () => palaceSpinsBalance(db, spinsRow(db, s.id, s.user_id), back, { final: true, status: why[0], reason: why[1] }));
+  }
+  /** Ends the Palace free spins whose time ran out (the casino money taken back first). */
+  async function expirePalaceSpins() {
+    if (!casino?.enabled) return 0;
+    let n = 0;
+    for (const s of db.prepare("SELECT * FROM casino_spins WHERE status = 'active' AND palace_cents IS NOT NULL AND expires_at <= ?").all(nowIso())) {
+      try { await settlePalaceSpins(s); n += 1; } catch (err) { console.error(`free spins palace #${s.id}: ${err.message}`); }
+    }
+    return n;
+  }
+  app.locals.expirePalaceSpins = expirePalaceSpins;
 
   // ---------- events ----------
 
@@ -986,9 +1012,28 @@ export function createApp(db, {
     res.json({ campaign: o.campaign, name: o.name, bonus: o.bonusCents ? cents(o.bonusCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
   });
   // The player ends the free spins now: winnings above the value given are paid as real money.
-  app.post('/api/me/free-spins/:id/claim', requireUser, (req, res) => {
-    const paid = tx(db, () => claimSpins(db, req.user.id, req.params.id));
+  app.post('/api/me/free-spins/:id/claim', requireUser, wrap(async (req, res) => {
+    const s = spinsRow(db, Number(req.params.id), req.user.id);
+    const paid = s?.status === 'active' && s.palace_cents !== null && casino?.enabled
+      ? await settlePalaceSpins(s, { end: true, status: 'closed', reason: 'terminadas pelo jogador' })
+      : tx(db, () => claimSpins(db, req.user.id, req.params.id));
     res.json({ paid: cents(paid), user: userOut(userById(req.user.id)) });
+  }));
+  // The free spins the player has now and the games to pick from (just the picked one once chosen).
+  app.get('/api/me/free-spins/active', requireUser, wrap(async (req, res) => {
+    const s = activeSpinsOf(req.user.id);
+    if (!s || s.expires_at <= nowIso()) return res.json({ freeSpins: null, games: [] });
+    const games = [];
+    for (const id of playableGames(s)) {
+      const g = bb ? await bb.game(id) : null;
+      if (g) games.push({ id: g.id, name: g.name, provider: g.provider, image: g.image, bet: cents(spinBet(s, g.id)) });
+    }
+    res.json({ freeSpins: { ...spinsView(s), chosenGame: s.chosen_game || null }, games });
+  }));
+  // The player picks the game of the free spins (only that one afterwards).
+  app.post('/api/me/free-spins/:id/choose', requireUser, (req, res) => {
+    const s = chooseSpinsGame(db, req.user.id, req.params.id, req.body?.gameId);
+    res.json({ chosenGame: s.chosen_game });
   });
 
   // Responsible-gaming limits (stricter at once, looser after 24 h).
@@ -1111,9 +1156,12 @@ export function createApp(db, {
     if (err instanceof HttpError) return err;
     return new HttpError(502, err.message || 'Erro no servidor de jogos.');
   };
-  const wrap = (fn) => async (req, res, next) => {
-    try { await fn(req, res); } catch (err) { next(casinoError(err)); }
-  };
+  // (A function declaration: routes registered further up use it too.)
+  function wrap(fn) {
+    return async (req, res, next) => {
+      try { await fn(req, res); } catch (err) { next(casinoError(err)); }
+    };
+  }
 
   app.get('/api/casino/games', wrap(async (req, res) => {
     if (!casinoOn()) return res.json({ enabled: false, games: [], providers: [], total: 0 });
@@ -1138,7 +1186,7 @@ export function createApp(db, {
     const g = await bb.game(req.params.id);
     if (!g) throw new HttpError(404, 'Jogo não encontrado.');
     const s = req.user ? db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' AND expires_at > ? ORDER BY id LIMIT 1").get(req.user.id, nowIso()) : null;
-    const eligible = !!s && JSON.parse(s.games || '[]').includes(g.id);
+    const eligible = !!s && playableGames(s).includes(g.id);
     // The spins left, the bet each is played at in this game (€0.20, €0.10…) and what they have won.
     res.json({ game: g, related: await bb.related(g), freeSpins: s ? { id: s.id, eligible, balance: cents(spinsBalance(s)), spinsLeft: s.spins_left ?? s.spins, won: cents(s.won_cents || 0), spins: s.spins, spinValue: cents(eligible ? spinBet(s, g.id) : s.spin_value_cents) } : null });
   }));
@@ -1152,7 +1200,9 @@ export function createApp(db, {
       const s = req.query.fs ? spinsRow(db, Number(req.query.fs), req.user.id) : null;
       const u = userById(req.user.id);
       const away = u.casino_active && casino?.enabled ? await casino.casinoBalanceCents(u) : 0;
-      return res.json({ balance: cents(u.balance_cents + away), freeSpins: s ? cents(s.status === 'active' ? s.balance_cents : 0) : null, inCasino: !!u.casino_active });
+      const onPalace = s && s.status === 'active' && s.palace_cents !== null && casino?.enabled;
+      const fsCents = !s ? null : onPalace ? await casino.fsBalanceCents(u) : s.status === 'active' ? s.balance_cents : 0;
+      return res.json({ balance: cents(u.balance_cents + away), freeSpins: fsCents === null ? null : cents(fsCents), inCasino: !!u.casino_active });
     }
     const u = userById(req.user.id);
     const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
@@ -1178,9 +1228,25 @@ export function createApp(db, {
       // A Palace slot (split mode): Transfer mode — the balance goes into that casino while it plays.
       if (g.source === 'palace') {
         if (req.body.demo) throw new HttpError(400, 'Este jogo não tem modo demonstração.');
-        if (req.body.freeSpins) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
         if (!req.user) throw new HttpError(401, 'Inicie sessão para jogar com dinheiro real.');
         if (!casino?.enabled) throw new HttpError(503, 'Casino Palace não configurado.');
+        if (req.body.freeSpins) {
+          // Free spins: their value goes to the player's free-spins account there (the first time),
+          // the player's own balance stays here; only the picked game opens.
+          let fs = spinsRow(db, Number(req.body.freeSpins), req.user.id);
+          if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
+          fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
+          const fund = fs.palace_cents === null ? fs.value_cents : 0;
+          if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ? WHERE id = ? AND palace_cents IS NULL').run(fund, fs.id);
+          let out;
+          try {
+            out = await casino.fsEnterGame(userById(req.user.id), { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl, fundCents: fund });
+          } catch (err) {
+            if (fund) db.prepare('UPDATE casino_spins SET palace_cents = NULL WHERE id = ?').run(fs.id);
+            throw err;
+          }
+          return res.json({ url: out.url, freeSpins: { id: fs.id, balance: cents(out.fsCents) }, balance: cents(userById(req.user.id).balance_cents), transfer: true });
+        }
         const pu = userById(req.user.id);
         if (pu.balance_cents <= 0 && !pu.casino_active) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
         const { url, casinoCents } = await casino.enterGame(pu, { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl });
@@ -1196,7 +1262,7 @@ export function createApp(db, {
       if (req.body.freeSpins) {
         const s = spinsRow(db, Number(req.body.freeSpins), u.id);
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
-        if (!JSON.parse(s.games || '[]').includes(g.id)) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
+        chooseSpinsGame(db, u.id, s.id, g.id); // the picked game is the only one from now on
         const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl });
         return res.json({ url, freeSpins: { id: s.id, balance: cents(s.balance_cents) }, balance: cents(u.balance_cents) });
       }
@@ -1215,6 +1281,8 @@ export function createApp(db, {
 
   // Leaving the game: the balance comes back to the ClassicBet wallet.
   app.post('/api/casino/close', requireUser, wrap(async (req, res) => {
+    // Free spins on the Palace casino: what is left there is read back (ended when played out).
+    await settlePalaceSpins(activeSpinsOf(req.user.id)).catch((err) => console.error(`free spins palace: ${err.message}`));
     // BigBang never holds the balance; a Palace game (alone, or in split mode) does while open.
     if (!casino?.enabled || !userById(req.user.id).casino_active) return res.json({ amount: 0, balance: cents(userById(req.user.id).balance_cents) });
     const amountCents = await casino.leaveGame(req.user);
@@ -1543,10 +1611,17 @@ export function createApp(db, {
   admin.put('/cashout', (req, res) => res.json({ config: saveCashoutConfig(db, req.body || {}) }));
 
   // ---------- promotions (configuration, bonuses, decisions) ----------
-  admin.get('/promotions', (_req, res) => {
+  admin.get('/promotions', wrap(async (_req, res) => {
     const who = (r) => ({ userId: r.user_id, user: r.name, email: r.email });
+    const config = promoConfig(db);
+    // The free-spins games by name (the admin picks them by name).
+    const fsGames = [];
+    for (const id of config.casinoFs.games) {
+      const g = bb ? await bb.game(id).catch(() => null) : null;
+      fsGames.push({ id, name: g?.name || `Jogo ${id}`, provider: g?.provider || '', found: !!g });
+    }
     res.json({
-      config: promoConfig(db),
+      config, fsGames,
       bonuses: db.prepare('SELECT b.*, u.name, u.email FROM bonuses b JOIN users u ON u.id = b.user_id ORDER BY b.id DESC LIMIT 200').all()
         .map((b) => ({ ...bonusView(b), ...who(b) })),
       freebets: db.prepare('SELECT f.*, u.name, u.email FROM freebets f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100').all()
@@ -1558,7 +1633,7 @@ export function createApp(db, {
       totals: db.prepare("SELECT kind, COUNT(*) AS n, SUM(amount_cents) AS granted, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed FROM bonuses GROUP BY kind").all()
         .map((t) => ({ kind: t.kind, count: t.n, granted: cents(t.granted || 0), completed: t.completed })),
     });
-  });
+  }));
   admin.put('/promotions/config', (req, res) => res.json({ config: savePromoConfig(db, req.body || {}) }));
   admin.post('/bonuses/:id/cancel', (req, res) => {
     const reason = str(req.body?.reason, 200);
