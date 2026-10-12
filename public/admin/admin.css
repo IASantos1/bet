@@ -114,3 +114,36 @@
 .fs-results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .fs-result { text-align: left; padding: 7px 10px; border: 1px solid var(--line, #2a2f37); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .fs-result:hover { border-color: #ffc400; }
+
+/* Player modals: adjust the balance, give a free bet or free spins (in the panel's own style). */
+.adm-modal-back { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .7); backdrop-filter: blur(3px); }
+.adm-modal { width: 100%; max-width: 380px; padding: 22px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: 0 24px 60px rgba(0, 0, 0, .6); }
+.adm-modal form { display: flex; flex-direction: column; gap: 10px; }
+.adm-modal input { width: 100%; }
+.am-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.am-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; }
+.am-head h2 svg { width: 18px; height: 18px; }
+.am-x { border: 0; background: none; color: var(--text-3); font-size: 24px; line-height: 1; cursor: pointer; }
+.am-x:hover { color: var(--text); }
+.am-who { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; padding: 12px; border-radius: 10px; background: var(--dim); }
+.am-who small { color: var(--text-3); }
+.am-bal { font-size: 22px; font-weight: 900; color: var(--green); }
+.am-fb { font-size: 13px; color: #c084fc; font-weight: 700; }
+.am-ops, .am-tabs { display: flex; gap: 6px; }
+.am-tabs { margin-bottom: 12px; }
+.am-op, .am-tab { flex: 1; padding: 9px 6px; border: 0; border-radius: 9px; background: var(--dim); color: var(--text-3); font-weight: 800; font-size: 12px; cursor: pointer; }
+.am-op:hover, .am-tab:hover { color: var(--text); }
+.am-op.on { background: var(--brand); color: var(--on-brand); }
+.am-tab.on { background: #7e22ce; color: #fff; }
+.am-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-3); }
+.am-row input { width: 80px; }
+.am-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.am-two label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); }
+.am-hint { margin: 0; font-size: 12px; }
+.am-go { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 11px; font-weight: 900; }
+.am-go svg { width: 16px; height: 16px; }
+.am-go.gift { border-color: #7e22ce; background: #7e22ce; color: #fff; }
+.am-go.gift:hover { background: #9333ea; }
+.adm-modal input { box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--dim); color: var(--text); font: inherit; font-size: 14px; }
+.adm-modal input:focus { outline: none; border-color: var(--brand); }
+.am-row input { width: 80px; padding: 7px 10px; }
