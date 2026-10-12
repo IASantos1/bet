@@ -1252,17 +1252,8 @@ img, video, iframe { max-width: 100%; }
   background: #e0242b; color: #fff; font: 700 10px/1 system-ui, sans-serif; font-style: normal; vertical-align: middle; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
 .match-team .red-card { width: 16px; height: 21px; font-size: 12px; }
 
-/* Casino artwork shown whole: a 3:4 frame (a touch wider, a touch shorter than 2:3) and the picture
-   fitted inside, never cropped — so the game's name on the art is always readable. A blurred copy
-   fills any edge the picture leaves free. */
-.game-card .game-art, .cg-art, .cg-rel-art { aspect-ratio: 3 / 4; }
-.game-card .game-img, .cg-art .game-img, .cg-rel-art .game-img { object-fit: contain; z-index: 1; }
+/* Casino artwork: the tall 2:3 card as always. A picture that isn't portrait (Palace's own) is shown
+   whole inside it, never cropped, so the game's name on the art stays readable; a blurred copy of it
+   fills the rest of the card. */
+.game-art.fit .game-img, .cg-art.fit .game-img, .cg-rel-art.fit .game-img { object-fit: contain; z-index: 1; }
 .game-art .game-fill, .cg-art .game-fill, .cg-rel-art .game-fill { position: absolute; inset: -12px; width: calc(100% + 24px); height: calc(100% + 24px); object-fit: cover; filter: blur(14px) brightness(.6); }
-/* Lobby rows: cards slightly wider, with a peek of the next one. */
-.casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 3 * 14px) / 3.7); }
-@media (min-width: 1100px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 4 * 14px) / 4.6); } }
-@media (min-width: 1600px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: calc((100% - 5 * 14px) / 5.5); } }
-@media (max-width: 700px) { .casino-row .car-track, #homeCasino .car-track { grid-auto-columns: 43vw; } }
-@media (min-width: 761px) { .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 4 * 14px) / 4.6); } }
-@media (min-width: 1100px) { .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 6 * 14px) / 6.5); } }
-@media (min-width: 1500px) { .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 7 * 14px) / 7.4); } }
