@@ -135,7 +135,11 @@ function openAdminModal(html) {
   back.querySelector('input:not([type=hidden])')?.focus();
 }
 function closeAdminModal() { $('.adm-modal-back')?.remove(); }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAdminModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeAdminModal();
+  // Enter in a game search picks nothing and must not submit the form around it.
+  if (e.key === 'Enter' && (e.target.id === 'amGameSearch' || e.target.id === 'fsGameSearch')) e.preventDefault();
+});
 const modalHead = (icon, title) => `<div class="am-head"><h2>${icon}${esc(title)}</h2><button type="button" class="am-x" data-action="am-close" aria-label="Fechar">×</button></div>`;
 
 function balanceModal({ id, name, balance }) {
@@ -169,9 +173,28 @@ function giftModal({ id, name, freebet }) {
         <label>Valor por rodada (€)<input name="spinValue" type="number" step="0.01" min="0.01" value="0.20" required></label></div>
       <label class="am-row">Válidas durante <input name="days" type="number" min="1" max="365" value="7"> dias</label>
       <input name="note" maxlength="120" placeholder="Nota (opcional)">
-      <p class="muted am-hint">Nos jogos da campanha Free Spins casino (Promoções). O jogador escolhe 1 deles.</p>
+      <div class="am-games"><span class="am-lbl">Jogos (o jogador escolhe 1)</span>
+        <div class="fs-chips" id="amChips"><small class="muted">A carregar os jogos da campanha…</small></div>
+        <input id="amGameSearch" placeholder="Procurar jogo para juntar (ex.: Big Bass)…" autocomplete="off"><div class="fs-results" id="amGameResults"></div></div>
       <button class="primary-btn am-go gift">${ICON.gift} Atribuir Free Spins</button>
     </form>`);
+  amLoadGames();
+}
+
+// The free-spins games of the gift modal: the campaign's to start with, changed by name.
+let amGames = [];
+const amChip = (g) => `<span class="fs-chip">${esc(g.name)}<button type="button" data-action="am-game-remove" data-id="${g.id}" aria-label="Retirar">×</button></span>`;
+function amRenderGames() {
+  const box = $('#amChips');
+  if (box) box.innerHTML = amGames.length ? amGames.map(amChip).join('') : '<small class="muted">Sem jogos: procure e junte pelo menos um.</small>';
+}
+async function amLoadGames() {
+  amGames = [];
+  try {
+    const d = await api('/api/admin/promotions');
+    amGames = (d.fsGames || []).filter((g) => g.found !== false).map((g) => ({ id: g.id, name: g.name }));
+  } catch { /* none */ }
+  amRenderGames();
 }
 
 function adminPromos(d) {
@@ -1002,7 +1025,8 @@ const handlers = {
   },
   async 'user-spins'(form) {
     const d = formData(form);
-    const r = await api(`/api/admin/users/${form.dataset.id}/free-spins`, { method: 'POST', body: { spins: Number(d.spins), spinValue: d.spinValue, days: Number(d.days) || 7, note: d.note } });
+    if (!amGames.length) throw new Error('Escolha pelo menos um jogo para as Free Spins.');
+    const r = await api(`/api/admin/users/${form.dataset.id}/free-spins`, { method: 'POST', body: { spins: Number(d.spins), spinValue: d.spinValue, days: Number(d.days) || 7, note: d.note, games: amGames.map((g) => g.id) } });
     closeAdminModal();
     toast('Feito', `${r.freeSpins.spins} Free Spins atribuídas.`);
     loadTab();
@@ -1201,6 +1225,19 @@ document.addEventListener('click', async (e) => {
       }
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'am-game-add') {
+    const id = Number(actionEl.dataset.id);
+    if (!amGames.some((g) => g.id === id)) amGames.push({ id, name: actionEl.dataset.name });
+    amRenderGames();
+    $('#amGameResults').innerHTML = '';
+    $('#amGameSearch').value = '';
+    return;
+  }
+  if (action === 'am-game-remove') {
+    amGames = amGames.filter((g) => g.id !== Number(actionEl.dataset.id));
+    amRenderGames();
     return;
   }
   if (action === 'fs-game-add') {
@@ -1512,16 +1549,17 @@ document.addEventListener('click', async (e) => {
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
 document.addEventListener('input', (e) => {
-  if (e.target.id !== 'fsGameSearch') return;
+  const modal = e.target.id === 'amGameSearch';
+  if (e.target.id !== 'fsGameSearch' && !modal) return;
   clearTimeout(fsSearchTimer);
   const q = e.target.value.trim();
   fsSearchTimer = setTimeout(async () => {
-    const box = $('#fsGameResults');
+    const box = $(modal ? '#amGameResults' : '#fsGameResults');
     if (!box) return;
     if (q.length < 2) { box.innerHTML = ''; return; }
     try {
       const r = await api(`/api/casino/games?limit=8&q=${encodeURIComponent(q)}`);
-      box.innerHTML = r.games.length ? r.games.map((g) => `<button type="button" class="fs-result" data-action="fs-game-add" data-id="${g.id}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)}${g.type === 'live' ? ' · ao vivo' : ''}</small></button>`).join('')
+      box.innerHTML = r.games.length ? r.games.map((g) => `<button type="button" class="fs-result" data-action="${modal ? 'am-game-add' : 'fs-game-add'}" data-id="${g.id}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)}${g.type === 'live' ? ' · ao vivo' : ''}</small></button>`).join('')
         : '<small class="muted">Nenhum jogo encontrado.</small>';
     } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
   }, 250);

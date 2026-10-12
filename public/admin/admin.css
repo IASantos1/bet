@@ -147,3 +147,7 @@
 .adm-modal input { box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--dim); color: var(--text); font: inherit; font-size: 14px; }
 .adm-modal input:focus { outline: none; border-color: var(--brand); }
 .am-row input { width: 80px; padding: 7px 10px; }
+.am-games { display: flex; flex-direction: column; gap: 6px; }
+.am-lbl { font-size: 12px; color: var(--text-3); }
+.am-games .fs-chips { margin: 0; }
+.am-games .fs-results { max-height: 180px; overflow-y: auto; }
