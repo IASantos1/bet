@@ -2358,8 +2358,14 @@ const formHandlers = {
     state.user.balance = res.balance;
     form.reset();
     if (form.closest('#modal')) closeModal();
-    toast(res.instant ? 'Levantamento aprovado' : 'Levantamento pedido',
-      res.instant ? 'Levantamento instantâneo: a transferência segue para o seu IBAN.' : 'Acima de €' + ((state.config || {}).instantWithdraw ?? 200) + ': processado pela equipa em 24 a 72 horas.');
+    if (res.payout === 'paid' || res.payout === 'processing') {
+      toast('Levantamento processado', res.payout === 'paid' ? 'Pago automaticamente: o valor deve chegar à sua conta em poucos minutos.' : 'Aprovado e em pagamento automático: o valor chega à sua conta em breve.');
+    } else if (res.payout === 'failed') {
+      toast('Levantamento recebido', 'O seu pedido está a ser tratado pela nossa equipa.');
+    } else {
+      toast(res.instant ? 'Levantamento aprovado' : 'Levantamento pedido',
+        res.instant ? 'Levantamento instantâneo: a transferência segue para o seu IBAN.' : 'Acima de €' + ((state.config || {}).instantWithdraw ?? 200) + ': processado pela equipa em 24 a 72 horas.');
+    }
     updateHeader(); loadWallet();
   },
 };

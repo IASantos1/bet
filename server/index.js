@@ -16,6 +16,7 @@ import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
 import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
+import { createRevolut } from './revolut.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -139,7 +140,10 @@ const telegram = createTelegram(db, { ...config.telegram, publicUrl: config.publ
 const stopTelegram = telegram.start();
 if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, publicação automática ${telegram.status().auto && config.telegram.production ? 'ligada' : 'desligada'}`);
 
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, boardCacheMs: 2000 });
+// Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
+const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
+if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, revolut, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 const server = app.listen(config.port, () => {

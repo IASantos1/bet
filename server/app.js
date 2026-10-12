@@ -29,6 +29,7 @@ import { postTransaction } from './wallet.js';
 import { compression, staticText } from './compress.js';
 import { importNovo, connectNovo } from './importnovo.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
+import { payoutState } from './revolut.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { TENNIS_SOURCE } from './tennis.js';
@@ -134,7 +135,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, revolut = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -181,6 +182,45 @@ export function createApp(db, {
       return res.status(500).json({ error: 'Erro ao processar.' });
     }
     res.json({ received: true });
+  });
+
+  // Revolut: how each withdrawal payout ended (signed, raw body). Also at Bet62Novo's path, so the
+  // webhook configured there works here as it is.
+  const revolutWebhook = (req, res) => {
+    if (!revolut) return res.status(404).json({ error: 'Revolut não configurada.' });
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    if (!revolut.verifyWebhook(raw, req.get('revolut-signature'), req.get('revolut-request-timestamp'))) {
+      return res.status(401).json({ error: 'Assinatura inválida.' });
+    }
+    let ev;
+    try { ev = JSON.parse(raw); } catch { return res.status(400).json({ error: 'JSON inválido.' }); }
+    if (ev?.event === 'TransactionStateChanged' && ev.data?.id) {
+      const w = db.prepare('SELECT * FROM withdrawals WHERE payout_ref = ?').get(String(ev.data.id));
+      if (w) payoutUpdate(w, payoutState(ev.data.new_state ?? ev.data.state), `Revolut: ${ev.data.new_state ?? ev.data.state}`);
+    }
+    res.json({ received: true });
+  };
+  app.post('/api/revolut/webhook', express.raw({ type: '*/*', limit: '256kb' }), revolutWebhook);
+  app.post('/api/withdrawals/webhook/revolut', express.raw({ type: '*/*', limit: '256kb' }), revolutWebhook);
+
+  // Revolut's one-time authorisation (Revolut Business → APIs → "Enable access" redirects here): the
+  // code becomes the refresh token, shown once to put in REVOLUT_REFRESH_TOKEN.
+  app.get('/api/revolut/callback', async (req, res) => {
+    const page = (title, body, status = 200) => res.status(status).type('html').send(`<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>${title}</title></head>
+      <body style="font-family:monospace;max-width:720px;margin:0 auto;padding:24px;background:#0b0d10;color:#e5e7eb"><h2>${title}</h2>${body}</body></html>`);
+    const html = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    if (!revolut) return page('Revolut não configurada', '<p>Defina primeiro REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER e REVOLUT_PRIVATE_KEY.</p>', 503);
+    if (req.query.error) return page('Revolut — erro', `<p>${html(req.query.error)}</p>`, 400);
+    if (!req.query.code) return page('Revolut — falta o código', '<p>Falta o parâmetro "code".</p>', 400);
+    try {
+      const refresh = await revolut.exchangeCode(String(req.query.code));
+      console.warn(`Revolut: novo refresh_token obtido (…${refresh.slice(-6)}) — coloque-o em REVOLUT_REFRESH_TOKEN`);
+      page('Revolut — autorização concluída', `<p><strong>Copie agora o refresh_token (esta página não o volta a mostrar):</strong></p>
+        <pre style="background:#111;color:#4ade80;padding:16px;border-radius:8px;overflow-wrap:anywhere;white-space:pre-wrap">${html(refresh)}</pre>
+        <ol><li>No Railway → Variables, defina <code>REVOLUT_REFRESH_TOKEN</code> com este valor.</li><li>O serviço reinicia e os levantamentos passam a ser pagos pela Revolut.</li></ol>`);
+    } catch (err) {
+      page('Revolut — falhou', `<p>${html(err.message)}</p>`, 502);
+    }
   });
 
   // A KYC document (image / PDF as base64): its own, larger body limit, before the general parser.
@@ -284,6 +324,33 @@ export function createApp(db, {
       next(err instanceof HttpError ? err : new HttpError(502, `Não foi possível recuperar o saldo do casino: ${err.message}`));
     }
   };
+
+  // ---------- withdrawals paid through Revolut ----------
+  // A failed payout goes back to the team (status pending): they pay it by hand or reject it (refund).
+  function payoutUpdate(w, state, note = null) {
+    if (!state || w.payout_status === state || w.payout_status === 'paid') return;
+    if (state === 'paid') {
+      db.prepare("UPDATE withdrawals SET payout_status = 'paid', payout_error = NULL, paid_at = ? WHERE id = ?").run(nowIso(), w.id);
+    } else if (state === 'failed') {
+      db.prepare("UPDATE withdrawals SET payout_status = 'failed', payout_error = ?, status = 'pending', decided_at = NULL WHERE id = ?").run(note, w.id);
+    } else {
+      db.prepare('UPDATE withdrawals SET payout_status = ? WHERE id = ?').run(state, w.id);
+    }
+  }
+  /** Sends an approved withdrawal to the player's IBAN through Revolut. Returns the row after. */
+  async function payWithdrawal(id) {
+    const w = db.prepare('SELECT w.*, u.name, u.iban_name FROM withdrawals w JOIN users u ON u.id = w.user_id WHERE w.id = ?').get(id);
+    db.prepare("UPDATE withdrawals SET payout_status = 'processing', payout_error = NULL WHERE id = ?").run(w.id);
+    try {
+      const p = await revolut.payOut({ iban: w.iban, holderName: w.iban_name || w.name, amountCents: w.amount_cents, reference: `BET62 levantamento #${w.id}`, requestId: `withdrawal-${w.id}` });
+      db.prepare('UPDATE withdrawals SET payout_ref = ? WHERE id = ?').run(String(p?.id || ''), w.id);
+      payoutUpdate({ ...w, payout_status: 'processing' }, payoutState(p?.state) || 'processing');
+    } catch (err) {
+      console.warn(`revolut levantamento #${w.id}: ${err.message}`);
+      payoutUpdate({ ...w, payout_status: 'processing' }, 'failed', err.message);
+    }
+    return db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(w.id);
+  }
 
   // ---------- free spins on the Palace casino ----------
   // Their money sits on the player's free-spins account there; this reads it back into the grant,
@@ -1045,7 +1112,7 @@ export function createApp(db, {
   // Whether the player may withdraw now (the form shows why not before they try).
   app.get('/api/wallet/withdraw/eligibility', requireUser, (req, res) => res.json(withdrawEligibility(db, req.user)));
 
-  app.post('/api/wallet/withdraw', requireUser, reclaimCasino, (req, res) => {
+  app.post('/api/wallet/withdraw', requireUser, reclaimCasino, wrap(async (req, res) => {
     const amount = parseEuros(req.body.amount, 'Valor do levantamento');
     if (amount < config.limits.minWithdrawCents) throw new HttpError(400, `Levantamento mínimo: €${cents(config.limits.minWithdrawCents)}.`);
     const can = withdrawEligibility(db, req.user);
@@ -1058,17 +1125,22 @@ export function createApp(db, {
       throw new HttpError(409, `Tem o ${CAMPAIGN_NAMES[running.kind]} ativo (€${cents(running.balance_cents).toFixed(2)} de bónus). Ao levantar, o bónus é cancelado.`, { bonusActive: true });
     }
     // Up to the instant limit it is approved at once; above it the team decides within 24–72 h.
-    const instant = instantWithdrawal(amount, config.limits.instantWithdrawCents);
+    // With Revolut, from REVOLUT_AUTO_PAYOUT_MIN to _MAX it is also paid at once to the IBAN.
+    const autoPay = !!revolut?.autoPays(amount);
+    const instant = autoPay || instantWithdrawal(amount, config.limits.instantWithdrawCents);
+    let id;
     const balance = tx(db, () => {
       if (running) cancelBonus(db, running.id, 'levantamento pedido com o bónus ativo');
       const now = nowIso();
       const { lastInsertRowid } = db.prepare(
         'INSERT INTO withdrawals (user_id, amount_cents, iban, status, created_at, decided_at) VALUES (?, ?, ?, ?, ?, ?)'
       ).run(req.user.id, amount, iban, instant ? 'approved' : 'pending', now, instant ? now : null);
+      id = Number(lastInsertRowid);
       return postTransaction(db, req.user.id, -amount, 'withdrawal', instant ? 'Levantamento instantâneo' : 'Pedido de levantamento', `withdrawal:${lastInsertRowid}`);
     });
-    res.status(201).json({ balance: cents(balance), status: instant ? 'approved' : 'pending', instant });
-  });
+    const w = autoPay ? await payWithdrawal(id) : null;
+    res.status(201).json({ balance: cents(balance), status: w ? w.status : instant ? 'approved' : 'pending', instant: w ? w.status === 'approved' : instant, payout: w?.payout_status || null });
+  }));
 
   // ---------- bets ----------
 
@@ -1527,25 +1599,41 @@ export function createApp(db, {
       withdrawals: rows.map((w) => ({
         id: w.id, user: w.name, email: w.email, amount: cents(w.amount_cents), iban: w.iban, status: w.status,
         createdAt: w.created_at, decidedAt: w.decided_at,
+        payout: w.payout_status || null, payoutRef: w.payout_ref || null, payoutError: w.payout_error || null, paidAt: w.paid_at || null,
       })),
+      revolut: revolut ? { configured: revolut.configured, environment: revolut.environment, autoMin: cents(revolut.autoMinCents), autoMax: cents(revolut.autoMaxCents), webhook: revolut.webhookSet } : null,
     });
   });
 
-  admin.post('/withdrawals/:id/:decision', (req, res) => {
+  // approve: approved (and, with Revolut on, paid to the IBAN; body.manual → paid by hand);
+  // reject: the money goes back to the player; pay: an approved one sent through Revolut now.
+  admin.post('/withdrawals/:id/:decision', wrap(async (req, res) => {
     const { decision } = req.params;
-    if (decision !== 'approve' && decision !== 'reject') throw new HttpError(404, 'Ação desconhecida.');
+    if (!['approve', 'reject', 'pay'].includes(decision)) throw new HttpError(404, 'Ação desconhecida.');
+    const id = Number(req.params.id);
+    const viaRevolut = !!revolut?.configured && req.body?.manual !== true && decision !== 'reject';
     tx(db, () => {
-      const w = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(Number(req.params.id));
+      const w = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(id);
       if (!w) throw new HttpError(404, 'Levantamento não encontrado.');
+      if (decision === 'pay') {
+        if (!revolut?.configured) throw new HttpError(503, 'Revolut não configurada.');
+        if (w.status !== 'approved') throw new HttpError(409, 'Só um levantamento aprovado pode ser pago.');
+        if (['processing', 'paid'].includes(w.payout_status)) throw new HttpError(409, 'Este levantamento já foi enviado para a Revolut.');
+        return;
+      }
       if (w.status !== 'pending') throw new HttpError(409, 'Levantamento já decidido.');
+      if (w.payout_status === 'processing') throw new HttpError(409, 'O pagamento deste levantamento está em curso na Revolut.');
       db.prepare('UPDATE withdrawals SET status = ?, decided_at = ? WHERE id = ?')
         .run(decision === 'approve' ? 'approved' : 'rejected', nowIso(), w.id);
       if (decision === 'reject') {
         postTransaction(db, w.user_id, w.amount_cents, 'withdrawal_refund', 'Levantamento rejeitado — valor devolvido', `withdrawal:${w.id}`);
       }
     });
-    res.json({ ok: true });
-  });
+    if (!viaRevolut) return res.json({ ok: true });
+    const w = await payWithdrawal(id);
+    if (w.payout_status === 'failed') throw new HttpError(502, `Pagamento Revolut falhou: ${w.payout_error}. O levantamento voltou a pendente.`);
+    res.json({ ok: true, payout: w.payout_status });
+  }));
 
   admin.get('/users', (_req, res) => {
     const rows = db.prepare(
