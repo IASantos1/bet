@@ -435,3 +435,9 @@ test('split: slots from Palace (Transfer mode), live tables from BigBang; Premiu
   bb2.reload();
   assert.deepEqual((await bb2.games()).games.map((x) => x.id), [2]);   // the original
 });
+
+test('no game twice: the copy with portrait artwork wins over a landscape one', async () => {
+  const { dropCrossDuplicates } = await import('../server/casinolobby.js');
+  const g = (id, provider, fit) => ({ id, name: 'Shining Crown', provider, providerId: provider.toLowerCase(), type: 'slot', image: `https://x/${id}.png`, fit });
+  assert.deepEqual(dropCrossDuplicates([g(1, 'EGT', true), g(2, 'EGT', false)]).map((x) => x.id), [2]);
+});

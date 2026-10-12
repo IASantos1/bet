@@ -1251,9 +1251,3 @@ img, video, iframe { max-width: 100%; }
 .red-card { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 13px; height: 17px; margin-left: 6px; border-radius: 2.5px;
   background: #e0242b; color: #fff; font: 700 10px/1 system-ui, sans-serif; font-style: normal; vertical-align: middle; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
 .match-team .red-card { width: 16px; height: 21px; font-size: 12px; }
-
-/* Casino artwork: the tall 2:3 card as always. A picture that isn't portrait (Palace's own) is shown
-   whole inside it, never cropped, so the game's name on the art stays readable; a blurred copy of it
-   fills the rest of the card. */
-.game-art.fit .game-img, .cg-art.fit .game-img, .cg-rel-art.fit .game-img { object-fit: contain; z-index: 1; }
-.game-art .game-fill, .cg-art .game-fill, .cg-rel-art .game-fill { position: absolute; inset: -12px; width: calc(100% + 24px); height: calc(100% + 24px); object-fit: cover; filter: blur(14px) brightness(.6); }

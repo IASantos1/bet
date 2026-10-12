@@ -692,7 +692,7 @@ function livePage() {
 
 function casinoGameCard(g, i) {
   return `<button class="game-card" data-game="${i}">
-    <div class="game-art${g.fit ? ' fit' : ''}">${g.image ? `${g.fit ? `<img class="game-fill" src="${esc(g.image)}" alt="" loading="lazy">` : ''}<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)} · ${esc(g.category)}</small></div></button>`;
 }
 
@@ -700,7 +700,7 @@ const CASINO_PAGE = 24;
 
 /** A lobby card (BigBang): opens the game's page. */
 const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
-    <div class="game-art${g.fit ? ' fit' : ''}">${g.image ? `${g.fit ? `<img class="game-fill" src="${esc(g.image)}" alt="" loading="lazy">` : ''}<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
 
 /** The casino's tabs: the lobby, then the house tabs that have games (Populares, Novos Jogos, Slots…). */
@@ -895,14 +895,14 @@ function casinoGamePage(id) {
   if (d.error) return `<div class="panel empty">${esc(d.error)}<div class="hero-actions"><a class="outline-btn" href="#/casino">Voltar ao casino</a></div></div>${footer()}`;
   const g = d.game;
   const fs = d.freeSpins;
-  const art = g.image ? `${g.fit ? `<img class="game-fill" src="${esc(g.image)}" alt="">` : ''}<img src="${esc(g.image)}" alt="" class="game-img">` : '<span class="cg-emoji">🎰</span>';
+  const art = g.image ? `<img src="${esc(g.image)}" alt="" class="game-img">` : '<span class="cg-emoji">🎰</span>';
   const tags = [g.category, g.premium ? 'Premium' : null, g.provider].filter(Boolean);
-  const rel = (x) => `<a class="cg-rel" href="#/casino/jogo/${x.id}"><span class="cg-rel-art${x.fit ? ' fit' : ''}">${x.image ? `${x.fit ? `<img class="game-fill" src="${esc(x.image)}" alt="" loading="lazy">` : ''}<img src="${esc(x.image)}" alt="" loading="lazy" class="game-img">` : '🎰'}</span><strong>${esc(x.name)}</strong></a>`;
+  const rel = (x) => `<a class="cg-rel" href="#/casino/jogo/${x.id}"><span class="cg-rel-art">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" class="game-img">` : '🎰'}</span><strong>${esc(x.name)}</strong></a>`;
   return `<div class="cg">
       <div class="cg-hero">
         ${g.image ? `<img class="cg-bg" src="${esc(g.image)}" alt="">` : ''}
         <a class="cg-close" href="#/casino" aria-label="Fechar">×</a>
-        <div class="cg-art${g.fit ? ' fit' : ''}">${art}</div>
+        <div class="cg-art">${art}</div>
       </div>
       <div class="cg-body">
         <h1>${esc(g.name)}</h1>
