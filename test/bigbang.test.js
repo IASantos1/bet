@@ -339,3 +339,24 @@ test('hidden games: by name or id, out of the lists, the game page and "do mesmo
   assert.equal((await bb.related(await bb.game(4822))).length, 0);
   assert.equal((await bb.gamesPage({})).total, 1);
 });
+
+test('launch speed: the demo URL is reused, a player created once is remembered across restarts', async () => {
+  const db = openDb(':memory:');
+  const api = fakeApi();
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl });
+  await bb.games();
+  const n = () => api.calls.length;
+  let before = n();
+  const u1 = await bb.launch({ gameId: 4821, demo: true });
+  const u2 = await bb.launch({ gameId: 4821, demo: true });
+  assert.equal(u1, u2);
+  assert.equal(n() - before, 1);                                   // the second one from the cache
+  before = n();
+  await bb.launch({ gameId: 4821, token: 'b62_7' });
+  assert.deepEqual(api.calls.slice(before).map((c) => c.path.split('/').pop()), ['create', 'launch']);
+  // A restart: a new instance, same database — no users/create again.
+  const bb2 = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl });
+  before = n();
+  await bb2.launch({ gameId: 4821, token: 'b62_7' });
+  assert.deepEqual(api.calls.slice(before).map((c) => c.path.split('/').pop()), ['launch']);
+});

@@ -218,6 +218,9 @@ CREATE TABLE IF NOT EXISTS promo_log (
 CREATE INDEX IF NOT EXISTS idx_promo_log_user ON promo_log(user_id, id);
 
 -- Casino (BigBang, seamless wallet): every balance move the provider sends, once per transaction_id.
+-- Players already created at BigBang (users/create): kept across restarts, so a real game opens
+-- with one call to BigBang, not two.
+CREATE TABLE IF NOT EXISTS bigbang_players (token TEXT PRIMARY KEY, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS casino_moves (
   id                  INTEGER PRIMARY KEY,
   transaction_id      TEXT    NOT NULL UNIQUE,

@@ -474,7 +474,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .immersive .left-sidebar, .immersive .betslip, .immersive .slip-fab { display: none !important; }
 .immersive .content { padding: 0; }
 .casino-player { display: flex; flex-direction: column; height: calc(100vh - 68px); }
-.casino-frame { flex: 1; width: 100%; border: 0; background: #000; }
+.casino-stage { position: relative; flex: 1; display: flex; }
+.casino-frame { flex: 1; width: 100%; border: 0; background: #0d1114; }
+.casino-loading.over { position: absolute; inset: 0; z-index: 2; background: #0d1114; transition: opacity .35s, visibility 0s .35s; }
+.casino-loading.over.gone { opacity: 0; visibility: hidden; }
+.casino-cover-img { width: 120px; height: 120px; object-fit: cover; border-radius: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45); }
 @media (max-width: 1000px) {
   .casino-player { height: calc(100vh - 68px - 62px); }
 }

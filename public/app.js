@@ -852,6 +852,13 @@ async function refreshCasinoBalance() {
  * The game servers' connection opened ahead (DNS, TLS) while the player looks at the game page, so
  * "Jogar" starts loading at once; then the origin of each game opened, for the next one.
  */
+// The game's page loaded (load does not bubble: caught on the way down): the cover goes.
+const uncoverGame = () => {
+  if (state.casinoSession) state.casinoSession.loaded = true;
+  $('#casinoCover')?.classList.add('gone');
+};
+document.addEventListener('load', (e) => { if (e.target?.id === 'casinoFrame') setTimeout(uncoverGame, 300); }, true);
+
 const warmOrigins = new Set();
 function warmOrigin(url) {
   let origin;
@@ -871,6 +878,11 @@ function casinoGamePage(id) {
     api(`/api/casino/game/${id}`).then((d) => {
       if (state.casinoGame?.id !== id) return;
       state.casinoGame.data = d;
+      // "Jogar" ready ahead: the player created at BigBang now (once), so the real game opens with one call.
+      if (state.user && !state.casinoPrepared) { state.casinoPrepared = true; api('/api/casino/prepare', { method: 'POST', body: {} }).catch(() => { state.casinoPrepared = false; }); }
+      // "Testar" ready ahead: the demo's address asked now, while the player reads the page.
+      state.casinoGame.demo = api('/api/casino/launch', { method: 'POST', body: { gameId: id, demo: true } })
+        .then((r) => { warmOrigin(r.url); return r; }).catch(() => null);
       render({ keepScroll: true });
     }).catch((err) => {
       if (state.casinoGame?.id !== id) return;
@@ -914,13 +926,16 @@ async function playCasino(mode) {
   const g = d?.game;
   if (!g) return;
   if (mode !== 'demo' && !state.user) return openAuth('login');
-  state.casinoSession = { name: g.name, provider: g.provider, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null, fsBalance: null };
+  state.casinoSession = { name: g.name, provider: g.provider, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null, fsBalance: null };
   location.hash = '#/casino/jogar';
   try {
-    const r = await api('/api/casino/launch', { method: 'POST', body: { gameId: g.id, demo: mode === 'demo', freeSpins: mode === 'fs' ? d.freeSpins?.id : undefined } });
+    const ahead = mode === 'demo' ? await state.casinoGame?.demo : null;
+    const r = ahead || await api('/api/casino/launch', { method: 'POST', body: { gameId: g.id, demo: mode === 'demo', freeSpins: mode === 'fs' ? d.freeSpins?.id : undefined } });
     if (!state.casinoSession) return;
     warmOrigin(r.url);
     state.casinoSession.url = r.url;
+    // Never covered for long: a game whose page does not report loading shows itself anyway.
+    setTimeout(uncoverGame, 20_000);
     if (r.freeSpins) state.casinoSession.fsBalance = r.freeSpins.balance;
     if (currentRoute().sub === 'jogar') render({ keepScroll: true });
   } catch (err) {
@@ -940,13 +955,17 @@ function casinoPlayPage() {
     setTimeout(() => { location.hash = '#/casino'; });
     return '<div class="loading">A voltar ao casino…</div>';
   }
-  if (!g.url) return `<div class="casino-player"><div class="casino-loading"><div class="spinner"></div><strong>${esc(g.name)}</strong><span class="muted">A abrir o jogo…</span></div></div>`;
+  // The game's own loading shows black for seconds: our cover (its picture, a spinner) stays until
+  // the game's page has loaded (or 20 s), over the frame that loads beneath it.
+  const cover = `<div class="casino-loading${g.url ? ' over' : ''}" id="casinoCover">${g.image ? `<img src="${esc(g.image)}" alt="" class="casino-cover-img">` : ''}<div class="spinner"></div><strong>${esc(g.name)}</strong><span class="muted">${g.url ? 'A carregar o jogo…' : 'A abrir o jogo…'}</span></div>`;
+  if (!g.url) return `<div class="casino-player">${cover}</div>`;
   const mode = g.demo ? '<span class="cbar-tag">DEMO · saldo virtual</span>'
     : g.fs ? `<span class="cbar-tag fs">FREE SPINS · <b id="fsBal">${money(g.fsBalance ?? 0)}</b></span>` : '';
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
+    <div class="casino-stage">${g.loaded ? '' : cover}
     <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
-      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>
+      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe></div>
   </div>`;
 }
 
