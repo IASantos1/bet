@@ -797,7 +797,10 @@ function winhousePanel(w) {
       <button class="ghost-btn btn-sm" data-action="winhouse-video">Ver vídeo (HLS)</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-discover">Descobrir rotas</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
-      <pre class="raw-odds hidden" id="whOut"></pre>` : ''}<br>`;
+      <pre class="raw-odds hidden" id="whOut"></pre>` : ''}
+    ${w?.enabled ? `<h4>Revisão VAR na WinHouse</h4>${w.varSeen?.length
+    ? `<p>✅ A WinHouse já enviou VAR (${w.varSeen.length} exemplo(s)). Copie e envie para o ligarmos ao minicampo:</p><pre class="raw-odds">${esc(JSON.stringify(w.varSeen, null, 2))}</pre>`
+    : '<p class="muted">Ainda nenhum tracker da WinHouse mencionou VAR. O servidor está atento a todos os jogos de futebol ao vivo e guarda aqui o primeiro que aparecer. "Descobrir rotas" também procura VAR na documentação e nos scripts da WinHouse (campo varHits).</p>'}` : ''}<br>`;
 }
 
 function proplinePanel(p) {

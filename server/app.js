@@ -1767,7 +1767,7 @@ export function createApp(db, {
       sports: Object.values(sports).map((f) => f.status()),
       propline: propline ? propline.status() : { enabled: false, keySet: false },
       requestBudget: providerSummary()[0] || null,
-      winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null },
+      winhouse: { enabled: !!winhouse?.enabled, feed: winhouseFeed ? winhouseFeed.status() : null, varSeen: getSetting(db, 'winhouse.varSeen', []) || [] },
       rapidStream: !!rapidStream?.enabled,
       rapidKey: !!rapidStream,
     });
