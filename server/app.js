@@ -1156,6 +1156,13 @@ export function createApp(db, {
     res.json({ balance: cents(u.balance_cents + casinoCents), inCasino: !!u.casino_active });
   }));
 
+  // The game page asks this ahead: the player exists at BigBang before "Jogar", so the game opens
+  // with one call to BigBang (only the launch).
+  app.post('/api/casino/prepare', requireUser, wrap(async (req, res) => {
+    if (bb) await bb.ensurePlayer(playerToken(req.user.id)).catch(() => {});
+    res.json({ ok: true });
+  }));
+
   // Opens a game: "Testar" (demo, virtual money, no account needed), "Jogar" (the player's
   // balance) or the free spins (their own balance, only in the eligible games).
   app.post('/api/casino/launch', wrap(async (req, res) => {

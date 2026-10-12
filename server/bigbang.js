@@ -284,15 +284,28 @@ export function createBigBang(db, {
 
   // ---------- players and launch ----------
 
+  const knownPlayer = db.prepare('SELECT 1 FROM bigbang_players WHERE token = ?');
   async function ensurePlayer(token) {
     if (players.has(token)) return;
+    if (knownPlayer.get(token)) { players.add(token); return; }
     // username = the token: BigBang's wallet callbacks identify the player by it.
     await call('POST', '/users/create', { user_token: token, username: token, country: 'PT' });
     players.add(token);
+    db.prepare('INSERT OR IGNORE INTO bigbang_players (token, created_at) VALUES (?, ?)').run(token, nowIso());
   }
+
+  // A demo's URL is the same for everyone (no player): kept a while, so "Testar" opens without
+  // waiting for BigBang (and the game page can ask for it ahead).
+  const demoUrls = new Map(); // `${gameId}|${returnUrl}` → { url, at }
+  const DEMO_URL_MS = 30 * 60_000;
 
   /** A game URL: demo (no account, virtual money) or real (the player's token: account or free spins). */
   async function launch({ gameId, token = null, demo = false, returnUrl = '' }) {
+    const dk = `${Number(gameId)}|${returnUrl}`;
+    if (demo) {
+      const hit = demoUrls.get(dk);
+      if (hit && Date.now() - hit.at < DEMO_URL_MS) return hit.url;
+    }
     const body = { game_id: Number(gameId), language: 'pt', return_url: returnUrl || undefined };
     if (demo) body.demo = true;
     else {
@@ -301,6 +314,10 @@ export function createBigBang(db, {
     }
     const r = await call('POST', '/games/launch', body);
     if (!r.game_url) throw new HttpError(502, 'O servidor de jogos não devolveu o endereço do jogo.');
+    if (demo) {
+      if (demoUrls.size > 2000) demoUrls.clear();
+      demoUrls.set(dk, { url: r.game_url, at: Date.now() });
+    }
     return r.game_url;
   }
 
@@ -395,5 +412,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
