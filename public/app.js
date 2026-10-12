@@ -881,7 +881,7 @@ function casinoGamePage(id) {
       // "Jogar" ready ahead: the player created at BigBang now (once), so the real game opens with one call.
       if (state.user && !state.casinoPrepared) { state.casinoPrepared = true; api('/api/casino/prepare', { method: 'POST', body: {} }).catch(() => { state.casinoPrepared = false; }); }
       // "Testar" ready ahead: the demo's address asked now, while the player reads the page.
-      state.casinoGame.demo = api('/api/casino/launch', { method: 'POST', body: { gameId: id, demo: true } })
+      state.casinoGame.demo = d.game?.demo === false ? Promise.resolve(null) : api('/api/casino/launch', { method: 'POST', body: { gameId: id, demo: true } })
         .then((r) => { warmOrigin(r.url); return r; }).catch(() => null);
       render({ keepScroll: true });
     }).catch((err) => {
@@ -911,10 +911,10 @@ function casinoGamePage(id) {
         <div class="cg-actions">
           ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fs.spinsLeft} ${fs.spinsLeft === 1 ? 'rodada' : 'rodadas'} de ${money(fs.spinValue)}</small></button>` : ''}
           <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
-          <button class="cg-btn demo" data-cg-play="demo">Testar</button>
+          ${g.demo !== false ? '<button class="cg-btn demo" data-cg-play="demo">Testar</button>' : ''}
         </div>
         ${fs && !fs.eligible ? '<p class="cg-note">As suas Free Spins são válidas noutros jogos — veja-os em <a href="#/promocoes">Promoções</a>.</p>' : ''}
-        <p class="cg-note">Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.</p>
+        <p class="cg-note">${g.demo !== false ? 'Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.' : 'Este jogo (ao vivo / Premium) é só com dinheiro real: não tem modo demonstração.'}</p>
       </div>
       ${d.related.length ? `<section class="section"><div class="section-head"><h2>Do mesmo estilo</h2></div>${carousel('cgRelated', d.related.map(rel))}</section>` : ''}
     </div>${footer()}`;

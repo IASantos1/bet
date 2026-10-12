@@ -1172,7 +1172,10 @@ export function createApp(db, {
       const g = await bb.game(req.body.gameId);
       if (!g) throw new HttpError(404, 'Jogo não encontrado.');
       const returnUrl = `${origin}/casino-return.html`;
-      if (req.body.demo) return res.json({ url: await bb.launch({ gameId: g.id, demo: true, returnUrl }), demo: true });
+      if (req.body.demo) {
+        if (g.demo === false) throw new HttpError(400, 'Este jogo é só com dinheiro real (ao vivo / Premium): não tem modo demonstração.');
+        return res.json({ url: await bb.launch({ gameId: g.id, demo: true, returnUrl }), demo: true });
+      }
       if (!req.user) throw new HttpError(401, 'Inicie sessão para jogar com dinheiro real.');
       const u = userById(req.user.id);
       if (u.excluded_until && u.excluded_until > nowIso()) throw new HttpError(403, 'A sua conta está em autoexclusão. O casino está bloqueado.');
