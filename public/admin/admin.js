@@ -85,8 +85,8 @@ function usersTable(users) {
       <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
       <td class="num">${u.bets}</td><td>${esc(fmtDateTime(u.createdAt))}</td>
       <td><div class="user-acts">
-        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" title="Saldo da carteira">${ICON.wallet}</button>
-        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" title="FreeBets">${ICON.gift}</button>
+        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" data-balance="${u.balance}" title="Ajustar saldo">${ICON.wallet}</button>
+        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" data-freebet="${u.freebet}" title="FreeBet / Free Spins">${ICON.gift}</button>
         ${u.role === 'admin' ? '' : `<button class="ua ban${u.banned ? ' on' : ''}" data-action="user-ban" data-id="${u.id}" data-name="${esc(u.name)}" data-banned="${u.banned ? 1 : 0}" title="${u.banned ? 'Desbanir' : 'Banir'}">${ICON.ban}</button>`}
         <button class="ua notes" data-action="user-detail" data-id="${u.id}" title="Ver detalhe">${ICON.notes}</button>
       </div></td></tr>`).join('')}
@@ -122,6 +122,57 @@ const fsChip = (id, name, bet, missing = false) => `<span class="fs-chip${missin
 /** The free-spins games input: "id[:€], …" as a list of [id, bet]. */
 const fsTokens = () => String($('#fsGamesInput')?.value || '').split(/[\s,;]+/).filter(Boolean).map((t) => t.split(':'));
 const fsWrite = (tokens) => { $('#fsGamesInput').value = tokens.map(([id, bet]) => (bet ? `${id}:${bet}` : id)).join(', '); };
+
+// ---------- player modals (balance, free bet / free spins) ----------
+
+function openAdminModal(html) {
+  closeAdminModal();
+  const back = document.createElement('div');
+  back.className = 'adm-modal-back';
+  back.innerHTML = `<div class="adm-modal" role="dialog" aria-modal="true">${html}</div>`;
+  back.addEventListener('click', (e) => { if (e.target === back) closeAdminModal(); });
+  document.body.appendChild(back);
+  back.querySelector('input:not([type=hidden])')?.focus();
+}
+function closeAdminModal() { $('.adm-modal-back')?.remove(); }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAdminModal(); });
+const modalHead = (icon, title) => `<div class="am-head"><h2>${icon}${esc(title)}</h2><button type="button" class="am-x" data-action="am-close" aria-label="Fechar">×</button></div>`;
+
+function balanceModal({ id, name, balance }) {
+  openAdminModal(`${modalHead(ICON.wallet, 'Ajustar saldo')}
+    <div class="am-who"><small>${esc(name)}</small><strong class="am-bal">${money(Number(balance) || 0)}</strong></div>
+    <form data-form="user-balance" data-id="${id}">
+      <input type="hidden" name="op" value="add">
+      <div class="am-ops">
+        <button type="button" class="am-op on" data-action="am-op" data-op="add">Adicionar</button>
+        <button type="button" class="am-op" data-action="am-op" data-op="subtract">Subtrair</button>
+        <button type="button" class="am-op" data-action="am-op" data-op="set">Definir</button>
+      </div>
+      <input name="amount" type="number" step="0.01" min="0" placeholder="Valor em €" required>
+      <input name="note" maxlength="120" placeholder="Nota (opcional, fica no extrato)">
+      <button class="primary-btn am-go">${ICON.wallet} Confirmar</button>
+    </form>`);
+}
+
+function giftModal({ id, name, freebet }) {
+  openAdminModal(`${modalHead(ICON.gift, 'Atribuir prémio')}
+    <div class="am-who"><small>${esc(name)}</small><span class="am-fb">FreeBet atual: ${money(Number(freebet) || 0)}</span></div>
+    <div class="am-tabs"><button type="button" class="am-tab on" data-action="am-tab" data-tab="fb">FreeBet</button><button type="button" class="am-tab" data-action="am-tab" data-tab="fs">Free Spins</button></div>
+    <form data-form="user-freebet" data-id="${id}" data-pane="fb">
+      <input name="amount" type="number" step="0.01" min="0.01" placeholder="Valor da free bet em €" required>
+      <label class="am-row">Válida durante <input name="days" type="number" min="1" max="365" value="7"> dias</label>
+      <input name="note" maxlength="120" placeholder="Nota (opcional)">
+      <button class="primary-btn am-go gift">${ICON.gift} Atribuir FreeBet</button>
+    </form>
+    <form data-form="user-spins" data-id="${id}" data-pane="fs" hidden>
+      <div class="am-two"><label>Rodadas<input name="spins" type="number" min="1" max="500" value="5" required></label>
+        <label>Valor por rodada (€)<input name="spinValue" type="number" step="0.01" min="0.01" value="0.20" required></label></div>
+      <label class="am-row">Válidas durante <input name="days" type="number" min="1" max="365" value="7"> dias</label>
+      <input name="note" maxlength="120" placeholder="Nota (opcional)">
+      <p class="muted am-hint">Nos jogos da campanha Free Spins casino (Promoções). O jogador escolhe 1 deles.</p>
+      <button class="primary-btn am-go gift">${ICON.gift} Atribuir Free Spins</button>
+    </form>`);
+}
 
 function adminPromos(d) {
   const c = d.config;
@@ -399,8 +450,8 @@ function userDetailView(d) {
         <div><small>Apostado</small><strong>${money(d.totals.staked)}</strong></div><div><small>Prémios</small><strong>${money(d.totals.payouts)}</strong></div>
       </div>
       <div class="user-acts big">
-        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" title="Saldo da carteira">${ICON.wallet}</button>
-        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" title="FreeBets">${ICON.gift}</button>
+        <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" data-balance="${u.balance}" title="Ajustar saldo">${ICON.wallet}</button>
+        <button class="ua gift" data-action="user-freebet" data-id="${u.id}" data-name="${esc(u.name)}" data-freebet="${u.freebet}" title="FreeBet / Free Spins">${ICON.gift}</button>
         ${u.role === 'admin' ? '' : `<button class="ua ban${u.banned ? ' on' : ''}" data-action="user-ban" data-id="${u.id}" data-name="${esc(u.name)}" data-banned="${u.banned ? 1 : 0}" title="${u.banned ? 'Desbanir' : 'Banir'}">${ICON.ban}</button>`}
       </div>
     </div>
@@ -935,6 +986,27 @@ const handlers = {
     loadTab();
   },
   async 'aff-search'(form) { state.affQ = formData(form).q || ''; loadTab(); },
+  async 'user-balance'(form) {
+    const d = formData(form);
+    await api(`/api/admin/users/${form.dataset.id}/balance`, { method: 'POST', body: { op: d.op, amount: d.amount, note: d.note } });
+    closeAdminModal();
+    toast('Feito', 'Saldo atualizado.');
+    loadTab();
+  },
+  async 'user-freebet'(form) {
+    const d = formData(form);
+    await api(`/api/admin/users/${form.dataset.id}/freebet`, { method: 'POST', body: { amount: d.amount, days: Number(d.days) || 7, note: d.note } });
+    closeAdminModal();
+    toast('Feito', 'FreeBet atribuída.');
+    loadTab();
+  },
+  async 'user-spins'(form) {
+    const d = formData(form);
+    const r = await api(`/api/admin/users/${form.dataset.id}/free-spins`, { method: 'POST', body: { spins: Number(d.spins), spinValue: d.spinValue, days: Number(d.days) || 7, note: d.note } });
+    closeAdminModal();
+    toast('Feito', `${r.freeSpins.spins} Free Spins atribuídas.`);
+    loadTab();
+  },
   async 'promo-config'(form) {
     const body = { general: { requireKyc: false, methods: [] } };
     for (const el of form.elements) {
@@ -1072,19 +1144,23 @@ document.addEventListener('click', async (e) => {
   if (action === 'refresh') { loadTab(); return; }
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
   if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
-  if (action === 'user-balance' || action === 'user-freebet') {
-    const what = action === 'user-balance' ? 'saldo da carteira' : 'saldo de FreeBets';
-    const v = prompt(action === 'user-balance'
-      ? `${actionEl.dataset.name}: valor a juntar ao ${what} em € (ex.: 50). Para retirar, use o sinal menos (ex.: -20).`
-      : `${actionEl.dataset.name}: valor da free bet em € (ex.: 10). Fica válida 7 dias.`);
-    if (v === null || !v.trim()) return;
-    try {
-      await api(`/api/admin/users/${actionEl.dataset.id}/${action === 'user-balance' ? 'balance' : 'freebet'}`, { method: 'POST', body: { amount: v.trim() } });
-      toast('Feito', `${what[0].toUpperCase()}${what.slice(1)} atualizado.`);
-      loadTab();
-    } catch (err) { toast('Erro', err.message, 'error'); }
+  if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
+  if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
+  if (action === 'am-close') { closeAdminModal(); return; }
+  if (action === 'am-op') {
+    const form = actionEl.closest('form');
+    form.op.value = actionEl.dataset.op;
+    form.querySelectorAll('.am-op').forEach((b) => b.classList.toggle('on', b === actionEl));
+    form.amount.placeholder = actionEl.dataset.op === 'set' ? 'Novo saldo em €' : 'Valor em €';
     return;
   }
+  if (action === 'am-tab') {
+    const box = actionEl.closest('.adm-modal');
+    box.querySelectorAll('.am-tab').forEach((b) => b.classList.toggle('on', b === actionEl));
+    box.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== actionEl.dataset.tab; });
+    return;
+  }
+
   if (action === 'user-ban') {
     const banned = actionEl.dataset.banned !== '1';
     if (!confirm(banned ? `Banir ${actionEl.dataset.name}? A conta deixa de entrar no site.` : `Desbanir ${actionEl.dataset.name}?`)) return;

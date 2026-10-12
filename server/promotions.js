@@ -337,6 +337,28 @@ function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
   return { kind: 'casinoFs', ...db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id) };
 }
 
+/**
+ * Free spins given by the administrator (tests, support): `spins` at `spinValueCents` each, in the
+ * games of the Free Spins campaign, valid `days`. One grant active per player, as on a deposit.
+ */
+export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, ref, note = null }) {
+  const c = promoConfig(db).casinoFs;
+  if (!c.games.length) throw new HttpError(400, 'Configure primeiro os jogos das Free Spins em Promoções → Free Spins casino.');
+  if (activeSpins(db, userId)) throw new HttpError(409, 'Este jogador já tem Free Spins ativas.');
+  const n = Math.round(Number(spins));
+  if (!Number.isInteger(n) || n < 1 || n > 500) throw new HttpError(400, 'Número de rodadas inválido (1 a 500).');
+  if (!Number.isInteger(spinValueCents) || spinValueCents < 1 || spinValueCents > 10_000) throw new HttpError(400, 'Valor por rodada inválido.');
+  const now = nowIso();
+  const value = n * spinValueCents;
+  const bets = Object.fromEntries(c.games.map((g) => [g, spinValueCents]));
+  const id = Number(db.prepare(`INSERT INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, deposit_cents, expires_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`).run(userId, ref, n, n, spinValueCents, value, value, JSON.stringify(c.games), JSON.stringify(bets),
+    new Date(Date.parse(now) + Math.min(365, Math.max(1, Number(days) || 7)) * DAY).toISOString(), now).lastInsertRowid);
+  ledger(db, { userId, type: 'free_spin_credit', amount: value, balanceAfter: value, description: `${n} Free Spins do administrador (€${(value / 100).toFixed(2)})${note ? ` — ${note}` : ''}`, ref: `fs:${id}` });
+  log(db, userId, 'casinoFs', ref, 'granted', 'administrador');
+  return db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id);
+}
+
 const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
 /** The games these free spins can be played in now: the one the player picked, else all eligible. */
 export const playableGames = (s) => (s.chosen_game ? [s.chosen_game] : spinGames(s));

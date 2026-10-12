@@ -20,7 +20,7 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
-  casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance,
+  casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
@@ -1577,7 +1577,19 @@ export function createApp(db, {
 
   admin.post('/users/:id/balance', (req, res) => {
     const u = playerRow(req.params.id);
-    const amount = signedCents(req.body?.amount);
+    // op: add / subtract (the value given) or set (the balance becomes the value given).
+    const op = req.body?.op;
+    let amount;
+    if (op === 'set') {
+      const raw = String(req.body?.amount ?? '').trim().replace(',', '.');
+      const target = raw === '0' || raw === '0.00' || Number(raw) === 0 ? 0 : parseEuros(raw, 'Valor');
+      amount = target - userById(u.id).balance_cents;
+      if (!amount) throw new HttpError(400, 'O saldo já tem esse valor.');
+    } else {
+      amount = signedCents(req.body?.amount);
+      if (op === 'subtract') amount = -Math.abs(amount);
+      else if (op === 'add') amount = Math.abs(amount);
+    }
     const note = str(req.body?.note, 120);
     const balance = tx(db, () => postTransaction(db, u.id, amount, amount > 0 ? 'admin_credit' : 'admin_debit',
       `${amount > 0 ? 'Crédito' : 'Débito'} do administrador${note ? ` — ${note}` : ''}`, `admin:${req.user.id}`));
@@ -1592,6 +1604,15 @@ export function createApp(db, {
     tx(db, () => grantFreebet(db, u.id, { amountCents: amount, source: 'admin', ref: `admin:${req.user.id}:${Date.now()}:${u.id}`, validityDays: days,
       description: `Free bet do administrador${req.body?.note ? ` — ${str(req.body.note, 120)}` : ''}` }));
     res.json({ ok: true, freebet: cents(freebetCents(db, u.id)) });
+  });
+  // Free spins for the player (tests, support): in the games of the Free Spins campaign.
+  admin.post('/users/:id/free-spins', (req, res) => {
+    const u = playerRow(req.params.id);
+    const s = tx(db, () => grantAdminSpins(db, u.id, {
+      spins: req.body?.spins, spinValueCents: parseEuros(req.body?.spinValue ?? 0.2, 'Valor por rodada'), days: req.body?.days,
+      ref: `admin:${req.user.id}:${Date.now()}:${u.id}:fs`, note: req.body?.note ? str(req.body.note, 120) : null,
+    }));
+    res.json({ ok: true, freeSpins: spinsView(s) });
   });
   admin.post('/freebets/:id/cancel', (req, res) => {
     const f = db.prepare('SELECT * FROM freebets WHERE id = ?').get(Number(req.params.id));

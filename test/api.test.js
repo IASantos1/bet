@@ -326,6 +326,26 @@ test('admin can take an event live and update score', async () => {
   assert.ok(live.some((e) => e.id === ev.id && e.homeScore === 1 && e.clock === "12'"));
 });
 
+test('admin players: balance add / subtract / set, and free spins given by hand', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer();
+  const me = (await p('GET', '/api/me')).body.user;
+  const bal = (body) => adm('POST', `/api/admin/users/${me.id}/balance`, body);
+  assert.equal((await bal({ op: 'add', amount: '40' })).body.balance, 40);
+  assert.equal((await bal({ op: 'subtract', amount: '15' })).body.balance, 25);
+  assert.equal((await bal({ op: 'set', amount: '100' })).body.balance, 100);
+  assert.equal((await bal({ op: 'set', amount: '0' })).body.balance, 0);
+  assert.equal((await bal({ op: 'set', amount: '0' })).status, 400);              // already that value
+  // Free spins: the campaign's games first, then one grant at a time.
+  const fs = (body) => adm('POST', `/api/admin/users/${me.id}/free-spins`, body);
+  assert.equal((await fs({ spins: 5, spinValue: '0.20' })).status, 400);
+  await adm('PUT', '/api/admin/promotions/config', { casinoFs: { games: '4821, 4822' } });
+  const r = await fs({ spins: 5, spinValue: '0.20', days: 3 });
+  assert.deepEqual([r.status, r.body.freeSpins.spins, r.body.freeSpins.value, r.body.freeSpins.games.length], [200, 5, 1, 2]);
+  assert.equal((await fs({ spins: 5, spinValue: '0.20' })).status, 409);
+  assert.equal((await p('GET', '/api/me/free-spins/active')).body.freeSpins.spinsLeft, 5);
+});
+
 test('admin players: wallet credit/debit, free bets, ban and the detail page', async () => {
   const adm = await adminClient();
   const p = await newPlayer();
