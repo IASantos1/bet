@@ -103,3 +103,14 @@
 .form-grid .field.wide { grid-column: 1 / -1; }
 .field textarea { width: 100%; border: 1px solid var(--border); background: var(--dim); color: #fff; border-radius: 6px; padding: 10px 12px; outline: none; font: inherit; resize: vertical; }
 .field textarea:focus { border-color: #8d252b; }
+
+/* Promotions: the free-spins games, picked by name. */
+.fs-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.fs-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; border-radius: 999px; background: rgba(255, 196, 0, .14); border: 1px solid rgba(255, 196, 0, .4); font-size: 13px; font-weight: 700; }
+.fs-chip.missing { background: rgba(224, 36, 43, .12); border-color: rgba(224, 36, 43, .45); }
+.fs-chip button { border: 0; background: none; color: inherit; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.fs-search { position: relative; margin-bottom: 8px; }
+.fs-search input { width: 100%; }
+.fs-results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.fs-result { text-align: left; padding: 7px 10px; border: 1px solid var(--line, #2a2f37); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.fs-result:hover { border-color: #ffc400; }

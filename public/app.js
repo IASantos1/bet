@@ -711,6 +711,7 @@ function casinoTabs(f) {
 }
 
 async function loadCasinoLobby() {
+  loadFreeSpins();
   try {
     state.casinoLobby = await api('/api/casino/lobby');
   } catch { state.casinoLobby = null; }
@@ -718,8 +719,48 @@ async function loadCasinoLobby() {
   if ((page === 'casino' && !sub) || page === 'home') render({ keepScroll: true });
 }
 
+/** The player's free spins: the games to pick from (only the picked one once chosen). */
+async function loadFreeSpins() {
+  if (!state.user) { state.fsActive = null; return; }
+  state.fsAt = Date.now();
+  try { state.fsActive = await api('/api/me/free-spins/active'); } catch { state.fsActive = null; }
+  const { page, sub } = currentRoute();
+  if (page === 'casino' && !sub) render({ keepScroll: true });
+}
+
+/** On top of the casino: the free spins waiting to be played, opening the games to pick from. */
+function freeSpinsBar() {
+  const d = state.fsActive;
+  if (!d?.freeSpins || !d.games.length) return '';
+  const s = d.freeSpins;
+  const chosen = s.chosenGame ? d.games[0] : null;
+  return `<button class="fs-bar" data-action="fs-open"><span class="fs-ico">🎁</span>
+    <span class="fs-text"><strong>${s.spinsLeft} Free Spins disponíveis</strong><small>${chosen ? `No seu jogo: ${esc(chosen.name)}` : `Escolha 1 de ${d.games.length} jogos selecionados`}</small></span>
+    <span class="fs-go">${chosen ? 'Jogar' : 'Ver jogos'} ›</span></button>`;
+}
+
+function openFreeSpins() {
+  const d = state.fsActive;
+  if (!d?.freeSpins) return;
+  const s = d.freeSpins;
+  const intro = s.chosenGame
+    ? 'Este é o jogo das suas Free Spins. Pode sair e voltar quando quiser: as rodadas por jogar ficam guardadas.'
+    : `Escolha o jogo onde quer usar as suas ${s.spinsLeft} Free Spins. Depois de escolher, as Free Spins ficam nesse jogo até terminarem.`;
+  openModal('Jogos disponíveis para Free Spins', `<p class="muted">${intro}</p>
+    <div class="fs-pick">${d.games.map((g) => `<button class="fs-game" data-action="fs-pick" data-id="${g.id}">
+      <span class="fs-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span>
+      <strong>${esc(g.name)}</strong><small>${esc(g.provider)} · ${money(g.bet)} por rodada</small></button>`).join('')}</div>
+    <p class="muted fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))}. Os ganhos passam a saldo real quando as Free Spins terminam.</p>`);
+}
+
 function casinoPage() {
   const c = state.casino;
+  // The player's free spins: fetched on arrival (another player, or a while since the last look).
+  if (state.user && (state.fsFor !== state.user.id || Date.now() - (state.fsAt || 0) > 30_000)) {
+    state.fsFor = state.user.id;
+    state.fsAt = Date.now();
+    loadFreeSpins();
+  }
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
@@ -750,7 +791,7 @@ function casinoPage() {
   const head = prov?.name || cat?.label;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  return `<div class="page-title"><h1>Casino</h1><p>${state.casinoLobby?.total || c.total} jogos de ${c.providers.filter((p) => !p.maintenance).length} fornecedores.</p></div>
+  return `<div class="page-title"><h1>Casino</h1></div>${freeSpinsBar()}
     <div class="casino-filters">
       <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
@@ -825,6 +866,7 @@ async function closeCasino({ keepalive = false } = {}) {
       state.user.balance = r.balance;
       updateHeader();
     }
+    loadFreeSpins();
   } catch { state.user && (state.user.casinoActive = true); }
 }
 
@@ -913,7 +955,7 @@ function casinoGamePage(id) {
           <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
           ${g.demo !== false ? '<button class="cg-btn demo" data-cg-play="demo">Testar</button>' : ''}
         </div>
-        ${fs && !fs.eligible ? '<p class="cg-note">As suas Free Spins são válidas noutros jogos — veja-os em <a href="#/promocoes">Promoções</a>.</p>' : ''}
+        ${fs && !fs.eligible ? '<p class="cg-note">As suas Free Spins são para outro jogo — veja os jogos disponíveis no topo do <a href="#/casino">Casino</a>.</p>' : ''}
         ${g.demo !== false ? '<p class="cg-note">Testar abre o jogo em modo demonstração, com saldo virtual: nenhum dinheiro real é usado.</p>' : ''}
       </div>
       ${d.related.length ? `<section class="section"><div class="section-head"><h2>Do mesmo estilo</h2></div>${carousel('cgRelated', d.related.map(rel))}</section>` : ''}
@@ -2484,13 +2526,29 @@ document.addEventListener('click', async (e) => {
     updateHeader(); renderSlip();
     location.hash = '#/';
     render();
+  } else if (action === 'fs-open') {
+    openFreeSpins();
+  } else if (action === 'fs-pick') {
+    const d = state.fsActive;
+    const g = d?.games.find((x) => String(x.id) === actionEl.dataset.id);
+    if (!g) return;
+    if (!d.freeSpins.chosenGame) {
+      if (!confirm(`Usar as Free Spins em ${g.name}? Depois de escolher não é possível trocar de jogo.`)) return;
+      try {
+        await api(`/api/me/free-spins/${d.freeSpins.id}/choose`, { method: 'POST', body: { gameId: g.id } });
+        d.freeSpins.chosenGame = g.id;
+        d.games = [g];
+      } catch (err) { toast('Free Spins', err.message, 'error'); return; }
+    }
+    closeModal();
+    location.hash = `#/casino/jogo/${g.id}`;
   } else if (action === 'fs-claim') {
     if (!confirm('Terminar as Free Spins? Os ganhos passam a saldo real; as rodadas por jogar deixam de estar disponíveis.')) return;
     try {
       const r = await api(`/api/me/free-spins/${actionEl.dataset.id}/claim`, { method: 'POST', body: {} });
       state.user = r.user;
       toast('Free Spins terminadas', r.paid > 0 ? `${money(r.paid)} de ganhos creditados no saldo.` : 'Sem ganhos a pagar.');
-      updateHeader(); loadPromos();
+      updateHeader(); loadPromos(); loadFreeSpins();
     } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'end-sessions') {
     try {

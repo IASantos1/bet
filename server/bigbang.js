@@ -128,6 +128,7 @@ export function createBigBang(db, {
 
   async function loadCatalog() {
     const games = [];
+    const hidden = [];
     for (let offset = 0; offset < 50_000;) {
       const page = await call('GET', `/games?limit=5000&offset=${offset}`);
       const list = Array.isArray(page.data) ? page.data : [];
@@ -139,6 +140,7 @@ export function createBigBang(db, {
     // Split: BigBang only for the live tables, the slots (and the rest) from Palace.
     if (split() && palace) {
       const live = games.filter((g) => g.type === 'live');
+      hidden.push(...games.filter((g) => g.type !== 'live')); // not listed, still opened by id (free spins)
       // BigBang's portrait artwork (made for these tall cards) for the same game, when it has one.
       // Matched by provider and title, else by title alone (the provider may be spelled apart).
       const art = new Map();
@@ -192,7 +194,7 @@ export function createBigBang(db, {
     const unique = dropCrossDuplicates(games.filter((g) => best.get(titleKey(g)) === g));
     // Every copy stays reachable by id (a free-spins game, an old link); the lists show one.
     const shown = new Set(unique.map((g) => g.providerId));
-    catalog = { at: Date.now(), games: unique, byId: new Map(games.map((g) => [g.id, g])), providers: providers.filter((p) => shown.has(p.id)) };
+    catalog = { at: Date.now(), games: unique, byId: new Map([...hidden, ...games].map((g) => [g.id, g])), providers: providers.filter((p) => shown.has(p.id)) };
     return catalog;
   }
 

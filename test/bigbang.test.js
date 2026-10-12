@@ -441,3 +441,51 @@ test('no game twice: the copy with portrait artwork wins over a landscape one', 
   const g = (id, provider, fit) => ({ id, name: 'Shining Crown', provider, providerId: provider.toLowerCase(), type: 'slot', image: `https://x/${id}.png`, fit });
   assert.deepEqual(dropCrossDuplicates([g(1, 'EGT', true), g(2, 'EGT', false)]).map((x) => x.id), [2]);
 });
+
+test('free spins on Palace: one picked game, own casino account, winnings above the value paid', async () => {
+  const { palaceId } = await import('../server/bigbang.js');
+  const db = openDb(':memory:');
+  const games = [
+    { providerId: 7, provider: 'Pragmatic Play', code: 'bigbass', name: 'Big Bass Splash', image: null, category: 'Slots' },
+    { providerId: 7, provider: 'Pragmatic Play', code: 'olympus', name: 'Gates of Olympus', image: null, category: 'Slots' },
+  ];
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl, palace: async () => games, split: () => true });
+  const [bass, oly] = [palaceId(7, 'bigbass'), palaceId(7, 'olympus')];
+  let fsAccount = 0;
+  const calls = [];
+  const casino = {
+    enabled: true, casinoBalanceCents: async () => 0, syncBack: async () => 0, leaveGame: async () => 0,
+    fsEnterGame: async (_u, a) => { calls.push(['enter', a.gameCode, a.fundCents]); if (a.fundCents) fsAccount = a.fundCents; return { url: 'https://palace/fs', fsCents: fsAccount }; },
+    fsBalanceCents: async () => fsAccount,
+    fsWithdrawAll: async () => { const c = fsAccount; fsAccount = 0; calls.push(['withdraw', c]); return c; },
+  };
+  const uid = player(db, 5);
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run((await import('../server/security.js')).hashPassword('segredo123'), uid);
+  const email = db.prepare('SELECT email FROM users WHERE id = ?').get(uid).email;
+  const fsId = Number(db.prepare(`INSERT INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, expires_at, created_at)
+    VALUES (?, 'fs1', 5, 5, 20, 100, 100, ?, '{}', 0, ?, ?)`).run(uid, JSON.stringify([bass, oly]), new Date(Date.now() + 86_400_000).toISOString(), nowIso()).lastInsertRowid);
+  const server = createApp(db, { bigbang: bb, casino, loginAttempts: 100 }).listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'segredo123' }) });
+    const cookie = login.headers.get('set-cookie')?.split(';')[0];
+    const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+    const get = (path) => fetch(`${base}${path}`, { headers: { cookie } }).then((r) => r.json());
+    assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass, oly]);   // both to pick from
+    const r = await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
+    assert.deepEqual([r.status, r.j.url, r.j.freeSpins.balance], [200, 'https://palace/fs', 1]);
+    assert.deepEqual(calls[0], ['enter', 'bigbass', 100]);                                              // the value goes there, once
+    assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 500); // own balance stays
+    assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass]);         // only the picked game now
+    assert.equal((await post('/api/casino/launch', { gameId: oly, freeSpins: fsId })).status, 409);    // no other game
+    await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
+    assert.deepEqual(calls[1], ['enter', 'bigbass', 0]);                                                // not funded twice
+    fsAccount = 340;                                                                                    // played and won
+    await post('/api/casino/close', {});
+    assert.equal(db.prepare("SELECT status FROM casino_spins WHERE id = ?").get(fsId).status, 'active'); // can come back
+    const c = await post(`/api/me/free-spins/${fsId}/claim`, {});
+    assert.equal(c.j.paid, 2.4);                                                                        // €3.40 − €1.00 given
+    assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 740);
+    assert.equal(fsAccount, 0);
+  } finally { server.close(); }
+});

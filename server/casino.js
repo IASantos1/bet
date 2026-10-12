@@ -273,6 +273,52 @@ export function createCasino(db, {
     return leaveGame(u);
   }
 
+  // ---------- free spins (a separate casino account per player) ----------
+  // The free-spins money never mixes with the player's own: it goes to a second casino account
+  // (cb<id>fs), only the chosen game is opened on it, and what is left there is settled by us.
+
+  async function fsUserCode(user) {
+    const row = db.prepare('SELECT casino_fs_code FROM users WHERE id = ?').get(user.id);
+    if (row?.casino_fs_code) return row.casino_fs_code;
+    const data = await call('/v4/user/create', { name: `cb${user.id}fs` });
+    db.prepare('UPDATE users SET casino_fs_code = ? WHERE id = ?').run(data.user_code, user.id);
+    return data.user_code;
+  }
+  async function fsBalanceCents(user) {
+    const code = await fsUserCode(user);
+    return toCents((await call('/v4/user/info', { user_code: code }))?.balance);
+  }
+
+  /**
+   * Opens a game on the free-spins account; `fundCents` (first launch only) is put there first.
+   * Returns { url, fsCents }.
+   */
+  function fsEnterGame(user, { providerId, gameCode, returnUrl, fundCents = 0 }) {
+    return withLock(`fs:${user.id}`, async () => {
+      const u = freshUser(user.id);
+      assertCanPlay(u);
+      const code = await fsUserCode(u);
+      if (fundCents > 0) {
+        // A new grant starts from zero there (anything left by an older one goes back first).
+        await call('/v4/wallet/withdraw-all', { user_code: code });
+        await call('/v4/wallet/deposit', { user_code: code, amount: fundCents / 100 });
+      }
+      const data = await call('/v4/game/game-url', {
+        user_code: code, provider_id: Number(providerId), game_symbol: String(gameCode), lang, return_url: returnUrl || '',
+      });
+      if (!data?.game_url) throw new CasinoError(-1, 'O fornecedor não devolveu o endereço do jogo.');
+      return { url: data.game_url, fsCents: await fsBalanceCents(u) };
+    });
+  }
+
+  /** Takes everything left on the free-spins account back (to the operator). Returns the cents. */
+  function fsWithdrawAll(user) {
+    return withLock(`fs:${user.id}`, async () => {
+      const code = await fsUserCode(user);
+      return toCents((await call('/v4/wallet/withdraw-all', { user_code: code }))?.amount);
+    });
+  }
+
   async function agentInfo() {
     const a = await call('/v4/agent/info');
     return { name: a?.name, balance: a?.balance, currency: a?.currency };
@@ -292,6 +338,6 @@ export function createCasino(db, {
 
   return {
     enabled, games, gamesPage, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo,
-    enterGame, leaveGame, syncBack,
+    enterGame, leaveGame, syncBack, fsEnterGame, fsBalanceCents, fsWithdrawAll,
   };
 }

@@ -338,6 +338,8 @@ function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
 }
 
 const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
+/** The games these free spins can be played in now: the one the player picked, else all eligible. */
+export const playableGames = (s) => (s.chosen_game ? [s.chosen_game] : spinGames(s));
 const spinBets = (s) => { try { return JSON.parse(s.game_bets || '{}') || {}; } catch { return {}; } };
 /** The bet (cents) one spin of this game is played at. */
 export const spinBet = (s, gameId) => Number(spinBets(s)[gameId]) || s.spin_value_cents;
@@ -386,7 +388,7 @@ export function spinsMove(db, user, spinsId, move) {
   }
   if (asValue(s)) return spinValueMove(db, user, s, move);
   if (move.cents < 0) {
-    if (move.gameId && !spinGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: s.balance_cents };
+    if (move.gameId && !playableGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: s.balance_cents };
     if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: s.balance_cents };
     if (s.balance_cents + move.cents < 0) return { error: 'insufficient balance', balance: s.balance_cents };
   }
@@ -410,7 +412,7 @@ function spinValueMove(db, user, s, move) {
   const shown = () => spinsBalance(spinsRow(db, s.id, user.id));
   if (move.cents < 0) {
     const stake = -move.cents;
-    if (!move.gameId || !spinGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: spinsBalance(s) };
+    if (!move.gameId || !playableGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: spinsBalance(s) };
     if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: spinsBalance(s) };
     const bet = spinBet(s, move.gameId);
     if (stake > bet) return { error: `free spins: each spin is €${(bet / 100).toFixed(2)}`, balance: spinsBalance(s) };
@@ -429,6 +431,38 @@ function spinValueMove(db, user, s, move) {
   return { balance: shown() };
 }
 
+/**
+ * The player picks the game for the free spins, among the eligible ones; once picked it is the only
+ * one (leaving and coming back shows just that game) until the free spins end.
+ */
+export function chooseSpinsGame(db, userId, spinsId, gameId) {
+  const s = spinsRow(db, Number(spinsId), userId);
+  if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
+  const id = Number(gameId);
+  if (s.chosen_game) {
+    if (s.chosen_game !== id) throw new HttpError(409, 'Já escolheu o jogo destas Free Spins.');
+    return s;
+  }
+  if (!spinGames(s).includes(id)) throw new HttpError(400, 'As Free Spins não são válidas neste jogo.');
+  db.prepare('UPDATE casino_spins SET chosen_game = ? WHERE id = ? AND chosen_game IS NULL').run(id, s.id);
+  return spinsRow(db, s.id, userId);
+}
+
+/**
+ * Free spins played on the Palace casino (Transfer mode): the value is put on the player's own
+ * free-spins account there and can only be followed by its balance. `cents` = that balance now:
+ * up to the value given it is the spins still to play, above it what they have won. `final` ends
+ * them (the money there already taken back): the winnings are paid as real money.
+ */
+export function palaceSpinsBalance(db, s, cents, { final = false, status = 'closed', reason = null } = {}) {
+  if (s.status !== 'active') return 0;
+  const left = Math.min(cents, s.value_cents);
+  const bet = spinBet(s, s.chosen_game) || s.spin_value_cents;
+  db.prepare('UPDATE casino_spins SET balance_cents = ?, won_cents = ?, spins_left = ? WHERE id = ?')
+    .run(left, Math.max(0, cents - s.value_cents), Math.floor(left / bet), s.id);
+  return final ? closeSpins(db, spinsRow(db, s.id, s.user_id), status, reason) : 0;
+}
+
 /** The player ends the free spins now (winnings above the value given are paid). */
 export function claimSpins(db, userId, spinsId) {
   const s = spinsRow(db, Number(spinsId), userId);
@@ -442,7 +476,7 @@ export const spinsView = (s, gameName = () => null) => ({
   // The spins still to play (what the player sees), and what they have won (real money when they end).
   spinsLeft: asValue(s) ? s.spins_left : Math.floor(Math.min(s.balance_cents, s.value_cents) / s.spin_value_cents),
   winnings: (asValue(s) ? s.won_cents : Math.max(0, s.balance_cents - s.value_cents)) / 100, paid: s.paid_cents / 100, expiresAt: s.expires_at, createdAt: s.created_at,
-  endedAt: s.ended_at, reason: s.cancel_reason, games: spinGames(s).map((id) => ({ id, name: gameName(id), bet: spinBet(s, id) / 100 })),
+  endedAt: s.ended_at, reason: s.cancel_reason, chosenGame: s.chosen_game || null, games: spinGames(s).map((id) => ({ id, name: gameName(id), bet: spinBet(s, id) / 100 })),
 });
 
 // ---------- bonus money ----------
@@ -524,7 +558,8 @@ export function cancelUserPromos(db, userId, reason) {
 export function expireDue(db, now = nowIso()) {
   let n = 0;
   for (const b of db.prepare("SELECT * FROM bonuses WHERE status = 'active' AND expires_at <= ?").all(now)) { endBonus(db, b, 'expired', 'prazo terminado'); n += 1; }
-  for (const s of db.prepare("SELECT * FROM casino_spins WHERE status = 'active' AND expires_at <= ?").all(now)) { closeSpins(db, s, 'expired', 'prazo terminado'); n += 1; }
+  // (Free spins on the Palace casino are ended by the casino side, which takes their money back first.)
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE status = 'active' AND expires_at <= ? AND palace_cents IS NULL").all(now)) { closeSpins(db, s, 'expired', 'prazo terminado'); n += 1; }
   for (const f of db.prepare("SELECT * FROM freebets WHERE status = 'active' AND expires_at <= ?").all(now)) {
     db.prepare("UPDATE freebets SET status = 'expired' WHERE id = ?").run(f.id);
     ledger(db, { userId: f.user_id, freebetId: f.id, type: 'freebet_expiry', amount: -f.amount_cents, description: 'Free bet expirada', ref: `fbexpiry:${f.id}` });

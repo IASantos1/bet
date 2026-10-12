@@ -466,6 +466,10 @@ function migrate(db) {
   if (!fsCols.has('won_cents')) db.exec('ALTER TABLE casino_spins ADD COLUMN won_cents INTEGER');
   if (!fsCols.has('game_bets')) db.exec('ALTER TABLE casino_spins ADD COLUMN game_bets TEXT');
   if (!fsCols.has('spins_left')) db.exec('ALTER TABLE casino_spins ADD COLUMN spins_left INTEGER');
+  // The game the player picked among the eligible ones (only that one afterwards), and for a
+  // Palace game the money put on the player's free-spins casino account (null: not there).
+  if (!fsCols.has('chosen_game')) db.exec('ALTER TABLE casino_spins ADD COLUMN chosen_game INTEGER');
+  if (!fsCols.has('palace_cents')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_cents INTEGER');
 
   // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
   const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
@@ -507,6 +511,7 @@ function migrate(db) {
   // Casino (aggregator Agent API): the player's code there.
   const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
+  if (!userCols.has('casino_fs_code')) db.exec('ALTER TABLE users ADD COLUMN casino_fs_code INTEGER');
   // Single wallet: 1 while the player's balance is in the casino (a game is open).
   if (!userCols.has('casino_active')) db.exec('ALTER TABLE users ADD COLUMN casino_active INTEGER NOT NULL DEFAULT 0');
   // Admin panel: free-bet wallet, ban, identity verification (KYC) state.

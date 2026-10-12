@@ -139,7 +139,10 @@ const telegram = createTelegram(db, { ...config.telegram, publicUrl: config.publ
 const stopTelegram = telegram.start();
 if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, publicação automática ${telegram.status().auto && config.telegram.production ? 'ligada' : 'desligada'}`);
 
-const server = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, boardCacheMs: 2000 }).listen(config.port, () => {
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, boardCacheMs: 2000 });
+// Free spins played on the Palace casino that ran out of time: their money there is taken back first.
+setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
+const server = app.listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
 
