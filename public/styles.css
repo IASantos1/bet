@@ -1284,3 +1284,15 @@ img, video, iframe { max-width: 100%; }
 .fs-game strong { font-size: 13px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-game small { font-size: 11px; color: var(--text-3); }
 .fs-note { font-size: 12px; }
+
+
+/* Payment provider logos in the deposit form */
+.payment-methods { display: flex; flex-wrap: wrap; gap: 10px; }
+.payment-method-logo { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 125px; min-height: 64px; padding: 10px 14px; cursor: pointer; }
+.payment-method-logo img { display: block; width: auto; max-width: 112px; height: 30px; object-fit: contain; }
+.payment-method-logo input { flex: 0 0 auto; }
+@media (max-width: 480px) {
+  .payment-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payment-method-logo { min-width: 0; padding: 9px; }
+  .payment-method-logo img { max-width: 100%; height: 27px; }
+}
