@@ -106,9 +106,10 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-// Only instantiate Stripe while Stripe is the selected provider. This also stops its background
-// reconciliation job when Eupago is active, while preserving all Stripe code and credentials.
-const stripe = config.paymentsMode === 'stripe' && config.stripe.secretKey
+// Stripe remains the inline card processor when Eupago handles MB WAY and Multibanco.
+// It must also stay active in Eupago mode so its card PaymentIntents, webhook and reconciliation
+// job continue to work. The frontend embeds Stripe's secure card fields inside the BET62 layout.
+const stripe = ['stripe', 'eupago'].includes(config.paymentsMode) && config.stripe.secretKey
   ? createStripe(db, { ...config.stripe, log: (m) => console.warn(m) })
   : null;
 if (stripe) {
