@@ -135,7 +135,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, bigbang = null, telegram = null, revolut = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -183,6 +183,22 @@ export function createApp(db, {
     }
     res.json({ received: true });
   });
+
+  // Eupago calls this URL only after a payment has been paid. The handler validates the channel API key,
+  // our unique identifier, the exact amount and the expected payment method before crediting once.
+  const eupagoWebhook = (req, res) => {
+    if (!eupago) return res.status(404).json({ error: 'Eupago não está ativa.' });
+    const params = { ...(req.body && typeof req.body === 'object' ? req.body : {}), ...req.query };
+    const result = eupago.handleWebhook(params);
+    if (!result.accepted) {
+      if (result.reason === 'authentication') return res.status(401).json({ error: 'Notificação não autenticada.' });
+      console.warn(`Eupago webhook rejeitado: ${result.reason || 'invalid'}`);
+      return res.status(400).json({ error: 'Notificação inválida.' });
+    }
+    res.status(200).json({ received: true });
+  };
+  app.get('/api/eupago/webhook', eupagoWebhook);
+  app.post('/api/eupago/webhook', express.json({ limit: '32kb' }), eupagoWebhook);
 
   // Revolut: how each withdrawal payout ended (signed, raw body). Also at Bet62Novo's path, so the
   // webhook configured there works here as it is.
@@ -956,8 +972,9 @@ export function createApp(db, {
   app.post('/api/wallet/deposit', requireUser, async (req, res, next) => {
     try {
       const stripeMode = config.paymentsMode === 'stripe';
-      if (config.paymentsMode !== 'demo' && !(stripeMode && stripe)) {
-        throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: nenhum fornecedor de pagamentos está configurado.');
+      const eupagoMode = config.paymentsMode === 'eupago';
+      if (config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
+        throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
       if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
       const amount = parseEuros(req.body.amount, 'Valor do depósito');
@@ -982,6 +999,16 @@ export function createApp(db, {
         }
         return res.status(201).json({ payment: depositOut(r), clientSecret: r.clientSecret, publishableKey: r.publishableKey, balance: cents(userById(req.user.id).balance_cents) });
       }
+      if (eupagoMode) {
+        const method = String(req.body.method || '');
+        let r;
+        try {
+          r = await eupago.createDeposit(req.user, amount, { method, phone: req.body.phone, promo });
+        } catch (err) {
+          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento Eupago: ${err.message}`);
+        }
+        return res.status(201).json({ payment: depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
+      }
       demoDeposit(req, res, amount, promo);
     } catch (err) { next(err); }
   });
@@ -989,10 +1016,12 @@ export function createApp(db, {
   // A deposit's state, for the player's page (asks Stripe if the webhook has not arrived yet).
   app.get('/api/wallet/deposit/:sessionId', requireUser, async (req, res, next) => {
     try {
-      if (!stripe) throw new HttpError(404, 'Depósito não encontrado.');
-      const r = await stripe.refresh(req.params.sessionId, req.user.id);
+      const r = config.paymentsMode === 'eupago'
+        ? eupago?.refresh(req.params.sessionId, req.user.id)
+        : stripe?.refresh(req.params.sessionId, req.user.id);
       if (!r) throw new HttpError(404, 'Depósito não encontrado.');
-      res.json({ ...depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
+      const refreshed = r instanceof Promise ? await r : r;
+      res.json({ ...depositOut(refreshed), balance: cents(userById(req.user.id).balance_cents) });
     } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(502, err.message) : err); }
   });
 
