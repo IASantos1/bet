@@ -48,7 +48,7 @@ export const config = {
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.
-  // "stripe": MB WAY, Multibanco and card through Stripe. "eupago": MB WAY and Multibanco via Eupago.
+  // "stripe": payments through Stripe. "eupago": card, MB WAY and Multibanco via Eupago.
   paymentsMode: (env.PAYMENTS_MODE || ((env.STRIPE_SECRET_KEY || '').trim() ? 'stripe' : 'demo')).trim().toLowerCase(),
   eupago: {
     apiKey: unquote(env.EUPAGO_API_KEY),
