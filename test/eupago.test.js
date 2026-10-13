@@ -23,7 +23,7 @@ test('Eupago MB WAY deposit is credited only once after an authenticated matchin
       assert.equal(body.payment.amount.currency, 'EUR');
       assert.match(body.payment.identifier, /^B62-1-/);
       assert.equal(body.payment.customerPhone, '912345678');
-      assert.equal(body.payment.countryCode, '+351');
+      assert.equal(body.payment.countryCode, '351');
       return Response.json({ transactionID: 'provider-1', status: 'pending' }, { status: 201 });
     },
   });
