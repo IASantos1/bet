@@ -57,9 +57,11 @@ export function createEupago(db, {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const message = find(payload, ['message', 'mensagem', 'error', 'erro', 'detail']) || `HTTP ${response.status}`;
-      log(`Eupago ${path}: ${String(message).slice(0, 250)}`);
-      const err = new Error('A Eupago não aceitou o pedido de pagamento. Confirme as credenciais e o ambiente.');
+      const message = find(payload, ['message', 'mensagem', 'error', 'erro', 'detail', 'description', 'descricao']) || `HTTP ${response.status}`;
+      const code = find(payload, ['code', 'codigo', 'errorCode', 'error_code', 'status']);
+      // Log only provider diagnostics; never dump the whole payload (it can contain customer data).
+      log(`Eupago ${path}: HTTP ${response.status}; code=${String(code ?? 'n/a').slice(0, 80)}; message=${String(message).slice(0, 250)}; responseFields=${Object.keys(payload || {}).slice(0, 20).join(',')}`);
+      const err = new Error(`Eupago HTTP ${response.status}: ${String(message).slice(0, 180)}`);
       err.status = response.status;
       throw err;
     }
@@ -73,8 +75,11 @@ export function createEupago(db, {
 
   async function createDeposit(user, amountCents, { method, phone, promo = 'none' } = {}) {
     if (!enabled) throw Object.assign(new Error('Eupago não configurada.'), { status: 503 });
-    if (!['mbway', 'multibanco'].includes(method)) {
-      throw Object.assign(new Error('Com a Eupago, escolha MB WAY ou Multibanco.'), { status: 400, ours: true });
+    if (!['mbway', 'multibanco', 'cartao'].includes(method)) {
+      throw Object.assign(new Error('Com a Eupago, escolha MB WAY, Multibanco ou Cartão.'), { status: 400, ours: true });
+    }
+    if (method === 'cartao' && amountCents > 399900) {
+      throw Object.assign(new Error('O pagamento por cartão tem o limite de €3.999.'), { status: 400, ours: true });
     }
     const tel = method === 'mbway' ? phonePT(phone) : '';
     if (method === 'mbway' && !tel) {
@@ -95,11 +100,26 @@ export function createEupago(db, {
           payment: { amount, identifier },
           customer: { phone: tel },
         });
+      } else if (method === 'cartao') {
+        payload = await call('/api/v1.02/creditcard/create', {
+          payment: {
+            amount, identifier, lang: 'PT', minutesFormUp: 1440,
+            successUrl: 'https://bet62.plus/#/perfil/carteira',
+            errorUrl: 'https://bet62.plus/#/perfil/carteira',
+            backUrl: 'https://bet62.plus/#/perfil/carteira',
+          },
+          customer: { email: user.email, notify: true },
+        });
       } else {
         const deadline = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
         payload = await call('/clientes/rest_api/multibanco/create', {
           chave: key, valor: amount, id: identifier, per_dup: 0, data_fim: deadline, email: user.email,
         });
+      }
+      const redirectUrl = method === 'cartao' ? find(payload, ['redirectUrl', 'redirect_url', 'paymentUrl', 'payment_url', 'url']) : undefined;
+      if (method === 'cartao' && (typeof redirectUrl !== 'string' || !/^https:\/\//i.test(redirectUrl))) {
+        log(`Eupago ${identifier}: resposta de cartão sem URL de redirecionamento reconhecida.`);
+        throw new Error('A Eupago não devolveu o endereço seguro para concluir o pagamento por cartão.');
       }
       const entity = find(payload, ['entidade', 'entity']);
       const reference = find(payload, ['referencia', 'reference']);
@@ -111,7 +131,7 @@ export function createEupago(db, {
         log(`Eupago ${identifier}: a resposta não trouxe entidade/referência reconhecível.`);
         throw new Error('A Eupago respondeu sem a entidade e a referência Multibanco. O depósito não foi iniciado; contacte o apoio antes de tentar novamente.');
       }
-      return view(row);
+      return { ...view(row), ...(redirectUrl ? { redirectUrl } : {}) };
     } catch (err) {
       db.prepare("UPDATE eupago_payments SET status = 'failed', updated_at = ? WHERE session_id = ? AND status = 'pending'")
         .run(nowIso(), identifier);
@@ -137,8 +157,8 @@ export function createEupago(db, {
       return { accepted: false, reason: 'amount' };
     }
     const mp = String(params.mp || '').toUpperCase();
-    const expectedMethod = row.method === 'mbway' ? 'MW:PT' : 'PC:PT';
-    if (mp && mp !== expectedMethod) return { accepted: false, reason: 'method' };
+    const expectedMethods = row.method === 'mbway' ? ['MW:PT'] : row.method === 'cartao' ? ['CC:PT', 'CC', 'CREDITCARD', 'CARTAO'] : ['PC:PT'];
+    if (mp && !expectedMethods.includes(mp)) return { accepted: false, reason: 'method' };
     const reference = String(params.referencia || params.reference || '');
     if (row.reference && reference && row.reference !== reference) return { accepted: false, reason: 'reference' };
 
@@ -147,7 +167,7 @@ export function createEupago(db, {
         .run(String(params.transacao || '') || null, nowIso(), identifier);
       if (!changed.changes) return { accepted: rowOf(identifier)?.status === 'paid', duplicate: true };
       const ref = `eupago:${identifier}`;
-      const label = row.method === 'mbway' ? 'MB WAY' : 'Multibanco';
+      const label = row.method === 'mbway' ? 'MB WAY' : row.method === 'cartao' ? 'Cartão de Crédito' : 'Multibanco';
       postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, ref);
       const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
       onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref, method: row.method, choice: PROMO_CHOICE[row.promo_opt] || 'none' });

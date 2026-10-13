@@ -1424,13 +1424,19 @@ function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
-    ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha MB WAY ou Multibanco.</div><br>' : ''}
+    ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha um método de pagamento.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
+      ${c.paymentsMode === 'eupago' ? `
+      <div class="methods payment-methods">
+        <label class="method payment-method-logo"><input type="radio" name="method" value="mbway" checked><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/mbway_Logo.svg" alt="MB WAY" title="MB WAY"></label>
+        <label class="method payment-method-logo"><input type="radio" name="method" value="multibanco"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/multibanco_Logo.svg" alt="Multibanco" title="Multibanco"></label>
+        <label class="method payment-method-logo"><input type="radio" name="method" value="cartao"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/cartao_credito_Logo.svg" alt="Cartão de Crédito" title="Cartão de Crédito"></label>
+      </div>` : `
       <div class="methods">
         <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
         <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
-        ${c.paymentsMode === 'eupago' ? '' : '<label class="method"><input type="radio" name="method" value="cartao">Cartão</label>'}
-      </div>
+        <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
+      </div>`}
       <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
@@ -2334,7 +2340,18 @@ const formHandlers = {
       const p = res.payment;
       state.depositWatch = null;
       if (p.status === 'paid') return depositDone({ ...p, balance: res.balance });
-      if (p.method === 'cartao') return showCardForm(p, res.clientSecret, res.publishableKey);
+      if (p.method === 'cartao') {
+        if (p.redirectUrl && /^https:\/\//i.test(p.redirectUrl)) {
+          const providerUrl = new URL(p.redirectUrl);
+          if (providerUrl.hostname === 'eupago.pt' || providerUrl.hostname.endsWith('.eupago.pt')) {
+            location.assign(providerUrl.href);
+            return;
+          }
+          throw new Error('A Eupago devolveu um endereço de pagamento não reconhecido. Contacte o suporte.');
+        }
+        if (res.clientSecret && res.publishableKey) return showCardForm(p, res.clientSecret, res.publishableKey);
+        throw new Error('Não foi possível abrir o pagamento por cartão. Confirme a configuração do serviço Cartão de Crédito na Eupago.');
+      }
       if (p.method === 'multibanco') {
         depositPanel(`<div class="pay-box mb"><strong>Referência Multibanco</strong>
           <dl><dt>Entidade</dt><dd>${esc(p.entity || '—')}</dd><dt>Referência</dt><dd>${esc(String(p.reference || '—').replace(/(\d{3})(?=\d)/g, '$1 '))}</dd><dt>Valor</dt><dd>${money(p.amount)}</dd>

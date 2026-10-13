@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS eupago_payments (
   amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
   currency       TEXT    NOT NULL DEFAULT 'eur',
   status         TEXT    NOT NULL DEFAULT 'pending',
-  method         TEXT    NOT NULL CHECK (method IN ('mbway', 'multibanco')),
+  method         TEXT    NOT NULL CHECK (method IN ('mbway', 'multibanco', 'cartao')),
   identifier     TEXT    NOT NULL UNIQUE,
   provider_id    TEXT,
   entity         TEXT,
@@ -436,6 +436,9 @@ export function openDb(file) {
 
 /** Additive migrations for databases created by earlier versions. */
 function migrate(db) {
+  // Credit-card support widens the CHECK constraint without losing existing deposits.
+  const eupagoSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'eupago_payments'").get()?.sql || '';
+  if (eupagoSql && !eupagoSql.includes("'cartao'")) rebuildKeeping(db, 'eupago_payments');
   const pay = new Set(db.prepare('PRAGMA table_info(stripe_payments)').all().map((c) => c.name));
   for (const c of ['method', 'entity', 'reference', 'expires_at']) if (!pay.has(c)) db.exec(`ALTER TABLE stripe_payments ADD COLUMN ${c} TEXT`);
   const cols = new Set(db.prepare('PRAGMA table_info(events)').all().map((c) => c.name));

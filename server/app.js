@@ -1019,8 +1019,8 @@ export function createApp(db, {
       const r = config.paymentsMode === 'eupago'
         ? eupago?.refresh(req.params.sessionId, req.user.id)
         : stripe?.refresh(req.params.sessionId, req.user.id);
-      if (!r) throw new HttpError(404, 'Depósito não encontrado.');
       const refreshed = r instanceof Promise ? await r : r;
+      if (!refreshed) throw new HttpError(404, 'Depósito não encontrado.');
       res.json({ ...depositOut(refreshed), balance: cents(userById(req.user.id).balance_cents) });
     } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(502, err.message) : err); }
   });
@@ -1028,6 +1028,7 @@ export function createApp(db, {
   const depositOut = (r) => ({
     id: r.id, method: r.method, status: r.status, amount: cents(r.amountCents),
     entity: r.entity, reference: r.reference, expiresAt: r.expiresAt, voucherUrl: r.voucherUrl,
+    redirectUrl: r.redirectUrl,
   });
 
   function demoDeposit(req, res, amount, promo) {
