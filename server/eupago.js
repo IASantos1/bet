@@ -100,7 +100,7 @@ export function createEupago(db, {
           payment: {
             amount: { value: amount, currency: 'EUR' },
             customerPhone: tel,
-            countryCode: '351',
+            countryCode: '+351',
             identifier,
           },
         });

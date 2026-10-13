@@ -973,6 +973,7 @@ export function createApp(db, {
     try {
       const stripeMode = config.paymentsMode === 'stripe';
       const eupagoMode = config.paymentsMode === 'eupago';
+      const method = String(req.body.method || '');
       if (config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
@@ -987,20 +988,23 @@ export function createApp(db, {
       // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
       // whether it is given, and how much, is decided here.
       const promo = ['sport', 'casino', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
-      if (stripeMode) {
-        // Inside the site: MB WAY / Multibanco confirmed here, the card through Stripe's form on our page.
-        const method = String(req.body.method || '');
-        if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'Pagamento por cartão indisponível: falta STRIPE_PUBLISHABLE_KEY.');
+
+      // Hybrid provider mode: keep Eupago for MB WAY + Multibanco, but use the existing Stripe
+      // Elements form for card so card details stay inside the BET62 page and never touch our API.
+      // A missing Stripe setup is a hard error: never silently redirect the player to Eupago's page.
+      const inlineCardMode = eupagoMode && method === 'cartao';
+      if (stripeMode || inlineCardMode) {
+        if (!stripe) throw new HttpError(503, 'O formulário de cartão dentro da BET62 necessita de configurar o Stripe (chave secreta).');
+        if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'O formulário de cartão dentro da BET62 necessita de configurar STRIPE_PUBLISHABLE_KEY.');
         let r;
         try {
           r = await stripe.createDeposit(req.user, amount, { method, phone: req.body.phone, promo });
         } catch (err) {
-          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
+          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento por cartão: ${err.message}`);
         }
         return res.status(201).json({ payment: depositOut(r), clientSecret: r.clientSecret, publishableKey: r.publishableKey, balance: cents(userById(req.user.id).balance_cents) });
       }
       if (eupagoMode) {
-        const method = String(req.body.method || '');
         let r;
         try {
           r = await eupago.createDeposit(req.user, amount, { method, phone: req.body.phone, promo });
@@ -1016,9 +1020,14 @@ export function createApp(db, {
   // A deposit's state, for the player's page (asks Stripe if the webhook has not arrived yet).
   app.get('/api/wallet/deposit/:sessionId', requireUser, async (req, res, next) => {
     try {
-      const r = config.paymentsMode === 'eupago'
-        ? eupago?.refresh(req.params.sessionId, req.user.id)
-        : stripe?.refresh(req.params.sessionId, req.user.id);
+      // Stripe PaymentIntent IDs begin with pi_; Eupago's internal identifiers begin with B62-.
+      // The provider is chosen per transaction so inline card payments remain refreshable in hybrid mode.
+      const sessionId = String(req.params.sessionId || '');
+      const r = sessionId.startsWith('pi_')
+        ? stripe?.refresh(sessionId, req.user.id)
+        : config.paymentsMode === 'eupago'
+          ? eupago?.refresh(sessionId, req.user.id)
+          : stripe?.refresh(sessionId, req.user.id);
       const refreshed = r instanceof Promise ? await r : r;
       if (!refreshed) throw new HttpError(404, 'Depósito não encontrado.');
       res.json({ ...depositOut(refreshed), balance: cents(userById(req.user.id).balance_cents) });
