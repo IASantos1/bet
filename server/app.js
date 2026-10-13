@@ -1028,6 +1028,7 @@ export function createApp(db, {
   const depositOut = (r) => ({
     id: r.id, method: r.method, status: r.status, amount: cents(r.amountCents),
     entity: r.entity, reference: r.reference, expiresAt: r.expiresAt, voucherUrl: r.voucherUrl,
+    redirectUrl: r.redirectUrl,
   });
 
   function demoDeposit(req, res, amount, promo) {
