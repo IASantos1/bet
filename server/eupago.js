@@ -98,16 +98,18 @@ export function createEupago(db, {
       if (method === 'mbway') {
         payload = await call('/api/v1.02/mbway/create', {
           payment: {
-            amount: { value: amount, currency: 'EUR' },
+            value: amount,
+            currency: 'EUR',
             customerPhone: tel,
-            countryCode: '351',
+            countryCode: '+351',
             identifier,
           },
         });
       } else if (method === 'cartao') {
         payload = await call('/api/v1.02/creditcard/create', {
           payment: {
-            amount: { value: amount, currency: 'EUR' },
+            value: amount,
+            currency: 'EUR',
             identifier, lang: 'PT', minutesFormUp: 1440,
             successUrl: 'https://bet62.plus/#/perfil/carteira',
             errorUrl: 'https://bet62.plus/#/perfil/carteira',
