@@ -79,6 +79,26 @@ CREATE TABLE IF NOT EXISTS stripe_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_stripe_user ON stripe_payments(user_id, id);
 
+-- Eupago deposits: the provider callback credits each deposit once after checking identifier, API key and exact amount.
+CREATE TABLE IF NOT EXISTS eupago_payments (
+  id             INTEGER PRIMARY KEY,
+  session_id     TEXT    NOT NULL UNIQUE,
+  user_id        INTEGER NOT NULL REFERENCES users(id),
+  amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
+  currency       TEXT    NOT NULL DEFAULT 'eur',
+  status         TEXT    NOT NULL DEFAULT 'pending',
+  method         TEXT    NOT NULL CHECK (method IN ('mbway', 'multibanco')),
+  identifier     TEXT    NOT NULL UNIQUE,
+  provider_id    TEXT,
+  entity         TEXT,
+  reference      TEXT,
+  expires_at     TEXT,
+  created_at     TEXT    NOT NULL,
+  updated_at     TEXT,
+  promo_opt      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_eupago_user ON eupago_payments(user_id, id);
+
 -- Settings changed in the admin (key → JSON value), read by the server while it runs.
 CREATE TABLE IF NOT EXISTS settings (
   key        TEXT PRIMARY KEY,
