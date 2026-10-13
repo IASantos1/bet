@@ -2334,7 +2334,18 @@ const formHandlers = {
       const p = res.payment;
       state.depositWatch = null;
       if (p.status === 'paid') return depositDone({ ...p, balance: res.balance });
-      if (p.method === 'cartao') return showCardForm(p, res.clientSecret, res.publishableKey);
+      if (p.method === 'cartao') {
+        if (p.redirectUrl && /^https:\/\//i.test(p.redirectUrl)) {
+          const providerUrl = new URL(p.redirectUrl);
+          if (providerUrl.hostname === 'eupago.pt' || providerUrl.hostname.endsWith('.eupago.pt')) {
+            location.assign(providerUrl.href);
+            return;
+          }
+          throw new Error('A Eupago devolveu um endereço de pagamento não reconhecido. Contacte o suporte.');
+        }
+        if (res.clientSecret && res.publishableKey) return showCardForm(p, res.clientSecret, res.publishableKey);
+        throw new Error('Não foi possível abrir o pagamento por cartão. Confirme a configuração do serviço Cartão de Crédito na Eupago.');
+      }
       if (p.method === 'multibanco') {
         depositPanel(`<div class="pay-box mb"><strong>Referência Multibanco</strong>
           <dl><dt>Entidade</dt><dd>${esc(p.entity || '—')}</dd><dt>Referência</dt><dd>${esc(String(p.reference || '—').replace(/(\d{3})(?=\d)/g, '$1 '))}</dd><dt>Valor</dt><dd>${money(p.amount)}</dd>
