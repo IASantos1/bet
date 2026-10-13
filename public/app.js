@@ -1424,11 +1424,12 @@ function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
+    ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha MB WAY ou Multibanco.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
       <div class="methods">
         <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
         <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
-        <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
+        ${c.paymentsMode === 'eupago' ? '' : '<label class="method"><input type="radio" name="method" value="cartao">Cartão</label>'}
       </div>
       <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
