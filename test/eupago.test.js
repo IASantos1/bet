@@ -19,9 +19,10 @@ test('Eupago MB WAY deposit is credited only once after an authenticated matchin
       assert.equal(url, 'https://sandbox.eupago.pt/api/v1.02/mbway/create');
       assert.equal(options.headers.Authorization, 'ApiKey api-key-test');
       const body = JSON.parse(options.body);
-      assert.equal(body.payment.amount, 10);
+      assert.deepEqual(body.payment.amount, { value: 10, currency: 'EUR' });
       assert.match(body.payment.identifier, /^B62-1-/);
-      assert.equal(body.customer.phone, '912345678');
+      assert.equal(body.payment.customerPhone, '912345678');
+      assert.equal(body.payment.countryCode, '351');
       return Response.json({ transactionID: 'provider-1', status: 'pending' }, { status: 201 });
     },
   });
@@ -79,7 +80,7 @@ test('Eupago credit card creates a secure checkout URL and credits only after ca
       assert.equal(url, 'https://sandbox.eupago.pt/api/v1.02/creditcard/create');
       assert.equal(options.headers.Authorization, 'ApiKey api-key-test');
       const body = JSON.parse(options.body);
-      assert.equal(body.payment.amount, 25);
+      assert.deepEqual(body.payment.amount, { value: 25, currency: 'EUR' });
       assert.match(body.payment.identifier, /^B62-1-/);
       assert.equal(body.payment.lang, 'PT');
       assert.equal(body.customer.email, 'player@example.test');
