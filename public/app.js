@@ -1569,7 +1569,7 @@ async function showCardForm(p, clientSecret, publishableKey) {
     </div>
     <small class="pay-err" id="cardErr" role="alert"></small>
     <button class="primary-btn pay-btn" id="cardPay" disabled>Depositar ${money(p.amount)}</button>
-    <small class="muted pay-safe">🔒 Pagamento seguro: os dados do cartão vão diretamente para a Stripe e não passam pelo nosso servidor.</small></div>`);
+    <small class="muted pay-safe">🔒 Pagamento seguro processado pela Eupago.</small></div>`);
 
   const done = (status) => {
     depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>');
