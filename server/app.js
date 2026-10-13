@@ -989,11 +989,9 @@ export function createApp(db, {
       // whether it is given, and how much, is decided here.
       const promo = ['sport', 'casino', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
 
-      // Hybrid provider mode: keep Eupago for MB WAY + Multibanco, but use the existing Stripe
-      // Elements form for card so card details stay inside the BET62 page and never touch our API.
-      // A missing Stripe setup is a hard error: never silently redirect the player to Eupago's page.
-      const inlineCardMode = eupagoMode && method === 'cartao';
-      if (stripeMode || inlineCardMode) {
+      // Stripe is used only when explicitly selected. In Eupago mode, card, MB WAY and
+      // Multibanco all go through Eupago; its credit-card API returns Eupago's own secure form URL.
+      if (stripeMode) {
         if (!stripe) throw new HttpError(503, 'O formulário de cartão dentro da BET62 necessita de configurar o Stripe (chave secreta).');
         if (method === 'cartao' && !stripe.hasPublishable) throw new HttpError(503, 'O formulário de cartão dentro da BET62 necessita de configurar STRIPE_PUBLISHABLE_KEY.');
         let r;
