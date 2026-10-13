@@ -16,6 +16,7 @@ import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
 import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
+import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
@@ -105,7 +106,9 @@ const settlement = createSettlementEngine(db, {
 });
 const stopSettlement = settlement.start();
 
-const stripe = config.stripe.secretKey
+// Only instantiate Stripe while Stripe is the selected provider. This also stops its background
+// reconciliation job when Eupago is active, while preserving all Stripe code and credentials.
+const stripe = config.paymentsMode === 'stripe' && config.stripe.secretKey
   ? createStripe(db, { ...config.stripe, log: (m) => console.warn(m) })
   : null;
 if (stripe) {
@@ -114,6 +117,13 @@ if (stripe) {
   const sweep = () => stripe.sweep().then((r) => { if (r.credited) console.log(`Stripe: ${r.credited} depósito(s) creditado(s) pela verificação`); }).catch((err) => console.warn(`stripe sweep: ${err.message}`));
   setTimeout(sweep, 10_000).unref();
   setInterval(sweep, 60_000).unref();
+}
+
+const eupago = config.paymentsMode === 'eupago' && config.eupago.apiKey
+  ? createEupago(db, { ...config.eupago, log: (m) => console.warn(`[eupago] ${m}`) })
+  : null;
+if (config.paymentsMode === 'eupago') {
+  console.log(`Eupago: ${eupago ? config.eupago.environment : 'não configurada'}`);
 }
 
 // Promotions: expired bonuses / free bets removed, and the weekly cashback credited (once per week).
@@ -143,7 +153,7 @@ if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, p
 // Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
 const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
 if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, bigbang, telegram, revolut, boardCacheMs: 2000 });
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 const server = app.listen(config.port, () => {
