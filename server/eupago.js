@@ -100,7 +100,7 @@ export function createEupago(db, {
           payment: {
             amount: { value: amount, currency: 'EUR' },
             customerPhone: tel,
-            countryCode: '+351',
+            countryCode: '351',
             identifier,
           },
         });
@@ -110,7 +110,7 @@ export function createEupago(db, {
             amount: { value: amount, currency: 'EUR' },
             identifier, lang: 'PT', minutesFormUp: 1440,
             successUrl: 'https://bet62.plus/#/perfil/carteira',
-            errorUrl: 'https://bet62.plus/#/perfil/carteira',
+            failUrl: 'https://bet62.plus/#/perfil/carteira',
             backUrl: 'https://bet62.plus/#/perfil/carteira',
           },
           customer: { email: user.email, notify: true },

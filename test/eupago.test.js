@@ -23,7 +23,7 @@ test('Eupago MB WAY deposit is credited only once after an authenticated matchin
       assert.equal(body.payment.amount.currency, 'EUR');
       assert.match(body.payment.identifier, /^B62-1-/);
       assert.equal(body.payment.customerPhone, '912345678');
-      assert.equal(body.payment.countryCode, '+351');
+      assert.equal(body.payment.countryCode, '351');
       return Response.json({ transactionID: 'provider-1', status: 'pending' }, { status: 201 });
     },
   });
@@ -85,6 +85,10 @@ test('Eupago credit card creates a secure checkout URL and credits only after ca
       assert.equal(body.payment.amount.currency, 'EUR');
       assert.match(body.payment.identifier, /^B62-1-/);
       assert.equal(body.payment.lang, 'PT');
+      assert.equal(body.payment.successUrl, 'https://bet62.plus/#/perfil/carteira');
+      assert.equal(body.payment.failUrl, 'https://bet62.plus/#/perfil/carteira');
+      assert.equal(body.payment.backUrl, 'https://bet62.plus/#/perfil/carteira');
+      assert.equal('errorUrl' in body.payment, false);
       assert.equal(body.customer.email, 'player@example.test');
       return Response.json({ transactionID: 'card-provider-1', redirectUrl: 'https://sandbox.eupago.pt/checkout/example', status: 'pending' }, { status: 200 });
     },
