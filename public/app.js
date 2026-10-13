@@ -1426,11 +1426,17 @@ function depositFormHtml() {
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
     ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha um método de pagamento.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
+      ${c.paymentsMode === 'eupago' ? `
       <div class="methods payment-methods">
         <label class="method payment-method-logo"><input type="radio" name="method" value="mbway" checked><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/mbway_Logo.svg" alt="MB WAY" title="MB WAY"></label>
         <label class="method payment-method-logo"><input type="radio" name="method" value="multibanco"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/multibanco_Logo.svg" alt="Multibanco" title="Multibanco"></label>
         <label class="method payment-method-logo"><input type="radio" name="method" value="cartao"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/cartao_credito_Logo.svg" alt="Cartão de Crédito" title="Cartão de Crédito"></label>
-      </div>
+      </div>` : `
+      <div class="methods">
+        <label class="method"><input type="radio" name="method" value="mbway" checked>MB WAY</label>
+        <label class="method"><input type="radio" name="method" value="multibanco">Multibanco</label>
+        <label class="method"><input type="radio" name="method" value="cartao">Cartão</label>
+      </div>`}
       <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
