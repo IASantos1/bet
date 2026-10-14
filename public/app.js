@@ -3293,7 +3293,35 @@ function marketBlocks(e, markets) {
     let grid;
     // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
     const bare = (s) => s.code.replace(/^\d:/, '');
-    if (mk.market === 'ou' || mk.market === 'gou' || mk.market === 'pou') {
+    // WinHouse's unmapped markets (x) also carry line-based prices: corners/cards totals,
+    // first/second-half totals, and other Over/Under markets. Group paired outcomes by line just
+    // like our native OU markets, without changing the provider feed or settlement rules.
+    const providerLine = (s) => {
+      const raw = String(s.label || s.code?.split('~').at(-1) || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+      const match = /\\b(mais de|menos de|over|under|above|below)\\s*\\(?\\s*(\\d+(?:[.,]\\d+)?)\\s*\\)?/i.exec(raw);
+      if (!match) return null;
+      return { side: /^(mais|over|above)/i.test(match[1]) ? 'over' : 'under', line: Number(match[2].replace(',', '.')) };
+    };
+    const providerLines = mk.market === 'x' ? mk.selections.map((s) => ({ s, parsed: providerLine(s) })) : [];
+    const lineGroups = new Map();
+    for (const item of providerLines) {
+      if (!item.parsed) continue;
+      if (!lineGroups.has(item.parsed.line)) lineGroups.set(item.parsed.line, {});
+      lineGroups.get(item.parsed.line)[item.parsed.side] = item.s;
+    }
+    const hasProviderLinePairs = providerLines.length > 1 && providerLines.every((item) => item.parsed)
+      && [...lineGroups.values()].some((pair) => pair.over && pair.under);
+    if (hasProviderLinePairs) {
+      const title = String(mk.name || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+      const unit = /corner|canto/.test(title) ? 'cantos'
+        : /card|booking|cartao/.test(title) ? 'cartoes'
+        : /goal|golo|half|tempo|parte/.test(title) ? 'golos' : '';
+      grid = [...lineGroups.entries()].sort((a, b) => a[0] - b[0]).map(([line, pair]) => {
+        const label = unit ? `${line} ${unit}` : `Linha ${line}`;
+        return `<div class="market-line"><span class="market-line-label">${esc(label)}</span>
+          <div class="odds two">${pair.over ? btn(pair.over, 'Mais') : '<span></span>'}${pair.under ? btn(pair.under, 'Menos') : '<span></span>'}</div></div>`;
+      }).join('');
+    } else if (mk.market === 'ou' || mk.market === 'gou' || mk.market === 'pou') {
       const unit = mk.market === 'gou' || (mk.market === 'pou' && e.sport === 'tenis') ? 'jogos'
         : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
       const lines = [...new Set(mk.selections.map((s) => bare(s).slice(1)))].sort((a, b) => a - b);
