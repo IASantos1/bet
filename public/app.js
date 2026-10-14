@@ -3284,7 +3284,50 @@ function marketsView(e) {
 
 function marketBlocks(e, markets) {
   const locked = !isOpen(e);
-  const btn = (s, label = s.label) => {
+  // Presentation-only translations: provider codes, selection IDs and odds remain untouched.
+  const displayMarketName = (value) => {
+    const raw = String(value || '');
+    const key = raw.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+    if (key.includes('total e ambas marcam')) return 'Total de golos e ambas marcam';
+    if (key.includes('total por tempos')) return 'Total de golos por partes';
+    if (key.includes('total de golos por tempos')) return 'Total de golos por partes';
+    if (key.includes('3 vias total')) return 'Total de golos — 3 opções';
+    if (key.includes('expected goals') && key.includes('handikap')) return raw.replace(/Expected Goals/i, 'Golos Esperados').replace(/Handikap/i, 'Handicap');
+    if (key.includes('expected goals') && key.includes('totali')) return raw.replace(/Expected Goals/i, 'Golos Esperados').replace(/Totali/i, 'Total');
+    return raw;
+  };
+  const displaySelectionLabel = (value) => {
+    let label = String(value ?? '');
+    const replacements = [
+      [/goal number\\s*-\\s*scored by kicking/ig, 'Golo marcado com o pé'],
+      [/goal number\\s*-\\s*me kokë/ig, 'Golo marcado de cabeça'],
+      [/goal number\\s*-\\s*to be scored from a direct free kick/ig, 'Golo de livre direto'],
+      [/goal number\\s*-\\s*penalty/ig, 'Penálti'],
+      [/goal number\\s*-\\s*own goal/ig, 'Autogolo'],
+      [/both to score\\s*\\+\\s*to/ig, 'Ambas marcam + Mais de'],
+      [/both to score\\s*\\+\\s*tu/ig, 'Ambas marcam + Menos de'],
+      [/both to score/ig, 'Ambas marcam'],
+      [/first half/ig, 'primeira parte'],
+      [/second half/ig, 'segunda parte'],
+      [/up to and including/ig, 'Até inclusive'],
+      [/up to part time/ig, 'Até ao intervalo'],
+      [/or after/ig, 'ou depois'],
+      [/or fewer/ig, 'ou menos'],
+      [/points or more/ig, 'pontos ou mais'],
+      [/two goals will not be scored/ig, 'Não serão marcados dois golos'],
+      [/three goals will not be scored/ig, 'Não serão marcados três golos'],
+      [/four goals will not be scored/ig, 'Não serão marcados quatro golos'],
+      [/no goals/ig, 'Nenhum golo'],
+      [/não goals/ig, 'Nenhum golo'],
+      [/team 1/ig, String(e.home || 'Equipa 1')],
+      [/team 2/ig, String(e.away || 'Equipa 2')],
+      [/corner awarded for time wasting by the portieri/ig, 'Canto assinalado por perda de tempo do guarda-redes'],
+      [/2\\+ canceled match goals/ig, 'Dois ou mais golos anulados no jogo']
+    ];
+    for (const [pattern, text] of replacements) label = label.replace(pattern, text);
+    return label;
+  };
+  const btn = (s, label = displaySelectionLabel(s.label)) => {
     const off = locked || !s.active;
     return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${off ? ' locked' : ''}" data-sel="${s.id}" ${off ? 'disabled' : ''}>
       <small>${esc(label)}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
@@ -3350,7 +3393,7 @@ function marketBlocks(e, markets) {
     } else {
       grid = `<div class="odds${mk.selections.length === 2 ? ' two' : ''}">${mk.selections.map((s) => btn(s)).join('')}</div>`;
     }
-    return `<div class="market-block"><div class="market-head">${esc(mk.name)}</div>${grid}</div>`;
+    return `<div class="market-block"><div class="market-head">${esc(displayMarketName(mk.name))}</div>${grid}</div>`;
   }).join('');
 }
 
