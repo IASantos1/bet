@@ -3332,13 +3332,21 @@ function marketBlocks(e, markets) {
           <div class="odds two">${over ? btn(over, 'Mais') : '<span></span>'}${under ? btn(under, 'Menos') : '<span></span>'}</div></div>`;
       }).join('');
     } else if (mk.market === 'hcp' || mk.market === 'ghcp' || mk.market === 'phcp') {
-      // One row per line: player 1 with the line, player 2 with the opposite one.
+      // Keep the provider's exact selections/IDs and odds; only make the line and team names clearer.
       const rows = [...new Set(mk.selections.filter((s) => bare(s)[0] === '1').map((s) => bare(s).slice(1)))];
-      grid = rows.map((line) => {
+      const handicapLabel = (value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return value;
+        return n === 0 ? '0.0' : `${n > 0 ? '+' : ''}${n.toFixed(1)}`;
+      };
+      const oppositeLine = (line) => (/^[+-]?0(?:\.0+)?$/.test(line) ? '+0' : `${line[0] === '-' ? '+' : '-'}${line.replace(/^[+-]/, '')}`);
+      const homeRows = rows.map((line) => {
         const one = mk.selections.find((s) => bare(s) === `1${line}`);
-        const two = mk.selections.find((s) => bare(s) === (/^[+-]0$/.test(line) ? '2+0' : `2${line[0] === '-' ? '+' : '-'}${line.slice(1)}`));
-        return `<div class="odds two">${one ? btn(one) : '<span></span>'}${two ? btn(two) : '<span></span>'}</div>`;
+        const opposite = oppositeLine(line);
+        const two = mk.selections.find((s) => bare(s) === `2${opposite}`);
+        return `<div class="odds two handicap-odds">${one ? btn(one, handicapLabel(line)) : '<span></span>'}${two ? btn(two, handicapLabel(opposite)) : '<span></span>'}</div>`;
       }).join('');
+      grid = `<div class="handicap-teams"><span>${esc(e.home)}</span><span>${esc(e.away)}</span></div>${homeRows}`;
     } else {
       grid = `<div class="odds${mk.selections.length === 2 ? ' two' : ''}">${mk.selections.map((s) => btn(s)).join('')}</div>`;
     }
