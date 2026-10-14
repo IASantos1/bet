@@ -433,6 +433,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .market-odd small { margin: 0; font-size: 12px; color: var(--text-2); font-weight: 600; }
 .market-line { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
 .market-line-label { font-size: 12px; color: var(--muted); font-weight: 700; }
+.handicap-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-bottom: 7px; color: var(--text-2); font-size: 11px; font-weight: 700; }
+.handicap-teams span { min-width: 0; overflow-wrap: anywhere; }
+.handicap-teams span:last-child { text-align: right; }
+.handicap-odds { margin-bottom: 5px; }
+.handicap-odds .odd-btn { min-width: 0; }
 .match-stats-grid { grid-template-columns: 1.2fr 1fr; }
 .match-stats-grid h3 { margin: 0 0 12px; font-size: 14px; }
 .stat-row { margin-bottom: 12px; }
