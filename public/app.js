@@ -3297,8 +3297,8 @@ function marketBlocks(e, markets) {
     // first/second-half totals, and other Over/Under markets. Group paired outcomes by line just
     // like our native OU markets, without changing the provider feed or settlement rules.
     const providerLine = (s) => {
-      const raw = String(s.label || s.code?.split('~').at(-1) || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
-      const match = /\\b(mais de|menos de|over|under|above|below)\\s*\\(?\\s*(\\d+(?:[.,]\\d+)?)\\s*\\)?/i.exec(raw);
+      const raw = String(s.label || s.code?.split('~').at(-1) || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const match = /\b(mais de|menos de|over|under|above|below)\s*\(?\s*(\d+(?:[.,]\d+)?)\s*\)?/i.exec(raw);
       if (!match) return null;
       return { side: /^(mais|over|above)/i.test(match[1]) ? 'over' : 'under', line: Number(match[2].replace(',', '.')) };
     };
@@ -3312,7 +3312,7 @@ function marketBlocks(e, markets) {
     const hasProviderLinePairs = providerLines.length > 1 && providerLines.every((item) => item.parsed)
       && [...lineGroups.values()].some((pair) => pair.over && pair.under);
     if (hasProviderLinePairs) {
-      const title = String(mk.name || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
+      const title = String(mk.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const unit = /corner|canto/.test(title) ? 'cantos'
         : /card|booking|cartao/.test(title) ? 'cartoes'
         : /goal|golo|half|tempo|parte/.test(title) ? 'golos' : '';
