@@ -3299,13 +3299,13 @@ function marketBlocks(e, markets) {
   const displaySelectionLabel = (value) => {
     let label = String(value ?? '');
     const replacements = [
-      [/goal number\\s*-\\s*scored by kicking/ig, 'Golo marcado com o pé'],
-      [/goal number\\s*-\\s*me kokë/ig, 'Golo marcado de cabeça'],
-      [/goal number\\s*-\\s*to be scored from a direct free kick/ig, 'Golo de livre direto'],
-      [/goal number\\s*-\\s*penalty/ig, 'Penálti'],
-      [/goal number\\s*-\\s*own goal/ig, 'Autogolo'],
-      [/both to score\\s*\\+\\s*to/ig, 'Ambas marcam + Mais de'],
-      [/both to score\\s*\\+\\s*tu/ig, 'Ambas marcam + Menos de'],
+      [/goal number\s*-\s*scored by kicking/ig, 'Golo marcado com o pé'],
+      [/goal number\s*-\s*me kokë/ig, 'Golo marcado de cabeça'],
+      [/goal number\s*-\s*to be scored from a direct free kick/ig, 'Golo de livre direto'],
+      [/goal number\s*-\s*penalty/ig, 'Penálti'],
+      [/goal number\s*-\s*own goal/ig, 'Autogolo'],
+      [/both to score\s*\+\s*to/ig, 'Ambas marcam + Mais de'],
+      [/both to score\s*\+\s*tu/ig, 'Ambas marcam + Menos de'],
       [/both to score/ig, 'Ambas marcam'],
       [/first half/ig, 'primeira parte'],
       [/second half/ig, 'segunda parte'],
@@ -3322,7 +3322,7 @@ function marketBlocks(e, markets) {
       [/team 1/ig, String(e.home || 'Equipa 1')],
       [/team 2/ig, String(e.away || 'Equipa 2')],
       [/corner awarded for time wasting by the portieri/ig, 'Canto assinalado por perda de tempo do guarda-redes'],
-      [/2\\+ canceled match goals/ig, 'Dois ou mais golos anulados no jogo']
+      [/2\+ canceled match goals/ig, 'Dois ou mais golos anulados no jogo']
     ];
     for (const [pattern, text] of replacements) label = label.replace(pattern, text);
     return label;
