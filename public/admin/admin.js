@@ -476,7 +476,8 @@ function adminCampaigns({ status: st, segments, optedIn, campaigns = [] }) {
       : `<p class="muted">Email: ${st.email ? `ligado (${esc(st.sender)})` : 'desligado'} · SMS: ${st.sms ? 'ligado' : 'desligado (defina BREVO_SMS_SENDER)'}</p>`}
     <p class="muted">Só recebem os jogadores que aceitaram promoções no perfil (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b>). Contas em autoexclusão ou banidas nunca recebem.
       Cada email leva o aviso 18+ e um link para deixar de receber. O plano grátis do Brevo envia até 300 emails por dia; os SMS são pagos com créditos Brevo e só saem entre as 09:00 e as 21:00.
-      Use <b>{nome}</b> no texto para o primeiro nome do jogador.</p></div>
+      Use <b>{nome}</b> no texto para o primeiro nome do jogador.</p>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="cp-check">Verificar configuração do Brevo</button></div><div id="cpCheck"></div></div>
   <form class="panel" data-form="campaign" id="cpForm"><h3>Nova campanha</h3>
     <div class="form-grid three">
       <div class="field"><label>Canal</label><select name="channel" data-cp="1"><option value="email">Email</option><option value="sms"${st.sms ? '' : ' disabled'}>SMS${st.sms ? '' : ' (não configurado)'}</option></select></div>
@@ -1287,6 +1288,15 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
+  if (action === 'cp-check') {
+    actionEl.disabled = true;
+    try {
+      const { steps } = await api('/api/admin/campaigns/check', { method: 'POST', body: {} });
+      $('#cpCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
   if (action === 'cp-test') {
     actionEl.disabled = true;
     try {

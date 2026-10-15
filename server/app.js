@@ -1964,6 +1964,10 @@ export function createApp(db, {
     const optedIn = (channel) => campaigns.audience({ channel, segment: 'all' }).length;
     res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms') }, campaigns: campaigns.list().map(campaignOut) });
   });
+  admin.post('/campaigns/check', async (_req, res, next) => {
+    try { res.json({ steps: brevo ? await brevo.diagnose() : [{ name: 'Brevo', ok: false, detail: 'não configurado' }] }); }
+    catch (err) { next(campaignError(err)); }
+  });
   admin.post('/campaigns/count', (req, res) => {
     try { res.json({ count: campaigns.audience({ channel: req.body?.channel, segment: req.body?.segment, days: req.body?.days }).length }); }
     catch (err) { throw campaignError(err); }

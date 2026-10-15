@@ -26,6 +26,21 @@ test('brevo client: email and SMS requests, numbers normalised', async () => {
   await assert.rejects(bad.sendEmail({ to: 'a@x.com', subject: 's', html: 'h', text: 't' }), /Key not found/);
 });
 
+test('brevo diagnose: key format, blocked IP, sender or authenticated domain, SMS credits', async () => {
+  const reply = (body, status = 200) => ({ ok: status < 400, status, text: async () => JSON.stringify(body) });
+  const ok = createBrevo({ apiKey: 'xkeysib-1', senderEmail: 'promo@bet62.plus', smsSender: 'BET62', fetchImpl: async (url) => (
+    url.endsWith('/account') ? reply({ email: 'a@b.c', plan: [{ type: 'free', credits: 300 }] })
+      : url.endsWith('/senders') ? reply({ senders: [{ email: 'outro@x.com', active: true }] })
+        : reply({ domains: [{ domain_name: 'bet62.plus', authenticated: true }] })) });
+  const steps = await ok.diagnose();
+  assert.deepEqual(steps.map((x) => x.ok), [true, true, true, true, true, false]); // no SMS credits
+  assert.match(steps[4].detail, /domínio bet62.plus autenticado/);
+  const blocked = createBrevo({ apiKey: 'xsmtpsib-1', senderEmail: 's@x', fetchImpl: async () => reply({ message: 'We have detected you are using an unrecognised IP address 1.2.3.4. If…' }, 401) });
+  const b = await blocked.diagnose();
+  assert.match(b[0].detail, /chave SMTP/);
+  assert.deepEqual([b[2].ok, /1\.2\.3\.4.*Authorised IPs/.test(b[2].detail)], [false, true]);
+});
+
 test('campaigns: only opted-in, never excluded or banned; segments; unsubscribe; sign-up consent', async () => {
   const db = openDb(':memory:');
   const old = new Date(Date.now() - 30 * 86_400_000).toISOString();
