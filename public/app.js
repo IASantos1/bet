@@ -306,8 +306,9 @@ function sideBadge(e, side, size = '') {
   return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag);
 }
 
-function matchCard(e) {
-  return `<article class="match-card clickable" data-open="${e.id}">
+function matchCard(e, extraClass = '') {
+  const modifier = typeof extraClass === 'string' && extraClass ? ` ${extraClass}` : '';
+  return `<article class="match-card clickable${modifier}" data-open="${e.id}">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? (e.sport === 'tenis' ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e)) : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
       <div class="team">${sideBadge(e, 'home')}${esc(e.home)}${redCard(e, 'home')}</div>
@@ -316,6 +317,14 @@ function matchCard(e) {
     </div>
     ${oddsButtons(e)}
   </article>`;
+}
+
+function homeSpotlight(event) {
+  return `<div class="home-feature">
+    <div class="home-feature-label">JOGO EM DESTAQUE</div>
+    ${matchCard(event, 'home-feature-match')}
+    <a class="home-feature-link" href="#/jogo/${event.id}">Ver jogo completo <span aria-hidden="true">→</span></a>
+  </div>`;
 }
 
 /** In play: the match time in red after a pulsing dot (45', S1, Q3, P2…) instead of "AO VIVO". */
@@ -485,19 +494,37 @@ async function loadAffHome() {
 }
 
 function homePage() {
-  const live = pickHighlights(state.events.filter((e) => e.status === 'live'));
-  const upcoming = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
+  const livePool = pickHighlights(state.events.filter((e) => e.status === 'live'));
+  const upcomingPool = pickHighlights(state.events.filter((e) => e.status === 'scheduled'));
+  const spotlight = livePool[0] || upcomingPool.find((e) => e.featured) || upcomingPool[0] || null;
+  const live = livePool.filter((e) => e.id !== spotlight?.id);
+  const upcoming = upcomingPool.filter((e) => e.id !== spotlight?.id);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   // Signed in: the invitation card (link and code to copy) instead of the welcome banner.
   if (state.user && state.affHome?.uid !== state.user.id) loadAffHome();
-  const hero = state.user ? '' : `<div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
-       <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>`;
-  return `${state.user ? `<div id="affHome">${affHomeHtml()}</div>` : `<section class="hero"><div class="hero-copy">${hero}</div></section>`}
+  const hero = state.user ? '' : `<section class="hero${spotlight ? ' hero-has-feature' : ''}">
+      <div class="hero-copy"><div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
+        <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>
+      </div>${spotlight ? homeSpotlight(spotlight) : ''}
+    </section>`;
+  const memberSpotlight = state.user && spotlight ? `<section class="section">${homeSpotlight(spotlight)}</section>` : '';
+  const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
+    ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
+    : '';
+  const casinoGames = state.casinoLobby?.rows?.[0]?.games || [];
+  const casinoContent = casinoGames.length
+    ? carousel('homeCasino', casinoGames.map(lobbyCard))
+    : state.casino.enabled && state.casino.games?.length
+      ? `<div class="game-grid grid">${state.casino.games.slice(0, 5).map(casinoGameCard).join('')}</div>`
+      : '';
+  const casinoSection = casinoContent
+    ? `<section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${casinoContent}</section>`
+    : '';
+  return `${state.user ? `<div id="affHome">${affHomeHtml()}</div>${memberSpotlight}` : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
-    <section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>
-      ${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>
-    <section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${state.casinoLobby?.rows?.[0]?.games.length ? carousel('homeCasino', state.casinoLobby.rows[0].games.map(lobbyCard)) : state.casino.enabled && state.casino.games.length ? `<div class="game-grid grid">${state.casino.games.slice(0, 5).map(casinoGameCard).join('')}</div>` : '<p class="muted">Os jogos do casino aparecem aqui em breve.</p>'}</section>
+    ${upcomingSection}
+    ${casinoSection}
     ${footer()}`;
 }
 

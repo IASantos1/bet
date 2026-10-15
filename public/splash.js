@@ -1,4 +1,4 @@
-// The intro shown when the site opens: five seconds, once per visit (tab), skipped with a tap.
+// The intro shown when the site opens: brief, once per visit (tab), skipped with a tap or button.
 // A classic script right after the intro's markup, so a repeat visit removes it before it is painted.
 (function () {
   var el = document.getElementById('splash');
@@ -13,8 +13,14 @@
     done = true;
     el.classList.add('out');
     document.documentElement.classList.remove('splash-on');
+    document.removeEventListener('keydown', onKeyDown);
     setTimeout(function () { el.remove(); }, 300);
   }
-  setTimeout(close, 5000);
+  function onKeyDown(event) {
+    if (event.key === 'Escape') close();
+  }
+  document.addEventListener('keydown', onKeyDown);
+  var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(close, reducedMotion ? 450 : 1400);
   el.addEventListener('click', close);
 })();
