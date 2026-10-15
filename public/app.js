@@ -1257,23 +1257,113 @@ async function loadKyc() {
     approved: '<div class="pf-note ok"><strong>Conta verificada.</strong> Os levantamentos estão desbloqueados.</div>',
     pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A equipa responde até 48 horas úteis.</div>',
     rejected: '<div class="pf-note bad"><strong>Verificação recusada.</strong> Envie documentos legíveis e dentro da validade.</div>',
-  }[k.status] || '<div class="pf-note">Envie um documento de identificação (Cartão de Cidadão ou passaporte) e um comprovativo de IBAN ou morada.</div>';
+  }[k.status] || '<div class="pf-note">Para desbloquear levantamentos: fotografe o seu documento de identificação (frente e verso) e envie um comprovativo de IBAN ou extrato bancário.</div>';
+  const idState = slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']);
+  const bankState = slot(['Comprovativo de IBAN / morada']);
+  const canSend = (st) => st === 'missing' || st === 'rejected';
   box.innerHTML = `${notice}
     <div class="pf-list">
       ${badge('Email', 'given', esc(u.email))}
       ${badge('NIF', u.nif ? 'given' : 'none', u.nif ? esc(u.nif) : 'Indique-o em Dados bancários')}
-      ${badge('Documento de identificação', slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']), 'Cartão de Cidadão (frente e verso) ou passaporte')}
-      ${badge('Comprovativo de IBAN / morada', slot(['Comprovativo de IBAN / morada']))}
     </div>
-    <h4>Enviar documento</h4>
-    <form data-form="kyc"><div class="form-grid">
-      <div class="field"><label>Tipo de documento</label><select name="kind">
-        <option value="id_front">Cartão de Cidadão — frente</option><option value="id_back">Cartão de Cidadão — verso</option>
-        <option value="passport">Passaporte</option><option value="address">Comprovativo de IBAN / morada</option></select></div>
-      <div class="field"><label>Ficheiro (JPG, PNG, WEBP ou PDF, máx. 5 MB)</label><input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div>
-    </div><div class="form-actions"><button class="primary-btn">Enviar documento</button></div></form>
+    <div class="kyc-step">
+      <div class="kyc-step-head"><span class="kyc-num">1</span><div><b>Documento de identificação</b><small>Cartão de Cidadão ou outro documento — frente e verso, fotografado com a câmara.</small></div>
+        <span class="pf-badge ${KYC_STATE[idState][0]}">${KYC_STATE[idState][1]}</span></div>
+      ${canSend(idState) ? '<button class="primary-btn kyc-cam-btn" data-action="kyc-camera">📷 Fotografar documento (frente e verso)</button>'
+        : `<p class="kyc-done">${idState === 'approved' ? '✅ Documento verificado.' : '✅ Fotografias enviadas — em análise.'}</p>`}
+    </div>
+    <div class="kyc-step">
+      <div class="kyc-step-head"><span class="kyc-num">2</span><div><b>Comprovativo de IBAN ou extrato bancário</b><small>Documento do banco com o seu nome e o IBAN (PDF ou imagem, máx. 5 MB).</small></div>
+        <span class="pf-badge ${KYC_STATE[bankState][0]}">${KYC_STATE[bankState][1]}</span></div>
+      ${canSend(bankState) ? `<form data-form="kyc"><input type="hidden" name="kind" value="address">
+        <div class="field"><input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></div>
+        <div class="form-actions"><button class="primary-btn">Enviar comprovativo</button></div></form>`
+        : `<p class="kyc-done">${bankState === 'approved' ? '✅ Comprovativo verificado.' : '✅ Comprovativo enviado — em análise.'}</p>`}
+    </div>
     ${k.documents.length ? `<h4>Documentos enviados</h4><div class="pf-list">${k.documents.map((d) => `<div class="pf-row"><div><b>${esc(d.kind)}</b><small>${esc(d.fileName)} · ${esc(fmtDateTime(d.createdAt))}</small></div>
       <span class="pf-badge ${KYC_STATE[d.status][0]}">${KYC_STATE[d.status][1]}</span></div>`).join('')}</div>` : ''}`;
+}
+
+/**
+ * Identity document through the camera only: the front, then the back, each checked before going on;
+ * both are sent together. No file upload: the document has to be photographed there and then.
+ */
+async function kycCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('Câmara', 'Este navegador não dá acesso à câmara. Abra o site no telemóvel (Chrome ou Safari).', 'error');
+    return;
+  }
+  const steps = [['id_front', 'Frente do documento', 'Coloque a FRENTE do documento dentro do retângulo.'], ['id_back', 'Verso do documento', 'Agora vire o documento e fotografe o VERSO.']];
+  const shots = [];
+  const el = document.createElement('div');
+  el.className = 'cam';
+  el.innerHTML = `<div class="cam-top"><b class="cam-title"></b><button class="cam-x" aria-label="Fechar">×</button></div>
+    <p class="cam-hint"></p>
+    <div class="cam-view"><video playsinline autoplay muted></video><img class="cam-shot" alt=""><i class="cam-frame"></i></div>
+    <div class="cam-acts"></div>`;
+  document.body.appendChild(el);
+  const video = el.querySelector('video');
+  const img = el.querySelector('.cam-shot');
+  const acts = el.querySelector('.cam-acts');
+  let stream = null;
+  const stop = () => { stream?.getTracks().forEach((t) => t.stop()); el.remove(); };
+  el.querySelector('.cam-x').onclick = stop;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    video.srcObject = stream;
+  } catch (err) {
+    stop();
+    toast('Câmara', err?.name === 'NotAllowedError' ? 'Permita o acesso à câmara para fotografar o documento (nas definições do navegador).' : 'Não foi possível abrir a câmara.', 'error');
+    return;
+  }
+  const grab = () => {
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    const scale = Math.min(1, 1600 / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85);
+  };
+  const live = (i) => {
+    el.querySelector('.cam-title').textContent = `${i + 1}/2 · ${steps[i][1]}`;
+    el.querySelector('.cam-hint').textContent = steps[i][2];
+    img.hidden = true; video.hidden = false;
+    acts.innerHTML = '<button class="cam-shoot" aria-label="Tirar foto"></button>';
+    acts.querySelector('.cam-shoot').onclick = () => {
+      const shot = grab();
+      img.src = shot; img.hidden = false; video.hidden = true;
+      el.querySelector('.cam-hint').textContent = 'A foto está nítida e o documento aparece inteiro?';
+      acts.innerHTML = '<button class="outline-btn cam-redo">Repetir</button><button class="primary-btn cam-ok">Usar foto</button>';
+      acts.querySelector('.cam-redo').onclick = () => live(i);
+      acts.querySelector('.cam-ok').onclick = () => { shots[i] = shot; i === 0 ? live(1) : review(); };
+    };
+  };
+  const review = () => {
+    stream?.getTracks().forEach((t) => t.stop());
+    el.querySelector('.cam-title').textContent = 'Frente e verso';
+    el.querySelector('.cam-hint').textContent = 'Confirme as duas fotografias e envie.';
+    el.querySelector('.cam-view').innerHTML = `<div class="cam-pair">${shots.map((s, n) => `<figure><img src="${s}" alt=""><figcaption>${n ? 'Verso' : 'Frente'}</figcaption></figure>`).join('')}</div>`;
+    acts.innerHTML = '<button class="outline-btn cam-again">Repetir tudo</button><button class="primary-btn cam-send">Enviar</button>';
+    acts.querySelector('.cam-again').onclick = () => { stop(); kycCamera(); };
+    acts.querySelector('.cam-send').onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = 'A enviar…';
+      try {
+        for (const [n, [kind]] of steps.entries()) {
+          await api('/api/me/kyc', { method: 'POST', body: { kind, mimeType: 'image/jpeg', fileName: `${kind === 'id_front' ? 'frente' : 'verso'}.jpg`, data: shots[n].split(',')[1] } });
+        }
+        el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A equipa vai analisá-lo em até 48 horas úteis.</span></div>';
+        el.querySelector('.cam-hint').textContent = '';
+        acts.innerHTML = '<button class="primary-btn cam-close">OK</button>';
+        acts.querySelector('.cam-close').onclick = () => { el.remove(); loadKyc(); };
+        if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
+      } catch (err) {
+        ev.target.disabled = false; ev.target.textContent = 'Enviar';
+        toast('Erro', err.message, 'error');
+      }
+    };
+  };
+  live(0);
 }
 
 function securityView() {
@@ -2349,7 +2439,7 @@ const formHandlers = {
     });
     await api('/api/me/kyc', { method: 'POST', body: { kind: form.kind.value, mimeType: file.type, fileName: file.name, data } });
     if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
-    toast('Documento enviado', 'A equipa vai analisá-lo em até 48 horas úteis.');
+    toast('Comprovativo enviado', 'A equipa vai analisá-lo em até 48 horas úteis.');
     loadKyc();
   },
   async password(form) {
@@ -2583,6 +2673,8 @@ document.addEventListener('click', async (e) => {
     updateHeader(); renderSlip();
     location.hash = '#/';
     render();
+  } else if (action === 'kyc-camera') {
+    kycCamera();
   } else if (action === 'fs-open') {
     openFreeSpins();
   } else if (action === 'fs-pick') {
