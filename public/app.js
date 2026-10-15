@@ -471,7 +471,6 @@ function affHomeHtml() {
   const a = state.affHome;
   if (!a?.enabled || !a.referralUrl || a.uid !== state.user?.id) return '';
   const url = esc(a.referralUrl);
-  const wa = `https://wa.me/?text=${encodeURIComponent(`Aposta comigo na Bet62: ${a.referralUrl}`)}`;
   return `<section class="aff-home">
     <div class="aff-home-top">
       <div class="aff-home-badge"><b>${a.commission.rate}%</b><small>por amigo</small></div>
@@ -482,7 +481,7 @@ function affHomeHtml() {
     <ol class="aff-home-steps"><li><i>1</i>Partilhe o seu link</li><li><i>2</i>O amigo regista-se e deposita</li><li><i>3</i>Recebe ${a.commission.rate}% em saldo</li></ol>
     <div class="aff-home-row"><input readonly value="${url}" aria-label="Link de convite">
       <button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
-      ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : `<a class="aff-btn share" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`}
+      ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : ''}
     </div></section>`;
 }
 async function loadAffHome() {
