@@ -3367,7 +3367,7 @@ function marketBlocks(e, markets) {
     return m && m[1] ? { base: m[1].trim(), line: m[2].replace(',', '.') } : null;
   };
   const shortBase = (b) => ({ 'mais de': 'Mais', 'menos de': 'Menos', exatamente: 'Exato' })[b.toLowerCase()] || b;
-  return markets.map((mk) => {
+  const blocks = markets.map((mk) => {
     let grid;
     // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
     const bare = (s) => s.code.replace(/^\d:/, '');
@@ -3439,6 +3439,10 @@ function marketBlocks(e, markets) {
         return m ? { s, team: m[1].trim(), over: /^(mais|over)/i.test(m[2]), line: m[3].replace(',', '.') } : null;
       });
       const teams = [...new Set(perTeam.map((x) => x?.team))].sort((a, b) => (b === e.home) - (a === e.home));
+      const byTeam = sels.map((s) => {
+        const m = /^(.+?):\s*(.+)$/.exec(displaySelectionLabel(s.label));
+        return m && [e.home, e.away].includes(m[1].trim()) ? { s, team: m[1].trim(), rest: m[2].trim() } : null;
+      });
       const titleKey = String(mk.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const unitOf = () => (/corner|canto/.test(titleKey) ? 'cantos' : /card|booking|cartao/.test(titleKey) ? 'cartões' : 'golos');
       const lineName = (line, unit) => `${line} ${Number(line) === 1 ? unit.replace(/s$/, '').replace(/õe$/, 'ão') : unit}`;
@@ -3454,6 +3458,13 @@ function marketBlocks(e, markets) {
           }).join('');
           return `<div class="market-team">${esc(team)}</div>
             <div class="market-line market-line-head"><span></span><div class="odds two"><span>Mais</span><span>Menos</span></div></div>${rows}`;
+        }).join('');
+      } else if (mk.market === 'x' && byTeam.length > 1 && byTeam.every(Boolean) && new Set(byTeam.map((x) => x.team)).size === 2) {
+        // "Freiburg: Sim", "Jablonec: 2 - 3"… any per-team options: one block per team, home first.
+        grid = [e.home, e.away].map((team) => {
+          const mine = byTeam.filter((x) => x.team === team);
+          const cls = mine.some((x) => x.rest.length > 12) ? ' list' : mine.length === 2 ? ' two' : '';
+          return `<div class="market-team">${esc(team)}</div><div class="odds${cls}">${mine.map((x) => btn(x.s, x.rest)).join('')}</div>`;
         }).join('');
       } else if (mk.market === 'x' && parsed.length > 2 && parsed.every((x) => x.p) && lines.length > 1 && bases.length <= 3) {
         // Options on lines (Mais / Exato / Menos): one row per line, the line on the left.
@@ -3475,7 +3486,28 @@ function marketBlocks(e, markets) {
         grid = `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => btn(s)).join('')}</div>`;
       }
     }
-    return `<div class="market-block"><div class="market-head">${esc(displayMarketName(mk.name))}</div>${grid}</div>`;
+    return { name: displayMarketName(mk.name), grid };
+  }).filter(Boolean);
+  // The same market once per team ("Total Individual 3 vias · Freiburg" and "… · Jablonec",
+  // "Freiburg Marca N Golos" and "Jablonec Marca N Golos"): one block, a section per team, home first.
+  const teamRe = (t) => new RegExp(`(^|\\s·\\s|\\s)${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|\\s)`);
+  const keyOf = (name) => {
+    for (const [side, team] of [['home', e.home], ['away', e.away]]) {
+      if (team && teamRe(team).test(name)) return { side, team, key: name.replace(teamRe(team), '$1{T}') };
+    }
+    return null;
+  };
+  const tagged = blocks.map((b) => ({ ...b, k: keyOf(b.name) }));
+  const used = new Set();
+  return tagged.map((b, i) => {
+    if (used.has(i)) return '';
+    const j = b.k ? tagged.findIndex((o, n) => n !== i && !used.has(n) && o.k && o.k.key === b.k.key && o.k.side !== b.k.side) : -1;
+    if (j < 0) return `<div class="market-block"><div class="market-head">${esc(b.name)}</div>${b.grid}</div>`;
+    used.add(j);
+    const [home, away] = b.k.side === 'home' ? [b, tagged[j]] : [tagged[j], b];
+    const title = b.k.key.replace(/\s·\s\{T\}/, '').replace(/^\{T\}\s/, 'Equipa ').replace('{T}', 'Equipa').replace(/\s+/g, ' ').trim();
+    return `<div class="market-block"><div class="market-head">${esc(title)}</div>
+      <div class="market-team">${esc(e.home)}</div>${home.grid}<div class="market-team">${esc(e.away)}</div>${away.grid}</div>`;
   }).join('');
 }
 
