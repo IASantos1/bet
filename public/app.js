@@ -157,6 +157,24 @@ function closeModal() {
   $('#modal').innerHTML = '';
 }
 
+/**
+ * Asks a player once whether they want promotions by email (players from before the sign-up box,
+ * or who never answered). Yes or No is saved; closing the window asks again on a later visit.
+ */
+function askPromos() {
+  const u = state.user;
+  if (!u || u.role !== 'user' || state.promoAsked || u.prefs?.promoAsked || u.prefs?.notifyPromos) return;
+  if (u.excludedUntil && new Date(u.excludedUntil) > new Date()) return;
+  if (!$('#modalBackdrop').classList.contains('hidden') || playingCasino()) return;
+  state.promoAsked = true;
+  openModal('Promoções e bónus', `<div class="promo-ask">
+    <div class="promo-ask-icon">🎁</div>
+    <p><b>Quer receber as nossas promoções por email?</b></p>
+    <p class="muted">FreeBets, Free Spins, bónus de depósito e odds aumentadas — só para quem aceita. Pode desligar a qualquer momento em Perfil → Preferências.</p>
+    <div class="promo-ask-acts"><button class="outline-btn" data-action="promo-answer" data-yes="0">Agora não</button><button class="primary-btn" data-action="promo-answer" data-yes="1">Sim, quero receber</button></div>
+  </div>`);
+}
+
 function openAuth(mode) {
   if (mode === 'register') {
     const max = new Date();
@@ -2395,6 +2413,7 @@ const formHandlers = {
     closeModal();
     toast('Sessão iniciada', `Bem-vindo, ${user.name.split(' ')[0]}.`);
     updateHeader(); renderSlip(); render({ keepScroll: true });
+    setTimeout(askPromos, 2500);
   },
   async register(form) {
     const d = formData(form);
@@ -2626,6 +2645,17 @@ document.addEventListener('click', async (e) => {
     if (!wasOpen) history.replaceState(null, '', `#/perfil/${id}`);
     render({ keepScroll: true });
     if (!wasOpen) $(`#pf-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  const promoAnswer = e.target.closest('[data-action="promo-answer"]');
+  if (promoAnswer) {
+    const yes = promoAnswer.dataset.yes === '1';
+    closeModal();
+    try {
+      const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: { notifyPromos: yes, promoAsked: true } } });
+      state.user = user;
+      if (yes) toast('Obrigado!', 'Vai receber as nossas promoções por email.');
+    } catch (err) { toast('Erro', err.message, 'error'); }
     return;
   }
   const pref = e.target.closest('[data-pref]');
@@ -4141,6 +4171,7 @@ async function init() {
   if (state.user?.casinoActive && !(currentRoute().page === 'casino' && currentRoute().sub === 'jogar')) closeCasino();
   render();
   if (referred && !state.user) openAuth('register');
+  setTimeout(askPromos, 4000);
   loadCasino({ reset: true });
   loadCasinoLobby();
   await refreshEvents();
