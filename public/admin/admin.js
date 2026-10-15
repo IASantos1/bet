@@ -12,20 +12,47 @@ const STATUS_LABEL = {
   rejected: 'Rejeitado', scheduled: 'Agendado', live: 'Ao vivo', finished: 'Terminado', cancelled: 'Cancelado',
 };
 
+const ADMIN_ICON_PATHS = {
+  dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+  scale: '<path d="M12 3v18M5 7h14M7 7l-4 8h8L7 7zm10 0-4 8h8l-4-8zM8 21h8"/>',
+  ticket: '<path d="M3 8a2 2 0 0 0 0 4v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 1 0-4V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2z"/><path d="M13 5v2m0 4v2m0 4v2"/>',
+  wallet: '<rect x="3" y="6" width="18" height="15" rx="2"/><path d="M3 10h18M16 15h2M7 6V4a1 1 0 0 1 1-1h10"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  gift: '<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M12 8c-1.6-3.8-5.5-4-5.5-1.5S9.8 8 12 8zm0 0c1.6-3.8 5.5-4 5.5-1.5S14.2 8 12 8z"/>',
+  affiliate: '<circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="m8.7 10.6 6.5-3.2m-6.5 6 6.5 3.2"/>',
+  megaphone: '<path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 15.4 13 21H8l-2-7.2M3 11v2"/>',
+  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8m-4-4h8"/>',
+  radio: '<path d="M4 8.5A11 11 0 0 1 20 8.5M7 11.5a7 7 0 0 1 10 0M10 14.5a3 3 0 0 1 4 0"/><circle cx="12" cy="18" r="1" fill="currentColor" stroke="none"/>',
+  casino: '<path d="M4 4h16v16H4z"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="16" r="1" fill="currentColor" stroke="none"/>',
+  catalog: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M4 5.5v13A2.5 2.5 0 0 1 6.5 16H20M8 7h8m-8 4h8"/>',
+  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/>',
+  logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>',
+  refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17 6.4L20 12M4 12l3 5.6A7 7 0 0 0 18.4 15"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  shield: '<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/>',
+  warning: '<path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9v4m0 4h.01"/>',
+  coins: '<circle cx="8" cy="8" r="5"/><path d="M12.5 4.5A5 5 0 1 1 10 13M8 6v4m-2-2h4M16 16v4m-2-2h4"/>',
+  chart: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-5 5"/>',
+  trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+};
+const adminIcon = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ADMIN_ICON_PATHS[name] || ADMIN_ICON_PATHS.dashboard}</svg>`;
+
 const TABS = [
-  { id: 'painel', label: 'Painel', icon: '📊', section: 'Operações' },
-  { id: 'eventos', label: 'Eventos', icon: '🗓️', section: 'Operações' },
-  { id: 'liquidacao', label: 'Liquidação', icon: '⚖️', section: 'Operações' },
-  { id: 'apostas', label: 'Apostas', icon: '🎟️', section: 'Operações' },
-  { id: 'levantamentos', label: 'Levantamentos', icon: '💸', section: 'Operações' },
-  { id: 'utilizadores', label: 'Utilizadores', icon: '👥', section: 'Operações' },
-  { id: 'promocoes', label: 'Promoções', icon: '🎁', section: 'Operações' },
-  { id: 'afiliados', label: 'Afiliados', icon: '🤝', section: 'Operações' },
-  { id: 'telegram', label: 'Telegram', icon: '📣', section: 'Operações' },
-  { id: 'novo', label: 'Novo evento', icon: '➕', section: 'Avançado' },
-  { id: 'feed', label: 'Dados ao vivo', icon: '📡', section: 'Avançado' },
-  { id: 'casino', label: 'Casino', icon: '🎰', section: 'Avançado' },
-  { id: 'mercados', label: 'Catálogo de mercados', icon: '🧾', section: 'Avançado' },
+  { id: 'painel', label: 'Painel', icon: 'dashboard', section: 'Operações' },
+  { id: 'eventos', label: 'Eventos', icon: 'calendar', section: 'Operações' },
+  { id: 'liquidacao', label: 'Liquidação', icon: 'scale', section: 'Operações' },
+  { id: 'apostas', label: 'Apostas', icon: 'ticket', section: 'Operações' },
+  { id: 'levantamentos', label: 'Levantamentos', icon: 'wallet', section: 'Operações' },
+  { id: 'utilizadores', label: 'Utilizadores', icon: 'users', section: 'Operações' },
+  { id: 'promocoes', label: 'Promoções', icon: 'gift', section: 'Operações' },
+  { id: 'afiliados', label: 'Afiliados', icon: 'affiliate', section: 'Operações' },
+  { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Operações' },
+  { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
+  { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
+  { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
+  { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
 
@@ -522,12 +549,12 @@ async function settleTicket(id, legs, label) {
 
 function loginView(error = '') {
   return `<div class="adm-login"><form class="adm-login-card" data-form="login" novalidate>
-    <div class="adm-login-head"><div class="adm-shield">🛡️</div><div class="brand-word">BET<span>62</span></div><p>Painel Administrativo</p></div>
+    <div class="adm-login-head"><div class="adm-shield">${adminIcon('shield', 27)}</div><div class="brand-word">BET<span>62</span></div><p>Painel Administrativo</p><small class="adm-login-note">Acesso restrito à equipa de operações</small></div>
     <div class="form-error${error ? '' : ' hidden'}">${esc(error)}</div>
     <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="username" placeholder="admin@seudominio.com"></div>
     <div class="field"><label>Palavra-passe</label><input name="password" type="password" required autocomplete="current-password" placeholder="••••••••"></div>
-    <button class="primary-btn adm-login-btn">ENTRAR NO PAINEL</button>
-    <a class="adm-back" href="/">← Voltar ao site</a>
+    <button class="primary-btn adm-login-btn">Entrar no painel <span>${adminIcon('arrow', 16)}</span></button>
+    <a class="adm-back" href="/"><span>${adminIcon('home', 14)}</span>Voltar ao site</a>
   </form></div>`;
 }
 
@@ -536,21 +563,23 @@ function loginView(error = '') {
 function shell() {
   const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
   const pending = state.stats?.pendingWithdrawals || 0;
-  const link = (t) => `<button class="adm-nav${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span>${t.icon}</span><span class="grow">${esc(t.label)}</span>${t.id === 'levantamentos' && pending ? `<b class="adm-badge">${pending}</b>` : ''}</button>`;
+  const link = (t) => `<button class="adm-nav${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span class="adm-icon">${adminIcon(t.icon)}</span><span class="grow">${esc(t.label)}</span>${t.id === 'levantamentos' && pending ? `<b class="adm-badge">${pending}</b>` : ''}</button>`;
   const sections = [...new Set(TABS.map((t) => t.section))];
-  const sidebar = `<div class="adm-side-head"><span class="brand-word small">BET<span>62</span></span><span class="adm-tag">Admin</span></div>
+  const sidebar = `<div class="adm-side-head"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>OPERATIONS</small></div><span class="adm-tag">ADMIN</span></div>
     <nav class="adm-side-nav">${sections.map((sec) => `<div class="adm-section">${esc(sec)}</div>${TABS.filter((t) => t.section === sec).map(link).join('')}`).join('')}</nav>
-    <div class="adm-side-foot"><div class="adm-user">${esc(state.user?.email || '')}</div><a class="adm-nav" href="/"><span>🏠</span><span class="grow">Ver o site</span></a><button class="adm-nav" data-action="logout"><span>⏻</span><span class="grow">Sair</span></button></div>`;
+    <div class="adm-side-foot"><div class="adm-user"><span class="adm-user-dot"></span>${esc(state.user?.email || '')}</div><a class="adm-nav" href="/"><span class="adm-icon">${adminIcon('home')}</span><span class="grow">Ver o site</span></a><button class="adm-nav" data-action="logout"><span class="adm-icon">${adminIcon('logout')}</span><span class="grow">Sair</span></button></div>`;
   return `<div class="adm">
     <aside class="adm-side" id="admSide">${sidebar}</aside>
     <div class="adm-overlay" data-action="close-menu"></div>
     <main class="adm-main">
-      <header class="adm-top"><button class="adm-burger" data-action="open-menu" aria-label="Menu">☰</button><h1>${esc(tab.label)}</h1>
-        <button class="ghost-btn btn-sm" data-action="refresh">⟳ Atualizar</button></header>
+      <header class="adm-top"><button class="adm-burger" data-action="open-menu" aria-label="Menu">${adminIcon('menu', 20)}</button>
+        <div class="adm-top-title"><span class="adm-top-kicker">BET62 <i>/</i> ADMINISTRAÇÃO</span><h1>${esc(tab.label)}</h1></div>
+        <span class="adm-secure-label">${adminIcon('shield', 14)} Área restrita</span>
+        <button class="ghost-btn btn-sm adm-refresh" data-action="refresh">${adminIcon('refresh', 15)}<span>Atualizar</span></button></header>
       <div class="adm-body"><div id="adminMain"><div class="loading">A carregar…</div></div></div>
     </main>
-    <nav class="adm-bottom">${MOBILE_TABS.map((id) => TABS.find((t) => t.id === id)).map((t) => `<button class="${t.id === state.tab ? 'active' : ''}" data-tab="${t.id}"><span>${t.icon}</span>${esc(t.label)}</button>`).join('')}
-      <button data-action="open-menu"><span>☰</span>Mais</button></nav>
+    <nav class="adm-bottom">${MOBILE_TABS.map((id) => TABS.find((t) => t.id === id)).map((t) => `<button class="${t.id === state.tab ? 'active' : ''}" data-tab="${t.id}"><span>${adminIcon(t.icon, 18)}</span>${esc(t.label)}</button>`).join('')}
+      <button data-action="open-menu"><span>${adminIcon('menu', 18)}</span>Mais</button></nav>
   </div>`;
 }
 
@@ -570,27 +599,28 @@ function go(tab) {
 // ---------- tabs ----------
 
 function dashboard(s, settle) {
-  const card = (icon, label, value, sub = '', tone = '') => `<div class="adm-card ${tone}"><span class="adm-card-icon">${icon}</span><small>${esc(label)}</small><strong>${esc(value)}</strong>${sub ? `<em>${esc(sub)}</em>` : ''}</div>`;
-  const alert = s.pendingWithdrawals ? `<button class="adm-alert" data-tab="levantamentos">⚠️ ${s.pendingWithdrawals} levantamento(s) pendente(s) a aguardar aprovação — total ${esc(money(s.pendingWithdrawalAmount))} ›</button>` : '';
+  const card = (icon, label, value, sub = '', tone = '') => `<div class="adm-card ${tone}"><span class="adm-card-icon">${adminIcon(icon, 19)}</span><small>${esc(label)}</small><strong>${esc(value)}</strong>${sub ? `<em>${esc(sub)}</em>` : ''}</div>`;
+  const alert = s.pendingWithdrawals ? `<button class="adm-alert" data-tab="levantamentos"><span class="adm-alert-icon">${adminIcon('warning', 17)}</span><span>${s.pendingWithdrawals} levantamento(s) pendente(s) a aguardar aprovação — total ${esc(money(s.pendingWithdrawalAmount))}</span><span class="adm-alert-arrow">→</span></button>` : '';
   const sm = settle?.summary || {};
   const storage = s.storage && !s.storage.persistent
-    ? `<div class="adm-alert">⚠️ A base de dados está no disco temporário do servidor (${esc(s.storage.path)}): saldos, apostas e utilizadores são apagados em cada deploy. No Railway, crie um <strong>Volume</strong> neste serviço (Settings → Volumes, por exemplo em /data) e faça redeploy — o servidor passa a usá-lo sozinho.</div>`
+    ? `<div class="adm-alert"><span class="adm-alert-icon">${adminIcon('warning', 17)}</span><span>A base de dados está no disco temporário do servidor (${esc(s.storage.path)}): saldos, apostas e utilizadores são apagados em cada deploy. No Railway, crie um <strong>Volume</strong> neste serviço (Settings → Volumes, por exemplo em /data) e faça redeploy — o servidor passa a usá-lo sozinho.</span></div>`
     : '';
   return `${storage}${alert}
+    <div class="adm-overview"><div><span class="adm-eyebrow">CENTRO DE OPERAÇÕES</span><p>Visão geral da atividade e do desempenho da plataforma.</p></div><span class="adm-overview-mark">${adminIcon('chart', 17)} Monitorização</span></div>
     <div class="adm-cards">
-      ${card('👥', 'Jogadores', s.users, '', 'blue')}
-      ${card('🎟️', 'Apostas em aberto', s.openBets, money(s.openStake) + ' apostado', 'gold')}
-      ${card('💶', 'Receita bruta', money(s.grossRevenue), 'apostas liquidadas', 'green')}
-      ${card('💸', 'Levantamentos pendentes', s.pendingWithdrawals, money(s.pendingWithdrawalAmount), 'red')}
+      ${card('users', 'Jogadores', s.users, '', 'blue')}
+      ${card('ticket', 'Apostas em aberto', s.openBets, money(s.openStake) + ' apostado', 'gold')}
+      ${card('coins', 'Receita bruta', money(s.grossRevenue), 'apostas liquidadas', 'green')}
+      ${card('wallet', 'Levantamentos pendentes', s.pendingWithdrawals, money(s.pendingWithdrawalAmount), 'red')}
     </div>
     <div class="adm-cards">
-      ${card('⚠️', 'Responsabilidade máxima', money(sm.maxLiability), 'se todas as apostas ganharem', 'red')}
-      ${card('✅', 'Liquidadas hoje', sm.settledToday ?? 0, money(sm.stakesSettledToday) + ' apostado', 'blue')}
-      ${card('💰', 'Pago hoje', money(sm.paidToday), '', 'gold')}
-      ${card('📈', 'Margem hoje', money(sm.marginToday), '', 'green')}
+      ${card('warning', 'Responsabilidade máxima', money(sm.maxLiability), 'se todas as apostas ganharem', 'red')}
+      ${card('scale', 'Liquidadas hoje', sm.settledToday ?? 0, money(sm.stakesSettledToday) + ' apostado', 'blue')}
+      ${card('wallet', 'Pago hoje', money(sm.paidToday), '', 'gold')}
+      ${card('trend', 'Margem hoje', money(sm.marginToday), '', 'green')}
     </div>
-    <div class="panel"><h3>Atalhos</h3><div class="adm-shortcuts">
-      ${TABS.filter((t) => t.id !== 'painel').map((t) => `<button class="ghost-btn" data-tab="${t.id}">${t.icon} ${esc(t.label)}</button>`).join('')}
+    <div class="panel adm-shortcut-panel"><div class="adm-panel-heading"><div><span class="adm-eyebrow">ACESSO RÁPIDO</span><h3>Atalhos de operação</h3></div><span class="adm-panel-count">${TABS.length - 1} secções</span></div><div class="adm-shortcuts">
+      ${TABS.filter((t) => t.id !== 'painel').map((t) => `<button class="ghost-btn adm-shortcut" data-tab="${t.id}"><span>${adminIcon(t.icon, 16)}</span>${esc(t.label)}<i>${adminIcon('trend', 13)}</i></button>`).join('')}
     </div></div>`;
 }
 
