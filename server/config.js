@@ -270,6 +270,14 @@ export const config = {
     deleteMinutes: Math.max(1, int(env.TELEGRAM_DELETE_MINUTES, 10)),
     editSeconds: Math.max(5, int(env.TELEGRAM_EDIT_SECONDS, 30)),
   },
+  // Brevo (brevo.js): promotional emails (API key + a sender verified in Brevo) and, when a sender
+  // name or number is set, SMS (paid with Brevo SMS credits).
+  brevo: {
+    apiKey: unquote(env.BREVO_API_KEY),
+    senderEmail: unquote(env.BREVO_SENDER_EMAIL),
+    senderName: unquote(env.BREVO_SENDER_NAME) || 'BET62',
+    smsSender: unquote(env.BREVO_SMS_SENDER),
+  },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).

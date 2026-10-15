@@ -18,6 +18,7 @@ import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
 import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
+import { createBrevo } from './brevo.js';
 import { expireDue, runCashback } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -153,7 +154,9 @@ if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, p
 // Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
 const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
 if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, boardCacheMs: 2000 });
+const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] ${m}`) });
+if (brevo.configured) console.log(`Brevo: emails de ${config.brevo.senderEmail}${brevo.smsConfigured ? ', SMS ligado' : ''}`);
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 const server = app.listen(config.port, () => {
