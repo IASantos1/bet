@@ -3368,8 +3368,6 @@ function marketBlocks(e, markets) {
   };
   const shortBase = (b) => ({ 'mais de': 'Mais', 'menos de': 'Menos', exatamente: 'Exato' })[b.toLowerCase()] || b;
   return markets.map((mk) => {
-    // A market with every option closed (while the game is open) is not shown.
-    if (!locked && mk.selections.length && mk.selections.every((s) => !s.active)) return '';
     let grid;
     // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
     const bare = (s) => s.code.replace(/^\d:/, '');
