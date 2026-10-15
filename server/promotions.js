@@ -59,6 +59,9 @@ const NUM = {
   validityDays: [1, 365], maxCountStake: [0, 100_000, true], maxCountPct: [0, 100, true], minStake: [0, 100_000],
   maxRefund: [0, 100_000], minLoss: [0, 100_000], max: [0, 100_000], spinValue: [0.01, 100], maxDeposit: [1, 100_000], maxClaims: [1, 1000, true], maxBoost: [0, 1_000_000],
 };
+// Free spins are played at €0.10 or €0.20 a spin (the house rule): only games that accept those bets.
+export const SPIN_BETS = [10, 20];
+const SPIN_BET_MSG = 'Free Spins: o valor por rodada só pode ser €0,10 ou €0,20.';
 /** "10:5, 20:10" or [[10, 5], …] → sorted [[deposit €, spins], …]. */
 function parseTiers(v) {
   const pairs = Array.isArray(v) ? v : String(v || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>-]+/).map((n) => n.trim()));
@@ -83,7 +86,7 @@ export function parseGames(v) {
     if (!games.includes(id)) games.push(id);
     if (betText !== undefined && betText !== '') {
       const bet = Number(String(betText).replace(',', '.'));
-      if (!Number.isFinite(bet) || bet < 0.01 || bet > 100) throw new HttpError(400, `Free Spins: valor por rodada inválido no jogo ${id}.`);
+      if (!Number.isFinite(bet) || !SPIN_BETS.includes(Math.round(bet * 100))) throw new HttpError(400, `${SPIN_BET_MSG} (jogo ${id})`);
       gameBets[id] = Math.round(bet * 100) / 100;
     }
   }
@@ -127,6 +130,7 @@ export function savePromoConfig(db, input) {
         if ((v === null || v === '') && nullable) { c[f] = null; continue; }
         const n = Number(v);
         if (!Number.isFinite(n) || n < min || n > max) throw new HttpError(400, `${CAMPAIGN_NAMES[k] || 'Geral'}: valor inválido em ${f}.`);
+        if (f === 'spinValue' && !SPIN_BETS.includes(Math.round(n * 100))) throw new HttpError(400, SPIN_BET_MSG);
         c[f] = n;
       }
     }
@@ -349,7 +353,7 @@ export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, r
   if (activeSpins(db, userId)) throw new HttpError(409, 'Este jogador já tem Free Spins ativas.');
   const n = Math.round(Number(spins));
   if (!Number.isInteger(n) || n < 1 || n > 500) throw new HttpError(400, 'Número de rodadas inválido (1 a 500).');
-  if (!Number.isInteger(spinValueCents) || spinValueCents < 1 || spinValueCents > 10_000) throw new HttpError(400, 'Valor por rodada inválido.');
+  if (!SPIN_BETS.includes(spinValueCents)) throw new HttpError(400, SPIN_BET_MSG);
   const now = nowIso();
   const value = n * spinValueCents;
   const bets = Object.fromEntries(c.games.map((g) => [g, spinValueCents]));

@@ -136,7 +136,7 @@ const PROMO_FIELDS = {
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
   reload: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
-  casinoFs: [['tiers', 'Escalões (depósito € : rodadas)', 'tiers'], ['spinValue', 'Valor por rodada padrão (€)'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
+  casinoFs: [['tiers', 'Escalões (depósito € : rodadas)', 'tiers'], ['spinValue', 'Valor por rodada padrão', 'spin'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
     ['maxClaims', 'Máximo de utilizações por jogador', 'opt'], ['games', 'Jogos elegíveis e valor por rodada (ID:€, separados por vírgula)', 'games']],
   accaBoost: [['tiers', 'Escalões (seleções : % de boost, ex.: 4:5, 8:10, 12:15, 17:20)', 'tiers'], ['minOdds', 'Odd mínima por seleção'], ['maxBoost', 'Boost máximo por aposta (€)']],
   firstBet: [['minStake', 'Aposta mínima (€)'], ['minOdds', 'Odd mínima'], ['maxRefund', 'Reembolso máximo em free bet (€)'], ['validityDays', 'Validade da free bet (dias)']],
@@ -197,10 +197,10 @@ function giftModal({ id, name, freebet }) {
     </form>
     <form data-form="user-spins" data-id="${id}" data-pane="fs" hidden>
       <div class="am-two"><label>Rodadas<input name="spins" type="number" min="1" max="500" value="5" required></label>
-        <label>Valor por rodada (€)<input name="spinValue" type="number" step="0.01" min="0.01" value="0.20" required></label></div>
+        <label>Valor por rodada<select name="spinValue"><option value="0.1">€0,10</option><option value="0.2" selected>€0,20</option></select></label></div>
       <label class="am-row">Válidas durante <input name="days" type="number" min="1" max="365" value="7"> dias</label>
       <input name="note" maxlength="120" placeholder="Nota (opcional)">
-      <div class="am-games"><span class="am-lbl">Jogos (o jogador escolhe 1)</span>
+      <div class="am-games"><span class="am-lbl">Jogos (o jogador escolhe 1) — só jogos que aceitam €0,10 / €0,20 por rodada</span>
         <div class="fs-chips" id="amChips"><small class="muted">A carregar os jogos da campanha…</small></div>
         <input id="amGameSearch" placeholder="Procurar jogo para juntar (ex.: Big Bass)…" autocomplete="off"><div class="fs-results" id="amGameResults"></div></div>
       <button class="primary-btn am-go gift">${ICON.gift} Atribuir Free Spins</button>
@@ -236,8 +236,9 @@ function adminPromos(d) {
         <div class="fs-chips" id="fsChips">${v.map((id) => fsChip(id, names.get(id)?.name || `Jogo ${id}`, bets[id], names.get(id)?.found === false)).join('') || '<small class="muted">Sem jogos: a campanha não fica disponível.</small>'}</div>
         <div class="fs-search"><input id="fsGameSearch" placeholder="Procurar jogo para juntar (ex.: Big Bass, Gates of Olympus)…" autocomplete="off"><div class="fs-results" id="fsGameResults"></div></div>
         <label class="field">${esc(label)}<input name="${camp}.${k}" id="fsGamesInput" value="${esc(v.map((id) => (bets[id] ? `${id}:${bets[id]}` : String(id))).join(', '))}" placeholder="ex.: 4821:0.20, 4822:0.10"></label>
-        <small class="muted">Cada rodada é jogada ao valor indicado (ID:€; sem valor: o padrão). Jogos da Palace (slots) ou da BigBang.</small></div>`;
+        <small class="muted">⚠ As rodadas valem €0,10 ou €0,20: escolha só jogos que aceitam essa aposta (há jogos com aposta mínima maior — confirme no próprio jogo). Cada rodada é jogada ao valor indicado (ID:€, com €0,10 ou €0,20; sem valor: o padrão).</small></div>`;
     }
+    if (type === 'spin') return `<label class="field">${esc(label)}<select name="${camp}.${k}">${[0.1, 0.2].map((x) => `<option value="${x}"${Math.round(Number(v) * 100) === x * 100 ? ' selected' : ''}>€${x.toFixed(2).replace('.', ',')}</option>`).join('')}</select></label>`;
     if (type === 'base') return `<label class="field">${esc(label)}<select name="${camp}.${k}"><option value="deposit_bonus"${v !== 'bonus' ? ' selected' : ''}>Depósito + bónus</option><option value="bonus"${v === 'bonus' ? ' selected' : ''}>Só o bónus</option></select></label>`;
     return `<label class="field">${esc(label)}<input name="${camp}.${k}" type="number" step="0.01" value="${v ?? ''}"${type === 'opt' ? ' placeholder="sem limite"' : ' required'}></label>`;
   };
@@ -1079,6 +1080,7 @@ const handlers = {
       if (key === 'methods') { if (el.checked) body.general.methods.push(el.value); continue; }
       if (el.type === 'checkbox') body[camp][key] = el.checked;
       else if (el.type === 'datetime-local') body[camp][key] = el.value ? new Date(el.value).toISOString() : null;
+      else if (key === 'spinValue') body[camp][key] = Number(el.value);
       else if (el.tagName === 'SELECT' || key === 'tiers' || key === 'games') body[camp][key] = el.value;
       else body[camp][key] = el.value === '' ? null : Number(el.value);
     }
