@@ -3432,7 +3432,30 @@ function marketBlocks(e, markets) {
       const parsed = sels.map((s) => ({ s, p: withLine(displaySelectionLabel(s.label)) }));
       const bases = [...new Set(parsed.map((x) => x.p?.base))];
       const lines = [...new Set(parsed.map((x) => x.p?.line))];
-      if (mk.market === 'x' && parsed.length > 2 && parsed.every((x) => x.p) && lines.length > 1 && bases.length <= 3) {
+      // "Freiburg: Mais de (1.5)" — over/under per team: one block per team (home first), Mais on
+      // the left and Menos on the right, one row per line.
+      const perTeam = sels.map((s) => {
+        const m = /^(.+?):\s*(mais de|menos de|over|under)\s*\(?\s*([+-]?\d+(?:[.,]\d+)?)\s*\)?\s*$/i.exec(displaySelectionLabel(s.label));
+        return m ? { s, team: m[1].trim(), over: /^(mais|over)/i.test(m[2]), line: m[3].replace(',', '.') } : null;
+      });
+      const teams = [...new Set(perTeam.map((x) => x?.team))].sort((a, b) => (b === e.home) - (a === e.home));
+      const titleKey = String(mk.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const unitOf = () => (/corner|canto/.test(titleKey) ? 'cantos' : /card|booking|cartao/.test(titleKey) ? 'cartões' : 'golos');
+      const lineName = (line, unit) => `${line} ${Number(line) === 1 ? unit.replace(/s$/, '').replace(/õe$/, 'ão') : unit}`;
+      if (mk.market === 'x' && perTeam.length > 1 && perTeam.every(Boolean) && teams.length <= 2) {
+        const unit = unitOf();
+        grid = teams.map((team) => {
+          const mine = perTeam.filter((x) => x.team === team);
+          const rows = [...new Set(mine.map((x) => x.line))].sort((a, b) => a - b).map((line) => {
+            const over = mine.find((x) => x.line === line && x.over);
+            const under = mine.find((x) => x.line === line && !x.over);
+            return `<div class="market-line"><span class="market-line-label">${esc(lineName(line, unit))}</span>
+              <div class="odds two price-only">${over ? btn(over.s, '') : '<span></span>'}${under ? btn(under.s, '') : '<span></span>'}</div></div>`;
+          }).join('');
+          return `<div class="market-team">${esc(team)}</div>
+            <div class="market-line market-line-head"><span></span><div class="odds two"><span>Mais</span><span>Menos</span></div></div>${rows}`;
+        }).join('');
+      } else if (mk.market === 'x' && parsed.length > 2 && parsed.every((x) => x.p) && lines.length > 1 && bases.length <= 3) {
         // Options on lines (Mais / Exato / Menos): one row per line, the line on the left.
         const title = String(mk.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const unit = /corner|canto/.test(title) ? 'cantos' : /card|booking|cartao/.test(title) ? 'cartões' : /goal|golo|total|tempo|parte/.test(title) ? 'golos' : '';
