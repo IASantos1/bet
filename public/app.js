@@ -3399,6 +3399,23 @@ function marketBlocks(e, markets) {
         return `<div class="market-line"><span class="market-line-label">${esc(label)}</span>
           <div class="odds two">${pair.over ? btn(pair.over, 'Mais') : '<span></span>'}${pair.under ? btn(pair.under, 'Menos') : '<span></span>'}</div></div>`;
       }).join('');
+    } else if (mk.market === 'tou') {
+      // Team totals ("1O1.5" = home over 1.5, "2U2" = away under 2): one section per team, home
+      // first, Mais on the left and Menos on the right, one row per line.
+      const unit = { basquetebol: 'pontos', tenis: 'jogos' }[e.sport] || 'golos';
+      grid = [['1', e.home], ['2', e.away]].map(([side, team]) => {
+        const mine = mk.selections.filter((s) => bare(s)[0] === side);
+        if (!mine.length) return '';
+        const lines = [...new Set(mine.map((s) => bare(s).slice(2)))].sort((a, b) => a - b);
+        const rows = lines.map((line) => {
+          const over = mine.find((s) => bare(s) === `${side}O${line}`);
+          const under = mine.find((s) => bare(s) === `${side}U${line}`);
+          return `<div class="market-line"><span class="market-line-label">${esc(`${line} ${Number(line) === 1 ? unit.replace(/s$/, '') : unit}`)}</span>
+            <div class="odds two price-only">${over ? btn(over, '') : '<span></span>'}${under ? btn(under, '') : '<span></span>'}</div></div>`;
+        }).join('');
+        return `<div class="market-team">${esc(team)}</div>
+          <div class="market-line market-line-head"><span></span><div class="odds two"><span>Mais</span><span>Menos</span></div></div>${rows}`;
+      }).join('');
     } else if (mk.market === 'ou' || mk.market === 'gou' || mk.market === 'pou') {
       const unit = mk.market === 'gou' || (mk.market === 'pou' && e.sport === 'tenis') ? 'jogos'
         : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
