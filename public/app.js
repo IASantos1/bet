@@ -3313,14 +3313,17 @@ function marketBlocks(e, markets) {
   // Presentation-only translations: provider codes, selection IDs and odds remain untouched.
   const displayMarketName = (value) => {
     const raw = String(value || '');
-    const key = raw.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase();
-    if (key.includes('total e ambas marcam')) return 'Total de golos e ambas marcam';
+    const key = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (key === 'total e ambas marcam') return 'Total de golos e ambas marcam';
     if (key.includes('total por tempos')) return 'Total de golos por partes';
     if (key.includes('total de golos por tempos')) return 'Total de golos por partes';
-    if (key.includes('3 vias total')) return 'Total de golos — 3 opções';
+    if (key === '3 vias total') return 'Total de golos — 3 opções';
     if (key.includes('expected goals') && key.includes('handikap')) return raw.replace(/Expected Goals/i, 'Golos Esperados').replace(/Handikap/i, 'Handicap');
     if (key.includes('expected goals') && key.includes('totali')) return raw.replace(/Expected Goals/i, 'Golos Esperados').replace(/Totali/i, 'Total');
-    return raw;
+    // "Equipa 1", "Total Individual 1", "Total 2"… → the team's name.
+    const team = (n) => String((n === '1' ? e.home : e.away) || `Equipa ${n}`);
+    return raw.replace(/\b(?:Equipa|Team)\s([12])\b/g, (_, n) => team(n))
+      .replace(/\b(Individual|Total)(\s+3 vias)?\s([12])\b(?!\s*[.,]\d)/g, (_, w, v, n) => `${w}${v || ''} · ${team(n)}`);
   };
   const displaySelectionLabel = (value) => {
     let label = String(value ?? '');
@@ -3356,8 +3359,14 @@ function marketBlocks(e, markets) {
   const btn = (s, label = displaySelectionLabel(s.label)) => {
     const off = locked || !s.active;
     return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${off ? ' locked' : ''}" data-sel="${s.id}" ${off ? 'disabled' : ''}>
-      <small>${esc(label)}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
+      <small>${esc(String(label).replace(/\s*\(([+-]?\d+(?:[.,]\d+)?)\)/g, ' $1'))}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
   };
+  // "Mais de (2.5)", "Exatamente (3)", "Menos de (2)": the option and its line.
+  const withLine = (label) => {
+    const m = /^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/.exec(label);
+    return m && m[1] ? { base: m[1].trim(), line: m[2].replace(',', '.') } : null;
+  };
+  const shortBase = (b) => ({ 'mais de': 'Mais', 'menos de': 'Menos', exatamente: 'Exato' })[b.toLowerCase()] || b;
   return markets.map((mk) => {
     let grid;
     // Period markets carry "<n>:" before the code (set / half); the grids work on the code after it.
@@ -3367,7 +3376,7 @@ function marketBlocks(e, markets) {
     // like our native OU markets, without changing the provider feed or settlement rules.
     const providerLine = (s) => {
       const raw = String(s.label || s.code?.split('~').at(-1) || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const match = /\b(mais de|menos de|over|under|above|below)\s*\(?\s*(\d+(?:[.,]\d+)?)\s*\)?/i.exec(raw);
+      const match = /^\s*(mais de|menos de|over|under|above|below)\s*\(?\s*(\d+(?:[.,]\d+)?)\s*\)?\s*$/i.exec(raw);
       if (!match) return null;
       return { side: /^(mais|over|above)/i.test(match[1]) ? 'over' : 'under', line: Number(match[2].replace(',', '.')) };
     };
@@ -3417,7 +3426,31 @@ function marketBlocks(e, markets) {
       }).join('');
       grid = `<div class="handicap-teams"><span>${esc(e.home)}</span><span>${esc(e.away)}</span></div>${homeRows}`;
     } else {
-      grid = `<div class="odds${mk.selections.length === 2 ? ' two' : ''}">${mk.selections.map((s) => btn(s)).join('')}</div>`;
+      // The same option twice (same name and price) shows once.
+      const seen = new Set();
+      const sels = mk.selections.filter((s) => { const k = `${displaySelectionLabel(s.label)}|${s.odds}`; if (seen.has(k)) return false; seen.add(k); return true; });
+      const parsed = sels.map((s) => ({ s, p: withLine(displaySelectionLabel(s.label)) }));
+      const bases = [...new Set(parsed.map((x) => x.p?.base))];
+      const lines = [...new Set(parsed.map((x) => x.p?.line))];
+      if (mk.market === 'x' && parsed.length > 2 && parsed.every((x) => x.p) && lines.length > 1 && bases.length <= 3) {
+        // Options on lines (Mais / Exato / Menos): one row per line, the line on the left.
+        const title = String(mk.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const unit = /corner|canto/.test(title) ? 'cantos' : /card|booking|cartao/.test(title) ? 'cartões' : /goal|golo|total|tempo|parte/.test(title) ? 'golos' : '';
+        // The options named once on top (Mais · Exato · Menos); each row only the prices.
+        const cols = bases.length === 2 ? ' two' : '';
+        const head = `<div class="market-line market-line-head"><span></span><div class="odds${cols}">${bases.map((b) => `<span>${esc(shortBase(b))}</span>`).join('')}</div></div>`;
+        grid = head + lines.sort((a, b) => a - b).map((line) => {
+          const cells = bases.map((b) => { const x = parsed.find((y) => y.p.line === line && y.p.base === b); return x ? btn(x.s, '') : '<span></span>'; }).join('');
+          const name = unit ? `${line} ${Number(line) === 1 ? unit.replace(/s$/, '').replace(/õe$/, 'ão') : unit}` : `Linha ${line}`;
+          return `<div class="market-line"><span class="market-line-label">${esc(name)}</span>
+            <div class="odds${cols} price-only">${cells}</div></div>`;
+        }).join('');
+      } else if (sels.some((s) => displaySelectionLabel(s.label).length > 12)) {
+        // Long names (combined markets, team names): one option per row, the name in full.
+        grid = `<div class="odds list">${sels.map((s) => btn(s)).join('')}</div>`;
+      } else {
+        grid = `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => btn(s)).join('')}</div>`;
+      }
     }
     return `<div class="market-block"><div class="market-head">${esc(displayMarketName(mk.name))}</div>${grid}</div>`;
   }).join('');
