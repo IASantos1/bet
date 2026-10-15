@@ -47,6 +47,7 @@ const TABS = [
   { id: 'levantamentos', label: 'Levantamentos', icon: 'wallet', section: 'Operações' },
   { id: 'utilizadores', label: 'Utilizadores', icon: 'users', section: 'Operações' },
   { id: 'promocoes', label: 'Promoções', icon: 'gift', section: 'Operações' },
+  { id: 'campanhas', label: 'Campanhas', icon: 'megaphone', section: 'Operações' },
   { id: 'afiliados', label: 'Afiliados', icon: 'affiliate', section: 'Operações' },
   { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Operações' },
   { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
@@ -457,6 +458,72 @@ function adminTelegram({ status: st, posts = [], promos = [], tickets = [] }) {
     </tbody></table></div>` : '<p class="muted">Ainda nenhuma.</p>'}</div>`;
 }
 
+/** Promotional campaigns by email / SMS (Brevo): a message to the players who accept promotions. */
+const CP_TEMPLATES = {
+  freebet: ['🎁 {nome}, tem uma FreeBet à sua espera', 'Olá {nome},\n\nPreparámos uma FreeBet para si. Entre na sua conta e use-a na aposta que quiser.\n\nBoa sorte!', 'VER PROMOÇÃO'],
+  freespins: ['🎰 Free Spins grátis para si, {nome}', 'Olá {nome},\n\nTem Free Spins à sua espera no casino. Escolha o jogo e comece a rodar.\n\nBoa sorte!', 'JOGAR AGORA'],
+  deposito: ['💶 Bónus no seu próximo depósito', 'Olá {nome},\n\nFaça um depósito hoje e receba um bónus extra para apostar.\n\nConsulte as condições na página de promoções.', 'DEPOSITAR'],
+  boost: ['🚀 Odds aumentadas nas múltiplas', 'Olá {nome},\n\nAs suas apostas múltiplas pagam mais: o boost aumenta o ganho conforme o número de seleções.', 'APOSTAR AGORA'],
+  volta: ['Sentimos a sua falta, {nome}', 'Olá {nome},\n\nHá jogos novos todos os dias e promoções à sua espera. Volte e veja o que preparámos para si.', 'VOLTAR À BET62'],
+};
+const CP_STATUS = { sending: ['open', 'A enviar'], sent: ['won', 'Enviada'], failed: ['lost', 'Falhou'] };
+function adminCampaigns({ status: st, segments, optedIn, campaigns = [] }) {
+  const site = location.origin;
+  const off = !st.email && !st.sms;
+  return `<div class="panel"><h3>Campanhas por email e SMS</h3>
+    ${off ? `<p class="muted">⚠️ Brevo não configurado. No Railway, defina <b>BREVO_API_KEY</b> (Brevo → SMTP &amp; API → API Keys) e <b>BREVO_SENDER_EMAIL</b>
+      (um remetente verificado no Brevo, por exemplo promocoes@o-seu-dominio). Para SMS, também <b>BREVO_SMS_SENDER</b> (nome até 11 letras, ex.: BET62).</p>`
+      : `<p class="muted">Email: ${st.email ? `ligado (${esc(st.sender)})` : 'desligado'} · SMS: ${st.sms ? 'ligado' : 'desligado (defina BREVO_SMS_SENDER)'}</p>`}
+    <p class="muted">Só recebem os jogadores que aceitaram promoções no perfil (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b>). Contas em autoexclusão ou banidas nunca recebem.
+      Cada email leva o aviso 18+ e um link para deixar de receber. O plano grátis do Brevo envia até 300 emails por dia; os SMS são pagos com créditos Brevo e só saem entre as 09:00 e as 21:00.
+      Use <b>{nome}</b> no texto para o primeiro nome do jogador.</p></div>
+  <form class="panel" data-form="campaign" id="cpForm"><h3>Nova campanha</h3>
+    <div class="form-grid three">
+      <div class="field"><label>Canal</label><select name="channel" data-cp="1"><option value="email">Email</option><option value="sms"${st.sms ? '' : ' disabled'}>SMS${st.sms ? '' : ' (não configurado)'}</option></select></div>
+      <div class="field"><label>Público</label><select name="segment" data-cp="1">${Object.entries(segments).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
+      <div class="field"><label>X dias (sem apostas / registados)</label><input name="days" type="number" min="1" max="365" value="7" data-cp="1"></div>
+    </div>
+    <p class="cp-count" id="cpCount">A contar…</p>
+    <div class="form-grid">
+      <div class="field"><label>Modelo (opcional)</label><select name="template" data-cp="tpl"><option value="">— Escrever do zero —</option>
+        <option value="freebet">FreeBet</option><option value="freespins">Free Spins casino</option><option value="deposito">Bónus de depósito</option><option value="boost">Boost de múltiplas</option><option value="volta">Jogadores inativos</option></select></div>
+      <div class="field cp-email"><label>Assunto</label><input name="subject" maxlength="150"></div>
+      <div class="field wide"><label>Mensagem</label><textarea name="body" rows="7" maxlength="5000" required></textarea><small class="muted" id="cpChars"></small></div>
+      <div class="field cp-email"><label>Botão (opcional)</label><input name="ctaText" maxlength="60" placeholder="VER PROMOÇÃO"></div>
+      <div class="field cp-email"><label>Link do botão</label><input name="ctaUrl" type="url" value="${esc(site)}/#/promocoes"></div>
+      <div class="field cp-sms" hidden><label>Telefone para o teste</label><input name="testPhone" placeholder="+351 9…"></div>
+    </div>
+    <div class="form-actions"><button type="button" class="ghost-btn" data-action="cp-test">Enviar teste para mim</button><button class="primary-btn">Enviar campanha</button></div></form>
+  <div class="panel"><h3>Campanhas enviadas</h3>${campaigns.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Canal</th><th>Mensagem</th><th>Público</th><th>Enviados</th><th>Estado</th></tr></thead><tbody>
+    ${campaigns.map((c) => `<tr><td>${fmtDateTime(c.createdAt)}<br><small class="muted">${esc(c.createdBy || '')}</small></td><td>${c.channel === 'sms' ? 'SMS' : 'Email'}</td>
+      <td>${esc(c.subject || c.body.slice(0, 60))}</td><td>${esc(segments[c.segment] || c.segment)}${['inactive', 'new'].includes(c.segment) ? ` <small class="muted">(${c.days} dias)</small>` : ''}</td>
+      <td class="num">${c.sent} / ${c.total}${c.failed ? `<br><small class="muted">${c.failed} falharam</small>` : ''}</td>
+      <td><span class="pill ${(CP_STATUS[c.status] || ['void'])[0]}">${(CP_STATUS[c.status] || [0, c.status])[1]}</span>${c.error ? `<br><small class="muted">${esc(c.error)}</small>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda nenhuma.</p>'}</div>`;
+}
+const campaignBody = (form) => {
+  const d = formData(form);
+  return { channel: d.channel, segment: d.segment, days: d.days, subject: d.subject, body: d.body, ctaText: d.ctaText, ctaUrl: d.ctaUrl, testPhone: d.testPhone };
+};
+let cpTimer = null;
+function campaignCount() {
+  const form = $('#cpForm');
+  if (!form) return;
+  const sms = form.channel.value === 'sms';
+  $$('.cp-email', form).forEach((el) => { el.hidden = sms; });
+  $$('.cp-sms', form).forEach((el) => { el.hidden = !sms; });
+  form.days.closest('.field').hidden = !['inactive', 'new'].includes(form.segment.value);
+  $('#cpChars').textContent = sms ? `${form.body.value.length} caracteres (até 160 = 1 SMS; acentos contam mais)` : '';
+  clearTimeout(cpTimer);
+  cpTimer = setTimeout(async () => {
+    try {
+      const { count } = await api('/api/admin/campaigns/count', { method: 'POST', body: { channel: form.channel.value, segment: form.segment.value, days: form.days.value } });
+      $('#cpCount').innerHTML = `Vai para <b>${count}</b> jogador(es).`;
+      form.dataset.count = count;
+    } catch (err) { $('#cpCount').textContent = err.message; }
+  }, 200);
+}
+
 /** Players whose identity documents wait for validation (top of the players tab). */
 function kycPendingPanel(list = []) {
   if (!list.length) return '<div class="panel"><h3>Verificações KYC pendentes</h3><p class="muted">Nenhum documento à espera de validação.</p></div>';
@@ -642,6 +709,7 @@ async function loadTab() {
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
     else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
+    else if (tab === 'campanhas') { main.innerHTML = adminCampaigns(await api('/api/admin/campaigns')); campaignCount(); }
     else if (tab === 'afiliados') {
       const [a, c, l] = await Promise.all([api(`/api/admin/affiliates?q=${encodeURIComponent(state.affQ || '')}`), api('/api/admin/affiliates/commissions'), api('/api/admin/affiliates/audit')]);
       main.innerHTML = adminAffiliates(a, c, l);
@@ -1133,6 +1201,13 @@ const handlers = {
     toast('Bilhetes sugeridos guardados');
     loadTab();
   },
+  async campaign(form) {
+    const n = Number(form.dataset.count || 0);
+    if (!confirm(`Enviar esta campanha a ${n} jogador(es)? Não pode ser anulada.`)) return;
+    const r = await api('/api/admin/campaigns', { method: 'POST', body: campaignBody(form) });
+    toast('Campanha a ser enviada', `${r.total} destinatário(s). Os números atualizam na lista.`);
+    loadTab();
+  },
   async 'tg-post'(form) {
     const d = formData(form);
     await api('/api/admin/telegram/posts', { method: 'POST', body: { type: d.type, title: d.title, body: d.body, ctaText: d.ctaText, ctaUrl: d.ctaUrl } });
@@ -1212,6 +1287,16 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
+  if (action === 'cp-test') {
+    actionEl.disabled = true;
+    try {
+      const form = actionEl.closest('form');
+      await api('/api/admin/campaigns/test', { method: 'POST', body: campaignBody(form) });
+      toast('Teste enviado', form.channel.value === 'sms' ? 'Veja o SMS no telemóvel.' : `Veja a caixa de ${state.user.email}.`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
   if (action === 'am-op') {
     const form = actionEl.closest('form');
     form.op.value = actionEl.dataset.op;
@@ -1595,7 +1680,19 @@ document.addEventListener('click', async (e) => {
 
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
+document.addEventListener('change', (e) => {
+  const cp = e.target.dataset?.cp;
+  if (!cp) return;
+  const form = e.target.form;
+  if (cp === 'tpl' && CP_TEMPLATES[e.target.value]) {
+    const [subject, body, cta] = CP_TEMPLATES[e.target.value];
+    form.subject.value = subject; form.body.value = body; form.ctaText.value = cta;
+  }
+  campaignCount();
+});
+
 document.addEventListener('input', (e) => {
+  if (e.target.form?.id === 'cpForm' && e.target.name === 'body') { campaignCount(); return; }
   const modal = e.target.id === 'amGameSearch';
   if (e.target.id !== 'fsGameSearch' && !modal) return;
   clearTimeout(fsSearchTimer);

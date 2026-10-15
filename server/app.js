@@ -32,6 +32,7 @@ import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { payoutState } from './revolut.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
+import { createCampaigns, unsubscribe, SEGMENTS } from './campaigns.js';
 import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
@@ -135,7 +136,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -270,6 +271,26 @@ export function createApp(db, {
       });
       res.status(201).json({ ok: true });
     } catch (err) { next(err); }
+  });
+
+  // The link at the foot of every promotional email: stops them (one click, no login). Before the
+  // JSON/CSRF guard: mail apps send the one-click POST (List-Unsubscribe-Post) as a plain form.
+  // A GET only asks (mail scanners open links); the button, or the mail app's one-click, POSTs.
+  const unsubPage = (title, text, form = '') => `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BET62</title></head>
+<body style="margin:0;background:#1a1f24;color:#e8eaed;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:20px">
+<div><h1 style="font-size:22px">${title}</h1><p style="color:#b0b7bf">${text}</p>${form}
+<p><a href="/" style="color:#ffffff;font-weight:700">Voltar à BET62</a></p></div></body></html>`;
+  const sendUnsub = (res, status, html) => res.status(status).set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'").type('html').send(html);
+  app.get('/api/unsubscribe', (req, res) => {
+    const u = encodeURIComponent(String(req.query.u || ''));
+    const t = encodeURIComponent(String(req.query.t || ''));
+    sendUnsub(res, 200, unsubPage('Deixar de receber promoções?', 'Deixa de receber as nossas promoções por email.',
+      `<form method="post" action="/api/unsubscribe?u=${u}&amp;t=${t}"><button style="background:#42946b;color:#fff;border:0;border-radius:8px;padding:12px 22px;font-weight:700;font-size:15px">Confirmar</button></form>`));
+  });
+  app.post('/api/unsubscribe', (req, res) => {
+    const ok = unsubscribe(db, req.query.u, String(req.query.t || ''));
+    sendUnsub(res, ok ? 200 : 400, ok ? unsubPage('Deixou de receber promoções por email', 'Pode voltar a ativá-las em Perfil → Preferências.')
+      : unsubPage('Link inválido', 'Pode desligar as promoções em Perfil → Preferências.'));
   });
 
   app.use('/api', express.json({ limit: '32kb' }));
@@ -803,9 +824,11 @@ export function createApp(db, {
     if (req.body.acceptTerms !== true) throw new HttpError(400, 'Tem de aceitar os termos e condições.');
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'Já existe uma conta com este email.');
 
+    // Promotions by email only when the box was ticked at sign-up (off by default).
+    const prefs = req.body.promos === true ? JSON.stringify({ notifyPromos: true }) : null;
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), nowIso());
+      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso());
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
     // once, on the server; a bad or unknown code never stops the registration.
     const refCode = str(req.body.ref, 12) || parseCookies(req.headers.cookie)[REF_COOKIE] || '';
@@ -1927,6 +1950,37 @@ export function createApp(db, {
       await pg?.end().catch(() => {});
     }
   }));
+
+  // ---------- Promotional campaigns (email / SMS through Brevo) ----------
+
+  const campaigns = createCampaigns(db, { brevo, log: (m) => console.warn(`[campanhas] ${m}`) });
+  const campaignError = (err) => (err instanceof HttpError ? err : new HttpError([400, 409].includes(err.status) ? err.status : 502, err.message));
+  const campaignOut = (c) => ({
+    id: c.id, channel: c.channel, segment: c.segment, days: c.days, subject: c.subject, body: c.body, ctaText: c.cta_text, ctaUrl: c.cta_url,
+    status: c.status, total: c.total, sent: c.sent, failed: c.failed, error: c.error, createdBy: c.created_by, createdAt: c.created_at, finishedAt: c.finished_at,
+  });
+
+  admin.get('/campaigns', (_req, res) => {
+    const optedIn = (channel) => campaigns.audience({ channel, segment: 'all' }).length;
+    res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms') }, campaigns: campaigns.list().map(campaignOut) });
+  });
+  admin.post('/campaigns/count', (req, res) => {
+    try { res.json({ count: campaigns.audience({ channel: req.body?.channel, segment: req.body?.segment, days: req.body?.days }).length }); }
+    catch (err) { throw campaignError(err); }
+  });
+  admin.post('/campaigns/test', async (req, res, next) => {
+    try {
+      await campaigns.test(req.body || {}, { email: req.user.email, phone: str(req.body?.testPhone, 30) || req.user.phone, name: req.user.name }, siteUrl(req));
+      res.json({ ok: true });
+    } catch (err) { next(campaignError(err)); }
+  });
+  admin.post('/campaigns', (req, res) => {
+    try {
+      const r = campaigns.start(req.body || {}, { by: req.user.email, baseUrl: siteUrl(req) });
+      r.done.catch((err) => console.warn(`[campanhas] #${r.id}: ${err.message}`));
+      res.status(201).json({ id: r.id, total: r.total });
+    } catch (err) { throw campaignError(err); }
+  });
 
   // ---------- Telegram channel ----------
 

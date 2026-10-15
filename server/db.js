@@ -361,6 +361,26 @@ CREATE TABLE IF NOT EXISTS affiliate_commissions (
 CREATE INDEX IF NOT EXISTS idx_aff_comm_affiliate ON affiliate_commissions(affiliate_user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_aff_comm_status ON affiliate_commissions(status, created_at);
 
+-- Promotional campaigns (campaigns.js): one email or SMS sent to the players who asked for promotions.
+CREATE TABLE IF NOT EXISTS campaigns (
+  id            INTEGER PRIMARY KEY,
+  channel       TEXT    NOT NULL CHECK (channel IN ('email', 'sms')),
+  segment       TEXT    NOT NULL,
+  days          INTEGER,
+  subject       TEXT,
+  body          TEXT    NOT NULL,
+  cta_text      TEXT,
+  cta_url       TEXT,
+  status        TEXT    NOT NULL DEFAULT 'sending' CHECK (status IN ('sending', 'sent', 'failed')),
+  total         INTEGER NOT NULL DEFAULT 0,
+  sent          INTEGER NOT NULL DEFAULT 0,
+  failed        INTEGER NOT NULL DEFAULT 0,
+  error         TEXT,
+  created_by    TEXT,
+  created_at    TEXT    NOT NULL,
+  finished_at   TEXT
+);
+
 -- Telegram channel (telegram.js): the administrator's posts, one row per attempt (sent or failed).
 CREATE TABLE IF NOT EXISTS telegram_posts (
   id          INTEGER PRIMARY KEY,
