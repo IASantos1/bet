@@ -144,7 +144,7 @@
 .am-go svg { width: 16px; height: 16px; }
 .am-go.gift { border-color: #7e22ce; background: #7e22ce; color: #fff; }
 .am-go.gift:hover { background: #9333ea; }
-.adm-modal input { box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--dim); color: var(--text); font: inherit; font-size: 14px; }
+.adm-modal input, .adm-modal select { box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--dim); color: var(--text); font: inherit; font-size: 14px; }
 .adm-modal input:focus { outline: none; border-color: var(--brand); }
 .am-row input { width: 80px; padding: 7px 10px; }
 .am-games { display: flex; flex-direction: column; gap: 6px; }

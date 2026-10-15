@@ -339,6 +339,10 @@ test('admin players: balance add / subtract / set, and free spins given by hand'
   // Free spins: the campaign's games first, then one grant at a time.
   const fs = (body) => adm('POST', `/api/admin/users/${me.id}/free-spins`, body);
   assert.equal((await fs({ spins: 5, spinValue: '0.20' })).status, 400);
+  // Free spins are €0.10 or €0.20 a spin only.
+  assert.equal((await fs({ spins: 5, spinValue: '0.50', games: [4823] })).status, 400);
+  assert.equal((await adm('PUT', '/api/admin/promotions/config', { casinoFs: { games: '4821:0.50' } })).status, 400);
+  assert.equal((await adm('PUT', '/api/admin/promotions/config', { casinoFs: { spinValue: 1 } })).status, 400);
   // Games picked in the modal (no campaign games needed).
   const own = await fs({ spins: 3, spinValue: '0.10', games: [4823] });
   assert.deepEqual([own.status, own.body.freeSpins.games.map((g) => g.id)], [200, [4823]]);
