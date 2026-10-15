@@ -1322,3 +1322,12 @@ img, video, iframe { max-width: 100%; }
   .payment-method-logo { min-width: 0; padding: 9px; }
   .payment-method-logo img { max-width: 100%; height: 27px; }
 }
+
+/* Match page: options with long names, one per row with the name in full. */
+.odds.list { grid-template-columns: 1fr; }
+.odds.list .market-odd small { white-space: normal; overflow: visible; text-overflow: clip; text-align: left; line-height: 1.3; font-size: 13px; }
+.odds.list .market-odd { padding: 11px 14px; }
+.market-line-head { margin-bottom: 4px; }
+.market-line-head .odds span { text-align: center; font-size: 11.5px; font-weight: 800; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.odds.price-only .market-odd { justify-content: center; }
+.odds.price-only .market-odd small { display: none; }
