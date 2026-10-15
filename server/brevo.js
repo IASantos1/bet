@@ -23,9 +23,9 @@ export function createBrevo({
 
   async function call(path, body) {
     const res = await fetchImpl(`${API}${path}`, {
-      method: 'POST',
+      method: body === undefined ? 'GET' : 'POST',
       headers: { 'api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(20_000),
     });
     const text = await res.text();
@@ -57,5 +57,47 @@ export function createBrevo({
     return call('/transactionalSMS/sms', { type: 'marketing', unicodeEnabled: true, sender: smsSender, recipient, content });
   }
 
-  return { configured, smsConfigured, senderEmail, sendEmail, sendSms };
+  /**
+   * The account as Brevo sees it, for the admin's "Verificar" button: each check { name, ok, detail }.
+   * Asks only (GET /account, /senders): nothing is sent.
+   */
+  async function diagnose() {
+    const steps = [];
+    const add = (name, ok, detail) => steps.push({ name, ok, detail });
+    add('BREVO_API_KEY definida', !!apiKey, apiKey ? (apiKey.startsWith('xkeysib-') ? 'chave de API (xkeysib-…)' : apiKey.startsWith('xsmtpsib-') ? 'esta é a chave SMTP (xsmtpsib-…): use a chave de API (xkeysib-…)' : 'formato inesperado: a chave de API começa por xkeysib-') : 'em falta no Railway');
+    add('BREVO_SENDER_EMAIL definido', !!senderEmail, senderEmail || 'em falta no Railway');
+    if (!apiKey) return steps;
+    let account;
+    try {
+      account = await call('/account');
+      add('Chave aceite pelo Brevo', true, `conta ${account.email || ''}${account.companyName ? ` (${account.companyName})` : ''}`);
+    } catch (err) {
+      const ip = /unrecognised IP address ([\d.:a-f]+)/i.exec(err.message)?.[1];
+      add('Chave aceite pelo Brevo', false, ip ? `o Brevo bloqueou o IP ${ip} do servidor: desative o bloqueio em Brevo → Security → Authorised IPs` : err.message);
+      return steps;
+    }
+    const plans = Array.isArray(account.plan) ? account.plan : [];
+    const mail = plans.find((p) => p.type !== 'sms');
+    if (mail) add('Plano de email', (mail.credits ?? 1) > 0, `${mail.type}${mail.credits != null ? ` · ${mail.credits} envios disponíveis` : ''}`);
+    try {
+      const { senders = [] } = await call('/senders');
+      const me = senders.find((x) => String(x.email).toLowerCase() === senderEmail.toLowerCase());
+      // A sender of an authenticated domain is accepted even when it is not listed one by one.
+      const domain = senderEmail.split('@')[1]?.toLowerCase();
+      const { domains = [] } = me?.active ? {} : await call('/senders/domains').catch(() => ({}));
+      const dom = domains.find((d) => String(d.domain_name).toLowerCase() === domain);
+      const ok = !!me?.active || !!dom?.authenticated;
+      add('Remetente verificado no Brevo', ok, me?.active ? `${me.email} ativo`
+        : dom?.authenticated ? `domínio ${dom.domain_name} autenticado`
+          : me ? `${me.email} existe mas não está verificado: confirme-o no Brevo → Senders`
+            : `${senderEmail || '(vazio)'} não está nos remetentes nem nos domínios autenticados do Brevo${senders.length ? ` (remetentes: ${senders.map((x) => x.email).join(', ')})` : ''}`);
+    } catch (err) { add('Remetente verificado no Brevo', false, err.message); }
+    if (smsSender) {
+      const sms = plans.find((p) => p.type === 'sms');
+      add('Créditos SMS', (sms?.credits || 0) > 0, sms ? `${sms.credits} créditos` : 'sem créditos SMS: compre no Brevo ou apague BREVO_SMS_SENDER');
+    }
+    return steps;
+  }
+
+  return { configured, smsConfigured, senderEmail, sendEmail, sendSms, diagnose };
 }
