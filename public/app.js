@@ -3399,6 +3399,11 @@ function marketBlocks(e, markets) {
         return `<div class="market-line"><span class="market-line-label">${esc(label)}</span>
           <div class="odds two">${pair.over ? btn(pair.over, 'Mais') : '<span></span>'}${pair.under ? btn(pair.under, 'Menos') : '<span></span>'}</div></div>`;
       }).join('');
+    } else if (mk.market === '1x2' || mk.market === 'dc' || (mk.market === 'pw' && mk.selections.some((s) => bare(s) === 'X'))) {
+      // Full-time result and double chance by their codes: 1 · X · 2 and 1X · 12 · X2 (in that order).
+      const order = mk.market === 'dc' ? ['1X', '12', 'X2'] : ['1', 'X', '2'];
+      const sels = order.map((c) => mk.selections.find((s) => bare(s) === c)).filter(Boolean);
+      grid = `<div class="odds">${sels.map((s) => btn(s, bare(s))).join('')}</div>`;
     } else if (mk.market === 'tou') {
       // Team totals ("1O1.5" = home over 1.5, "2U2" = away under 2): one section per team, home
       // first, Mais on the left and Menos on the right, one row per line.
