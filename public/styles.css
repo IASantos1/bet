@@ -1364,3 +1364,11 @@ img, video, iframe { max-width: 100%; }
 .cam-okmsg b { font-size: 20px; }
 .cam-okmsg span { font-size: 14px; color: #d5d9de; }
 .cam-shot:not([hidden]) ~ .cam-frame { display: none; }
+
+/* One-time "receive promotions?" question */
+.promo-ask { text-align: center; }
+.promo-ask-icon { font-size: 44px; margin-bottom: 6px; }
+.promo-ask p { margin: 0 0 10px; line-height: 1.5; }
+.promo-ask-acts { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+.promo-ask-acts button { flex: 1; min-width: 140px; }
+.promo-ask-acts .primary-btn { background: var(--register); border-color: var(--register); }

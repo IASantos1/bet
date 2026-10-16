@@ -111,7 +111,8 @@ function publicUser(u) {
 }
 
 // Account preferences the player can change in the profile (unknown keys are dropped).
-const PREF_DEFAULTS = { notifyResults: true, notifyPromos: false, notifySms: false, notifyPush: true, cookiesAnalytics: true, cookiesMarketing: false, shareData: false };
+// promoAsked: the player already answered the one-time "receive promotions?" question (sign-up or site).
+const PREF_DEFAULTS = { notifyResults: true, notifyPromos: false, notifySms: false, notifyPush: true, cookiesAnalytics: true, cookiesMarketing: false, shareData: false, promoAsked: false };
 function parsePrefs(raw) {
   let v = {};
   try { v = JSON.parse(raw || '{}') || {}; } catch { /* keep defaults */ }
@@ -824,8 +825,8 @@ export function createApp(db, {
     if (req.body.acceptTerms !== true) throw new HttpError(400, 'Tem de aceitar os termos e condições.');
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'Já existe uma conta com este email.');
 
-    // Promotions by email only when the box was ticked at sign-up (off by default).
-    const prefs = req.body.promos === true ? JSON.stringify({ notifyPromos: true }) : null;
+    // Promotions by email only when the box was ticked at sign-up (off by default); asked either way.
+    const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
       'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso());

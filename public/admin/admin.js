@@ -1204,6 +1204,10 @@ const handlers = {
   },
   async campaign(form) {
     const n = Number(form.dataset.count || 0);
+    if (!n) {
+      toast('Ninguém para receber', 'Nenhum jogador deste público aceitou promoções por este canal. Os jogadores aceitam no aviso do site, no registo ou em Perfil → Preferências.', 'error');
+      return;
+    }
     if (!confirm(`Enviar esta campanha a ${n} jogador(es)? Não pode ser anulada.`)) return;
     const r = await api('/api/admin/campaigns', { method: 'POST', body: campaignBody(form) });
     toast('Campanha a ser enviada', `${r.total} destinatário(s). Os números atualizam na lista.`);
