@@ -16,23 +16,34 @@ const SPORT_META = {
   tenismesa: { name: 'Ténis de mesa', icon: '🏓' },
   badminton: { name: 'Badminton', icon: '🏸' },
 };
-/** Line icons for the sports filter (stroke = the text colour). */
+/** Sport icons (filter tiles): Phosphor Icons (bold, MIT) as "P:" paths on a 256 grid, "F:" the same
+ * with a line under it (futsal), "S:" filled shapes and plain strings line drawings on a 24 grid. */
 const SPORT_SVG = {
-  popular: '<rect x="3" y="3" width="4" height="4" rx="1"/><rect x="10" y="3" width="4" height="4" rx="1"/><rect x="17" y="3" width="4" height="4" rx="1"/><rect x="3" y="10" width="4" height="4" rx="1"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="17" y="10" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><rect x="10" y="17" width="4" height="4" rx="1"/><rect x="17" y="17" width="4" height="4" rx="1"/>',
-  futebol: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.4 2.5-1.3 4h-4.2l-1.3-4z"/><path d="M12 3v4.5M15.4 10l4.8-1.6M14.1 14l2.8 4.2M9.9 14l-2.8 4.2M8.6 10L3.8 8.4"/>',
-  basquetebol: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6a12 12 0 0 1 0 12.8M18.4 5.6a12 12 0 0 0 0 12.8"/>',
-  tenis: '<circle cx="12" cy="12" r="9"/><path d="M5.2 5.8a10 10 0 0 1 0 12.4M18.8 5.8a10 10 0 0 0 0 12.4"/>',
-  hoquei: '<path d="M16 3l-5 13a3 3 0 0 1-2.8 2H4"/><path d="M19 4l-5 13"/><ellipse cx="6" cy="20" rx="3" ry="1.3"/>',
-  dardos: '<circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4.5"/><circle cx="11" cy="13" r="1.2"/><path d="M11 13l9-9M17 4h3v3"/>',
-  esports: '<path d="M7 8h10a4 4 0 0 1 4 4v3a3 3 0 0 1-5.2 2L14 15h-4l-1.8 2A3 3 0 0 1 3 15v-3a4 4 0 0 1 4-4z"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01"/>',
-  voleibol: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 4 8M12 12l-7.6 4.5M12 12h8.8M12 12a9 9 0 0 0-6.7-7.5M12 12a9 9 0 0 1-2.5 8.6"/>',
-  andebol: '<circle cx="12" cy="12" r="9"/><path d="M5 7.5c3 1.5 4 4.5 3.5 9M19 7.5c-3 1.5-4 4.5-3.5 9M8.5 4c1 2 5 2 7 0"/>',
-  futsal: '<circle cx="12" cy="10.5" r="7.5"/><path d="M12 6.5l2.8 2-1 3.3h-3.6l-1-3.3z"/><path d="M4 21h16"/>',
-  tenismesa: '<circle cx="9.5" cy="9.5" r="6"/><path d="M13.7 13.7L19 19a1.5 1.5 0 0 1-2 2l-5.3-5.3"/><circle cx="19" cy="6" r="1.8"/>',
-  resultados: '<path d="M5 21V4M5 4h13l-2.5 4L18 12H5"/><path d="M9 4v8M13 4v8"/>',
+  popular: 'S:<rect x="3.5" y="3.5" width="4.4" height="4.4" rx=".8"/><rect x="9.8" y="3.5" width="4.4" height="4.4" rx=".8"/><rect x="16.1" y="3.5" width="4.4" height="4.4" rx=".8"/><rect x="3.5" y="9.8" width="4.4" height="4.4" rx=".8"/><rect x="9.8" y="9.8" width="4.4" height="4.4" rx=".8"/><rect x="16.1" y="9.8" width="4.4" height="4.4" rx=".8"/><rect x="3.5" y="16.1" width="4.4" height="4.4" rx=".8"/><rect x="9.8" y="16.1" width="4.4" height="4.4" rx=".8"/><rect x="16.1" y="16.1" width="4.4" height="4.4" rx=".8"/>',
+  futebol: 'P:M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm71.88,151.42h-24L166.1,158l11.3-32.94L193.15,120l18.6,14.26A83.42,83.42,0,0,1,199.88,171.42ZM44.25,134.21,62.85,120l15.75,5.11L89.9,158l-9.75,13.42h-24A83.42,83.42,0,0,1,44.25,134.21ZM111.85,148l-9.54-27.77L128,102.56l25.69,17.67L144.15,148Zm80.66-73.73-6.78,22.85-15.81,5.14L140,81.69V65.46l21.22-14.59A84.27,84.27,0,0,1,192.51,74.27ZM94.78,50.87,116,65.46V81.69L86.08,102.26,70.27,97.12,63.49,74.27A84.27,84.27,0,0,1,94.78,50.87Zm13.58,158.79-8.62-24.37L109.39,172h37.22l9.65,13.29-8.62,24.37a83.59,83.59,0,0,1-39.28,0Z',
+  futsal: 'F:M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm71.88,151.42h-24L166.1,158l11.3-32.94L193.15,120l18.6,14.26A83.42,83.42,0,0,1,199.88,171.42ZM44.25,134.21,62.85,120l15.75,5.11L89.9,158l-9.75,13.42h-24A83.42,83.42,0,0,1,44.25,134.21ZM111.85,148l-9.54-27.77L128,102.56l25.69,17.67L144.15,148Zm80.66-73.73-6.78,22.85-15.81,5.14L140,81.69V65.46l21.22-14.59A84.27,84.27,0,0,1,192.51,74.27ZM94.78,50.87,116,65.46V81.69L86.08,102.26,70.27,97.12,63.49,74.27A84.27,84.27,0,0,1,94.78,50.87Zm13.58,158.79-8.62-24.37L109.39,172h37.22l9.65,13.29-8.62,24.37a83.59,83.59,0,0,1-39.28,0Z',
+  andebol: 'P:M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm71.88,151.42h-24L166.1,158l11.3-32.94L193.15,120l18.6,14.26A83.42,83.42,0,0,1,199.88,171.42ZM44.25,134.21,62.85,120l15.75,5.11L89.9,158l-9.75,13.42h-24A83.42,83.42,0,0,1,44.25,134.21ZM111.85,148l-9.54-27.77L128,102.56l25.69,17.67L144.15,148Zm80.66-73.73-6.78,22.85-15.81,5.14L140,81.69V65.46l21.22-14.59A84.27,84.27,0,0,1,192.51,74.27ZM94.78,50.87,116,65.46V81.69L86.08,102.26,70.27,97.12,63.49,74.27A84.27,84.27,0,0,1,94.78,50.87Zm13.58,158.79-8.62-24.37L109.39,172h37.22l9.65,13.29-8.62,24.37a83.59,83.59,0,0,1-39.28,0Z',
+  basquetebol: 'P:M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20ZM60,177.28A83.59,83.59,0,0,1,44.87,140H75.14A83.1,83.1,0,0,1,60,177.28ZM44.87,116A83.59,83.59,0,0,1,60,78.72,83.1,83.1,0,0,1,75.14,116ZM116,211.13a83.63,83.63,0,0,1-39-16.46A106.94,106.94,0,0,0,99.34,140H116ZM116,116H99.34A106.94,106.94,0,0,0,77,61.33a83.63,83.63,0,0,1,39-16.46Zm80-37.28A83.59,83.59,0,0,1,211.13,116H180.86A83.1,83.1,0,0,1,196,78.72ZM140,211.13V140h16.66A106.94,106.94,0,0,0,179,194.67,83.63,83.63,0,0,1,140,211.13ZM156.66,116H140V44.87a83.63,83.63,0,0,1,39,16.46A106.94,106.94,0,0,0,156.66,116ZM196,177.28A83.1,83.1,0,0,1,180.86,140h30.27A83.59,83.59,0,0,1,196,177.28Z',
+  voleibol: 'P:M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20ZM96.83,50a83.49,83.49,0,0,1,17.92-5A84,84,0,0,1,161.26,116H134.93Zm38.1,90h76.2a83.37,83.37,0,0,1-4.69,18,84.07,84.07,0,0,1-84.68,4.79Zm76.2-24H185.29a107.43,107.43,0,0,0-14.4-49.71A108.71,108.71,0,0,0,159.5,50.15,84.21,84.21,0,0,1,211.13,116ZM76.07,62.05,89,84.39a107.44,107.44,0,0,0-35.85,37.32,108.9,108.9,0,0,0-8.28,18A83.65,83.65,0,0,1,76.07,62.05ZM62.79,180.87A84,84,0,0,1,101,105.2L114.14,128,76.07,194A84.68,84.68,0,0,1,62.79,180.87Zm34,25.11,12.92-22.37A107.41,107.41,0,0,0,160,196a109,109,0,0,0,19.59-1.78A83.72,83.72,0,0,1,96.83,206Z',
+  tenis: '<circle cx="12" cy="12" r="9"/><path d="M6 5.3a9 9 0 0 1 0 13.4M18 5.3a9 9 0 0 0 0 13.4"/>',
+  hoquei: '<path d="M18.5 3l-6.2 15.2a2 2 0 0 1-1.9 1.3H6.5a1.5 1.5 0 0 1 0-3h3l5.6-13.5"/><ellipse cx="5" cy="11" rx="2.4" ry="1.2"/>',
+  dardos: 'P:M229.26,90.4a108,108,0,0,1-177.63,114A108,108,0,0,1,195.41,43.63l20.1-20.11a12,12,0,0,1,17,17l-96,96a12,12,0,1,1-17-17l24-24a36,36,0,1,0,19.76,39.65,12,12,0,0,1,23.53,4.74,60,60,0,1,1-25.73-62L178.3,60.74a84,84,0,1,0,28.46,38,12,12,0,1,1,22.5-8.35Z',
+  esports: 'P:M176,116H152a12,12,0,0,1,0-24h24a12,12,0,0,1,0,24ZM104,92h-4V88a12,12,0,0,0-24,0v4H72a12,12,0,0,0,0,24h4v4a12,12,0,0,0,24,0v-4h4a12,12,0,0,0,0-24ZM244.76,202.94a40,40,0,0,1-61,5.35,7,7,0,0,1-.53-.56L144.67,164H111.33L72.81,207.73c-.17.19-.35.38-.53.56A40,40,0,0,1,4.62,173.05a1.18,1.18,0,0,1,0-.2L21,88.79A63.88,63.88,0,0,1,83.88,36H172a64.08,64.08,0,0,1,62.93,52.48,1.8,1.8,0,0,1,0,.19l16.36,84.17a1.77,1.77,0,0,1,0,.2A39.74,39.74,0,0,1,244.76,202.94ZM172,140a40,40,0,0,0,0-80H83.89A39.9,39.9,0,0,0,44.62,93.06a1.55,1.55,0,0,0,0,.21l-16.34,84a16,16,0,0,0,13,18.44,16.07,16.07,0,0,0,13.86-4.21L96.9,144.07a12,12,0,0,1,9-4.07Zm55.76,37.31-7-35.95a63.84,63.84,0,0,1-44.27,22.46l24.41,27.72a16,16,0,0,0,26.85-14.23Z',
+  tenismesa: 'P:M243.93,195.71a20,20,0,0,0-8-14.41L203,155.17l12.1-12.1a43.66,43.66,0,0,0,12.11-39.4,103.52,103.52,0,0,0-36.81-60.23A106.19,106.19,0,0,0,122.52,20,104.29,104.29,0,0,0,20,122.52a106.17,106.17,0,0,0,23.43,67.85,103.52,103.52,0,0,0,60.23,36.81,43.64,43.64,0,0,0,39.39-12.11L155.17,203l26.13,32.95a20,20,0,0,0,14.41,8c.55,0,1.1.07,1.66.07a20,20,0,0,0,14.13-5.86l26.64-26.64A19.94,19.94,0,0,0,243.93,195.71ZM44,122.86C44.6,80,80,44.6,122.86,44a81.92,81.92,0,0,1,65.2,31L75,188.06a81.92,81.92,0,0,1-31-65.2ZM197.71,218l-32.1-40.49A12,12,0,0,0,156.9,173l-.69,0a12,12,0,0,0-8.49,3.51L126.09,198.1h0a19.72,19.72,0,0,1-17.75,5.54,76.28,76.28,0,0,1-11.68-3.33L200.31,96.66a76.28,76.28,0,0,1,3.33,11.68,19.72,19.72,0,0,1-5.54,17.75l-21.63,21.63a12,12,0,0,0,1,17.89L218,197.71Z',
   badminton: '<path d="M8 14l-3-9 4 1 3-3 3 3 4-1-3 9z"/><path d="M8 14h8M9 14v2a3 3 0 0 0 6 0v-2"/>',
+  resultados: 'P:M229,45a12,12,0,0,0-12.85,1.84c-24.71,21.41-44.53,13.31-74.82-1.68C113.19,31.27,78.17,13.94,40.14,46.88A12,12,0,0,0,36,56V224a12,12,0,0,0,24,0V181.71c22.84-17.13,42.1-9.11,70.68,5,16.23,8,34.74,17.2,54.8,17.2,14.72,0,30.28-4.94,46.38-18.88A12,12,0,0,0,236,176V56A12,12,0,0,0,229,45ZM185.48,83.91A63,63,0,0,0,212,78.08v32.15c-11,8.26-21.2,10.67-32,9.37V83.66C181.81,83.81,183.64,83.91,185.48,83.91ZM156,78.08v34.09c-4.64-2-9.5-4.4-14.68-7A255.21,255.21,0,0,0,116,93.83V59.75c4.64,2,9.5,4.4,14.68,7A252.91,252.91,0,0,0,156,78.08ZM92,52.32V88.24a63.33,63.33,0,0,0-32,5.61V61.68C71,53.42,81.2,51,92,52.32ZM86.52,148A63,63,0,0,0,60,153.86V121.7c11-8.25,21.2-10.66,32-9.36v35.94C90.19,148.13,88.36,148,86.52,148ZM116,153.86V119.77c4.64,2,9.5,4.4,14.68,7A252.91,252.91,0,0,0,156,138.1v34.09c-4.64-2.05-9.5-4.4-14.68-7A250.66,250.66,0,0,0,116,153.86Zm64,25.76V143.68c1.81.14,3.64.24,5.48.24A62.85,62.85,0,0,0,212,138.07v32.19C201,178.52,190.8,180.92,180,179.62Z',
 };
-const sportIcon = (k) => `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SPORT_SVG[k] || SPORT_SVG.futebol}</svg>`;
+function sportIcon(k) {
+  const v = SPORT_SVG[k] || SPORT_SVG.futebol;
+  const kind = v.slice(0, 2);
+  if (kind === 'P:' || kind === 'F:') {
+    const paths = v.slice(2).split('|').map((d) => `<path d="${d}"/>`).join('');
+    return kind === 'P:' ? `<svg viewBox="0 0 256 256" width="30" height="30" fill="currentColor" aria-hidden="true">${paths}</svg>`
+      : `<svg viewBox="0 0 256 256" width="30" height="30" fill="currentColor" aria-hidden="true"><g transform="translate(30 10) scale(.766)">${paths}</g><rect x="44" y="226" width="168" height="18" rx="9"/></svg>`;
+  }
+  if (kind === 'S:') return `<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true">${v.slice(2)}</svg>`;
+  return `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${v}</svg>`;
+}
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
@@ -269,16 +280,14 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 }
 
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
-// A team without a badge: a shirt in its kit colours (or two colours made from its name).
-const KIT_COLOURS = [['#d62828', '#ffffff'], ['#1d4ed8', '#ffffff'], ['#16a34a', '#ffffff'], ['#111827', '#ffffff'], ['#f59e0b', '#111827'],
-  ['#7c3aed', '#ffffff'], ['#0ea5e9', '#0b1d3a'], ['#ffffff', '#d62828'], ['#ffffff', '#1d4ed8'], ['#be123c', '#fbbf24'], ['#065f46', '#fde68a'], ['#ea580c', '#1f2937']];
+// A team without a badge: its real kit picture, else a shirt in its real kit colours (both found
+// with the badge, teamlogos.js);
+// a plain neutral shirt while they are not known (colours are never made up).
 const SAFE_HEX = /^#[0-9a-f]{6}$/i;
 function kitOf(name, kit) {
   const [a, b] = Array.isArray(kit) ? kit.filter((c) => SAFE_HEX.test(c)) : [];
   if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
-  let h = 0;
-  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return KIT_COLOURS[h % KIT_COLOURS.length];
+  return ['#9aa4b1', '#d7dce3'];
 }
 function jerseySvg(name, kit) {
   const [a, b] = kitOf(name, kit);
@@ -358,6 +367,9 @@ function sideBadge(e, side, size = '') {
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
   // Players (tennis, darts…) have no shirt: initials when there is no photo nor flag.
   const solo = ['tenis', 'tenismesa', 'badminton', 'dardos'].includes(e.sport);
+  // No badge: the team's real kit picture (the drawn shirt if it does not load).
+  const kitImg = e[`${side}KitImg`];
+  if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
   return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`]);
 }
 
@@ -574,8 +586,7 @@ function leagueBadge(l) {
   const k = String(l.country || '').toLowerCase().trim();
   const code = COUNTRY_FLAG[k];
   const pic = code ? `<img src="https://flagcdn.com/w80/${code}.png" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
-  const sport = l.sport !== 'futebol' ? `<em>${sportIcon(l.sport)}</em>` : '';
-  return `<span class="lg-badge">${pic}${sport}</span>`;
+  return `<span class="lg-badge">${pic}</span>`;
 }
 function leagueRow() {
   const leagues = popularLeagues();
@@ -2871,7 +2882,7 @@ document.addEventListener('error', (e) => {
   }
   const box = img.parentElement;
   box.classList.remove('has-logo');
-  box.classList.remove('flag');
+  box.classList.remove('flag', 'kit-photo');
   // No badge after all: the shirt (players keep their initials).
   if (box.classList.contains('player') || box.dataset.kit === 'none') box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
   else { box.classList.add('kit'); box.innerHTML = jerseySvg(box.dataset.name, box.dataset.kit ? box.dataset.kit.split(',') : null); }
@@ -4254,7 +4265,17 @@ function captureReferral() {
   return true;
 }
 
+/** Light theme from 07:00 to 21:00 (the visitor's clock), dark otherwise; no switch to press. */
+function applyTheme() {
+  const h = new Date().getHours();
+  const light = h >= 7 && h < 21;
+  document.documentElement.classList.toggle('light', light);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#ffffff' : '#1e2329');
+}
+
 async function init() {
+  applyTheme();
+  setInterval(applyTheme, 60_000);
   const referred = captureReferral();
   bindChrome();
   autoMode();

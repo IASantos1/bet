@@ -469,6 +469,7 @@ export function createApp(db, {
         homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
         awayLogo: teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
         homeKit: teamLogos?.get(e.sport, e.home)?.colors || null, awayKit: teamLogos?.get(e.sport, e.away)?.colors || null,
+        homeKitImg: teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: teamLogos?.get(e.sport, e.away)?.kit || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
@@ -560,6 +561,13 @@ export function createApp(db, {
     AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))
     AND ${NOT_GONE}`)
     .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore());
+  // Team badges kept here (teamlogos.js: API-Football asks for its logos not to be fetched each time).
+  app.get('/team-logo/:id', (req, res) => {
+    const f = teamLogos?.file?.(req.params.id);
+    if (!f) return res.status(404).end();
+    res.set({ 'Content-Type': f.type, 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff' });
+    res.end(Buffer.from(f.body));
+  });
   app.get('/api/leagues', (_req, res) => {
     const out = {};
     for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {
