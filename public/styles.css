@@ -1376,11 +1376,11 @@ img, video, iframe { max-width: 100%; }
 /* Home: casino games as round icons at the top (scrolls sideways) */
 .cb-row { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 12px; margin-bottom: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
 .cb-row::-webkit-scrollbar { display: none; }
-.cb-game { flex: 0 0 auto; width: 74px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--text-2); scroll-snap-align: start; text-decoration: none; }
-.cb-ring { width: 68px; height: 68px; border-radius: 50%; padding: 3px; background: conic-gradient(from 200deg, #f6c64a, #ff6890, #8a6cff, #3fc3ff, #f6c64a); display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); transition: transform .15s; }
-.cb-ring img, .cb-ring i { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid var(--page); background: #20262c; display: grid; place-items: center; font-style: normal; font-size: 26px; color: #fff; }
+.cb-game { flex: 0 0 auto; width: 104px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--text-2); scroll-snap-align: start; text-decoration: none; }
+.cb-ring { width: 100px; height: 100px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); transition: transform .15s; }
+.cb-ring img, .cb-ring i { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: #20262c; display: grid; place-items: center; font-style: normal; font-size: 26px; color: #fff; }
 .cb-game:hover .cb-ring { transform: scale(1.06); }
-.cb-game small { max-width: 74px; font-size: 11px; font-weight: 700; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-game small { max-width: 104px; font-size: 11px; font-weight: 700; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cb-all .cb-ring { background: var(--row-hover); }
 .cb-all .cb-ring i { font-size: 30px; font-weight: 300; }
 
