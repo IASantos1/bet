@@ -269,7 +269,8 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 }
 
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
-// A team without a badge: a shirt in its real kit colours (found with the badge, teamlogos.js);
+// A team without a badge: its real kit picture, else a shirt in its real kit colours (both found
+// with the badge, teamlogos.js);
 // a plain neutral shirt while they are not known (colours are never made up).
 const SAFE_HEX = /^#[0-9a-f]{6}$/i;
 function kitOf(name, kit) {
@@ -355,6 +356,9 @@ function sideBadge(e, side, size = '') {
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
   // Players (tennis, darts…) have no shirt: initials when there is no photo nor flag.
   const solo = ['tenis', 'tenismesa', 'badminton', 'dardos'].includes(e.sport);
+  // No badge: the team's real kit picture (the drawn shirt if it does not load).
+  const kitImg = e[`${side}KitImg`];
+  if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
   return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`]);
 }
 
@@ -2868,7 +2872,7 @@ document.addEventListener('error', (e) => {
   }
   const box = img.parentElement;
   box.classList.remove('has-logo');
-  box.classList.remove('flag');
+  box.classList.remove('flag', 'kit-photo');
   // No badge after all: the shirt (players keep their initials).
   if (box.classList.contains('player') || box.dataset.kit === 'none') box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
   else { box.classList.add('kit'); box.innerHTML = jerseySvg(box.dataset.name, box.dataset.kit ? box.dataset.kit.split(',') : null); }

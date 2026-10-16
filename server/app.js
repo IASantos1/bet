@@ -469,6 +469,7 @@ export function createApp(db, {
         homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
         awayLogo: teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
         homeKit: teamLogos?.get(e.sport, e.home)?.colors || null, awayKit: teamLogos?.get(e.sport, e.away)?.colors || null,
+        homeKitImg: teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: teamLogos?.get(e.sport, e.away)?.kit || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
