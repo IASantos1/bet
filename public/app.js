@@ -2,7 +2,6 @@
 
 import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, marketsReopened, createClipGate, createCornerWatch } from './trkclips.js';
 import { qualityTier, zoneTier, DANGER } from './trk3dmath.js';
-import { rollingOddsMarkup } from './odds.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -45,9 +44,6 @@ const state = {
   mode: 'single',
   sport: '',
   previousOdds: new Map(),
-  oddsChanges: new Map(),
-  matchOddsChanges: new Map(),
-  matchOddsAnimations: new Map(),
 };
 
 // ---------- utilities ----------
@@ -57,24 +53,6 @@ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(Number(n) || 0);
 const fmtOdds = (n) => Number(n).toFixed(2);
-function oddsDirection(previous, current) {
-  if (previous == null || !Number.isFinite(Number(previous)) || !Number.isFinite(Number(current))) return '';
-  if (fmtOdds(previous) === fmtOdds(current)) return '';
-  return Number(current) > Number(previous) ? 'up' : 'down';
-}
-function selectionsForEvent(event) {
-  return [...(event?.selections || []), ...(event?.markets || []).flatMap((market) => market.selections || [])];
-}
-function buildOddsChanges(previousOdds, selections) {
-  const changes = new Map();
-  for (const selection of selections) {
-    if (selection.active === false) continue;
-    const previous = previousOdds.get(selection.id);
-    const direction = oddsDirection(previous, selection.odds);
-    if (direction) changes.set(selection.id, { previous, current: selection.odds, direction });
-  }
-  return changes;
-}
 const initials = (name) => String(name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('');
 
 function fmtWhen(iso) {
@@ -265,14 +243,11 @@ function oddsButtons(e, { labels = 'code' } = {}) {
   if (!sels.length) return '<div class="odds-off">Apostas indisponíveis neste jogo</div>';
   return `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => {
     const prev = state.previousOdds.get(s.id);
-    const direction = oddsDirection(prev, s.odds);
-    const move = direction ? ` ${direction}` : '';
-    const animation = e.status === 'live' ? state.oddsChanges.get(s.id) : null;
+    const move = prev && prev !== s.odds ? (s.odds > prev ? ' up' : ' down') : '';
     const locked = !s.active || !isOpen(e);
     const label = labels === 'name' ? (s.code === '1' ? e.home : s.code === '2' ? e.away : 'Empate') : s.code;
-    const accessiblePrice = locked ? 'indisponível' : fmtOdds(s.odds);
-    return `<button class="odd-btn${inSlip(s.id) ? ' selected' : ''}${move}${locked ? ' locked' : ''}" data-sel="${s.id}" aria-label="${esc(label)} ${accessiblePrice}" ${locked ? 'disabled' : ''}>
-      <small>${esc(label)}</small>${locked ? '🔒' : rollingOddsMarkup(animation?.previous, s.odds, animation?.direction)}</button>`;
+    return `<button class="odd-btn${inSlip(s.id) ? ' selected' : ''}${move}${locked ? ' locked' : ''}" data-sel="${s.id}" ${locked ? 'disabled' : ''}>
+      <small>${esc(label)}</small>${locked ? '🔒' : fmtOdds(s.odds)}</button>`;
   }).join('')}</div>`;
 }
 
@@ -2370,17 +2345,12 @@ async function loadLeagues() {
 async function refreshEvents() {
   try {
     const { events } = await api('/api/events');
-    const previousOdds = new Map(state.events.flatMap((e) => e.selections.map((s) => [s.id, s.odds])));
-    state.previousOdds = previousOdds;
+    state.previousOdds = new Map(state.events.flatMap((e) => e.selections.map((s) => [s.id, s.odds])));
     state.events = events;
-    state.oddsChanges = buildOddsChanges(
-      previousOdds,
-      events.filter((event) => event.status === 'live').flatMap((event) => event.selections),
-    );
     state.eventsLoaded = true;
     renderSidebar();
     renderSlip();
-    try { refreshView(); } finally { state.oddsChanges.clear(); }
+    refreshView();
   } catch { /* keep last data; next poll retries */ }
 }
 
@@ -2997,12 +2967,6 @@ async function loadMatch(id, { quiet = false } = {}) {
   try {
     const { event } = await (takePrefetched(id) || api(`/api/events/${id}`));
     if (state.match.id !== id) return;
-    const previousEvent = state.match.data?.id === id ? state.match.data : null;
-    const previousMatchOdds = new Map(selectionsForEvent(previousEvent).map((selection) => [selection.id, selection.odds]));
-    state.matchOddsChanges = event.status === 'live' && previousEvent?.status === 'live'
-      ? buildOddsChanges(previousMatchOdds, selectionsForEvent(event))
-      : new Map();
-    state.matchOddsAnimations = new Map(state.matchOddsChanges);
     const wasLive = state.match.data?.status === 'live';
     // Tennis: the live board (sets, point) from the stream stays when the polled event has none yet.
     if (event.sport === 'tenis' && !event.tennis && state.match.data?.id === event.id && state.match.data.tennis) event.tennis = state.match.data.tennis;
@@ -3014,9 +2978,7 @@ async function loadMatch(id, { quiet = false } = {}) {
     if (event.status !== 'scheduled') loadMatchExtras(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
-    if (currentRoute().page === 'jogo') {
-      try { render({ keepScroll: true }); } finally { state.matchOddsAnimations.clear(); }
-    } else state.matchOddsAnimations.clear();
+    if (currentRoute().page === 'jogo') render({ keepScroll: true });
   } catch (err) {
     if (!quiet) toast('Jogo', err.message, 'error');
   }
@@ -3519,13 +3481,8 @@ function marketBlocks(e, markets) {
   };
   const btn = (s, label = displaySelectionLabel(s.label)) => {
     const off = locked || !s.active;
-    const movement = !off && e.status === 'live' ? state.matchOddsChanges.get(s.id) : null;
-    const animation = !off && e.status === 'live' ? state.matchOddsAnimations.get(s.id) : null;
-    const move = movement?.direction ? ` ${movement.direction}` : '';
-    const accessiblePrice = off ? 'indisponível' : fmtOdds(s.odds);
-    const marketLabel = String(label).replace(/\s*\(([+-]?\d+(?:[.,]\d+)?)\)/g, ' $1');
-    return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${move}${off ? ' locked' : ''}" data-sel="${s.id}" aria-label="${esc(marketLabel)} ${accessiblePrice}" ${off ? 'disabled' : ''}>
-      <small>${esc(marketLabel)}</small>${off ? '🔒' : rollingOddsMarkup(animation?.previous, s.odds, animation?.direction)}</button>`;
+    return `<button class="odd-btn market-odd${inSlip(s.id) ? ' selected' : ''}${off ? ' locked' : ''}" data-sel="${s.id}" ${off ? 'disabled' : ''}>
+      <small>${esc(String(label).replace(/\s*\(([+-]?\d+(?:[.,]\d+)?)\)/g, ' $1'))}</small>${off ? '🔒' : fmtOdds(s.odds)}</button>`;
   };
   // "Mais de (2.5)", "Exatamente (3)", "Menos de (2)": the option and its line.
   const withLine = (label) => {
