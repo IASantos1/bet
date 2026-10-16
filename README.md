@@ -142,7 +142,11 @@ Com `WINHOUSE_BASE_URL` definido, `server/winhouse.js` importa futebol, basquete
   `WINHOUSE_FOOTBALL_LEAGUES` troca a lista (nomes como a WinHouse os escreve, separados por `;`) e
   `*` mostra todas. Jogos já importados de outras ligas saem; os que já têm apostas seguem até ao fim
   (sem odds) para serem liquidados.
-- **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` é
+- **Fim rápido**: futebol, futsal e andebol: assim que o tracker do jogo diz que acabou (com placar
+  não inferior ao último visto), o jogo sai do ao vivo e é liquidado em segundos. Isto vale também
+  se ainda estiver na lista da WinHouse, desde que passe dos 85' (futsal 35'). Um jogo que sai da
+  lista desaparece do site 20 s depois.
+- **Fim**: um jogo que sai da lista ao vivo e não volta em `WINHOUSE_FINISH_CONFIRM_SECONDS` (180 s) é
   liquidado pelo último placar só se estava claramente no fim (futebol ≥ 88'; basquetebol ≥ 39'
   ou 47' na NBA e sem empate; hóquei ≥ 59' ou prolongamento = empate no regulamentar; ténis com 2
   sets ganhos). O resto vai para Admin → Liquidação para o operador decidir.

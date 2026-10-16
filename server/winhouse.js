@@ -875,7 +875,7 @@ export function finishVerdict(row) {
 }
 
 export function createWinHouseFeed(db, {
-  client, tzOffsetMinutes = null, finishConfirmSeconds = 600, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined, hockeyLeagues = undefined,
+  client, tzOffsetMinutes = null, finishConfirmSeconds = 180, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined, hockeyLeagues = undefined,
   volleyballLeagues = undefined, handballLeagues = undefined, futsalLeagues = undefined,
   detailHours = 12, footballDetailHours = 48, detailPerCycle = 20, detailRefreshMinutes = 30, liveDetailPerCycle = 10, liveDetailSeconds = 30, onOdds = null, log = () => {},
   futureDays = 0, futureMinutes = 10,
@@ -1265,7 +1265,7 @@ export function createWinHouseFeed(db, {
   async function readCards({ now = Date.now(), cardsPerCycle = 12, everyMs = 60_000 } = {}) {
     if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
     const due = new Date(now - everyMs).toISOString();
-    const rows = db.prepare(`SELECT id, external_id, sport FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
       AND (cards_at IS NULL OR cards_at < ?) ORDER BY COALESCE(cards_at, '') LIMIT ?`).all(SOURCE, due, cardsPerCycle);
     let updated = 0;
     for (const row of rows) {
@@ -1275,6 +1275,11 @@ export function createWinHouseFeed(db, {
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
           spotVar(db, JSON.stringify(r.body), { gameId: row.external_id, eventId: row.id, via: 'tracker' });
           const s = normalizeWidgetData(r.body);
+          // Over while still in the book's list (it lingers there a few minutes after the whistle):
+          // finished and settled now, so it leaves "Ao vivo" at once.
+          // Only near the end of play: a tracker that answers for the wrong match never closes one mid-game.
+          if ((row.wh_minute ?? 0) >= (row.sport === 'futsal' ? 35 : 85)
+            && settleFromTracker(row, s, 'WinHouse: fim do jogo confirmado pelo tracker')) continue;
           red = redCardsOf(s.stats);
           if (s.halfTime) {
             db.prepare('UPDATE events SET period_scores = ? WHERE id = ?').run(JSON.stringify([[s.halfTime.home, s.halfTime.away]]), row.id);
@@ -1326,6 +1331,60 @@ export function createWinHouseFeed(db, {
   }
 
   const TRACKER_ENDED = /\b(ended|finished|full.?time|ft|aet|ap|after (extra|over)time|after penalties|terminad[oa]|final|fim)\b/i;
+  const TRACKER_SPORTS = new Set(['futebol', 'andebol', 'futsal']);
+
+  /**
+   * The match tracker says this live match is over, with a score not lower than the last one seen:
+   * it is finished and its bets settled now (true), without waiting for the list's confirmation time.
+   */
+  function settleFromTracker(row, s, note) {
+    if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) return false;
+    const h = s.homeScore;
+    const a = s.awayScore;
+    if (!Number.isInteger(h) || !Number.isInteger(a) || h < (row.home_score ?? 0) || a < (row.away_score ?? 0)) return false;
+    let done = false;
+    tx(db, () => {
+      // The half-time score first: it settles the first-half markets with the rest.
+      if (s.halfTime) db.prepare('UPDATE events SET period_scores = ? WHERE id = ?').run(JSON.stringify([[s.halfTime.home, s.halfTime.away]]), row.id);
+      const r = db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, review_reason = NULL,
+          clock = 'Final', wh_missing_since = COALESCE(wh_missing_since, ?), live_odds_at = NULL, updated_at = ? WHERE id = ? AND status = 'live'`)
+        .run(h, a, resultCode(h, a), nowIso(), nowIso(), row.id);
+      if (!r.changes) return;
+      db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+      settleEvent(db, row.id, { source: 'feed', note });
+      done = true;
+    });
+    return done;
+  }
+
+  /**
+   * Right after a match leaves the live list: the tracker is asked whether it is over (each match at
+   * most every 20 s, a few a run), so its bets are settled within seconds instead of after the
+   * confirmation time. Without the tracker's word the list's rule (finishMissing) still applies.
+   */
+  const fastAsked = new Map();
+  async function fastFinish({ now = Date.now(), perRun = 8 } = {}) {
+    if (typeof client.tracker !== 'function') return { asked: 0, finished: 0 };
+    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' AND wh_missing_since IS NOT NULL
+      AND review_reason IS NULL ORDER BY wh_missing_since LIMIT 50`).all(SOURCE)
+      .filter((row) => TRACKER_SPORTS.has(row.sport) && now - (fastAsked.get(row.id) || 0) >= 20_000).slice(0, perRun);
+    let finished = 0;
+    await Promise.all(rows.map(async (row) => {
+      fastAsked.set(row.id, now);
+      try {
+        const r = await client.tracker(row.external_id);
+        if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)
+          && settleFromTracker(row, normalizeWidgetData(r.body), 'WinHouse: fim do jogo confirmado pelo tracker')) {
+          fastAsked.delete(row.id);
+          finished += 1;
+        }
+      } catch { /* the list's rule settles it */ }
+    }));
+    if (fastAsked.size > 500) fastAsked.clear();
+    if (finished) log(`WinHouse: ${finished} jogo(s) terminados liquidados logo (tracker)`);
+    return { asked: rows.length, finished };
+  }
+
   const reviewAsked = new Map();
   async function confirmReviews({ now = Date.now() } = {}) {
     if (typeof client.tracker !== 'function') return { asked: 0, confirmed: 0 };
@@ -1342,15 +1401,7 @@ export function createWinHouseFeed(db, {
         const r = await client.tracker(row.external_id);
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) s = normalizeWidgetData(r.body);
       } catch { /* asked again in 5 minutes */ }
-      if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) continue;
-      const h = s.homeScore;
-      const a = s.awayScore;
-      if (!Number.isInteger(h) || !Number.isInteger(a) || h < (row.home_score ?? 0) || a < (row.away_score ?? 0)) continue;
-      tx(db, () => {
-        const r = db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, review_reason = NULL,
-            clock = 'Final', updated_at = ? WHERE id = ? AND status = 'live'`).run(h, a, resultCode(h, a), nowIso(), row.id);
-        if (r.changes) settleEvent(db, row.id, { source: 'feed', note: 'WinHouse: resultado final confirmado pelo tracker' });
-      });
+      if (!settleFromTracker(row, s, 'WinHouse: resultado final confirmado pelo tracker')) continue;
       reviewAsked.delete(row.id);
       confirmed += 1;
     }
@@ -1658,10 +1709,11 @@ export function createWinHouseFeed(db, {
     const liveDetails = guard('páginas ao vivo', syncLiveDetails);
     const streams = guard('streams', syncStreams);
     const reviews = guard('revisão', confirmReviews);
+    const fast = guard('fim dos jogos', fastFinish);
     const cards = guard('cartões', readCards);
     const tennis = guard('pontos do ténis', readTennis);
     live().then(pre).then(details).then(liveDetails).then(streams);
-    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(cards, 20_000), setInterval(tennis, 3_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(fast, 10_000), setInterval(cards, 20_000), setInterval(tennis, 3_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1679,5 +1731,5 @@ export function createWinHouseFeed(db, {
     enabled: state.enabled, rawLive: (ext) => liveRaw.get(String(ext)) || null,
     /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
     rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
-    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
 }

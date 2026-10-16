@@ -27,6 +27,7 @@ import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, 
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
 import { postTransaction } from './wallet.js';
 import { compression, staticText } from './compress.js';
+import { createAssets } from './assets.js';
 import { importNovo, connectNovo } from './importnovo.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { payoutState } from './revolut.js';
@@ -50,11 +51,16 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 // files stamped (app.js?v=…), so a browser can never keep running an old script after a deploy,
 // and the footer shows it so the running version can be checked.
 const readPublic = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
-export const APP_VERSION = createHash('sha256').update(readPublic('app.js')).update(readPublic('styles.css'))
-  .update(readPublic('admin/admin.js')).update(readPublic('admin/admin.css')).digest('hex').slice(0, 8);
+export const APP_VERSION = ['app.js', 'styles.css', 'splash.js', 'trkclips.js', 'trk3dmath.js', 'trk3d.js', 'admin/admin.js', 'admin/admin.css']
+  .reduce((h, f) => h.update(readPublic(f)), createHash('sha256')).digest('hex').slice(0, 8);
+// The scripts' own imports are versioned too (assets.js), and the app's modules are announced in the
+// page (modulepreload) so they download alongside app.js instead of after it.
+const assets = createAssets(PUBLIC_DIR);
 const INDEX_HTML = readPublic('index.html')
   .replace('src="app.js"', `src="app.js?v=${APP_VERSION}"`)
-  .replace('href="styles.css"', `href="styles.css?v=${APP_VERSION}"`);
+  .replace('src="splash.js"', `src="splash.js?v=${APP_VERSION}"`)
+  .replace('href="styles.css"', `href="styles.css?v=${APP_VERSION}"`)
+  .replace(/(\s*)(<script type="module" src="app\.js)/, (m, sp, tag) => `${assets.preloads('app.js').map((l) => `${sp}${l}`).join('')}${sp}${tag}`);
 // The administration is a separate page at /admin, with its own login.
 const ADMIN_HTML = readPublic('admin/index.html').replace(/(\/(?:admin\/admin|styles)\.(?:js|css))"/g, `$1?v=${APP_VERSION}"`);
 const COOKIE = 'cb_session';
@@ -518,7 +524,8 @@ export function createApp(db, {
   // A live game the feed no longer lists (WinHouse ended it) leaves the site within a minute, while
   // it waits to be settled (automatically, or by the operator in Liquidação). Its own page stays.
   const NOT_GONE = "NOT (e.status = 'live' AND e.wh_missing_since IS NOT NULL AND e.wh_missing_since < ?)";
-  const goneBefore = () => new Date(Date.now() - 60_000).toISOString();
+  // A live match gone from the book's list leaves the board 20 s later (one missed read is tolerated).
+  const goneBefore = () => new Date(Date.now() - 20_000).toISOString();
 
   // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
   const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
@@ -2340,7 +2347,7 @@ export function createApp(db, {
     res.redirect(302, `/?ref=${encodeURIComponent(code)}`);
   });
   // Scripts, styles and SVG: from memory, compressed once, kept a year when versioned (?v=).
-  app.use(staticText(PUBLIC_DIR));
+  app.use(staticText(PUBLIC_DIR, { transform: (rel, raw) => (rel.endsWith('.js') && !rel.includes('/') ? assets.file(rel)?.body : raw) }));
   app.use(express.static(PUBLIC_DIR, {
     index: 'index.html',
     setHeaders(res, file) {
