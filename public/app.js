@@ -485,30 +485,42 @@ function carousel(id, cards) {
   </div>`;
 }
 
-// The home page's invitation banner: the offer, three steps and the link to copy or share.
-function affHomeHtml() {
+// The side menu's invitation card: the offer and the link to copy or share.
+function affSideHtml() {
   const a = state.affHome;
   if (!a?.enabled || !a.referralUrl || a.uid !== state.user?.id) return '';
   const url = esc(a.referralUrl);
-  return `<section class="aff-home">
-    <div class="aff-home-top">
-      <div class="aff-home-badge"><b>${a.commission.rate}%</b><small>por amigo</small></div>
-      <div class="aff-home-copy"><span class="aff-home-eyebrow">🎁 Programa de convites</span>
-        <b>Convide amigos e ganhe ${a.commission.rate}% do primeiro depósito de cada um.</b>
-        <a href="#/perfil/afiliados">Ver regras e comissões ›</a></div>
-    </div>
-    <ol class="aff-home-steps"><li><i>1</i>Partilhe o seu link</li><li><i>2</i>O amigo regista-se e deposita</li><li><i>3</i>Recebe ${a.commission.rate}% em saldo</li></ol>
-    <div class="aff-home-row"><input readonly value="${url}" aria-label="Link de convite">
-      <button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
-      ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : ''}
-    </div></section>`;
+  return `<section class="aff-side">
+    <div class="aff-side-top"><span class="aff-side-badge"><b>${a.commission.rate}%</b></span>
+      <div><small>🎁 Programa de convites</small><b>Convide amigos e ganhe ${a.commission.rate}% do 1.º depósito</b></div></div>
+    <div class="aff-side-link">${url.replace(/^https?:\/\//, '')}</div>
+    <div class="aff-side-btns"><button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
+      ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : ''}</div>
+    <a class="aff-side-more" href="#/perfil/afiliados">Ver regras e comissões ›</a></section>`;
+}
+function renderSideInvite() {
+  const box = $('#sideInvite');
+  if (!box) return;
+  if (state.user && state.affHome?.uid !== state.user.id) { loadAffHome(); return; }
+  const html = state.user ? affSideHtml() : '';
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
 }
 async function loadAffHome() {
   const uid = state.user.id;
   state.affHome = { uid };
   try { state.affHome = { ...(await api('/api/affiliates/me')), uid }; } catch { state.affHome = { enabled: false, uid }; }
-  const box = $('#affHome');
-  if (box) box.innerHTML = affHomeHtml();
+  renderSideInvite();
+}
+
+/** The top of the home page: the casino's games as round icons in a row that scrolls sideways. */
+function casinoBubbles() {
+  const games = state.casinoLobby?.rows?.[0]?.games?.length ? state.casinoLobby.rows[0].games
+    : state.casino.enabled ? (state.casino.games || []).slice(0, 12) : [];
+  if (!games.length) return '';
+  return `<section class="cb-row" aria-label="Jogos de casino">
+    ${games.slice(0, 15).map((g) => `<button class="cb-game" data-game-id="${g.id}"><span class="cb-ring">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : '<i>🎰</i>'}</span><small>${esc(g.name)}</small></button>`).join('')}
+    <a class="cb-game cb-all" href="#/casino"><span class="cb-ring"><i>›</i></span><small>Ver todos</small></a>
+  </section>`;
 }
 
 function homePage() {
@@ -518,8 +530,6 @@ function homePage() {
   const live = livePool.filter((e) => e.id !== spotlight?.id);
   const upcoming = upcomingPool.filter((e) => e.id !== spotlight?.id);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
-  // Signed in: the invitation card (link and code to copy) instead of the welcome banner.
-  if (state.user && state.affHome?.uid !== state.user.id) loadAffHome();
   const hero = state.user ? '' : `<section class="hero${spotlight ? ' hero-has-feature' : ''}">
       <div class="hero-copy"><div class="eyebrow">A NOVA EXPERIÊNCIA DE APOSTAS</div><h1>Mais mercados.<br>Mais emoção.</h1><p>Uma plataforma clássica, rápida e simples para acompanhar desporto, apostas ao vivo e casino num único lugar.</p>
         <div class="hero-actions"><button class="primary-btn" data-action="register">Criar conta</button><a class="outline-btn" href="#/desporto">Explorar desporto</a></div>
@@ -529,20 +539,10 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  const casinoGames = state.casinoLobby?.rows?.[0]?.games || [];
-  const casinoContent = casinoGames.length
-    ? carousel('homeCasino', casinoGames.map(lobbyCard))
-    : state.casino.enabled && state.casino.games?.length
-      ? `<div class="game-grid grid">${state.casino.games.slice(0, 5).map(casinoGameCard).join('')}</div>`
-      : '';
-  const casinoSection = casinoContent
-    ? `<section class="section"><div class="section-head"><h2>Casino</h2><a href="#/casino">Ver casino ›</a></div>${casinoContent}</section>`
-    : '';
-  return `${state.user ? `<div id="affHome">${affHomeHtml()}</div>${memberSpotlight}` : hero}
+  return `${casinoBubbles()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
-    ${casinoSection}
     ${footer()}`;
 }
 
@@ -2237,6 +2237,7 @@ function sideTree(sport) {
 }
 
 function renderSidebar() {
+  renderSideInvite();
   const counts = {};
   for (const e of state.events) counts[e.sport] = (counts[e.sport] || 0) + 1;
   $('#sportLinks').innerHTML = Object.entries(SPORT_META)

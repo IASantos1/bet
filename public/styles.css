@@ -1372,3 +1372,26 @@ img, video, iframe { max-width: 100%; }
 .promo-ask-acts { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
 .promo-ask-acts button { flex: 1; min-width: 140px; }
 .promo-ask-acts .primary-btn { background: var(--register); border-color: var(--register); }
+
+/* Home: casino games as round icons at the top (scrolls sideways) */
+.cb-row { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 12px; margin-bottom: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x proximity; }
+.cb-row::-webkit-scrollbar { display: none; }
+.cb-game { flex: 0 0 auto; width: 74px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: 0; padding: 0; color: var(--text-2); scroll-snap-align: start; text-decoration: none; }
+.cb-ring { width: 68px; height: 68px; border-radius: 50%; padding: 3px; background: conic-gradient(from 200deg, #f6c64a, #ff6890, #8a6cff, #3fc3ff, #f6c64a); display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); transition: transform .15s; }
+.cb-ring img, .cb-ring i { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid var(--page); background: #20262c; display: grid; place-items: center; font-style: normal; font-size: 26px; color: #fff; }
+.cb-game:hover .cb-ring { transform: scale(1.06); }
+.cb-game small { max-width: 74px; font-size: 11px; font-weight: 700; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-all .cb-ring { background: var(--row-hover); }
+.cb-all .cb-ring i { font-size: 30px; font-weight: 300; }
+
+/* Side menu: the invitation card (link to copy or share) */
+.aff-side { margin: 10px 3px; padding: 14px; border-radius: 12px; border: 1px solid rgba(255, 196, 0, .35); background: radial-gradient(120% 90% at 100% 0, rgba(255, 196, 0, .16), transparent 60%), linear-gradient(160deg, #262d36, #1b2027); display: grid; gap: 10px; }
+.aff-side-top { display: flex; gap: 10px; align-items: center; }
+.aff-side-badge { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(145deg, #ffd45a, #f4a83a); color: #1b1408; box-shadow: 0 0 0 4px rgba(255, 196, 0, .15); }
+.aff-side-badge b { font-size: 14px; font-weight: 900; }
+.aff-side-top small { display: block; color: #ffd45a; font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.aff-side-top b { display: block; font-size: 13px; line-height: 1.3; color: #fff; margin-top: 2px; }
+.aff-side-link { padding: 9px 10px; border-radius: 8px; border: 1px dashed rgba(255, 196, 0, .45); background: #12161b; color: #fff; font-weight: 800; font-size: 13px; text-align: center; overflow-wrap: anywhere; user-select: all; }
+.aff-side-btns { display: flex; gap: 8px; }
+.aff-side-btns .aff-btn { flex: 1; justify-content: center; height: 36px; font-size: 12px; }
+.aff-side-more { color: var(--text-3); font-size: 11px; font-weight: 700; text-decoration: none; }
