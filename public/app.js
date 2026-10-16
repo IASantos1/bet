@@ -518,7 +518,7 @@ function casinoBubbles() {
     : state.casino.enabled ? (state.casino.games || []).slice(0, 12) : [];
   if (!games.length) return '';
   return `<section class="cb-row" aria-label="Jogos de casino">
-    ${games.slice(0, 15).map((g) => `<button class="cb-game" data-game-id="${g.id}"><span class="cb-ring">${g.image ? `<img class="cb-bg" src="${esc(g.image)}" alt="" loading="lazy" decoding="async"><img class="cb-art" src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : '<i>🎰</i>'}</span><small>${esc(String(g.name).replace(/[™®©]/g, '').trim())}</small></button>`).join('')}
+    ${games.slice(0, 15).map((g) => `<button class="cb-game" data-game-id="${g.id}"><span class="cb-ring">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : '<i>🎰</i>'}</span><small>${esc(String(g.name).replace(/[™®©]/g, '').trim())}</small></button>`).join('')}
     <a class="cb-game cb-all" href="#/casino"><span class="cb-ring"><i>›</i></span><small>Ver todos</small></a>
   </section>`;
 }
