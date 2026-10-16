@@ -1384,8 +1384,9 @@ img, video, iframe { max-width: 100%; }
 .cb-ring .cb-art { position: absolute; left: 50%; top: 50%; height: 80%; width: auto; max-width: none; transform: translate(-50%, -50%); border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, .45); }
 .cb-ring i { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-size: 30px; color: #fff; }
 .cb-game:hover .cb-ring { transform: scale(1.05); }
-/* The game's full name under the circle, on up to two lines. */
-.cb-game small { width: 100%; min-height: 2.5em; font-size: 12px; font-weight: 800; line-height: 1.25; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+/* The game's full name under the circle, on as many lines as it needs. */
+.cb-game small { width: 100%; font-size: 12px; font-weight: 800; line-height: 1.25; text-align: center; white-space: normal; overflow-wrap: break-word; }
+.cb-row { align-items: flex-start; }
 .cb-all .cb-ring { background: var(--row-hover); }
 .cb-all .cb-ring i { font-size: 34px; font-weight: 300; }
 
