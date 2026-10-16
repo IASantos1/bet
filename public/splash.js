@@ -1,3 +1,13 @@
+// Light theme from 07:00 to 21:00 (the visitor's own clock), dark the rest of the night. Set here,
+// before the page is painted; app.js checks it again every minute.
+(function () {
+  var h = new Date().getHours();
+  var light = h >= 7 && h < 21;
+  document.documentElement.classList.toggle('light', light);
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', light ? '#ffffff' : '#1e2329');
+})();
+
 // The intro shown when the site opens: brief, once per visit (tab), skipped with a tap or button.
 // A classic script right after the intro's markup, so a repeat visit removes it before it is painted.
 (function () {

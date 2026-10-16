@@ -19,15 +19,15 @@ const SPORT_META = {
 /** Line icons for the sports filter (stroke = the text colour). */
 const SPORT_SVG = {
   popular: '<rect x="3" y="3" width="4" height="4" rx="1"/><rect x="10" y="3" width="4" height="4" rx="1"/><rect x="17" y="3" width="4" height="4" rx="1"/><rect x="3" y="10" width="4" height="4" rx="1"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="17" y="10" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><rect x="10" y="17" width="4" height="4" rx="1"/><rect x="17" y="17" width="4" height="4" rx="1"/>',
-  futebol: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.4 2.5-1.3 4h-4.2l-1.3-4z"/><path d="M12 3v4.5M15.4 10l4.8-1.6M14.1 14l2.8 4.2M9.9 14l-2.8 4.2M8.6 10L3.8 8.4"/>',
-  basquetebol: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6a12 12 0 0 1 0 12.8M18.4 5.6a12 12 0 0 0 0 12.8"/>',
-  tenis: '<circle cx="12" cy="12" r="9"/><path d="M5.2 5.8a10 10 0 0 1 0 12.4M18.8 5.8a10 10 0 0 0 0 12.4"/>',
+  futebol: '<circle cx="12" cy="12" r="9"/><path d="M12 7l4.76 3.45-1.76 5.55h-6l-1.76-5.55z" fill="currentColor"/><path d="M12 7V3M15 16l2.5 3M16.76 10.45l3.74-1.45M9 16l-2.56 2.95M7.24 10.45L3.5 9"/>',
+  basquetebol: '<circle cx="12" cy="12" r="9"/><path d="M5.65 5.65l12.7 12.7M5.65 18.35l12.7-12.7M12 3a9 9 0 0 0 9 9M3 12a9 9 0 0 1 9 9"/>',
+  tenis: '<circle cx="12" cy="12" r="9"/><path d="M6 5.3a9 9 0 0 1 0 13.4M18 5.3a9 9 0 0 0 0 13.4"/>',
   hoquei: '<path d="M16 3l-5 13a3 3 0 0 1-2.8 2H4"/><path d="M19 4l-5 13"/><ellipse cx="6" cy="20" rx="3" ry="1.3"/>',
   dardos: '<circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4.5"/><circle cx="11" cy="13" r="1.2"/><path d="M11 13l9-9M17 4h3v3"/>',
   esports: '<path d="M7 8h10a4 4 0 0 1 4 4v3a3 3 0 0 1-5.2 2L14 15h-4l-1.8 2A3 3 0 0 1 3 15v-3a4 4 0 0 1 4-4z"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01"/>',
-  voleibol: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 4 8M12 12l-7.6 4.5M12 12h8.8M12 12a9 9 0 0 0-6.7-7.5M12 12a9 9 0 0 1-2.5 8.6"/>',
-  andebol: '<circle cx="12" cy="12" r="9"/><path d="M5 7.5c3 1.5 4 4.5 3.5 9M19 7.5c-3 1.5-4 4.5-3.5 9M8.5 4c1 2 5 2 7 0"/>',
-  futsal: '<circle cx="12" cy="10.5" r="7.5"/><path d="M12 6.5l2.8 2-1 3.3h-3.6l-1-3.3z"/><path d="M4 21h16"/>',
+  voleibol: '<circle cx="12" cy="12" r="9"/><path d="M12 12a8 8 0 0 0 8 4M7.5 13.5a12 12 0 0 0 8.5 6.5M12 12a8 8 0 0 0-7.46 4.93M12.95 7.35a12 12 0 0 0-9.88 4.11M12 12a8 8 0 0 0-.54-8.93M15.55 15.15a12 12 0 0 0 1.38-10.61"/>',
+  andebol: '<circle cx="12" cy="12" r="9"/><path d="M12 3c-2.6 2.7-3.6 5.7-3 9s2.6 6.3 6 9M3.6 8.6c3.2.2 6.1 1.3 8.4 3.4s3.8 4.9 4.4 8.2M20.6 9.4c-2.7.6-5 2-6.8 4.1"/>',
+  futsal: '<circle cx="12" cy="10.5" r="7.5"/><path d="M12 6.6l3.6 2.6-1.4 4.2H9.8L8.4 9.2z" fill="currentColor"/><path d="M12 6.6V3.2M15.6 9.2l3.3-1.1M8.4 9.2L5.1 8.1M5 21h14"/>',
   tenismesa: '<circle cx="9.5" cy="9.5" r="6"/><path d="M13.7 13.7L19 19a1.5 1.5 0 0 1-2 2l-5.3-5.3"/><circle cx="19" cy="6" r="1.8"/>',
   resultados: '<path d="M5 21V4M5 4h13l-2.5 4L18 12H5"/><path d="M9 4v8M13 4v8"/>',
   badminton: '<path d="M8 14l-3-9 4 1 3-3 3 3 4-1-3 9z"/><path d="M8 14h8M9 14v2a3 3 0 0 0 6 0v-2"/>',
@@ -269,16 +269,13 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 }
 
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
-// A team without a badge: a shirt in its kit colours (or two colours made from its name).
-const KIT_COLOURS = [['#d62828', '#ffffff'], ['#1d4ed8', '#ffffff'], ['#16a34a', '#ffffff'], ['#111827', '#ffffff'], ['#f59e0b', '#111827'],
-  ['#7c3aed', '#ffffff'], ['#0ea5e9', '#0b1d3a'], ['#ffffff', '#d62828'], ['#ffffff', '#1d4ed8'], ['#be123c', '#fbbf24'], ['#065f46', '#fde68a'], ['#ea580c', '#1f2937']];
+// A team without a badge: a shirt in its real kit colours (found with the badge, teamlogos.js);
+// a plain neutral shirt while they are not known (colours are never made up).
 const SAFE_HEX = /^#[0-9a-f]{6}$/i;
 function kitOf(name, kit) {
   const [a, b] = Array.isArray(kit) ? kit.filter((c) => SAFE_HEX.test(c)) : [];
   if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
-  let h = 0;
-  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return KIT_COLOURS[h % KIT_COLOURS.length];
+  return ['#9aa4b1', '#d7dce3'];
 }
 function jerseySvg(name, kit) {
   const [a, b] = kitOf(name, kit);
@@ -4254,7 +4251,17 @@ function captureReferral() {
   return true;
 }
 
+/** Light theme from 07:00 to 21:00 (the visitor's clock), dark otherwise; no switch to press. */
+function applyTheme() {
+  const h = new Date().getHours();
+  const light = h >= 7 && h < 21;
+  document.documentElement.classList.toggle('light', light);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#ffffff' : '#1e2329');
+}
+
 async function init() {
+  applyTheme();
+  setInterval(applyTheme, 60_000);
   const referred = captureReferral();
   bindChrome();
   autoMode();
