@@ -776,9 +776,9 @@ function livePage() {
   if (state.liveSport && !present.includes(state.liveSport)) state.liveSport = '';
   const live = state.liveSport ? withTv.filter((e) => e.sport === state.liveSport) : withTv;
   const tvCount = all.filter((e) => e.stream).length;
-  const strip = `<div class="sport-strip live-sports">
-      <button class="sport-pill${!state.liveSport ? ' active' : ''}" data-live-sport="">Todos <small>${withTv.length}</small></button>
-      ${present.map((sp) => `<button class="sport-pill${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small>${withTv.filter((e) => e.sport === sp).length}</small></button>`).join('')}
+  const strip = `<div class="sport-tiles live-sports" data-hscroll="liveSports">
+      <button class="sport-tile${!state.liveSport ? ' active' : ''}" data-live-sport="">${sportIcon('popular')}<span>Todos</span><i class="tile-n">${withTv.length}</i></button>
+      ${present.map((sp) => `<button class="sport-tile${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${sportIcon(sp)}<span>${esc(SPORT_META[sp]?.name || sp)}</span><i class="tile-n">${withTv.filter((e) => e.sport === sp).length}</i></button>`).join('')}
     </div>`;
   // Football first, then the other sports; big leagues first inside each sport.
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
