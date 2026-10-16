@@ -1426,3 +1426,10 @@ img, video, iframe { max-width: 100%; }
 .lg-badge em svg { width: 15px; height: 15px; }
 .sport-tile { position: relative; }
 .sport-tile .tile-n { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--live); color: #fff; font-style: normal; font-size: 10px; font-weight: 900; line-height: 18px; text-align: center; }
+
+/* Team without a badge: a shirt in its colours */
+.team-icon.kit { background: transparent; }
+.team-icon .team-kit { width: 30px; height: 30px; }
+.team-icon.big .team-kit { width: 54px; height: 54px; }
+.team-icon.mini .team-kit { width: 18px; height: 18px; }
+.team-icon.mini.kit { background: transparent; }

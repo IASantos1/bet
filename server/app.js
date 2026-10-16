@@ -100,8 +100,8 @@ const footballLogo = providerImg('team');
 // Player photos for tennis and darts from the same image proxy (the page falls back to the flag).
 const PLAYER_IMG = { 'bzzoiro-tennis': 'tennis/player', 'bzzoiro-darts': 'darts/player' };
 const playerPhoto = (source, id) => (PLAYER_IMG[source] && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${PLAYER_IMG[source]}/${id}/?bg=transparent` : null);
-// WinHouse sends the badge URL itself (its image CDN, checked when stored).
-const winhouseLogo = (source, v) => (source === 'winhouse' && typeof v === 'string' && v.startsWith('https://cdn.sportapi.net/') ? v : null);
+// WinHouse sends the badge URL itself (checked when stored: https only).
+const winhouseLogo = (source, v) => (source === 'winhouse' && typeof v === 'string' && /^https:\/\/[^\s"'<>]+$/.test(v) ? v : null);
 const teamLogo = (source, id) => winhouseLogo(source, id) || footballLogo(source, id) || sportTeamImage(source, id) || playerPhoto(source, id);
 // League badge; for national-team competitions this is the flag/emblem the provider publishes.
 const leagueLogo = providerImg('league');
@@ -143,7 +143,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -465,7 +465,10 @@ export function createApp(db, {
         clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
         selections: rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
-        homeLogo: teamLogo(e.source, e.home_team_ext), awayLogo: teamLogo(e.source, e.away_team_ext),
+        // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
+        homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
+        awayLogo: teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
+        homeKit: teamLogos?.get(e.sport, e.home)?.colors || null, awayKit: teamLogos?.get(e.sport, e.away)?.colors || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),

@@ -785,13 +785,15 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
   const start = Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2], +(t[3] || 0)) - tzOffsetMinutes * 60_000;
   const score = /^(\d+)\s*-\s*(\d+)$/.exec(String(ev.result || '').trim());
   const minutes = minutesOf(ev.current_minute);
-  const safeLogo = (u) => (typeof u === 'string' && /^https:\/\/cdn\.sportapi\.net\/[\w./-]+$/.test(u) ? u : null);
+  // The badge, under whichever name the list gives it; any https image address (no quotes or spaces).
+  const safeLogo = (...vs) => vs.find((u) => typeof u === 'string' && /^https:\/\/[\w.-]+\/[\w./%+=?&-]+$/.test(u.trim()))?.trim() || null;
   return {
     externalId: String(ev.id), sport, competition: String(ev.league || 'WinHouse').slice(0, 80), home, away,
     startTime: new Date(start).toISOString(), localStart: `${d[0]}T${t[1]}:${t[2]}`,
     homeScore: score ? Number(score[1]) : null, awayScore: score ? Number(score[2]) : null,
     minutes, clockRaw: ev.current_minute || null,
-    homeLogo: safeLogo(ev.home_logo), awayLogo: safeLogo(ev.away_logo),
+    homeLogo: safeLogo(ev.home_logo, ev.home_team_logo, ev.home_image, ev.home_img, ev.team1_logo, ev.logo_home, ev.home?.logo),
+    awayLogo: safeLogo(ev.away_logo, ev.away_team_logo, ev.away_image, ev.away_img, ev.team2_logo, ev.logo_away, ev.away?.logo),
     // Every market of the list: the settleable ones mapped, the rest operator-settled ('x').
     ...bookOf(parseOdds(ev.odd), sport),
   };
