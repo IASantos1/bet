@@ -279,8 +279,14 @@ export const config = {
     smsSender: unquote(env.BREVO_SMS_SENDER),
   },
   // Team badges and kit colours looked up by name for teams the feed sends without a badge
-  // (teamlogos.js, TheSportsDB). TEAM_LOGOS=0 turns it off.
-  teamLogos: { key: unquote(env.THESPORTSDB_KEY) || '123', enabled: env.TEAM_LOGOS !== '0' },
+  // (teamlogos.js, TheSportsDB). TEAM_LOGOS=0 turns it off. API_FOOTBALL_KEY (api-sports.io; or a
+  // RapidAPI key with API_FOOTBALL_VIA=rapidapi) takes the badges from API-Football, at most
+  // API_FOOTBALL_DAILY lookups a day per sport (default 90; the free plan allows 100).
+  teamLogos: {
+    key: unquote(env.THESPORTSDB_KEY) || '123', enabled: env.TEAM_LOGOS !== '0',
+    apiFootballKey: unquote(env.API_FOOTBALL_KEY), apiFootballVia: unquote(env.API_FOOTBALL_VIA).toLowerCase(),
+    apiFootballDaily: Math.max(0, Number(env.API_FOOTBALL_DAILY) || 90),
+  },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).

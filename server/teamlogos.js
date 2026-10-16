@@ -1,5 +1,8 @@
-// Team badges for the teams the feed sends without one, and their kit colours (TheSportsDB).
+// Team badges for the teams the feed sends without one, and their kit colours.
 //
+// Badges come from API-Football (api-sports.io, key API_FOOTBALL_KEY) when it is set: the same key
+// serves football, basketball, hockey, volleyball and handball, 100 requests a day each on the free
+// plan, so at most apiFootballDaily lookups a day per sport are made (games in play first).
 // WinHouse sends a badge for some teams only. For the others, the team is looked up by name in
 // TheSportsDB (free API: https://www.thesportsdb.com, key THESPORTSDB_KEY), a few teams a minute
 // (the free tier allows 30 requests a minute), and the badge and kit colours kept in team_logos.
@@ -15,7 +18,8 @@ const SPORT_NAME = {
   andebol: 'Handball', esports: 'ESports',
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
-const VERSION = 2; // entries saved by an older version are looked up again
+const VERSION = 2;
+const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball' }; // entries saved by an older version are looked up again
 const HEX = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i;
 
 /** A team name compared loosely: no accents, lower case, single spaces. */
@@ -49,17 +53,32 @@ const colour = (c) => {
   return `#${h.toLowerCase()}`;
 };
 
-export function createTeamLogos(db, { key = '123', fetchImpl = globalThis.fetch, perRun = 12, enabled = true, log = () => {} } = {}) {
+export function createTeamLogos(db, {
+  key = '123', apiFootballKey = '', apiFootballVia = '', apiFootballDaily = 90, fetchImpl = globalThis.fetch, perRun = 12, enabled = true,
+  log = () => {},
+} = {}) {
   db.exec(`CREATE TABLE IF NOT EXISTS team_logos (
     team_key TEXT PRIMARY KEY, logo TEXT, colors TEXT, checked_at TEXT NOT NULL)`);
   const cols = db.prepare('PRAGMA table_info(team_logos)').all().map((c) => c.name);
   if (!cols.includes('kit')) db.exec('ALTER TABLE team_logos ADD COLUMN kit TEXT');
   if (!cols.includes('ver')) db.exec('ALTER TABLE team_logos ADD COLUMN ver INTEGER NOT NULL DEFAULT 1');
-  const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, checked_at FROM team_logos').all()
-    .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, checkedAt: r.checked_at }]));
-  const save = db.prepare(`INSERT INTO team_logos (team_key, logo, colors, kit, ver, checked_at) VALUES (?, ?, ?, ?, ?, ?)
+  if (!cols.includes('apif')) db.exec('ALTER TABLE team_logos ADD COLUMN apif INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE TABLE IF NOT EXISTS api_quota (name TEXT PRIMARY KEY, day TEXT NOT NULL, used INTEGER NOT NULL)');
+  const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, checked_at FROM team_logos').all()
+    .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, apif: !!r.apif, checkedAt: r.checked_at }]));
+  const save = db.prepare(`INSERT INTO team_logos (team_key, logo, colors, kit, ver, apif, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(team_key) DO UPDATE SET logo = excluded.logo, colors = excluded.colors, kit = excluded.kit, ver = excluded.ver,
-      checked_at = excluded.checked_at`);
+      apif = excluded.apif, checked_at = excluded.checked_at`);
+
+  // API-Football: requests made today per sport (the free plan allows 100 a day each).
+  const apif = Boolean(apiFootballKey);
+  const today = () => new Date().toISOString().slice(0, 10);
+  const quotaRow = db.prepare('SELECT day, used FROM api_quota WHERE name = ?');
+  const quotaSet = db.prepare(`INSERT INTO api_quota (name, day, used) VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET day = excluded.day, used = excluded.used`);
+  const used = (sport) => { const r = quotaRow.get(`apif:${sport}`); return r && r.day === today() ? r.used : 0; };
+  const spend = (sport, n = 1) => quotaSet.run(`apif:${sport}`, today(), used(sport) + n);
+  const apifCan = (sport) => apif && API_SPORTS[sport] && used(sport) < apiFootballDaily;
 
   /** What is known of a team: { logo, colors, kit } (any may be null), or null when never looked up. */
   const get = (sport, name) => cache.get(teamKey(sport, name)) || null;
@@ -71,6 +90,35 @@ export function createTeamLogos(db, { key = '123', fetchImpl = globalThis.fetch,
     if (!res.ok) throw new Error(`TheSportsDB HTTP ${res.status}`);
     const data = await res.json().catch(() => null);
     return Array.isArray(data?.teams) ? data.teams : [];
+  }
+
+  /** API-Football: the badge of the team with this name (same team only), or null. */
+  async function apiFootballLogo(sport, name) {
+    const api = API_SPORTS[sport];
+    for (const variant of nameVariants(name)) {
+      // The search takes letters, digits and spaces only, 3 at least.
+      const q = variant.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (q.length < 3 || !apifCan(sport)) continue;
+      const rapid = apiFootballVia === 'rapidapi' && api === 'football';
+      const url = rapid ? `https://api-football-v1.p.rapidapi.com/v3/teams?search=${encodeURIComponent(q)}`
+        : `https://${api === 'football' ? 'v3' : 'v1'}.${api}.api-sports.io/teams?search=${encodeURIComponent(q)}`;
+      const headers = rapid ? { 'x-rapidapi-key': apiFootballKey, 'x-rapidapi-host': 'api-football-v1.p.rapidapi.com' } : { 'x-apisports-key': apiFootballKey };
+      spend(sport);
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), headers: { Accept: 'application/json', ...headers } });
+      if (res.status === 429) throw Object.assign(new Error('API-Football: demasiados pedidos'), { rate: true });
+      if (!res.ok) throw new Error(`API-Football HTTP ${res.status}`);
+      const data = await res.json().catch(() => null);
+      const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
+      if (errors?.length) {
+        // Out of requests for today (or a bad key): no more today.
+        spend(sport, apiFootballDaily);
+        throw new Error(`API-Football: ${String(errors[0]).slice(0, 120)}`);
+      }
+      const teams = (Array.isArray(data?.response) ? data.response : []).map((x) => x.team || x);
+      const t = teams.find((x) => httpsUrl(x.logo) && sameTeam({ strTeam: x.name, strTeamShort: x.code }, name));
+      if (t) return t.logo;
+    }
+    return null;
   }
 
   /** Looks one team up: a result of its sport with the team's own name (one with a badge first). */
@@ -100,7 +148,8 @@ export function createTeamLogos(db, { key = '123', fetchImpl = globalThis.fetch,
         if (!name || (typeof ext === 'string' && ext.startsWith('https://'))) continue;
         const k = teamKey(r.sport, name);
         const c = cache.get(k);
-        if (c && c.ver >= VERSION && (c.logo || new Date(c.checkedAt).getTime() > stale)) continue;
+        const fresh = c && c.ver >= VERSION && (c.logo || new Date(c.checkedAt).getTime() > stale);
+        if (fresh && !(apifCan(r.sport) && !c.apif)) continue;
         if (!out.has(k)) out.set(k, { sport: r.sport, name });
         if (out.size >= limit) return [...out.values()];
       }
@@ -116,18 +165,25 @@ export function createTeamLogos(db, { key = '123', fetchImpl = globalThis.fetch,
     let found = 0;
     try {
       for (const { sport, name } of wanted(perRun)) {
-        let r;
-        try { r = await lookUp(sport, name); } catch (err) {
+        const k = teamKey(sport, name);
+        const c = cache.get(k);
+        let r = c && c.ver >= VERSION ? c : null;
+        let apiLogo = null;
+        let apiAsked = Boolean(c?.apif);
+        try {
+          if (!r) r = await lookUp(sport, name);
+          if (!apiAsked && apifCan(sport)) { apiLogo = await apiFootballLogo(sport, name); apiAsked = true; }
+        } catch (err) {
           if (err.rate) break;
           log(`emblema de ${name}: ${err.message}`);
-          continue;
+          if (!r) continue;
         }
         asked += 1;
-        if (r.logo) found += 1;
-        const k = teamKey(sport, name);
-        const v = { logo: r.logo, colors: r.colors, kit: r.kit, ver: VERSION, checkedAt: nowIso() };
+        const logo = apiLogo || r.logo;
+        if (logo && logo !== c?.logo) found += 1;
+        const v = { logo, colors: r.colors, kit: r.kit, ver: VERSION, apif: apiAsked, checkedAt: nowIso() };
         cache.set(k, v);
-        save.run(k, v.logo, v.colors ? JSON.stringify(v.colors) : null, v.kit, VERSION, v.checkedAt);
+        save.run(k, v.logo, v.colors ? JSON.stringify(v.colors) : null, v.kit, VERSION, apiAsked ? 1 : 0, v.checkedAt);
       }
     } finally { busy = false; }
     if (found) log(`${found} emblema(s) de equipas encontrados (${asked} procuradas)`);
@@ -141,5 +197,5 @@ export function createTeamLogos(db, { key = '123', fetchImpl = globalThis.fetch,
     return () => { clearTimeout(first); clearInterval(t); };
   }
 
-  return { get, run, start, wanted };
+  return { get, run, start, wanted, apiFootballUsed: used };
 }
