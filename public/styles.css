@@ -599,7 +599,7 @@ table.compare td.center { text-align: center; }
 
 /* ---------- carousels (home highlights) ---------- */
 .carousel { position: relative; }
-.car-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(270px, 1fr); gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; padding-bottom: 6px; scrollbar-width: thin; }
+.car-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(270px, 1fr); gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 6px; scrollbar-width: thin; }
 .car-track > * { scroll-snap-align: start; min-width: 0; }
 @media (min-width: 1300px) { .car-track { grid-auto-columns: calc((100% - 20px) / 3); } }
 .car-btn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: #12151aee; color: #fff; font-size: 20px; line-height: 1; display: grid; place-items: center; box-shadow: 0 4px 12px #0006; }

@@ -480,7 +480,7 @@ function pickHighlights(events, limit = 12) {
 function carousel(id, cards) {
   return `<div class="carousel" id="${id}">
     <button class="car-btn prev" data-action="car-prev" data-target="${id}" aria-label="Anterior">‹</button>
-    <div class="car-track">${cards.join('')}</div>
+    <div class="car-track" data-hscroll="${id}">${cards.join('')}</div>
     <button class="car-btn next" data-action="car-next" data-target="${id}" aria-label="Seguinte">›</button>
   </div>`;
 }
@@ -517,7 +517,7 @@ function casinoBubbles() {
   const games = state.casinoLobby?.rows?.[0]?.games?.length ? state.casinoLobby.rows[0].games
     : state.casino.enabled ? (state.casino.games || []).slice(0, 12) : [];
   if (!games.length) return '';
-  return `<section class="cb-row" aria-label="Jogos de casino">
+  return `<section class="cb-row" data-hscroll="casinoRow" aria-label="Jogos de casino">
     ${games.slice(0, 15).map((g) => `<button class="cb-game" data-game-id="${g.id}"><span class="cb-ring">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : '<i>🎰</i>'}</span><small>${esc(String(g.name).replace(/[™®©]/g, '').trim())}</small></button>`).join('')}
     <a class="cb-game cb-all" href="#/casino"><span class="cb-ring"><i>›</i></span><small>Ver todos</small></a>
   </section>`;
@@ -583,7 +583,7 @@ function sportsPage(sub, rest = '') {
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    <div class="sport-strip">
+    <div class="sport-strip" data-hscroll="sportStrip">
       <button class="sport-pill${!state.sport ? ' active' : ''}" data-sport="">Todos</button>
       ${sports.map((s) => `<button class="sport-pill${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${SPORT_META[s]?.icon || ''} ${esc(SPORT_META[s]?.name || s)}</button>`).join('')}
       <a class="sport-pill" href="#/desporto/resultados">🏁 Resultados</a>
@@ -2302,8 +2302,9 @@ function render({ keepScroll = false } = {}) {
   document.body.classList.toggle('immersive', immersive);
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
-  // Carousels keep their position when the page refreshes itself (odds, live scores).
-  const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
+  // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
+  // scores): only the person scrolling moves them, never the refresh.
+  const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
   const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();
   // A playing video must never leave the document: an iframe that is detached, even for a moment,
   // reloads (black "Loading stream…", sound lost). The match page refreshes every few seconds, so
@@ -2311,7 +2312,7 @@ function render({ keepScroll = false } = {}) {
   const keep = page === 'jogo' ? $('#content #trackerInline') : null;
   if (keep?.querySelector('iframe')) mergeKeeping($('#content'), html, 'trackerInline');
   else $('#content').innerHTML = html;
-  for (const [id, left] of carScroll) { const t = $(`#${id} .car-track`); if (t) t.scrollLeft = left; }
+  for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
@@ -2324,9 +2325,17 @@ function setSideMenu(open) {
 }
 
 /** Re-renders only pages that show odds, and never while the user is typing. */
+let swipingUntil = 0;
+for (const ev of ['touchstart', 'touchmove', 'wheel']) {
+  document.addEventListener(ev, (e) => { if (e.target.closest?.('[data-hscroll]')) swipingUntil = Date.now() + 1500; }, { passive: true });
+}
+document.addEventListener('scroll', (e) => { if (e.target.matches?.('[data-hscroll]')) swipingUntil = Date.now() + 1500; }, { capture: true, passive: true });
+
 function refreshView() {
   const { page } = currentRoute();
   if (!['home', 'desporto', 'ao-vivo'].includes(page)) return;
+  // Someone is swiping a carousel: this refresh waits for the next one, the gesture is not cut.
+  if (Date.now() < swipingUntil) return;
   if (document.activeElement && $('#content').contains(document.activeElement) && document.activeElement.matches('input, select')) return;
   render({ keepScroll: true });
   if (!$('#modalBackdrop').classList.contains('hidden') && $('#searchInput')) renderSearch($('#searchInput').value);
