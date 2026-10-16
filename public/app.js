@@ -16,6 +16,23 @@ const SPORT_META = {
   tenismesa: { name: 'Ténis de mesa', icon: '🏓' },
   badminton: { name: 'Badminton', icon: '🏸' },
 };
+/** Line icons for the sports filter (stroke = the text colour). */
+const SPORT_SVG = {
+  popular: '<rect x="3" y="3" width="4" height="4" rx="1"/><rect x="10" y="3" width="4" height="4" rx="1"/><rect x="17" y="3" width="4" height="4" rx="1"/><rect x="3" y="10" width="4" height="4" rx="1"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="17" y="10" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><rect x="10" y="17" width="4" height="4" rx="1"/><rect x="17" y="17" width="4" height="4" rx="1"/>',
+  futebol: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.4 2.5-1.3 4h-4.2l-1.3-4z"/><path d="M12 3v4.5M15.4 10l4.8-1.6M14.1 14l2.8 4.2M9.9 14l-2.8 4.2M8.6 10L3.8 8.4"/>',
+  basquetebol: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6a12 12 0 0 1 0 12.8M18.4 5.6a12 12 0 0 0 0 12.8"/>',
+  tenis: '<circle cx="12" cy="12" r="9"/><path d="M5.2 5.8a10 10 0 0 1 0 12.4M18.8 5.8a10 10 0 0 0 0 12.4"/>',
+  hoquei: '<path d="M16 3l-5 13a3 3 0 0 1-2.8 2H4"/><path d="M19 4l-5 13"/><ellipse cx="6" cy="20" rx="3" ry="1.3"/>',
+  dardos: '<circle cx="11" cy="13" r="8"/><circle cx="11" cy="13" r="4.5"/><circle cx="11" cy="13" r="1.2"/><path d="M11 13l9-9M17 4h3v3"/>',
+  esports: '<path d="M7 8h10a4 4 0 0 1 4 4v3a3 3 0 0 1-5.2 2L14 15h-4l-1.8 2A3 3 0 0 1 3 15v-3a4 4 0 0 1 4-4z"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01"/>',
+  voleibol: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 4 8M12 12l-7.6 4.5M12 12h8.8M12 12a9 9 0 0 0-6.7-7.5M12 12a9 9 0 0 1-2.5 8.6"/>',
+  andebol: '<circle cx="12" cy="12" r="9"/><path d="M5 7.5c3 1.5 4 4.5 3.5 9M19 7.5c-3 1.5-4 4.5-3.5 9M8.5 4c1 2 5 2 7 0"/>',
+  futsal: '<circle cx="12" cy="10.5" r="7.5"/><path d="M12 6.5l2.8 2-1 3.3h-3.6l-1-3.3z"/><path d="M4 21h16"/>',
+  tenismesa: '<circle cx="9.5" cy="9.5" r="6"/><path d="M13.7 13.7L19 19a1.5 1.5 0 0 1-2 2l-5.3-5.3"/><circle cx="19" cy="6" r="1.8"/>',
+  resultados: '<path d="M5 21V4M5 4h13l-2.5 4L18 12H5"/><path d="M9 4v8M13 4v8"/>',
+  badminton: '<path d="M8 14l-3-9 4 1 3-3 3 3 4-1-3 9z"/><path d="M8 14h8M9 14v2a3 3 0 0 0 6 0v-2"/>',
+};
+const sportIcon = (k) => `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SPORT_SVG[k] || SPORT_SVG.futebol}</svg>`;
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
@@ -480,7 +497,7 @@ function pickHighlights(events, limit = 12) {
 function carousel(id, cards) {
   return `<div class="carousel" id="${id}">
     <button class="car-btn prev" data-action="car-prev" data-target="${id}" aria-label="Anterior">‹</button>
-    <div class="car-track">${cards.join('')}</div>
+    <div class="car-track" data-hscroll="${id}">${cards.join('')}</div>
     <button class="car-btn next" data-action="car-next" data-target="${id}" aria-label="Seguinte">›</button>
   </div>`;
 }
@@ -512,12 +529,49 @@ async function loadAffHome() {
   renderSideInvite();
 }
 
+// Home: the leagues people look for first (then the busiest others), as cards with a round badge.
+const TOP_LEAGUES = [
+  ['futebol', /premier league/i, 'england'], ['futebol', /la ?liga|primera divisi/i, 'spain'], ['futebol', /s[eé]rie a/i, 'italy'],
+  ['futebol', /bundesliga/i, 'germany'], ['futebol', /ligue 1/i, 'france'], ['futebol', /liga portugal|primeira liga|betclic/i, 'portugal'],
+  ['futebol', /champions league/i, null], ['futebol', /europa league/i, null], ['futebol', /conference league/i, null],
+  ['futebol', /eredivisie/i, 'netherlands'], ['futebol', /s[eé]rie a|brasileir/i, 'brazil'],
+  ['basquetebol', /\bnba\b/i, null], ['basquetebol', /euroleague|euroliga/i, null],
+];
+function popularLeagues(max = 16) {
+  const all = [];
+  for (const [sport, tree] of Object.entries(state.leagueTree || {})) {
+    for (const c of tree) for (const l of c.leagues) if (l.count) all.push({ sport, country: c.country, ...l });
+  }
+  const picked = [];
+  const used = new Set();
+  const take = (l) => { if (l && !used.has(`${l.sport}|${l.name}`)) { used.add(`${l.sport}|${l.name}`); picked.push(l); } };
+  for (const [sport, re, country] of TOP_LEAGUES) {
+    take(all.find((l) => l.sport === sport && re.test(l.name) && (!country || String(l.country).toLowerCase() === country)));
+  }
+  for (const l of [...all].sort((a, b) => b.count - a.count)) { if (picked.length >= max) break; take(l); }
+  return picked.slice(0, max);
+}
+function leagueBadge(l) {
+  const k = String(l.country || '').toLowerCase().trim();
+  const code = COUNTRY_FLAG[k];
+  const pic = code ? `<img src="https://flagcdn.com/w80/${code}.png" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
+  const sport = l.sport !== 'futebol' ? `<em>${sportIcon(l.sport)}</em>` : '';
+  return `<span class="lg-badge">${pic}${sport}</span>`;
+}
+function leagueRow() {
+  const leagues = popularLeagues();
+  if (!leagues.length) return '';
+  return `<section class="lg-row" data-hscroll="leagueRow" aria-label="Ligas">
+    ${leagues.map((l) => `<a class="lg-card" href="#/desporto/liga/${encodeURIComponent(l.name)}">${leagueBadge(l)}<b>${esc(l.label || leagueShort(l.name))}</b></a>`).join('')}
+  </section>`;
+}
+
 /** The top of the home page: the casino's games as round icons in a row that scrolls sideways. */
 function casinoBubbles() {
   const games = state.casinoLobby?.rows?.[0]?.games?.length ? state.casinoLobby.rows[0].games
     : state.casino.enabled ? (state.casino.games || []).slice(0, 12) : [];
   if (!games.length) return '';
-  return `<section class="cb-row" aria-label="Jogos de casino">
+  return `<section class="cb-row" data-hscroll="casinoRow" aria-label="Jogos de casino">
     ${games.slice(0, 15).map((g) => `<button class="cb-game" data-game-id="${g.id}"><span class="cb-ring">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : '<i>🎰</i>'}</span><small>${esc(String(g.name).replace(/[™®©]/g, '').trim())}</small></button>`).join('')}
     <a class="cb-game cb-all" href="#/casino"><span class="cb-ring"><i>›</i></span><small>Ver todos</small></a>
   </section>`;
@@ -539,7 +593,7 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  return `${casinoBubbles()}${state.user ? memberSpotlight : hero}
+  return `${casinoBubbles()}${leagueRow()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
@@ -583,10 +637,10 @@ function sportsPage(sub, rest = '') {
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    <div class="sport-strip">
-      <button class="sport-pill${!state.sport ? ' active' : ''}" data-sport="">Todos</button>
-      ${sports.map((s) => `<button class="sport-pill${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${SPORT_META[s]?.icon || ''} ${esc(SPORT_META[s]?.name || s)}</button>`).join('')}
-      <a class="sport-pill" href="#/desporto/resultados">🏁 Resultados</a>
+    <div class="sport-tiles" data-hscroll="sportStrip">
+      <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
+      ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
+      <a class="sport-tile" href="#/desporto/resultados">${sportIcon('resultados')}<span>Resultados</span></a>
     </div>
     ${builderSection()}
     <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
@@ -722,9 +776,9 @@ function livePage() {
   if (state.liveSport && !present.includes(state.liveSport)) state.liveSport = '';
   const live = state.liveSport ? withTv.filter((e) => e.sport === state.liveSport) : withTv;
   const tvCount = all.filter((e) => e.stream).length;
-  const strip = `<div class="sport-strip live-sports">
-      <button class="sport-pill${!state.liveSport ? ' active' : ''}" data-live-sport="">Todos <small>${withTv.length}</small></button>
-      ${present.map((sp) => `<button class="sport-pill${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small>${withTv.filter((e) => e.sport === sp).length}</small></button>`).join('')}
+  const strip = `<div class="sport-tiles live-sports" data-hscroll="liveSports">
+      <button class="sport-tile${!state.liveSport ? ' active' : ''}" data-live-sport="">${sportIcon('popular')}<span>Todos</span><i class="tile-n">${withTv.length}</i></button>
+      ${present.map((sp) => `<button class="sport-tile${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${sportIcon(sp)}<span>${esc(SPORT_META[sp]?.name || sp)}</span><i class="tile-n">${withTv.filter((e) => e.sport === sp).length}</i></button>`).join('')}
     </div>`;
   // Football first, then the other sports; big leagues first inside each sport.
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
@@ -2302,8 +2356,9 @@ function render({ keepScroll = false } = {}) {
   document.body.classList.toggle('immersive', immersive);
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
-  // Carousels keep their position when the page refreshes itself (odds, live scores).
-  const carScroll = keepScroll ? $$('#content .carousel').map((c) => [c.id, $('.car-track', c).scrollLeft]) : [];
+  // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
+  // scores): only the person scrolling moves them, never the refresh.
+  const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
   const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();
   // A playing video must never leave the document: an iframe that is detached, even for a moment,
   // reloads (black "Loading stream…", sound lost). The match page refreshes every few seconds, so
@@ -2311,7 +2366,7 @@ function render({ keepScroll = false } = {}) {
   const keep = page === 'jogo' ? $('#content #trackerInline') : null;
   if (keep?.querySelector('iframe')) mergeKeeping($('#content'), html, 'trackerInline');
   else $('#content').innerHTML = html;
-  for (const [id, left] of carScroll) { const t = $(`#${id} .car-track`); if (t) t.scrollLeft = left; }
+  for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
@@ -2324,9 +2379,17 @@ function setSideMenu(open) {
 }
 
 /** Re-renders only pages that show odds, and never while the user is typing. */
+let swipingUntil = 0;
+for (const ev of ['touchstart', 'touchmove', 'wheel']) {
+  document.addEventListener(ev, (e) => { if (e.target.closest?.('[data-hscroll]')) swipingUntil = Date.now() + 1500; }, { passive: true });
+}
+document.addEventListener('scroll', (e) => { if (e.target.matches?.('[data-hscroll]')) swipingUntil = Date.now() + 1500; }, { capture: true, passive: true });
+
 function refreshView() {
   const { page } = currentRoute();
   if (!['home', 'desporto', 'ao-vivo'].includes(page)) return;
+  // Someone is swiping a carousel: this refresh waits for the next one, the gesture is not cut.
+  if (Date.now() < swipingUntil) return;
   if (document.activeElement && $('#content').contains(document.activeElement) && document.activeElement.matches('input, select')) return;
   render({ keepScroll: true });
   if (!$('#modalBackdrop').classList.contains('hidden') && $('#searchInput')) renderSearch($('#searchInput').value);
@@ -2339,7 +2402,7 @@ async function loadLeagues() {
     state.leagueTree = leagues;
     renderSidebar();
     // A league page opened before the trees arrived: now its sport is known.
-    if (first && currentRoute().sub === 'liga') render({ keepScroll: true });
+    if (first && (currentRoute().sub === 'liga' || currentRoute().page === 'home')) render({ keepScroll: true });
   } catch { /* the sidebar works without it */ }
 }
 
