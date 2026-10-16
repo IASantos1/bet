@@ -269,11 +269,28 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 }
 
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
-function teamBadge(logo, name, size = '', fallback = null) {
+// A team without a badge: a shirt in its kit colours (or two colours made from its name).
+const KIT_COLOURS = [['#d62828', '#ffffff'], ['#1d4ed8', '#ffffff'], ['#16a34a', '#ffffff'], ['#111827', '#ffffff'], ['#f59e0b', '#111827'],
+  ['#7c3aed', '#ffffff'], ['#0ea5e9', '#0b1d3a'], ['#ffffff', '#d62828'], ['#ffffff', '#1d4ed8'], ['#be123c', '#fbbf24'], ['#065f46', '#fde68a'], ['#ea580c', '#1f2937']];
+const SAFE_HEX = /^#[0-9a-f]{6}$/i;
+function kitOf(name, kit) {
+  const [a, b] = Array.isArray(kit) ? kit.filter((c) => SAFE_HEX.test(c)) : [];
+  if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return KIT_COLOURS[h % KIT_COLOURS.length];
+}
+function jerseySvg(name, kit) {
+  const [a, b] = kitOf(name, kit);
+  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z" fill="${a}" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
+    + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
+}
+function teamBadge(logo, name, size = '', fallback = null, kit = null) {
   const cls = `team-icon${size ? ` ${size}` : ''}`;
-  const mini = size.split(' ').includes('mini');
-  if (!logo) return `<div class="${cls}">${esc(mini ? initials(name).slice(0, 1) : initials(name))}</div>`;
-  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}"><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}></div>`;
+  const kitAttr = kit === false ? ' data-kit="none"' : Array.isArray(kit) ? ` data-kit="${esc(kit.join(','))}"` : '';
+  if (!logo && kit === false) return `<div class="${cls}">${esc(size.split(' ').includes('mini') ? initials(name).slice(0, 1) : initials(name))}</div>`;
+  if (!logo) return `<div class="${cls} kit">${jerseySvg(name, kit)}</div>`;
+  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}" data-name="${esc(name)}"${kitAttr}><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}></div>`;
 }
 
 // Flags as images (Windows does not draw flag emoji). The provider uses non-ISO codes for the
@@ -339,7 +356,9 @@ function sideBadge(e, side, size = '') {
   const flag = flagUrl(e[`${side}Country`]);
   const logo = e[`${side}Logo`];
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
-  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag);
+  // Players (tennis, darts…) have no shirt: initials when there is no photo nor flag.
+  const solo = ['tenis', 'tenismesa', 'badminton', 'dardos'].includes(e.sport);
+  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`]);
 }
 
 function matchCard(e, extraClass = '') {
@@ -2853,7 +2872,9 @@ document.addEventListener('error', (e) => {
   const box = img.parentElement;
   box.classList.remove('has-logo');
   box.classList.remove('flag');
-  box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
+  // No badge after all: the shirt (players keep their initials).
+  if (box.classList.contains('player') || box.dataset.kit === 'none') box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
+  else { box.classList.add('kit'); box.innerHTML = jerseySvg(box.dataset.name, box.dataset.kit ? box.dataset.kit.split(',') : null); }
 }, true);
 // A league badge that fails to load falls back to the sport icon.
 document.addEventListener('error', (e) => {

@@ -278,6 +278,9 @@ export const config = {
     senderName: unquote(env.BREVO_SENDER_NAME) || 'BET62',
     smsSender: unquote(env.BREVO_SMS_SENDER),
   },
+  // Team badges and kit colours looked up by name for teams the feed sends without a badge
+  // (teamlogos.js, TheSportsDB). TEAM_LOGOS=0 turns it off.
+  teamLogos: { key: unquote(env.THESPORTSDB_KEY) || '123', enabled: env.TEAM_LOGOS !== '0' },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).
