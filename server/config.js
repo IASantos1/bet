@@ -190,7 +190,7 @@ export const config = {
     futureDays: Math.min(90, Math.max(0, int(env.WINHOUSE_FUTURE_DAYS, 30))),
     futureMinutes: Math.max(5, int(env.WINHOUSE_FUTURE_MINUTES, 10)),
     tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,
-    finishConfirmSeconds: int(env.WINHOUSE_FINISH_CONFIRM_SECONDS, 600),
+    finishConfirmSeconds: int(env.WINHOUSE_FINISH_CONFIRM_SECONDS, 180),
     // Women's and youth (U19, Sub-20, Junior…) games are left out unless set to 0.
     blockWomen: env.WINHOUSE_BLOCK_WOMEN !== '0',
     blockYouth: env.WINHOUSE_BLOCK_YOUTH !== '0',

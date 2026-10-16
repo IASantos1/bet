@@ -57,14 +57,16 @@ const TYPES = { '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascrip
  * (brotli at a high level, gzip), answered with an ETag (304 when unchanged). With ?v= in the URL
  * the browser keeps them a year; without, it checks each time (a cheap 304).
  */
-export function staticText(root, { maxBytes = 4 * 1024 * 1024 } = {}) {
+export function staticText(root, { maxBytes = 4 * 1024 * 1024, transform = null } = {}) {
   const base = path.resolve(root);
   const cache = new Map(); // file → { etag, type, raw, br?, gzip? }
   const load = (file) => {
     let c = cache.get(file);
     if (c) return c;
-    const raw = fs.readFileSync(file);
+    let raw = fs.readFileSync(file);
     if (raw.length > maxBytes) return null;
+    // e.g. a script's own imports versioned (assets.js)
+    if (transform) raw = transform(path.relative(base, file).split(path.sep).join('/'), raw) || raw;
     c = { etag: `"${createHash('sha1').update(raw).digest('base64url').slice(0, 20)}"`, type: TYPES[path.extname(file)], raw };
     cache.set(file, c);
     return c;

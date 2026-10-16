@@ -989,12 +989,12 @@ function casinoGamePage(id) {
   if (d.error) return `<div class="panel empty">${esc(d.error)}<div class="hero-actions"><a class="outline-btn" href="#/casino">Voltar ao casino</a></div></div>${footer()}`;
   const g = d.game;
   const fs = d.freeSpins;
-  const art = g.image ? `<img src="${esc(g.image)}" alt="" class="game-img">` : '<span class="cg-emoji">🎰</span>';
+  const art = g.image ? `<img src="${esc(g.image)}" alt="" class="game-img" loading="lazy" decoding="async">` : '<span class="cg-emoji">🎰</span>';
   const tags = [g.category, g.premium ? 'Premium' : null, g.provider].filter(Boolean);
   const rel = (x) => `<a class="cg-rel" href="#/casino/jogo/${x.id}"><span class="cg-rel-art">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" class="game-img">` : '🎰'}</span><strong>${esc(x.name)}</strong></a>`;
   return `<div class="cg">
       <div class="cg-hero">
-        ${g.image ? `<img class="cg-bg" src="${esc(g.image)}" alt="">` : ''}
+        ${g.image ? `<img class="cg-bg" src="${esc(g.image)}" alt="" loading="lazy" decoding="async">` : ''}
         <a class="cg-close" href="#/casino" aria-label="Fechar">×</a>
         <div class="cg-art">${art}</div>
       </div>
@@ -2180,7 +2180,7 @@ async function placeBet() {
         const item = state.slip.find((s) => s.selectionId === c.selectionId) || state.builder?.legs.find((l) => l.selectionId === c.selectionId);
         if (item) item.newOdds = c.odds;
       }
-      await refreshEvents();
+      await refreshEvents({ full: true });
     } else if (err.status === 401) {
       openAuth('login');
     }
@@ -2342,9 +2342,26 @@ async function loadLeagues() {
   } catch { /* the sidebar works without it */ }
 }
 
-async function refreshEvents() {
+/**
+ * The board. The whole of it (pre-match up to two weeks ahead and live) is read at most every 30 s
+ * (or when asked: coming back to the page, odds changed on a bet); in between, every poll reads only
+ * the live games, a far smaller answer, and lays them over the last pre-match list. A finished game
+ * leaves "Ao vivo" on the next poll; a pre-match game whose start has passed drops off.
+ */
+let board = { events: [], at: 0 };
+async function refreshEvents({ full = false, prefetched = null } = {}) {
   try {
-    const { events } = await api('/api/events');
+    let events;
+    if (prefetched || full || !state.eventsLoaded || Date.now() - board.at > 30_000) {
+      ({ events } = prefetched ? await prefetched : await api('/api/events'));
+      board = { events, at: Date.now() };
+    } else {
+      const { events: live } = await api('/api/events?status=live');
+      const liveIds = new Set(live.map((e) => e.id));
+      const now = new Date().toISOString();
+      events = [...live, ...board.events.filter((e) => e.status !== 'live' && !liveIds.has(e.id) && e.startTime > now)]
+        .sort((a, b) => (a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0));
+    }
     state.previousOdds = new Map(state.events.flatMap((e) => e.selections.map((s) => [s.id, s.odds])));
     state.events = events;
     state.eventsLoaded = true;
@@ -2388,7 +2405,7 @@ async function resume() {
     // A deploy happened while away: load the new version.
     if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) { window.location.reload(); return; }
   } catch { /* offline: the polls retry */ }
-  await Promise.all([refreshMe(), refreshEvents(), loadLeagues()]);
+  await Promise.all([refreshMe(), refreshEvents({ full: true }), loadLeagues()]);
   const { page, sub } = currentRoute();
   if (page === 'jogo' && state.match.id) loadMatch(state.match.id, { quiet: true });
   if (page === 'perfil' && sub === 'carteira') loadWallet();
@@ -4157,6 +4174,9 @@ async function init() {
   bindChrome();
   autoMode();
   renderSlip();
+  // The board is asked for at once, alongside the settings and the account (not after them).
+  const boardReq = api('/api/events');
+  boardReq.catch(() => {});
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
   // A new deploy changes the version: reload once so nobody keeps an old page open for hours.
@@ -4172,9 +4192,12 @@ async function init() {
   render();
   if (referred && !state.user) openAuth('register');
   setTimeout(askPromos, 4000);
-  loadCasino({ reset: true });
-  loadCasinoLobby();
-  await refreshEvents();
+  // The casino's lists wait for the board, unless the casino is the page opened.
+  const casinoFirst = currentRoute().page === 'casino';
+  if (casinoFirst) { loadCasino({ reset: true }); loadCasinoLobby(); }
+  await refreshEvents({ prefetched: boardReq });
+  document.dispatchEvent(new Event('bet62:ready'));
+  if (!casinoFirst) { loadCasino({ reset: true }); loadCasinoLobby(); }
   loadLeagues();
   setInterval(() => { if (!document.hidden && !playingCasino()) loadLeagues(); }, 60_000);
   // My bets: scores, clocks and cash-out values kept fresh while the tickets are on screen.

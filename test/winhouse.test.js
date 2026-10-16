@@ -194,6 +194,39 @@ test('a match flagged for review is settled when the tracker says it is over (sc
   assert.equal(t.betStatus(onHome), 'won');
 });
 
+test('a match that leaves the live list is settled within seconds when the tracker says it is over', async () => {
+  const lists = { live: [football(8, 91, '2-1', ODD), football(9, 92, '0-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(8, '1x2', '1');
+  lists.live = [];
+  await t.feed.syncLive(); // gone from the list: hidden at once, settled only after the confirmation time…
+  assert.equal(t.row(8).status, 'live');
+  // …unless the tracker already says it ended (8); 9 is still "in progress" for it.
+  lists.trackers = { 8: { status: 'Ended', home_score: 2, away_score: 1 }, 9: { status: 'inprogress', home_score: 0, away_score: 0 } };
+  const now = Date.now();
+  assert.deepEqual(await t.feed.fastFinish({ now }), { asked: 2, finished: 1 });
+  assert.equal(t.row(8).status, 'finished');
+  assert.equal(t.row(8).clock, 'Final');
+  assert.equal(t.betStatus(onHome), 'won');
+  assert.equal(t.row(9).status, 'live');
+  assert.deepEqual(await t.feed.fastFinish({ now: now + 5_000 }), { asked: 0, finished: 0 }); // each match every 20 s
+  lists.trackers[9] = { status: 'Ended', home_score: 0, away_score: 0 };
+  assert.deepEqual(await t.feed.fastFinish({ now: now + 21_000 }), { asked: 1, finished: 1 });
+});
+
+test('a match still in the list but over for the tracker (after the 85th minute) is settled; earlier it is not', async () => {
+  const lists = { live: [football(10, 93, '1-0', ODD), football(11, 40, '0-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  lists.trackers = { 10: { status: 'Ended', home_score: 1, away_score: 0 }, 11: { status: 'Ended', home_score: 0, away_score: 0 } };
+  await t.feed.readCards();
+  assert.equal(t.row(10).status, 'finished');
+  assert.equal(t.row(11).status, 'live');
+  await t.feed.syncLive(); // the list still carries 10: it stays finished
+  assert.equal(t.row(10).status, 'finished');
+});
+
 test('ice hockey: overtime means a regulation draw — 1X2 settles on it', async () => {
   const hockey = (min, result, odd) => ({ id: 77, sport_id: 4, league: 'RHL', ...when((min + 30) * 60_000), name: 'Akuly - Medvedi', home_team: 'Akuly', away_team: 'Medvedi', result, current_minute: clock(min), odd });
   const HOD = '1|3.05|1|1045|1x2 [1X2],2|6.35|x|1045|1x2 [1X2],3|1.63|2|1045|1x2 [1X2]';

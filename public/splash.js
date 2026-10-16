@@ -20,7 +20,10 @@
     if (event.key === 'Escape') close();
   }
   document.addEventListener('keydown', onKeyDown);
+  // It ends as soon as the site is ready (the games loaded), never before 0.6 s nor after 1.4 s.
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var shownAt = Date.now();
+  document.addEventListener('bet62:ready', function () { setTimeout(close, Math.max(0, 600 - (Date.now() - shownAt))); });
   setTimeout(close, reducedMotion ? 450 : 1400);
   el.addEventListener('click', close);
 })();
