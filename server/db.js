@@ -513,6 +513,9 @@ function migrate(db) {
   // Palace game the money put on the player's free-spins casino account (null: not there).
   if (!fsCols.has('chosen_game')) db.exec('ALTER TABLE casino_spins ADD COLUMN chosen_game INTEGER');
   if (!fsCols.has('palace_cents')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_cents INTEGER');
+  // Palace: whether the last fall of that balance may still have its win to come, and when it last moved.
+  if (!fsCols.has('palace_pending')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_pending INTEGER');
+  if (!fsCols.has('palace_at')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_at TEXT');
 
   // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
   const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));

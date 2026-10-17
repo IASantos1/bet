@@ -399,14 +399,22 @@ export function createApp(db, {
   // ---------- free spins on the Palace casino ----------
   // Their money sits on the player's free-spins account there; this reads it back into the grant,
   // and ends the grant (taking that money back first) when asked, when it is played out or expired.
+  const PALACE_SETTLE_MS = 4_000;
   const activeSpinsOf = (userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
   async function settlePalaceSpins(s, { end = false, status = 'closed', reason = null } = {}) {
     if (!s || s.status !== 'active' || s.palace_cents === null || s.palace_cents === undefined || !casino?.enabled) return 0;
     const u = userById(s.user_id);
     const expired = s.expires_at <= nowIso();
-    const left = await casino.fsBalanceCents(u);
-    const bet = spinBet(s, s.chosen_game);
-    if (!end && !expired && left >= bet) { tx(db, () => palaceSpinsBalance(db, s, left)); return 0; }
+    if (!end && !expired) {
+      const cents = await casino.fsBalanceCents(u);
+      tx(db, () => palaceSpinsBalance(db, s, cents));
+      const now = spinsRow(db, s.id, s.user_id);
+      // Every spin played: they end once the last one has paid (the balance still for a moment),
+      // at once if the game goes on being played with what they won.
+      const still = Date.now() - Date.parse(now.palace_at) >= PALACE_SETTLE_MS;
+      const overplayed = s.spins_left < 1 && now.palace_cents < s.palace_cents;
+      if (now.spins_left >= 1 || !(still || overplayed)) return 0;
+    }
     const back = await casino.fsWithdrawAll(u);
     const why = expired ? ['expired', 'prazo terminado'] : end ? [status, reason] : ['closed', 'Free Spins utilizadas'];
     return tx(db, () => palaceSpinsBalance(db, spinsRow(db, s.id, s.user_id), back, { final: true, status: why[0], reason: why[1] }));
@@ -1354,9 +1362,12 @@ export function createApp(db, {
       const s = req.query.fs ? spinsRow(db, Number(req.query.fs), req.user.id) : null;
       const u = userById(req.user.id);
       const away = u.casino_active && casino?.enabled ? await casino.casinoBalanceCents(u) : 0;
-      const onPalace = s && s.status === 'active' && s.palace_cents !== null && casino?.enabled;
-      const fsCents = !s ? null : onPalace ? await casino.fsBalanceCents(u) : s.status === 'active' ? s.balance_cents : 0;
-      return res.json({ balance: cents(u.balance_cents + away), freeSpins: fsCents === null ? null : cents(fsCents), inCasino: !!u.casino_active });
+      // Free spins: the rounds left (what the player sees), what they won, and whether they ended.
+      if (s && s.status === 'active' && s.palace_cents !== null && casino?.enabled) await settlePalaceSpins(s);
+      const f = s && spinsRow(db, s.id, req.user.id);
+      const fs = f ? { spinsLeft: f.status === 'active' ? Math.max(0, f.spins_left ?? 0) : 0, spins: f.spins, won: cents(f.status === 'active' ? f.won_cents || 0 : f.paid_cents || 0),
+        ended: f.status !== 'active' } : null;
+      return res.json({ balance: cents(userById(req.user.id).balance_cents + away), freeSpins: fs, inCasino: !!u.casino_active });
     }
     const u = userById(req.user.id);
     const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
@@ -1391,7 +1402,7 @@ export function createApp(db, {
           if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
           fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
           const fund = fs.palace_cents === null ? fs.value_cents : 0;
-          if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ? WHERE id = ? AND palace_cents IS NULL').run(fund, fs.id);
+          if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
           let out;
           try {
             out = await casino.fsEnterGame(userById(req.user.id), { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl, fundCents: fund,
@@ -1400,7 +1411,7 @@ export function createApp(db, {
             if (fund) db.prepare('UPDATE casino_spins SET palace_cents = NULL WHERE id = ?').run(fs.id);
             throw err;
           }
-          return res.json({ url: out.url, freeSpins: { id: fs.id, balance: cents(out.fsCents) }, balance: cents(userById(req.user.id).balance_cents), transfer: true });
+          return res.json({ url: out.url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left, spins: fs.spins }, balance: cents(userById(req.user.id).balance_cents), transfer: true });
         }
         const pu = userById(req.user.id);
         if (pu.balance_cents <= 0 && !pu.casino_active) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
@@ -1419,7 +1430,7 @@ export function createApp(db, {
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
         chooseSpinsGame(db, u.id, s.id, g.id); // the picked game is the only one from now on
         const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl });
-        return res.json({ url, freeSpins: { id: s.id, balance: cents(s.balance_cents) }, balance: cents(u.balance_cents) });
+        return res.json({ url, freeSpins: { id: s.id, spinsLeft: s.spins_left ?? s.spins, spins: s.spins }, balance: cents(u.balance_cents) });
       }
       if (u.balance_cents <= 0) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
       const url = await bb.launch({ gameId: g.id, token: playerToken(u.id), returnUrl });

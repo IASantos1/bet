@@ -417,8 +417,11 @@ const spinBets = (s) => { try { return JSON.parse(s.game_bets || '{}') || {}; } 
 export const spinBet = (s, gameId) => Number(spinBets(s)[gameId]) || s.spin_value_cents;
 /** Grants counted in spins (won_cents kept apart); older ones mixed winnings into the balance. */
 const asValue = (s) => s.spins_left !== null && s.spins_left !== undefined;
-/** What the casino shows for the free spins: the spins left (at the spin value) plus what they have won. */
-export const spinsBalance = (s) => (asValue(s) ? s.balance_cents + s.won_cents : s.balance_cents);
+/**
+ * What the casino game is told the free spins hold: only the spins left (at the spin value). What
+ * they won is kept apart (never played again) and paid as real money when they end.
+ */
+export const spinsBalance = (s) => s.balance_cents;
 
 /**
  * Ends a free-spins grant: what the spins won is paid as real money (the free spins themselves are
@@ -522,17 +525,31 @@ export function chooseSpinsGame(db, userId, spinsId, gameId) {
 
 /**
  * Free spins played on the Palace casino (Transfer mode): the value is put on the player's own
- * free-spins account there and can only be followed by its balance. `cents` = that balance now:
- * up to the value given it is the spins still to play, above it what they have won. `final` ends
- * them (the money there already taken back): the winnings are paid as real money.
+ * free-spins account there, which only tells its balance, so the spins are counted from how it
+ * moves between two readings (the game page reads it every 2 s): a fall is spins played at the
+ * fixed bet (a fall of exact bets may still have its win to come: `palace_pending`), a rise
+ * without one pending is a spin that won. What is above the spins left is what they won.
+ * `cents` = that balance now. `final` ends them (`cents` = the money taken back from there): up to
+ * the spins left it is their unused value, the rest is paid as real money.
  */
 export function palaceSpinsBalance(db, s, cents, { final = false, status = 'closed', reason = null } = {}) {
   if (s.status !== 'active') return 0;
-  const left = Math.min(cents, s.value_cents);
   const bet = spinBet(s, s.chosen_game) || s.spin_value_cents;
-  db.prepare('UPDATE casino_spins SET balance_cents = ?, won_cents = ?, spins_left = ? WHERE id = ?')
-    .run(left, Math.max(0, cents - s.value_cents), Math.floor(left / bet), s.id);
-  return final ? closeSpins(db, spinsRow(db, s.id, s.user_id), status, reason) : 0;
+  if (final) {
+    const unused = Math.min(cents, Math.max(0, s.spins_left ?? 0) * bet);
+    db.prepare('UPDATE casino_spins SET balance_cents = ?, won_cents = ?, palace_cents = 0 WHERE id = ?').run(unused, cents - unused, s.id);
+    return closeSpins(db, spinsRow(db, s.id, s.user_id), status, reason);
+  }
+  const d = cents - (s.palace_cents ?? s.value_cents);
+  let played = 0;
+  let pending = s.palace_pending ? 1 : 0;
+  if (d < 0) { played = Math.ceil(-d / bet); pending = -d % bet === 0 ? 1 : 0; }
+  else if (d > 0) { played = pending ? 0 : 1; pending = 0; }
+  let left = Math.max(0, (s.spins_left ?? 0) - played);
+  if (cents < left * bet) left = Math.floor(cents / bet); // more played than the readings showed
+  db.prepare('UPDATE casino_spins SET spins_left = ?, balance_cents = ?, won_cents = ?, palace_cents = ?, palace_pending = ?, palace_at = ? WHERE id = ?')
+    .run(left, left * bet, cents - left * bet, cents, pending, d !== 0 || !s.palace_at ? nowIso() : s.palace_at, s.id);
+  return 0;
 }
 
 /** The player ends the free spins now (winnings above the value given are paid). */
