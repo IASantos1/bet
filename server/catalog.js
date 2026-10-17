@@ -103,7 +103,7 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
    * [{ source, sports() → [sport], gameMarkets(ext, { live }) → { markets }, wired(sport) → Set<marketId> }]
    * (WinHouse: every sport it feeds, one game page per sampled game). Switched-off providers are left out.
    */
-  async function run({ sample = 12, liveSample = 5 } = {}) {
+  async function run({ sample = 12, liveSample = 5, sport: only = null } = {}) {
     if (running) return last;
     running = true;
     try {
@@ -120,6 +120,7 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
         if (!p.enabled()) continue;
         if (p.gameMarkets) {
           for (const sport of p.sports()) {
+            if (only && sport !== only) continue;
             const games = pickGames(p.source, sport);
             const byId = new Map();
             const errors = [];
@@ -152,6 +153,7 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
           }
           continue;
         }
+        if (only && p.sport !== only) continue;
         const games = pickGames(p.source, null);
         const map = new Map();
         const errors = [];
@@ -176,7 +178,9 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
           })).sort((a, b) => b.events - a.events || a.kind.localeCompare(b.kind)),
         });
       }
-      last = { at: nowIso(), calls, sports };
+      // One sport asked: the others keep their last results.
+      const kept = only && last ? last.sports.filter((s) => s.sport !== only) : [];
+      last = { at: nowIso(), calls, sports: [...sports, ...kept] };
       log(`catálogo de mercados: ${calls} pedidos`);
       return last;
     } finally {

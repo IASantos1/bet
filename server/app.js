@@ -1521,7 +1521,8 @@ export function createApp(db, {
   admin.post('/market-catalog/run', async (req, res, next) => {
     try {
       const sample = Math.min(30, Math.max(3, Number(req.body.sample) || 12));
-      res.json({ catalog: await catalog.run({ sample }) });
+      const sport = typeof req.body.sport === 'string' && /^[a-z]{2,20}$/.test(req.body.sport) ? req.body.sport : null;
+      res.json({ catalog: await catalog.run({ sample, sport }) });
     } catch (err) { next(err); }
   });
 
