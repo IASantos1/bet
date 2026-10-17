@@ -233,4 +233,7 @@ test('free pass: the competition is matched to its kept league and close names t
   for (const n of ['Strasbourg', 'Paris Saint-Germain', 'Lille OSC', 'Stade Brestois 29', 'Angers SCO', 'Olympique de Marseille']) {
     assert.match(logos.get('futebol', n)?.logo || '', /^\/team-logo\//, n);
   }
+  // Lyon has no game now, but its badge is downloaded ahead too (images cost no requests).
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM team_logo_files').get().n, 7);
+  assert.equal(api.length, 1);
 });
