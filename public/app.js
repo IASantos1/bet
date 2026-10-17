@@ -896,14 +896,14 @@ function freeSpinsBar() {
   const chosen = s.chosenGame ? games[0] : null;
   const expanded = Boolean(state.fsExpanded);
   const previewGames = games.slice(0, 5);
+  const count = Number(s.spinsLeft ?? s.spins) || 0;
   const gameCards = previewGames.map((g) => `<button class="fs-showcase-game" type="button" data-action="fs-pick" data-id="${esc(g.id)}">
       <span class="fs-showcase-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '<span class="fs-showcase-fallback" aria-hidden="true">🎰</span>'}
         <span class="fs-showcase-tag">FREE SPINS</span><span class="fs-showcase-play" aria-hidden="true">▶</span></span>
       <span class="fs-showcase-info"><strong title="${esc(g.name)}">${esc(g.name)}</strong>
-        <small><span>${esc(g.provider)}</span><b>${money(g.bet)} / rodada</b></small></span>
+        <small><span>${esc(g.provider)}</span><b>${count} ${count === 1 ? 'rodada' : 'rodadas'}</b></small></span>
       <span class="fs-showcase-action">${chosen ? 'Jogar agora' : 'Escolher jogo'} <i aria-hidden="true">↗</i></span>
     </button>`).join('');
-  const count = Number(s.spinsLeft ?? s.spins) || 0;
   const intro = chosen
     ? `As suas rodadas estão no jogo ${esc(chosen.name)}.`
     : `Escolha 1 dos ${games.length} jogos elegíveis para começar.`;
@@ -918,7 +918,7 @@ function freeSpinsBar() {
     </button>
     <div class="fs-reveal"${expanded ? '' : ' hidden'} id="fsGameReveal">
       <div class="fs-reveal-head"><div><span>ESCOLHE A TUA EXPERIÊNCIA</span><strong>${chosen ? 'O teu jogo de Free Spins' : `${previewGames.length} jogos disponíveis`}</strong></div>
-        <small>${chosen ? 'Joga quando quiseres' : 'Cada jogo mostra o valor por rodada'}</small></div>
+        <small>${chosen ? 'Joga quando quiseres' : 'As rodadas valem em qualquer um deles'}</small></div>
       <div class="fs-showcase">${gameCards}</div>
       ${games.length > 5 ? `<button class="fs-more-games" type="button" data-action="fs-more">Ver todos os ${games.length} jogos disponíveis <span aria-hidden="true">→</span></button>` : ''}
       <p class="fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))} · Os ganhos passam a saldo real quando as Free Spins terminam.</p>
@@ -936,7 +936,7 @@ function openFreeSpins() {
   openModal('Jogos disponíveis para Free Spins', `<p class="muted">${intro}</p>
     <div class="fs-pick">${d.games.map((g) => `<button class="fs-game" data-action="fs-pick" data-id="${g.id}">
       <span class="fs-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span>
-      <strong>${esc(g.name)}</strong><small>${esc(g.provider)} · ${money(g.bet)} por rodada</small></button>`).join('')}</div>
+      <strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></button>`).join('')}</div>
     <p class="muted fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))}. Os ganhos passam a saldo real quando as Free Spins terminam.</p>`);
 }
 
@@ -1052,7 +1052,10 @@ async function closeCasino({ keepalive = false } = {}) {
   } catch { state.user && (state.user.casinoActive = true); }
 }
 
-/** While a game is open, the header shows the live casino balance (and the free-spins balance in its bar). */
+/** "3 de 5 rodadas": free spins are shown in rounds, never in money (to us one round is its bet). */
+const fsRounds = (g) => `${g.fsLeft ?? 0}${g.fsSpins ? ` de ${g.fsSpins}` : ''} ${(g.fsSpins || g.fsLeft) === 1 ? 'rodada' : 'rodadas'}`;
+
+/** While a game is open, the header shows the live casino balance (and the free-spins rounds left in its bar). */
 async function refreshCasinoBalance() {
   const sess = state.casinoSession;
   if (!state.user || sess?.demo) return;
@@ -1062,10 +1065,19 @@ async function refreshCasinoBalance() {
       state.user.balance = w.balance;
       updateHeader();
     }
-    if (sess?.fs && w.freeSpins !== null && w.freeSpins !== undefined) {
-      sess.fsBalance = w.freeSpins;
+    if (sess?.fs && w.freeSpins && state.casinoSession === sess) {
+      const was = [sess.fsLeft, sess.fsEnded];
+      sess.fsLeft = w.freeSpins.spinsLeft;
+      sess.fsSpins = w.freeSpins.spins;
+      sess.fsWon = w.freeSpins.won;
+      sess.fsEnded = w.freeSpins.ended;
       const el = $('#fsBal');
-      if (el) el.textContent = money(w.freeSpins);
+      if (el) el.textContent = fsRounds(sess);
+      // The last round played: the game is covered (no more spins) until the free spins end.
+      if ((was[0] > 0) !== (sess.fsLeft > 0) || was[1] !== sess.fsEnded) {
+        render({ keepScroll: true });
+        if (sess.fsEnded) { loadFreeSpins(); state.promos = null; }
+      }
     }
   } catch { /* next tick retries */ }
 }
@@ -1133,7 +1145,7 @@ function casinoGamePage(id) {
         <div class="cg-provider">${esc(g.provider)}</div>
         <p class="cg-tags">${tags.map(esc).join(', ')}</p>
         <div class="cg-actions">
-          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fs.spinsLeft} ${fs.spinsLeft === 1 ? 'rodada' : 'rodadas'} de ${money(fs.spinValue)}</small></button>` : ''}
+          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fs.spinsLeft} ${fs.spinsLeft === 1 ? 'rodada' : 'rodadas'}</small></button>` : ''}
           <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
           ${g.demo !== false ? '<button class="cg-btn demo" data-cg-play="demo">Testar</button>' : ''}
         </div>
@@ -1150,7 +1162,8 @@ async function playCasino(mode) {
   const g = d?.game;
   if (!g) return;
   if (mode !== 'demo' && !state.user) return openAuth('login');
-  state.casinoSession = { name: g.name, provider: g.provider, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null, fsBalance: null };
+  state.casinoSession = { name: g.name, provider: g.provider, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null,
+    fsLeft: d.freeSpins?.spinsLeft ?? null, fsSpins: d.freeSpins?.spins ?? null, fsWon: 0, fsEnded: false };
   location.hash = '#/casino/jogar';
   try {
     const ahead = mode === 'demo' ? await state.casinoGame?.demo : null;
@@ -1162,7 +1175,7 @@ async function playCasino(mode) {
     if (r.transfer && state.user) { state.user.casinoActive = true; state.user.balance = r.balance; updateHeader(); }
     // Never covered for long: a game whose page does not report loading shows itself anyway.
     setTimeout(uncoverGame, 20_000);
-    if (r.freeSpins) state.casinoSession.fsBalance = r.freeSpins.balance;
+    if (r.freeSpins) Object.assign(state.casinoSession, { fsLeft: r.freeSpins.spinsLeft, fsSpins: r.freeSpins.spins });
     if (currentRoute().sub === 'jogar') render({ keepScroll: true });
   } catch (err) {
     state.casinoSession = null;
@@ -1186,10 +1199,16 @@ function casinoPlayPage() {
   const cover = `<div class="casino-loading${g.url ? ' over' : ''}" id="casinoCover">${g.image ? `<img src="${esc(g.image)}" alt="" class="casino-cover-img">` : ''}<div class="spinner"></div><strong>${esc(g.name)}</strong><span class="muted">${g.url ? 'A carregar o jogo…' : 'A abrir o jogo…'}</span></div>`;
   if (!g.url) return `<div class="casino-player">${cover}</div>`;
   const mode = g.demo ? '<span class="cbar-tag">DEMO · saldo virtual</span>'
-    : g.fs ? `<span class="cbar-tag fs">FREE SPINS · <b id="fsBal">${money(g.fsBalance ?? 0)}</b></span>` : '';
+    : g.fs ? `<span class="cbar-tag fs">FREE SPINS · <b id="fsBal">${fsRounds(g)}</b></span>` : '';
+  // Every round played: the game is covered; when they end, what they won is already real balance.
+  const fsDone = !g.fs || (g.fsLeft > 0 && !g.fsEnded) || g.fsLeft === null ? ''
+    : `<div class="fs-done"><div class="fs-done-box">${g.fsEnded
+      ? `<strong>Free Spins terminadas</strong><span>${g.fsWon > 0 ? `Ganhou <b>${money(g.fsWon)}</b>: já está no seu saldo real.` : 'Desta vez não houve ganhos.'}</span>
+        <a class="cg-btn play" href="#/casino">Voltar ao casino</a>`
+      : '<div class="spinner"></div><strong>Rodadas terminadas</strong><span>A confirmar os ganhos…</span>'}</div></div>`;
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
-    <div class="casino-stage">${g.loaded ? '' : cover}
+    <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
     <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
       allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe></div>
   </div>`;
@@ -1254,7 +1273,7 @@ function spinsCard(f) {
   return `<div class="bonus-card">
     <div class="bonus-head"><strong>🎰 Free Spins casino · ${f.spins} rodadas</strong><span class="pf-badge verified">Ativas</span></div>
     <div class="bonus-nums"><div><small>Rodadas por jogar</small><b>${f.spinsLeft} de ${f.spins}</b></div><div><small>Ganhos (saldo real)</small><b class="green">${money(f.winnings)}</b></div></div>
-    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>${g.bet ? ` (${money(g.bet)}/rodada)` : ''}`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · os ganhos passam a saldo real quando terminarem</small>
+    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · os ganhos passam a saldo real quando terminarem</small>
     <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar e receber ganhos (${money(f.winnings)})</button></div>
   </div>`;
 }
@@ -2466,7 +2485,12 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = null;
     if (state.user?.casinoActive) closeCasino();
   } else if (!state.casinoTimer) {
-    state.casinoTimer = setInterval(() => { if (!document.hidden && state.casinoSession?.url) refreshCasinoBalance(); }, 5_000);
+    // Free spins are followed closely (every 2 s: the rounds left, the end); the balance every 6 s.
+    let tick = 0;
+    state.casinoTimer = setInterval(() => {
+      tick += 1;
+      if (!document.hidden && state.casinoSession?.url && (state.casinoSession.fs || tick % 3 === 0)) refreshCasinoBalance();
+    }, 2_000);
   }
   document.body.classList.toggle('immersive', immersive);
   // The casino has no sports menu nor bet slip: its pages take the whole width.

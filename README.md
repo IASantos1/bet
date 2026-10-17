@@ -316,8 +316,13 @@ Chamadas da chave de teste (`"sandbox": true`) nunca mexem em dinheiro real. Cad
 casino" (em vez do bónus de desporto). Escalões iniciais €10→5, €20→10, €50→25, €100→50 rodadas de €0,20,
 válidas 7 dias, só nos jogos com os IDs configurados. A API não tem rodadas grátis nativas, por isso as rodadas
 são um saldo próprio (rodadas × valor) jogado numa sessão à parte (jogador `bet62_<id>_fs<n>`), aceite só nos
-jogos elegíveis; o custo máximo é o valor oferecido. Ao terminar (pelo jogador, saldo esgotado ou fim do
-prazo), o que o saldo tiver acima do valor oferecido é pago em saldo real (`free_spin_win`); o resto expira.
+jogos elegíveis; o custo máximo é o valor oferecido. O jogador vê **rodadas** ("3 de 5 rodadas"), nunca
+valores: internamente 1 rodada = a aposta fixa do jogo (€0,20 / €0,10). O jogo só recebe o valor das rodadas
+por jogar; o que elas ganham fica à parte (não volta a ser jogado). Ao fim da última rodada o jogo é tapado e as
+Free Spins terminam: os ganhos passam a saldo real (`free_spin_win`). No Palace (modo Transfer) a API só dá o
+saldo da conta de Free Spins: a página do jogo lê-o a cada 2 s e as rodadas contam-se pelas descidas dessa
+conta (cada aposta fixa = 1 rodada); terminadas as rodadas, o dinheiro de lá é retirado e pago como ganhos.
+Também terminam pelo jogador ou no fim do prazo (as rodadas por jogar expiram).
 
 ## As minhas apostas e cash out
 
