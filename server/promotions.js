@@ -109,6 +109,50 @@ const isoOrNull = (v) => {
 };
 
 /** Validates and saves the configuration sent by the admin (unknown fields are ignored). */
+// The house's free-spins games, put in the free-spins list once (by name: their ids differ per catalogue).
+export const FS_DEFAULT_GAMES = ['Fortune Tiger', 'Big Bass Splash', 'The Dog House', 'Shining Crown', 'Cash Heat', '3 Lucky Lions'];
+const nameWords = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[™®©]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w && w !== 'the');
+/**
+ * The catalogue game with this name: the same words in any order ("Lucky 3 Lions" = "3 Lucky Lions",
+ * "CashHeat" = "Cash Heat"), else the shortest name holding them all with at most one more word
+ * (never a "Megaways"/"Xmas" version when the plain one exists). Null when none.
+ */
+export function findGameByName(name, games) {
+  const want = nameWords(name);
+  const glued = want.join('');
+  const key = [...want].sort().join(' ');
+  const exact = games.find((g) => { const w = nameWords(g.name); return [...w].sort().join(' ') === key || w.join('') === glued; });
+  if (exact) return exact;
+  return games.map((g) => ({ g, w: nameWords(g.name) }))
+    .filter(({ w }) => want.every((x) => w.includes(x)) && w.length - want.length === 1)
+    .sort((a, b) => a.w.length - b.w.length || a.g.name.length - b.g.name.length)[0]?.g || null;
+}
+/**
+ * Once: the house's free-spins games found in the catalogue are added to the free-spins list (the
+ * admin's own picks stay). Returns { added: [names], missing: [names] }, or null when already done
+ * or the catalogue is empty (tried again later).
+ */
+export function seedFsGames(db, catalogue) {
+  if (getSetting(db, 'promo.fsDefaults', null)) return null;
+  if (!Array.isArray(catalogue) || !catalogue.length) return null;
+  const cfg = promoConfig(db);
+  const games = [...(cfg.casinoFs.games || [])];
+  const added = [];
+  const missing = [];
+  for (const name of FS_DEFAULT_GAMES) {
+    const g = findGameByName(name, catalogue);
+    if (!g) { missing.push(name); continue; }
+    if (!games.includes(Number(g.id))) games.push(Number(g.id));
+    added.push(g.name);
+  }
+  const saved = getSetting(db, 'promo.config', {}) || {};
+  setSetting(db, 'promo.config', { ...saved, casinoFs: { ...(saved.casinoFs || {}), games, gameBets: cfg.casinoFs.gameBets || {} } });
+  const out = { added, missing, at: nowIso() };
+  setSetting(db, 'promo.fsDefaults', out);
+  return out;
+}
+
 export function savePromoConfig(db, input) {
   const cur = promoConfig(db);
   const next = {};

@@ -878,6 +878,15 @@ async function loadFreeSpins() {
   if (page === 'casino' && !sub) render({ keepScroll: true });
 }
 
+/** The player's free spins, fetched on arrival (another player, or a while since the last look). */
+function ensureFreeSpins() {
+  if (state.user && (state.fsFor !== state.user.id || Date.now() - (state.fsAt || 0) > 30_000)) {
+    state.fsFor = state.user.id;
+    state.fsAt = Date.now();
+    loadFreeSpins();
+  }
+}
+
 /** A personal, expandable casino banner shown only while the player has active free spins. */
 function freeSpinsBar() {
   const d = state.fsActive;
@@ -933,12 +942,7 @@ function openFreeSpins() {
 
 function casinoPage() {
   const c = state.casino;
-  // The player's free spins: fetched on arrival (another player, or a while since the last look).
-  if (state.user && (state.fsFor !== state.user.id || Date.now() - (state.fsAt || 0) > 30_000)) {
-    state.fsFor = state.user.id;
-    state.fsAt = Date.now();
-    loadFreeSpins();
-  }
+  ensureFreeSpins();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>

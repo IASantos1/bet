@@ -20,7 +20,7 @@ import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
 import { createBrevo } from './brevo.js';
 import { createTeamLogos } from './teamlogos.js';
-import { expireDue, runCashback } from './promotions.js';
+import { expireDue, runCashback, seedFsGames } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
@@ -146,6 +146,20 @@ const bigbang = createBigBang(db, {
   split: () => casino.enabled && getSetting(db, 'casino.split', false) === true,
 });
 if (bigbang.enabled) console.log(`Casino BigBang: chave ${bigbang.sandbox ? 'sandbox (ek_test_)' : 'real'}`);
+// The house's free-spins games (Fortune Tiger, Big Bass Splash…) go into the free-spins list once the
+// catalogue has loaded: tried after start and every 10 minutes until done.
+if (bigbang.enabled) {
+  const seedFs = async () => {
+    try {
+      const r = seedFsGames(db, (await bigbang.games()).games);
+      if (r) { console.log(`[free spins] jogos da casa: ${r.added.join(', ') || 'nenhum'}${r.missing.length ? ` · não encontrados: ${r.missing.join(', ')}` : ''}`); clearInterval(fsSeedTimer); }
+      else if (getSetting(db, 'promo.fsDefaults', null)) clearInterval(fsSeedTimer);
+    } catch (err) { console.warn(`[free spins] jogos da casa: ${err.message}`); }
+  };
+  const fsSeedTimer = setInterval(seedFs, 10 * 60_000);
+  fsSeedTimer.unref();
+  setTimeout(seedFs, 30_000).unref();
+}
 
 // Telegram channel: the admin's posts, and the big games posted and followed automatically.
 const telegram = createTelegram(db, { ...config.telegram, publicUrl: config.publicUrl, log: (m) => console.warn(`[telegram] ${m}`) });
