@@ -757,6 +757,7 @@ async function loadTab() {
 // ---------- tab renderers ----------
 
 let lastCatalog = null;
+let catalogSport = ''; // '' = every sport
 
 function marketCatalog({ catalog, running }) {
   lastCatalog = catalog;
@@ -764,13 +765,16 @@ function marketCatalog({ catalog, running }) {
     <p class="muted">Consulta jogos reais de cada desporto (pré-jogo e ao vivo) e lista os mercados que a API devolve de facto:
     nome, código, linhas, seleções e em quantos jogos da amostra aparece. Na WinHouse todos os mercados vão para o site;
     "Liquidação" diz quais o sistema liquida sozinho pelo resultado e quais ficam para decidir em Liquidação. Cada jogo consultado gasta 1 pedido.</p>
-    <div class="form-actions"><label class="field adm-inline">Jogos por desporto <input id="catSample" type="number" min="3" max="30" value="12"></label>
-      <button class="primary-btn" data-action="catalog-run" ${running ? 'disabled' : ''}>${running ? 'A consultar…' : 'Consultar a API agora'}</button>
+    <div class="form-actions"><label class="field adm-inline">Desporto <select id="catSport">
+        <option value="">Todos os desportos</option>${[...new Set([...Object.keys(SPORT_META), ...(catalog?.sports || []).map((sp) => sp.sport)])].map((k) => `<option value="${esc(k)}"${catalogSport === k ? ' selected' : ''}>${esc(`${SPORT_META[k]?.icon || ''} ${SPORT_META[k]?.name || k}`.trim())}</option>`).join('')}
+      </select></label>
+      <label class="field adm-inline">Jogos por desporto <input id="catSample" type="number" min="3" max="30" value="12"></label>
+      <button class="primary-btn" data-action="catalog-run" ${running ? 'disabled' : ''}>${running ? 'A consultar…' : catalogSport ? `Consultar ${esc(SPORT_META[catalogSport]?.name || catalogSport)} agora` : 'Consultar a API agora'}</button>
       ${catalog ? '<button class="ghost-btn" data-action="catalog-copy">Copiar resultado (JSON)</button>' : ''}</div>
     ${catalog ? `<p class="muted">Última consulta: ${esc(fmtDateTime(catalog.at))} · ${catalog.calls} pedidos.</p>` : ''}</div>`;
   if (!catalog) return `${intro}<div class="panel empty">Ainda não foi feita nenhuma consulta.</div>`;
-  const sports = catalog.sports.filter((sp) => !sp.disabled);
-  if (!sports.length) return `${intro}<div class="panel empty">Nenhuma fonte de odds ligada com jogos para consultar.</div>`;
+  const sports = catalog.sports.filter((sp) => !sp.disabled && (!catalogSport || sp.sport === catalogSport));
+  if (!sports.length) return `${intro}<div class="panel empty">${catalogSport ? 'Ainda sem resultados para este desporto: carregue em "Consultar".' : 'Nenhuma fonte de odds ligada com jogos para consultar.'}</div>`;
   return intro + sports.map((sp) => {
     const name = `${SPORT_META[sp.sport]?.icon || ''} ${SPORT_META[sp.sport]?.name || sp.sport}`;
     if (sp.disabled) return `<div class="panel"><h3>${esc(name)}</h3><p class="muted">Desligado (sem token ou sem Sports Addon).</p></div>`;
@@ -1475,7 +1479,7 @@ document.addEventListener('click', async (e) => {
     actionEl.textContent = 'A consultar… (pode demorar 1–2 min)';
     try {
       const sample = Number($('#catSample')?.value) || 12;
-      const { catalog } = await api('/api/admin/market-catalog/run', { method: 'POST', body: { sample } });
+      const { catalog } = await api('/api/admin/market-catalog/run', { method: 'POST', body: { sample, sport: catalogSport || null } });
       $('#adminMain').innerHTML = marketCatalog({ catalog, running: false });
     } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; }
     return;
@@ -1712,6 +1716,12 @@ document.addEventListener('click', async (e) => {
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
 document.addEventListener('change', (e) => {
+  // Market catalogue: show (and consult) one sport only.
+  if (e.target.id === 'catSport') {
+    catalogSport = e.target.value;
+    $('#adminMain').innerHTML = marketCatalog({ catalog: lastCatalog, running: false });
+    return;
+  }
   const cp = e.target.dataset?.cp;
   if (!cp) return;
   const form = e.target.form;

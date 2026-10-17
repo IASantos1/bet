@@ -79,4 +79,12 @@ test('catalogue: WinHouse, every sport it feeds, markets by id with automatic or
   assert.deepEqual([x12.events, x12.pre, x12.live, x12.wired], [2, 1, 1, true]);
   assert.deepEqual([corners.lines, corners.selections, corners.wired], [['8.5'], ['Over', 'Under'], false]);
   assert.equal(r.sports.find((s) => s.sport === 'tenis').markets[0].wired, false);
+  // One sport only: only its games are asked, the other sports keep their last results.
+  const cat = createMarketCatalog(db, [provider]);
+  await cat.run({ sample: 5 });
+  asked.length = 0;
+  const one = await cat.run({ sample: 5, sport: 'tenis' });
+  assert.deepEqual(asked, [['20', false]]);
+  assert.equal(one.calls, 1);
+  assert.deepEqual(one.sports.map((s) => s.sport).sort(), ['futebol', 'tenis']);
 });
