@@ -142,6 +142,7 @@ export function createTeamLogos(db, {
   const dirLeagues = db.prepare('SELECT DISTINCT league FROM team_directory WHERE sport = ? AND name_key = ? AND league IS NOT NULL');
   const dirOfLeague = db.prepare('SELECT DISTINCT name, logo FROM team_directory WHERE sport = ? AND league = ?');
   const dirSize = db.prepare('SELECT COUNT(*) AS n FROM team_directory');
+  const dirLogos = db.prepare('SELECT DISTINCT logo FROM team_directory');
   const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
@@ -275,7 +276,7 @@ export function createTeamLogos(db, {
 
   /** Downloads a badge once and serves it from here (/team-logo/<id>); the remote address if that fails. */
   async function keepFile(url) {
-    const id = createHash('sha1').update(url).digest('hex').slice(0, 20);
+    const id = fileId(url);
     if (fileGet.get(id)) return `/team-logo/${id}`;
     try {
       const res = await apiGet(url, {});
@@ -395,6 +396,20 @@ export function createTeamLogos(db, {
   }
   const LEAGUE_PACKS_SPORTS = () => leaguePacks;
 
+  // Every badge of the kept league lists is downloaded ahead (image calls cost no API requests, but
+  // API-Sports limits them per minute, so a few a run), so a team's first game already has it.
+  const fileId = (url) => createHash('sha1').update(url).digest('hex').slice(0, 20);
+  async function prefetch(max = 20) {
+    let n = 0;
+    for (const { logo } of dirLogos.all()) {
+      if (n >= max) break;
+      if (fileGet.get(fileId(logo))) continue;
+      n += 1;
+      await keepFile(logo);
+    }
+    return n;
+  }
+
   let busy = false;
   let minuteCalls = 0; // API-Football requests in this run (runs are a minute apart)
   let lastRun = null;
@@ -416,6 +431,7 @@ export function createTeamLogos(db, {
         }
       }
       try { found += await freePass(); } catch (err) { log(`emblemas das ligas guardadas: ${err.message}`); }
+      try { if (apif) await prefetch(); } catch (err) { log(`descarga de emblemas: ${err.message}`); }
       for (const { sport, name, feedBadge } of wanted(perRun)) {
         const k = teamKey(sport, name);
         const c = cache.get(k);
@@ -477,6 +493,8 @@ export function createTeamLogos(db, {
     const total = cache.size;
     const withLogo = [...cache.values()].filter((c) => c.logo).length;
     const local = [...cache.values()].filter((c) => typeof c.logo === 'string' && c.logo.startsWith('/team-logo/')).length;
+    steps.push({ name: 'Emblemas descarregados (guardados aqui)', ok: true,
+      detail: `${count('SELECT COUNT(*) AS n FROM team_logo_files')} de ${dirLogos.all().length} das ligas guardadas · não gastam pedidos` });
     steps.push({ name: 'Equipas dos jogos', ok: withLogo > 0, detail: `${total} procuradas · ${withLogo} com emblema · ${local} guardados aqui (API-Football)` });
     steps.push({ name: 'Pedidos API-Football hoje (contados aqui)', ok: true, detail: Object.keys(API_SPORTS).map((sp) => `${sp} ${used(sp)}`).join(' · ') });
     steps.push({ name: 'Última procura', ok: Boolean(lastRun), detail: lastRun ? `${lastRun.at} · ${lastRun.asked} procuradas · ${lastRun.found} encontradas` : 'ainda não correu' });
