@@ -44,6 +44,8 @@ function sportIcon(k) {
   if (kind === 'S:') return `<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true">${v.slice(2)}</svg>`;
   return `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${v}</svg>`;
 }
+// The tennis mini court (live tracker) is hidden for now; true shows it again (its code is kept).
+const TENNIS_COURT = false;
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
@@ -3309,7 +3311,7 @@ function matchPage(sub) {
     </section>
     ${live ? `<div class="match-views">
       <button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
-      ${e.liveTracker || e.sport === 'tenis' ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
+      ${(e.sport === 'tenis' ? TENNIS_COURT : e.liveTracker) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
     </div>` : ''}
     <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
     <div class="match-body">${body}</div>
@@ -3964,7 +3966,8 @@ function mountLiveWidget() {
   }
   // Leaving the video: the trial player stops (no stream left downloading in the background).
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
-  const kind = e?.status === 'live' ? (e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null) : null;
+  const kind = e?.status !== 'live' || (e.sport === 'tenis' && !TENNIS_COURT) ? null
+    : e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null;
   if (!kind) {
     drop3D();
     m.widget?.remove();
