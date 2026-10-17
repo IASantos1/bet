@@ -117,7 +117,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   assert.equal(bal(db, u), 3000); // the real balance untouched while they run
   const mine = tx(db, () => playerPromos(db, u)).activeSpins;
   assert.deepEqual([mine.spins, mine.spinsLeft, mine.winnings], [5, 3, 1.5]);
-  assert.equal(bb.walletUser(fs).body.balance, '2.10'); // 3 × €0.20 + €1.50
+  assert.equal(bb.walletUser(fs).body.balance, '0.60'); // 3 × €0.20: the €1.50 won is kept apart, never played
   // The last spins: they end and the €1.50 won is paid as real money.
   for (const t of ['f4', 'f5', 'f6']) bb.walletChange(move(fs, -0.2, t));
   assert.equal(db.prepare('SELECT paid_cents FROM casino_spins WHERE id = ?').get(s.id).paid_cents, 150);
@@ -211,11 +211,11 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     const u = await (await fetch(`${base}/api/casino/bb/user?username=b62_${uid}`)).json();
     assert.equal(u.balance, '20.00');
     const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
-    assert.equal((await res.json()).balance, '5.00'); // 10 spins × €0.20 + €3 won
+    assert.equal((await res.json()).balance, '2.00'); // the game is told 10 spins × €0.20: the €3 won is kept apart
     // The previous platform's callback paths answer the same.
     assert.equal((await (await fetch(`${base}/api/casino/bigbang/user-data?username=b62_${uid}`)).json()).balance, '20.00');
     const res2 = await fetch(`${base}/api/casino/bigbang/balance-change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 0, 'cb2', { game_id: 4822 })) });
-    assert.equal((await res2.json()).balance, '5.00');
+    assert.equal((await res2.json()).balance, '2.00');
     // The player ends the free spins: the €3 won is paid.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
     assert.equal(claim.body.paid, 3);
@@ -473,19 +473,29 @@ test('free spins on Palace: one picked game, own casino account, winnings above 
     const get = (path) => fetch(`${base}${path}`, { headers: { cookie } }).then((r) => r.json());
     assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass, oly]);   // both to pick from
     const r = await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
-    assert.deepEqual([r.status, r.j.url, r.j.freeSpins.balance], [200, 'https://palace/fs', 1]);
+    assert.deepEqual([r.status, r.j.url, r.j.freeSpins.spinsLeft], [200, 'https://palace/fs', 5]);
     assert.deepEqual(calls[0], ['enter', 'bigbass', 100]);                                              // the value goes there, once
     assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 500); // own balance stays
     assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass]);         // only the picked game now
     assert.equal((await post('/api/casino/launch', { gameId: oly, freeSpins: fsId })).status, 409);    // no other game
     await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
     assert.deepEqual(calls[1], ['enter', 'bigbass', 0]);                                                // not funded twice
-    fsAccount = 340;                                                                                    // played and won
+    // The game page reads the account every 2 s: the spins are counted from how it moves.
+    const wallet = async (cents) => { fsAccount = cents; return (await get(`/api/casino/wallet?fs=${fsId}`)).freeSpins; };
+    assert.deepEqual(await wallet(80), { spinsLeft: 4, spins: 5, won: 0, ended: false });     // a spin (its win may come)
+    assert.equal((await wallet(180)).spinsLeft, 4);                                                    // that spin won €1
+    assert.equal((await wallet(170)).spinsLeft, 3);                                                    // a spin that won €0.10
     await post('/api/casino/close', {});
     assert.equal(db.prepare("SELECT status FROM casino_spins WHERE id = ?").get(fsId).status, 'active'); // can come back
-    const c = await post(`/api/me/free-spins/${fsId}/claim`, {});
-    assert.equal(c.j.paid, 2.4);                                                                        // €3.40 − €1.00 given
-    assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 740);
+    assert.deepEqual(await wallet(250), { spinsLeft: 2, spins: 5, won: 2.1, ended: false });          // a spin that won €1
+    await wallet(230);
+    const last = await wallet(210);                                                                     // the 5th spin
+    assert.deepEqual([last.spinsLeft, last.won, last.ended], [0, 2.1, false]);                          // its win may still come
+    db.prepare("UPDATE casino_spins SET palace_at = ? WHERE id = ?").run(new Date(Date.now() - 5_000).toISOString(), fsId);
+    const done = await wallet(210);                                                                     // still: they end
+    assert.deepEqual(done, { spinsLeft: 0, spins: 5, won: 2.1, ended: true });
+    assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 710); // winnings: real balance
     assert.equal(fsAccount, 0);
+    assert.equal((await post('/api/casino/launch', { gameId: bass, freeSpins: fsId })).status, 400);   // no 6th spin
   } finally { server.close(); }
 });
