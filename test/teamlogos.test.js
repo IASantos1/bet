@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb, nowIso } from '../server/db.js';
-import { createTeamLogos, nameVariants, sameTeam, teamKey } from '../server/teamlogos.js';
+import { closeName, createTeamLogos, nameVariants, sameTeam, teamKey } from '../server/teamlogos.js';
 
 test('team names: loose key and other spellings to try', () => {
   assert.equal(teamKey('futebol', 'Atlético  Madrid'), 'futebol|atletico madrid');
@@ -190,4 +190,47 @@ test('whole league lists are kept: their teams get a badge with no request of th
   const steps = await again.diagnose();
   assert.ok(steps.some((x) => /Ligas guardadas/.test(x.name) && /1 de 1 ligas/.test(x.detail)));
   assert.ok(!(await logos.diagnose()).some((x) => /Último erro/.test(x.name))); // the refused seasons are not errors
+});
+
+test('close names within one league: the one team that fits, or none', () => {
+  const ligue1 = ['Paris Saint Germain', 'Marseille', 'Lyon', 'Lille', 'Rennes', 'Stade Brestois 29', 'Angers', 'Lens', 'Paris FC', 'Nice']
+    .map((name) => ({ name, logo: `https://x/${name}.png` }));
+  const pick = (n) => closeName(n, ligue1)?.name || null;
+  assert.equal(pick('Lille OSC'), 'Lille');
+  assert.equal(pick('Olympique de Marseille'), 'Marseille');
+  assert.equal(pick('Olympique Lyonnais'), 'Lyon');
+  assert.equal(pick('Stade Rennais'), 'Rennes');
+  assert.equal(pick('Angers SCO'), 'Angers');
+  assert.equal(pick('OGC Nice'), 'Nice');
+  assert.equal(pick('Paris'), 'Paris FC');
+  assert.equal(pick('Paris Saint-Germain'), 'Paris Saint Germain');
+  assert.equal(pick('Troyes AC'), null);
+});
+
+test('free pass: the competition is matched to its kept league and close names there get the badge, no request', async () => {
+  const db = openDb(':memory:');
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const ins = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('futebol', 'France. Ligue 1', ?, ?, ?, 'scheduled', 'winhouse', ?, ?)`);
+  ins.run('Strasbourg', 'Paris Saint-Germain', soon, nowIso(), nowIso());
+  ins.run('Lille OSC', 'Stade Brestois 29', soon, nowIso(), nowIso());
+  ins.run('Angers SCO', 'Olympique de Marseille', soon, nowIso(), nowIso());
+  const api = [];
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    if (u.hostname === 'media.api-sports.io') return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new Uint8Array([1]).buffer };
+    if (u.hostname.endsWith('api-sports.io')) {
+      api.push(u.search);
+      const response = ['Strasbourg', 'Paris Saint Germain', 'Lille', 'Stade Brestois 29', 'Angers', 'Marseille', 'Lyon']
+        .map((name, i) => ({ team: { name, logo: `https://media.api-sports.io/football/teams/${i + 1}.png` } }));
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ teams: null }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: { futebol: [61] }, perRun: 0 });
+  await logos.run();
+  assert.equal(api.length, 1); // the league list only
+  for (const n of ['Strasbourg', 'Paris Saint-Germain', 'Lille OSC', 'Stade Brestois 29', 'Angers SCO', 'Olympique de Marseille']) {
+    assert.match(logos.get('futebol', n)?.logo || '', /^\/team-logo\//, n);
+  }
 });
