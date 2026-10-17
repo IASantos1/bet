@@ -173,3 +173,57 @@ test('provider markets: a set / half winner or total read from the period scores
   assert.equal(balance(), 10_000 - 1_000 + 1_340);
   db.close();
 });
+
+test('tennis: set and games markets read from complete sets only; anything partial waits', async () => {
+  const { tennisOutcome, completeSets } = await import('../server/markets.js');
+  const sets = [[6, 4], [3, 6], [7, 5]]; // 2-1 in sets; games 16-15 (31)
+  const r = (code, extra = {}) => tennisOutcome(code, { sets, home: 2, away: 1, ...extra });
+  // Set markets, on the final score in sets.
+  assert.equal(r('1079~Apostas por Set~2:1'), 'won');
+  assert.equal(r('1079~Apostas por Set~2:0'), 'lost');
+  assert.equal(r('2721~Menos / Mais sets~Mais de 2.5'), 'won');
+  assert.equal(r('2721~Menos / Mais sets~Menos de 2.5'), 'lost');
+  assert.equal(r('1874~Handicap Asiático de Set~1 (-1.5)'), 'lost');
+  assert.equal(r('1874~Handicap Asiático de Set~2 (1.5)'), 'won');
+  // A set's winner.
+  assert.equal(r('1081~1.º set - Vencedor~1'), 'won');
+  assert.equal(r('1082~2° Set - Vencedor~1'), 'lost');
+  // Games markets, on every set.
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Mais de 21.5'), 'won');
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Menos de (31.0)'), 'void'); // whole line hit
+  assert.equal(r('1279~Total de Jogos - Ímpar / Par~Ímpar'), 'won');
+  assert.equal(r('1279~Total de Jogos - Ímpar / Par~Par'), 'lost');
+  assert.equal(r('1881~Handicap asiático de Jogos~1 (-1.5)'), 'lost'); // 16 - 1.5 < 15
+  assert.equal(r('1881~Handicap asiático de Jogos~1 (-0.5)'), 'won');
+  assert.equal(r('1881~Handicap asiático de Jogos~2 (1.0)'), 'void');  // 15 + 1 = 16
+  assert.equal(r('1881~Handicap asiático de Jogos~1 (-0.25)'), null);  // quarter line: operator
+  assert.equal(r('1872~Jogador 1 - Total de Jogos - Mais/Menos~Mais de 15.5'), 'won');
+  assert.equal(r('1878~Jogador 2 - Total de Jogos - Mais/Menos~Mais de 15.5'), 'lost');
+  // Partial or inconsistent sets: the games markets wait (a set still running, a missing set, sets
+  // that do not add up to the final score); a finished set still settles its winner.
+  const running = { sets: [[6, 4], [3, 6], [5, 4]] };
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Mais de 21.5', running), null);
+  assert.equal(r('1081~1.º set - Vencedor~1', running), 'won');
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Mais de 21.5', { sets: [[6, 4], [3, 6]] }), null);
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Mais de 21.5', { sets: null }), null);
+  assert.equal(r('1082~2° Set - Vencedor~1', { sets: [[6, 4], [6, 6]] }), null);
+  assert.equal(completeSets([[6, 4], [7, 7]], 2, 0), null);
+  // A retirement: only a finished set's winner stands.
+  assert.equal(r('1079~Apostas por Set~2:1', { retired: true }), null);
+  assert.equal(r('1080~Total de Jogos - Mais/Menos~Mais de 21.5', { retired: true }), null);
+  assert.equal(r('1081~1.º set - Vencedor~1', { retired: true }), 'won');
+  // Labels it does not understand wait too.
+  assert.equal(r('1079~Apostas por Set~Outro'), null);
+
+  // Settled by the engine on a finished match (sets from the tracker in live_detail).
+  const { db, event, bet, balance } = setup();
+  const add = (id, code) => db.prepare("INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, 'x', ?, 200)").run(id, code);
+  const t = event();
+  db.prepare("UPDATE events SET sport = 'tenis' WHERE id = ?").run(t);
+  add(t, '1079~Apostas por Set~2:1');
+  bet(t, 'x', '1079~Apostas por Set~2:1', 2);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 2, away_score = 1, live_detail = ? WHERE id = ?").run(JSON.stringify({ sets }), t);
+  tx(db, () => settleEvent(db, t, { source: 'feed' }));
+  assert.equal(balance(), 10_000 - 1_000 + 2_000);
+  db.close();
+});

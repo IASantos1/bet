@@ -31,7 +31,7 @@ import { createAssets } from './assets.js';
 import { importNovo, connectNovo } from './importnovo.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { payoutState } from './revolut.js';
-import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial } from './markets.js';
+import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial, TENNIS_AUTO } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { createCampaigns, unsubscribe, SEGMENTS } from './campaigns.js';
 import { TENNIS_SOURCE } from './tennis.js';
@@ -1511,7 +1511,7 @@ export function createApp(db, {
       source: WH_SOURCE, enabled: () => true,
       sports: () => db.prepare("SELECT sport, COUNT(*) AS n FROM events WHERE source = ? AND status IN ('scheduled', 'live') GROUP BY sport ORDER BY n DESC").all(WH_SOURCE).map((r) => r.sport),
       gameMarkets: (gameId, { live }) => winhouse.markets({ gameId, live }),
-      wired: (sport) => new Set(WH_SPORT_MARKETS[sport] || []),
+      wired: (sport) => new Set([...(WH_SPORT_MARKETS[sport] || []), ...(sport === 'tenis' ? Object.keys(TENNIS_AUTO).map(Number) : [])]),
     },
     feed && { sport: 'futebol', source: 'bzzoiro', enabled: () => feed.status().enabled, rawOdds: feed.rawOdds, extra: feed.rawOddsExtra },
     tennis && { sport: 'tenis', source: TENNIS_SOURCE, enabled: () => tennis.status().enabled, rawOdds: tennis.rawOdds },

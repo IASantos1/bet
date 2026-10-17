@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
 import { postTransaction } from './wallet.js';
@@ -215,8 +215,11 @@ export function settleEvent(db, eventId, { source = 'engine', userId = null, not
   for (const leg of legs) {
     // The provider's own markets: read when they are a period's winner / total, else they wait.
     if (leg.market === 'x') {
+      // Tennis set and games markets: read from complete sets only (else they wait for the operator).
+      const tennis = ev.sport === 'tenis' && TENNIS_AUTO[splitSpecial(leg.code)?.id];
       const out = ev.status === 'cancelled' ? 'void'
-        : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away });
+        : tennis ? tennisOutcome(leg.code, { sets: periods, home: ev.home_score, away: ev.away_score, retired: !!ev.retired })
+          : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away });
       if (out) setLeg.run(out, leg.id);
       continue;
     }

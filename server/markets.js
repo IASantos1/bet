@@ -221,3 +221,79 @@ export function specialOutcome(code, { periods = null, home = null, away = null,
   }
   return null;
 }
+
+// ---------- Tennis: the provider's set and games markets, read from the sets ----------
+// WinHouse ids → how each is read. Set markets need the final score in sets (always there); a set's
+// winner needs that set over; games markets need every set over and adding up to the final score.
+// Anything that cannot be read that way (missing or partial sets, a retirement, a label not
+// understood) returns null and waits for the operator: nothing is paid or lost on guesswork.
+export const TENNIS_AUTO = {
+  1079: 'set-betting', 2721: 'sets-ou', 1874: 'sets-hcp', 1081: 'set1', 1082: 'set2',
+  1080: 'games-ou', 1279: 'games-oe', 1881: 'games-hcp', 1872: 'p1-games-ou', 1878: 'p2-games-ou',
+};
+
+/** A set that is over: 6 games with a lead of 2 (6-0 … 6-4), or 7-5 / 7-6, either way. */
+export const setOver = (s) => {
+  if (!Array.isArray(s) || !Number.isInteger(s[0]) || !Number.isInteger(s[1])) return false;
+  const hi = Math.max(s[0], s[1]);
+  const lo = Math.min(s[0], s[1]);
+  return (hi === 6 && hi - lo >= 2) || (hi === 7 && (lo === 5 || lo === 6));
+};
+
+/** Every set, when all are over and their winners add up to the final score in sets; else null. */
+export function completeSets(sets, home, away) {
+  if (!Array.isArray(sets) || !sets.length || !Number.isInteger(home) || !Number.isInteger(away)) return null;
+  if (!sets.every(setOver)) return null;
+  const first = sets.filter(([h, a]) => h > a).length;
+  return first === home && sets.length - first === away ? sets : null;
+}
+
+/**
+ * One of the TENNIS_AUTO markets of a finished tennis match: 'won' | 'lost' | 'void', or null when
+ * it cannot be read safely (the leg waits for the operator). `sets`: games per set ([[6, 4], …]).
+ */
+export function tennisOutcome(code, { sets = null, home = null, away = null, retired = false } = {}) {
+  const sp = splitSpecial(code);
+  const kind = sp && TENNIS_AUTO[sp.id];
+  if (!kind) return null;
+  const l = plain(sp.label);
+  // The line at the end ("Mais de 21.5", "1 (-1.5)"); only whole and half lines (quarters split stakes).
+  const lineOf = () => {
+    const m = /([-+]?\d+(?:[.,]\d+)?)\s*\)?\s*$/.exec(l);
+    const v = m ? Number(m[1].replace(',', '.')) : NaN;
+    return Number.isFinite(v) && Number.isInteger(v * 2) ? v : null;
+  };
+  const ou = () => (/^(mais|over|acima)\b/.test(l) ? 'O' : /^(menos|under|abaixo)\b/.test(l) ? 'U' : null);
+  const side = () => (/^1\b/.test(l) ? '1' : /^2\b/.test(l) ? '2' : null);
+  const total = (t) => { const o = ou(); const v = lineOf(); return o && v !== null && v >= 0 ? overUnder(`${o}${v}`, t) : null; };
+  const hcp = (h, a) => { const sd = side(); const v = lineOf(); return sd && v !== null && /\(/.test(l) ? handicap(hcpCode(sd, v), h, a) : null; };
+  if (retired || !Number.isInteger(home) || !Number.isInteger(away)) {
+    // After a retirement only a set that was over stands.
+    if (!(kind === 'set1' || kind === 'set2')) return null;
+  }
+  if (kind === 'set1' || kind === 'set2') {
+    const s = Array.isArray(sets) ? sets[kind === 'set1' ? 0 : 1] : null;
+    const sd = side();
+    if (!setOver(s) || !sd) return null;
+    return sd === resultCode(s[0], s[1]) ? 'won' : 'lost';
+  }
+  if (kind === 'set-betting') {
+    const m = /^(\d)\s*[:-]\s*(\d)$/.exec(l);
+    return m ? (Number(m[1]) === home && Number(m[2]) === away ? 'won' : 'lost') : null;
+  }
+  if (kind === 'sets-ou') return total(home + away);
+  if (kind === 'sets-hcp') return hcp(home, away);
+  const all = completeSets(sets, home, away);
+  if (!all) return null;
+  const g1 = all.reduce((n, s) => n + s[0], 0);
+  const g2 = all.reduce((n, s) => n + s[1], 0);
+  if (kind === 'games-ou') return total(g1 + g2);
+  if (kind === 'games-oe') {
+    const odd = /^(impar|odd)$/.test(l) ? true : /^(par|even)$/.test(l) ? false : null;
+    return odd === null ? null : odd === ((g1 + g2) % 2 === 1) ? 'won' : 'lost';
+  }
+  if (kind === 'games-hcp') return hcp(g1, g2);
+  if (kind === 'p1-games-ou') return total(g1);
+  if (kind === 'p2-games-ou') return total(g2);
+  return null;
+}
