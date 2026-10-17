@@ -66,6 +66,7 @@ const state = {
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
   casinoSession: null, casinoGame: null,
+  fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
   match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
@@ -866,22 +867,54 @@ async function loadCasinoLobby() {
 
 /** The player's free spins: the games to pick from (only the picked one once chosen). */
 async function loadFreeSpins() {
-  if (!state.user) { state.fsActive = null; return; }
+  if (!state.user) { state.fsActive = null; state.fsExpanded = false; return; }
   state.fsAt = Date.now();
-  try { state.fsActive = await api('/api/me/free-spins/active'); } catch { state.fsActive = null; }
+  try {
+    const active = await api('/api/me/free-spins/active');
+    if (state.fsActive?.freeSpins?.id !== active?.freeSpins?.id) state.fsExpanded = false;
+    state.fsActive = active;
+  } catch { state.fsActive = null; state.fsExpanded = false; }
   const { page, sub } = currentRoute();
   if (page === 'casino' && !sub) render({ keepScroll: true });
 }
 
-/** On top of the casino: the free spins waiting to be played, opening the games to pick from. */
+/** A personal, expandable casino banner shown only while the player has active free spins. */
 function freeSpinsBar() {
   const d = state.fsActive;
-  if (!d?.freeSpins || !d.games.length) return '';
+  const games = Array.isArray(d?.games) ? d.games : [];
+  if (!d?.freeSpins || !games.length) return '';
   const s = d.freeSpins;
-  const chosen = s.chosenGame ? d.games[0] : null;
-  return `<button class="fs-bar" data-action="fs-open"><span class="fs-ico">🎁</span>
-    <span class="fs-text"><strong>${s.spinsLeft} Free Spins disponíveis</strong><small>${chosen ? `No seu jogo: ${esc(chosen.name)}` : `Escolha 1 de ${d.games.length} jogos selecionados`}</small></span>
-    <span class="fs-go">${chosen ? 'Jogar' : 'Ver jogos'} ›</span></button>`;
+  const chosen = s.chosenGame ? games[0] : null;
+  const expanded = Boolean(state.fsExpanded);
+  const previewGames = games.slice(0, 5);
+  const gameCards = previewGames.map((g) => `<button class="fs-showcase-game" type="button" data-action="fs-pick" data-id="${esc(g.id)}">
+      <span class="fs-showcase-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '<span class="fs-showcase-fallback" aria-hidden="true">🎰</span>'}
+        <span class="fs-showcase-tag">FREE SPINS</span><span class="fs-showcase-play" aria-hidden="true">▶</span></span>
+      <span class="fs-showcase-info"><strong title="${esc(g.name)}">${esc(g.name)}</strong>
+        <small><span>${esc(g.provider)}</span><b>${money(g.bet)} / rodada</b></small></span>
+      <span class="fs-showcase-action">${chosen ? 'Jogar agora' : 'Escolher jogo'} <i aria-hidden="true">↗</i></span>
+    </button>`).join('');
+  const count = Number(s.spinsLeft ?? s.spins) || 0;
+  const intro = chosen
+    ? `As suas rodadas estão no jogo ${esc(chosen.name)}.`
+    : `Escolha 1 dos ${games.length} jogos elegíveis para começar.`;
+  return `<section class="fs-banner${expanded ? ' is-open' : ''}" aria-label="Free Spins disponíveis">
+    <div class="fs-banner-light" aria-hidden="true"></div>
+    <button class="fs-banner-toggle" type="button" data-action="fs-toggle" aria-expanded="${expanded}" aria-controls="fsGameReveal">
+      <span class="fs-emblem" aria-hidden="true"><i class="fs-orbit"></i><span class="fs-token"><b>FS</b></span><i class="fs-spark">✦</i></span>
+      <span class="fs-banner-copy"><span class="fs-kicker"><i></i> OFERTA ATIVA NO CASINO</span>
+        <strong>As tuas Free Spins estão prontas</strong><small>${intro}</small></span>
+      <span class="fs-count"><b>${count}</b><small>rodadas</small></span>
+      <span class="fs-cta">${expanded ? 'Fechar jogos' : chosen ? 'Jogar agora' : 'Entrar'}<i aria-hidden="true">${expanded ? '−' : '→'}</i></span>
+    </button>
+    <div class="fs-reveal"${expanded ? '' : ' hidden'} id="fsGameReveal">
+      <div class="fs-reveal-head"><div><span>ESCOLHE A TUA EXPERIÊNCIA</span><strong>${chosen ? 'O teu jogo de Free Spins' : `${previewGames.length} jogos disponíveis`}</strong></div>
+        <small>${chosen ? 'Joga quando quiseres' : 'Cada jogo mostra o valor por rodada'}</small></div>
+      <div class="fs-showcase">${gameCards}</div>
+      ${games.length > 5 ? `<button class="fs-more-games" type="button" data-action="fs-more">Ver todos os ${games.length} jogos disponíveis <span aria-hidden="true">→</span></button>` : ''}
+      <p class="fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))} · Os ganhos passam a saldo real quando as Free Spins terminam.</p>
+    </div>
+  </section>`;
 }
 
 function openFreeSpins() {
@@ -2868,7 +2901,15 @@ document.addEventListener('click', async (e) => {
     render();
   } else if (action === 'kyc-camera') {
     kycCamera();
-  } else if (action === 'fs-open') {
+  } else if (action === 'fs-toggle') {
+    const d = state.fsActive;
+    if (!state.fsExpanded && d?.freeSpins?.chosenGame && d.games?.[0]) {
+      location.hash = `#/casino/jogo/${d.games[0].id}`;
+    } else {
+      state.fsExpanded = !state.fsExpanded;
+      render({ keepScroll: true });
+    }
+  } else if (action === 'fs-more') {
     openFreeSpins();
   } else if (action === 'fs-pick') {
     const d = state.fsActive;
@@ -2883,6 +2924,7 @@ document.addEventListener('click', async (e) => {
       } catch (err) { toast('Free Spins', err.message, 'error'); return; }
     }
     closeModal();
+    state.fsExpanded = false;
     location.hash = `#/casino/jogo/${g.id}`;
   } else if (action === 'fs-claim') {
     if (!confirm('Terminar as Free Spins? Os ganhos passam a saldo real; as rodadas por jogar deixam de estar disponíveis.')) return;
