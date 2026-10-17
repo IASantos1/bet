@@ -92,18 +92,25 @@ const sameWord = (a, b) => {
   return n >= 4 && n >= Math.min(a.length, b.length) - 2; // "rennais" ~ "rennes", "brestois" ~ "brest"
 };
 
-/** The one team of a league whose name is close to this one ({ name, logo } list), or null when none or two are. */
+// Words many clubs share: they never tell two clubs apart ("Leeds United" is not "Manchester United").
+const COMMON = new Set(['united', 'utd', 'city', 'town', 'county', 'rovers', 'wanderers', 'athletic', 'atletico', 'atletic', 'sporting',
+  'real', 'albion', 'hotspur', 'rangers', 'inter', 'internacional', 'dynamo', 'dinamo', 'racing', 'deportivo', 'borussia', 'union',
+  'saint', 'st', 'san', 'santa', 'sport', 'sports', 'esporte', 'football', 'futebol', 'futbol', 'women', 'ii', 'b', 'u19', 'u21', 'u23']);
+const strong = (name) => { const w = words(name); const s = w.filter((x) => !COMMON.has(x)); return s.length ? s : w; };
+
+/** The one team whose name is the same club ({ name, logo } list): every telling word of each name is in the
+ * other ("Stade Rennais" ~ "Rennes", "Lille OSC" ~ "Lille"), and no other team fits. Null otherwise. */
 export function closeName(name, teams) {
-  const mine = words(name);
+  const mine = strong(name);
   if (!mine.length) return null;
-  const scored = teams.map((t) => {
-    const theirs = words(t.name);
-    const hit = mine.filter((w) => theirs.some((x) => sameWord(w, x))).length;
-    return { t, score: theirs.length ? hit / Math.max(mine.length, theirs.length) : 0 };
-  }).sort((a, b) => b.score - a.score);
-  const [best, next] = scored;
-  if (!best || best.score < 0.5 || (next && next.score === best.score)) return null;
-  return best.t;
+  const fits = new Map();
+  for (const t of teams) {
+    const theirs = strong(t.name);
+    if (!theirs.length) continue;
+    const ok = mine.every((w) => theirs.some((x) => sameWord(w, x))) && theirs.every((x) => mine.some((w) => sameWord(w, x)));
+    if (ok) fits.set(t.logo, t);
+  }
+  return fits.size === 1 ? [...fits.values()][0] : null;
 }
 
 const colour = (c) => {
@@ -141,10 +148,16 @@ export function createTeamLogos(db, {
   const dirPut = db.prepare('INSERT OR REPLACE INTO team_directory (sport, name_key, name, logo, league) VALUES (?, ?, ?, ?, ?)');
   const dirLeagues = db.prepare('SELECT DISTINCT league FROM team_directory WHERE sport = ? AND name_key = ? AND league IS NOT NULL');
   const dirOfLeague = db.prepare('SELECT DISTINCT name, logo FROM team_directory WHERE sport = ? AND league = ?');
+  const dirOfSport = db.prepare('SELECT DISTINCT name, logo FROM team_directory WHERE sport = ?');
   const dirSize = db.prepare('SELECT COUNT(*) AS n FROM team_directory');
   const dirLogos = db.prepare('SELECT DISTINCT logo FROM team_directory');
   const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
+  // Badges matched by the first close-name rule (which let "United" alone match) are matched again.
+  if (!db.prepare("SELECT 1 FROM api_quota WHERE name = 'migrate:close-names-2'").get()) {
+    db.exec("UPDATE team_logos SET logo = NULL, apif = 0 WHERE logo LIKE '/team-logo/%'");
+    db.prepare("INSERT INTO api_quota (name, day, used) VALUES ('migrate:close-names-2', ?, 1)").run(new Date().toISOString().slice(0, 10));
+  }
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
     .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, apif: !!r.apif,
       alt: r.alt ? JSON.parse(r.alt) : [], checkedAt: r.checked_at }]));
@@ -369,6 +382,7 @@ export function createTeamLogos(db, {
     }
     let downloads = 0;
     let found = 0;
+    const allTeams = new Map();
     for (const { sport, teams } of comps.values()) {
       let league;
       for (const name of teams) {
@@ -382,6 +396,11 @@ export function createTeamLogos(db, {
         if (!remote) {
           if (league === undefined) league = competitionLeague(sport, teams);
           if (league != null) remote = closeName(name, dirOfLeague.all(sport, league))?.logo || null;
+        }
+        // Not in its competition's league (promoted, another country…): the same club among all kept teams.
+        if (!remote) {
+          if (!allTeams.has(sport)) allTeams.set(sport, dirOfSport.all(sport));
+          remote = closeName(name, allTeams.get(sport))?.logo || null;
         }
         if (!remote) continue;
         downloads += 1;
