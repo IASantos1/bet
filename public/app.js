@@ -901,11 +901,11 @@ function freeSpinsBar() {
       <span class="fs-showcase-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '<span class="fs-showcase-fallback" aria-hidden="true">🎰</span>'}
         <span class="fs-showcase-tag">FREE SPINS</span><span class="fs-showcase-play" aria-hidden="true">▶</span></span>
       <span class="fs-showcase-info"><strong title="${esc(g.name)}">${esc(g.name)}</strong>
-        <small><span>${esc(g.provider)}</span><b>${fsPoints(count)}</b></small></span>
+        <small><span>${esc(g.provider)}</span><b>${fsCount(count)}</b></small></span>
       <span class="fs-showcase-action">${chosen ? 'Jogar agora' : 'Escolher jogo'} <i aria-hidden="true">↗</i></span>
     </button>`).join('');
   const intro = chosen
-    ? `Os seus pontos estão no jogo ${esc(chosen.name)} (1 ponto = 1 rodada).`
+    ? `As suas Free Spins estão no jogo ${esc(chosen.name)}.`
     : `Escolha 1 dos ${games.length} jogos elegíveis para começar.`;
   return `<section class="fs-banner${expanded ? ' is-open' : ''}" aria-label="Free Spins disponíveis">
     <div class="fs-banner-light" aria-hidden="true"></div>
@@ -913,12 +913,12 @@ function freeSpinsBar() {
       <span class="fs-emblem" aria-hidden="true"><i class="fs-orbit"></i><span class="fs-token"><b>FS</b></span><i class="fs-spark">✦</i></span>
       <span class="fs-banner-copy"><span class="fs-kicker"><i></i> OFERTA ATIVA NO CASINO</span>
         <strong>As tuas Free Spins estão prontas</strong><small>${intro}</small></span>
-      <span class="fs-count"><b>${count}</b><small>${count === 1 ? 'ponto' : 'pontos'}</small></span>
+      <span class="fs-count"><b>${count}</b><small>Free Spins</small></span>
       <span class="fs-cta">${expanded ? 'Fechar jogos' : chosen ? 'Jogar agora' : 'Entrar'}<i aria-hidden="true">${expanded ? '−' : '→'}</i></span>
     </button>
     <div class="fs-reveal"${expanded ? '' : ' hidden'} id="fsGameReveal">
       <div class="fs-reveal-head"><div><span>ESCOLHE A TUA EXPERIÊNCIA</span><strong>${chosen ? 'O teu jogo de Free Spins' : `${previewGames.length} jogos disponíveis`}</strong></div>
-        <small>${chosen ? 'Joga quando quiseres' : '1 ponto = 1 rodada em qualquer um deles'}</small></div>
+        <small>${chosen ? 'Joga quando quiseres' : 'As Free Spins valem em qualquer um deles'}</small></div>
       <div class="fs-showcase">${gameCards}</div>
       ${games.length > 5 ? `<button class="fs-more-games" type="button" data-action="fs-more">Ver todos os ${games.length} jogos disponíveis <span aria-hidden="true">→</span></button>` : ''}
       <p class="fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))} · Os ganhos passam a saldo real quando as Free Spins terminam.</p>
@@ -931,8 +931,8 @@ function openFreeSpins() {
   if (!d?.freeSpins) return;
   const s = d.freeSpins;
   const intro = s.chosenGame
-    ? 'Este é o jogo das suas Free Spins. Pode sair e voltar quando quiser: os pontos por jogar ficam guardados.'
-    : `Escolha o jogo onde quer usar os seus ${fsPoints(s.spinsLeft)} de Free Spins (1 ponto = 1 rodada). Depois de escolher, as Free Spins ficam nesse jogo até terminarem.`;
+    ? 'Este é o jogo das suas Free Spins. Pode sair e voltar quando quiser: as Free Spins por jogar ficam guardadas.'
+    : `Escolha o jogo onde quer usar as suas ${fsCount(s.spinsLeft)}. Depois de escolher, as Free Spins ficam nesse jogo até terminarem.`;
   openModal('Jogos disponíveis para Free Spins', `<p class="muted">${intro}</p>
     <div class="fs-pick">${d.games.map((g) => `<button class="fs-game" data-action="fs-pick" data-id="${g.id}">
       <span class="fs-art">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span>
@@ -1052,9 +1052,9 @@ async function closeCasino({ keepalive = false } = {}) {
   } catch { state.user && (state.user.casinoActive = true); }
 }
 
-/** Free spins are shown in points (1 point = 1 round), never in money (to us one point is its bet). */
-const fsPoints = (n) => `${Number(n) || 0} ${Number(n) === 1 ? 'ponto' : 'pontos'}`;
-const fsRounds = (g) => `${g.fsLeft ?? 0}${g.fsSpins ? ` de ${g.fsSpins}` : ''} ${(g.fsSpins || g.fsLeft) === 1 ? 'ponto' : 'pontos'}`;
+/** Free spins are shown as a count ("5 Free Spins"), never in money (to us each one is worth its bet). */
+const fsCount = (n) => `${Number(n) || 0} Free Spins`;
+const fsRounds = (g) => `${g.fsLeft ?? 0}${g.fsSpins ? ` de ${g.fsSpins}` : ''}`;
 
 /** While a game is open, the header shows the live casino balance (and the free-spins rounds left in its bar). */
 async function refreshCasinoBalance() {
@@ -1147,7 +1147,7 @@ function casinoGamePage(id) {
         <div class="cg-provider">${esc(g.provider)}</div>
         <p class="cg-tags">${tags.map(esc).join(', ')}</p>
         <div class="cg-actions">
-          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fsPoints(fs.spinsLeft)}</small></button>` : ''}
+          ${fs?.eligible ? `<button class="cg-btn fs" data-cg-play="fs">🎁 Jogar com Free Spins <small>${fs.spinsLeft} disponíveis</small></button>` : ''}
           <button class="cg-btn play" data-cg-play="real"><span class="cg-play-ico">▶</span> Jogar</button>
           ${g.demo !== false ? '<button class="cg-btn demo" data-cg-play="demo">Testar</button>' : ''}
         </div>
@@ -1207,7 +1207,7 @@ function casinoPlayPage() {
     : `<div class="fs-done"><div class="fs-done-box">${g.fsEnded
       ? `<strong>Free Spins terminadas</strong><span>${g.fsWon > 0 ? `Ganhou <b>${money(g.fsWon)}</b>: já está no seu saldo real.` : 'Desta vez não houve ganhos.'}</span>
         <a class="cg-btn play" href="#/casino">Voltar ao casino</a>`
-      : '<div class="spinner"></div><strong>Pontos terminados</strong><span>A confirmar os ganhos…</span>'}</div></div>`;
+      : '<div class="spinner"></div><strong>Free Spins usadas</strong><span>A confirmar os ganhos…</span>'}</div></div>`;
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
     <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
@@ -1273,8 +1273,8 @@ function bonusCard(b) {
 /** Active casino free spins: their balance, the games they work in, and ending them (winnings paid). */
 function spinsCard(f) {
   return `<div class="bonus-card">
-    <div class="bonus-head"><strong>🎰 Free Spins casino · ${fsPoints(f.spins)}</strong><span class="pf-badge verified">Ativas</span></div>
-    <div class="bonus-nums"><div><small>Pontos por jogar (1 ponto = 1 rodada)</small><b>${f.spinsLeft} de ${fsPoints(f.spins)}</b></div><div><small>Ganhos (saldo real)</small><b class="green">${money(f.winnings)}</b></div></div>
+    <div class="bonus-head"><strong>🎰 Casino · ${fsCount(f.spins)}</strong><span class="pf-badge verified">Ativas</span></div>
+    <div class="bonus-nums"><div><small>Free Spins por jogar</small><b>${f.spinsLeft} de ${f.spins}</b></div><div><small>Ganhos (saldo real)</small><b class="green">${money(f.winnings)}</b></div></div>
     <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · os ganhos passam a saldo real quando terminarem</small>
     <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar e receber ganhos (${money(f.winnings)})</button></div>
   </div>`;
@@ -2352,9 +2352,9 @@ function updateHeader() {
   if (!u) { $('#freebetPill').classList.add('hidden'); state.myBets = null; }
   $('#profileBtn').classList.toggle('hidden', !u);
   if (u) {
-    // Playing free spins: the header shows their points (1 point = 1 round), never a balance.
+    // Playing free spins: the header shows how many are left ("5 Free Spins"), never a balance.
     const fsg = state.casinoSession;
-    $('#headerBalance').textContent = fsg?.fs && !fsg.fsEnded && fsg.fsLeft !== null ? fsPoints(fsg.fsLeft) : money(u.balance);
+    $('#headerBalance').textContent = fsg?.fs && !fsg.fsEnded && fsg.fsLeft !== null ? fsCount(fsg.fsLeft) : money(u.balance);
     // Open tickets on the ticket button.
     const open = (state.myBets || []).filter((b) => b.status === 'open').length;
     $('#myBetsCount').textContent = open || '';
