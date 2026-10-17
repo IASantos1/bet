@@ -742,7 +742,7 @@ body.no-scroll { overflow: hidden; }
 .trk-ball.resting .trk-ball-svg { animation: none; }
 /* Commentary and incident list under the pitch: not shown (the header and the Estatísticas tab carry them). */
 .trk-note, .trk-actions { display: none; }
-.trk-badge { position: absolute; z-index: 6; display: none; align-items: stretch; gap: 7px; padding: 5px 9px 5px 6px; max-width: 70%; border: 1px solid #ffffff1f; border-radius: var(--radius); background: #0a0a0c8c; backdrop-filter: blur(6px); transform: translate(-50%, -50%); transition: left 900ms cubic-bezier(.22, 1, .36, 1), top 900ms cubic-bezier(.22, 1, .36, 1); pointer-events: none; }
+.trk-badge { position: absolute; z-index: 6; color: #fff; display: none; align-items: stretch; gap: 7px; padding: 5px 9px 5px 6px; max-width: 70%; border: 1px solid #ffffff1f; border-radius: var(--radius); background: #0a0a0c8c; backdrop-filter: blur(6px); transform: translate(-50%, -50%); transition: left 900ms cubic-bezier(.22, 1, .36, 1), top 900ms cubic-bezier(.22, 1, .36, 1); pointer-events: none; }
 .trk-badge.on { display: flex; }
 .trk-badge div { display: flex; flex-direction: column; min-width: 0; }
 .trk-badge b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1460,3 +1460,4 @@ html.light .aff-side-top b { color: #111827; }
 html.light .pill.open, html.light .pill.pending, html.light .pill.scheduled { background: #e6eaf0; }
 html.light .game-art, html.light .fs-art { background: linear-gradient(160deg, #eef1f5, #dde3ea); }
 html.light .hero { background: radial-gradient(circle at 80% 20%, #dfe6ee 0, #eef1f5 28%, var(--dim) 70%); }
+html.light .match-hero { background: radial-gradient(circle at 50% 0%, #ffffff 0, #f4f6f9 45%, var(--dim) 80%); }

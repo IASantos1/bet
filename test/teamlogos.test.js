@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { openDb, nowIso } from '../server/db.js';
 import { closeName, createTeamLogos, nameVariants, sameTeam, teamKey } from '../server/teamlogos.js';
 
@@ -205,6 +206,14 @@ test('close names within one league: the one team that fits, or none', () => {
   assert.equal(pick('Paris'), 'Paris FC');
   assert.equal(pick('Paris Saint-Germain'), 'Paris Saint Germain');
   assert.equal(pick('Troyes AC'), null);
+  // A shared word alone is not the same club.
+  const pl = ['Manchester United', 'Manchester City', 'Leeds', 'West Ham', 'Newcastle', 'Atletico Madrid', 'Real Madrid']
+    .map((name) => ({ name, logo: `https://x/${name}.png` }));
+  assert.equal(closeName('Leeds United', pl.filter((t) => t.name !== 'Leeds')), null);
+  assert.equal(closeName('Leeds United', pl)?.name, 'Leeds');
+  assert.equal(closeName('Man City', pl), null);
+  assert.equal(closeName('West Ham United', pl)?.name, 'West Ham');
+  assert.equal(closeName('Newcastle United', pl)?.name, 'Newcastle');
 });
 
 test('free pass: the competition is matched to its kept league and close names there get the badge, no request', async () => {
@@ -236,4 +245,39 @@ test('free pass: the competition is matched to its kept league and close names t
   // Lyon has no game now, but its badge is downloaded ahead too (images cost no requests).
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM team_logo_files').get().n, 7);
   assert.equal(api.length, 1);
+});
+
+test('a promoted club gets its own badge from another kept league, and a wrong old match is redone', async () => {
+  const db = openDb(':memory:');
+  // A badge saved by the earlier rule (Leeds United given Manchester United's).
+  db.exec(`CREATE TABLE team_logos (team_key TEXT PRIMARY KEY, logo TEXT, colors TEXT, checked_at TEXT NOT NULL)`);
+  db.prepare("INSERT INTO team_logos (team_key, logo, checked_at) VALUES ('futebol|leeds united', '/team-logo/aaaaaaaaaaaaaaaaaaaa', ?)").run(nowIso());
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const ins = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('futebol', 'England. Premier League', ?, ?, ?, 'scheduled', 'winhouse', ?, ?)`);
+  ins.run('Leeds United', 'Manchester United', soon, nowIso(), nowIso());
+  ins.run('Arsenal', 'Chelsea', soon, nowIso(), nowIso());
+  const lists = {
+    39: ['Manchester United', 'Arsenal', 'Chelsea', 'West Ham'],
+    40: ['Leeds', 'Sunderland', 'Burnley'],
+  };
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    if (u.hostname === 'media.api-sports.io') return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new Uint8Array([1]).buffer };
+    if (u.hostname.endsWith('api-sports.io')) {
+      const league = Number(u.searchParams.get('league'));
+      const response = (lists[league] || []).map((name) => ({ team: { name, logo: `https://media.api-sports.io/football/teams/${name.replace(/ /g, '')}.png` } }));
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ teams: null }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: { futebol: [39, 40] }, perRun: 0 });
+  await logos.run();
+  const fileOf = (n) => logos.get('futebol', n)?.logo;
+  assert.match(fileOf('Leeds United'), /^\/team-logo\//);
+  assert.notEqual(fileOf('Leeds United'), fileOf('Manchester United'));
+  assert.notEqual(fileOf('Leeds United'), '/team-logo/aaaaaaaaaaaaaaaaaaaa');
+  const id = (u) => createHash('sha1').update(u).digest('hex').slice(0, 20);
+  assert.equal(fileOf('Leeds United'), `/team-logo/${id('https://media.api-sports.io/football/teams/Leeds.png')}`);
+  assert.equal(fileOf('Manchester United'), `/team-logo/${id('https://media.api-sports.io/football/teams/ManchesterUnited.png')}`);
 });
