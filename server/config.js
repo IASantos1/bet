@@ -117,6 +117,9 @@ export const config = {
     token: (env.CASINO_API_TOKEN || '').trim(),
     lang: int(env.CASINO_LANG, 6), // 6 = Português
     minTransferCents: int(env.CASINO_MIN_TRANSFER_CENTS, 100),
+    // Free spins on Palace: the name of the game-url field that fixes the bet per spin (the value
+    // sent is the spin's €0.10 / €0.20), as Palace's documentation calls it. Empty: not sent.
+    fsBetParam: /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test((env.CASINO_FS_BET_PARAM || '').trim()) ? env.CASINO_FS_BET_PARAM.trim() : '',
   },
 
   // Settlement engine: postponed matches without a new date are voided after this many hours.

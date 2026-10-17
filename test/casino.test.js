@@ -253,3 +253,18 @@ test('a .env file in the working directory is loaded', async () => {
   { cwd: dir, env }).toString().trim();
   assert.equal(out, 'https://from-dotenv.example/v4|abc');
 });
+
+test('free spins on Palace: the game opens with the bet per spin fixed when the field name is set', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const p = player(db, 10_000);
+  const fixed = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: api.fetchImpl, fsBetParam: 'bet_amount' });
+  await fixed.fsEnterGame(p, { providerId: 1, gameCode: 'vs20doghouse', returnUrl: 'https://cb', fundCents: 200, spinBetCents: 20 });
+  const call = api.calls.filter((c) => c.path === '/v4/game/game-url').at(-1);
+  assert.equal(call.body.bet_amount, 0.2);
+  // Without the field name nothing extra is sent (as before).
+  const plain = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: api.fetchImpl });
+  await plain.fsEnterGame(p, { providerId: 1, gameCode: 'vs20doghouse', returnUrl: 'https://cb', spinBetCents: 20 });
+  const call2 = api.calls.filter((c) => c.path === '/v4/game/game-url').at(-1);
+  assert.equal(Object.keys(call2.body).some((k) => k.startsWith('bet')), false);
+});
