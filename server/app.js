@@ -1394,7 +1394,8 @@ export function createApp(db, {
           if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ? WHERE id = ? AND palace_cents IS NULL').run(fund, fs.id);
           let out;
           try {
-            out = await casino.fsEnterGame(userById(req.user.id), { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl, fundCents: fund });
+            out = await casino.fsEnterGame(userById(req.user.id), { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl, fundCents: fund,
+              spinBetCents: spinBet(fs, g.id) });
           } catch (err) {
             if (fund) db.prepare('UPDATE casino_spins SET palace_cents = NULL WHERE id = ?').run(fs.id);
             throw err;

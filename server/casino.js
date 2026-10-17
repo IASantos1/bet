@@ -41,7 +41,7 @@ export class CasinoError extends Error {
 }
 
 export function createCasino(db, {
-  baseUrl, token, lang = 6, fetchImpl = globalThis.fetch, log = () => {}, cacheMs = 60 * 60_000,
+  baseUrl, token, lang = 6, fetchImpl = globalThis.fetch, log = () => {}, cacheMs = 60 * 60_000, fsBetParam = '',
 } = {}) {
   const root = normalizeBaseUrl(baseUrl);
   const enabled = !!(root && token);
@@ -291,9 +291,9 @@ export function createCasino(db, {
 
   /**
    * Opens a game on the free-spins account; `fundCents` (first launch only) is put there first.
-   * Returns { url, fsCents }.
+   * Returns { url, fsCents }. `spinBetCents`: the bet each spin is fixed at (sent as `fsBetParam`).
    */
-  function fsEnterGame(user, { providerId, gameCode, returnUrl, fundCents = 0 }) {
+  function fsEnterGame(user, { providerId, gameCode, returnUrl, fundCents = 0, spinBetCents = 0 }) {
     return withLock(`fs:${user.id}`, async () => {
       const u = freshUser(user.id);
       assertCanPlay(u);
@@ -305,6 +305,8 @@ export function createCasino(db, {
       }
       const data = await call('/v4/game/game-url', {
         user_code: code, provider_id: Number(providerId), game_symbol: String(gameCode), lang, return_url: returnUrl || '',
+        // The bet per spin fixed in the game (€0.10 / €0.20), so the player cannot raise it.
+        ...(fsBetParam && spinBetCents > 0 ? { [fsBetParam]: spinBetCents / 100 } : {}),
       });
       if (!data?.game_url) throw new CasinoError(-1, 'O fornecedor não devolveu o endereço do jogo.');
       return { url: data.game_url, fsCents: await fsBalanceCents(u) };
