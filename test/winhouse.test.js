@@ -974,3 +974,41 @@ test('tennis in play: every game\'s point and sets read from its tracker, for th
   assert.deepEqual(await t.feed.readTennis({ now: Date.now() + 11_000 }), { asked: 2, updated: 1 });
   assert.equal(JSON.parse(t.row(60).live_detail).point, '40-40');
 });
+
+test('a football game listed in play before kick-off stays pre-match until a minute before it, and shows once', async () => {
+  // Pre-match under one id, kick-off in 10 minutes; WinHouse already lists it in play under another id.
+  const pre = { ...football(20, 0, '', ODD), id: 20, ...when(-10 * 60_000), current_minute: '' };
+  const early = { ...football(21, 3, '0-0', ODD), id: 21, ...when(-10 * 60_000) };
+  const lists = { live: [early], pre: [pre] };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  await t.feed.syncLive();
+  assert.equal(t.row(20).status, 'scheduled');
+  assert.equal(t.row(21), undefined); // not taken live, no copy
+  await t.feed.syncPrematch();
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE home = 'Cordoba'").get().n, 1);
+  // At kick-off it goes live on the pre-match row; the pre-match list makes no second copy.
+  lists.live = [{ ...football(21, 1, '0-0', ODD), id: 21 }];
+  await t.feed.syncLive();
+  const live = t.db.prepare("SELECT * FROM events WHERE home = 'Cordoba' AND status = 'live'").all();
+  assert.equal(live.length, 1);
+  lists.pre = [{ ...pre, ...when(-30_000) }];
+  await t.feed.syncPrematch();
+  assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE home = 'Cordoba' AND status IN ('scheduled', 'live')").get().n, 1);
+});
+
+test('a copy already taken live too early (no bets) is dropped, leaving the pre-match game', async () => {
+  const pre = { ...football(30, 0, '', ODD), id: 30, ...when(-10 * 60_000), current_minute: '' };
+  const lists = { live: [], pre: [pre] };
+  const t = setupFeed(lists);
+  await t.feed.syncPrematch();
+  // A copy made live by the earlier rule.
+  t.db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, source, external_id, created_at, updated_at)
+    VALUES ('futebol', 'Spain. Segunda Division', 'Cordoba', 'Tenerife', ?, 'live', 0, 0, 'winhouse', '31', ?, ?)`)
+    .run(t.row(30).start_time, new Date().toISOString(), new Date().toISOString());
+  const copyId = t.row(31).id;
+  lists.live = [{ ...football(31, 3, '0-0', ODD), id: 31, ...when(-10 * 60_000) }];
+  await t.feed.syncLive();
+  assert.equal(t.db.prepare('SELECT status FROM events WHERE id = ?').get(copyId).status, 'cancelled');
+  assert.equal(t.row(30).status, 'scheduled');
+});

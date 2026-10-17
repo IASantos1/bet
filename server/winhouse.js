@@ -827,6 +827,10 @@ export const sameTeam = (a, b) => !!teamKey(a) && teamKey(a) === teamKey(b);
 const TWIN_WINDOW_MS = 3 * 60 * 60_000;
 /** How long a match in review with no bets waits, gone from the live list, before it is closed. */
 const STALE_CLOSE_MS = 60 * 60_000;
+/** WinHouse lists some games in play minutes before kick-off: they go live at most this long before it. */
+const LIVE_EARLY_MS = 60_000;
+/** A kick-off further ahead than this is a clock or time-zone slip, not an early listing: it goes live. */
+const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
 
 const clockText = (sport, minutes, raw) => {
@@ -1081,6 +1085,25 @@ export function createWinHouseFeed(db, {
    */
   const twinOf = db.prepare(`SELECT * FROM events WHERE source = ? AND sport = ? AND status = 'scheduled'
     AND start_time BETWEEN ? AND ? ORDER BY start_time`);
+  /**
+   * A game taken live before its kick-off (no bets on it): back to pre-match, or, when it is a second
+   * copy of a pre-match row (the live list's id), that copy is dropped so the game shows once.
+   */
+  function unLive(row) {
+    const others = twinOf.all(SOURCE, row.sport, new Date(new Date(row.start_time).getTime() - TWIN_WINDOW_MS).toISOString(),
+      new Date(new Date(row.start_time).getTime() + TWIN_WINDOW_MS).toISOString())
+      .filter((r) => r.id !== row.id && sameTeam(r.home, row.home) && sameTeam(r.away, row.away));
+    tx(db, () => {
+      if (others.length) {
+        db.prepare("UPDATE events SET external_id = ?, status = 'cancelled', updated_at = ? WHERE id = ?").run(`${row.external_id}:early${row.id}`, nowIso(), row.id);
+        db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(row.id);
+      } else {
+        db.prepare(`UPDATE events SET status = 'scheduled', home_score = NULL, away_score = NULL, clock = NULL, wh_minute = NULL,
+          live_odds_at = NULL, updated_at = ? WHERE id = ?`).run(nowIso(), row.id);
+      }
+    });
+    log(`WinHouse: ${row.home} - ${row.away} estava ao vivo antes do início (${row.start_time}): volta ao pré-jogo`);
+  }
   function adoptTwin(ev) {
     const at = new Date(ev.startTime).getTime();
     const near = twinOf.all(SOURCE, ev.sport, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
@@ -1161,6 +1184,16 @@ export function createWinHouseFeed(db, {
         ev = { ...kept, prices: {}, coefs: new Map() };
       }
       seen.add(ev.externalId);
+      // Not live before kick-off (a minute's grace): the pre-match game stays as it is until then.
+      try {
+        const known = findEvent.get(SOURCE, ev.externalId);
+        const kickoff = new Date(ev.startTime).getTime(); // the live list's own kick-off time
+        // Only sports with a set kick-off time (a tennis match's time is a "not before").
+        if (CLOCK_SPORTS.has(ev.sport) && kickoff - Date.now() > LIVE_EARLY_MS && kickoff - Date.now() < LIVE_EARLY_LIMIT_MS && (!known || known.status === 'scheduled' || known.status === 'live')) {
+          if (known?.status === 'live' && !db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(known.id)) unLive(known);
+          continue;
+        }
+      } catch (err) { log(`WinHouse ao vivo ${ev.externalId}: ${err.message}`); }
       try {
         tx(db, () => {
           let row = findEvent.get(SOURCE, ev.externalId);
@@ -1472,7 +1505,16 @@ export function createWinHouseFeed(db, {
         tx(db, () => {
           let row = findEvent.get(SOURCE, ev.externalId);
           if (row && row.status !== 'scheduled') return; // started: the live list owns it
-          if (!row) { row = insert(ev, 'scheduled'); created += 1; }
+          if (!row) {
+            // Already in play or over under another id (the live list's): no pre-match copy of it.
+            const at = new Date(ev.startTime).getTime();
+            const playing = db.prepare(`SELECT home, away FROM events WHERE source = ? AND sport = ? AND status IN ('live', 'finished')
+              AND start_time BETWEEN ? AND ?`).all(SOURCE, ev.sport, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
+              .some((r) => sameTeam(r.home, ev.home) && sameTeam(r.away, ev.away));
+            if (playing) return;
+            row = insert(ev, 'scheduled');
+            created += 1;
+          }
           db.prepare(`UPDATE events SET competition = ?, home = ?, away = ?, start_time = ?, home_team_ext = COALESCE(?, home_team_ext),
               away_team_ext = COALESCE(?, away_team_ext), wh_seen_at = ?, updated_at = ? WHERE id = ?`)
             .run(ev.competition, ev.home, ev.away, ev.startTime, ev.homeLogo, ev.awayLogo, nowIso(), nowIso(), row.id);
