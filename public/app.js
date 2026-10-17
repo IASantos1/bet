@@ -632,7 +632,8 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  return `${casinoBubbles()}${leagueRow()}${state.user ? memberSpotlight : hero}
+  ensureFreeSpins();
+  return `${casinoBubbles()}${freeSpinsBanner()}${leagueRow()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
@@ -870,18 +871,39 @@ async function loadFreeSpins() {
   state.fsAt = Date.now();
   try { state.fsActive = await api('/api/me/free-spins/active'); } catch { state.fsActive = null; }
   const { page, sub } = currentRoute();
-  if (page === 'casino' && !sub) render({ keepScroll: true });
+  if ((page === 'casino' && !sub) || page === 'home') render({ keepScroll: true });
 }
 
-/** On top of the casino: the free spins waiting to be played, opening the games to pick from. */
-function freeSpinsBar() {
+/** The player's free spins, fetched on arrival (another player, or a while since the last look). */
+function ensureFreeSpins() {
+  if (state.user && (state.fsFor !== state.user.id || Date.now() - (state.fsAt || 0) > 30_000)) {
+    state.fsFor = state.user.id;
+    state.fsAt = Date.now();
+    loadFreeSpins();
+  }
+}
+
+/**
+ * The free spins waiting to be played (top of the home page and of the casino): how many, at what
+ * bet, until when, three of the games, and one button that opens the games to pick from.
+ */
+function freeSpinsBanner() {
   const d = state.fsActive;
-  if (!d?.freeSpins || !d.games.length) return '';
+  if (!d?.freeSpins || !d.games.length || !(d.freeSpins.spinsLeft > 0)) return '';
   const s = d.freeSpins;
   const chosen = s.chosenGame ? d.games[0] : null;
-  return `<button class="fs-bar" data-action="fs-open"><span class="fs-ico">🎁</span>
-    <span class="fs-text"><strong>${s.spinsLeft} Free Spins disponíveis</strong><small>${chosen ? `No seu jogo: ${esc(chosen.name)}` : `Escolha 1 de ${d.games.length} jogos selecionados`}</small></span>
-    <span class="fs-go">${chosen ? 'Jogar' : 'Ver jogos'} ›</span></button>`;
+  const days = Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86_400_000);
+  const until = days <= 1 ? 'expiram hoje' : `expiram em ${days} dias`;
+  const pics = d.games.filter((g) => g.image).slice(0, 3);
+  return `<button class="fsb" data-action="fs-open" aria-label="Free Spins: ${s.spinsLeft} rodadas grátis">
+    <span class="fsb-copy">
+      <span class="fsb-tag">🎁 FREE SPINS</span>
+      <span class="fsb-title"><b>${s.spinsLeft}</b> ${s.spinsLeft === 1 ? 'rodada grátis' : 'rodadas grátis'}</span>
+      <span class="fsb-sub">${chosen ? `No seu jogo: ${esc(chosen.name)}` : `Escolha 1 de ${d.games.length} jogos`} · ${money(d.games[0].bet)} por rodada · ${until}</span>
+      <span class="fsb-cta">${chosen ? 'Jogar agora' : 'Escolher jogo'} ›</span>
+    </span>
+    <span class="fsb-art fsb-n${pics.length}" aria-hidden="true">${pics.map((g, i) => `<img class="fsb-pic fsb-p${i}" src="${esc(g.image)}" alt="" loading="lazy" decoding="async">`).join('') || '<span class="fsb-emoji">🎰</span>'}</span>
+  </button>`;
 }
 
 function openFreeSpins() {
@@ -900,12 +922,7 @@ function openFreeSpins() {
 
 function casinoPage() {
   const c = state.casino;
-  // The player's free spins: fetched on arrival (another player, or a while since the last look).
-  if (state.user && (state.fsFor !== state.user.id || Date.now() - (state.fsAt || 0) > 30_000)) {
-    state.fsFor = state.user.id;
-    state.fsAt = Date.now();
-    loadFreeSpins();
-  }
+  ensureFreeSpins();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
@@ -936,7 +953,7 @@ function casinoPage() {
   const head = prov?.name || cat?.label;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  return `<div class="page-title"><h1>Casino</h1></div>${freeSpinsBar()}
+  return `<div class="page-title"><h1>Casino</h1></div>${freeSpinsBanner()}
     <div class="casino-filters">
       <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">

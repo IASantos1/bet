@@ -347,3 +347,26 @@ test('multiple boost: % by selections (4 → 5%, 8 → 10%…), on the winnings,
   assert.equal(multi(4).row().boost_pct, 5);
   assert.throws(() => savePromoConfig(db, { accaBoost: { tiers: '4:abc' } }), /escalões inválidos/);
 });
+
+test('free spins: the house games are found by name in the catalogue and added once', async () => {
+  const { findGameByName, seedFsGames, promoConfig } = await import('../server/promotions.js');
+  const { openDb } = await import('../server/db.js');
+  const catalogue = [
+    { id: 11, name: 'Fortune Tiger' }, { id: 12, name: 'Big Bass Splash' }, { id: 13, name: 'Big Bass Splash 1000' },
+    { id: 14, name: 'The Dog House Megaways' }, { id: 15, name: 'The Dog House' }, { id: 16, name: 'Shining Crown' },
+    { id: 17, name: 'CashHeat' }, { id: 18, name: 'Lucky 3 Lions' }, { id: 19, name: 'Sweet Bonanza' },
+  ];
+  assert.equal(findGameByName('The Dog House', catalogue).id, 15); // not the Megaways one
+  assert.equal(findGameByName('Big Bass Splash', catalogue).id, 12);
+  assert.equal(findGameByName('Cash Heat', catalogue).id, 17);
+  assert.equal(findGameByName('3 Lucky Lions', catalogue).id, 18);
+  assert.equal(findGameByName('Gates of Olympus', catalogue), null);
+  assert.equal(findGameByName('Fortune Tiger', [{ id: 20, name: 'Fortune Tiger™' }]).id, 20);
+
+  const db = openDb(':memory:');
+  assert.equal(seedFsGames(db, []), null); // catalogue not loaded yet: tried again later
+  const r = seedFsGames(db, catalogue);
+  assert.deepEqual(r.missing, []);
+  assert.deepEqual(promoConfig(db).casinoFs.games, [11, 12, 15, 16, 17, 18]);
+  assert.equal(seedFsGames(db, catalogue), null); // once only: the admin's later changes stay
+});
