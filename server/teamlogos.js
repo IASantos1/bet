@@ -167,10 +167,12 @@ export function createTeamLogos(db, {
     const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
     if (errors?.length) {
       const message = String(errors[0]).slice(0, 200);
-      lastError = { at: nowIso(), message: `API-Football: ${message}` };
+      const seasonRefused = /season|plan/i.test(message) && /season/i.test(pathAndQuery);
+      // A season outside the plan is expected (an older one is tried next): not an error to show.
+      if (!seasonRefused) lastError = { at: nowIso(), message: `API-Football: ${message}` };
       if (/request limit|requests|quota/i.test(message)) spend(sport, apiFootballDaily); // out of requests today
       else if (!/season|plan/i.test(message)) pausedUntil = Date.now() + 15 * 60_000; // bad key or the like
-      throw Object.assign(new Error(lastError.message), { season: /season|plan/i.test(message) });
+      throw Object.assign(new Error(`API-Football: ${message}`), { season: /season|plan/i.test(message) });
     }
     return Array.isArray(data?.response) ? data.response : [];
   }

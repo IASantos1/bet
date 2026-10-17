@@ -189,4 +189,5 @@ test('whole league lists are kept: their teams get a badge with no request of th
   assert.equal(images, 2);
   const steps = await again.diagnose();
   assert.ok(steps.some((x) => /Ligas guardadas/.test(x.name) && /1 de 1 ligas/.test(x.detail)));
+  assert.ok(!(await logos.diagnose()).some((x) => /Último erro/.test(x.name))); // the refused seasons are not errors
 });
