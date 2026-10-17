@@ -155,7 +155,7 @@ if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, p
 // Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
 const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
 if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
-const teamLogos = createTeamLogos(db, { ...config.teamLogos, log: (m) => console.warn(`[emblemas] ${m}`) });
+const teamLogos = createTeamLogos(db, { ...config.teamLogos, persistent: config.dbPersistent, log: (m) => console.warn(`[emblemas] ${m}`) });
 const stopTeamLogos = teamLogos.start();
 if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[emblemas] API-Football ativo (até ${config.teamLogos.apiFootballDaily} pesquisas por dia e desporto)`);
 const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] ${m}`) });

@@ -468,6 +468,9 @@ export function createApp(db, {
         // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
         homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
         awayLogo: teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
+        // The badge found here, to show should the feed's not load.
+        homeLogoAlt: teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
+        awayLogoAlt: teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
         homeKit: teamLogos?.get(e.sport, e.home)?.colors || null, awayKit: teamLogos?.get(e.sport, e.away)?.colors || null,
         homeKitImg: teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: teamLogos?.get(e.sport, e.away)?.kit || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
@@ -1977,6 +1980,16 @@ export function createApp(db, {
   const campaignOut = (c) => ({
     id: c.id, channel: c.channel, segment: c.segment, days: c.days, subject: c.subject, body: c.body, ctaText: c.cta_text, ctaUrl: c.cta_url,
     status: c.status, total: c.total, sent: c.sent, failed: c.failed, error: c.error, createdBy: c.created_by, createdAt: c.created_at, finishedAt: c.finished_at,
+  });
+
+  // Team badges: what is set, the API-Football account and what is kept; "search now" runs a round.
+  admin.post('/team-logos/check', async (_req, res, next) => {
+    try { res.json({ steps: teamLogos ? await teamLogos.diagnose() : [{ name: 'Emblemas', ok: false, detail: 'não iniciado' }] }); }
+    catch (err) { next(err); }
+  });
+  admin.post('/team-logos/run', async (_req, res, next) => {
+    try { res.json(teamLogos ? await teamLogos.run() : { asked: 0, found: 0 }); }
+    catch (err) { next(err); }
   });
 
   admin.get('/campaigns', (_req, res) => {

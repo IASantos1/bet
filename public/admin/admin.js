@@ -946,6 +946,10 @@ function adminFeed(f) {
       : `<p class="muted">Bzzoiro desligado (sem <strong>BZZOIRO_API_TOKEN</strong>).</p>`}
   </div>
   <div class="panel">${winhousePanel(f.winhouse)}</div>
+  <div class="panel"><h3>Emblemas das equipas</h3>
+    <p class="muted">Logos oficiais do API-Football (chave <strong>API_FOOTBALL_KEY</strong>), guardados aqui de vez: as ligas principais vêm inteiras num pedido cada, e as outras equipas são procuradas pelo nome. Cores das camisolas do TheSportsDB.</p>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="tl-check">Verificar logos</button>
+      <button class="ghost-btn btn-sm" data-action="tl-run">Procurar logos agora</button></div><div id="tlCheck"></div></div>
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
       : 'Defina nas Variables do Railway <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI), <strong>RAPIDAPI_STREAM_LIST_PATH</strong> (a rota da lista de jogos) e <strong>RAPIDAPI_STREAM_PATH</strong> (a rota de um jogo, com {id}) e faça redeploy. O host por omissão é football-live-stream-api.p.rapidapi.com (RAPIDAPI_STREAM_HOST para outro).'}</p>
@@ -1292,6 +1296,19 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
+  if (action === 'tl-check' || action === 'tl-run') {
+    actionEl.disabled = true;
+    try {
+      if (action === 'tl-run') {
+        const r = await api('/api/admin/team-logos/run', { method: 'POST', body: {} });
+        toast('Procura feita', `${r.asked} equipa(s) procurada(s), ${r.found} logo(s) novo(s).`);
+      }
+      const { steps } = await api('/api/admin/team-logos/check', { method: 'POST', body: {} });
+      $('#tlCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
   if (action === 'cp-check') {
     actionEl.disabled = true;
     try {
