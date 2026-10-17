@@ -294,7 +294,14 @@ function jerseySvg(name, kit) {
   return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z" fill="${a}" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
     + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
 }
+// Pictures that failed to load: the next refresh draws their replacement straight away (no blink).
+const BROKEN_IMG = new Set();
 function teamBadge(logo, name, size = '', fallback = null, kit = null, alt = null) {
+  if (logo && BROKEN_IMG.has(logo)) {
+    if (alt && !BROKEN_IMG.has(alt)) { logo = alt; alt = null; }
+    else if (fallback && !BROKEN_IMG.has(fallback)) { logo = fallback; fallback = null; size = `${size} flag`.trim(); }
+    else logo = null;
+  }
   const cls = `team-icon${size ? ` ${size}` : ''}`;
   const kitAttr = kit === false ? ' data-kit="none"' : Array.isArray(kit) ? ` data-kit="${esc(kit.join(','))}"` : '';
   if (!logo && kit === false) return `<div class="${cls}">${esc(size.split(' ').includes('mini') ? initials(name).slice(0, 1) : initials(name))}</div>`;
@@ -2359,6 +2366,45 @@ function mergeKeeping(root, html, keepId) {
   })(root, fresh);
 }
 
+/**
+ * Brings `root` to the given HTML changing only what differs: a refresh (odds, clock, score) touches
+ * just those nodes, so badges, casino pictures and buttons stay as they are instead of being built
+ * again (which made every picture blink). Children are matched in order, or by a key (id, link,
+ * data-key…) when a list gains or loses a row, so the rows below keep their pictures too.
+ */
+const nodeKey = (n) => (n.nodeType === 1 ? n.id || n.getAttribute('data-key') || n.getAttribute('data-event-id') || n.getAttribute('data-game-id')
+  || n.getAttribute('data-hscroll') || (n.tagName === 'A' ? n.getAttribute('href') : null) || null : null);
+function morphNode(cur, next) {
+  if (cur.nodeType !== 1) { if (cur.nodeValue !== next.nodeValue) cur.nodeValue = next.nodeValue; return; }
+  for (const a of [...cur.attributes]) if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
+  for (const a of [...next.attributes]) if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
+  if (cur.tagName === 'IFRAME' || cur.tagName === 'VIDEO' || cur.tagName === 'CANVAS') return;
+  morphChildren(cur, next);
+}
+function morphChildren(parent, nextParent) {
+  const next = [...nextParent.childNodes];
+  const keyed = new Map();
+  for (const c of parent.childNodes) { const k = nodeKey(c); if (k && !keyed.has(`${c.tagName}|${k}`)) keyed.set(`${c.tagName}|${k}`, c); }
+  const placed = new Set();
+  next.forEach((n, i) => {
+    let cur = parent.childNodes[i] || null;
+    const k = nodeKey(n);
+    const match = k ? keyed.get(`${n.tagName}|${k}`) : null;
+    if (match && match !== cur && !placed.has(match)) { parent.insertBefore(match, cur); cur = match; }
+    const same = cur && !placed.has(cur) && cur.nodeType === n.nodeType
+      && (n.nodeType !== 1 || (cur.tagName === n.tagName && nodeKey(cur) === k));
+    if (same) morphNode(cur, n);
+    else { parent.insertBefore(n, cur); cur = n; }
+    placed.add(cur);
+  });
+  while (parent.childNodes.length > next.length) parent.lastChild.remove();
+}
+function morph(root, html) {
+  const fresh = document.createElement('template');
+  fresh.innerHTML = html;
+  morphChildren(root, fresh.content);
+}
+
 function currentRoute() {
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const [page = '', sub = '', ...rest] = path.split('/');
@@ -2395,7 +2441,10 @@ function render({ keepScroll = false } = {}) {
   // there the new page is merged around the slot that holds it instead of replacing everything.
   const keep = page === 'jogo' ? $('#content #trackerInline') : null;
   if (keep?.querySelector('iframe')) mergeKeeping($('#content'), html, 'trackerInline');
+  // A refresh of the same page changes only what moved; a new page is built whole.
+  else if (keepScroll && $('#content').dataset.page === page) morph($('#content'), html);
   else $('#content').innerHTML = html;
+  $('#content').dataset.page = page;
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
@@ -2873,6 +2922,7 @@ document.addEventListener('error', (e) => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
+  BROKEN_IMG.add(img.getAttribute('src'));
   // The feed's badge did not load: the one found here (API-Football…).
   if (img.dataset.alt) {
     img.src = img.dataset.alt;
