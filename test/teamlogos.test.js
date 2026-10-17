@@ -58,8 +58,8 @@ test('badges looked up by name for teams the feed sends without one; misses kept
   const logos = createTeamLogos(db, { fetchImpl });
   assert.equal(logos.get('futebol', 'Eintracht Frankfurt'), null);
   const r = await logos.run();
-  assert.deepEqual(r, { asked: 3, found: 2 }); // Porto has the feed's badge: not asked
-  assert.ok(!asked.includes('Porto'));
+  assert.deepEqual(r, { asked: 4, found: 2 });
+  assert.equal(asked.at(-1), 'Porto'); // Porto has the feed's badge: looked up last (a spare)
   assert.deepEqual(logos.get('futebol', 'Eintracht Frankfurt'), { logo: 'https://r2.thesportsdb.com/images/media/team/badge/ef.png', colors: ['#e1000f', '#000000'], kit: 'https://r2.thesportsdb.com/images/media/team/equipment/ef.png', ver: 2, apif: false, alt: [], checkedAt: logos.get('futebol', 'Eintracht Frankfurt').checkedAt });
   assert.equal(logos.get('futebol', '1. Koln').logo, 'https://r2.thesportsdb.com/k.png'); // second spelling, football one
   assert.deepEqual(logos.get('futebol', '1. Koln').colors, ['#ffffff']);
@@ -100,7 +100,7 @@ test('API-Football badges when its key is set, within the daily allowance; TheSp
     const teams = t === 'Benfica' ? [{ strTeam: 'Benfica', strSport: 'Soccer', strBadge: 'https://r2.thesportsdb.com/slb.png', strColour1: '#E20E0E' }] : null;
     return { ok: true, status: 200, json: async () => ({ teams }) };
   };
-  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', apiFootballDaily: 3 });
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', apiFootballDaily: 3, leaguePacks: {} });
   await logos.run();
   // Not "Benfica B"; the badge is kept here and served from /team-logo/<id>.
   const kept = logos.get('futebol', 'Benfica').logo;
@@ -117,7 +117,7 @@ test('API-Football badges when its key is set, within the daily allowance; TheSp
   db2.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
     VALUES ('futebol', 'L', 'Porto', 'Gil Vicente', ?, 'scheduled', 'winhouse', ?, ?)`).run(soon, nowIso(), nowIso());
   let apiCalls = 0;
-  const limited = createTeamLogos(db2, { apiFootballKey: 'k', fetchImpl: async (url) => {
+  const limited = createTeamLogos(db2, { apiFootballKey: 'k', leaguePacks: {}, fetchImpl: async (url) => {
     if (url.includes('api-sports.io')) { apiCalls += 1; return { ok: true, status: 200, json: async () => ({ errors: { requests: 'You have reached the request limit for the day' }, response: [] }) }; }
     return { ok: true, status: 200, json: async () => ({ teams: null }) };
   } });
@@ -144,10 +144,49 @@ test('hybrid match: the official name TheSportsDB knows finds the API-Football t
     const teams = t === 'Man Utd' ? [{ strTeam: 'Manchester United', strTeamAlternate: 'Man United, Man Utd', strSport: 'Soccer', strColour1: '#DA020E' }] : null;
     return { ok: true, status: 200, json: async () => ({ teams }) };
   };
-  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', apiFootballPerMinute: 3 });
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', apiFootballPerMinute: 3, leaguePacks: {} });
   await logos.run();
   assert.deepEqual(searched.slice(0, 2), ['Man Utd', 'Manchester United']);
   // The logo could not be downloaded: the remote address is used.
   assert.equal(logos.get('futebol', 'Man Utd').logo, 'https://media.api-sports.io/football/teams/33.png');
   assert.equal(searched.length, 3); // Wolves: one search, then the minute's allowance is spent
+});
+
+test('whole league lists are kept: their teams get a badge with no request of their own', async () => {
+  const db = openDb(':memory:');
+  db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('futebol', 'Liga Portugal', 'SL Benfica', 'FC Porto', ?, 'live', 'winhouse', ?, ?)`).run(nowIso(), nowIso(), nowIso());
+  const api = [];
+  let images = 0;
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    if (u.hostname === 'media.api-sports.io') {
+      images += 1;
+      return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+    }
+    if (u.hostname.endsWith('api-sports.io')) {
+      api.push(u.pathname + u.search);
+      const season = u.searchParams.get('season');
+      if (season && season !== '2024') return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: { plan: 'Free plans do not have access to this season, try from 2022 to 2024.' }, response: [] }) };
+      const response = [{ team: { name: 'Benfica', code: 'BEN', logo: 'https://media.api-sports.io/football/teams/211.png' } },
+        { team: { name: 'FC Porto', code: 'POR', logo: 'https://media.api-sports.io/football/teams/212.png' } }];
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ teams: null }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: { futebol: [94] } });
+  await logos.run();
+  assert.ok(api.every((p) => p.startsWith('/teams?league=94')), api.join(' ')); // no search per team
+  assert.equal(api.at(-1), '/teams?league=94&season=2024'); // the plan's latest season
+  assert.match(logos.get('futebol', 'SL Benfica').logo, /^\/team-logo\//);
+  assert.match(logos.get('futebol', 'FC Porto').logo, /^\/team-logo\//);
+  assert.equal(images, 2);
+  // Kept: a new game of these teams needs no request at all.
+  const before = api.length;
+  const again = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: { futebol: [94] } });
+  await again.run();
+  assert.equal(api.length, before);
+  assert.equal(images, 2);
+  const steps = await again.diagnose();
+  assert.ok(steps.some((x) => /Ligas guardadas/.test(x.name) && /1 de 1 ligas/.test(x.detail)));
 });

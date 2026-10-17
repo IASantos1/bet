@@ -17,6 +17,7 @@
 // colours, else a neutral shirt.
 
 import { createHash } from 'node:crypto';
+import https from 'node:https';
 import { nowIso } from './db.js';
 
 const SPORT_NAME = {
@@ -24,8 +25,36 @@ const SPORT_NAME = {
   andebol: 'Handball', esports: 'ESports',
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
-const VERSION = 2;
-const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball' }; // entries saved by an older version are looked up again
+const VERSION = 2; // entries saved by an older version are looked up again
+const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball' };
+// API-Football leagues whose whole team list (one request each, a few dozen badges) is kept in
+// team_directory, so the teams of these leagues need no request of their own. Refreshed monthly.
+const LEAGUE_PACKS = {
+  futebol: [94, 95, 39, 40, 140, 141, 135, 136, 78, 79, 61, 62, 88, 144, 179, 203, 197, 207, 218, 119, 113, 103, 106, 345, 283, 210,
+    71, 72, 128, 253, 262, 307, 2, 3, 848, 96],
+};
+const PACK_RETRY_MS = 30 * 86_400_000;
+
+/** A GET with only the headers given (fetch adds its own, which API-Sports refuses). */
+export function plainGet(url, headers) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers, timeout: 10_000 }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks);
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode,
+          headers: { get: (h) => res.headers[String(h).toLowerCase()] ?? null },
+          json: async () => JSON.parse(body.toString('utf8')), arrayBuffer: async () => body,
+        });
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error('sem resposta (10 s)')));
+    req.on('error', reject);
+  });
+}
 const HEX = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i;
 
 /** A team name compared loosely: no accents, lower case, single spaces. */
@@ -61,7 +90,7 @@ const colour = (c) => {
 
 export function createTeamLogos(db, {
   key = '123', apiFootballKey = '', apiFootballVia = '', apiFootballDaily = 90, apiFootballPerMinute = 8, fetchImpl = globalThis.fetch, perRun = 12, enabled = true,
-  log = () => {},
+  log = () => {}, persistent = true, leaguePacks = LEAGUE_PACKS,
 } = {}) {
   db.exec(`CREATE TABLE IF NOT EXISTS team_logos (
     team_key TEXT PRIMARY KEY, logo TEXT, colors TEXT, checked_at TEXT NOT NULL)`);
@@ -74,6 +103,14 @@ export function createTeamLogos(db, {
   const fileGet = db.prepare('SELECT type, body FROM team_logo_files WHERE id = ?');
   const filePut = db.prepare('INSERT OR REPLACE INTO team_logo_files (id, type, body, fetched_at) VALUES (?, ?, ?, ?)');
   db.exec('CREATE TABLE IF NOT EXISTS api_quota (name TEXT PRIMARY KEY, day TEXT NOT NULL, used INTEGER NOT NULL)');
+  // Every team of the leagues fetched whole, by loose name: { logo } (the remote address).
+  db.exec(`CREATE TABLE IF NOT EXISTS team_directory (sport TEXT NOT NULL, name_key TEXT NOT NULL, name TEXT NOT NULL, logo TEXT NOT NULL,
+    PRIMARY KEY (sport, name_key))`);
+  db.exec('CREATE TABLE IF NOT EXISTS team_directory_packs (sport TEXT NOT NULL, league INTEGER NOT NULL, season INTEGER, teams INTEGER NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY (sport, league))');
+  const dirGet = db.prepare('SELECT name, logo FROM team_directory WHERE sport = ? AND name_key = ?');
+  const dirPut = db.prepare('INSERT OR REPLACE INTO team_directory (sport, name_key, name, logo) VALUES (?, ?, ?, ?)');
+  const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
+  const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
     .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, apif: !!r.apif,
       alt: r.alt ? JSON.parse(r.alt) : [], checkedAt: r.checked_at }]));
@@ -89,7 +126,10 @@ export function createTeamLogos(db, {
     ON CONFLICT(name) DO UPDATE SET day = excluded.day, used = excluded.used`);
   const used = (sport) => { const r = quotaRow.get(`apif:${sport}`); return r && r.day === today() ? r.used : 0; };
   const spend = (sport, n = 1) => quotaSet.run(`apif:${sport}`, today(), used(sport) + n);
-  const apifCan = (sport) => apif && API_SPORTS[sport] && used(sport) < apiFootballDaily;
+  let pausedUntil = 0; // after an error that is not the daily limit (a bad key…): a pause, then try again
+  let lastError = null;
+  const apifCan = (sport) => apif && API_SPORTS[sport] && used(sport) < apiFootballDaily && Date.now() >= pausedUntil;
+  const apiGet = fetchImpl === globalThis.fetch ? plainGet : (url, headers) => fetchImpl(url, { signal: AbortSignal.timeout(10_000), headers });
 
   /** What is known of a team: { logo, colors, kit } (any may be null), or null when never looked up. */
   const get = (sport, name) => cache.get(teamKey(sport, name)) || null;
@@ -103,38 +143,97 @@ export function createTeamLogos(db, {
     return Array.isArray(data?.teams) ? data.teams : [];
   }
 
+  /** One API-Sports request (counted against the day's and the minute's allowance): its `response` list. */
+  async function apiCall(sport, pathAndQuery) {
+    const api = API_SPORTS[sport];
+    const rapid = apiFootballVia === 'rapidapi' && api === 'football';
+    const url = rapid ? `https://api-football-v1.p.rapidapi.com/v3/${pathAndQuery}`
+      : `https://${api === 'football' ? 'v3' : 'v1'}.${api}.api-sports.io/${pathAndQuery}`;
+    // Only the key header: API-Sports refuses requests with headers it does not list.
+    const headers = rapid ? { 'x-rapidapi-key': apiFootballKey, 'x-rapidapi-host': 'api-football-v1.p.rapidapi.com' } : { 'x-apisports-key': apiFootballKey };
+    spend(sport);
+    minuteCalls += 1;
+    const res = await apiGet(url, headers);
+    if (res.status === 429) throw Object.assign(new Error('API-Football: demasiados pedidos por minuto'), { rate: true });
+    if (!res.ok) {
+      lastError = { at: nowIso(), message: `API-Football HTTP ${res.status}` };
+      pausedUntil = Date.now() + 15 * 60_000;
+      throw new Error(lastError.message);
+    }
+    // Requests left today, as the API counts them.
+    const leftRaw = res.headers?.get?.('x-ratelimit-requests-remaining');
+    if (leftRaw != null && Number.isFinite(Number(leftRaw)) && Number(leftRaw) <= 0) spend(sport, apiFootballDaily);
+    const data = await res.json().catch(() => null);
+    const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
+    if (errors?.length) {
+      const message = String(errors[0]).slice(0, 200);
+      lastError = { at: nowIso(), message: `API-Football: ${message}` };
+      if (/request limit|requests|quota/i.test(message)) spend(sport, apiFootballDaily); // out of requests today
+      else if (!/season|plan/i.test(message)) pausedUntil = Date.now() + 15 * 60_000; // bad key or the like
+      throw Object.assign(new Error(lastError.message), { season: /season|plan/i.test(message) });
+    }
+    return Array.isArray(data?.response) ? data.response : [];
+  }
+
+  /** A badge from the kept league lists (no request): the team's name, or one of its other names. */
+  function directoryLogo(sport, names) {
+    for (const n of names) for (const v of nameVariants(n)) {
+      const row = dirGet.get(sport, loose(v));
+      if (row) return row.logo;
+    }
+    return null;
+  }
+
+  // The season to ask for: the current one, or the latest the plan allows (the free plan has a range).
+  const seasonNow = () => { const d = new Date(); return d.getUTCMonth() >= 6 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
+  const seasonKept = () => { const r = quotaRow.get('apif:season'); return r ? Number(r.used) : null; };
+  /** Fetches one league's team list whole into team_directory. */
+  async function loadPack(sport, league) {
+    const tries = [...new Set([seasonKept(), seasonNow(), seasonNow() - 1, 2024, 2023, 2022].filter(Boolean))];
+    for (const season of tries) {
+      if (!apifCan(sport) || minuteCalls >= apiFootballPerMinute) return false;
+      let list;
+      try { list = await apiCall(sport, `teams?league=${league}&season=${season}`); } catch (err) {
+        if (err.season) continue; // that season is not in the plan: an older one
+        throw err;
+      }
+      quotaSet.run('apif:season', today(), season);
+      let n = 0;
+      for (const x of list) {
+        const t = x.team || x;
+        if (!t?.name || !httpsUrl(t.logo)) continue;
+        for (const v of [...nameVariants(t.name), t.code].filter(Boolean)) if (loose(v).length >= 3) dirPut.run(sport, loose(v), t.name, t.logo);
+        n += 1;
+      }
+      packPut.run(sport, league, season, n, nowIso());
+      return true;
+    }
+    packPut.run(sport, league, null, 0, nowIso()); // no season works: try again next month
+    return false;
+  }
+  /** The next league lists to fetch (never fetched, or a month old). */
+  function packsDue() {
+    const old = Date.now() - PACK_RETRY_MS;
+    return Object.entries(leaguePacks).flatMap(([sport, ids]) => ids.map((league) => ({ sport, league })))
+      .filter(({ sport, league }) => { const r = packGet.get(sport, league); return !r || new Date(r.fetched_at).getTime() < old; });
+  }
+
   /** API-Football: the badge of the team with this name or one of its other names (same team only), or null. */
   async function apiFootballLogo(sport, name, alt = []) {
-    const api = API_SPORTS[sport];
     const known = [name, ...alt];
+    const kept = directoryLogo(sport, known);
+    if (kept) return keepFile(kept);
     const terms = [...new Set([...nameVariants(name), ...alt.slice(0, 1)].map((v) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-zA-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()))];
     for (const q of terms) {
       // The search takes letters, digits and spaces only, 3 at least.
       if (q.length < 3 || !apifCan(sport) || minuteCalls >= apiFootballPerMinute) continue;
-      const rapid = apiFootballVia === 'rapidapi' && api === 'football';
-      const url = rapid ? `https://api-football-v1.p.rapidapi.com/v3/teams?search=${encodeURIComponent(q)}`
-        : `https://${api === 'football' ? 'v3' : 'v1'}.${api}.api-sports.io/teams?search=${encodeURIComponent(q)}`;
-      // Only the key header: API-Sports refuses requests with headers it does not list.
-      const headers = rapid ? { 'x-rapidapi-key': apiFootballKey, 'x-rapidapi-host': 'api-football-v1.p.rapidapi.com' } : { 'x-apisports-key': apiFootballKey };
-      spend(sport);
-      minuteCalls += 1;
-      const res = await fetchImpl(url, { signal: AbortSignal.timeout(10_000), headers });
-      if (res.status === 429) throw Object.assign(new Error('API-Football: demasiados pedidos'), { rate: true });
-      if (!res.ok) throw new Error(`API-Football HTTP ${res.status}`);
-      // Requests left today, as the API counts them.
-      const left = Number(res.headers?.get?.('x-ratelimit-requests-remaining'));
-      if (res.headers?.get?.('x-ratelimit-requests-remaining') != null && Number.isFinite(left) && left <= 0) spend(sport, apiFootballDaily);
-      const data = await res.json().catch(() => null);
-      const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
-      if (errors?.length) {
-        // Out of requests for today (or a bad key): no more today.
-        spend(sport, apiFootballDaily);
-        throw new Error(`API-Football: ${String(errors[0]).slice(0, 120)}`);
-      }
-      const teams = (Array.isArray(data?.response) ? data.response : []).map((x) => x.team || x);
+      const teams = (await apiCall(sport, `teams?search=${encodeURIComponent(q)}`)).map((x) => x.team || x);
       const t = teams.find((x) => httpsUrl(x.logo) && known.some((n) => sameTeam({ strTeam: x.name, strTeamShort: x.code }, n)));
-      if (t) return keepFile(t.logo);
+      if (t) {
+        for (const v of nameVariants(t.name)) dirPut.run(sport, loose(v), t.name, t.logo);
+        return keepFile(t.logo);
+      }
     }
     return null;
   }
@@ -144,7 +243,7 @@ export function createTeamLogos(db, {
     const id = createHash('sha1').update(url).digest('hex').slice(0, 20);
     if (fileGet.get(id)) return `/team-logo/${id}`;
     try {
-      const res = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
+      const res = await apiGet(url, {});
       const type = String(res.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
       if (!res.ok || !/^image\/(png|jpeg|webp|gif)$/.test(type)) return url;
       const body = Buffer.from(await res.arrayBuffer());
@@ -173,30 +272,36 @@ export function createTeamLogos(db, {
     return { logo: null, colors: null, kit: null, alt: [] };
   }
 
-  /** Teams of the games in play or starting in two days that have no badge from the feed and were not looked up (lately). */
+  /** Teams of the games in play or starting in two days still to look up (or that a kept league list now covers).
+   * Teams the feed sends a badge for come last: theirs is kept as a spare should the feed's not load. */
   function wanted(limit) {
     const until = new Date(Date.now() + 2 * 86_400_000).toISOString();
     const rows = db.prepare(`SELECT sport, home, away, home_team_ext, away_team_ext FROM events
       WHERE (status = 'live' OR (status = 'scheduled' AND start_time < ?)) AND sport IN (${Object.keys(SPORT_NAME).map(() => '?').join(',')})
       ORDER BY status = 'live' DESC, start_time LIMIT 600`).all(until, ...Object.keys(SPORT_NAME));
-    const out = new Map();
+    const first = new Map();
+    const later = new Map();
     const stale = Date.now() - MISS_RETRY_MS;
     for (const r of rows) {
       for (const [name, ext] of [[r.home, r.home_team_ext], [r.away, r.away_team_ext]]) {
-        if (!name || (typeof ext === 'string' && ext.startsWith('https://'))) continue;
+        if (!name) continue;
+        const feedBadge = typeof ext === 'string' && ext.startsWith('https://');
         const k = teamKey(r.sport, name);
         const c = cache.get(k);
         const fresh = c && c.ver >= VERSION && (c.logo || new Date(c.checkedAt).getTime() > stale);
-        if (fresh && !(apifCan(r.sport) && !c.apif)) continue;
-        if (!out.has(k)) out.set(k, { sport: r.sport, name });
-        if (out.size >= limit) return [...out.values()];
+        const local = typeof c?.logo === 'string' && c.logo.startsWith('/team-logo/');
+        const apiDue = apif && API_SPORTS[r.sport] && !local && (!c?.apif || directoryLogo(r.sport, [name, ...(c?.alt || [])]));
+        if (fresh && !(apiDue && (apifCan(r.sport) || directoryLogo(r.sport, [name, ...(c?.alt || [])])))) continue;
+        const into = feedBadge ? later : first;
+        if (!first.has(k) && !later.has(k)) into.set(k, { sport: r.sport, name, feedBadge });
       }
     }
-    return [...out.values()];
+    return [...first.values(), ...later.values()].slice(0, limit);
   }
 
   let busy = false;
   let minuteCalls = 0; // API-Football requests in this run (runs are a minute apart)
+  let lastRun = null;
   async function run() {
     if (!enabled || busy) return { asked: 0, found: 0 };
     busy = true;
@@ -204,7 +309,17 @@ export function createTeamLogos(db, {
     let asked = 0;
     let found = 0;
     try {
-      for (const { sport, name } of wanted(perRun)) {
+      // Whole league lists first (a few a minute): one request covers a league's teams.
+      if (apif) {
+        for (const { sport, league } of packsDue().slice(0, 3)) {
+          if (!apifCan(sport) || minuteCalls >= apiFootballPerMinute - 2) break;
+          try { await loadPack(sport, league); } catch (err) {
+            log(`lista de equipas da liga ${league}: ${err.message}`);
+            if (err.rate) break;
+          }
+        }
+      }
+      for (const { sport, name, feedBadge } of wanted(perRun)) {
         const k = teamKey(sport, name);
         const c = cache.get(k);
         let r = c && c.ver >= VERSION ? c : null;
@@ -212,13 +327,17 @@ export function createTeamLogos(db, {
         let apiAsked = Boolean(c?.apif);
         try {
           if (!r) r = await lookUp(sport, name);
-          if (!apiAsked && apifCan(sport) && minuteCalls < apiFootballPerMinute) {
+          const known = [name, ...(r.alt || [])];
+          if (apif && API_SPORTS[sport] && directoryLogo(sport, known)) {
+            apiLogo = await keepFile(directoryLogo(sport, known)); // kept list: no request
+            apiAsked = true;
+          } else if (!apiAsked && !feedBadge && apifCan(sport) && minuteCalls < apiFootballPerMinute) {
             apiLogo = await apiFootballLogo(sport, name, r.alt || []);
             apiAsked = true;
           }
         } catch (err) {
-          if (err.rate) break;
           log(`emblema de ${name}: ${err.message}`);
+          if (err.rate) break;
           if (!r) continue;
         }
         asked += 1;
@@ -229,8 +348,43 @@ export function createTeamLogos(db, {
         save.run(k, v.logo, v.colors ? JSON.stringify(v.colors) : null, v.kit, VERSION, apiAsked ? 1 : 0, JSON.stringify(v.alt), v.checkedAt);
       }
     } finally { busy = false; }
+    lastRun = { at: nowIso(), asked, found };
     if (found) log(`${found} emblema(s) de equipas encontrados (${asked} procuradas)`);
     return { asked, found };
+  }
+
+  /** For the admin: what is set, the API-Football account (its status call is free) and what is kept. */
+  async function diagnose() {
+    const steps = [];
+    steps.push({ name: 'Procura de emblemas', ok: enabled, detail: enabled ? 'ligada' : 'desligada (TEAM_LOGOS=0)' });
+    steps.push({ name: 'Base de dados guardada entre deploys', ok: persistent,
+      detail: persistent ? 'sim: os emblemas ficam guardados' : 'NÃO: crie um volume no Railway, senão os emblemas perdem-se em cada deploy' });
+    steps.push({ name: 'Chave API-Football (API_FOOTBALL_KEY)', ok: apif, detail: apif ? `definida${apiFootballVia === 'rapidapi' ? ' (via RapidAPI)' : ''}` : 'não definida nas Variables' });
+    if (apif && apiFootballVia !== 'rapidapi') {
+      try {
+        const res = await apiGet('https://v3.football.api-sports.io/status', { 'x-apisports-key': apiFootballKey });
+        const data = await res.json().catch(() => null);
+        const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
+        if (!res.ok || errors?.length) steps.push({ name: 'Conta API-Football', ok: false, detail: errors?.length ? String(errors[0]) : `HTTP ${res.status}` });
+        else {
+          const r = data.response || {};
+          steps.push({ name: 'Conta API-Football', ok: r.subscription?.active !== false,
+            detail: `plano ${r.subscription?.plan || '?'} · pedidos hoje ${r.requests?.current ?? '?'} de ${r.requests?.limit_day ?? '?'}` });
+        }
+      } catch (err) { steps.push({ name: 'Conta API-Football', ok: false, detail: err.message }); }
+    }
+    const count = (sql, ...a) => db.prepare(sql).get(...a).n;
+    const packs = count('SELECT COUNT(*) AS n FROM team_directory_packs WHERE teams > 0');
+    steps.push({ name: 'Ligas guardadas (API-Football)', ok: !apif || packs > 0,
+      detail: `${packs} de ${Object.values(leaguePacks).flat().length} ligas · ${count('SELECT COUNT(DISTINCT logo) AS n FROM team_directory')} equipas${seasonKept() ? ` · época ${seasonKept()}` : ''}` });
+    const total = cache.size;
+    const withLogo = [...cache.values()].filter((c) => c.logo).length;
+    const local = [...cache.values()].filter((c) => typeof c.logo === 'string' && c.logo.startsWith('/team-logo/')).length;
+    steps.push({ name: 'Equipas dos jogos', ok: withLogo > 0, detail: `${total} procuradas · ${withLogo} com emblema · ${local} guardados aqui (API-Football)` });
+    steps.push({ name: 'Pedidos API-Football hoje (contados aqui)', ok: true, detail: Object.keys(API_SPORTS).map((sp) => `${sp} ${used(sp)}`).join(' · ') });
+    steps.push({ name: 'Última procura', ok: Boolean(lastRun), detail: lastRun ? `${lastRun.at} · ${lastRun.asked} procuradas · ${lastRun.found} encontradas` : 'ainda não correu' });
+    if (lastError) steps.push({ name: 'Último erro da API', ok: false, detail: `${lastError.at} · ${lastError.message}` });
+    return steps;
   }
 
   function start(everyMs = 60_000) {
@@ -240,5 +394,5 @@ export function createTeamLogos(db, {
     return () => { clearTimeout(first); clearInterval(t); };
   }
 
-  return { get, run, start, wanted, file, apiFootballUsed: used };
+  return { get, run, start, wanted, file, diagnose, apiFootballUsed: used };
 }

@@ -294,12 +294,12 @@ function jerseySvg(name, kit) {
   return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z" fill="${a}" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
     + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
 }
-function teamBadge(logo, name, size = '', fallback = null, kit = null) {
+function teamBadge(logo, name, size = '', fallback = null, kit = null, alt = null) {
   const cls = `team-icon${size ? ` ${size}` : ''}`;
   const kitAttr = kit === false ? ' data-kit="none"' : Array.isArray(kit) ? ` data-kit="${esc(kit.join(','))}"` : '';
   if (!logo && kit === false) return `<div class="${cls}">${esc(size.split(' ').includes('mini') ? initials(name).slice(0, 1) : initials(name))}</div>`;
   if (!logo) return `<div class="${cls} kit">${jerseySvg(name, kit)}</div>`;
-  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}" data-name="${esc(name)}"${kitAttr}><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}></div>`;
+  return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}" data-name="${esc(name)}"${kitAttr}><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}${alt && alt !== logo ? ` data-alt="${esc(alt)}"` : ''}></div>`;
 }
 
 // Flags as images (Windows does not draw flag emoji). The provider uses non-ISO codes for the
@@ -370,7 +370,7 @@ function sideBadge(e, side, size = '') {
   // No badge: the team's real kit picture (the drawn shirt if it does not load).
   const kitImg = e[`${side}KitImg`];
   if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
-  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`]);
+  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`], e[`${side}LogoAlt`]);
 }
 
 function matchCard(e, extraClass = '') {
@@ -2873,6 +2873,12 @@ document.addEventListener('error', (e) => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('team-logo')) return;
+  // The feed's badge did not load: the one found here (API-Football…).
+  if (img.dataset.alt) {
+    img.src = img.dataset.alt;
+    delete img.dataset.alt;
+    return;
+  }
   // No player photo: show the flag instead.
   if (img.dataset.fallback) {
     img.src = img.dataset.fallback;
