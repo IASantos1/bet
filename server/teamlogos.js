@@ -81,6 +81,31 @@ export function sameTeam(t, name) {
   return nameVariants(name).map(loose).some((n) => n && theirs.includes(n));
 }
 
+// Words that do not tell clubs apart ("Lille OSC" is "Lille", "Olympique de Marseille" is "Marseille").
+const FILLER = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'sl', 'fk', 'sk', 'bk', 'if', 'sv', 'vfb', 'vfl', 'tsg', 'rc', 'as', 'us', 'ss',
+  'ca', 'ud', 'sd', 'rcd', 'osc', 'sco', 'ogc', 'aj', 'olympique', 'de', 'del', 'la', 'le', 'les', 'the', 'club', 'stade', 'calcio', 'clube']);
+const words = (name) => loose(name).split(' ').filter((w) => w && !FILLER.has(w));
+const sameWord = (a, b) => {
+  if (a === b) return true;
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
+  return n >= 4 && n >= Math.min(a.length, b.length) - 2; // "rennais" ~ "rennes", "brestois" ~ "brest"
+};
+
+/** The one team of a league whose name is close to this one ({ name, logo } list), or null when none or two are. */
+export function closeName(name, teams) {
+  const mine = words(name);
+  if (!mine.length) return null;
+  const scored = teams.map((t) => {
+    const theirs = words(t.name);
+    const hit = mine.filter((w) => theirs.some((x) => sameWord(w, x))).length;
+    return { t, score: theirs.length ? hit / Math.max(mine.length, theirs.length) : 0 };
+  }).sort((a, b) => b.score - a.score);
+  const [best, next] = scored;
+  if (!best || best.score < 0.5 || (next && next.score === best.score)) return null;
+  return best.t;
+}
+
 const colour = (c) => {
   const m = HEX.exec(String(c || '').trim());
   if (!m) return null;
@@ -107,8 +132,16 @@ export function createTeamLogos(db, {
   db.exec(`CREATE TABLE IF NOT EXISTS team_directory (sport TEXT NOT NULL, name_key TEXT NOT NULL, name TEXT NOT NULL, logo TEXT NOT NULL,
     PRIMARY KEY (sport, name_key))`);
   db.exec('CREATE TABLE IF NOT EXISTS team_directory_packs (sport TEXT NOT NULL, league INTEGER NOT NULL, season INTEGER, teams INTEGER NOT NULL, fetched_at TEXT NOT NULL, PRIMARY KEY (sport, league))');
+  if (!db.prepare('PRAGMA table_info(team_directory)').all().some((c) => c.name === 'league')) {
+    // Lists kept before leagues were noted are fetched again (once) to note them.
+    db.exec('ALTER TABLE team_directory ADD COLUMN league INTEGER');
+    db.exec('DELETE FROM team_directory_packs');
+  }
   const dirGet = db.prepare('SELECT name, logo FROM team_directory WHERE sport = ? AND name_key = ?');
-  const dirPut = db.prepare('INSERT OR REPLACE INTO team_directory (sport, name_key, name, logo) VALUES (?, ?, ?, ?)');
+  const dirPut = db.prepare('INSERT OR REPLACE INTO team_directory (sport, name_key, name, logo, league) VALUES (?, ?, ?, ?, ?)');
+  const dirLeagues = db.prepare('SELECT DISTINCT league FROM team_directory WHERE sport = ? AND name_key = ? AND league IS NOT NULL');
+  const dirOfLeague = db.prepare('SELECT DISTINCT name, logo FROM team_directory WHERE sport = ? AND league = ?');
+  const dirSize = db.prepare('SELECT COUNT(*) AS n FROM team_directory');
   const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
@@ -167,10 +200,12 @@ export function createTeamLogos(db, {
     const errors = data?.errors && (Array.isArray(data.errors) ? data.errors : Object.values(data.errors));
     if (errors?.length) {
       const message = String(errors[0]).slice(0, 200);
-      lastError = { at: nowIso(), message: `API-Football: ${message}` };
+      const seasonRefused = /season|plan/i.test(message) && /season/i.test(pathAndQuery);
+      // A season outside the plan is expected (an older one is tried next): not an error to show.
+      if (!seasonRefused) lastError = { at: nowIso(), message: `API-Football: ${message}` };
       if (/request limit|requests|quota/i.test(message)) spend(sport, apiFootballDaily); // out of requests today
       else if (!/season|plan/i.test(message)) pausedUntil = Date.now() + 15 * 60_000; // bad key or the like
-      throw Object.assign(new Error(lastError.message), { season: /season|plan/i.test(message) });
+      throw Object.assign(new Error(`API-Football: ${message}`), { season: /season|plan/i.test(message) });
     }
     return Array.isArray(data?.response) ? data.response : [];
   }
@@ -202,7 +237,7 @@ export function createTeamLogos(db, {
       for (const x of list) {
         const t = x.team || x;
         if (!t?.name || !httpsUrl(t.logo)) continue;
-        for (const v of [...nameVariants(t.name), t.code].filter(Boolean)) if (loose(v).length >= 3) dirPut.run(sport, loose(v), t.name, t.logo);
+        for (const v of [...nameVariants(t.name), t.code].filter(Boolean)) if (loose(v).length >= 3) dirPut.run(sport, loose(v), t.name, t.logo, league);
         n += 1;
       }
       packPut.run(sport, league, season, n, nowIso());
@@ -231,7 +266,7 @@ export function createTeamLogos(db, {
       const teams = (await apiCall(sport, `teams?search=${encodeURIComponent(q)}`)).map((x) => x.team || x);
       const t = teams.find((x) => httpsUrl(x.logo) && known.some((n) => sameTeam({ strTeam: x.name, strTeamShort: x.code }, n)));
       if (t) {
-        for (const v of nameVariants(t.name)) dirPut.run(sport, loose(v), t.name, t.logo);
+        for (const v of nameVariants(t.name)) dirPut.run(sport, loose(v), t.name, t.logo, null);
         return keepFile(t.logo);
       }
     }
@@ -299,6 +334,67 @@ export function createTeamLogos(db, {
     return [...first.values(), ...later.values()].slice(0, limit);
   }
 
+  /** The kept league a competition is (most of its teams found there by exact name), or null. */
+  function competitionLeague(sport, teams) {
+    const votes = new Map();
+    for (const name of teams) {
+      const seen = new Set();
+      for (const v of nameVariants(name)) for (const { league } of dirLeagues.all(sport, loose(v))) seen.add(league);
+      for (const l of seen) votes.set(l, (votes.get(l) || 0) + 1);
+    }
+    const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+    if (!ranked.length || ranked[0][1] < 2 || (ranked[1] && ranked[1][1] === ranked[0][1])) return null;
+    return ranked[0][0];
+  }
+
+  // Free pass, every run: teams the kept league lists cover get their badge with no request — by exact
+  // name, or by a close name among the teams of the league their competition is ("Stade Rennais" →
+  // "Rennes" in Ligue 1). Each team is checked again only when the lists grow.
+  const freeChecked = new Map(); // team key → list size when checked
+  async function freePass(maxDownloads = 40) {
+    if (!apif) return 0;
+    const until = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const sports = Object.keys(LEAGUE_PACKS_SPORTS());
+    if (!sports.length) return 0;
+    const rows = db.prepare(`SELECT sport, competition, home, away FROM events
+      WHERE (status = 'live' OR (status = 'scheduled' AND start_time < ?)) AND sport IN (${sports.map(() => '?').join(',')})
+      ORDER BY status = 'live' DESC, start_time LIMIT 3000`).all(until, ...sports);
+    const size = dirSize.get().n;
+    const comps = new Map();
+    for (const r of rows) {
+      const k = `${r.sport}|${r.competition}`;
+      if (!comps.has(k)) comps.set(k, { sport: r.sport, teams: new Set() });
+      comps.get(k).teams.add(r.home).add(r.away);
+    }
+    let downloads = 0;
+    let found = 0;
+    for (const { sport, teams } of comps.values()) {
+      let league;
+      for (const name of teams) {
+        if (!name || downloads >= maxDownloads) continue;
+        const k = teamKey(sport, name);
+        const c = cache.get(k);
+        if (typeof c?.logo === 'string' && c.logo.startsWith('/team-logo/')) continue;
+        if (freeChecked.get(k) === size) continue;
+        freeChecked.set(k, size);
+        let remote = directoryLogo(sport, [name, ...(c?.alt || [])]);
+        if (!remote) {
+          if (league === undefined) league = competitionLeague(sport, teams);
+          if (league != null) remote = closeName(name, dirOfLeague.all(sport, league))?.logo || null;
+        }
+        if (!remote) continue;
+        downloads += 1;
+        const logo = await keepFile(remote);
+        found += 1;
+        const v = { logo, colors: c?.colors || null, kit: c?.kit || null, ver: VERSION, apif: true, alt: c?.alt || [], checkedAt: nowIso() };
+        cache.set(k, v);
+        save.run(k, v.logo, v.colors ? JSON.stringify(v.colors) : null, v.kit, VERSION, 1, JSON.stringify(v.alt), v.checkedAt);
+      }
+    }
+    return found;
+  }
+  const LEAGUE_PACKS_SPORTS = () => leaguePacks;
+
   let busy = false;
   let minuteCalls = 0; // API-Football requests in this run (runs are a minute apart)
   let lastRun = null;
@@ -319,6 +415,7 @@ export function createTeamLogos(db, {
           }
         }
       }
+      try { found += await freePass(); } catch (err) { log(`emblemas das ligas guardadas: ${err.message}`); }
       for (const { sport, name, feedBadge } of wanted(perRun)) {
         const k = teamKey(sport, name);
         const c = cache.get(k);
