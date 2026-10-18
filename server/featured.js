@@ -4,11 +4,30 @@
 //             corners, shots on target, team to score first) and goals over / under 1.5–3.5.
 //             Six cards are kept: one whose match starts or whose price closes is replaced by a new one.
 //   accas     "Apostas vencedoras": four favourites from different matches (full-time result /
-//             winner): football of today, then of the next days; other sports only to complete the six.
+//             winner): the big clubs (BIG_TEAMS) winning first, then the big leagues; football of
+//             today, then of the next days; other sports only to complete the six.
 // A draw is kept for a few minutes (it would reshuffle on every refresh otherwise); a card whose
 // match started or whose prices closed is dropped, and the prices shown are always the current ones.
 import { MARKETS, selectionLabel, splitSpecial } from './markets.js';
 import { config } from './config.js';
+import { leagueTier } from './leagues.js';
+
+// The big clubs whose wins come first in "Apostas vencedoras". A team's name is compared without
+// accents, in lower case and without "FC", "CF", "AC"… around it, to the whole names below (so
+// "Inter Miami", "Barcelona SC" or "Liverpool Montevideo" are not taken for the big ones).
+export const BIG_TEAMS = [
+  'real madrid', 'barcelona', 'atletico madrid', 'atletico de madrid', 'atl madrid', 'paris saint-germain', 'paris saint germain', 'psg', 'paris sg',
+  'juventus', 'milan', 'inter', 'internazionale', 'inter milan', 'atalanta', 'napoli', 'roma',
+  'bayern munich', 'bayern munchen', 'bayern', 'borussia dortmund', 'dortmund', 'bayer leverkusen', 'leverkusen',
+  'manchester city', 'man city', 'liverpool', 'arsenal', 'chelsea', 'manchester united', 'man united', 'man utd', 'tottenham', 'tottenham hotspur',
+  'benfica', 'porto', 'sporting', 'sporting cp', 'sporting clube de portugal', 'braga', 'sporting braga',
+  'ajax', 'psv', 'psv eindhoven', 'marseille', 'olympique marseille', 'olympique de marseille', 'monaco', 'lille', 'losc lille',
+  'sevilla', 'villarreal', 'athletic club', 'athletic bilbao', 'real sociedad',
+];
+const BIG = new Set(BIG_TEAMS);
+const AFFIX = /^(fc|cf|ac|afc|sc|ssc|as|sl|sv|rc|ca|cd|ud|ogc|bv|vfb|vfl|tsg|1\.?)\s+|\s+(fc|cf|ac|afc|bc|cp)$/g;
+const plain = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[.']/g, '').replace(/\s+/g, ' ').trim();
+export const isBigTeam = (name) => { let n = plain(name); for (let k = 0; k < 2; k++) n = n.replace(AFFIX, '').trim(); return BIG.has(n); };
 
 const TZ = 'Europe/Lisbon';
 const dayOf = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso));
@@ -109,22 +128,33 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
     const favourite = (e) => {
       const sels = selectionsOf(e.id).filter((s) => s.market === '1x2' || s.market === 'ml');
       const main = sels.some((s) => s.market === '1x2') ? '1x2' : 'ml';
-      const best = sels.filter((s) => s.market === main && s.code !== 'X' && s.odds_x100 >= 115 && s.odds_x100 <= 195).sort((a, b) => a.odds_x100 - b.odds_x100)[0];
-      return best ? { eventId: e.id, sel: best.id, sport: e.sport, today: dayOf(e.start_time) === today, tomorrow: dayOf(e.start_time) === tomorrow } : null;
+      // A big club winning may be priced lower (from 1.08); the rest from 1.15. Never above 1.95.
+      const bigSide = (s) => (s.code === '1' ? isBigTeam(e.home) : s.code === '2' ? isBigTeam(e.away) : false);
+      const best = sels.filter((s) => s.market === main && s.code !== 'X' && s.odds_x100 >= (bigSide(s) ? 108 : 115) && s.odds_x100 <= 195)
+        .sort((a, b) => a.odds_x100 - b.odds_x100)[0];
+      if (!best) return null;
+      // Priority: a big club winning (2), a big league (1), the rest (0).
+      const rank = e.sport === 'futebol' && bigSide(best) ? 2 : leagueTier(e.sport, e.competition) === 1 ? 1 : 0;
+      return { eventId: e.id, sel: best.id, sport: e.sport, rank, today: dayOf(e.start_time) === today, tomorrow: dayOf(e.start_time) === tomorrow };
     };
     const pool = upcoming(t + 10 * 60_000, t + 4 * 86_400_000).map(favourite).filter(Boolean);
     const used = new Set();
     const cards = [];
-    // As many four-leg cards as `list` fills (unused matches only), up to six in all.
-    const fill = (list, todayOnly) => {
-      const free = shuffle(list.filter((c) => !used.has(c.eventId)), rng);
+    // As many four-leg cards as `list` fills (unused matches only), up to six in all; the big clubs
+    // and the big leagues first (in random order within each).
+    const fill = (list, todayOnly, big = false) => {
+      const free = shuffle(list.filter((c) => !used.has(c.eventId)), rng).sort((a, b) => b.rank - a.rank);
       while (cards.length < 6 && free.length >= 4) {
         const legs = free.splice(0, 4);
         legs.forEach((c) => used.add(c.eventId));
-        cards.push({ legs: legs.map((c) => c.sel), today: todayOnly, sport: legs[0].sport });
+        cards.push({ legs: legs.map((c) => c.sel), today: todayOnly, sport: legs[0].sport, big });
       }
     };
     const football = pool.filter((c) => c.sport === 'futebol');
+    // First the big clubs' card(s): today's, then with the next days' when today has fewer than four.
+    const bigs = football.filter((c) => c.rank === 2);
+    fill(bigs.filter((c) => c.today), true, true);
+    if (!cards.length) fill(bigs, false, true);
     fill(football.filter((c) => c.today), true);
     // Then tomorrow's football, then the days after (a card may join the two when one runs short).
     fill(football.filter((c) => c.tomorrow), false);
@@ -173,7 +203,7 @@ export function createFeatured(db, { ttlMs = 10 * 60_000, retryMs = 60_000, rng 
       return { eventId: b.eventId, match: `${l.home} × ${l.away}`, competition: l.competition, startTime: l.startTime, legs, odds: builderOdds(b.legs) };
     });
     accas = accas.map((a) => ({
-      today: a.today, legs: a.legs, odds: Math.round(a.legs.reduce((p, l) => p * l.odds, 1) * 100) / 100,
+      today: a.today, big: !!a.big, legs: a.legs, odds: Math.round(a.legs.reduce((p, l) => p * l.odds, 1) * 100) / 100,
       lastStart: a.legs.map((l) => l.startTime).sort().at(-1),
     }));
     return { builders, accas, builderFactor: config.builderFactor };

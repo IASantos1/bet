@@ -640,6 +640,7 @@ function homePage() {
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
+    ${accaSection()}
     ${footer()}`;
 }
 
@@ -715,7 +716,8 @@ function builderCard(b, i) {
 }
 
 function accaCard(a, i) {
-  return `<div class="combo-card acca">
+  return `<div class="combo-card acca${a.big ? ' big' : ''}">
+    ${a.big ? '<div class="acca-badge">⭐ Grandes favoritos</div>' : ''}
     ${a.legs.map((l) => `<div class="acca-leg">
       <div class="acca-when">${SPORT_META[l.sport]?.icon || '⚽'} ${esc(shortWhen(l.startTime))}, ${esc(l.home)} - ${esc(l.away)}</div>
       <div class="acca-pick"><div><small>${esc(l.market === 'ml' ? 'Vencedor' : 'Resultado no fim do tempo regulamentar')}</small><b>${esc(l.label)}</b></div><span>${fmtOdds(l.odds)}</span></div>
