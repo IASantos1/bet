@@ -769,7 +769,7 @@ async function shareLink(url, text) {
 /** A placed ticket (open, in play or settled: only once it is placed): its own link, with the picks, the odds and the result. */
 async function shareBet(id) {
   try {
-    const { url } = await api(`/api/bets/${id}/share`, { method: 'POST' });
+    const { url } = await api(`/api/bets/${id}/share`, { method: 'POST', body: {} });
     const b = (state.myBets || []).find((x) => x.id === id);
     shareLink(url, b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62');
   } catch (err) { toast('Partilhar', err.message, 'error'); }
@@ -2072,9 +2072,10 @@ function ticketCard(b) {
       ${profit !== null ? `<div><span>Lucro / prejuízo</span><b class="${profit > 0 ? 'green' : profit < 0 ? 'red' : ''}">${profit > 0 ? '+' : ''}${money(profit)}</b></div>` : ''}
     </div>
     ${b.id ? cashoutBlock(b) : ''}
-    <div class="tk-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">🎟️ Ref ${esc(b.ref)}</button>${b.id ? `<button class="tk-share" data-share-bet="${b.id}">↗ Partilhar</button>` : ''}<span>${esc(fmtDateTime(b.createdAt))}</span>
+    <div class="tk-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">🎟️ Ref ${esc(b.ref)}</button><span>${esc(fmtDateTime(b.createdAt))}</span>
       ${b.settledAt && b.status !== 'open' ? `<small>Resolvida: ${esc(fmtDateTime(b.settledAt))}</small>` : ''}
-      ${b.status === 'open' ? '<span class="tk-ok">✔ Aposta confirmada</span>' : b.status === 'won' ? '<span class="tk-ok won">🏆 Bilhete vencedor</span>' : ''}</div>
+      ${b.status === 'open' ? '<span class="tk-ok">✔ Aposta confirmada</span>' : b.status === 'won' ? '<span class="tk-ok won">🏆 Bilhete vencedor</span>' : ''}
+      ${b.id ? `<button class="tk-share" data-share-bet="${b.id}">↗ Partilhar</button>` : ''}</div>
   </div>`;
 }
 
