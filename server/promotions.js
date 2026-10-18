@@ -490,7 +490,10 @@ function spinValueMove(db, user, s, move) {
     if (!move.gameId || !playableGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: spinsBalance(s) };
     if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: spinsBalance(s) };
     const bet = spinBet(s, move.gameId);
-    if (stake > bet) return { error: `free spins: each spin is €${(bet / 100).toFixed(2)}`, balance: spinsBalance(s) };
+    if (stake > bet) {
+      db.prepare('UPDATE casino_spins SET bet_warn_at = ? WHERE id = ?').run(nowIso(), s.id); // the game page tells the player
+      return { error: `free spins: each spin is €${(bet / 100).toFixed(2)}`, balance: spinsBalance(s) };
+    }
     if (s.spins_left < 1) return { error: 'free spins used up', balance: spinsBalance(s) };
     db.prepare('UPDATE casino_spins SET spins_left = spins_left - 1, balance_cents = (spins_left - 1) * spin_value_cents WHERE id = ?').run(s.id);
   } else if (move.cents > 0) {
@@ -545,6 +548,9 @@ export function palaceSpinsBalance(db, s, cents, { final = false, status = 'clos
   let pending = s.palace_pending ? 1 : 0;
   if (d < 0) { played = Math.ceil(-d / bet); pending = -d % bet === 0 ? 1 : 0; }
   else if (d > 0) { played = pending ? 0 : 1; pending = 0; }
+  // Several spins' worth gone between two readings 2 s apart: the bet was raised in the game (it
+  // can't be refused there, so each fixed bet's worth counts as one spin) and the player is told.
+  if (played >= 2) db.prepare('UPDATE casino_spins SET bet_warn_at = ? WHERE id = ?').run(nowIso(), s.id);
   let left = Math.max(0, (s.spins_left ?? 0) - played);
   if (cents < left * bet) left = Math.floor(cents / bet); // more played than the readings showed
   db.prepare('UPDATE casino_spins SET spins_left = ?, balance_cents = ?, won_cents = ?, palace_cents = ?, palace_pending = ?, palace_at = ? WHERE id = ?')

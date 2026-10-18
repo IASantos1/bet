@@ -1092,7 +1092,7 @@ async function closeCasino({ keepalive = false } = {}) {
 }
 
 /** Free spins are shown as a count ("5 Free Spins"), never in money (to us each one is worth its bet). */
-const fsCount = (n) => `${Number(n) || 0} Free Spins`;
+const fsCount = (n) => `${Number(n) || 0} ${Number(n) === 1 ? 'Free Spin' : 'Free Spins'}`;
 const fsRounds = (g) => `${g.fsLeft ?? 0}${g.fsSpins ? ` de ${g.fsSpins}` : ''}`;
 
 /** While a game is open, the header shows the live casino balance (and the free-spins rounds left in its bar). */
@@ -1111,6 +1111,9 @@ async function refreshCasinoBalance() {
       sess.fsSpins = w.freeSpins.spins;
       sess.fsWon = w.freeSpins.won;
       sess.fsEnded = w.freeSpins.ended;
+      sess.fsBet = w.freeSpins.bet;
+      sess.fsPalace = w.freeSpins.palace;
+      if (w.freeSpins.betTooHigh !== !!sess.fsWarn) { sess.fsWarn = w.freeSpins.betTooHigh; render({ keepScroll: true }); }
       const el = $('#fsBal');
       if (el) el.textContent = fsRounds(sess);
       updateHeader();
@@ -1204,7 +1207,7 @@ async function playCasino(mode) {
   if (!g) return;
   if (mode !== 'demo' && !state.user) return openAuth('login');
   state.casinoSession = { name: g.name, provider: g.provider, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null,
-    fsLeft: d.freeSpins?.spinsLeft ?? null, fsSpins: d.freeSpins?.spins ?? null, fsWon: 0, fsEnded: false };
+    fsLeft: d.freeSpins?.spinsLeft ?? null, fsSpins: d.freeSpins?.spins ?? null, fsBet: d.freeSpins?.spinValue ?? null, fsWon: 0, fsEnded: false };
   location.hash = '#/casino/jogar';
   try {
     const ahead = mode === 'demo' ? await state.casinoGame?.demo : null;
@@ -1247,8 +1250,15 @@ function casinoPlayPage() {
       ? `<strong>Free Spins terminadas</strong><span>${g.fsWon > 0 ? `Ganhou <b>${money(g.fsWon)}</b>: já está no seu saldo real.` : 'Desta vez não houve ganhos.'}</span>
         <a class="cg-btn play" href="#/casino">Voltar ao casino</a>`
       : '<div class="spinner"></div><strong>Free Spins usadas</strong><span>A confirmar os ganhos…</span>'}</div></div>`;
+  // Free spins are played at a fixed bet: said when the game opens, and again (louder) when the
+  // player raises it in the game (BigBang refuses the spin; at Palace it uses several Free Spins).
+  const bet = money(g.fsBet || 0.2);
+  const fsNote = !g.fs || g.fsEnded ? ''
+    : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ Nas Free Spins cada rodada é de <b>${bet}</b>. ${g.fsPalace
+      ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'Uma aposta maior não é aceite.'} Baixe a aposta no jogo para <b>${bet}</b>.</div>`
+      : `<div class="fs-bet-note">Jogue com a aposta de <b>${bet}</b> por rodada: cada rodada usa 1 Free Spin.</div>`;
   return `<div class="casino-player">
-    ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
+    ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}${fsNote}
     <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
     <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
       allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe></div>

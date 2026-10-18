@@ -1389,7 +1389,10 @@ export function createApp(db, {
       // Free spins: the rounds left (what the player sees), what they won, and whether they ended.
       if (s && s.status === 'active' && s.palace_cents !== null && casino?.enabled) await settlePalaceSpins(s);
       const f = s && spinsRow(db, s.id, req.user.id);
+      // betTooHigh: the player bet above the fixed bet a moment ago (refused at BigBang, counted as several spins at Palace).
+      const warned = f?.bet_warn_at && Date.now() - Date.parse(f.bet_warn_at) < 15_000;
       const fs = f ? { spinsLeft: f.status === 'active' ? Math.max(0, f.spins_left ?? 0) : 0, spins: f.spins, won: cents(f.status === 'active' ? f.won_cents || 0 : f.paid_cents || 0),
+        bet: cents(spinBet(f, f.chosen_game)), betTooHigh: !!warned, palace: f.palace_cents !== null && f.palace_cents !== undefined,
         ended: f.status !== 'active' } : null;
       return res.json({ balance: cents(userById(req.user.id).balance_cents + away), freeSpins: fs, inCasino: !!u.casino_active });
     }

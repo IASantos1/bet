@@ -516,6 +516,8 @@ function migrate(db) {
   // Palace: whether the last fall of that balance may still have its win to come, and when it last moved.
   if (!fsCols.has('palace_pending')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_pending INTEGER');
   if (!fsCols.has('palace_at')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_at TEXT');
+  // When the player last bet above the free spins' fixed bet (the game page warns them).
+  if (!fsCols.has('bet_warn_at')) db.exec('ALTER TABLE casino_spins ADD COLUMN bet_warn_at TEXT');
 
   // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
   const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
