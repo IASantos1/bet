@@ -3474,7 +3474,48 @@ const CAT_BY_NAME = [
   ['golos', /goal|total|both|btts|golo|odd|even|multi|will score|exact number/],
   ['resultados', /result|score|exact|margin|winner|draw|1x2|double chance|\bwin/],
 ];
-function marketCat(mk) {
+
+// Other sports have their own menu: tennis is won by sets and games (no goals, corners or cards),
+// basketball by points and quarters, volleyball / table tennis by sets and points.
+const SPORT_CATS = {
+  tenis: {
+    cats: [['todos', 'Todos'], ['principais', 'Principais'], ['sets', 'Sets'], ['jogos', 'Jogos'], ['resultados', 'Resultados exatos'], ['especiais', 'Especiais']],
+    // Tennis 'ou' / 'hcp' are counted in sets, 'gou' / 'ghcp' and a set's own totals in games.
+    byMarket: { ml: 'principais', '1x2': 'principais', ou: 'sets', hcp: 'sets', pw: 'sets', cs: 'resultados',
+      gou: 'jogos', ghcp: 'jogos', oe: 'jogos', goe: 'jogos', tou: 'jogos', pou: 'jogos', phcp: 'jogos', poe: 'jogos' },
+    // A set's winner or total is a set market; the match winner ("Vencedor do jogo") a main one.
+    byName: [['resultados', /exact|correct score|resultado exato|set score/], ['sets', /\bsets?\b|tie.?break/],
+      ['principais', /winner|vencedor|\bwin/], ['jogos', /\bgames?\b|jogos?\b|total|handicap|odd|even/]],
+  },
+  basquetebol: {
+    cats: [['todos', 'Todos'], ['principais', 'Principais'], ['pontos', 'Pontos'], ['handicap', 'Handicap'], ['equipa', 'Equipa'], ['periodos', 'Quartos e partes'],
+      ['marcadores', 'Jogadores'], ['especiais', 'Especiais']],
+    byMarket: { ml: 'principais', '1x2': 'principais', dnb: 'principais', ou: 'pontos', oe: 'pontos', hcp: 'handicap', tou: 'equipa',
+      pw: 'periodos', pou: 'periodos', phcp: 'periodos', poe: 'periodos' },
+    byName: [['marcadores', /player|jogador|points? by|rebound|assist/], ['periodos', /quarter|half|period|parte|quarto/],
+      ['equipa', /\bteam [12]\b|home team|away team|individual|equipa/], ['handicap', /handicap|spread/], ['pontos', /total|points?|pontos|odd|even/],
+      ['principais', /winner|vencedor|money ?line|\bwin|1x2/]],
+  },
+};
+for (const sp of ['voleibol', 'tenismesa', 'badminton']) {
+  SPORT_CATS[sp] = {
+    cats: [['todos', 'Todos'], ['principais', 'Principais'], ['sets', 'Sets'], ['pontos', 'Pontos'], ['handicap', 'Handicap'], ['resultados', 'Resultados exatos'], ['especiais', 'Especiais']],
+    byMarket: { ml: 'principais', '1x2': 'principais', ou: 'pontos', oe: 'pontos', hcp: 'handicap', cs: 'resultados', pw: 'sets', pou: 'sets', phcp: 'sets', poe: 'sets' },
+    byName: [['resultados', /exact|correct score|resultado exato|set score/], ['sets', /\bsets?\b/], ['handicap', /handicap/],
+      ['pontos', /total|points?|pontos|odd|even/], ['principais', /winner|vencedor|\bwin/]],
+  };
+}
+const catsOf = (sport) => SPORT_CATS[sport] || null;
+// Football's menu also serves ice hockey, handball and futsal (goals, periods).
+const marketCatsFor = (sport) => catsOf(sport)?.cats || MARKET_CATS;
+
+function marketCat(mk, sport) {
+  const own = catsOf(sport);
+  if (own) {
+    if (mk.market !== 'x') return own.byMarket[mk.market] || 'especiais';
+    const name = String(mk.name || '').toLowerCase();
+    return own.byName.find(([, re]) => re.test(name))?.[0] || 'especiais';
+  }
   if (mk.market !== 'x') return CAT_BY_MARKET[mk.market] || 'especiais';
   const name = String(mk.name || '').toLowerCase();
   return CAT_BY_NAME.find(([, re]) => re.test(name))?.[0] || 'especiais';
@@ -3728,11 +3769,11 @@ function marketsView(e) {
   }
   const m = state.match;
   const counts = new Map();
-  for (const mk of e.markets) counts.set(marketCat(mk), (counts.get(marketCat(mk)) || 0) + 1);
+  for (const mk of e.markets) counts.set(marketCat(mk, e.sport), (counts.get(marketCat(mk, e.sport)) || 0) + 1);
   if (m.cat !== 'todos' && !counts.has(m.cat)) m.cat = 'todos';
-  const chips = MARKET_CATS.filter(([k]) => k === 'todos' || counts.has(k))
+  const chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
     .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
-  const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk) === m.cat);
+  const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk, e.sport) === m.cat);
   return `<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
 }
 
