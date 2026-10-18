@@ -640,7 +640,7 @@ function homePage() {
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
-    ${accaSection()}
+    ${accaSection({ home: true })}
     ${footer()}`;
 }
 
@@ -715,7 +715,7 @@ function builderCard(b, i) {
   </div>`;
 }
 
-function accaCard(a, i) {
+function accaCard(a, i, list = 'accas') {
   return `<div class="combo-card acca${a.big ? ' big' : ''}">
     ${a.big ? '<div class="acca-badge">⭐ Grandes favoritos</div>' : ''}
     ${a.legs.map((l) => `<div class="acca-leg">
@@ -723,7 +723,7 @@ function accaCard(a, i) {
       <div class="acca-pick"><div><small>${esc(l.market === 'ml' ? 'Vencedor' : 'Resultado no fim do tempo regulamentar')}</small><b>${esc(l.label)}</b></div><span>${fmtOdds(l.odds)}</span></div>
     </div>`).join('')}
     <div class="acca-last">Início do último jogo: ${esc(shortWhen(a.lastStart))}</div>
-    <div class="acca-foot"><span>Odds totais <b>${fmtOdds(a.odds)}</b></span><button class="primary-btn" data-acca="${i}">Adicionar ao boletim</button></div>
+    <div class="acca-foot"><span>Odds totais <b>${fmtOdds(a.odds)}</b></span><button class="primary-btn" data-acca="${i}" data-acca-list="${list}">Adicionar ao boletim</button></div>
   </div>`;
 }
 
@@ -732,9 +732,11 @@ function builderSection() {
   const b = state.featured?.builders;
   return b?.length ? `<section class="section"><div class="section-head"><h2>Construa o seu ganho</h2></div>${carousel('builderCar', b.map(builderCard))}</section>` : '';
 }
-function accaSection() {
-  const a = state.featured?.accas;
-  return a?.length ? `<div class="acca-section"><div class="section-head"><h2>🏆 Apostas vencedoras</h2></div>${carousel('accaCar', a.map(accaCard))}</div>` : '';
+// The sports page has the usual draw; the home page its own, the big clubs and leagues first.
+function accaSection({ home = false } = {}) {
+  const list = home ? 'topAccas' : 'accas';
+  const a = state.featured?.[list];
+  return a?.length ? `<div class="acca-section"><div class="section-head"><h2>🏆 Apostas vencedoras</h2></div>${carousel(home ? 'accaTopCar' : 'accaCar', a.map((x, i) => accaCard(x, i, list)))}</div>` : '';
 }
 
 /** A bet builder goes into the slip on its own (its legs are one bet on one match). */
@@ -748,8 +750,8 @@ function addBuilder(i) {
 }
 
 /** A ready-made multiple: its four picks into the slip (replacing other picks on those matches). */
-function addAcca(i) {
-  const a = state.featured?.accas?.[i];
+function addAcca(i, list = 'accas') {
+  const a = state.featured?.[list === 'topAccas' ? 'topAccas' : 'accas']?.[i];
   if (!a) return;
   state.builder = null;
   const events = new Set(a.legs.map((l) => l.eventId));
@@ -2860,7 +2862,7 @@ document.addEventListener('click', async (e) => {
   const builderBtn = e.target.closest('[data-builder]');
   if (builderBtn) { addBuilder(Number(builderBtn.dataset.builder)); return; }
   const accaBtn = e.target.closest('[data-acca]');
-  if (accaBtn) { addAcca(Number(accaBtn.dataset.acca)); return; }
+  if (accaBtn) { addAcca(Number(accaBtn.dataset.acca), accaBtn.dataset.accaList); return; }
   if (e.target.closest('[data-remove-builder]')) { state.builder = null; saveSlip(); renderSlip(); return; }
 
   const sport = e.target.closest('[data-sport]');
