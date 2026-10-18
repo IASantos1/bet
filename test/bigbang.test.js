@@ -110,6 +110,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   assert.equal(bb.walletChange(move(fs, -0.2, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
   assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /each spin is €0.20/);
   assert.match(bb.walletChange(move(fs, -0.2, 'f0c', { game_id: 4822 })).body.error, /each spin is €0.10/);
+  assert.ok(db.prepare('SELECT bet_warn_at FROM casino_spins WHERE id = ?').get(s.id).bet_warn_at); // the game page warns the player
   // A spin at €0.20 that wins €1.50, then one at €0.10 in the other game: 3 spins left, €1.50 won.
   bb.walletChange(move(fs, -0.2, 'f1'));
   bb.walletChange(move(fs, 1.5, 'f2'));
@@ -481,16 +482,23 @@ test('free spins on Palace: one picked game, own casino account, winnings above 
     await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
     assert.deepEqual(calls[1], ['enter', 'bigbass', 0]);                                                // not funded twice
     // The game page reads the account every 2 s: the spins are counted from how it moves.
-    const wallet = async (cents) => { fsAccount = cents; return (await get(`/api/casino/wallet?fs=${fsId}`)).freeSpins; };
+    let warned = false;
+    const wallet = async (cents) => {
+      fsAccount = cents;
+      const { bet, betTooHigh, palace, ...f } = (await get(`/api/casino/wallet?fs=${fsId}`)).freeSpins;
+      assert.deepEqual([bet, palace], [0.2, true]);
+      warned = betTooHigh;
+      return f;
+    };
     assert.deepEqual(await wallet(80), { spinsLeft: 4, spins: 5, won: 0, ended: false });     // a spin (its win may come)
     assert.equal((await wallet(180)).spinsLeft, 4);                                                    // that spin won €1
     assert.equal((await wallet(170)).spinsLeft, 3);                                                    // a spin that won €0.10
     await post('/api/casino/close', {});
     assert.equal(db.prepare("SELECT status FROM casino_spins WHERE id = ?").get(fsId).status, 'active'); // can come back
     assert.deepEqual(await wallet(250), { spinsLeft: 2, spins: 5, won: 2.1, ended: false });          // a spin that won €1
-    await wallet(230);
-    const last = await wallet(210);                                                                     // the 5th spin
-    assert.deepEqual([last.spinsLeft, last.won, last.ended], [0, 2.1, false]);                          // its win may still come
+    assert.equal(warned, false);
+    const last = await wallet(210);                                                                     // €0.40 gone at once: a raised bet
+    assert.deepEqual([last.spinsLeft, last.won, last.ended, warned], [0, 2.1, false, true]);            // 2 spins used, the player warned
     db.prepare("UPDATE casino_spins SET palace_at = ? WHERE id = ?").run(new Date(Date.now() - 5_000).toISOString(), fsId);
     const done = await wallet(210);                                                                     // still: they end
     assert.deepEqual(done, { spinsLeft: 0, spins: 5, won: 2.1, ended: true });
