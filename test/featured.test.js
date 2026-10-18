@@ -10,9 +10,9 @@ import { config } from '../server/config.js';
 // A tiny seeded random, so draws are repeatable.
 const seeded = (n) => () => { n = (n * 16807) % 2147483647; return (n - 1) / 2147483646; };
 
-function addEvent(db, { sport = 'futebol', hours = 3, home, away, base = Date.now() }) {
+function addEvent(db, { sport = 'futebol', hours = 3, home, away, base = Date.now(), competition = 'Liga' }) {
   const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, created_at, updated_at)
-    VALUES (?, 'Liga', ?, ?, ?, 'scheduled', ?, ?)`).run(sport, home, away, new Date(base + hours * 3600_000).toISOString(), nowIso(), nowIso()).lastInsertRowid);
+    VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`).run(sport, competition, home, away, new Date(base + hours * 3600_000).toISOString(), nowIso(), nowIso()).lastInsertRowid);
   const add = (market, code, odds) => db.prepare('INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)').run(id, market, code, odds);
   if (sport === 'futebol') {
     add('1x2', '1', 150); add('1x2', 'X', 380); add('1x2', '2', 600);
@@ -177,4 +177,20 @@ test('featured: fewer than six builder cards asks for the pages of the games wit
   const f = createFeatured(db, { rng: seeded(3), prefetch: (ids) => asked.push(...ids) }).get();
   assert.deepEqual(f.builders.map((b) => b.eventId), [full]);
   assert.deepEqual(asked.sort(), bare.sort());
+});
+
+test('home page accas: the big clubs card first, then big and known leagues; the sports page keeps its own draw', () => {
+  const db = openDb(':memory:');
+  const base = Date.UTC(2026, 9, 18, 9, 0); // 10:00 in Lisbon: the games below are today
+  const ev = (home, away, competition, hours) => addEvent(db, { home, away, competition, hours, base });
+  for (const [i, [h, c]] of [['Real Madrid', 'Spain. LaLiga'], ['FC Barcelona', 'Spain. LaLiga'], ['AC Milan', 'Italy. Serie A'], ['Atlético Madrid', 'Spain. LaLiga']].entries()) ev(h, `Rival ${i}`, c, 2 + i);
+  for (let i = 0; i < 4; i++) ev(`Clube ${i}`, `Outro ${i}`, 'Portugal. Liga Portugal 2', 3 + i);
+  for (let i = 0; i < 4; i++) ev(`Equipa ${i}`, `Visitante ${i}`, 'Bahrain. Premier League', 3 + i);
+  const f = createFeatured(db, { rng: seeded(7), now: () => base }).get();
+  assert.ok(f.topAccas[0].big);
+  assert.deepEqual(f.topAccas[0].legs.map((l) => l.label).sort(), ['AC Milan', 'Atlético Madrid', 'FC Barcelona', 'Real Madrid']);
+  assert.equal(f.topAccas.length, 2);                                                // the Bahrain games never
+  assert.ok(f.topAccas[1].legs.every((l) => l.competition === 'Portugal. Liga Portugal 2'));
+  assert.equal(f.accas.length, 3);                                                   // the sports page: any league
+  assert.ok(f.accas.every((a) => !a.big));
 });

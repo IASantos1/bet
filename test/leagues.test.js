@@ -6,7 +6,10 @@ test('big leagues come first in every sport', () => {
   assert.equal(leagueTier('futebol', 'Premier League'), 1);
   assert.equal(leagueTier('futebol', 'Liga Portugal'), 1);
   assert.equal(leagueTier('futebol', 'UEFA Europa League'), 1);
-  assert.equal(leagueTier('futebol', 'Segunda Liga'), 9);
+  // Portugal's second division is a known league (tier 2), never the top one.
+  assert.equal(leagueTier('futebol', 'Segunda Liga'), 2);
+  assert.equal(leagueTier('futebol', 'Portugal. Liga Portugal 2'), 2);
+  assert.equal(leagueTier('futebol', 'Portugal. Liga Portugal Betclic'), 1);
   assert.equal(leagueTier('tenis', 'ATP · Wimbledon · Final'), 1);
   assert.equal(leagueTier('tenis', 'ATP · Rome Masters · Final'), 2);
   assert.equal(leagueTier('tenis', 'ATP · Challenger Lyon'), 9);
