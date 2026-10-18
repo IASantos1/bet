@@ -1189,8 +1189,6 @@ img, video, iframe { max-width: 100%; }
 .tk-ref { background: none; border: 0; color: var(--text-3); font: 700 11px ui-monospace, Menlo, monospace; padding: 0; }
 .tk-share { margin-left: auto; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text-2); font-weight: 800; font-size: 11.5px; padding: 5px 12px; }
 .tk-share:hover { color: var(--text); border-color: var(--text-4); }
-.share-slip { width: 100%; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text-2); padding: 10px; font-weight: 800; }
-.share-slip:hover { color: var(--text); border-color: var(--text-4); }
 .shared-ticket { max-width: 560px; }
 .shared-actions { margin: 14px 0 6px; }
 .tk-foot small { width: 100%; }

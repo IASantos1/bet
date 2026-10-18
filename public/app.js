@@ -766,14 +766,7 @@ async function shareLink(url, text) {
   catch { window.prompt('Copie o link do bilhete:', url); }
 }
 
-/** The slip before betting: a link that puts the same picks in the slip of whoever opens it. */
-function shareSlip() {
-  const ids = state.slip.filter((s) => !s.closed).map((s) => s.selectionId);
-  if (!ids.length) return;
-  shareLink(`${location.origin}/#/bilhete/${ids.join('-')}`, `O meu bilhete na Bet62 (${ids.length} ${ids.length === 1 ? 'seleção' : 'seleções'})`);
-}
-
-/** A placed ticket (open or settled): its own link, with the picks, the odds and the result. */
+/** A placed ticket (open, in play or settled: only once it is placed): its own link, with the picks, the odds and the result. */
 async function shareBet(id) {
   try {
     const { url } = await api(`/api/bets/${id}/share`, { method: 'POST' });
@@ -2286,7 +2279,6 @@ function renderBuilderSlip() {
       ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small>${l.newOdds ? ` <small class="note">${fmtOdds(l.odds)} → ${fmtOdds(l.newOdds)}</small>` : ''}</div>`).join('')}
     </div>`;
   $('#betFooter').classList.remove('hidden');
-  $('#shareSlip')?.classList.add('hidden'); // a builder's picks are not single selections
   freebetUi();
   const t = slipTotals();
   $('#oddsLabel').textContent = 'Cotação do criador';
@@ -2317,7 +2309,6 @@ function renderSlip() {
       </div>`).join('')
     : '<div class="empty-bet"><div>🎟️</div><strong>O seu boletim está vazio</strong><span>Selecione uma odd para começar a sua aposta.</span></div>';
   $('#betFooter').classList.toggle('hidden', n === 0);
-  $('#shareSlip')?.classList.toggle('hidden', !state.slip.some((s) => !s.closed));
   if (!n) return;
 
   freebetUi();
@@ -2894,7 +2885,6 @@ document.addEventListener('click', async (e) => {
   if (affShare) { navigator.share?.({ title: 'Bet62', text: 'Junta-te a mim na Bet62', url: affShare.dataset.affShare }).catch(() => {}); return; }
   const shareBetBtn = e.target.closest('[data-share-bet]');
   if (shareBetBtn) { shareBet(Number(shareBetBtn.dataset.shareBet)); return; }
-  if (e.target.closest('#shareSlip')) { shareSlip(); return; }
   const copy = e.target.closest('[data-copy]');
   if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Referência copiada', copy.dataset.copy)).catch(() => {}); return; }
   const walletTab = e.target.closest('[data-wallet-tab]');
