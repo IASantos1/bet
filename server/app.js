@@ -106,6 +106,9 @@ const teamLogo = (source, id) => winhouseLogo(source, id) || footballLogo(source
 // League badge; for national-team competitions this is the flag/emblem the provider publishes.
 const leagueLogo = providerImg('league');
 
+/** The profile emblems a player gets one of at random on sign-up (public/media/avatar-<name>.webp). */
+const AVATARS = ['robo', 'hood'];
+
 function publicUser(u) {
   return {
     id: u.id, email: u.email, name: u.name, phone: u.phone, birthdate: u.birthdate, role: u.role,
@@ -114,6 +117,8 @@ function publicUser(u) {
     freebet: cents(u.freebet_cents || 0), kycStatus: u.kyc_status || 'not_submitted', banned: !!u.banned_at,
     nif: u.nif || null, iban: u.iban || null, ibanName: u.iban_name || null, prefs: parsePrefs(u.prefs),
     promoAskedAt: u.promo_asked_at || null,
+    // Accounts from before emblems keep one of the two by their number.
+    avatar: AVATARS.includes(u.avatar) ? u.avatar : AVATARS[u.id % AVATARS.length],
   };
 }
 
@@ -859,8 +864,8 @@ export function createApp(db, {
     // The same box covers SMS when a phone number was given.
     const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso());
+      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)]);
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
     // once, on the server; a bad or unknown code never stops the registration.
     const refCode = str(req.body.ref, 12) || parseCookies(req.headers.cookie)[REF_COOKIE] || '';
