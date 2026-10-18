@@ -189,19 +189,22 @@ function closeModal() {
 }
 
 /**
- * Asks a player once whether they want promotions by email (players from before the sign-up box,
- * or who never answered). Yes or No is saved; closing the window asks again on a later visit.
+ * Asks every registered player whether they want promotions by email and SMS (those from before the
+ * sign-up box, or who never answered); a "not now" is asked again 30 days later. Closing the window
+ * asks again on a later visit. Only those who say yes receive the campaigns.
  */
+const PROMO_ASK_AGAIN_MS = 30 * 86_400_000;
 function askPromos() {
   const u = state.user;
-  if (!u || u.role !== 'user' || state.promoAsked || u.prefs?.promoAsked || u.prefs?.notifyPromos) return;
+  if (!u || u.role !== 'user' || state.promoAsked || u.prefs?.notifyPromos) return;
+  if (u.prefs?.promoAsked && u.promoAskedAt && Date.now() - Date.parse(u.promoAskedAt) < PROMO_ASK_AGAIN_MS) return;
   if (u.excludedUntil && new Date(u.excludedUntil) > new Date()) return;
   if (!$('#modalBackdrop').classList.contains('hidden') || playingCasino()) return;
   state.promoAsked = true;
   openModal('Promoções e bónus', `<div class="promo-ask">
     <div class="promo-ask-icon">🎁</div>
-    <p><b>Quer receber as nossas promoções por email?</b></p>
-    <p class="muted">FreeBets, Free Spins, bónus de depósito e odds aumentadas — só para quem aceita. Pode desligar a qualquer momento em Perfil → Preferências.</p>
+    <p><b>Quer receber as nossas promoções por email${u.phone ? ' e SMS' : ''}?</b></p>
+    <p class="muted">FreeBets, Free Spins, bónus de depósito e odds aumentadas — só para quem aceita. Pode desligar a qualquer momento em Perfil → Notificações.</p>
     <div class="promo-ask-acts"><button class="outline-btn" data-action="promo-answer" data-yes="0">Agora não</button><button class="primary-btn" data-action="promo-answer" data-yes="1">Sim, quero receber</button></div>
   </div>`);
 }
@@ -223,7 +226,7 @@ function openAuth(mode) {
           <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
         </div>
         <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
-        <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email (pode desligar a qualquer momento).</span></label>
+        <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
         <button class="primary-btn btn-block">CRIAR CONTA</button>
       </form>
       <div class="modal-switch">Já tem conta? <button data-action="login">Entrar</button></div>`);
@@ -1426,7 +1429,7 @@ function profileSection(id) {
     case 'notificacoes': return prefToggles([
       ['notifyResults', 'Resultados das apostas por email', 'Aviso quando uma aposta é resolvida'],
       ['notifyPromos', 'Promoções por email', 'Ofertas e campanhas'],
-      ['notifySms', 'Alertas por SMS', 'Avisos importantes da conta'],
+      ['notifySms', 'Promoções por SMS', 'Ofertas e campanhas (precisa de telefone na conta)'],
       ['notifyPush', 'Notificações no dispositivo', 'Golos e resultados dos jogos em que apostou'],
     ]);
     case 'sessoes': setTimeout(loadSessions); return '<div id="sessionsBox"><div class="loading">A carregar…</div></div>';
@@ -2932,9 +2935,9 @@ document.addEventListener('click', async (e) => {
     const yes = promoAnswer.dataset.yes === '1';
     closeModal();
     try {
-      const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: { notifyPromos: yes, promoAsked: true } } });
+      const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: { notifyPromos: yes, notifySms: yes, promoAsked: true } } });
       state.user = user;
-      if (yes) toast('Obrigado!', 'Vai receber as nossas promoções por email.');
+      if (yes) toast('Obrigado!', `Vai receber as nossas promoções por email${user.prefs?.notifySms ? ' e SMS' : ''}.`);
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;
   }

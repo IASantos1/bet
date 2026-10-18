@@ -1,14 +1,14 @@
 // Promotional campaigns by email or SMS (sent through Brevo, brevo.js).
 //
-// Only players who turned the option on in the profile receive them (notifyPromos for email,
-// notifySms for SMS, both off by default); never a self-excluded or banned account. Every email
+// Only players who said yes receive them (notifyPromos for email, notifySms for SMS, both off by
+// default; every registered player is asked on the site, deposit or not, a "not now" again after 30 days); never a self-excluded or banned account. Every email
 // carries a one-click link to stop receiving them. SMS only between 09:00 and 21:00 (Lisbon).
 
 import crypto from 'node:crypto';
 import { nowIso, getSetting, setSetting } from './db.js';
 
 export const SEGMENTS = {
-  all: 'Todos os jogadores que aceitam promoções',
+  all: 'Todos os registados que aceitam promoções (com ou sem depósito)',
   depositors: 'Já fizeram pelo menos um depósito',
   no_deposit: 'Ainda não fizeram nenhum depósito',
   inactive: 'Sem apostas há X dias',

@@ -113,6 +113,7 @@ function publicUser(u) {
     casinoActive: !!u.casino_active,
     freebet: cents(u.freebet_cents || 0), kycStatus: u.kyc_status || 'not_submitted', banned: !!u.banned_at,
     nif: u.nif || null, iban: u.iban || null, ibanName: u.iban_name || null, prefs: parsePrefs(u.prefs),
+    promoAskedAt: u.promo_asked_at || null,
   };
 }
 
@@ -855,10 +856,11 @@ export function createApp(db, {
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'Já existe uma conta com este email.');
 
     // Promotions by email only when the box was ticked at sign-up (off by default); asked either way.
-    const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, promoAsked: true });
+    // The same box covers SMS when a phone number was given.
+    const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso());
+      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso());
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
     // once, on the server; a bad or unknown code never stops the registration.
     const refCode = str(req.body.ref, 12) || parseCookies(req.headers.cookie)[REF_COOKIE] || '';
@@ -922,7 +924,10 @@ export function createApp(db, {
     if (b.prefs !== undefined) {
       const cur = parsePrefs(req.user.prefs);
       for (const k of Object.keys(PREF_DEFAULTS)) if (typeof b.prefs?.[k] === 'boolean') cur[k] = b.prefs[k];
+      // Promotions by SMS need a phone number to send them to.
+      if (cur.notifySms && !(b.phone !== undefined ? set.phone : req.user.phone)) cur.notifySms = false;
       set.prefs = JSON.stringify(cur);
+      if (b.prefs?.promoAsked === true) set.promo_asked_at = nowIso();
     }
     const keys = Object.keys(set);
     if (keys.length) db.prepare(`UPDATE users SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), req.user.id);
@@ -2034,7 +2039,8 @@ export function createApp(db, {
 
   admin.get('/campaigns', (_req, res) => {
     const optedIn = (channel) => campaigns.audience({ channel, segment: 'all' }).length;
-    res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms') }, campaigns: campaigns.list().map(campaignOut) });
+    const registered = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'user' AND banned_at IS NULL").get().n;
+    res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms'), registered }, campaigns: campaigns.list().map(campaignOut) });
   });
   admin.post('/campaigns/check', async (_req, res, next) => {
     try { res.json({ steps: brevo ? await brevo.diagnose() : [{ name: 'Brevo', ok: false, detail: 'não configurado' }] }); }
