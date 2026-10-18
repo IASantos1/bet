@@ -330,6 +330,11 @@ O ícone de bilhete no topo abre **As minhas apostas** (`#/apostas`): separadore
 Anuladas; cada bilhete tem referência (`BT62-000123`), o estado de cada seleção e, com o jogo a decorrer, o
 relógio e o placar (atualizados a cada 10 s).
 
+**Partilhar bilhetes**: só depois de feita a aposta. Em *As minhas apostas* (em aberto, ao vivo ou resolvidas), *Partilhar* gera um
+link próprio do bilhete (`#/b/<código>`), que qualquer pessoa abre sem conta: seleções, odds, aposta, retorno e
+resultado; as seleções ainda em aberto podem ser copiadas para o boletim. No telemóvel abre a partilha do sistema
+(WhatsApp, Telegram…); no PC o link é copiado.
+
 **Cash out** (`server/cashout.js`, regras em **Admin → Apostas**): valor justo = aposta × odds tomadas ÷ odds
 atuais das seleções em aberto; paga-se o valor justo × fator (0.95 = 5% de margem), nunca acima do retorno
 potencial nem do máximo configurado. Regras: só simples e múltiplas com dinheiro real (não free bets, bónus nem

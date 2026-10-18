@@ -581,6 +581,9 @@ function migrate(db) {
   if (!userCols.has('novo_can_withdraw')) db.exec('ALTER TABLE users ADD COLUMN novo_can_withdraw INTEGER NOT NULL DEFAULT 0');
   // How each bet was paid for (real / bonus / free bet) and what of its payout was real money.
   const betCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
+  // The link a player shares a ticket by (#/b/<token>): made the first time it is shared.
+  if (!betCols.has('share_token')) db.exec('ALTER TABLE bets ADD COLUMN share_token TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_bets_share ON bets(share_token)');
   for (const [c, type] of [['real_stake_cents', 'INTEGER'], ['bonus_stake_cents', 'INTEGER NOT NULL DEFAULT 0'], ['freebet_stake_cents', 'INTEGER NOT NULL DEFAULT 0'],
     ['bonus_id', 'INTEGER'], ['freebet_id', 'INTEGER'], ['protected', 'INTEGER NOT NULL DEFAULT 0'], ['real_payout_cents', 'INTEGER']]) {
     if (!betCols.has(c)) db.exec(`ALTER TABLE bets ADD COLUMN ${c} ${type}`);

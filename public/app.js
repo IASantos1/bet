@@ -757,6 +757,45 @@ function addAcca(i) {
   toast('Adicionado ao boletim', `Múltipla de ${a.legs.length} seleções`);
 }
 
+/** Shares a link: the phone's share sheet where there is one, else it is copied. */
+async function shareLink(url, text) {
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Bet62', text, url }); return; } catch (err) { if (err?.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copiado', 'Envie-o a quem quiser: abre o bilhete na Bet62.'); }
+  catch { window.prompt('Copie o link do bilhete:', url); }
+}
+
+/** A placed ticket (open, in play or settled: only once it is placed): its own link, with the picks, the odds and the result. */
+async function shareBet(id) {
+  try {
+    const { url } = await api(`/api/bets/${id}/share`, { method: 'POST' });
+    const b = (state.myBets || []).find((x) => x.id === id);
+    shareLink(url, b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62');
+  } catch (err) { toast('Partilhar', err.message, 'error'); }
+}
+
+/** #/b/<token>: a ticket someone shared; its picks still open can be copied into the slip. */
+function sharedBetPage(token) {
+  const cur = state.sharedBet;
+  if (cur?.token !== token) {
+    state.sharedBet = { token };
+    api(`/api/shared-bets/${encodeURIComponent(token)}`)
+      .then((d) => { state.sharedBet = { token, ticket: d.ticket }; })
+      .catch((err) => { state.sharedBet = { token, error: err.message }; })
+      .finally(() => { if (currentRoute().page === 'b') render({ keepScroll: true }); });
+    return '<div class="loading">A carregar o bilhete…</div>';
+  }
+  if (cur.error) return `<div class="panel empty">${esc(cur.error)}<div class="hero-actions"><a class="outline-btn" href="#/desporto">Ver jogos</a></div></div>${footer()}`;
+  if (!cur.ticket) return '<div class="loading">A carregar o bilhete…</div>';
+  const t = cur.ticket;
+  const open = t.legs.filter((l) => l.selectionId).map((l) => l.selectionId);
+  return `<div class="page-title"><h1>🎟️ Bilhete partilhado</h1><p>Um bilhete da Bet62, com as odds e o resultado de cada seleção.</p></div>
+    <div class="tickets shared-ticket">${ticketCard(t)}</div>
+    <div class="hero-actions shared-actions">${open.length ? `<a class="primary-btn" href="#/bilhete/${open.join('-')}">Copiar ${open.length === t.legs.length ? 'as apostas' : `${open.length} ${open.length === 1 ? 'seleção' : 'seleções'} em aberto`} para o boletim</a>` : ''}
+      <a class="outline-btn" href="#/desporto">Ver jogos</a></div>${footer()}`;
+}
+
 /**
  * A ticket shared from the Telegram channel (#/bilhete/12-34-56): its picks go into the slip at
  * the current prices (a closed one, or a game already started, is left out), then the sports page.
@@ -2022,8 +2061,8 @@ function ticketCard(b) {
       <div><span>${ret[0]}</span><b class="${ret[2]}">${ret[1]}</b></div>
       ${profit !== null ? `<div><span>Lucro / prejuízo</span><b class="${profit > 0 ? 'green' : profit < 0 ? 'red' : ''}">${profit > 0 ? '+' : ''}${money(profit)}</b></div>` : ''}
     </div>
-    ${cashoutBlock(b)}
-    <div class="tk-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">🎟️ Ref ${esc(b.ref)}</button><span>${esc(fmtDateTime(b.createdAt))}</span>
+    ${b.id ? cashoutBlock(b) : ''}
+    <div class="tk-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">🎟️ Ref ${esc(b.ref)}</button>${b.id ? `<button class="tk-share" data-share-bet="${b.id}">↗ Partilhar</button>` : ''}<span>${esc(fmtDateTime(b.createdAt))}</span>
       ${b.settledAt && b.status !== 'open' ? `<small>Resolvida: ${esc(fmtDateTime(b.settledAt))}</small>` : ''}
       ${b.status === 'open' ? '<span class="tk-ok">✔ Aposta confirmada</span>' : b.status === 'won' ? '<span class="tk-ok won">🏆 Bilhete vencedor</span>' : ''}</div>
   </div>`;
@@ -2477,6 +2516,7 @@ function render({ keepScroll = false } = {}) {
   const { page, sub, rest } = currentRoute();
   if (page === 'bilhete') { openSharedTicket(sub); return; }
   const pages = {
+    b: () => sharedBetPage(sub),
     home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: () => (sub === 'jogo' && rest ? casinoGamePage(Number(rest)) : casinoPage()),
     promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub), apostas: myBetsPage,
   };
@@ -2843,6 +2883,8 @@ document.addEventListener('click', async (e) => {
   if (affCopy) { navigator.clipboard?.writeText(affCopy.dataset.affCopy).then(() => toast(affCopy.dataset.affLabel || 'Link copiado', affCopy.dataset.affCopy)).catch(() => {}); return; }
   const affShare = e.target.closest('[data-aff-share]');
   if (affShare) { navigator.share?.({ title: 'Bet62', text: 'Junta-te a mim na Bet62', url: affShare.dataset.affShare }).catch(() => {}); return; }
+  const shareBetBtn = e.target.closest('[data-share-bet]');
+  if (shareBetBtn) { shareBet(Number(shareBetBtn.dataset.shareBet)); return; }
   const copy = e.target.closest('[data-copy]');
   if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Referência copiada', copy.dataset.copy)).catch(() => {}); return; }
   const walletTab = e.target.closest('[data-wallet-tab]');
