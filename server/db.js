@@ -561,6 +561,8 @@ function migrate(db) {
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
   // When the player last answered "receive promotions?" (a "not now" is asked again 30 days later).
   if (!userCols.has('promo_asked_at')) db.exec('ALTER TABLE users ADD COLUMN promo_asked_at TEXT');
+  // The player's emblem (profile picture), drawn at random on sign-up: 'robo' or 'hood'.
+  if (!userCols.has('avatar')) db.exec('ALTER TABLE users ADD COLUMN avatar TEXT');
   // Withdrawals paid through Revolut: where the payout is (processing / paid / failed), its
   // Revolut transaction and why it failed.
   const wdCols = new Set(db.prepare('PRAGMA table_info(withdrawals)').all().map((c) => c.name));

@@ -553,3 +553,15 @@ test('promotions consent: the sign-up box covers email and SMS (with a phone); t
   r = await p('PATCH', '/api/me', { prefs: { notifyPromos: true, notifySms: true, promoAsked: true } });
   assert.deepEqual([r.body.user.prefs.notifyPromos, r.body.user.prefs.notifySms, !!r.body.user.promoAskedAt], [true, false, true]); // no phone: no SMS
 });
+
+test('every player has a profile emblem: one of the two, drawn on sign-up', async () => {
+  const seen = new Set();
+  for (let i = 0; i < 12; i++) {
+    const c = client();
+    const r = await c('POST', '/api/auth/register', { ...adult, email: `emb${++emailSeq}@example.com` });
+    assert.ok(['robo', 'hood'].includes(r.body.user.avatar));
+    seen.add(r.body.user.avatar);
+    assert.equal((await c('GET', '/api/me')).body.user.avatar, r.body.user.avatar); // kept
+  }
+  assert.equal(seen.size, 2); // both come out (12 draws: 1 in 2048 to fail by chance)
+});

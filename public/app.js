@@ -1396,7 +1396,7 @@ function accountPage(sub) {
   const active = PROFILE_SECTIONS.find((s) => s.id === (PROFILE_ALIAS[sub] ?? sub))?.id || 'pessoais';
   const excluded = u.excludedUntil && new Date(u.excludedUntil) > new Date();
   const head = `<div class="pf-head">
-    <div class="pf-avatar">${esc(initials(u.name))}</div>
+    <div class="pf-avatar${u.avatar ? ' emblem' : ''}">${u.avatar ? `<img src="/media/avatar-${esc(u.avatar)}.webp" alt="" width="160" height="160">` : esc(initials(u.name))}</div>
     <div class="pf-who"><strong>${esc(u.name)}</strong><span>${esc(u.email)}</span><small>${memberId(u)}</small></div>
     <div class="pf-balance"><small>Saldo disponível</small><strong>${money(u.balance)}</strong>
       ${excluded ? `<em>Autoexcluído até ${esc(new Date(u.excludedUntil).toLocaleDateString('pt-PT'))}</em>` : ''}</div>
