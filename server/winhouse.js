@@ -832,6 +832,8 @@ const LIVE_EARLY_MS = 60_000;
 /** A kick-off further ahead than this is a clock or time-zone slip, not an early listing: it goes live. */
 const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
+/** A clock this far on (or a goal) means the game is under way, whatever kick-off the live list gives. */
+const LIVE_STARTED_MIN = 20;
 
 const clockText = (sport, minutes, raw) => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
@@ -1188,8 +1190,12 @@ export function createWinHouseFeed(db, {
       try {
         const known = findEvent.get(SOURCE, ev.externalId);
         const kickoff = new Date(ev.startTime).getTime(); // the live list's own kick-off time
-        // Only sports with a set kick-off time (a tennis match's time is a "not before").
-        if (CLOCK_SPORTS.has(ev.sport) && kickoff - Date.now() > LIVE_EARLY_MS && kickoff - Date.now() < LIVE_EARLY_LIMIT_MS && (!known || known.status === 'scheduled' || known.status === 'live')) {
+        // Only sports with a set kick-off time (a tennis match's time is a "not before"), and only a game
+        // not clearly under way: one with goals or its clock well on (an early listing shows a few
+        // minutes at most) is in play whatever its listed kick-off says (a stale kick-off sent it
+        // back to pre-match and live again on every refresh).
+        const started = (ev.minutes !== null && ev.minutes >= LIVE_STARTED_MIN) || (ev.homeScore ?? 0) + (ev.awayScore ?? 0) > 0;
+        if (!started && CLOCK_SPORTS.has(ev.sport) && kickoff - Date.now() > LIVE_EARLY_MS && kickoff - Date.now() < LIVE_EARLY_LIMIT_MS && (!known || known.status === 'scheduled' || known.status === 'live')) {
           if (known?.status === 'live' && !db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(known.id)) unLive(known);
           continue;
         }

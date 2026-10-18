@@ -89,7 +89,9 @@ const sameWord = (a, b) => {
   if (a === b) return true;
   let n = 0;
   while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
-  return n >= 4 && n >= Math.min(a.length, b.length) - 2; // "rennais" ~ "rennes", "brestois" ~ "brest"
+  // "rennais" ~ "rennes", "brestois" ~ "brest"; a short word must be whole ("celta" is not "celtic").
+  const min = Math.min(a.length, b.length);
+  return n >= 4 && n >= (min >= 6 ? min - 2 : min);
 };
 
 // Words many clubs share: they never tell two clubs apart ("Leeds United" is not "Manchester United").
@@ -109,6 +111,13 @@ export function closeName(name, teams) {
     if (!theirs.length) continue;
     const ok = mine.every((w) => theirs.some((x) => sameWord(w, x))) && theirs.every((x) => mine.some((w) => sameWord(w, x)));
     if (ok) fits.set(t.logo, t);
+  }
+  if (fits.size === 1) return [...fits.values()][0];
+  if (fits.size) return null;
+  // None: a shorter name the other names in full and only adds to ("Celta" ~ "Celta Vigo"), still only one.
+  for (const t of teams) {
+    const theirs = strong(t.name);
+    if (theirs.length > mine.length && mine.every((w) => theirs.includes(w))) fits.set(t.logo, t);
   }
   return fits.size === 1 ? [...fits.values()][0] : null;
 }
@@ -153,10 +162,12 @@ export function createTeamLogos(db, {
   const dirLogos = db.prepare('SELECT DISTINCT logo FROM team_directory');
   const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
-  // Badges matched by the first close-name rule (which let "United" alone match) are matched again.
-  if (!db.prepare("SELECT 1 FROM api_quota WHERE name = 'migrate:close-names-2'").get()) {
+  // Badges matched by an earlier close-name rule (which let "United" alone match, then "Celta" take
+  // Celtic's) are matched again.
+  for (const m of ['migrate:close-names-2', 'migrate:close-names-3']) {
+    if (db.prepare('SELECT 1 FROM api_quota WHERE name = ?').get(m)) continue;
     db.exec("UPDATE team_logos SET logo = NULL, apif = 0 WHERE logo LIKE '/team-logo/%'");
-    db.prepare("INSERT INTO api_quota (name, day, used) VALUES ('migrate:close-names-2', ?, 1)").run(new Date().toISOString().slice(0, 10));
+    db.prepare('INSERT INTO api_quota (name, day, used) VALUES (?, ?, 1)').run(m, new Date().toISOString().slice(0, 10));
   }
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
     .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, apif: !!r.apif,
