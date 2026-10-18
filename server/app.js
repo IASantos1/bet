@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { loopDelay } from './loopdelay.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { parseLivestream, sessionRefused } from './whlive.js';
@@ -1250,6 +1250,30 @@ export function createApp(db, {
     const rows = db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(req.user.id);
     const offers = new Map(rows.filter((b) => b.status === 'open').map((b) => [b.id, offerView(cashoutOffer(db, b))]));
     res.json({ bets: withLegs(rows).map((b) => (offers.has(b.id) ? { ...b, cashout: offers.get(b.id) } : b)) });
+  });
+  // Sharing a ticket: a link anyone can open (#/b/<token>) with its picks, odds and result.
+  app.post('/api/bets/:id/share', requireUser, (req, res) => {
+    const b = db.prepare('SELECT id, share_token FROM bets WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
+    if (!b) throw new HttpError(404, 'Aposta não encontrada.');
+    let token = b.share_token;
+    if (!token) {
+      token = randomBytes(6).toString('base64url');
+      db.prepare('UPDATE bets SET share_token = ? WHERE id = ? AND share_token IS NULL').run(token, b.id);
+      token = db.prepare('SELECT share_token FROM bets WHERE id = ?').get(b.id).share_token;
+    }
+    res.json({ token, url: `${req.protocol}://${req.get('host')}/#/b/${token}` });
+  });
+  // A shared ticket, as its owner sees it (no account details): the picks still open carry their
+  // selection, so the visitor can copy them into the slip.
+  app.get('/api/shared-bets/:token', (req, res) => {
+    const b = db.prepare('SELECT * FROM bets WHERE share_token = ?').get(String(req.params.token).slice(0, 40));
+    if (!b) throw new HttpError(404, 'Este bilhete já não está disponível.');
+    const [t] = withLegs([b]);
+    const sel = db.prepare(`SELECT s.id FROM selections s JOIN events e ON e.id = s.event_id
+      WHERE s.event_id = ? AND s.market = ? AND s.code = ? AND s.active = 1 AND e.status = 'scheduled' AND e.start_time > ?`);
+    const legs = t.legs.map((l) => ({ ...l, selectionId: sel.get(l.eventId, l.market, l.code, nowIso())?.id || null }));
+    const { manual, id, ...ticket } = t;
+    res.json({ ticket: { ...ticket, legs } });
   });
   // Cash out: checked, then (in play) held for the acceptance delay and checked again before paying.
   app.post('/api/bets/:id/cashout', requireUser, reclaimCasino, async (req, res, next) => {

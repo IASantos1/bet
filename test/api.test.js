@@ -155,6 +155,25 @@ test('single bet: debits stake, pays out on win', async () => {
   assert.equal((await adm('POST', `/api/admin/events/${ev.id}/result`, { homeScore: 0, awayScore: 0 })).status, 409);
 });
 
+test('a ticket is shared by a link anyone can open: picks, odds, result; open picks copy into the slip', async () => {
+  const adm = await adminClient();
+  const ev = await createEvent(adm);
+  const p = await newPlayer(50);
+  await p('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: sel(ev, '1').id, odds: 2 }] });
+  const bet = (await p('GET', '/api/bets')).body.bets[0];
+  assert.equal((await client()('POST', `/api/bets/${bet.id}/share`, {})).status, 401);
+  assert.equal((await (await newPlayer(50))('POST', `/api/bets/${bet.id}/share`, {})).status, 404); // not theirs
+  const s1 = await p('POST', `/api/bets/${bet.id}/share`, {});
+  assert.match(s1.body.url, /\/#\/b\/[\w-]{8}$/);
+  assert.equal((await p('POST', `/api/bets/${bet.id}/share`, {})).body.token, s1.body.token); // the same link again
+  let shared = (await client()('GET', `/api/shared-bets/${s1.body.token}`)).body.ticket;
+  assert.deepEqual([shared.status, shared.stake, shared.legs[0].selectionId, shared.id], ['open', 10, sel(ev, '1').id, undefined]);
+  await adm('POST', `/api/admin/events/${ev.id}/result`, { homeScore: 2, awayScore: 1 });
+  shared = (await client()('GET', `/api/shared-bets/${s1.body.token}`)).body.ticket;
+  assert.deepEqual([shared.status, shared.payout, shared.legs[0].status, shared.legs[0].selectionId], ['won', 20, 'won', null]);
+  assert.equal((await client()('GET', '/api/shared-bets/nope')).status, 404);
+});
+
 test('single mode with several picks creates one bet per pick', async () => {
   const adm = await adminClient();
   const a = await createEvent(adm);
