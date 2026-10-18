@@ -544,3 +544,12 @@ test('board cache: with boardCacheMs the list is built once and shared for that 
     assert.ok(first.events.length > 0);
   } finally { s.close(); db2.close(); }
 });
+
+test('promotions consent: the sign-up box covers email and SMS (with a phone); the site question is dated', async () => {
+  const c = client();
+  let r = await c('POST', '/api/auth/register', { ...adult, email: `promo${++emailSeq}@example.com`, phone: '+351912345678', promos: true });
+  assert.deepEqual([r.body.user.prefs.notifyPromos, r.body.user.prefs.notifySms, !!r.body.user.promoAskedAt], [true, true, true]);
+  const p = await newPlayer();
+  r = await p('PATCH', '/api/me', { prefs: { notifyPromos: true, notifySms: true, promoAsked: true } });
+  assert.deepEqual([r.body.user.prefs.notifyPromos, r.body.user.prefs.notifySms, !!r.body.user.promoAskedAt], [true, false, true]); // no phone: no SMS
+});

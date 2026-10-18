@@ -474,7 +474,8 @@ function adminCampaigns({ status: st, segments, optedIn, campaigns = [] }) {
     ${off ? `<p class="muted">⚠️ Brevo não configurado. No Railway, defina <b>BREVO_API_KEY</b> (Brevo → SMTP &amp; API → API Keys) e <b>BREVO_SENDER_EMAIL</b>
       (um remetente verificado no Brevo, por exemplo promocoes@o-seu-dominio). Para SMS, também <b>BREVO_SMS_SENDER</b> (nome até 11 letras, ex.: BET62).</p>`
       : `<p class="muted">Email: ${st.email ? `ligado (${esc(st.sender)})` : 'desligado'} · SMS: ${st.sms ? 'ligado' : 'desligado (defina BREVO_SMS_SENDER)'}</p>`}
-    <p class="muted">Só recebem os jogadores que aceitaram promoções no perfil (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b>). Contas em autoexclusão ou banidas nunca recebem.
+    <p class="muted">Recebem todos os registados que aceitaram promoções, tenham ou não depositado (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b> de <b>${optedIn.registered ?? '—'}</b> registados).
+      O site pergunta a cada jogador se quer receber promoções por email e SMS (quem responde "Agora não" volta a ser perguntado 30 dias depois). Contas em autoexclusão ou banidas nunca recebem.
       Cada email leva o aviso 18+ e um link para deixar de receber. O plano grátis do Brevo envia até 300 emails por dia; os SMS são pagos com créditos Brevo e só saem entre as 09:00 e as 21:00.
       Use <b>{nome}</b> no texto para o primeiro nome do jogador.</p>
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="cp-check">Verificar configuração do Brevo</button></div><div id="cpCheck"></div></div>
