@@ -214,6 +214,11 @@ test('close names within one league: the one team that fits, or none', () => {
   assert.equal(closeName('Man City', pl), null);
   assert.equal(closeName('West Ham United', pl)?.name, 'West Ham');
   assert.equal(closeName('Newcastle United', pl)?.name, 'Newcastle');
+  // "Celta" is Celta Vigo, never Celtic.
+  const mixed = [{ name: 'Celtic', logo: 'celtic' }, { name: 'Celta Vigo', logo: 'celta' }, { name: 'Rangers', logo: 'rangers' }];
+  assert.equal(closeName('Celta', mixed)?.name, 'Celta Vigo');
+  assert.equal(closeName('Celtic', mixed)?.name, 'Celtic');
+  assert.equal(closeName('Celta', mixed.filter((x) => x.logo !== 'celta')), null);
 });
 
 test('free pass: the competition is matched to its kept league and close names there get the badge, no request', async () => {

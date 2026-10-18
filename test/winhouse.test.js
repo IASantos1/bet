@@ -997,6 +997,14 @@ test('a football game listed in play before kick-off stays pre-match until a min
   assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE home = 'Cordoba' AND status IN ('scheduled', 'live')").get().n, 1);
 });
 
+test('a game well under way (goals or its clock on) stays live even when its listed kick-off is ahead', async () => {
+  const lists = { live: [{ ...football(40, 68, '1-0', ODD), id: 40, ...when(-10 * 60_000) }, { ...football(41, 25, '0-0', ODD), id: 41, home_team: 'Celtic', away_team: 'Hearts', name: 'Celtic - Hearts', ...when(-10 * 60_000) }] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.deepEqual([t.row(40).status, t.row(40).home_score, t.row(41).status], ['live', 1, 'live']);
+});
+
 test('a copy already taken live too early (no bets) is dropped, leaving the pre-match game', async () => {
   const pre = { ...football(30, 0, '', ODD), id: 30, ...when(-10 * 60_000), current_minute: '' };
   const lists = { live: [], pre: [pre] };
