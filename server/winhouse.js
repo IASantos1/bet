@@ -801,12 +801,15 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
 
 /**
  * WinHouse's clock zone, from the live list: a match started (now − minutes played) ago, and its
- * game_time read as UTC is ahead of that by the zone's offset. Median of the early-stage matches,
- * rounded to 30 min; null with fewer than 3 samples.
+ * game_time read as UTC is ahead of that by the zone's offset. Football only (a basketball or
+ * hockey clock stops, so its minutes lag far behind the time since kick-off), the median of the
+ * first-half matches, rounded to the hour (kick-offs a few minutes late pull every sample a little
+ * under it; half hours read "UTC+1.5"); null with fewer than 3 samples.
  */
 export function estimateOffset(items, now = Date.now()) {
   const samples = [];
   for (const ev of items) {
+    if (ev?.sport_id !== undefined && ev?.sport_id !== null && SPORTS[Number(ev.sport_id)] !== 'futebol') continue;
     const mins = minutesOf(ev?.current_minute);
     const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ev?.game_date || ''));
     const t = /^(\d{2}):(\d{2})/.exec(String(ev?.game_time || ''));
@@ -816,7 +819,7 @@ export function estimateOffset(items, now = Date.now()) {
   }
   if (samples.length < 3) return null;
   samples.sort((a, b) => a - b);
-  return Math.round(samples[Math.floor(samples.length / 2)] / 30) * 30;
+  return Math.round(samples[Math.floor(samples.length / 2)] / 60) * 60;
 }
 
 // Sports whose clock counts up through the match.

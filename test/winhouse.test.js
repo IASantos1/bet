@@ -89,6 +89,10 @@ test('clock zone estimated from early live matches', () => {
   const items = [5, 10, 20, 25].map((m, i) => ({ id: i, ...when(m * 60_000, 120), current_minute: clock(m) }));
   assert.equal(estimateOffset(items), 120);
   assert.equal(estimateOffset(items.slice(0, 2)), null);
+  // Football kick-offs a few minutes late, and basketball (its clock stops) left out: still UTC+2, not +1.5.
+  const late = [5, 10, 20].map((m, i) => ({ id: 10 + i, sport_id: 1, ...when((m + 6) * 60_000, 120), current_minute: clock(m) }));
+  const basket = [8, 9, 10, 10].map((m, i) => ({ id: 20 + i, sport_id: 2, ...when((m + 25) * 60_000, 120), current_minute: clock(m) }));
+  assert.equal(estimateOffset([...late, ...basket]), 120);
 });
 
 function setupFeed(lists) {
