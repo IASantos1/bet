@@ -291,8 +291,8 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     }
     // Our football games of big and medium leagues in the next 2 days: which ones found their GOAL API game.
     const ours = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
-      WHERE sport = 'futebol' AND status IN ('scheduled', 'live') AND start_time <= ? ORDER BY start_time LIMIT 400`)
-      .all(new Date(Date.now() + 48 * HOUR).toISOString()).filter(covers);
+      WHERE sport = 'futebol' AND status IN ('scheduled', 'live') AND start_time >= ? AND start_time <= ? ORDER BY start_time LIMIT 400`)
+      .all(new Date(Date.now() - 3 * HOUR).toISOString(), new Date(Date.now() + 48 * HOUR).toISOString()).filter(covers);
     let found = 0;
     const misses = [];
     for (const ev of ours) {
