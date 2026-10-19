@@ -292,6 +292,12 @@ export const config = {
     apiFootballDaily: Math.max(0, Number(env.API_FOOTBALL_DAILY) || 90),
     apiFootballPerMinute: Math.max(1, Number(env.API_FOOTBALL_PER_MINUTE) || 8),
   },
+  // Football statistics on the match page (goalapi.js): head-to-head, league table, last five games.
+  // GOAL_API_KEY switches it on; at most GOAL_API_DAILY requests a day (default 900; the free plan allows 1000).
+  goalApi: {
+    key: unquote(env.GOAL_API_KEY), baseUrl: unquote(env.GOAL_API_BASE_URL) || 'https://api.goal-api.com/v1',
+    daily: Math.max(0, Number(env.GOAL_API_DAILY) || 900),
+  },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).

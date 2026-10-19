@@ -69,7 +69,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  match: { id: null, data: null, extras: null, insights: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -2851,6 +2851,8 @@ document.addEventListener('click', async (e) => {
   if (expand) { toggleExpand(expand.closest('.trk, .stream-box')); return; }
   const marketCatBtn = e.target.closest('[data-market-cat]');
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
+  const statTabBtn = e.target.closest('[data-stat-tab]');
+  if (statTabBtn) { state.match.statTab = statTabBtn.dataset.statTab; render({ keepScroll: true }); return; }
 
   const remove = e.target.closest('[data-remove]');
   if (remove) {
@@ -3235,7 +3237,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -3281,6 +3283,7 @@ async function loadMatch(id, { quiet = false } = {}) {
     const open = [...(event.selections || []), ...(event.markets || []).flatMap((x) => x.selections || [])].some((x) => x.active);
     if (state.match.clipHold && marketsReopened(state.match.clipHold, open)) state.match.clipHold.release();
     if (event.status !== 'scheduled') loadMatchExtras(id);
+    if (event.sport === 'futebol' && !state.match.insights) loadMatchInsights(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
     if (currentRoute().page === 'jogo') render({ keepScroll: true });
@@ -3296,6 +3299,17 @@ async function loadMatchExtras(id) {
     state.match.extras = extras;
     if (currentRoute().page === 'jogo' && state.match.tab !== 'tracker') render({ keepScroll: true });
   } catch { /* extras are optional */ }
+}
+
+// Head-to-head, league table and last five games (GOAL API); asked once per match page.
+async function loadMatchInsights(id) {
+  state.match.insights = { loading: true };
+  try {
+    const insights = await api(`/api/events/${id}/insights`);
+    if (state.match.id !== id) return;
+    state.match.insights = insights;
+    if (currentRoute().page === 'jogo' && state.match.tab === 'estatisticas') render({ keepScroll: true });
+  } catch { if (state.match.id === id) state.match.insights = {}; }
 }
 
 function startMatchStream(id) {
@@ -4002,9 +4016,58 @@ function marketBlocks(e, markets) {
   }).join('');
 }
 
+// The statistics tab of a football match: the live statistics, then H2H (head-to-head and each
+// team's last five games) and the league table. A menu entry only shows when it has data.
 function matchStatsView(e) {
+  const m = state.match;
+  const ins = m.insights || {};
+  const tabs = [];
+  if (e.status !== 'scheduled') tabs.push(['aovivo', e.status === 'live' ? 'Ao vivo' : 'Jogo']);
+  if (ins.h2h || ins.form?.home || ins.form?.away) tabs.push(['h2h', 'H2H']);
+  if (ins.standings?.rows?.length) tabs.push(['classificacao', 'Classificação']);
+  if (!tabs.length) {
+    return ins.loading ? '<div class="loading">A carregar estatísticas…</div>' : '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
+  }
+  if (!tabs.some(([k]) => k === m.statTab)) m.statTab = tabs[0][0];
+  const menu = tabs.length > 1 ? `<div class="market-cats stat-tabs">${tabs.map(([k, l]) => `<button class="${m.statTab === k ? 'active' : ''}" data-stat-tab="${k}">${l}</button>`).join('')}</div>` : '';
+  const body = m.statTab === 'h2h' ? h2hView(e, ins) : m.statTab === 'classificacao' ? standingsView(e, ins.standings) : liveStatsView(e);
+  return menu + body;
+}
+
+const RESULT_LABEL = { W: 'V', D: 'E', L: 'D' };
+const shortDate = (d) => { const t = Date.parse(d); return Number.isFinite(t) ? new Date(t).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''; };
+
+function h2hView(e, ins) {
+  const h = ins.h2h;
+  const pct = (n) => (h.total ? Math.round((n / h.total) * 100) : 0);
+  const direct = h ? `<div class="panel"><h3>Confronto direto · ${h.total} jogo${h.total === 1 ? '' : 's'}</h3>
+    <div class="h2h-sum"><div><b>${h.homeWins}</b><span>${esc(e.home)}</span></div><div><b>${h.draws}</b><span>Empates</span></div><div><b>${h.awayWins}</b><span>${esc(e.away)}</span></div></div>
+    <div class="h2h-bar"><i class="h" data-w="${pct(h.homeWins)}"></i><i class="d" data-w="${pct(h.draws)}"></i><i class="a" data-w="${pct(h.awayWins)}"></i></div>
+    <p class="muted h2h-goals">Golos: ${h.homeGoals} - ${h.awayGoals} · média ${h.avgGoals} por jogo</p>
+    ${h.recent.map((r) => `<div class="h2h-game"><span class="muted">${esc(shortDate(r.date))}</span><span class="h2h-teams">${esc(r.home)} <b>${r.homeScore} - ${r.awayScore}</b> ${esc(r.away)}</span></div>`).join('')}
+  </div>` : '';
+  const form = (side) => {
+    const f = ins.form?.[side];
+    if (!f) return '';
+    return `<div class="panel"><h3>${esc(side === 'home' ? e.home : e.away)} · últimos ${f.games.length} jogos</h3>
+      <div class="form-sum"><span class="fr W">${f.won} V</span><span class="fr D">${f.drawn} E</span><span class="fr L">${f.lost} D</span></div>
+      ${f.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
+    </div>`;
+  };
+  return `<div class="insight-stack">${direct}${form('home')}${form('away')}</div>`;
+}
+
+function standingsView(e, t) {
+  const key = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const side = (r) => r.side || (key(r.team) === key(e.home) ? 'home' : key(r.team) === key(e.away) ? 'away' : null);
+  return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3><div class="table-wrap"><table class="standings">
+    <thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num">V</th><th class="num">E</th><th class="num">D</th><th class="num">GM-GS</th><th class="num">Pts</th></tr></thead>
+    <tbody>${t.rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td>${esc(r.team)}</td><td class="num">${r.played ?? ''}</td><td class="num">${r.won ?? ''}</td><td class="num">${r.drawn ?? ''}</td><td class="num">${r.lost ?? ''}</td><td class="num">${r.goalsFor ?? ''}-${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td></tr>`).join('')}</tbody>
+  </table></div></div>`;
+}
+
+function liveStatsView(e) {
   const x = state.match.extras;
-  if (e.status === 'scheduled') return '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
   if (!x) return '<div class="loading">A carregar estatísticas…</div>';
   const stats = x.stats?.length ? x.stats : liveStatsFallback();
   const bars = stats.map((s) => {

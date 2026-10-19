@@ -149,7 +149,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -725,6 +725,8 @@ export function createApp(db, {
     try {
       const ev = eventRow(req.params.id);
       if (!ev) throw new HttpError(404, 'Evento não encontrado.');
+      // Football from big and medium leagues: GOAL API (head-to-head, table, last five games).
+      if (goalApi?.covers(ev)) return res.json(await goalApi.insights(ev));
       const provider = providerFor(ev);
       if (!provider) return res.json({ h2h: null, prediction: null, standings: null, rankings: null });
       res.json(await provider.matchInsights(ev));
@@ -2039,6 +2041,12 @@ export function createApp(db, {
   });
   admin.post('/team-logos/run', async (_req, res, next) => {
     try { res.json(teamLogos ? await teamLogos.run() : { asked: 0, found: 0 }); }
+    catch (err) { next(err); }
+  });
+
+  // GOAL API (match statistics): the key, today's requests, a real call.
+  admin.post('/goal-api/check', async (_req, res, next) => {
+    try { res.json({ steps: goalApi ? await goalApi.diagnose() : [{ name: 'GOAL API', ok: false, detail: 'não iniciada' }] }); }
     catch (err) { next(err); }
   });
 

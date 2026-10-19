@@ -955,6 +955,9 @@ function adminFeed(f) {
     <p class="muted">Logos oficiais do API-Football (chave <strong>API_FOOTBALL_KEY</strong>), guardados aqui de vez: as ligas principais vêm inteiras num pedido cada, e as outras equipas são procuradas pelo nome. Cores das camisolas do TheSportsDB.</p>
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="tl-check">Verificar logos</button>
       <button class="ghost-btn btn-sm" data-action="tl-run">Procurar logos agora</button></div><div id="tlCheck"></div></div>
+  <div class="panel"><h3>Estatísticas GOAL API</h3>
+    <p class="muted">H2H, classificação e últimos 5 jogos no separador Estatísticas dos jogos de futebol das ligas grandes e médias (só estatísticas, sem odds). Chave <strong>GOAL_API_KEY</strong> nas Variables do Railway; no máximo <strong>GOAL_API_DAILY</strong> pedidos por dia (900 por omissão; o plano grátis dá 1000). Os jogos ligam-se pelo nome das equipas e pela hora.</p>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="ga-check">Verificar GOAL API</button></div><div id="gaCheck"></div></div>
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
       : 'Defina nas Variables do Railway <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI), <strong>RAPIDAPI_STREAM_LIST_PATH</strong> (a rota da lista de jogos) e <strong>RAPIDAPI_STREAM_PATH</strong> (a rota de um jogo, com {id}) e faça redeploy. O host por omissão é football-live-stream-api.p.rapidapi.com (RAPIDAPI_STREAM_HOST para outro).'}</p>
@@ -1310,6 +1313,15 @@ document.addEventListener('click', async (e) => {
       }
       const { steps } = await api('/api/admin/team-logos/check', { method: 'POST', body: {} });
       $('#tlCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
+  if (action === 'ga-check') {
+    actionEl.disabled = true;
+    try {
+      const { steps } = await api('/api/admin/goal-api/check', { method: 'POST', body: {} });
+      $('#gaCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     return;

@@ -563,6 +563,23 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .pulse-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 #e95a74aa; animation: livePulse 1.4s ease-out infinite; }
 @keyframes livePulse { 0% { box-shadow: 0 0 0 0 #e95a74aa; } 70% { box-shadow: 0 0 0 7px #e95a7400; } 100% { box-shadow: 0 0 0 0 #e95a7400; } }
 .insight-stack { display: grid; gap: 12px; }
+.stat-tabs { margin-bottom: 12px; }
+.h2h-sum { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; text-align: center; }
+.h2h-sum div { display: grid; gap: 2px; min-width: 0; }
+.h2h-sum b { font-size: 22px; }
+.h2h-sum span { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h2h-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--row-hover); margin: 10px 0 6px; }
+.h2h-bar i { display: block; height: 100%; }
+.h2h-bar .h { background: var(--up); } .h2h-bar .d { background: var(--text-4); } .h2h-bar .a { background: var(--brand); }
+.h2h-goals { margin: 0 0 8px; font-size: 12px; }
+.h2h-game { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.h2h-game .h2h-teams { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h2h-game .muted { font-size: 12px; flex: none; }
+.form-sum { display: flex; gap: 6px; margin-bottom: 6px; }
+.fr { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 12px; font-weight: 800; color: #fff; flex: none; }
+.fr.W { background: var(--up); } .fr.D { background: var(--text-4); } .fr.L { background: var(--down); }
+table.standings td, table.standings th { padding: 7px 6px; font-size: 12px; }
+table.standings tr.ours td { background: var(--row-hover); font-weight: 700; }
 .insight-stack .panel h3, .match-body .panel h3 { margin: 0 0 12px; font-size: 14px; }
 .split-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--row-hover); margin: 10px 0; }
 .split-bar i { display: block; height: 100%; }

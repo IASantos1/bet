@@ -20,6 +20,7 @@ import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
 import { createBrevo } from './brevo.js';
 import { createTeamLogos } from './teamlogos.js';
+import { createGoalApi } from './goalapi.js';
 import { expireDue, runCashback, seedFsGames } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -174,7 +175,9 @@ const stopTeamLogos = teamLogos.start();
 if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[emblemas] API-Football ativo (até ${config.teamLogos.apiFootballDaily} pesquisas por dia e desporto)`);
 const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] ${m}`) });
 if (brevo.configured) console.log(`Brevo: emails de ${config.brevo.senderEmail}${brevo.smsConfigured ? ', SMS ligado' : ''}`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, boardCacheMs: 2000 });
+const goalApi = createGoalApi(db, { ...config.goalApi, log: (m) => console.warn(`[goal-api] ${m}`) });
+if (goalApi.enabled) console.log(`[goal-api] estatísticas ativas (até ${config.goalApi.daily} pedidos por dia)`);
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 const server = app.listen(config.port, () => {
