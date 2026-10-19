@@ -29,6 +29,11 @@ test('our event is matched by kick-off time and both team names', () => {
   assert.equal(findFixture(ev('Rodez Aveyron', 'Montpellier HSC'), short)?.id, '7');
   assert.equal(findFixture(ev('Corinthians Paulista', 'EC Vitoria Salvador'), short)?.id, '8');
   assert.equal(findFixture(ev('Ajax', 'De Graafschap'), short), null);
+  // Other names of the same club.
+  const other = [fx('10', 'PSG', 'Barcelona'), fx('11', 'Levante', 'Athletic Club'), fx('12', 'Crvena zvezda', 'København')].map(compact);
+  assert.equal(findFixture(ev('Paris Saint-Germain', 'Barcelona'), other)?.id, '10');
+  assert.equal(findFixture(ev('Levante UD', 'Athletic Bilbao'), other)?.id, '11');
+  assert.equal(findFixture(ev('Crvena Zvezda', 'Copenhagen'), other)?.home.name, 'Crvena zvezda');
   // Kick-off off by up to 3 h still matches (the closest one).
   assert.equal(findFixture(ev('Barcelona', 'Sevilla', { start_time: new Date(ko.getTime() + 3 * HOUR).toISOString() }), list)?.id, '3');
 });
@@ -61,6 +66,14 @@ test('league table picks the group with our teams; form counts the last five', (
   assert.equal(f.games.length, 5);
   assert.deepEqual([f.won, f.drawn, f.lost], [3, 1, 1]);
   assert.equal(normalizeForm({ recentFixtures: [] }), null);
+  // A plain list of fixtures, counted from the team's side; "win"/"loss" words.
+  const plain = normalizeForm([
+    { matchDate: '2026-10-10', homeTeamId: 'me', homeTeamName: 'Me', awayTeamId: 'x', awayTeamName: 'X', homeTeamScore: '2', awayTeamScore: '0' },
+    { matchDate: '2026-10-03', homeTeamId: 'y', homeTeamName: 'Y', awayTeamId: 'me', awayTeamName: 'Me', homeTeamScore: '3', awayTeamScore: '1' },
+    { matchDate: '2026-09-27', homeTeamId: 'z', homeTeamName: 'Z', awayTeamId: 'me', awayTeamName: 'Me', homeTeamScore: '1', awayTeamScore: '1' },
+  ], 'me');
+  assert.deepEqual(plain.games.map((g) => [g.opponent, g.result, g.home]), [['X', 'W', true], ['Y', 'L', false], ['Z', 'D', false]]);
+  assert.equal(normalizeForm({ recentFixtures: [{ date: '2026-10-01', opponent: 'Q', score: '0-1', isHome: true, result: 'loss' }] }).lost, 1);
 });
 
 test('insights: only big and medium leagues, answers kept, daily limit kept', async () => {

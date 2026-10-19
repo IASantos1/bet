@@ -31,7 +31,9 @@ const MAX_PAGES = 30;
 const AHEAD = 8 * 24 * HOUR; // games are looked up up to 8 days ahead
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-const loose = (name) => teamKey('', name).slice(1);
+// Letters that do not lose their mark like accents do ("København" is "kobenhavn").
+const PLAIN = { ø: 'o', Ø: 'o', æ: 'ae', Æ: 'ae', ß: 'ss', đ: 'd', Đ: 'd', ł: 'l', Ł: 'l', ı: 'i', þ: 'th' };
+const loose = (name) => teamKey('', String(name || '').replace(/[øØæÆßđĐłŁıþ]/g, (c) => PLAIN[c])).slice(1);
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // Reserve, youth and women's sides: "Ajax II" is never "Ajax".
@@ -65,21 +67,56 @@ const subset = (ours, theirs) => {
   return short.every((w) => long.some((x) => x === w || (w.length >= 5 && (x.startsWith(w) || w.startsWith(x)))));
 };
 
+// Clubs known by another name on one side ("PSG", "København", "Athletic Club"): compared by one name.
+const ALIASES = [
+  ['Paris Saint Germain', 'psg', 'paris sg', 'paris saint germain fc'],
+  ['Copenhagen', 'kobenhavn', 'fc kobenhavn', 'fc copenhagen'],
+  ['Athletic Bilbao', 'athletic club', 'athletic club bilbao'],
+  ['Inter Milan', 'inter', 'internazionale', 'fc internazionale milano', 'inter milano'],
+  ['AC Milan', 'milan'],
+  ['Manchester United', 'man utd', 'man united'],
+  ['Manchester City', 'man city'],
+  ['Tottenham', 'spurs', 'tottenham hotspur'],
+  ['Wolverhampton', 'wolves', 'wolverhampton wanderers'],
+  ['Nottingham Forest', 'nottm forest', 'nott m forest'],
+  ['Atletico Madrid', 'atl madrid', 'atletico de madrid', 'club atletico de madrid'],
+  ['Bayern Munich', 'bayern munchen', 'fc bayern munchen', 'bayern'],
+  ['Borussia Monchengladbach', 'monchengladbach', 'gladbach', 'b monchengladbach'],
+  ['Sporting CP', 'sporting lisbon', 'sporting clube de portugal', 'sporting'],
+  ['Crvena Zvezda', 'red star belgrade', 'fk crvena zvezda'],
+  ['Olympiacos', 'olympiakos', 'olympiacos piraeus', 'olympiacos fc'],
+  ['PSV Eindhoven', 'psv'],
+  ['AZ Alkmaar', 'az'],
+  ['NEC Nijmegen', 'nec', 'n e c'],
+  ['DC United', 'd c united'],
+  ['Cincinnati', 'fc cincinnati'],
+  ['Red Bull Salzburg', 'salzburg', 'rb salzburg', 'fc salzburg'],
+  ['Union Saint Gilloise', 'union sg', 'royale union saint gilloise', 'union st gilloise'],
+  ['Dinamo Zagreb', 'gnk dinamo zagreb', 'd zagreb'],
+  ['Kuopion Palloseura', 'kups'],
+];
+const ALIAS = new Map(ALIASES.flatMap(([name, ...others]) => [name, ...others].map((o) => [loose(o), name])));
+const alias = (name) => ALIAS.get(loose(name)) || name;
+
 /** The fixture of our event among a day's fixtures: kick-off within 3 h (closest first) and both teams the
  * same; else the only fixture where one team is the same and the other a loose fit; else the only fixture
  * kicking off within 45 min where each name is the other with words added or left out. */
-export function findFixture(ev, fixtures) {
-  const at = Date.parse(ev.start_time);
+export function findFixture(event, fixtures) {
+  const at = Date.parse(event.start_time);
   if (!Number.isFinite(at)) return null;
-  const close = fixtures.filter((f) => Math.abs(f.ko - at) <= WINDOW).sort((a, b) => Math.abs(a.ko - at) - Math.abs(b.ko - at));
+  const ev = { home: alias(event.home), away: alias(event.away) };
+  // Compared with the other names in place; the fixture found is returned as GOAL API has it.
+  const named = new Map();
+  const close = fixtures.filter((f) => Math.abs(f.ko - at) <= WINDOW).sort((a, b) => Math.abs(a.ko - at) - Math.abs(b.ko - at))
+    .map((f) => { const g = { ...f, home: { ...f.home, name: alias(f.home.name) }, away: { ...f.away, name: alias(f.away.name) } }; named.set(g, f); return g; });
   const homes = close.map((f) => f.home.name);
   const aways = close.map((f) => f.away.name);
   const sure = close.find((f) => fits(ev.home, f.home.name, homes) && fits(ev.away, f.away.name, aways));
-  if (sure) return sure;
+  if (sure) return named.get(sure);
   const maybe = close.filter((f) => (fits(ev.home, f.home.name, homes) && near(ev.away, f.away.name)) || (fits(ev.away, f.away.name, aways) && near(ev.home, f.home.name)));
-  if (maybe.length) return maybe.length === 1 ? maybe[0] : null;
+  if (maybe.length) return maybe.length === 1 ? named.get(maybe[0]) : null;
   const both = close.filter((f) => Math.abs(f.ko - at) <= 45 * 60_000 && subset(ev.home, f.home.name) && subset(ev.away, f.away.name));
-  return both.length === 1 ? both[0] : null;
+  return both.length === 1 ? named.get(both[0]) : null;
 }
 
 // Kick-off: kickoffUtc; else matchDate + matchTime (taken as UTC).
@@ -162,12 +199,35 @@ export function normalizeStandings(raw, fx) {
 }
 
 /** A team's last five games and how many it won, drew and lost. */
-export function normalizeForm(raw) {
-  const list = (Array.isArray(raw?.recentFixtures) ? raw.recentFixtures : [])
-    .filter((f) => ['W', 'D', 'L'].includes(f?.result) && f.opponent)
+const RESULT = { w: 'W', win: 'W', won: 'W', v: 'W', d: 'D', draw: 'D', e: 'D', l: 'L', loss: 'L', lost: 'L', lose: 'L' };
+/** One past game of the team, from its own side: { date, opponent, home, score, result } or null. Takes the
+ * resolved row ({ opponent, score:"2-1", isHome, result }) or a plain fixture (home/away names and scores). */
+function formGame(f, teamId) {
+  if (!f || typeof f !== 'object') return null;
+  const date = f.date || f.matchDate || f.match_date || f.kickoffUtc || null;
+  if (f.opponent || f.opponentName) {
+    let result = RESULT[String(f.result || f.outcome || '').toLowerCase()];
+    const [a, b] = String(f.score || '').split(/\s*[-:]\s*/).map(Number);
+    if (!result && Number.isFinite(a) && Number.isFinite(b)) result = a === b ? 'D' : (f.isHome === false ? b > a : a > b) ? 'W' : 'L';
+    return result ? { date, opponent: f.opponent || f.opponentName, home: f.isHome !== false, score: String(f.score || ''), result, league: f.league || f.leagueName || null } : null;
+  }
+  const homeId = String(f.homeTeamId ?? f.homeTeam?.id ?? f.match_hometeam_id ?? '');
+  const awayId = String(f.awayTeamId ?? f.awayTeam?.id ?? f.match_awayteam_id ?? '');
+  const hs = num(f.homeTeamScore ?? f.homeTeamFtScore ?? f.match_hometeam_score);
+  const as = num(f.awayTeamScore ?? f.awayTeamFtScore ?? f.match_awayteam_score);
+  if (hs === null || as === null || (teamId && homeId !== String(teamId) && awayId !== String(teamId))) return null;
+  const home = !teamId || homeId === String(teamId);
+  const opponent = home ? (f.awayTeamName || f.awayTeam?.name || f.match_awayteam_name) : (f.homeTeamName || f.homeTeam?.name || f.match_hometeam_name);
+  const ours = home ? hs : as;
+  const theirs = home ? as : hs;
+  return opponent ? { date, opponent, home, score: `${hs}-${as}`, result: ours > theirs ? 'W' : ours < theirs ? 'L' : 'D', league: f.leagueName || null } : null;
+}
+
+export function normalizeForm(raw, teamId = null) {
+  const rows = Array.isArray(raw) ? raw : ['recentFixtures', 'recent', 'results', 'fixtures', 'matches', 'lastMatches'].map((k) => raw?.[k]).find(Array.isArray) || [];
+  const list = rows.map((f) => formGame(f, teamId)).filter(Boolean)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-    .slice(0, 5)
-    .map((f) => ({ date: f.date || null, opponent: f.opponent, home: Boolean(f.isHome), score: String(f.score || ''), result: f.result, league: f.league || null }));
+    .slice(0, 5);
   if (!list.length) return null;
   const count = (r) => list.filter((f) => f.result === r).length;
   return { games: list, won: count('W'), drawn: count('D'), lost: count('L') };
@@ -283,8 +343,8 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       fx.home.id ? safe(cached(`form:${fx.home.id}`, TTL.form, async () => (await request(`/teams/${encodeURIComponent(fx.home.id)}/results`)).data)) : null,
       fx.away.id ? safe(cached(`form:${fx.away.id}`, TTL.form, async () => (await request(`/teams/${encodeURIComponent(fx.away.id)}/results`)).data)) : null,
     ]);
-    const formHome = normalizeForm(home);
-    const formAway = normalizeForm(away);
+    const formHome = normalizeForm(home, fx.home.id);
+    const formAway = normalizeForm(away, fx.away.id);
     return {
       h2h: normalizeH2H(h2h, ev),
       standings: normalizeStandings(table, fx),
@@ -342,6 +402,11 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     // One linked game of the biggest league: what the match page gets.
     if (sample) {
       const r = await insights(sample).catch(() => ({}));
+      const fx = await link(sample).catch(() => null);
+      const raw = fx?.home.id ? JSON.parse(cacheGet.get(`form:${fx.home.id}`)?.body || 'null') : null;
+      const shape = (v) => (Array.isArray(v) ? `lista de ${v.length}${v[0] && typeof v[0] === 'object' ? ` {${Object.keys(v[0]).slice(0, 15).join(', ')}}` : ''}` : v && typeof v === 'object'
+        ? `{${Object.keys(v).slice(0, 12).map((k) => (Array.isArray(v[k]) ? `${k}: ${shape(v[k])}` : k)).join(', ')}}` : String(v));
+      if (!r.form) steps.push({ name: 'Resposta de /teams/{id}/results', ok: false, detail: shape(raw).slice(0, 600) });
       steps.push({ name: `Exemplo: ${sample.home} - ${sample.away}`, ok: Boolean(r.h2h || r.standings || r.form),
         detail: `H2H: ${r.h2h ? `${r.h2h.total} jogos` : 'sem dados'} · Classificação: ${r.standings ? `${r.standings.rows.length} equipas` : 'sem dados'} · Últimos 5: ${r.form ? 'sim' : 'sem dados'}` });
     }
