@@ -28,13 +28,19 @@ const HOUR = 3_600_000;
 const TTL = { fixtures: 12 * HOUR, standings: 6 * HOUR, form: 12 * HOUR, h2h: 12 * HOUR };
 const WINDOW = 3 * HOUR; // kick-off difference allowed between our event and the GOAL API fixture
 const MAX_PAGES = 30;
+const AHEAD = 8 * 24 * HOUR; // games are looked up up to 8 days ahead
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 const loose = (name) => teamKey('', name).slice(1);
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
+// Reserve, youth and women's sides: "Ajax II" is never "Ajax".
+const SIDE = /\b(ii|iii|b|u\d{2}|w|women|fem|feminin[ao]?|reserves?|youth|juniors?|sub ?\d{2})\b/;
+const sideMark = (name) => (SIDE.exec(loose(name)) || [''])[0];
+
 /** Whether a GOAL API team name is our team (same name, or the only close fit among the candidates). */
 function fits(ours, theirs, candidates) {
+  if (sideMark(ours) !== sideMark(theirs)) return false;
   const mine = new Set(nameVariants(ours).map(loose));
   if (nameVariants(theirs).map(loose).some((n) => n && mine.has(n))) return true;
   return closeName(ours, candidates.map((name) => ({ name, logo: name })))?.name === theirs;
@@ -43,14 +49,25 @@ function fits(ours, theirs, candidates) {
 // Club words that tell nothing ("FC", "United"...) are left out of the loose comparison.
 const NOISE = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'sl', 'fk', 'sk', 'bk', 'if', 'sv', 'club', 'de', 'la', 'the', 'real', 'united', 'utd', 'city', 'sporting', 'atletico', 'athletic', 'inter']);
 const tokens = (name) => loose(name).split(' ').filter((w) => w.length >= 3 && !NOISE.has(w));
-/** A loose fit: one telling word of each name starts the same ("Man Utd" ~ "Manchester United", "Wolves" ~ "Wolverhampton"). */
 const KIND = { united: 'united', utd: 'united', city: 'city', town: 'town', county: 'county', rovers: 'rovers', albion: 'albion', athletic: 'athletic', wanderers: 'wanderers' };
 const kinds = (name) => new Set(loose(name).split(' ').map((w) => KIND[w]).filter(Boolean));
 const clash = (a, b) => { const ka = kinds(a); const kb = kinds(b); return ka.size > 0 && kb.size > 0 && ![...ka].some((k) => kb.has(k)); };
-const near = (ours, theirs) => !clash(ours, theirs) && tokens(ours).some((a) => tokens(theirs).some((b) => a.startsWith(b) || b.startsWith(a) || (a.slice(0, 4) === b.slice(0, 4) && a.length >= 4)));
+/** A loose fit: one telling word of each name starts the same ("Man Utd" ~ "Manchester United", "Wolves" ~ "Wolverhampton"). */
+const near = (ours, theirs) => !clash(ours, theirs) && sideMark(ours) === sideMark(theirs) && tokens(ours).some((a) => tokens(theirs).some((b) => a.startsWith(b) || b.startsWith(a) || (a.slice(0, 4) === b.slice(0, 4) && a.length >= 4)));
+
+/** One name is the other with words added ("Rodez Aveyron" ~ "Rodez", "EC Vitoria Salvador" ~ "Vitória"). */
+const subset = (ours, theirs) => {
+  if (clash(ours, theirs) || sideMark(ours) !== sideMark(theirs)) return false;
+  const a = tokens(ours);
+  const b = tokens(theirs);
+  if (!a.length || !b.length) return false;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.every((w) => long.some((x) => x === w || (w.length >= 5 && (x.startsWith(w) || w.startsWith(x)))));
+};
 
 /** The fixture of our event among a day's fixtures: kick-off within 3 h (closest first) and both teams the
- * same; or, when nothing fits that way, the only fixture where one team is the same and the other a loose fit. */
+ * same; else the only fixture where one team is the same and the other a loose fit; else the only fixture
+ * kicking off within 45 min where each name is the other with words added or left out. */
 export function findFixture(ev, fixtures) {
   const at = Date.parse(ev.start_time);
   if (!Number.isFinite(at)) return null;
@@ -60,7 +77,9 @@ export function findFixture(ev, fixtures) {
   const sure = close.find((f) => fits(ev.home, f.home.name, homes) && fits(ev.away, f.away.name, aways));
   if (sure) return sure;
   const maybe = close.filter((f) => (fits(ev.home, f.home.name, homes) && near(ev.away, f.away.name)) || (fits(ev.away, f.away.name, aways) && near(ev.home, f.home.name)));
-  return maybe.length === 1 ? maybe[0] : null;
+  if (maybe.length) return maybe.length === 1 ? maybe[0] : null;
+  const both = close.filter((f) => Math.abs(f.ko - at) <= 45 * 60_000 && subset(ev.home, f.home.name) && subset(ev.away, f.away.name));
+  return both.length === 1 ? both[0] : null;
 }
 
 // Kick-off: kickoffUtc; else matchDate + matchTime (taken as UTC).
@@ -83,6 +102,7 @@ const compactFixture = (f) => {
   const leagueId = f.leagueId ?? f.league?.id ?? f.league_id;
   return {
     id: String(id), ko, leagueId: leagueId ? String(leagueId) : null, league: f.leagueName || f.league?.name || f.league_name || null,
+    country: f.countryName || f.country_name || null,
     home: { id: home.id ? String(home.id) : null, name: String(home.name) },
     away: { id: away.id ? String(away.id) : null, name: String(away.name) },
   };
@@ -231,7 +251,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
 
   const candidatesFor = async (ev) => {
     const at = Date.parse(ev.start_time);
-    if (!Number.isFinite(at) || Math.abs(at - Date.now()) > 3 * 24 * HOUR) return [];
+    if (!Number.isFinite(at) || at < Date.now() - 12 * HOUR || at > Date.now() + AHEAD) return [];
     const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
     return (await Promise.all(dates.map(fixturesOn))).flat();
   };
@@ -289,24 +309,42 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       steps.push({ name: 'Última lista pedida', ok: lastPaging.items > 0,
         detail: `${lastPaging.pages} página(s), ${lastPaging.items} jogos · paginação: ${JSON.stringify(lastPaging.pagination)} · campos: ${lastPaging.keys.join(', ')}` });
     }
-    // Our football games of big and medium leagues in the next 2 days: which ones found their GOAL API game.
+    // Big and medium leagues GOAL API has today and in the next days (from the kept lists).
+    const lists = [];
+    for (let d = 0; d < 3; d += 1) lists.push(...await fixturesOn(day(Date.now() + d * 24 * HOUR)).catch(() => []));
+    const leagues = new Map();
+    for (const f of lists) {
+      const name = [f.country, f.league].filter(Boolean).join('. ');
+      if (leagueTier('futebol', name) <= 2) leagues.set(name, (leagues.get(name) || 0) + 1);
+    }
+    steps.push({ name: 'Ligas grandes e médias na GOAL API (hoje + 2 dias)', ok: leagues.size > 0,
+      detail: [...leagues].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} (${c})`).join(' · ') || 'nenhuma' });
+    // Our football games of big and medium leagues in the next 7 days: which ones found their GOAL API game.
     const ours = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
-      WHERE sport = 'futebol' AND status IN ('scheduled', 'live') AND start_time >= ? AND start_time <= ? ORDER BY start_time LIMIT 400`)
-      .all(new Date(Date.now() - 3 * HOUR).toISOString(), new Date(Date.now() + 48 * HOUR).toISOString()).filter(covers);
+      WHERE sport = 'futebol' AND status IN ('scheduled', 'live') AND start_time >= ? AND start_time <= ? ORDER BY start_time LIMIT 600`)
+      .all(new Date(Date.now() - 3 * HOUR).toISOString(), new Date(Date.now() + 7 * 24 * HOUR).toISOString()).filter(covers);
     let found = 0;
-    const misses = [];
+    let sample = null;
+    const misses = new Map();
     for (const ev of ours) {
       const fx = await link(ev).catch(() => null);
-      if (fx) { found += 1; continue; }
-      if (misses.length >= 8) continue;
+      if (fx) { found += 1; if (!sample || leagueTier('futebol', ev.competition) < leagueTier('futebol', sample.competition)) sample = ev; continue; }
+      const key = `${ev.home} - ${ev.away}`;
+      if (misses.has(key) || misses.size >= 10) continue;
       const at = Date.parse(ev.start_time);
-      const near = (await candidatesFor(ev).catch(() => [])).filter((f) => Math.abs(f.ko - at) <= WINDOW);
-      const same = near.filter((f) => [f.home.name, f.away.name].some((n) => [ev.home, ev.away].some((o) => loose(n).includes(loose(o).split(' ')[0]) || loose(o).includes(loose(n).split(' ')[0]))));
-      misses.push(`${ev.home} - ${ev.away} (${ev.start_time.slice(5, 16).replace('T', ' ')} UTC, ${ev.competition}) → ${near.length} jogos GOAL à mesma hora`
-        + (same.length ? `; parecidos: ${same.slice(0, 2).map((f) => `${f.home.name} - ${f.away.name} ${new Date(f.ko).toISOString().slice(11, 16)}`).join(' | ')}` : ''));
+      const close = (await candidatesFor(ev).catch(() => [])).filter((f) => Math.abs(f.ko - at) <= WINDOW);
+      const same = close.filter((f) => [f.home.name, f.away.name].some((n) => [ev.home, ev.away].some((o) => loose(n).includes(loose(o).split(' ')[0]) || loose(o).includes(loose(n).split(' ')[0]))));
+      misses.set(key, `${key} (${ev.start_time.slice(5, 16).replace('T', ' ')} UTC, ${ev.competition}) → ${close.length} jogos GOAL à mesma hora`
+        + (same.length ? `; parecidos: ${same.slice(0, 2).map((f) => `${f.home.name} - ${f.away.name} ${new Date(f.ko).toISOString().slice(11, 16)}`).join(' | ')}` : '; nenhum parecido'));
     }
-    steps.push({ name: 'Jogos nossos ligados (ligas grandes e médias, 48 h)', ok: found > 0, detail: `${found} de ${ours.length}` });
-    for (const m of misses) steps.push({ name: 'Sem ligação', ok: false, detail: m });
+    steps.push({ name: 'Jogos nossos ligados (ligas grandes e médias, 7 dias)', ok: found > 0, detail: `${found} de ${ours.length}` });
+    for (const m of misses.values()) steps.push({ name: 'Sem ligação', ok: false, detail: m });
+    // One linked game of the biggest league: what the match page gets.
+    if (sample) {
+      const r = await insights(sample).catch(() => ({}));
+      steps.push({ name: `Exemplo: ${sample.home} - ${sample.away}`, ok: Boolean(r.h2h || r.standings || r.form),
+        detail: `H2H: ${r.h2h ? `${r.h2h.total} jogos` : 'sem dados'} · Classificação: ${r.standings ? `${r.standings.rows.length} equipas` : 'sem dados'} · Últimos 5: ${r.form ? 'sim' : 'sem dados'}` });
+    }
     return steps;
   }
 

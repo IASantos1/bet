@@ -24,6 +24,11 @@ test('our event is matched by kick-off time and both team names', () => {
   assert.equal(findFixture(ev('Man Utd', 'Chelsea'), more)?.id, '4');
   assert.equal(findFixture(ev('Wolves', 'Everton'), more)?.id, '5');
   assert.equal(findFixture(ev('Man Utd', 'Arsenal'), more), null, 'United is not City');
+  // Both names shorter on one side (same kick-off); a reserve side is never the first team.
+  const short = [fx('7', 'Rodez', 'Montpellier'), fx('8', 'Corinthians', 'Vitória', ko.getTime() + 30 * 60_000), fx('9', 'Ajax II', 'De Graafschap')].map(compact);
+  assert.equal(findFixture(ev('Rodez Aveyron', 'Montpellier HSC'), short)?.id, '7');
+  assert.equal(findFixture(ev('Corinthians Paulista', 'EC Vitoria Salvador'), short)?.id, '8');
+  assert.equal(findFixture(ev('Ajax', 'De Graafschap'), short), null);
   // Kick-off off by up to 3 h still matches (the closest one).
   assert.equal(findFixture(ev('Barcelona', 'Sevilla', { start_time: new Date(ko.getTime() + 3 * HOUR).toISOString() }), list)?.id, '3');
 });
