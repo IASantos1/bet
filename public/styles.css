@@ -578,7 +578,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .form-sum { display: flex; gap: 6px; margin-bottom: 6px; }
 .fr { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 12px; font-weight: 800; color: #fff; flex: none; }
 .fr.W { background: var(--up); } .fr.D { background: var(--text-4); } .fr.L { background: var(--down); }
-table.standings td, table.standings th { padding: 7px 6px; font-size: 12px; }
+table.standings { width: 100%; table-layout: fixed; }
+table.standings td, table.standings th { padding: 6px 3px; font-size: 11px; }
+table.standings th:nth-child(1), table.standings td:nth-child(1) { width: 22px; }
+table.standings th:nth-child(n+3), table.standings td:nth-child(n+3) { width: 30px; }
+table.standings th:nth-child(7), table.standings td:nth-child(7) { width: 42px; }
+table.standings .st-team { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.standings .fr { min-width: 20px; height: 18px; padding: 0 4px; font-size: 11px; border-radius: 5px; }
 table.standings tr.ours td { background: var(--row-hover); font-weight: 700; }
 .insight-stack .panel h3, .match-body .panel h3 { margin: 0 0 12px; font-size: 14px; }
 .split-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--row-hover); margin: 10px 0; }

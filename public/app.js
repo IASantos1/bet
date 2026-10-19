@@ -4061,8 +4061,10 @@ function standingsView(e, t) {
   const key = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const side = (r) => r.side || (key(r.team) === key(e.home) ? 'home' : key(r.team) === key(e.away) ? 'away' : null);
   return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3><div class="table-wrap"><table class="standings">
-    <thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num">V</th><th class="num">E</th><th class="num">D</th><th class="num">GM-GS</th><th class="num">Pts</th></tr></thead>
-    <tbody>${t.rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td>${esc(r.team)}</td><td class="num">${r.played ?? ''}</td><td class="num">${r.won ?? ''}</td><td class="num">${r.drawn ?? ''}</td><td class="num">${r.lost ?? ''}</td><td class="num">${r.goalsFor ?? ''}-${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td></tr>`).join('')}</tbody>
+    <thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num"><span class="fr W">V</span></th><th class="num"><span class="fr D">E</span></th><th class="num"><span class="fr L">D</span></th><th class="num">G</th><th class="num">Pts</th></tr></thead>
+    <tbody>${t.rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td class="st-team">${esc(r.team)}</td><td class="num">${r.played ?? ''}</td>
+      <td class="num"><span class="fr W">${r.won ?? 0}</span></td><td class="num"><span class="fr D">${r.drawn ?? 0}</span></td><td class="num"><span class="fr L">${r.lost ?? 0}</span></td>
+      <td class="num">${r.goalsFor ?? ''}-${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td></tr>`).join('')}</tbody>
   </table></div></div>`;
 }
 
