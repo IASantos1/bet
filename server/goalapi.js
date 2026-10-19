@@ -25,7 +25,7 @@ import { leagueTier } from './leagues.js';
 import { closeName, nameVariants, teamKey } from './teamlogos.js';
 
 const HOUR = 3_600_000;
-const TTL = { fixtures: 12 * HOUR, standings: 6 * HOUR, form: 12 * HOUR, h2h: 12 * HOUR, noMatch: 6 * HOUR, link: 30 * 24 * HOUR };
+const TTL = { fixtures: 12 * HOUR, standings: 6 * HOUR, form: 12 * HOUR, h2h: 12 * HOUR };
 const WINDOW = 3 * HOUR; // kick-off difference allowed between our event and the GOAL API fixture
 const MAX_PAGES = 30;
 
@@ -40,25 +40,56 @@ function fits(ours, theirs, candidates) {
   return closeName(ours, candidates.map((name) => ({ name, logo: name })))?.name === theirs;
 }
 
-/** The fixture of our event among a day's fixtures: kick-off within 3 h (closest first), both teams the same. */
+// Club words that tell nothing ("FC", "United"...) are left out of the loose comparison.
+const NOISE = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'sl', 'fk', 'sk', 'bk', 'if', 'sv', 'club', 'de', 'la', 'the', 'real', 'united', 'utd', 'city', 'sporting', 'atletico', 'athletic', 'inter']);
+const tokens = (name) => loose(name).split(' ').filter((w) => w.length >= 3 && !NOISE.has(w));
+/** A loose fit: one telling word of each name starts the same ("Man Utd" ~ "Manchester United", "Wolves" ~ "Wolverhampton"). */
+const KIND = { united: 'united', utd: 'united', city: 'city', town: 'town', county: 'county', rovers: 'rovers', albion: 'albion', athletic: 'athletic', wanderers: 'wanderers' };
+const kinds = (name) => new Set(loose(name).split(' ').map((w) => KIND[w]).filter(Boolean));
+const clash = (a, b) => { const ka = kinds(a); const kb = kinds(b); return ka.size > 0 && kb.size > 0 && ![...ka].some((k) => kb.has(k)); };
+const near = (ours, theirs) => !clash(ours, theirs) && tokens(ours).some((a) => tokens(theirs).some((b) => a.startsWith(b) || b.startsWith(a) || (a.slice(0, 4) === b.slice(0, 4) && a.length >= 4)));
+
+/** The fixture of our event among a day's fixtures: kick-off within 3 h (closest first) and both teams the
+ * same; or, when nothing fits that way, the only fixture where one team is the same and the other a loose fit. */
 export function findFixture(ev, fixtures) {
   const at = Date.parse(ev.start_time);
   if (!Number.isFinite(at)) return null;
-  const near = fixtures.filter((f) => Math.abs(f.ko - at) <= WINDOW).sort((a, b) => Math.abs(a.ko - at) - Math.abs(b.ko - at));
-  const homes = near.map((f) => f.home.name);
-  const aways = near.map((f) => f.away.name);
-  return near.find((f) => fits(ev.home, f.home.name, homes) && fits(ev.away, f.away.name, aways)) || null;
+  const close = fixtures.filter((f) => Math.abs(f.ko - at) <= WINDOW).sort((a, b) => Math.abs(a.ko - at) - Math.abs(b.ko - at));
+  const homes = close.map((f) => f.home.name);
+  const aways = close.map((f) => f.away.name);
+  const sure = close.find((f) => fits(ev.home, f.home.name, homes) && fits(ev.away, f.away.name, aways));
+  if (sure) return sure;
+  const maybe = close.filter((f) => (fits(ev.home, f.home.name, homes) && near(ev.away, f.away.name)) || (fits(ev.away, f.away.name, aways) && near(ev.home, f.home.name)));
+  return maybe.length === 1 ? maybe[0] : null;
 }
 
+// Kick-off: kickoffUtc; else matchDate + matchTime (taken as UTC).
+const kickoff = (f) => {
+  const iso = Date.parse(f.kickoffUtc || f.kickoff || '');
+  if (Number.isFinite(iso)) return iso;
+  const d = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(f.matchDate || f.date || ''));
+  const t = /^(\d{1,2}):(\d{2})/.exec(String(f.matchTime || f.time || ''));
+  return d && t ? Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]) : NaN;
+};
+const team = (t, name, id) => (t && typeof t === 'object' ? { id: t.id ?? id, name: t.name ?? name } : { id, name: typeof t === 'string' ? t : name });
+
 const compactFixture = (f) => {
-  const ko = Date.parse(f.kickoffUtc || '');
-  if (!f?.id || !Number.isFinite(ko) || !f.homeTeam?.name || !f.awayTeam?.name) return null;
+  if (!f || typeof f !== 'object') return null;
+  const ko = kickoff(f);
+  const home = team(f.homeTeam, f.homeTeamName || f.match_hometeam_name, f.homeTeamId || f.match_hometeam_id);
+  const away = team(f.awayTeam, f.awayTeamName || f.match_awayteam_name, f.awayTeamId || f.match_awayteam_id);
+  const id = f.id ?? f.fixtureId ?? f.match_id;
+  if (!id || !Number.isFinite(ko) || !home.name || !away.name) return null;
+  const leagueId = f.leagueId ?? f.league?.id ?? f.league_id;
   return {
-    id: String(f.id), ko, leagueId: f.leagueId ? String(f.leagueId) : null, league: f.leagueName || null,
-    home: { id: f.homeTeam.id ? String(f.homeTeam.id) : null, name: f.homeTeam.name },
-    away: { id: f.awayTeam.id ? String(f.awayTeam.id) : null, name: f.awayTeam.name },
+    id: String(id), ko, leagueId: leagueId ? String(leagueId) : null, league: f.leagueName || f.league?.name || f.league_name || null,
+    home: { id: home.id ? String(home.id) : null, name: String(home.name) },
+    away: { id: away.id ? String(away.id) : null, name: String(away.name) },
   };
 };
+
+// The list in an answer: data itself, or data.fixtures / data.items / data.data.
+const listOf = (data) => (Array.isArray(data) ? data : ['fixtures', 'items', 'data', 'results'].map((k) => data?.[k]).find(Array.isArray) || []);
 
 /** Head-to-head of our two teams, in the shape of the match page (home/away as in our event). */
 export function normalizeH2H(raw, ev) {
@@ -152,12 +183,24 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     return body;
   }
 
+  // Every page (100 a page). When the answer does not say whether there is more, a full page means
+  // there may be; a page that repeats the previous one (offset ignored) ends it.
+  let lastPaging = null;
   async function fetchAll(path) {
     const out = [];
+    let prevFirst = null;
     for (let page = 0, offset = 0; page < MAX_PAGES; page += 1, offset += 100) {
       const body = await request(`${path}${path.includes('?') ? '&' : '?'}limit=100&offset=${offset}`);
-      if (Array.isArray(body.data)) out.push(...body.data);
-      if (!body.pagination?.hasMore) break;
+      const list = listOf(body.data);
+      const pg = body.pagination || body.data?.pagination || body.meta || null;
+      lastPaging = { pages: page + 1, items: out.length + list.length, pagination: pg, keys: list[0] ? Object.keys(list[0]).slice(0, 25) : [] };
+      const first = list[0] ? JSON.stringify(list[0]).slice(0, 200) : null;
+      if (!list.length || (first && first === prevFirst)) break;
+      prevFirst = first;
+      out.push(...list);
+      const more = pg?.hasMore ?? pg?.has_more ?? pg?.hasNext ?? (Number.isFinite(Number(pg?.total)) ? offset + list.length < Number(pg.total)
+        : Number.isFinite(Number(pg?.totalPages)) ? page + 1 < Number(pg.totalPages) : list.length >= 100);
+      if (!more) break;
     }
     return out;
   }
@@ -186,20 +229,21 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   const fixturesOn = (date) => cached(`fixtures:${date}`, TTL.fixtures,
     async () => (await fetchAll(`/fixtures/date/${date}`)).map(compactFixture).filter(Boolean));
 
-  /** The GOAL API fixture of our event (kept once found), or null. */
+  const candidatesFor = async (ev) => {
+    const at = Date.parse(ev.start_time);
+    if (!Number.isFinite(at) || Math.abs(at - Date.now()) > 3 * 24 * HOUR) return [];
+    const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
+    return (await Promise.all(dates.map(fixturesOn))).flat();
+  };
+
+  /** The GOAL API fixture of our event (kept once found), or null. No match is not kept: matching
+   * against the kept day lists costs no request, and a later list (or a fix) may find it. */
   async function link(ev) {
     const name = `link:${ev.id}`;
     const row = cacheGet.get(name);
-    if (row) {
-      const fx = JSON.parse(row.body);
-      if (fx || Date.now() - row.fetched_at < TTL.noMatch) return fx;
-    }
-    const at = Date.parse(ev.start_time);
-    if (!Number.isFinite(at) || Math.abs(at - Date.now()) > 3 * 24 * HOUR) return null;
-    const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
-    const fixtures = (await Promise.all(dates.map(fixturesOn))).flat();
-    const fx = findFixture(ev, fixtures);
-    cacheSet.run(name, JSON.stringify(fx), Date.now());
+    if (row) { const fx = JSON.parse(row.body); if (fx) return fx; }
+    const fx = findFixture(ev, await candidatesFor(ev));
+    if (fx) cacheSet.run(name, JSON.stringify(fx), Date.now());
     return fx;
   }
 
@@ -241,10 +285,33 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     } catch (err) {
       steps.push({ name: 'Jogos de hoje na GOAL API', ok: false, detail: err.message });
     }
-    const linked = db.prepare("SELECT COUNT(*) AS n FROM goal_cache WHERE key LIKE 'link:%' AND body != 'null'").get().n;
-    steps.push({ name: 'Jogos nossos ligados', ok: true, detail: String(linked) });
+    if (lastPaging) {
+      steps.push({ name: 'Última lista pedida', ok: lastPaging.items > 0,
+        detail: `${lastPaging.pages} página(s), ${lastPaging.items} jogos · paginação: ${JSON.stringify(lastPaging.pagination)} · campos: ${lastPaging.keys.join(', ')}` });
+    }
+    // Our football games of big and medium leagues in the next 2 days: which ones found their GOAL API game.
+    const ours = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+      WHERE sport = 'futebol' AND status IN ('scheduled', 'live') AND start_time >= ? AND start_time <= ? ORDER BY start_time LIMIT 400`)
+      .all(new Date(Date.now() - 3 * HOUR).toISOString(), new Date(Date.now() + 48 * HOUR).toISOString()).filter(covers);
+    let found = 0;
+    const misses = [];
+    for (const ev of ours) {
+      const fx = await link(ev).catch(() => null);
+      if (fx) { found += 1; continue; }
+      if (misses.length >= 8) continue;
+      const at = Date.parse(ev.start_time);
+      const near = (await candidatesFor(ev).catch(() => [])).filter((f) => Math.abs(f.ko - at) <= WINDOW);
+      const same = near.filter((f) => [f.home.name, f.away.name].some((n) => [ev.home, ev.away].some((o) => loose(n).includes(loose(o).split(' ')[0]) || loose(o).includes(loose(n).split(' ')[0]))));
+      misses.push(`${ev.home} - ${ev.away} (${ev.start_time.slice(5, 16).replace('T', ' ')} UTC, ${ev.competition}) → ${near.length} jogos GOAL à mesma hora`
+        + (same.length ? `; parecidos: ${same.slice(0, 2).map((f) => `${f.home.name} - ${f.away.name} ${new Date(f.ko).toISOString().slice(11, 16)}`).join(' | ')}` : ''));
+    }
+    steps.push({ name: 'Jogos nossos ligados (ligas grandes e médias, 48 h)', ok: found > 0, detail: `${found} de ${ours.length}` });
+    for (const m of misses) steps.push({ name: 'Sem ligação', ok: false, detail: m });
     return steps;
   }
 
-  return { enabled, covers, insights, link, status, diagnose };
+  /** Forgets the kept day lists (the next look asks GOAL API again). */
+  const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
+
+  return { enabled, covers, insights, link, status, diagnose, refresh };
 }

@@ -2045,6 +2045,7 @@ export function createApp(db, {
   });
 
   // GOAL API (match statistics): the key, today's requests, a real call.
+  admin.post('/goal-api/refresh', (_req, res) => res.json({ cleared: goalApi?.refresh() || 0 }));
   admin.post('/goal-api/check', async (_req, res, next) => {
     try { res.json({ steps: goalApi ? await goalApi.diagnose() : [{ name: 'GOAL API', ok: false, detail: 'não iniciada' }] }); }
     catch (err) { next(err); }
