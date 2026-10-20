@@ -950,6 +950,7 @@ function adminFeed(f) {
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : `<p class="muted">Bzzoiro desligado (sem <strong>BZZOIRO_API_TOKEN</strong>).</p>`}
   </div>
+  ${f.winhouse?.feed?.health ? `<div class="panel">${winhouseHealthPanel(f.winhouse.feed.health)}</div>` : ''}
   <div class="panel">${winhousePanel(f.winhouse)}</div>
   <div class="panel"><h3>Emblemas das equipas</h3>
     <p class="muted">Logos oficiais do API-Football (chave <strong>API_FOOTBALL_KEY</strong>), guardados aqui de vez: as ligas principais vêm inteiras num pedido cada, e as outras equipas são procuradas pelo nome. Cores das camisolas do TheSportsDB.</p>
@@ -1000,6 +1001,37 @@ function winhouseFeedInfo(fd) {
 function futureUntil(f) {
   const parts = Object.entries(f.bySport || {}).filter(([, v]) => v.until).map(([k, v]) => `${k} até ${esc(new Date(v.until).toLocaleDateString('pt-PT'))}`);
   return parts.length ? ` — ${parts.join(', ')}` : '';
+}
+
+// Is WinHouse up: state now, availability, the last 24 h in 15-min slots and the outages of the week.
+const WH_STATE = {
+  online: ['won', '🟢 Online'], instavel: ['void', '🟡 Instável'], em_baixo: ['lost', '🔴 Em baixo'], sem_leituras: ['', '⚪ Sem leituras'],
+};
+const minutesAgo = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60_000); return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)} h ${m % 60} min`; };
+const durationText = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`);
+function winhouseHealthPanel(h) {
+  if (!h) return '';
+  const [cls, label] = WH_STATE[h.state] || WH_STATE.sem_leituras;
+  const since = h.state === 'em_baixo' && h.since ? ` desde ${esc(fmtDateTime(h.since))} (${minutesAgo(h.since)})`
+    : h.state === 'online' && h.since ? ` · última queda terminou ${minutesAgo(h.since)}` : '';
+  const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')}%`);
+  const cells = h.timeline.map((t) => `<i class="whh-${t.state}" title="${esc(fmtDateTime(t.at))}"></i>`).join('');
+  const outages = h.outages.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Início</th><th>Fim</th><th>Duração</th><th>Erro</th></tr></thead><tbody>
+      ${h.outages.map((o) => `<tr><td>${esc(fmtDateTime(o.startedAt))}</td><td>${o.endedAt ? esc(fmtDateTime(o.endedAt)) : '<span class="pill lost">ainda em baixo</span>'}</td>
+        <td>${esc(durationText(o.minutes))}</td><td class="muted">${esc(o.error || '')}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">Nenhuma queda nos últimos 7 dias.</p>';
+  return `<h3>Estado da WinHouse <span class="pill ${cls}">${label}</span></h3>
+    <p>${label}${since}</p>
+    <p class="muted">Última resposta: ${h.lastOkAt ? `${esc(fmtDateTime(h.lastOkAt))} (${minutesAgo(h.lastOkAt)})` : '—'} ·
+      tempo médio de resposta (1 h): ${h.avgMs !== null ? `${h.avgMs} ms` : '—'} ·
+      disponível 24 h: <strong>${pct(h.uptime24h)}</strong> · 7 dias: <strong>${pct(h.uptime7d)}</strong>
+      ${h.lastError ? `<br>Último erro (${esc(fmtDateTime(h.lastFailAt))}): ${esc(h.lastError)}` : ''}</p>
+    <div class="whh-bar">${cells}</div>
+    <div class="whh-ends"><span>há 24 h</span><span>agora</span></div>
+    <div class="whh-legend"><span><i class="whh-ok"></i>a funcionar</span><span><i class="whh-partial"></i>com falhas</span><span><i class="whh-down"></i>em baixo</span><span><i class="whh-none"></i>sem leituras</span></div>
+    <h4>Quedas (7 dias)</h4>${outages}
+    <p class="muted">A leitura dos jogos ao vivo corre a cada 15 s; 3 falhas seguidas contam como queda, que termina na primeira resposta boa.</p><br>`;
 }
 
 function winhousePanel(w) {
