@@ -383,7 +383,8 @@ function sideBadge(e, side, size = '') {
   // No badge: the team's real kit picture (the drawn shirt if it does not load).
   const kitImg = e[`${side}KitImg`];
   if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
-  return teamBadge(logo, e[side], flag ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`], e[`${side}LogoAlt`]);
+  // Player photos (and any player picture) are round.
+  return teamBadge(logo, e[side], flag || solo ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`], e[`${side}LogoAlt`]);
 }
 
 function matchCard(e, extraClass = '') {
