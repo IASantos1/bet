@@ -6,6 +6,7 @@ import { nowIso, tx } from './db.js';
 import { settleEvent, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
 import { normalizeWidgetData, redCardsOf, spotVar } from './whtracker.js';
+import { createWinHouseHealth } from './whhealth.js';
 
 // WinHouse — data source being evaluated to replace / complement the odds providers.
 //
@@ -901,6 +902,8 @@ export function createWinHouseFeed(db, {
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
   };
   const offset = () => state.offset ?? 0;
+  // Is WinHouse up? Every read of the live list is noted (admin: availability, outages).
+  const health = createWinHouseHealth(db);
   // Every market of a game comes from its own page (prematchgame/{id}); the lists carry 2–3.
   // Page prices are kept here and merged under the lists' (fresher) ones when prices are written.
   const listPrices = new Map(); // externalId → prices from the last pre-match lists
@@ -1165,7 +1168,10 @@ export function createWinHouseFeed(db, {
   let liveListAt = null; // when that list was read
   /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
   async function syncLive() {
-    const r = await client.live();
+    const t0 = Date.now();
+    let r;
+    try { r = await client.live(); } catch (err) { health.note(false, Date.now() - t0, err.message); throw err; }
+    health.note(r.ok, Date.now() - t0, r.ok ? null : `HTTP ${r.status}`);
     if (!r.ok) throw new Error(`livegames HTTP ${r.status}`);
     const items = eventsOf(r.body);
     mergeTwins();
@@ -1778,6 +1784,7 @@ export function createWinHouseFeed(db, {
     streams: client.hasTenant ? (state.last.streams || null) : false,
     push: { socket: oddsPush?.status() ?? null, ...pushStats, tracked: coefIndex.size, games: eventCoefs.size },
     futureDays: futureDaysNow(), futureMinutes, restored: state.restored ?? null,
+    health: health.summary(),
   });
 
   return {

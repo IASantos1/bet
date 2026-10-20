@@ -708,3 +708,14 @@
 }
 .cp-count { margin: 4px 0 12px; color: var(--text-2); }
 #cpForm [hidden] { display: none; }
+
+/* WinHouse availability: the last 24 h in 15-minute slots */
+.whh-bar { display: grid; grid-template-columns: repeat(96, 1fr); gap: 1px; height: 26px; margin: 10px 0 4px; }
+.whh-bar i { border-radius: 2px; }
+.whh-ok { background: #3ad199; }
+.whh-partial { background: #ebc979; }
+.whh-down { background: #f05263; }
+.whh-none { background: rgba(132, 156, 180, .25); }
+.whh-ends { display: flex; justify-content: space-between; font-size: 11px; color: #8798aa; }
+.whh-legend { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 11px; color: #8798aa; margin: 8px 0 12px; }
+.whh-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
