@@ -595,3 +595,15 @@ test('maintenance screen: switched in the admin, shown in the config, bets pause
   assert.equal((await p('GET', '/api/config')).body.maintenance, null);
   assert.equal((await bet(p)).status, 201);
 });
+
+test('a WinHouse game in play that no live read confirmed for a while is not on the board', async () => {
+  const now = new Date().toISOString();
+  const old = new Date(Date.now() - 10 * 60_000).toISOString();
+  const add = (ext, seen) => Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, wh_seen_at, created_at, updated_at)
+    VALUES ('futebol', 'Liga', ?, 'B', ?, 'live', 'winhouse', ?, ?, ?, ?)`).run(`A${ext}`, now, ext, seen, now, now).lastInsertRowid);
+  const fresh = add('wh-fresh', now);
+  const frozen = add('wh-frozen', old);
+  const ids = (await client()('GET', '/api/events?status=live')).body.events.map((e) => e.id);
+  assert.ok(ids.includes(fresh));
+  assert.ok(!ids.includes(frozen));
+});

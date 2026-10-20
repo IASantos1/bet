@@ -1349,7 +1349,12 @@ export function createWinHouseFeed(db, {
         }
         continue;
       }
-      const v = finishVerdict(row);
+      // WinHouse was down between the last time the game was listed and now: the last score seen may
+      // be out of date (a late goal), so it is confirmed (tracker or operator), never settled on it.
+      const seenAt = Date.parse(row.wh_seen_at || '');
+      const v = Number.isFinite(seenAt) && health.downBetween(seenAt, now)
+        ? { review: `WinHouse esteve em baixo desde o último placar visto (${new Date(seenAt).toISOString().slice(11, 16)} UTC): resultado a confirmar` }
+        : finishVerdict(row);
       tx(db, () => {
         if (v.review) {
           db.prepare('UPDATE events SET review_reason = ? WHERE id = ?').run(`WinHouse: ${v.review} (placar ${row.home_score}-${row.away_score})`, row.id);
@@ -1564,10 +1569,21 @@ export function createWinHouseFeed(db, {
    * Every minute: the three pre-match lists → upcoming matches and their prices; every
    * `futureMinutes` (or when `force`) also each sport's full list, for games up to `futureDays` ahead.
    */
+  function closeStalePrematch(now) {
+    const stale = new Date(now - Math.max(prematchStaleSeconds, futureMinutes * 90) * 1000).toISOString();
+    db.prepare(`UPDATE selections SET active = 0 WHERE event_id IN (SELECT id FROM events WHERE source = ? AND status = 'scheduled' AND (wh_seen_at IS NULL OR wh_seen_at < ?))`)
+      .run(SOURCE, stale);
+  }
+
   async function syncPrematch({ force = false } = {}) {
     const lists = await Promise.all([client.prematchMain(), client.prematchTop(), client.prematch24h()].map((p) => p.catch((err) => ({ ok: false, error: err.message }))));
     const failed = lists.filter((r) => !r.ok);
-    if (failed.length === lists.length) throw new Error(`pré-jogo: ${failed.map((r) => r.error || `HTTP ${r.status}`).join(' · ')}`);
+    if (failed.length === lists.length) {
+      // WinHouse down: pre-match prices it has not confirmed for a while close all the same (they
+      // would otherwise stay open at old prices for as long as it is down); they reopen with it.
+      closeStalePrematch(Date.now());
+      throw new Error(`pré-jogo: ${failed.map((r) => r.error || `HTTP ${r.status}`).join(' · ')}`);
+    }
     const byId = new Map();
     const days = futureDaysNow();
     if (days > 0 && client.prematchBySport && (force || Date.now() - futureAt >= futureMinutes * 60_000)) {
@@ -1606,9 +1622,7 @@ export function createWinHouseFeed(db, {
     }
     // Pre-match prices not confirmed by any list for a while are closed (the match left the lists).
     // Future games are confirmed every `futureMinutes`: their prices must outlive that gap.
-    const stale = new Date(now - Math.max(prematchStaleSeconds, futureMinutes * 90) * 1000).toISOString();
-    db.prepare(`UPDATE selections SET active = 0 WHERE event_id IN (SELECT id FROM events WHERE source = ? AND status = 'scheduled' AND (wh_seen_at IS NULL OR wh_seen_at < ?))`)
-      .run(SOURCE, stale);
+    closeStalePrematch(now);
     const removed = purgeBlocked();
     state.last.prematch = { at: nowIso(), games: byId.size, created, priced, listsFailed: failed.length, removed };
     return state.last.prematch;
@@ -1855,6 +1869,8 @@ export function createWinHouseFeed(db, {
 
   return {
     enabled: state.enabled, rawLive: (ext) => liveRaw.get(String(ext)) || null,
+    /** WinHouse's live list is down now (an outage is open). */
+    liveDown: () => health.down(),
     /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
     rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
     liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };

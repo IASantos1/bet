@@ -554,14 +554,20 @@ export function createApp(db, {
       rapidStream: !!rapidStream?.enabled,
       rapidKey: !!rapidStream,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
+      // WinHouse is down: the live page says why it has no games.
+      liveDown: !!winhouseFeed?.liveDown?.(),
     });
   });
 
   // A live game the feed no longer lists (WinHouse ended it) leaves the site within a minute, while
   // it waits to be settled (automatically, or by the operator in Liquidação). Its own page stays.
-  const NOT_GONE = "NOT (e.status = 'live' AND e.wh_missing_since IS NOT NULL AND e.wh_missing_since < ?)";
+  // A WinHouse game in play that no live read has confirmed for a while (WinHouse down) is not shown
+  // either: its clock and score would be frozen. It comes back with the next good read.
+  const NOT_GONE = `NOT (e.status = 'live' AND ((e.wh_missing_since IS NOT NULL AND e.wh_missing_since < ?)
+    OR (e.source = 'winhouse' AND e.wh_seen_at IS NOT NULL AND e.wh_seen_at < ?)))`;
   // A live match gone from the book's list leaves the board 20 s later (one missed read is tolerated).
   const goneBefore = () => new Date(Date.now() - 20_000).toISOString();
+  const unseenBefore = () => new Date(Date.now() - 150_000).toISOString();
 
   // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
   const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
@@ -592,7 +598,7 @@ export function createApp(db, {
     AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
     AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))
     AND ${NOT_GONE}`)
-    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore());
+    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore(), unseenBefore());
   // Team badges kept here (teamlogos.js: API-Football asks for its logos not to be fetched each time).
   app.get('/team-logo/:id', (req, res) => {
     const f = teamLogos?.file?.(req.params.id);
@@ -690,7 +696,7 @@ export function createApp(db, {
     // Imported fixtures stay hidden until the feed has priced them.
     clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
     clauses.push(NOT_GONE);
-    params.push(goneBefore());
+    params.push(goneBefore(), unseenBefore());
     res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 1500), serverTime: now });
   });
 

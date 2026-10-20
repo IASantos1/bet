@@ -875,8 +875,12 @@ function livePage() {
       <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
   }).join('');
   const empty = state.liveTv ? 'Nenhum jogo com transmissão ao vivo neste momento.' : 'Não há eventos ao vivo neste momento.';
+  // The live data provider is down: its games are hidden (they would show a frozen clock) until it is back.
+  const down = state.config?.liveDown
+    ? '<div class="panel live-down">⏳ <b>Jogos ao vivo temporariamente indisponíveis.</b> Estamos a receber os dados novamente — os jogos voltam a aparecer aqui em breve. As suas apostas estão guardadas.</div>' : '';
   return `<div class="page-title live-title"><div><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
       <button class="tv-toggle${state.liveTv ? ' active' : ''}" data-live-tv title="Só jogos com transmissão" aria-pressed="${state.liveTv}">${ICON_TV}<small>${tvCount}</small></button></div>
+    ${down}
     ${all.length ? strip : ''}
     ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? empty : 'A carregar…'}</div>`}
     ${footer()}`;
@@ -4629,6 +4633,11 @@ async function init() {
       if (JSON.stringify(c.maintenance || null) !== JSON.stringify(state.config?.maintenance || null)) {
         state.config = { ...state.config, maintenance: c.maintenance || null };
         showMaintenance(currentRoute().page);
+      }
+      // The live provider went down or came back: the live page says so.
+      if (!!c.liveDown !== !!state.config?.liveDown) {
+        state.config = { ...state.config, liveDown: !!c.liveDown };
+        if (currentRoute().page === 'ao-vivo') render({ keepScroll: true });
       }
     } catch { /* offline for a moment */ }
   }, 60_000);

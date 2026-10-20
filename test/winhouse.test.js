@@ -99,7 +99,7 @@ function setupFeed(lists) {
   const db = openDb(':memory:');
   const client = {
     enabled: true,
-    live: async () => ({ ok: true, status: 200, body: lists.live }),
+    live: async () => (lists.liveFail ? { ok: false, status: 502 } : { ok: true, status: 200, body: lists.live }),
     prematchMain: async () => ({ ok: true, status: 200, body: lists.pre || [] }),
     prematchTop: async () => ({ ok: true, status: 200, body: [] }),
     prematch24h: async () => ({ ok: false, status: 500 }),
@@ -1071,4 +1071,25 @@ test('a tennis match WinHouse still lists after a player won it', () => {
   assert.equal(setsToWin('tenis', 'US Open', 'A. Silva / C. Lopes', 'B. Costa / D. Reis'), 2);
   // Table tennis waits longer (some events are best of seven).
   assert.equal(listedButOver({ sport: 'tenismesa', homeScore: 3, awayScore: 1, minutes: null }, held(3, 1, 5)), null);
+});
+
+test('live: a game that ends while WinHouse is down is not settled on the old score, and the feed says it is down', async () => {
+  const lists = { live: [football(8, 89, '1-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(8, '1x2', '1');
+  assert.equal(t.feed.liveDown(), false);
+  // WinHouse down: three failed reads open an outage.
+  lists.liveFail = true;
+  for (let i = 0; i < 3; i += 1) await t.feed.syncLive().catch(() => {});
+  assert.equal(t.feed.liveDown(), true);
+  // Back, without the game (it ended meanwhile, maybe with a late goal): to be confirmed, not settled 1-0.
+  lists.liveFail = false;
+  lists.live = [];
+  await t.feed.syncLive();
+  assert.equal(t.feed.liveDown(), false);
+  await t.feed.syncLive();
+  assert.equal(t.row(8).status, 'live');
+  assert.match(t.row(8).review_reason, /em baixo/);
+  assert.equal(t.betStatus(onHome), 'open');
 });
