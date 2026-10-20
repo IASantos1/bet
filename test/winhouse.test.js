@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, listedButOver, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -1023,4 +1023,35 @@ test('a copy already taken live too early (no bets) is dropped, leaving the pre-
   await t.feed.syncLive();
   assert.equal(t.db.prepare('SELECT status FROM events WHERE id = ?').get(copyId).status, 'cancelled');
   assert.equal(t.row(30).status, 'scheduled');
+});
+
+test('a game WinHouse still lists after it ended: clock stopped past full time, impossible clock, live too long', () => {
+  const now = Date.now();
+  const fb = (minutes) => ({ sport: 'futebol', minutes });
+  // Stopped at 93' for 10 min: over; for 5 min (the break before extra time): still on.
+  assert.match(listedButOver(fb(93), { clock: { minute: 93, since: now - 10 * 60_000 }, now }), /parado em 93/);
+  assert.equal(listedButOver(fb(93), { clock: { minute: 93, since: now - 5 * 60_000 }, now }), null);
+  // Half time (45') stopped for 15 min is not the end.
+  assert.equal(listedButOver(fb(45), { clock: { minute: 45, since: now - 15 * 60_000 }, now }), null);
+  // Past 125' is no football game; 116' in extra time is.
+  assert.match(listedButOver(fb(131), { now }), /131/);
+  assert.equal(listedButOver(fb(116), { clock: { minute: 116, since: now - 60_000 }, now }), null);
+  // Live for longer than a game lasts (from when we first saw it).
+  assert.match(listedButOver(fb(70), { liveSince: now - 3.2 * 3_600_000, now }), /ao vivo há/);
+  assert.equal(listedButOver({ sport: 'tenis', minutes: null }, { liveSince: now - 4 * 3_600_000, now }), null);
+  assert.match(listedButOver({ sport: 'basquetebol', minutes: 40 }, { liveSince: now - 4 * 3_600_000, now }), /ao vivo há/);
+});
+
+test('live: a finished game WinHouse keeps listing (clock past 125\') is closed and settled', async () => {
+  const lists = { live: [football(7, 88, '1-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(7, '1x2', '1');
+  lists.live = [football(7, 131, '1-0', ODD)];
+  const r = await t.feed.syncLive(); // still listed, but over: markets closed
+  assert.equal(r.listedOver, 1);
+  assert.equal(r.live, 0);
+  await t.feed.syncLive();
+  assert.equal(t.row(7).status, 'finished');
+  assert.equal(t.betStatus(onHome), 'won');
 });
