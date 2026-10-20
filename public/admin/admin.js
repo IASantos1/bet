@@ -950,6 +950,7 @@ function adminFeed(f) {
          <button class="primary-btn" data-action="feed-sync">Sincronizar agora</button>`
       : `<p class="muted">Bzzoiro desligado (sem <strong>BZZOIRO_API_TOKEN</strong>).</p>`}
   </div>
+  <div class="panel">${maintenancePanel(f.maintenance, f.winhouse?.feed?.health?.state)}</div>
   ${f.winhouse?.feed?.health ? `<div class="panel">${winhouseHealthPanel(f.winhouse.feed.health)}</div>` : ''}
   <div class="panel">${winhousePanel(f.winhouse)}</div>
   <div class="panel"><h3>Emblemas das equipas</h3>
@@ -1001,6 +1002,24 @@ function winhouseFeedInfo(fd) {
 function futureUntil(f) {
   const parts = Object.entries(f.bySport || {}).filter(([, v]) => v.until).map(([k, v]) => `${k} até ${esc(new Date(v.until).toLocaleDateString('pt-PT'))}`);
   return parts.length ? ` — ${parts.join(', ')}` : '';
+}
+
+// Maintenance screen on the site: on/off, whole site or sports only, optional message.
+function maintenancePanel(m, healthState) {
+  if (!m) return '';
+  const hint = !m.on && healthState === 'em_baixo' ? '<p class="pill lost">A WinHouse está em baixo — pode ativar a manutenção do desporto.</p>' : '';
+  return `<h3>Ecrã de manutenção ${m.on ? `<span class="pill lost">Ativo desde ${esc(fmtDateTime(m.since))}</span>` : '<span class="pill">Desligado</span>'}</h3>
+    ${hint}
+    <p class="muted">Mostra aos jogadores um ecrã "Estamos em manutenção — Brevemente disponível". Enquanto está ativo, as apostas e o cash out ficam em pausa (e o casino também, se for o site todo). Os administradores continuam a ver o site normal. Aparece e desaparece no site em menos de 1 minuto.</p>
+    <form id="maintForm" class="form-grid">
+      <label class="field">Onde
+        <select name="scope"><option value="sports"${m.scope !== 'all' ? ' selected' : ''}>Só desporto (o casino continua aberto)</option><option value="all"${m.scope === 'all' ? ' selected' : ''}>Site todo</option></select></label>
+      <label class="field">Mensagem extra (opcional)
+        <textarea name="message" rows="2" maxlength="300" placeholder="Ex.: Estamos a resolver um problema com os jogos ao vivo.">${esc(m.message || '')}</textarea></label>
+    </form>
+    <div class="form-actions">${m.on
+      ? '<button class="ghost-btn btn-sm" data-action="maint-save" data-on="1">Guardar mensagem</button> <button class="primary-btn btn-sm" data-action="maint-save" data-on="0">Desligar manutenção</button>'
+      : '<button class="primary-btn btn-sm" data-action="maint-save" data-on="1" data-confirm="1">Ativar manutenção</button>'}</div><br>`;
 }
 
 // Is WinHouse up: state now, availability, the last 24 h in 15-min slots and the outages of the week.
@@ -1348,6 +1367,18 @@ document.addEventListener('click', async (e) => {
       $('#tlCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
+    return;
+  }
+  if (action === 'maint-save') {
+    const on = actionEl.dataset.on === '1';
+    const form = $('#maintForm');
+    if (actionEl.dataset.confirm && !confirm(`Ativar o ecrã de manutenção (${form.scope.value === 'all' ? 'site todo' : 'só desporto'})? As apostas ficam em pausa.`)) return;
+    actionEl.disabled = true;
+    try {
+      await api('/api/admin/maintenance', { method: 'PUT', body: { on, scope: form.scope.value, message: form.message.value } });
+      toast('Manutenção', on ? 'Ecrã de manutenção ativo.' : 'Manutenção desligada: o site voltou ao normal.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; }
     return;
   }
   if (action === 'ga-check' || action === 'ga-refresh') {

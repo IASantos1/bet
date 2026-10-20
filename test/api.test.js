@@ -565,3 +565,33 @@ test('every player has a profile emblem: one of the two, drawn on sign-up', asyn
   }
   assert.equal(seen.size, 2); // both come out (12 draws: 1 in 2048 to fail by chance)
 });
+
+test('maintenance screen: switched in the admin, shown in the config, bets paused (not for admins)', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer(50);
+  const ev = await createEvent(adm);
+  const bet = (c) => c('POST', '/api/bets', { mode: 'single', stake: 1, selections: [{ selectionId: sel(ev, '1').id, odds: 2 }] });
+  assert.equal((await p('GET', '/api/config')).body.maintenance, null);
+  // Players cannot switch it.
+  assert.equal((await p('PUT', '/api/admin/maintenance', { on: true })).status, 403);
+
+  let r = await adm('PUT', '/api/admin/maintenance', { on: true, scope: 'sports', message: 'Problema com os jogos ao vivo.' });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.on && r.body.since);
+  const m = (await p('GET', '/api/config')).body.maintenance;
+  assert.deepEqual([m.scope, m.message], ['sports', 'Problema com os jogos ao vivo.']);
+  r = await bet(p);
+  assert.equal(r.status, 503);
+  assert.match(r.body.error, /manutenção/);
+  assert.equal((await bet(adm)).status === 503, false, 'admins are not held back');
+  // Sports only: the casino is not stopped by it.
+  assert.notEqual((await p('POST', '/api/casino/launch', { gameId: 'x' })).body.error, 'Estamos em manutenção. Brevemente disponível.');
+  await adm('PUT', '/api/admin/maintenance', { on: true, scope: 'all' });
+  assert.equal((await p('POST', '/api/casino/launch', { gameId: 'x' })).status, 503);
+
+  // Off: back to normal.
+  r = await adm('PUT', '/api/admin/maintenance', { on: false });
+  assert.equal(r.body.on, false);
+  assert.equal((await p('GET', '/api/config')).body.maintenance, null);
+  assert.equal((await bet(p)).status, 201);
+});

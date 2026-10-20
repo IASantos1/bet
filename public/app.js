@@ -2575,6 +2575,35 @@ function render({ keepScroll = false } = {}) {
   if (page === 'jogo') afterMatchRender();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
+  showMaintenance(page);
+}
+
+// Maintenance (switched in the admin): a full screen over the site, or over sports only (the casino,
+// my bets and the account stay open, reached from the screen's buttons). Admins see the site with a
+// strip saying the screen is on.
+const MAINT_SPORTS = new Set(['home', 'desporto', 'ao-vivo', 'jogo', 'b']);
+function showMaintenance(page) {
+  const m = state.config?.maintenance;
+  $('#maintenance')?.remove();
+  $('#maintStrip')?.remove();
+  document.body.classList.remove('maint-on');
+  if (!m) return;
+  if (state.user?.role === 'admin') {
+    document.body.insertAdjacentHTML('beforeend', `<div id="maintStrip" class="maint-strip">🛠️ Manutenção ativa (${m.scope === 'all' ? 'site todo' : 'desporto'}): os jogadores veem o ecrã de manutenção. <a href="/admin#feed">Desligar no admin</a></div>`);
+    return;
+  }
+  if (m.scope !== 'all' && !MAINT_SPORTS.has(page)) return;
+  document.body.classList.add('maint-on');
+  const links = m.scope === 'all' ? '' : `<div class="maint-links"><a class="primary-btn" href="#/casino">Ir para o Casino</a>
+    ${state.user ? '<a class="ghost-btn" href="#/apostas">As minhas apostas</a>' : ''}</div>`;
+  document.body.insertAdjacentHTML('beforeend', `<div id="maintenance" class="maint" role="alertdialog" aria-live="polite">
+    <div class="maint-box"><span class="brand-word">BET<span>62</span></span>
+      <div class="maint-icon" aria-hidden="true">🛠️</div>
+      <h1>Estamos em manutenção</h1>
+      <p class="maint-soon">Brevemente disponível.</p>
+      ${m.message ? `<p class="maint-msg">${esc(m.message)}</p>` : ''}
+      ${m.scope === 'all' ? '' : '<p class="maint-note">As apostas desportivas estão em pausa. As suas apostas em aberto continuam guardadas.</p>'}
+      ${links}</div></div>`);
 }
 
 /** The phone menu: opened and closed by its button (or a swipe), never by a page refresh. */
@@ -4592,6 +4621,17 @@ async function init() {
       if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) window.location.reload();
     } catch { /* offline for a moment */ }
   }, 5 * 60_000);
+  // Maintenance switched on or off in the admin: the screen comes and goes within a minute.
+  setInterval(async () => {
+    if (document.hidden) return;
+    try {
+      const c = await api('/api/config');
+      if (JSON.stringify(c.maintenance || null) !== JSON.stringify(state.config?.maintenance || null)) {
+        state.config = { ...state.config, maintenance: c.maintenance || null };
+        showMaintenance(currentRoute().page);
+      }
+    } catch { /* offline for a moment */ }
+  }, 60_000);
   if (config) $('#stake').min = config.minStake;
   // A game left open when the tab was closed: bring that balance back now.
   if (state.user?.casinoActive && !(currentRoute().page === 'casino' && currentRoute().sub === 'jogar')) closeCasino();

@@ -1602,3 +1602,17 @@ html.light .game-art, html.light .fs-art { background: linear-gradient(160deg, #
 html.light .hero { background: radial-gradient(circle at 80% 20%, #dfe6ee 0, #eef1f5 28%, var(--dim) 70%); }
 html.light .match-hero { background: radial-gradient(circle at 50% 0%, #ffffff 0, #f4f6f9 45%, var(--dim) 80%); }
 html.light .fs-banner { --fs-accent: #4f6276; }
+
+/* Maintenance screen (admin switch): over the whole viewport, header and slip included. */
+.maint { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; padding: 24px 16px; background: var(--bg, #0d1014); overflow-y: auto; }
+body.maint-on { overflow: hidden; }
+.maint-box { width: min(440px, 100%); text-align: center; display: grid; gap: 10px; justify-items: center; }
+.maint-icon { font-size: 56px; line-height: 1; margin: 18px 0 4px; }
+.maint h1 { margin: 0; font-size: 24px; color: var(--strong); }
+.maint-soon { margin: 0; font-size: 17px; font-weight: 700; color: var(--text-2); }
+.maint-msg { margin: 6px 0 0; color: var(--text-2); white-space: pre-line; }
+.maint-note { margin: 4px 0 0; font-size: 13px; color: var(--text-3); }
+.maint-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.maint-links a { text-decoration: none; padding: 10px 18px; border-radius: 10px; font-weight: 800; }
+.maint-strip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8000; padding: 8px 14px; background: #8a5a0b; color: #fff; font-size: 13px; text-align: center; }
+.maint-strip a { color: #fff; font-weight: 800; }
