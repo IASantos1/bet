@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, listedButOver, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, listedButOver, setsToWin, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -1054,4 +1054,21 @@ test('live: a finished game WinHouse keeps listing (clock past 125\') is closed 
   await t.feed.syncLive();
   assert.equal(t.row(7).status, 'finished');
   assert.equal(t.betStatus(onHome), 'won');
+});
+
+test('a tennis match WinHouse still lists after a player won it', () => {
+  const now = Date.now();
+  const tn = (h, a, competition = 'ATP. Vienna') => ({ sport: 'tenis', competition, home: 'A. Silva', away: 'B. Costa', homeScore: h, awayScore: a, minutes: null });
+  const held = (h, a, min) => ({ score: { value: `${h}-${a}`, since: now - min * 60_000 }, now });
+  assert.match(listedButOver(tn(2, 0), held(2, 0, 4)), /sets 2-0/);
+  assert.equal(listedButOver(tn(2, 0), held(2, 0, 1)), null, 'just won: a moment to be sure');
+  assert.equal(listedButOver(tn(1, 1), held(1, 1, 30)), null, 'third set still to play');
+  // Men's Grand Slam singles: best of five.
+  assert.equal(setsToWin('tenis', 'Wimbledon'), 3);
+  assert.equal(listedButOver(tn(2, 0, 'Wimbledon'), held(2, 0, 30)), null);
+  assert.match(listedButOver(tn(3, 1, 'Wimbledon'), held(3, 1, 4)), /sets 3-1/);
+  assert.equal(setsToWin('tenis', 'WTA. Wimbledon'), 2);
+  assert.equal(setsToWin('tenis', 'US Open', 'A. Silva / C. Lopes', 'B. Costa / D. Reis'), 2);
+  // Table tennis waits longer (some events are best of seven).
+  assert.equal(listedButOver({ sport: 'tenismesa', homeScore: 3, awayScore: 1, minutes: null }, held(3, 1, 5)), null);
 });

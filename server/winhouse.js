@@ -847,10 +847,33 @@ const MAX_MINUTE = { futebol: 125, futsal: 60, andebol: 80 };
 const MAX_LIVE_MS = { futebol: 3 * 3_600_000, tenis: 6 * 3_600_000 };
 const MAX_LIVE_DEFAULT_MS = 3.5 * 3_600_000;
 
+// Sets a side needs to win the match: tennis best of five only in men's Grand Slam singles; table
+// tennis best of five; volleyball best of five (three in beach / 4x4 / duo); badminton best of three.
+const GRAND_SLAM = /australian open|roland garros|french open|wimbledon|us open/i;
+const NOT_MEN_SINGLES = /\bwta\b|women|woman|feminin|ladies|\bw\b|doubles|duplas|\/|mixed|mist/i;
+export function setsToWin(sport, competition = '', home = '', away = '') {
+  if (sport === 'tenis') return GRAND_SLAM.test(competition) && !NOT_MEN_SINGLES.test(`${competition} ${home} ${away}`) ? 3 : 2;
+  if (sport === 'badminton') return 2;
+  if (sport === 'tenismesa') return 3;
+  if (sport === 'voleibol') return /beach|praia|4x4|duo/i.test(`${competition} ${home} ${away}`) ? 2 : 3;
+  return null;
+}
+// Sets won stay unchanged this long after the winning set before a listed match counts as over
+// (table tennis longer: some events are best of seven).
+const SETS_DONE_MS = { tenis: 3 * 60_000, badminton: 3 * 60_000, voleibol: 5 * 60_000, tenismesa: 12 * 60_000 };
+
 /** Why a game still in the live list is over (or null): `clock` is { minute, since } (the minute
  * shown and since when), `liveSince` when it was first seen live. */
-export function listedButOver(ev, { clock = null, liveSince = null, now = Date.now() } = {}) {
+export function listedButOver(ev, { clock = null, liveSince = null, score = null, now = Date.now() } = {}) {
   const m = ev.minutes;
+  // Set sports: a side has the sets to win and the score has not moved since.
+  const need = setsToWin(ev.sport, ev.competition, ev.home, ev.away);
+  const h = ev.homeScore;
+  const a = ev.awayScore;
+  if (need && Number.isInteger(h) && Number.isInteger(a) && h !== a && Math.max(h, a) >= need
+    && score && score.value === `${h}-${a}` && now - score.since >= SETS_DONE_MS[ev.sport]) {
+    return `sets ${h}-${a}: jogo ganho há ${Math.round((now - score.since) / 60_000)} min`;
+  }
   if (Number.isFinite(m) && MAX_MINUTE[ev.sport] && m > MAX_MINUTE[ev.sport]) return `relógio em ${Math.floor(m)}'`;
   if (Number.isFinite(m) && FULL_TIME[ev.sport] && m >= FULL_TIME[ev.sport] && clock && clock.minute === m && now - clock.since >= FROZEN_MS[ev.sport]) {
     return `relógio parado em ${Math.floor(m)}' há ${Math.round((now - clock.since) / 60_000)} min`;
@@ -888,7 +911,7 @@ export function finishVerdict(row) {
       return m >= 59 ? { home: h, away: a, regHome: h, regAway: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'tenis':
     case 'badminton':
-      return Math.max(h, a) >= 2 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: possível desistência` };
+      return Math.max(h, a) >= setsToWin(row.sport, row.competition, row.home, row.away) && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: possível desistência` };
     case 'tenismesa':
       // Best of five: three sets won.
       return Math.max(h, a) >= 3 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: jogo incompleto` };
@@ -1189,6 +1212,7 @@ export function createWinHouseFeed(db, {
   /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
   const clockSeen = new Map(); // external id → { minute, since }: the clock shown and since when
   const liveSince = new Map(); // external id → when first seen in the live list
+  const scoreSeen = new Map(); // external id → { value: "h-a", since }: the score and since when
   const overNoted = new Set();
   async function syncLive() {
     const t0 = Date.now();
@@ -1225,7 +1249,9 @@ export function createWinHouseFeed(db, {
       const clock = clockSeen.get(ev.externalId);
       if (!clock || clock.minute !== ev.minutes) clockSeen.set(ev.externalId, { minute: ev.minutes, since: now });
       if (!liveSince.has(ev.externalId)) liveSince.set(ev.externalId, now);
-      const ended = listedButOver(ev, { clock: clockSeen.get(ev.externalId), liveSince: liveSince.get(ev.externalId), now });
+      const sc = `${ev.homeScore}-${ev.awayScore}`;
+      if (scoreSeen.get(ev.externalId)?.value !== sc) scoreSeen.set(ev.externalId, { value: sc, since: now });
+      const ended = listedButOver(ev, { clock: clockSeen.get(ev.externalId), liveSince: liveSince.get(ev.externalId), score: scoreSeen.get(ev.externalId), now });
       if (ended) {
         over += 1;
         const row = findEvent.get(SOURCE, ev.externalId);
@@ -1283,7 +1309,7 @@ export function createWinHouseFeed(db, {
       } catch (err) { log(`WinHouse ao vivo ${ev.externalId}: ${err.message}`); }
     }
     for (const ext of [...streamUrls.keys()]) if (!seen.has(ext)) streamUrls.delete(ext);
-    for (const ext of [...clockSeen.keys()]) if (!listed.has(ext)) { clockSeen.delete(ext); liveSince.delete(ext); }
+    for (const ext of [...clockSeen.keys()]) if (!listed.has(ext)) { clockSeen.delete(ext); liveSince.delete(ext); scoreSeen.delete(ext); }
     if (overNoted.size > 500) overNoted.clear();
     const ended = finishMissing(seen);
     state.last.live = { at: nowIso(), live: seen.size, withOdds: open, listedOver: over, ...ended };
