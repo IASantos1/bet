@@ -524,8 +524,22 @@ export function createApp(db, {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+  // Maintenance screen, switched in the admin (e.g. while WinHouse is down): the whole site, or only
+  // sports (the casino stays open). Meanwhile bets and cash-out are refused, and casino games too
+  // for the whole site. Admins are never held back.
+  const maintenance = () => {
+    const m = getSetting(db, 'maintenance', null) || {};
+    return { on: !!m.on, scope: m.scope === 'all' ? 'all' : 'sports', message: String(m.message || '').slice(0, 300), since: m.since || null };
+  };
+  const maintenanceGuard = (casino = false) => (req, _res, next) => {
+    const m = maintenance();
+    if (m.on && req.user?.role !== 'admin' && (!casino || m.scope === 'all')) return next(new HttpError(503, 'Estamos em manutenção. Brevemente disponível.'));
+    next();
+  };
+
   app.get('/api/config', (_req, res) => {
     const { limits } = config;
+    const m = maintenance();
     res.json({
       paymentsMode: config.paymentsMode,
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
@@ -539,6 +553,7 @@ export function createApp(db, {
       // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.
       rapidStream: !!rapidStream?.enabled,
       rapidKey: !!rapidStream,
+      maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
     });
   });
 
@@ -1246,7 +1261,7 @@ export function createApp(db, {
 
   // ---------- bets ----------
 
-  app.post('/api/bets', requireUser, reclaimCasino, (req, res) => {
+  app.post('/api/bets', requireUser, maintenanceGuard(), reclaimCasino, (req, res) => {
     const stakeCents = parseEuros(req.body.stake, 'Valor da aposta');
     const picks = Array.isArray(req.body.selections)
       ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
@@ -1288,7 +1303,7 @@ export function createApp(db, {
     res.json({ ticket: { ...ticket, legs } });
   });
   // Cash out: checked, then (in play) held for the acceptance delay and checked again before paying.
-  app.post('/api/bets/:id/cashout', requireUser, reclaimCasino, async (req, res, next) => {
+  app.post('/api/bets/:id/cashout', requireUser, maintenanceGuard(), reclaimCasino, async (req, res, next) => {
     const id = Number(req.params.id);
     if (cashoutPending.has(id)) return next(new HttpError(409, 'Já há um pedido de cash out em curso para esta aposta.'));
     cashoutPending.add(id);
@@ -1422,7 +1437,7 @@ export function createApp(db, {
 
   // Opens a game: "Testar" (demo, virtual money, no account needed), "Jogar" (the player's
   // balance) or the free spins (their own balance, only in the eligible games).
-  app.post('/api/casino/launch', wrap(async (req, res) => {
+  app.post('/api/casino/launch', maintenanceGuard(true), wrap(async (req, res) => {
     if (!casinoOn()) throw new HttpError(503, 'Casino não configurado.');
     const origin = `${req.protocol}://${req.get('host')}`;
     if (bb) {
@@ -2202,6 +2217,7 @@ export function createApp(db, {
   admin.get('/feed', (_req, res) => {
     res.json({
       ...(feed ? feed.status() : { enabled: false, provider: 'sports.bzzoiro.com' }),
+      maintenance: maintenance(),
       tennis: tennis ? { ...tennis.status(), liveSocket: tennisLive ? tennisLive.status() : { enabled: false } } : { enabled: false },
       sports: Object.values(sports).map((f) => f.status()),
       propline: propline ? propline.status() : { enabled: false, keySet: false },
@@ -2210,6 +2226,19 @@ export function createApp(db, {
       rapidStream: !!rapidStream?.enabled,
       rapidKey: !!rapidStream,
     });
+  });
+
+  // Maintenance screen on the site: on/off, whole site or sports only, and an optional message.
+  admin.get('/maintenance', (_req, res) => res.json(maintenance()));
+  admin.put('/maintenance', (req, res) => {
+    const b = req.body || {};
+    const before = maintenance();
+    const on = !!b.on;
+    setSetting(db, 'maintenance', {
+      on, scope: b.scope === 'all' ? 'all' : 'sports', message: String(b.message || '').trim().slice(0, 300),
+      since: on ? (before.on ? before.since : nowIso()) : null,
+    });
+    res.json(maintenance());
   });
 
   // Future games: how many days ahead to import (0–90), saved and read at once; "now" reads the lists straight away.
