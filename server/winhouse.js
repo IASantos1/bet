@@ -838,6 +838,26 @@ const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
 /** A clock this far on (or a goal) means the game is under way, whatever kick-off the live list gives. */
 const LIVE_STARTED_MIN = 20;
+// Games WinHouse still lists after they ended: a clock stopped past full time (a stopped-clock sport
+// only when it stays stopped longer than its breaks), a clock past what a game can last, or live for
+// longer than a game lasts (counted from when we first saw it live: the listed kick-off can be wrong).
+const FULL_TIME = { futebol: 90, futsal: 40, andebol: 60, hoquei: 60 };
+const FROZEN_MS = { futebol: 10 * 60_000, futsal: 15 * 60_000, andebol: 10 * 60_000, hoquei: 15 * 60_000 };
+const MAX_MINUTE = { futebol: 125, futsal: 60, andebol: 80 };
+const MAX_LIVE_MS = { futebol: 3 * 3_600_000, tenis: 6 * 3_600_000 };
+const MAX_LIVE_DEFAULT_MS = 3.5 * 3_600_000;
+
+/** Why a game still in the live list is over (or null): `clock` is { minute, since } (the minute
+ * shown and since when), `liveSince` when it was first seen live. */
+export function listedButOver(ev, { clock = null, liveSince = null, now = Date.now() } = {}) {
+  const m = ev.minutes;
+  if (Number.isFinite(m) && MAX_MINUTE[ev.sport] && m > MAX_MINUTE[ev.sport]) return `relógio em ${Math.floor(m)}'`;
+  if (Number.isFinite(m) && FULL_TIME[ev.sport] && m >= FULL_TIME[ev.sport] && clock && clock.minute === m && now - clock.since >= FROZEN_MS[ev.sport]) {
+    return `relógio parado em ${Math.floor(m)}' há ${Math.round((now - clock.since) / 60_000)} min`;
+  }
+  if (liveSince && now - liveSince > (MAX_LIVE_MS[ev.sport] ?? MAX_LIVE_DEFAULT_MS)) return `ao vivo há ${Math.round((now - liveSince) / 60_000)} min`;
+  return null;
+}
 
 const clockText = (sport, minutes, raw) => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
@@ -1167,6 +1187,9 @@ export function createWinHouseFeed(db, {
   const liveRaw = new Map(); // WinHouse game id → its entry of the last live list (no odds)
   let liveListAt = null; // when that list was read
   /** Every 15 s: scores, clock and in-play odds; matches gone from the list are finished or flagged. */
+  const clockSeen = new Map(); // external id → { minute, since }: the clock shown and since when
+  const liveSince = new Map(); // external id → when first seen in the live list
+  const overNoted = new Set();
   async function syncLive() {
     const t0 = Date.now();
     let r;
@@ -1180,7 +1203,9 @@ export function createWinHouseFeed(db, {
       if (est !== null) { state.offset = est; state.offsetSource = 'estimado pelo ao vivo'; }
     }
     const seen = new Set();
+    const listed = new Set();
     let open = 0;
+    let over = 0;
     // Each game's entry as WinHouse sent it (without its odds), for the admin's "WinHouse data".
     liveRaw.clear();
     liveListAt = nowIso();
@@ -1193,6 +1218,19 @@ export function createWinHouseFeed(db, {
         const row = kept && findEvent.get(SOURCE, kept.externalId);
         if (!row || !db.prepare('SELECT 1 FROM bet_legs WHERE event_id = ? LIMIT 1').get(row.id)) continue;
         ev = { ...kept, prices: {}, coefs: new Map() };
+      }
+      // Still listed but clearly over: treated as gone from the list (markets closed, then settled).
+      listed.add(ev.externalId);
+      const now = Date.now();
+      const clock = clockSeen.get(ev.externalId);
+      if (!clock || clock.minute !== ev.minutes) clockSeen.set(ev.externalId, { minute: ev.minutes, since: now });
+      if (!liveSince.has(ev.externalId)) liveSince.set(ev.externalId, now);
+      const ended = listedButOver(ev, { clock: clockSeen.get(ev.externalId), liveSince: liveSince.get(ev.externalId), now });
+      if (ended) {
+        over += 1;
+        const row = findEvent.get(SOURCE, ev.externalId);
+        if (row?.status === 'live' && !overNoted.has(row.id)) { overNoted.add(row.id); log(`WinHouse: ${row.home} - ${row.away} ainda na lista mas terminado (${ended})`); }
+        continue;
       }
       seen.add(ev.externalId);
       // Not live before kick-off (a minute's grace): the pre-match game stays as it is until then.
@@ -1245,8 +1283,10 @@ export function createWinHouseFeed(db, {
       } catch (err) { log(`WinHouse ao vivo ${ev.externalId}: ${err.message}`); }
     }
     for (const ext of [...streamUrls.keys()]) if (!seen.has(ext)) streamUrls.delete(ext);
+    for (const ext of [...clockSeen.keys()]) if (!listed.has(ext)) { clockSeen.delete(ext); liveSince.delete(ext); }
+    if (overNoted.size > 500) overNoted.clear();
     const ended = finishMissing(seen);
-    state.last.live = { at: nowIso(), live: seen.size, withOdds: open, ...ended };
+    state.last.live = { at: nowIso(), live: seen.size, withOdds: open, listedOver: over, ...ended };
     return state.last.live;
   }
 
