@@ -390,10 +390,10 @@ function sideBadge(e, side, size = '') {
 function matchCard(e, extraClass = '') {
   const modifier = typeof extraClass === 'string' && extraClass ? ` ${extraClass}` : '';
   return `<article class="match-card clickable${modifier}" data-open="${e.id}">
-    <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? (e.sport === 'tenis' ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e)) : esc(fmtWhen(e.startTime))}</span></div>
+    <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? liveClock(e) : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
       <div class="team">${sideBadge(e, 'home')}${esc(e.home)}${redCard(e, 'home')}</div>
-      <div class="vs">${e.status === 'live' ? `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>` : 'VS'}</div>
+      <div class="vs">${e.status !== 'live' ? 'VS' : e.sport === 'tenis' ? `<b>${esc((tennisPoints(e.tennis?.point) || ['', '']).join(' - ')) || '·'}</b>` : `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>`}</div>
       <div class="team">${sideBadge(e, 'away')}${esc(e.away)}${redCard(e, 'away')}</div>
     </div>
     ${oddsButtons(e)}
@@ -409,16 +409,29 @@ function homeSpotlight(event) {
 }
 
 /** In play: the match time in red after a pulsing dot (45', S1, Q3, P2…) instead of "AO VIVO". */
+// Sports played in sets: the clock is the set being played ("2.º set"); tennis from its board, the
+// others from the sets already won. Basketball ("Q3 04:12"), ice hockey ("2.º P 12:30") and the
+// minute sports ("67'") come ready from the server.
+const SET_SPORTS = new Set(['tenis', 'tenismesa', 'badminton', 'voleibol']);
+const currentSet = (e) => (e.sport === 'tenis' && e.tennis?.set) || (Number(e.homeScore) || 0) + (Number(e.awayScore) || 0) + 1;
+const clockLabel = (e) => (SET_SPORTS.has(e.sport) ? `${currentSet(e)}.º set` : e.clock || 'Ao vivo');
 function liveClock(e) {
-  const text = e.sport === 'tenis' ? `S${e.tennis?.set || 1}` : e.clock || 'Ao vivo';
+  const text = clockLabel(e);
   return `<span class="live-clock"><i class="pulse-dot"></i>${esc(text)}</span>`;
 }
 
-/** Tennis in play: "S2" and the point (15 / 30 / 40 / AD) under it. */
+/** Tennis in play: the set being played and the point (15 / 30 / 40 / AD) under it. */
 function tennisLiveCell(e) {
   const t = e.tennis || {};
   const pts = tennisPoints(t.point);
   return `${liveClock(e)}<span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
+}
+
+/** Tennis on a card (live page, lists): only the point of each player (15 / 30 / 40 / AD); the
+ * sets and games are on the match page. */
+function tennisCardPoint(e, side) {
+  const pts = tennisPoints((e.tennis || {}).point);
+  return `<span class="tn-line">${(e.tennis || {}).server === side ? '<i class="tn-serve" title="Ao serviço"></i>' : ''}<strong>${pts ? esc(pts[side === 'home' ? 0 : 1]) : ''}</strong></span>`;
 }
 
 /** Per-player tennis line: sets won, games in the current set and the point, with the server marked. */
@@ -439,8 +452,8 @@ function redCard(e, side) {
 function liveCard(e) {
   if (e.sport === 'tenis') {
     return `<article class="live-card clickable" data-open="${e.id}">
-    <div class="match-top"><span class="tn-cell">${tennisLiveCell(e)}</span><span>${esc(e.competition)}</span></div>
-    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisSide(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisSide(e, 'away')}</div></div>
+    <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisCardPoint(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisCardPoint(e, 'away')}</div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
   }
@@ -454,9 +467,9 @@ function liveCard(e) {
 function eventRow(e) {
   const tennisLive = e.status === 'live' && e.sport === 'tenis';
   const when = e.status === 'live'
-    ? (tennisLive ? `<span class="tn-cell">${tennisLiveCell(e)}</span>` : liveClock(e))
+    ? liveClock(e)
     : esc(fmtWhen(e.startTime)).replace(' ', '<br>');
-  const score = (side) => (tennisLive ? tennisSide(e, side === 'h' ? 'home' : 'away')
+  const score = (side) => (tennisLive ? tennisCardPoint(e, side === 'h' ? 'home' : 'away')
     : e.status === 'live' ? `<b>${side === 'h' ? e.homeScore ?? 0 : e.awayScore ?? 0}</b>` : '');
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
@@ -875,8 +888,12 @@ function livePage() {
       <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
   }).join('');
   const empty = state.liveTv ? 'Nenhum jogo com transmissão ao vivo neste momento.' : 'Não há eventos ao vivo neste momento.';
+  // The live data provider is down: its games are hidden (they would show a frozen clock) until it is back.
+  const down = state.config?.liveDown
+    ? '<div class="panel live-down">⏳ <b>Jogos ao vivo temporariamente indisponíveis.</b> Estamos a receber os dados novamente — os jogos voltam a aparecer aqui em breve. As suas apostas estão guardadas.</div>' : '';
   return `<div class="page-title live-title"><div><h1><span class="live-dot"></span>Ao Vivo</h1><p>Eventos a decorrer agora. As odds atualizam automaticamente.</p></div>
       <button class="tv-toggle${state.liveTv ? ' active' : ''}" data-live-tv title="Só jogos com transmissão" aria-pressed="${state.liveTv}">${ICON_TV}<small>${tvCount}</small></button></div>
+    ${down}
     ${all.length ? strip : ''}
     ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? empty : 'A carregar…'}</div>`}
     ${footer()}`;
@@ -3399,7 +3416,7 @@ function applyLiveEvent(e, { quiet = false } = {}) {
   const score = $('#matchScore');
   if (score) score.textContent = `${d.homeScore ?? 0} - ${d.awayScore ?? 0}`;
   const clock = $('#matchClock span');
-  if (clock) clock.textContent = d.clock || '';
+  if (clock) clock.textContent = d.sport === 'tenis' ? d.clock || '' : clockLabel(d);
   const w = state.match.widget;
   if (w && state.match.widgetKind === 'football') {
     $('#trkHomeScore', w).textContent = d.homeScore ?? 0;
@@ -3467,7 +3484,7 @@ function matchPage(sub) {
 
   const live = e.status === 'live';
   const center = live
-    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div>${e.sport === 'tenis' ? `<div class="tn-sets" id="matchClock"><span>${esc(e.clock || '')}</span></div>` : `<div class="live-clock big" id="matchClock"><i class="pulse-dot"></i><span>${esc(e.clock || 'Ao vivo')}</span></div>`}
+    ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div>${e.sport === 'tenis' ? `<div class="tn-sets" id="matchClock"><span>${esc(e.clock || '')}</span></div>` : `<div class="live-clock big" id="matchClock"><i class="pulse-dot"></i><span>${esc(clockLabel(e))}</span></div>`}
        ${e.sport === 'tenis' ? `<div class="tn-cell tn-hero" id="matchTennis">${tennisLiveCell(e)}</div>` : ''}`
     : e.status === 'finished'
       ? `<div class="match-score">${e.homeScore} - ${e.awayScore}</div><div class="muted">Terminado</div>`
@@ -4629,6 +4646,11 @@ async function init() {
       if (JSON.stringify(c.maintenance || null) !== JSON.stringify(state.config?.maintenance || null)) {
         state.config = { ...state.config, maintenance: c.maintenance || null };
         showMaintenance(currentRoute().page);
+      }
+      // The live provider went down or came back: the live page says so.
+      if (!!c.liveDown !== !!state.config?.liveDown) {
+        state.config = { ...state.config, liveDown: !!c.liveDown };
+        if (currentRoute().page === 'ao-vivo') render({ keepScroll: true });
       }
     } catch { /* offline for a moment */ }
   }, 60_000);

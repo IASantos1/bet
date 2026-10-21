@@ -48,7 +48,7 @@ test('health check calls the six routes from the server and reports what came ba
 // ---------- collector ----------
 
 import { openDb, nowIso, tx } from '../server/db.js';
-import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, listedButOver, setsToWin, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
+import { normalizeItem, pricesFor, estimateOffset, createWinHouseFeed, listedButOver, setsToWin, clockText, blockedGame, leagueTerms, finishVerdict, footballLeagues, allowedLeagues, BASKETBALL_TREE, TENNIS_TREE, leagueKey, detailOdds } from '../server/winhouse.js';
 import { legOutcome } from '../server/markets.js';
 import { placeBets } from '../server/betting.js';
 import { postTransaction } from '../server/wallet.js';
@@ -99,7 +99,7 @@ function setupFeed(lists) {
   const db = openDb(':memory:');
   const client = {
     enabled: true,
-    live: async () => ({ ok: true, status: 200, body: lists.live }),
+    live: async () => (lists.liveFail ? { ok: false, status: 502 } : { ok: true, status: 200, body: lists.live }),
     prematchMain: async () => ({ ok: true, status: 200, body: lists.pre || [] }),
     prematchTop: async () => ({ ok: true, status: 200, body: [] }),
     prematch24h: async () => ({ ok: false, status: 500 }),
@@ -1071,4 +1071,50 @@ test('a tennis match WinHouse still lists after a player won it', () => {
   assert.equal(setsToWin('tenis', 'US Open', 'A. Silva / C. Lopes', 'B. Costa / D. Reis'), 2);
   // Table tennis waits longer (some events are best of seven).
   assert.equal(listedButOver({ sport: 'tenismesa', homeScore: 3, awayScore: 1, minutes: null }, held(3, 1, 5)), null);
+});
+
+test('live: a game that ends while WinHouse is down is not settled on the old score, and the feed says it is down', async () => {
+  const lists = { live: [football(8, 89, '1-0', ODD)] };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const onHome = t.bet(8, '1x2', '1');
+  assert.equal(t.feed.liveDown(), false);
+  // WinHouse down: three failed reads open an outage.
+  lists.liveFail = true;
+  for (let i = 0; i < 3; i += 1) await t.feed.syncLive().catch(() => {});
+  assert.equal(t.feed.liveDown(), true);
+  // Back, without the game (it ended meanwhile, maybe with a late goal): to be confirmed, not settled 1-0.
+  lists.liveFail = false;
+  lists.live = [];
+  await t.feed.syncLive();
+  assert.equal(t.feed.liveDown(), false);
+  await t.feed.syncLive();
+  assert.equal(t.row(8).status, 'live');
+  assert.match(t.row(8).review_reason, /em baixo/);
+  assert.equal(t.betStatus(onHome), 'open');
+});
+
+test('tennis cards: the point comes from the match tracker (widget route) when the plain route has none', async () => {
+  const odd = '975315002|1.31|1|1016|Vencedor do jogo [Match_Winner],975316091|3.44|2|1016|Vencedor do jogo [Match_Winner]';
+  const lists = { live: [{ id: 70, sport_id: 5, league: 'ATP. Vienna', name: 'A - B', home_team: 'A', away_team: 'B', ...when(-3_600_000), odd, result: '0-0', current_minute: '' }], trackers: {} };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  assert.deepEqual(await t.feed.readTennis(), { asked: 1, updated: 0 }); // the plain route: nothing
+  t.feed.setTrackerState(async (ext) => (ext === '70' ? { tennis: { setScore: [0, 0], sets: [[3, 2]], point: '15-30' } } : null));
+  assert.deepEqual(await t.feed.readTennis({ now: Date.now() + 11_000 }), { asked: 1, updated: 1 });
+  assert.equal(JSON.parse(t.row(70).live_detail).point, '15-30');
+});
+
+test('each sport\'s live clock', () => {
+  assert.equal(clockText('futebol', 67.4, '67:24'), "67'");
+  // Basketball: the quarter and the time left in it (10-min quarters; 12 in the NBA), then overtime.
+  assert.equal(clockText('basquetebol', 4.5, '04:30', 'Spain. ACB'), 'Q1 05:30');
+  assert.equal(clockText('basquetebol', 25.75, '', 'Euroleague'), 'Q3 04:15');
+  assert.equal(clockText('basquetebol', 30, '', 'NBA'), 'Q3 06:00');
+  assert.equal(clockText('basquetebol', 41, '', 'Euroleague'), 'Prol. 04:00');
+  // Ice hockey: the period and the time left, then overtime.
+  assert.equal(clockText('hoquei', 27.5, ''), '2.º P 12:30');
+  assert.equal(clockText('hoquei', 62, ''), 'Prol. 18:00');
+  // Set sports: the page shows the set, not a clock.
+  assert.equal(clockText('tenismesa', 12, ''), null);
 });

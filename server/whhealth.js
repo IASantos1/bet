@@ -88,5 +88,10 @@ export function createWinHouseHealth(db, { now = () => Date.now() } = {}) {
     };
   }
 
-  return { note, summary };
+  /** WinHouse is down now (an outage is open). */
+  const down = () => !!openOutage.get();
+  /** An outage overlapped this time span (ms): what was last seen in it may be out of date. */
+  const downBetween = (from, to) => !!db.prepare('SELECT 1 FROM winhouse_outages WHERE started_at <= ? AND (ended_at IS NULL OR ended_at >= ?) LIMIT 1').get(to, from);
+
+  return { note, summary, down, downBetween };
 }
