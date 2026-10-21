@@ -434,8 +434,11 @@ function tennisCardPoint(e, side) {
   const i = side === 'home' ? 0 : 1;
   const cur = (t.sets || [])[(t.sets || []).length - 1];
   const pts = tennisPoints(t.point);
-  return `<span class="tn-card ${side}">${t.server === side ? '<i class="tn-serve" title="Ao serviço"></i>' : ''}<em>${cur ? esc(String(cur[i])) : ''}</em><strong>${pts ? esc(pts[i]) : ''}</strong></span>`;
+  // Fixed columns (serve dot, games, point) so the two players' numbers sit exactly one under the other.
+  return `<span class="tn-card ${side}"><i class="tn-serve${t.server === side ? '' : ' off'}"${t.server === side ? ' title="Ao serviço"' : ''}></i><em>${cur ? esc(String(cur[i])) : ''}</em><strong>${pts ? esc(pts[i]) : ''}</strong></span>`;
 }
+/** Above the two players: which set the games are from ("S2"), over the games column. */
+const tennisCardHead = (e) => `<div class="tn-head"><span></span><span class="tn-card head"><i class="tn-serve off"></i><em>S${currentSet(e)}</em><strong></strong></span></div>`;
 
 /** Per-player tennis line: sets won, games in the current set and the point, with the server marked. */
 function tennisSide(e, side) {
@@ -456,7 +459,7 @@ function liveCard(e) {
   if (e.sport === 'tenis') {
     return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
-    <div class="live-teams tn-board"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisCardPoint(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisCardPoint(e, 'away')}</div></div>
+    <div class="live-teams tn-board">${tennisCardHead(e)}<div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisCardPoint(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisCardPoint(e, 'away')}</div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
   }

@@ -1621,9 +1621,13 @@ body.maint-on { overflow: hidden; }
 /* Tennis on cards: server dot, games of the set in play (gold), the point in one grey box for both. */
 .tn-board { gap: 0; }
 .tn-board > div { align-items: center; }
-.tn-card { display: inline-flex; align-items: center; gap: 8px; }
-.tn-card em { font-style: normal; font-weight: 900; color: var(--gold); min-width: 14px; text-align: right; font-size: 16px; }
-.tn-card strong { min-width: 38px; padding: 3px 8px; text-align: center; font-weight: 900; font-size: 16px; color: var(--strong); background: var(--row-hover); }
+.tn-card { display: inline-grid; grid-template-columns: 8px 22px 44px; align-items: center; column-gap: 8px; }
+.tn-card .tn-serve.off { visibility: hidden; }
+.tn-card em { font-style: normal; font-weight: 900; color: var(--gold); text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; }
+.tn-card strong { box-sizing: border-box; width: 44px; padding: 3px 0; text-align: center; font-weight: 900; font-size: 16px; color: var(--strong); background: var(--row-hover); font-variant-numeric: tabular-nums; }
+.tn-card.head em { font-size: 11px; color: var(--text-3); }
+.tn-card.head strong { background: none; padding: 0; }
+.tn-head { display: flex; justify-content: space-between; margin-bottom: 2px; }
 .tn-card.home strong { border-radius: 8px 8px 0 0; padding-top: 6px; }
 .tn-card.away strong { border-radius: 0 0 8px 8px; padding-bottom: 6px; }
 .event-row .tn-card em, .event-row .tn-card strong { font-size: 13px; }
