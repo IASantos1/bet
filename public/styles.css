@@ -1617,3 +1617,13 @@ body.maint-on { overflow: hidden; }
 .maint-strip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8000; padding: 8px 14px; background: #8a5a0b; color: #fff; font-size: 13px; text-align: center; }
 .maint-strip a { color: #fff; font-weight: 800; }
 .live-down { margin-bottom: 12px; border-color: #b7791f; color: var(--text-2); line-height: 1.5; }
+
+/* Tennis on cards: server dot, games of the set in play (gold), the point in one grey box for both. */
+.tn-board { gap: 0; }
+.tn-board > div { align-items: center; }
+.tn-card { display: inline-flex; align-items: center; gap: 8px; }
+.tn-card em { font-style: normal; font-weight: 900; color: var(--gold); min-width: 14px; text-align: right; font-size: 16px; }
+.tn-card strong { min-width: 38px; padding: 3px 8px; text-align: center; font-weight: 900; font-size: 16px; color: var(--strong); background: var(--row-hover); }
+.tn-card.home strong { border-radius: 8px 8px 0 0; padding-top: 6px; }
+.tn-card.away strong { border-radius: 0 0 8px 8px; padding-bottom: 6px; }
+.event-row .tn-card em, .event-row .tn-card strong { font-size: 13px; }
