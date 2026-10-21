@@ -882,10 +882,31 @@ export function listedButOver(ev, { clock = null, liveSince = null, score = null
   return null;
 }
 
-const clockText = (sport, minutes, raw) => {
+// mm:ss of a number of seconds.
+const mmss = (secs) => `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+
+/**
+ * The clock a sport is shown with, from WinHouse's elapsed time (minutes, decimals for seconds):
+ * football / handball / futsal the minute ("67'"); basketball the quarter and the time left in it
+ * ("Q3 04:12", quarters of 12 min in the NBA, 10 elsewhere; overtime 5 min); ice hockey the period
+ * and the time left ("2.º P 12:30", 20-min periods, then overtime). Set sports (tennis, table
+ * tennis, badminton, volleyball) show the set on the page, from the score.
+ */
+export const clockText = (sport, minutes, raw, competition = '') => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
-  if (['futebol', 'hoquei', 'andebol', 'futsal'].includes(sport)) return `${Math.floor(minutes)}'`;
-  return null; // basketball / tennis: the score says more than an elapsed-time clock
+  if (['futebol', 'andebol', 'futsal'].includes(sport)) return `${Math.floor(minutes)}'`;
+  const secs = Math.max(0, Math.round(minutes * 60));
+  if (sport === 'basquetebol') {
+    const q = (/\bNBA\b/i.test(competition) ? 12 : 10) * 60;
+    if (secs < 4 * q) { const n = Math.floor(secs / q) + 1; return `Q${n} ${mmss(n * q - secs)}`; }
+    const k = Math.floor((secs - 4 * q) / 300) + 1;
+    return `Prol.${k > 1 ? ` ${k}` : ''} ${mmss(4 * q + k * 300 - secs)}`;
+  }
+  if (sport === 'hoquei') {
+    if (secs < 3600) { const n = Math.floor(secs / 1200) + 1; return `${n}.º P ${mmss(n * 1200 - secs)}`; }
+    return `Prol. ${mmss(Math.max(0, 3600 + 1200 - secs))}`;
+  }
+  return null;
 };
 
 /**
@@ -1289,7 +1310,7 @@ export function createWinHouseFeed(db, {
           db.prepare(`UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = COALESCE(?, wh_minute),
               wh_seen_at = ?, wh_missing_since = NULL, review_reason = NULL, postponed_at = NULL, updated_at = ? WHERE id = ?`)
             // Tennis has no clock: the sets the tracker wrote (when someone watches the match) stay.
-            .run(home, away, row.sport === 'tenis' ? row.clock : clockText(row.sport, minutes, ev.clockRaw), minutes, nowIso(), nowIso(), row.id);
+            .run(home, away, row.sport === 'tenis' ? row.clock : clockText(row.sport, minutes, ev.clockRaw, row.competition), minutes, nowIso(), nowIso(), row.id);
           if (overtime) {
             const tie = Math.min(home, away);
             db.prepare('UPDATE events SET wh_overtime = 1, reg_home_score = ?, reg_away_score = ? WHERE id = ?').run(tie, tie, row.id);
@@ -1422,8 +1443,20 @@ export function createWinHouseFeed(db, {
    * `parallel` at a time). The sets also settle the set markets when the match ends.
    */
   const tennisReadAt = new Map(); // event id → when its tracker was last read (ms)
+  // The match tracker's reading (whtracker.js: the widget route, which carries the tennis point;
+  // the plain tracker route often does not). Set at start-up; the plain route without it.
+  let trackerState = null;
+  const tennisNow = async (ext) => {
+    if (trackerState) {
+      const s = await trackerState(ext).catch(() => null);
+      if (s?.tennis) return s.tennis;
+    }
+    if (typeof client.tracker !== 'function') return null;
+    const r = await client.tracker(ext);
+    return r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body) ? normalizeWidgetData(r.body).tennis : null;
+  };
   async function readTennis({ now = Date.now(), perRun = 12, parallel = 4, everyMs = 10_000 } = {}) {
-    if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
+    if (!trackerState && typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
     const all = db.prepare(`SELECT id, external_id, live_detail FROM events WHERE source = ? AND status = 'live' AND sport = 'tenis'`).all(SOURCE);
     const live = new Set(all.map((r) => r.id));
     for (const id of tennisReadAt.keys()) if (!live.has(id)) tennisReadAt.delete(id);
@@ -1434,9 +1467,7 @@ export function createWinHouseFeed(db, {
     const one = async (row) => {
       tennisReadAt.set(row.id, now);
       try {
-        const r = await client.tracker(row.external_id);
-        if (!r?.ok || !r.body || typeof r.body !== 'object' || Array.isArray(r.body)) return;
-        const t = normalizeWidgetData(r.body).tennis;
+        const t = await tennisNow(row.external_id);
         if (!t || (!t.sets?.length && !t.point)) return;
         let d = {};
         try { d = JSON.parse(row.live_detail || '{}') || {}; } catch { /* none */ }
@@ -1873,5 +1904,5 @@ export function createWinHouseFeed(db, {
     liveDown: () => health.down(),
     /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
     rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
-    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, source: SOURCE };
+    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, setTrackerState: (fn) => { trackerState = fn; }, source: SOURCE };
 }

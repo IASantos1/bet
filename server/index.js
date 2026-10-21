@@ -87,6 +87,8 @@ const winhouseOdds = winhouseFeed && config.winhouse.oddsPush
   ? createWinHouseOddsPush({ url: sioUrl(config.winhouse.baseUrl, config.winhouse.oddsPushPath), onCoefs: winhouseFeed.applyCoefs, log: (msg) => console.warn(`[winhouse] ${msg}`) })
   : null;
 winhouseFeed?.setOddsPush(winhouseOdds);
+// Tennis cards: the point (15 / 30 / 40 / AD) read the way the match page reads it.
+if (winhouseTracker?.enabled) winhouseFeed?.setTrackerState(winhouseTracker.state);
 const stopWinhouseOdds = winhouseOdds ? winhouseOdds.start() : () => {};
 const stopWinhouse = () => { stopWinhouseFeed(); stopWinhouseOdds(); };
 
