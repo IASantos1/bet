@@ -1932,7 +1932,8 @@ function skinEditorHtml() {
         <div class="field"><span>1. Jogo</span>
           <div class="fs-search"><input id="skGame" placeholder="Procurar jogo (ex.: Gates of Olympus)…" autocomplete="off" value="${esc(e.name || '')}">
           <div class="fs-results" id="skGameResults"></div></div>
-          <small class="muted" id="skGameCode">${e.code ? `Código: ${esc(e.code)}` : 'Escolha o jogo na lista.'}</small></div>
+          <small class="muted" id="skGameCode">${e.code ? `Código: ${esc(e.code)}` : 'Escolha o jogo na lista.'}</small>
+          <label class="field adm-inline">ou por fornecedor <select id="skProv"><option value="">Escolher fornecedor…</option></select></label></div>
         <label class="field"><span>2. Onde</span><select id="skSide">
           ${Object.entries(SIDE_LABEL).map(([v, t]) => `<option value="${v}"${e.side === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
         <div class="field"><span>3. O jogo</span>
@@ -1941,6 +1942,7 @@ function skinEditorHtml() {
         <label class="field"><span>4. Captura limpa (ex.: Betclic)</span><input type="file" id="skClean" accept="image/*">
           <small class="muted">O mesmo jogo, no mesmo aparelho e na mesma posição, sem o que quer tapar.</small></label>
       </div>
+      <div class="sk-prov-games hidden" id="skProvGames"></div>
       <div class="skin-tools">
         <div class="seg">
           <button type="button" class="${e.tool === 'play' ? 'on' : ''}" data-action="skin-tool" data-tool="play">🎮 Usar o jogo</button>
@@ -2016,6 +2018,7 @@ async function openSkinEditor(skin = null) {
   skinEd.tool = skinEd.zone ? 'zone' : 'move';
   $('#adminMain').innerHTML = skinEditorHtml();
   buildStage();
+  loadSkinProviders();
 }
 
 /** The stage: the game (live) or our screenshot, the clean picture over it, the zone; all in design px. */
@@ -2192,6 +2195,8 @@ async function skinAction(action, el) {
   if (action === 'skin-pick') {
     skinEd.code = el.dataset.code; skinEd.name = el.dataset.name;
     $('#skGame').value = el.dataset.name; $('#skGameResults').innerHTML = ''; $('#skGameCode').textContent = `Código: ${el.dataset.code}`;
+    document.querySelectorAll('.sk-game-card').forEach((c) => c.classList.toggle('on', c.dataset.code === el.dataset.code));
+    if (el.classList.contains('sk-game-card')) toast(el.dataset.name, 'Escolhido. Agora: "Abrir o jogo aqui" (passo 3).');
     return;
   }
   if (action === 'skin-open-game') {
@@ -2232,6 +2237,7 @@ async function skinAction(action, el) {
     host.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+  if (action === 'skin-prov-more') { showProviderGames($('#skProv').value, true); return; }
   if (action === 'skin-measure') {
     if (!skinEd.loadedAt) { toast('Cronómetro', 'Abra primeiro o jogo aqui (passo 3).', 'error'); return; }
     const secs = Math.round((Date.now() - skinEd.loadedAt) / 100) / 10;
@@ -2277,6 +2283,7 @@ async function skinChange(t) {
   if (t.id === 'skScale') { e.sBase = null; t.value = 0; return; }
   if (t.id === 'skDiff') { e.diff = t.checked; updateStage(); return; }
   if (t.id === 'skPreview') { e.preview = t.checked; updateStage(); return; }
+  if (t.id === 'skProv') { showProviderGames(t.value); return; }
   if (t.id === 'skWhen') {
     const touch = t.value === 'touch';
     document.querySelectorAll('.sk-touch-only').forEach((n) => n.classList.toggle('hidden', !touch));
@@ -2314,3 +2321,40 @@ window.addEventListener('message', (ev) => {
   out.dataset.n = String(Number(out.dataset.n) + 1);
   out.textContent = `${new Date().toLocaleTimeString('pt-PT')}  ${String(text).slice(0, 300)}\n${out.textContent}`.slice(0, 6000);
 });
+
+// ---------- películas: all the games of one provider, to pick from ----------
+async function loadSkinProviders() {
+  try {
+    const [cat, mine] = await Promise.all([api('/api/casino/games?limit=1'), api('/api/admin/skins')]);
+    if (!skinEd) return;
+    skinEd.withSkin = new Set(mine.skins.map((s) => s.code));
+    const sel = $('#skProv');
+    if (!sel) return;
+    const provs = [...(cat.providers || [])].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt'));
+    sel.insertAdjacentHTML('beforeend', provs.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.count ? ` (${p.count})` : ''}</option>`).join(''));
+    const prag = provs.find((p) => /pragmatic/i.test(p.name));
+    if (prag && !skinEd.code) { sel.value = prag.id; showProviderGames(prag.id); }
+  } catch (err) { toast('Erro', err.message, 'error'); }
+}
+
+async function showProviderGames(provider, more = false) {
+  const box = $('#skProvGames');
+  if (!box || !skinEd) return;
+  if (!provider) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const offset = more ? skinEd.provOffset || 0 : 0;
+  if (!more) box.innerHTML = '<p class="muted">A carregar os jogos…</p>';
+  box.classList.remove('hidden');
+  try {
+    const r = await api(`/api/casino/games?limit=60&offset=${offset}&provider=${encodeURIComponent(provider)}`);
+    const list = r.games.filter((g) => g.code);
+    const cards = list.map((g) => `<button type="button" class="sk-game-card${g.code === skinEd.code ? ' on' : ''}" data-action="skin-pick" data-code="${esc(g.code)}" data-name="${esc(g.name)}">
+        <span class="sk-game-img">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span>
+        <span class="sk-game-name">${esc(g.name)}</span>${skinEd.withSkin?.has(g.code) ? '<b class="sk-has">Película ✓</b>' : ''}</button>`).join('');
+    skinEd.provOffset = offset + r.games.length;
+    const grid = more ? $('.sk-game-grid', box) : null;
+    if (grid) grid.insertAdjacentHTML('beforeend', cards);
+    else box.innerHTML = `<div class="sk-prov-head"><strong>${r.total} jogos</strong> <small class="muted">Toque num jogo para o escolher.</small></div><div class="sk-game-grid">${cards}</div>`;
+    $('.sk-prov-more', box)?.remove();
+    if (skinEd.provOffset < r.total) box.insertAdjacentHTML('beforeend', `<button type="button" class="ghost-btn btn-sm sk-prov-more" data-action="skin-prov-more">Mostrar mais (${r.total - skinEd.provOffset})</button>`);
+  } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+}

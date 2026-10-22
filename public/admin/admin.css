@@ -764,3 +764,15 @@
   background: repeating-conic-gradient(#2a2f37 0 25%, #1b1f25 0 50%) 0 0 / 16px 16px; }
 .sp-view canvas { position: absolute; left: 0; top: 0; height: auto; image-rendering: auto; }
 .sp-view .sp-over { touch-action: none; cursor: crosshair; }
+/* Películas: games of one provider */
+.sk-prov-games { border: 1px solid var(--line, #2a2f37); border-radius: 10px; padding: 10px; margin-bottom: 12px; max-height: 60vh; overflow: auto; }
+.sk-prov-head { margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; }
+.sk-game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.sk-game-card { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line, #2a2f37); border-radius: 8px; background: #151a20; color: inherit; cursor: pointer; text-align: left; }
+.sk-game-card:hover { border-color: #ffc400; }
+.sk-game-card.on { border-color: #ffc400; box-shadow: 0 0 0 2px #ffc400 inset; }
+.sk-game-img { display: grid; place-items: center; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: #0d1114; font-size: 28px; }
+.sk-game-img img { width: 100%; height: 100%; object-fit: cover; }
+.sk-game-name { font-size: 12px; line-height: 1.25; }
+.sk-has { position: absolute; top: 8px; left: 8px; background: #2fbf71; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+.sk-prov-more { margin-top: 10px; }
