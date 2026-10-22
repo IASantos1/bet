@@ -1919,6 +1919,10 @@ function adminSkins(d) {
       <div class="skin-list">${cards || '<p class="muted">Ainda não há películas.</p>'}</div></div>`;
 }
 
+// The editor works in "design pixels": the size of the reference screenshot, or of the format chosen
+// for the live game (FORMATS). The stage shows them at any size; positions are kept in design pixels.
+const FORMATS = { land: { w: 1162, h: 660, label: 'Computador 16:9' }, port: { w: 1206, h: 1884, label: 'Telemóvel em pé' } };
+
 function skinEditorHtml() {
   const e = skinEd;
   return `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="skin-back">‹ Películas</button></div>
@@ -1930,22 +1934,26 @@ function skinEditorHtml() {
           <small class="muted" id="skGameCode">${e.code ? `Código: ${esc(e.code)}` : 'Escolha o jogo na lista.'}</small></div>
         <label class="field"><span>2. Onde</span><select id="skSide">
           ${Object.entries(SIDE_LABEL).map(([v, t]) => `<option value="${v}"${e.side === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-        <label class="field"><span>3. Captura do jogo no nosso site</span><input type="file" id="skRef" accept="image/*">
-          <small class="muted">O jogo parado, a ocupar a captura toda.</small></label>
+        <div class="field"><span>3. O jogo</span>
+          <button type="button" class="primary-btn btn-sm" data-action="skin-open-game">▶ Abrir o jogo aqui</button>
+          <small class="muted">Ou carregue uma captura do nosso site: <input type="file" id="skRef" accept="image/*"></small></div>
         <label class="field"><span>4. Captura limpa (ex.: Betclic)</span><input type="file" id="skClean" accept="image/*">
           <small class="muted">O mesmo jogo, no mesmo aparelho e na mesma posição, sem o que quer tapar.</small></label>
       </div>
       <div class="skin-tools">
-        <div class="seg"><button type="button" class="${e.tool === 'move' ? 'on' : ''}" data-action="skin-tool" data-tool="move">✋ Alinhar captura limpa</button>
+        <div class="seg">
+          <button type="button" class="${e.tool === 'play' ? 'on' : ''}" data-action="skin-tool" data-tool="play">🎮 Usar o jogo</button>
+          <button type="button" class="${e.tool === 'move' ? 'on' : ''}" data-action="skin-tool" data-tool="move">✋ Alinhar captura limpa</button>
           <button type="button" class="${e.tool === 'zone' ? 'on' : ''}" data-action="skin-tool" data-tool="zone">▭ Marcar zona a tapar</button></div>
         <label class="field adm-inline">Transparência <input type="range" id="skOp" min="0" max="100" value="${Math.round(e.op * 100)}"></label>
         <label class="field adm-inline">Tamanho <input type="range" id="skScale" min="-200" max="200" value="0"> <input type="number" id="skScaleN" step="0.0005" value="${e.s.toFixed(4)}" class="sk-num"></label>
         <label class="adm-switch"><input type="checkbox" id="skDiff"${e.diff ? ' checked' : ''}> Diferença (alinhado = preto)</label>
         <label class="adm-switch"><input type="checkbox" id="skPreview"${e.preview ? ' checked' : ''}> Ver resultado</label>
       </div>
-      <p class="muted">Arraste a captura limpa até coincidir com a nossa (setas do teclado: 1 px; Shift: 10 px). Depois escolha "Marcar zona" e arraste sobre o que quer tapar.</p>
-      <div class="skin-canvas-wrap"><canvas id="skCanvas" tabindex="0"></canvas>
-        <div class="skin-canvas-empty" id="skEmpty">${e.ref ? '' : 'Carregue a captura do jogo no nosso site (passo 3).'}</div></div>
+      <p class="muted">"Usar o jogo" deixa clicar no jogo (fechar o ecrã de entrada). "Alinhar": arraste a captura limpa até coincidir com o jogo
+        (setas do teclado: 1 px; Shift: 10 px). "Marcar zona": arraste sobre o que quer tapar. Para o telemóvel, faça-o com o admin aberto no telemóvel.</p>
+      <div class="skin-stage-wrap"><div class="skin-stage" id="skStage" tabindex="0"></div>
+        <div class="skin-canvas-empty" id="skEmpty"></div></div>
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" id="skEnabled"${e.enabled ? ' checked' : ''}> Ativa</label>
         <button class="primary-btn" data-action="skin-save">Guardar película</button></div>
     </div>`;
@@ -1959,101 +1967,126 @@ function asJpeg(img, quality = 0.9) {
   c.getContext('2d').drawImage(img, 0, 0);
   return c.toDataURL('image/jpeg', quality);
 }
+/** Design size: the reference screenshot's, else the format of the side (or of the saved cover). */
+function skinSize() {
+  const e = skinEd;
+  if (e.ref) return { w: e.ref.naturalWidth, h: e.ref.naturalHeight };
+  const f = FORMATS[e.side];
+  if (e.ratio && Math.abs(e.ratio - f.w / f.h) > 0.002) return { w: Math.round(1000 * e.ratio), h: 1000 };
+  return { w: f.w, h: f.h };
+}
 
 async function openSkinEditor(skin = null) {
   skinEd = {
     id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
     ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
-    box: skin?.box || null, ratio: skin?.ratio || null, cover: null,
+    box: skin?.box || null, ratio: skin?.ratio || null, cover: skin?.img || null, gameUrl: null,
   };
   try {
     if (skin?.ref) skinEd.ref = await loadImg(skin.ref);
     if (skin?.clean) skinEd.clean = await loadImg(skin.clean);
     if (skin?.align) Object.assign(skinEd, { x: skin.align.x, y: skin.align.y, s: skin.align.s });
-    if (skin && !skin.ref) skinEd.cover = await loadImg(skin.img);
   } catch (err) { toast('Erro', err.message, 'error'); }
-  if (skinEd.ref && skinEd.box) {
-    const W = skinEd.ref.naturalWidth, H = skinEd.ref.naturalHeight, [l, t, w, h] = skinEd.box;
-    skinEd.zone = { x: l * W / 100, y: t * H / 100, w: w * W / 100, h: h * H / 100 };
+  if (skinEd.box) {
+    const { w, h } = skinSize(), [l, t, bw, bh] = skinEd.box;
+    skinEd.zone = { x: l * w / 100, y: t * h / 100, w: bw * w / 100, h: bh * h / 100 };
   }
-  if (skinEd.clean || skinEd.zone) skinEd.tool = skinEd.zone ? 'zone' : 'move';
+  skinEd.tool = skinEd.zone ? 'zone' : 'move';
   $('#adminMain').innerHTML = skinEditorHtml();
-  wireSkinCanvas();
-  drawSkin();
+  buildStage();
 }
 
-function drawSkin() {
-  const e = skinEd, c = $('#skCanvas');
-  if (!e || !c) return;
-  const ctx = c.getContext('2d');
-  $('#skEmpty').textContent = e.ref ? '' : (e.cover ? 'Película feita antes do editor: para mudar a imagem ou a zona, carregue as duas capturas.' : 'Carregue a captura do jogo no nosso site (passo 3).');
-  if (!e.ref) {
-    if (e.cover) { c.width = e.cover.naturalWidth; c.height = e.cover.naturalHeight; ctx.clearRect(0, 0, c.width, c.height); ctx.drawImage(e.cover, 0, 0); } else { c.width = 0; c.height = 0; }
-    return;
-  }
-  const W = e.ref.naturalWidth, H = e.ref.naturalHeight;
-  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(e.ref, 0, 0);
-  if (e.clean) {
+/** The stage: the game (live) or our screenshot, the clean picture over it, the zone; all in design px. */
+function buildStage() {
+  const e = skinEd, st = $('#skStage');
+  if (!st) return;
+  const { w, h } = skinSize();
+  st.style.setProperty('--sr', `${w} / ${h}`);
+  st.style.setProperty('--srn', String(w / h));
+  const bg = e.gameUrl ? `<iframe class="sk-game" src="${esc(e.gameUrl)}" allow="autoplay; fullscreen" referrerpolicy="origin"></iframe>`
+    : e.ref ? `<img class="sk-ref" src="${e.ref.src}" alt="" draggable="false">` : '';
+  st.innerHTML = `${bg}${e.clean ? `<img class="sk-clean" src="${e.clean.src}" alt="" draggable="false">` : ''}
+    ${!e.ref && !e.gameUrl && e.cover && e.zone ? `<img class="sk-cover" src="${esc(e.cover)}" alt="">` : ''}
+    <div class="sk-zone hidden"></div><div class="sk-touch"></div>`;
+  $('#skEmpty').textContent = bg ? '' : 'Abra o jogo (passo 3) ou carregue uma captura do nosso site.';
+  st.classList.toggle('hidden', !bg && !e.cover);
+  wireStage();
+  updateStage();
+}
+
+function updateStage() {
+  const e = skinEd, st = $('#skStage');
+  if (!e || !st) return;
+  const { w, h } = skinSize(), pct = (v, d) => `${(v / d) * 100}%`;
+  const clean = $('.sk-clean', st);
+  if (clean) {
     const cw = e.clean.naturalWidth * e.s, ch = e.clean.naturalHeight * e.s;
+    Object.assign(clean.style, { left: pct(e.x, w), top: pct(e.y, h), width: pct(cw, w), height: pct(ch, h) });
+    clean.style.opacity = e.preview || e.diff ? 1 : e.op;
+    clean.style.mixBlendMode = e.diff && !e.preview ? 'difference' : 'normal';
+    // "Ver resultado": only the zone of the clean picture shows, as the players will see it.
     if (e.preview && e.zone) {
-      ctx.save(); ctx.beginPath(); ctx.rect(e.zone.x, e.zone.y, e.zone.w, e.zone.h); ctx.clip();
-      ctx.drawImage(e.clean, e.x, e.y, cw, ch); ctx.restore();
-    } else if (!e.preview) {
-      ctx.globalAlpha = e.diff ? 1 : e.op;
-      if (e.diff) ctx.globalCompositeOperation = 'difference';
-      ctx.drawImage(e.clean, e.x, e.y, cw, ch);
-      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    }
+      const l = (e.zone.x - e.x) / cw * 100, t = (e.zone.y - e.y) / ch * 100;
+      const r = 100 - (e.zone.x + e.zone.w - e.x) / cw * 100, b = 100 - (e.zone.y + e.zone.h - e.y) / ch * 100;
+      clean.style.clipPath = `inset(${t}% ${r}% ${b}% ${l}%)`;
+    } else clean.style.clipPath = '';
   }
-  if (e.zone && !e.preview) {
-    const lw = Math.max(2, W / 400);
-    ctx.lineWidth = lw; ctx.setLineDash([lw * 4, lw * 3]); ctx.strokeStyle = '#ffc400';
-    ctx.strokeRect(e.zone.x, e.zone.y, e.zone.w, e.zone.h); ctx.setLineDash([]);
-  }
+  const cover = $('.sk-cover', st);
+  if (cover && e.zone) Object.assign(cover.style, { left: pct(e.zone.x, w), top: pct(e.zone.y, h), width: pct(e.zone.w, w), height: pct(e.zone.h, h) });
+  const z = $('.sk-zone', st);
+  z.classList.toggle('hidden', !e.zone || e.preview);
+  if (e.zone) Object.assign(z.style, { left: pct(e.zone.x, w), top: pct(e.zone.y, h), width: pct(e.zone.w, w), height: pct(e.zone.h, h) });
+  // "Usar o jogo": the clicks go to the game underneath.
+  $('.sk-touch', st).style.pointerEvents = e.tool === 'play' ? 'none' : 'auto';
 }
 
-function wireSkinCanvas() {
-  const c = $('#skCanvas');
+function wireStage() {
+  const st = $('#skStage'), touch = $('.sk-touch', st);
   let drag = null;
-  const at = (ev) => { const r = c.getBoundingClientRect(); return { x: (ev.clientX - r.left) * c.width / r.width, y: (ev.clientY - r.top) * c.height / r.height }; };
-  c.addEventListener('pointerdown', (ev) => {
-    if (!skinEd?.ref) return;
-    c.setPointerCapture(ev.pointerId); c.focus();
-    const p = at(ev);
-    drag = { p, x: skinEd.x, y: skinEd.y };
+  const at = (ev) => { const r = st.getBoundingClientRect(), { w, h } = skinSize(); return { x: (ev.clientX - r.left) * w / r.width, y: (ev.clientY - r.top) * h / r.height }; };
+  touch.addEventListener('pointerdown', (ev) => {
+    touch.setPointerCapture(ev.pointerId); st.focus();
+    drag = { p: at(ev), x: skinEd.x, y: skinEd.y };
   });
-  c.addEventListener('pointermove', (ev) => {
+  touch.addEventListener('pointermove', (ev) => {
     if (!drag) return;
-    const p = at(ev), e = skinEd;
+    const p = at(ev), e = skinEd, { w, h } = skinSize();
     if (e.tool === 'move' && e.clean) { e.x = drag.x + p.x - drag.p.x; e.y = drag.y + p.y - drag.p.y; }
     else if (e.tool === 'zone') {
       const x0 = Math.max(0, Math.min(drag.p.x, p.x)), y0 = Math.max(0, Math.min(drag.p.y, p.y));
-      const x1 = Math.min(c.width, Math.max(drag.p.x, p.x)), y1 = Math.min(c.height, Math.max(drag.p.y, p.y));
+      const x1 = Math.min(w, Math.max(drag.p.x, p.x)), y1 = Math.min(h, Math.max(drag.p.y, p.y));
       e.zone = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     }
-    drawSkin();
+    updateStage();
   });
-  const end = () => { drag = null; if (skinEd?.zone && (skinEd.zone.w < 4 || skinEd.zone.h < 4)) skinEd.zone = null; drawSkin(); };
-  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
-  c.addEventListener('keydown', (ev) => {
+  const end = () => { drag = null; if (skinEd?.zone && (skinEd.zone.w < 4 || skinEd.zone.h < 4)) skinEd.zone = null; updateStage(); };
+  touch.addEventListener('pointerup', end); touch.addEventListener('pointercancel', end);
+  st.addEventListener('keydown', (ev) => {
     const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
     if (!d || !skinEd?.clean) return;
     ev.preventDefault();
     const k = ev.shiftKey ? 10 : 1;
-    skinEd.x += d[0] * k; skinEd.y += d[1] * k; drawSkin();
+    skinEd.x += d[0] * k; skinEd.y += d[1] * k; updateStage();
   });
 }
 
-/** Changes the size of the clean picture keeping the middle of the screen where it is. */
+/** Changes the size of the clean picture keeping the middle of the stage where it is. */
 function setSkinScale(s) {
   const e = skinEd;
-  if (!e?.ref || !(s > 0)) return;
-  const cx = e.ref.naturalWidth / 2, cy = e.ref.naturalHeight / 2;
+  if (!e || !(s > 0)) return;
+  const { w, h } = skinSize(), cx = w / 2, cy = h / 2;
   e.x = cx - (cx - e.x) * (s / e.s); e.y = cy - (cy - e.y) * (s / e.s); e.s = s;
   const n = $('#skScaleN'); if (n && document.activeElement !== n) n.value = s.toFixed(4);
-  drawSkin();
+  updateStage();
+}
+
+/** A new clean picture starts fitted to the width of the stage, centred. */
+function fitClean() {
+  const e = skinEd;
+  if (!e.clean) return;
+  const { w, h } = skinSize();
+  e.s = w / e.clean.naturalWidth; e.x = 0; e.y = (h - e.clean.naturalHeight * e.s) / 2;
+  const n = $('#skScaleN'); if (n) n.value = e.s.toFixed(4);
 }
 
 /** The cover: the marked zone of the clean picture at the clean picture's own resolution, soft edges. */
@@ -2078,21 +2111,16 @@ function skinCover() {
 async function saveSkin() {
   const e = skinEd;
   if (!e.code) throw new Error('Escolha o jogo (passo 1).');
-  const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked };
-  if (e.ref) {
-    if (!e.zone) throw new Error('Marque a zona a tapar.');
-    const W = e.ref.naturalWidth, H = e.ref.naturalHeight;
-    body.ratio = W / H;
-    body.box = [e.zone.x / W * 100, e.zone.y / H * 100, e.zone.w / W * 100, e.zone.h / H * 100];
-    if (!e.clean) throw new Error('Carregue a captura limpa (passo 4).');
+  if (!e.zone) throw new Error('Marque a zona a tapar.');
+  const { w, h } = skinSize();
+  const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked,
+    ratio: w / h, box: [e.zone.x / w * 100, e.zone.y / h * 100, e.zone.w / w * 100, e.zone.h / h * 100] };
+  if (e.clean) {
     body.image = skinCover();
     body.align = { x: e.x, y: e.y, s: e.s };
-    if (e.refNew) body.refImage = asJpeg(e.ref);
     if (e.cleanNew) body.cleanImage = asJpeg(e.clean, 0.95);
-  } else {
-    if (!e.id) throw new Error('Carregue a captura do jogo no nosso site (passo 3).');
-    body.ratio = e.ratio; body.box = e.box;
-  }
+  } else if (!e.id || !e.cover) throw new Error('Carregue a captura limpa (passo 4).');
+  if (e.ref && e.refNew) body.refImage = asJpeg(e.ref);
   const r = await api('/api/admin/skins', { method: 'POST', body });
   return r.skin;
 }
@@ -2117,11 +2145,26 @@ async function skinAction(action, el) {
   if (action === 'skin-tool') {
     skinEd.tool = el.dataset.tool;
     document.querySelectorAll('.skin-ed .seg button').forEach((b) => b.classList.toggle('on', b === el));
+    updateStage();
     return;
   }
   if (action === 'skin-pick') {
     skinEd.code = el.dataset.code; skinEd.name = el.dataset.name;
     $('#skGame').value = el.dataset.name; $('#skGameResults').innerHTML = ''; $('#skGameCode').textContent = `Código: ${el.dataset.code}`;
+    return;
+  }
+  if (action === 'skin-open-game') {
+    if (!skinEd.code) { toast('Jogo', 'Escolha primeiro o jogo (passo 1).', 'error'); return; }
+    el.disabled = true;
+    try {
+      const r = await api('/api/admin/skins/launch', { method: 'POST', body: { code: skinEd.code } });
+      // The live game takes the stage: the format of the side chosen (our screenshot is put aside).
+      skinEd.gameUrl = r.url; skinEd.ref = null; skinEd.refNew = false; skinEd.ratio = null; skinEd.tool = 'play';
+      document.querySelectorAll('.skin-ed .seg button').forEach((b) => b.classList.toggle('on', b.dataset.tool === 'play'));
+      buildStage();
+      toast('Jogo aberto', 'Feche o ecrã de entrada do jogo em "Usar o jogo" e depois alinhe e marque a zona.');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    el.disabled = false;
     return;
   }
   if (action === 'skin-save') {
@@ -2133,7 +2176,7 @@ async function skinAction(action, el) {
 let skGameTimer = null;
 function skinInput(t) {
   const e = skinEd;
-  if (t.id === 'skOp') { e.op = Number(t.value) / 100; drawSkin(); }
+  if (t.id === 'skOp') { e.op = Number(t.value) / 100; updateStage(); }
   else if (t.id === 'skScale') { e.sBase ??= e.s; setSkinScale(e.sBase * 2 ** (Number(t.value) / 200)); }
   else if (t.id === 'skScaleN') { const v = Number(t.value); if (v > 0) setSkinScale(v); }
   else if (t.id === 'skGame') {
@@ -2149,6 +2192,8 @@ function skinInput(t) {
         box.innerHTML = list.length ? list.map((g) => `<button type="button" class="fs-result" data-action="skin-pick" data-code="${esc(g.code)}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)} · ${esc(g.code)}</small></button>`).join('')
           : '<small class="muted">Nenhum jogo encontrado.</small>';
       } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
+      // The game's code can also be typed as it is (e.g. vs20olympgate).
+      if (/^[\w-]{3,80}$/.test(q)) box.insertAdjacentHTML('beforeend', `<button type="button" class="fs-result" data-action="skin-pick" data-code="${esc(q)}" data-name="${esc(q)}">Usar «${esc(q)}» como código do jogo</button>`);
     }, 250);
   }
 }
@@ -2156,23 +2201,24 @@ function skinInput(t) {
 async function skinChange(t) {
   const e = skinEd;
   if (t.id === 'skScale') { e.sBase = null; t.value = 0; return; }
-  if (t.id === 'skDiff') { e.diff = t.checked; drawSkin(); return; }
-  if (t.id === 'skPreview') { e.preview = t.checked; drawSkin(); return; }
-  if (t.id === 'skSide') { e.side = t.value; return; }
+  if (t.id === 'skDiff') { e.diff = t.checked; updateStage(); return; }
+  if (t.id === 'skPreview') { e.preview = t.checked; updateStage(); return; }
+  if (t.id === 'skSide') {
+    e.side = t.value;
+    if (!e.ref) { e.ratio = null; e.zone = null; fitClean(); buildStage(); }
+    return;
+  }
   if ((t.id === 'skRef' || t.id === 'skClean') && t.files?.[0]) {
     try {
       const img = await loadImg(await readFile(t.files[0]));
       if (t.id === 'skRef') {
-        e.ref = img; e.refNew = true; e.zone = null; e.cover = null;
+        e.ref = img; e.refNew = true; e.zone = null; e.cover = null; e.gameUrl = null;
         e.side = img.naturalWidth > img.naturalHeight ? 'land' : 'port';
         $('#skSide').value = e.side;
-      } else { e.clean = img; e.cleanNew = true; }
-      // A new clean picture starts fitted to the width of ours, centred.
-      if (e.ref && e.clean && (t.id === 'skClean' || !e.s)) {
-        e.s = e.ref.naturalWidth / e.clean.naturalWidth; e.x = 0; e.y = (e.ref.naturalHeight - e.clean.naturalHeight * e.s) / 2;
-        $('#skScaleN').value = e.s.toFixed(4);
-      }
-      drawSkin();
+        if (e.clean) fitClean();
+      } else { e.clean = img; e.cleanNew = true; fitClean(); if (e.tool === 'play') e.tool = 'move'; }
+      document.querySelectorAll('.skin-ed .seg button').forEach((b) => b.classList.toggle('on', b.dataset.tool === e.tool));
+      buildStage();
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
 }

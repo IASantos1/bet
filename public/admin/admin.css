@@ -734,7 +734,12 @@
 .skin-tools .seg button { background: transparent; color: inherit; border: 0; padding: 8px 12px; cursor: pointer; font-weight: 600; }
 .skin-tools .seg button.on { background: #ffc400; color: #111; }
 .sk-num { width: 90px; }
-.skin-canvas-wrap { position: relative; background: #000; border-radius: 8px; overflow: auto; max-height: 78vh; text-align: center; }
-#skCanvas { max-width: 100%; height: auto; touch-action: none; cursor: crosshair; outline: none; display: block; margin: 0 auto; }
-.skin-canvas-empty { padding: 30px 16px; color: #aaa; }
+.skin-stage-wrap { background: #000; border-radius: 8px; padding: 6px; }
+.skin-stage { position: relative; width: min(100%, calc(75vh * var(--srn, 1.76))); aspect-ratio: var(--sr, 16 / 9); margin: 0 auto; background: #000; overflow: hidden; outline: none; }
+.skin-stage > iframe, .skin-stage .sk-ref { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.skin-stage .sk-clean, .skin-stage .sk-cover { position: absolute; pointer-events: none; max-width: none; user-select: none; }
+.skin-stage .sk-zone { position: absolute; border: 2px dashed #ffc400; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .3); pointer-events: none; }
+.skin-stage .sk-touch { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+.skin-stage.hidden, .skin-stage .sk-zone.hidden { display: none; }
+.skin-canvas-empty { padding: 30px 16px; color: #aaa; text-align: center; }
 .skin-canvas-empty:empty { display: none; }

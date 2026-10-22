@@ -2210,6 +2210,14 @@ export function createApp(db, {
     try { fn(req, res); } catch (err) { throw err instanceof SkinError ? new HttpError(400, err.message) : err; }
   };
   admin.get('/skins', (_req, res) => res.json({ mode: getSetting(db, 'casino.skins', 'off'), skins: skins.all() }));
+  // Opens a game for the admin inside the editor (no money moves: the cover is made with the game idle).
+  admin.post('/skins/launch', wrap(async (req, res) => {
+    const code = String(req.body?.code || '');
+    if (!casino?.enabled) throw new HttpError(409, 'A Palace não está configurada: não é possível abrir o jogo aqui.');
+    const game = (await casino.games()).games.find((g) => g.code === code);
+    if (!game) throw new HttpError(404, 'Jogo não encontrado no catálogo da Palace.');
+    res.json({ url: await casino.launch(req.user, { providerId: game.providerId, gameCode: game.code, returnUrl: '' }) });
+  }));
   admin.get('/skins/:id/ref', (req, res) => sendImage(res, skins.image(req.params.id, 'ref')));
   admin.get('/skins/:id/clean', (req, res) => sendImage(res, skins.image(req.params.id, 'clean')));
   admin.post('/skins', skinErr((req, res) => res.json({ skin: skins.save(req.body || {}) })));
