@@ -123,7 +123,7 @@ function usersTable(users) {
 
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido', bet: 'Aposta', payout: 'Prémio', refund: 'Reembolso',
-  casino_out: 'Casino (saída)', casino_in: 'Casino (entrada)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
+  casino_out: 'Casino (saldo levado para o jogo)', casino_in: 'Casino (saldo que voltou do jogo)', admin_credit: 'Crédito do admin', admin_debit: 'Débito do admin',
   bonus_convert: 'Bónus convertido', chargeback: 'Chargeback', cashout: 'Cash out', casino_bet: 'Casino (aposta)', casino_win: 'Casino (ganho)', free_spin_win: 'Ganhos Free Spins',
 };
 
@@ -565,9 +565,12 @@ function userDetailView(d) {
     <div class="panel"><h3>${esc(u.name)} ${u.banned ? '<span class="pill lost">Banido</span>' : ''}</h3>
       <p>${esc(u.email)}${u.phone ? ` · ${esc(u.phone)}` : ''} · nascido em ${esc(u.birthdate || '—')} · registo ${esc(fmtDateTime(u.createdAt))}</p>
       <div class="user-sums">
-        <div><small>Saldo</small><strong>${money(u.balance)}</strong></div><div><small>FreeBets</small><strong>${money(u.freebet)}</strong></div>
+        <div><small>Saldo</small><strong>${money(u.balance)}</strong></div>
+        ${u.inCasino !== null && u.inCasino !== undefined ? `<div title="Jogo aberto: o saldo está no casino enquanto joga e volta quando sai."><small>No casino agora</small><strong>${typeof u.inCasino === 'number' ? money(u.inCasino) : esc(u.inCasino)}</strong></div>` : ''}
+        <div><small>FreeBets</small><strong>${money(u.freebet)}</strong></div>
         <div><small>Depósitos</small><strong>${money(d.totals.deposits)}</strong></div><div><small>Levantamentos</small><strong>${money(d.totals.withdrawals)}</strong></div>
         <div><small>Apostado</small><strong>${money(d.totals.staked)}</strong></div><div><small>Prémios</small><strong>${money(d.totals.payouts)}</strong></div>
+        <div title="Soma das transferências para o casino e das que voltaram. A diferença é o que perdeu (ou ganhou) nas slots."><small>Casino: enviado / voltou</small><strong>${money(d.totals.casinoOut)} / ${money(d.totals.casinoIn)}</strong></div>
       </div>
       <div class="user-acts big">
         <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" data-balance="${u.balance}" title="Ajustar saldo">${ICON.wallet}</button>

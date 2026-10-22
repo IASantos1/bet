@@ -2572,11 +2572,12 @@ function render({ keepScroll = false } = {}) {
     state.casinoTimer = null;
     if (state.user?.casinoActive) closeCasino();
   } else if (!state.casinoTimer) {
-    // Free spins are followed closely (every 2 s: the rounds left, the end); the balance every 6 s.
+    // The balance follows each spin (every 2 s); in a background tab every 30 s, which also tells the
+    // server the game is still open (otherwise it brings the balance back after 3 minutes).
     let tick = 0;
     state.casinoTimer = setInterval(() => {
       tick += 1;
-      if (!document.hidden && state.casinoSession?.url && (state.casinoSession.fs || tick % 3 === 0)) refreshCasinoBalance();
+      if (state.casinoSession?.url && (!document.hidden || tick % 15 === 0)) refreshCasinoBalance();
     }, 2_000);
   }
   document.body.classList.toggle('immersive', immersive);

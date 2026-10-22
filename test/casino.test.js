@@ -131,7 +131,8 @@ test('single wallet: the balance follows the player into the game and back', asy
   seed(db);
   const api = fakeAgentApi();
   const casino = createCasino(db, { baseUrl: 'https://a', token: 't', fetchImpl: api.fetchImpl });
-  const server = createApp(db, { casino, loginAttempts: 100, registrations: 100 }).listen(0);
+  const app = createApp(db, { casino, loginAttempts: 100, registrations: 100 });
+  const server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   let cookie = '';
@@ -174,6 +175,18 @@ test('single wallet: the balance follows the player into the game and back', asy
     assert.deepEqual((await call('POST', '/api/casino/close', {})).body, { amount: 0, balance: 60 });
     const types = (await call('GET', '/api/wallet')).body.transactions.map((t) => t.type).reverse();
     assert.deepEqual(types, ['deposit', 'casino_out', 'casino_in', 'bet', 'casino_out', 'casino_in']);
+
+    // A game closed without leaving it (tab closed): while it still asks for the balance nothing moves;
+    // 3 minutes without asking, the balance comes back to the wallet by itself.
+    await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' });
+    api.wallets.set(code, 12.14);
+    await call('GET', '/api/casino/wallet');
+    assert.equal(await app.locals.returnIdleCasino(Date.now() + 60_000), 0);
+    assert.equal((await call('GET', '/api/me')).body.user.casinoActive, true);
+    assert.equal(await app.locals.returnIdleCasino(Date.now() + 4 * 60_000), 1);
+    const me = (await call('GET', '/api/me')).body.user;
+    assert.equal(me.casinoActive, false);
+    assert.equal(me.balance, 12.14);
   } finally {
     server.closeAllConnections();
     server.close();
