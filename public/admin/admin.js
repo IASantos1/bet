@@ -853,6 +853,12 @@ function adminCasino(c) {
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-split"${c.split ? ' checked' : ''}${c.palace?.configured ? '' : ' disabled'}>
         Slots pela Palace · jogos ao vivo pela BigBang</label>
         ${c.palace?.configured ? '<button class="ghost-btn btn-sm" data-action="palace-test">Testar Palace</button>' : ''}</div>
+      <h4>Película "Comprar Rodadas Grátis"</h4>
+      <p class="muted">Tapa o painel de compra de rodadas (e o de aposta dupla) com a arte original do jogo, como na Betclic. Por agora: Gates of Olympus, no computador.
+        Experimente primeiro só para administradores (abra o jogo, o menu, as rodadas grátis) antes de ligar para todos.</p>
+      <div class="form-actions"><label class="field adm-inline">Película <select data-action="casino-skins">
+        ${[['off', 'Desligada'], ['admin', 'Só administradores (teste)'], ['all', 'Ligada para todos']].map(([v, t]) => `<option value="${v}"${(c.skins || 'off') === v ? ' selected' : ''}>${t}</option>`).join('')}
+      </select></label></div>
       <p class="muted">${c.palace?.configured
     ? (c.split ? 'Ativo: os slots vêm da Palace (o saldo passa para a Palace enquanto o jogo está aberto e volta ao sair) e a BigBang fica só com as mesas ao vivo.' : 'Desligado: todos os jogos vêm da BigBang.')
     : `A Palace não está configurada: defina <strong>CASINO_API_URL</strong> ${c.palace?.urlSet ? '✔' : '✘'} e <strong>CASINO_API_TOKEN</strong> ${c.palace?.tokenSet ? '✔' : '✘'} no Railway.`}</p>
@@ -1826,7 +1832,14 @@ document.addEventListener('click', async (e) => {
 
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
-document.addEventListener('change', (e) => {
+document.addEventListener('change', async (e) => {
+  if (e.target.dataset?.action === 'casino-skins') {
+    try {
+      const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
+      toast('Película', { off: 'Desligada', admin: 'Só para administradores', all: 'Ligada para todos' }[r.mode]);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
   // Market catalogue: show (and consult) one sport only.
   if (e.target.id === 'catSport') {
     catalogSport = e.target.value;
