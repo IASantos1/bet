@@ -12,6 +12,7 @@ import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
 import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
+import { createSkins, SkinError } from './skins.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -306,6 +307,8 @@ export function createApp(db, {
       : unsubPage('Link inválido', 'Pode desligar as promoções em Perfil → Preferências.'));
   });
 
+  // Admin → Películas sends pictures (the cover, the screenshots): a larger body there only.
+  app.use('/api/admin/skins', express.json({ limit: '16mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -435,6 +438,14 @@ export function createApp(db, {
     return n;
   }
   app.locals.expirePalaceSpins = expirePalaceSpins;
+
+  // Covers over parts of casino games (Admin → Películas).
+  const skins = createSkins(db, { seedDir: path.join(PUBLIC_DIR, 'casino', 'skins') });
+  const sendImage = (res, img) => {
+    if (!img) throw new HttpError(404, 'Imagem não encontrada.');
+    res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(img.data);
+  };
+  app.get('/api/casino/skin/:id', (req, res) => sendImage(res, skins.image(req.params.id)));
 
   // A Palace game open holds the player's balance in the casino. The game page asks for the balance
   // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
@@ -580,6 +591,7 @@ export function createApp(db, {
       liveDown: !!winhouseFeed?.liveDown?.(),
       // Covers over some Pragmatic games (the "buy free spins" panel): off, admins only (trial) or everyone.
       casinoSkins: getSetting(db, 'casino.skins', 'off'),
+      skins: getSetting(db, 'casino.skins', 'off') === 'off' ? [] : skins.live(),
     });
   });
 
@@ -2192,6 +2204,23 @@ export function createApp(db, {
     if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
     res.json(await telegram.promoteNext({ force: true }));
   }));
+
+  // ---------- películas (covers over parts of casino games) ----------
+  const skinErr = (fn) => (req, res) => {
+    try { fn(req, res); } catch (err) { throw err instanceof SkinError ? new HttpError(400, err.message) : err; }
+  };
+  admin.get('/skins', (_req, res) => res.json({ mode: getSetting(db, 'casino.skins', 'off'), skins: skins.all() }));
+  admin.get('/skins/:id/ref', (req, res) => sendImage(res, skins.image(req.params.id, 'ref')));
+  admin.get('/skins/:id/clean', (req, res) => sendImage(res, skins.image(req.params.id, 'clean')));
+  admin.post('/skins', skinErr((req, res) => res.json({ skin: skins.save(req.body || {}) })));
+  admin.post('/skins/:id/enabled', (req, res) => {
+    if (!skins.setEnabled(req.params.id, req.body?.on === true)) throw new HttpError(404, 'Película não encontrada.');
+    res.json({ ok: true });
+  });
+  admin.post('/skins/:id/delete', (req, res) => {
+    if (!skins.remove(req.params.id)) throw new HttpError(404, 'Película não encontrada.');
+    res.json({ ok: true });
+  });
 
   /** Covers over the "buy free spins" panel of some Pragmatic games: off | admin (trial) | all. */
   admin.post('/casino/skins', (req, res) => {

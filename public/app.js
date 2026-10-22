@@ -1265,35 +1265,29 @@ async function playCasino(mode) {
 // ---------- casino player (the game runs inside the page) ----------
 
 /**
- * Covers over the "buy free spins" panel of some Pragmatic games, made from the game's own artwork
- * (as the game looks where that panel does not exist). The game frame keeps the proportion the cover
- * was made for, so it always lands on the same spot; the cover also takes the clicks there.
- * land: computer, landscape; port: phone held upright. box: left, top, width, height in % of the frame.
- * A side without img only keeps the proportion (the game then lays out as in the reference picture).
+ * Covers ("películas") over parts of some games, made in Admin → Películas from the game's own
+ * artwork. The game frame keeps the proportion the cover was made for, so it always lands on the
+ * same spot; the cover also takes the clicks there. land: computer, landscape; port: phone upright.
+ * box: left, top, width, height in % of the frame.
  */
-const GAME_SKINS = {
-  vs20olympgate: {
-    land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] },
-    port: { img: '/casino/skins/vs20olympgate-port.png', ratio: 1206 / 1884, box: [12.023, 58.652, 75.622, 11.465] },
-  },
-};
 function gameSkin(g) {
   const mode = state.config?.casinoSkins;
-  if (g.demo || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
-  return GAME_SKINS[g.code] || null;
+  if (g.demo || !g.code || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
+  const mine = (state.config?.skins || []).filter((s) => s.code === g.code);
+  if (!mine.length) return null;
+  const side = (k) => { const list = mine.filter((s) => s.side === k); return list.length ? { ratio: list[0].ratio, covers: list } : null; };
+  return { land: side('land'), port: side('port') };
 }
 function skinned(g, frame) {
   const s = gameSkin(g);
   if (!s) return frame;
-  const cover = (side) => {
-    const c = s[side];
-    if (!c?.img) return '';
+  const covers = (side) => (s[side]?.covers || []).map((c) => {
     const [l, t, w, h] = c.box;
-    return `<img class="skin-${side}" src="${c.img}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
-  };
+    return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
+  }).join('');
   const vars = [s.land && `--rl:${s.land.ratio}`, s.port && `--rp:${s.port.ratio}`].filter(Boolean).join(';');
   const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port'].filter(Boolean).join(' ');
-  return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${cover('land')}${cover('port')}</div></div>`;
+  return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${covers('land')}${covers('port')}</div></div>`;
 }
 
 function casinoPlayPage() {

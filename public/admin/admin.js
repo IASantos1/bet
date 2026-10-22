@@ -53,6 +53,7 @@ const TABS = [
   { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
+  { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
   { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
@@ -710,6 +711,7 @@ async function loadTab() {
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
+    else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
@@ -1371,6 +1373,7 @@ document.addEventListener('click', async (e) => {
   if (action === 'refresh') { loadTab(); return; }
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
   if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
+  if (action.startsWith('skin-')) { skinAction(action, actionEl); return; }
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
@@ -1833,6 +1836,7 @@ document.addEventListener('click', async (e) => {
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
 document.addEventListener('change', async (e) => {
+  if (skinEd && e.target.closest?.('.skin-ed')) { skinChange(e.target); return; }
   if (e.target.dataset?.action === 'casino-skins') {
     try {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
@@ -1857,6 +1861,7 @@ document.addEventListener('change', async (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (e.target.form?.id === 'cpForm' && e.target.name === 'body') { campaignCount(); return; }
   const modal = e.target.id === 'amGameSearch';
   if (e.target.id !== 'fsGameSearch' && !modal) return;
@@ -1884,3 +1889,290 @@ async function init() {
   render();
 }
 init();
+
+// ---------- películas: covers over parts of casino games ----------
+// A cover is made from two screenshots of the same game on the same device: ours (the reference,
+// with the parts to hide) and a clean one (e.g. at Betclic). The clean one is laid over ours and
+// lined up (drag, size; "diferença" makes the match obvious: aligned = black), then the zone to hide
+// is marked. The cover is that zone of the clean picture, at its own resolution.
+
+const SIDE_LABEL = { land: 'Computador (deitado)', port: 'Telemóvel (em pé)' };
+let skinEd = null;
+
+function adminSkins(d) {
+  const mode = d.mode || 'off';
+  const cards = d.skins.map((s) => `<div class="skin-card">
+      <div class="skin-thumb"><img src="${esc(s.img)}" alt=""></div>
+      <div class="grow"><strong>${esc(s.name)}</strong><small class="muted">${esc(SIDE_LABEL[s.side])} · ${esc(s.code)}</small>
+        <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')}</small></div>
+      <label class="adm-switch"><input type="checkbox" data-action="skin-enabled" data-id="${s.id}"${s.enabled ? ' checked' : ''}> Ativa</label>
+      <button class="ghost-btn btn-sm" data-action="skin-edit" data-id="${s.id}">Editar</button>
+      <button class="danger-btn btn-sm" data-action="skin-delete" data-id="${s.id}" data-name="${esc(s.name)}">Apagar</button>
+    </div>`).join('');
+  return `<div class="panel"><h3>Películas</h3>
+      <p class="muted">Tapam partes de um jogo (por exemplo "Comprar Rodadas Grátis") com a arte original do próprio jogo.
+        O jogo abre sempre no formato da captura usada, para a película cair no sítio certo.</p>
+      <div class="form-actions"><label class="field adm-inline">Mostrar películas <select data-action="casino-skins">
+        ${[['off', 'Desligadas'], ['admin', 'Só administradores (teste)'], ['all', 'Ligadas para todos']].map(([v, t]) => `<option value="${v}"${mode === v ? ' selected' : ''}>${t}</option>`).join('')}
+      </select></label>
+      <button class="primary-btn btn-sm" data-action="skin-new">+ Nova película</button></div>
+      <div class="skin-list">${cards || '<p class="muted">Ainda não há películas.</p>'}</div></div>`;
+}
+
+function skinEditorHtml() {
+  const e = skinEd;
+  return `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="skin-back">‹ Películas</button></div>
+    <div class="panel skin-ed"><h3>${e.id ? 'Editar película' : 'Nova película'}</h3>
+      <div class="skin-ed-grid">
+        <div class="field"><span>1. Jogo</span>
+          <div class="fs-search"><input id="skGame" placeholder="Procurar jogo (ex.: Gates of Olympus)…" autocomplete="off" value="${esc(e.name || '')}">
+          <div class="fs-results" id="skGameResults"></div></div>
+          <small class="muted" id="skGameCode">${e.code ? `Código: ${esc(e.code)}` : 'Escolha o jogo na lista.'}</small></div>
+        <label class="field"><span>2. Onde</span><select id="skSide">
+          ${Object.entries(SIDE_LABEL).map(([v, t]) => `<option value="${v}"${e.side === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="field"><span>3. Captura do jogo no nosso site</span><input type="file" id="skRef" accept="image/*">
+          <small class="muted">O jogo parado, a ocupar a captura toda.</small></label>
+        <label class="field"><span>4. Captura limpa (ex.: Betclic)</span><input type="file" id="skClean" accept="image/*">
+          <small class="muted">O mesmo jogo, no mesmo aparelho e na mesma posição, sem o que quer tapar.</small></label>
+      </div>
+      <div class="skin-tools">
+        <div class="seg"><button type="button" class="${e.tool === 'move' ? 'on' : ''}" data-action="skin-tool" data-tool="move">✋ Alinhar captura limpa</button>
+          <button type="button" class="${e.tool === 'zone' ? 'on' : ''}" data-action="skin-tool" data-tool="zone">▭ Marcar zona a tapar</button></div>
+        <label class="field adm-inline">Transparência <input type="range" id="skOp" min="0" max="100" value="${Math.round(e.op * 100)}"></label>
+        <label class="field adm-inline">Tamanho <input type="range" id="skScale" min="-200" max="200" value="0"> <input type="number" id="skScaleN" step="0.0005" value="${e.s.toFixed(4)}" class="sk-num"></label>
+        <label class="adm-switch"><input type="checkbox" id="skDiff"${e.diff ? ' checked' : ''}> Diferença (alinhado = preto)</label>
+        <label class="adm-switch"><input type="checkbox" id="skPreview"${e.preview ? ' checked' : ''}> Ver resultado</label>
+      </div>
+      <p class="muted">Arraste a captura limpa até coincidir com a nossa (setas do teclado: 1 px; Shift: 10 px). Depois escolha "Marcar zona" e arraste sobre o que quer tapar.</p>
+      <div class="skin-canvas-wrap"><canvas id="skCanvas" tabindex="0"></canvas>
+        <div class="skin-canvas-empty" id="skEmpty">${e.ref ? '' : 'Carregue a captura do jogo no nosso site (passo 3).'}</div></div>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" id="skEnabled"${e.enabled ? ' checked' : ''}> Ativa</label>
+        <button class="primary-btn" data-action="skin-save">Guardar película</button></div>
+    </div>`;
+}
+
+const loadImg = (src) => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error('Não foi possível abrir a imagem.')); i.src = src; });
+const readFile = (file) => new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => fail(new Error('Não foi possível ler o ficheiro.')); r.readAsDataURL(file); });
+/** A picture as JPEG (for keeping the screenshots small enough to store). */
+function asJpeg(img, quality = 0.9) {
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return c.toDataURL('image/jpeg', quality);
+}
+
+async function openSkinEditor(skin = null) {
+  skinEd = {
+    id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
+    ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
+    box: skin?.box || null, ratio: skin?.ratio || null, cover: null,
+  };
+  try {
+    if (skin?.ref) skinEd.ref = await loadImg(skin.ref);
+    if (skin?.clean) skinEd.clean = await loadImg(skin.clean);
+    if (skin?.align) Object.assign(skinEd, { x: skin.align.x, y: skin.align.y, s: skin.align.s });
+    if (skin && !skin.ref) skinEd.cover = await loadImg(skin.img);
+  } catch (err) { toast('Erro', err.message, 'error'); }
+  if (skinEd.ref && skinEd.box) {
+    const W = skinEd.ref.naturalWidth, H = skinEd.ref.naturalHeight, [l, t, w, h] = skinEd.box;
+    skinEd.zone = { x: l * W / 100, y: t * H / 100, w: w * W / 100, h: h * H / 100 };
+  }
+  if (skinEd.clean || skinEd.zone) skinEd.tool = skinEd.zone ? 'zone' : 'move';
+  $('#adminMain').innerHTML = skinEditorHtml();
+  wireSkinCanvas();
+  drawSkin();
+}
+
+function drawSkin() {
+  const e = skinEd, c = $('#skCanvas');
+  if (!e || !c) return;
+  const ctx = c.getContext('2d');
+  $('#skEmpty').textContent = e.ref ? '' : (e.cover ? 'Película feita antes do editor: para mudar a imagem ou a zona, carregue as duas capturas.' : 'Carregue a captura do jogo no nosso site (passo 3).');
+  if (!e.ref) {
+    if (e.cover) { c.width = e.cover.naturalWidth; c.height = e.cover.naturalHeight; ctx.clearRect(0, 0, c.width, c.height); ctx.drawImage(e.cover, 0, 0); } else { c.width = 0; c.height = 0; }
+    return;
+  }
+  const W = e.ref.naturalWidth, H = e.ref.naturalHeight;
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(e.ref, 0, 0);
+  if (e.clean) {
+    const cw = e.clean.naturalWidth * e.s, ch = e.clean.naturalHeight * e.s;
+    if (e.preview && e.zone) {
+      ctx.save(); ctx.beginPath(); ctx.rect(e.zone.x, e.zone.y, e.zone.w, e.zone.h); ctx.clip();
+      ctx.drawImage(e.clean, e.x, e.y, cw, ch); ctx.restore();
+    } else if (!e.preview) {
+      ctx.globalAlpha = e.diff ? 1 : e.op;
+      if (e.diff) ctx.globalCompositeOperation = 'difference';
+      ctx.drawImage(e.clean, e.x, e.y, cw, ch);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  if (e.zone && !e.preview) {
+    const lw = Math.max(2, W / 400);
+    ctx.lineWidth = lw; ctx.setLineDash([lw * 4, lw * 3]); ctx.strokeStyle = '#ffc400';
+    ctx.strokeRect(e.zone.x, e.zone.y, e.zone.w, e.zone.h); ctx.setLineDash([]);
+  }
+}
+
+function wireSkinCanvas() {
+  const c = $('#skCanvas');
+  let drag = null;
+  const at = (ev) => { const r = c.getBoundingClientRect(); return { x: (ev.clientX - r.left) * c.width / r.width, y: (ev.clientY - r.top) * c.height / r.height }; };
+  c.addEventListener('pointerdown', (ev) => {
+    if (!skinEd?.ref) return;
+    c.setPointerCapture(ev.pointerId); c.focus();
+    const p = at(ev);
+    drag = { p, x: skinEd.x, y: skinEd.y };
+  });
+  c.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const p = at(ev), e = skinEd;
+    if (e.tool === 'move' && e.clean) { e.x = drag.x + p.x - drag.p.x; e.y = drag.y + p.y - drag.p.y; }
+    else if (e.tool === 'zone') {
+      const x0 = Math.max(0, Math.min(drag.p.x, p.x)), y0 = Math.max(0, Math.min(drag.p.y, p.y));
+      const x1 = Math.min(c.width, Math.max(drag.p.x, p.x)), y1 = Math.min(c.height, Math.max(drag.p.y, p.y));
+      e.zone = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    }
+    drawSkin();
+  });
+  const end = () => { drag = null; if (skinEd?.zone && (skinEd.zone.w < 4 || skinEd.zone.h < 4)) skinEd.zone = null; drawSkin(); };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  c.addEventListener('keydown', (ev) => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+    if (!d || !skinEd?.clean) return;
+    ev.preventDefault();
+    const k = ev.shiftKey ? 10 : 1;
+    skinEd.x += d[0] * k; skinEd.y += d[1] * k; drawSkin();
+  });
+}
+
+/** Changes the size of the clean picture keeping the middle of the screen where it is. */
+function setSkinScale(s) {
+  const e = skinEd;
+  if (!e?.ref || !(s > 0)) return;
+  const cx = e.ref.naturalWidth / 2, cy = e.ref.naturalHeight / 2;
+  e.x = cx - (cx - e.x) * (s / e.s); e.y = cy - (cy - e.y) * (s / e.s); e.s = s;
+  const n = $('#skScaleN'); if (n && document.activeElement !== n) n.value = s.toFixed(4);
+  drawSkin();
+}
+
+/** The cover: the marked zone of the clean picture at the clean picture's own resolution, soft edges. */
+function skinCover() {
+  const e = skinEd, z = e.zone;
+  const sw = z.w / e.s, sh = z.h / e.s;
+  const k = Math.min(1, 1600 / Math.max(sw, sh));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
+  const ctx = c.getContext('2d');
+  ctx.drawImage(e.clean, (z.x - e.x) / e.s, (z.y - e.y) / e.s, sw, sh, 0, 0, c.width, c.height);
+  const img = ctx.getImageData(0, 0, c.width, c.height), f = Math.max(2, Math.round(4 * c.width / z.w));
+  for (let y = 0; y < c.height; y += 1) {
+    for (let x = 0; x < c.width; x += 1) {
+      const a = Math.min(1, (x + 0.5) / f, (c.width - x - 0.5) / f, (y + 0.5) / f, (c.height - y - 0.5) / f);
+      if (a < 1) img.data[(y * c.width + x) * 4 + 3] *= a;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+async function saveSkin() {
+  const e = skinEd;
+  if (!e.code) throw new Error('Escolha o jogo (passo 1).');
+  const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked };
+  if (e.ref) {
+    if (!e.zone) throw new Error('Marque a zona a tapar.');
+    const W = e.ref.naturalWidth, H = e.ref.naturalHeight;
+    body.ratio = W / H;
+    body.box = [e.zone.x / W * 100, e.zone.y / H * 100, e.zone.w / W * 100, e.zone.h / H * 100];
+    if (!e.clean) throw new Error('Carregue a captura limpa (passo 4).');
+    body.image = skinCover();
+    body.align = { x: e.x, y: e.y, s: e.s };
+    if (e.refNew) body.refImage = asJpeg(e.ref);
+    if (e.cleanNew) body.cleanImage = asJpeg(e.clean, 0.95);
+  } else {
+    if (!e.id) throw new Error('Carregue a captura do jogo no nosso site (passo 3).');
+    body.ratio = e.ratio; body.box = e.box;
+  }
+  const r = await api('/api/admin/skins', { method: 'POST', body });
+  return r.skin;
+}
+
+async function skinAction(action, el) {
+  if (action === 'skin-new') { openSkinEditor(); return; }
+  if (action === 'skin-back') { loadTab(); return; }
+  if (action === 'skin-edit') {
+    try { const d = await api('/api/admin/skins'); openSkinEditor(d.skins.find((s) => s.id === Number(el.dataset.id))); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'skin-enabled') {
+    try { await api(`/api/admin/skins/${el.dataset.id}/enabled`, { method: 'POST', body: { on: el.checked } }); toast(el.checked ? 'Película ativa' : 'Película desligada'); } catch (err) { el.checked = !el.checked; toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'skin-delete') {
+    if (!confirm(`Apagar a película de ${el.dataset.name}?`)) return;
+    try { await api(`/api/admin/skins/${el.dataset.id}/delete`, { method: 'POST', body: {} }); toast('Película apagada'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (!skinEd) return;
+  if (action === 'skin-tool') {
+    skinEd.tool = el.dataset.tool;
+    document.querySelectorAll('.skin-ed .seg button').forEach((b) => b.classList.toggle('on', b === el));
+    return;
+  }
+  if (action === 'skin-pick') {
+    skinEd.code = el.dataset.code; skinEd.name = el.dataset.name;
+    $('#skGame').value = el.dataset.name; $('#skGameResults').innerHTML = ''; $('#skGameCode').textContent = `Código: ${el.dataset.code}`;
+    return;
+  }
+  if (action === 'skin-save') {
+    el.disabled = true;
+    try { await saveSkin(); toast('Película guardada'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
+  }
+}
+
+let skGameTimer = null;
+function skinInput(t) {
+  const e = skinEd;
+  if (t.id === 'skOp') { e.op = Number(t.value) / 100; drawSkin(); }
+  else if (t.id === 'skScale') { e.sBase ??= e.s; setSkinScale(e.sBase * 2 ** (Number(t.value) / 200)); }
+  else if (t.id === 'skScaleN') { const v = Number(t.value); if (v > 0) setSkinScale(v); }
+  else if (t.id === 'skGame') {
+    clearTimeout(skGameTimer);
+    const q = t.value.trim();
+    skGameTimer = setTimeout(async () => {
+      const box = $('#skGameResults');
+      if (!box) return;
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      try {
+        const r = await api(`/api/casino/games?limit=8&q=${encodeURIComponent(q)}`);
+        const list = r.games.filter((g) => g.code);
+        box.innerHTML = list.length ? list.map((g) => `<button type="button" class="fs-result" data-action="skin-pick" data-code="${esc(g.code)}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)} · ${esc(g.code)}</small></button>`).join('')
+          : '<small class="muted">Nenhum jogo encontrado.</small>';
+      } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
+    }, 250);
+  }
+}
+
+async function skinChange(t) {
+  const e = skinEd;
+  if (t.id === 'skScale') { e.sBase = null; t.value = 0; return; }
+  if (t.id === 'skDiff') { e.diff = t.checked; drawSkin(); return; }
+  if (t.id === 'skPreview') { e.preview = t.checked; drawSkin(); return; }
+  if (t.id === 'skSide') { e.side = t.value; return; }
+  if ((t.id === 'skRef' || t.id === 'skClean') && t.files?.[0]) {
+    try {
+      const img = await loadImg(await readFile(t.files[0]));
+      if (t.id === 'skRef') {
+        e.ref = img; e.refNew = true; e.zone = null; e.cover = null;
+        e.side = img.naturalWidth > img.naturalHeight ? 'land' : 'port';
+        $('#skSide').value = e.side;
+      } else { e.clean = img; e.cleanNew = true; }
+      // A new clean picture starts fitted to the width of ours, centred.
+      if (e.ref && e.clean && (t.id === 'skClean' || !e.s)) {
+        e.s = e.ref.naturalWidth / e.clean.naturalWidth; e.x = 0; e.y = (e.ref.naturalHeight - e.clean.naturalHeight * e.s) / 2;
+        $('#skScaleN').value = e.s.toFixed(4);
+      }
+      drawSkin();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+  }
+}
