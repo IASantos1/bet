@@ -1274,7 +1274,7 @@ async function playCasino(mode) {
 const GAME_SKINS = {
   vs20olympgate: {
     land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] },
-    port: { ratio: 940 / 1672 },
+    port: { img: '/casino/skins/vs20olympgate-port.png', ratio: 1206 / 1884, box: [12.023, 58.652, 75.622, 11.465] },
   },
 };
 function gameSkin(g) {
