@@ -872,6 +872,7 @@ const ICON_TV = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6"
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8v8l6-4z" fill="currentColor"/></svg>';
 const ICON_EXPAND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const expandBtn = () => `<button class="expand-btn" data-expand title="Expandir" aria-label="Expandir">${ICON_EXPAND}</button>`;
+const ICON_STATS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const ICON_PITCH = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5v14M2 9.5h3v5H2M22 9.5h-3v5h3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 
 function livePage() {
@@ -3510,11 +3511,12 @@ function matchPage(sub) {
       </div>
       <div id="trackerInline" class="tracker-inline"></div>
     </section>
-    ${live ? `<div class="match-views">
-      <button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
-      ${(e.sport === 'tenis' ? TENNIS_COURT : e.liveTracker) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
-    </div>` : ''}
-    <div class="match-tabs">${tabs.map(([k, l]) => `<button class="${m.tab === k ? 'active' : ''}" data-match-tab="${k}">${l}</button>`).join('')}</div>
+    <div class="match-views">
+      ${live ? `<button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
+      ${(e.sport === 'tenis' ? TENNIS_COURT : e.liveTracker) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
+      <button class="${m.tab === 'estatisticas' ? 'active' : ''}" data-match-tab="${m.tab === 'estatisticas' ? 'mercados' : 'estatisticas'}" title="${m.tab === 'estatisticas' ? 'Voltar aos mercados' : 'Estatísticas do jogo'}">${ICON_STATS}<span>Estatísticas</span></button>
+    </div>
+    ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
     <div class="match-body">${body}</div>
     ${footer()}`;
 }
