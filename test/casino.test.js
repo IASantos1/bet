@@ -268,3 +268,32 @@ test('free spins on Palace: the game opens with the bet per spin fixed when the 
   const call2 = api.calls.filter((c) => c.path === '/v4/game/game-url').at(-1);
   assert.equal(Object.keys(call2.body).some((k) => k.startsWith('bet')), false);
 });
+
+test('launch inspect: follows the game address, hides secrets, finds the jurisdiction', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const hops = [];
+  const fetchImpl = async (url, opts = {}) => {
+    const u = new URL(url);
+    if (u.host === 'agent.example') {
+      if (u.pathname === '/v4/game/game-url') {
+        await api.fetchImpl(url, opts);
+        return new Response(JSON.stringify({ code: 0, data: { game_url: 'https://launch.example/go?token=abcdefghijklmnopqrstuvwxyz123&symbol=vs20doghouse' } }), { status: 200 });
+      }
+      return api.fetchImpl(url, opts);
+    }
+    hops.push(u.host);
+    assert.equal(opts.redirect, 'manual');
+    if (u.host === 'launch.example') return new Response('', { status: 302, headers: { location: 'https://game.example/html5?jurisdiction=UK&lang=pt&mgckey=SECRETSECRET' } });
+    return new Response('<script>var cfg={"jurisdiction":"UK"}</script>', { status: 200 });
+  };
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl });
+  const r = await casino.inspectLaunch(player(db), { name: 'The Dog House' });
+  assert.equal(r.game.code, 'vs20doghouse');
+  assert.deepEqual(hops, ['launch.example', 'game.example']);
+  assert.deepEqual(r.jurisdiction, ['UK']);
+  const text = JSON.stringify(r);
+  assert.ok(!text.includes('abcdefghijklmnopqrstuvwxyz123') && !text.includes('SECRETSECRET'), 'secrets are masked');
+  assert.ok(text.includes('vs20doghouse') && text.includes('"lang","pt"'));
+  db.close();
+});

@@ -854,6 +854,12 @@ function adminCasino(c) {
     ? (c.split ? 'Ativo: os slots vêm da Palace (o saldo passa para a Palace enquanto o jogo está aberto e volta ao sair) e a BigBang fica só com as mesas ao vivo.' : 'Desligado: todos os jogos vêm da BigBang.')
     : `A Palace não está configurada: defina <strong>CASINO_API_URL</strong> ${c.palace?.urlSet ? '✔' : '✘'} e <strong>CASINO_API_TOKEN</strong> ${c.palace?.tokenSet ? '✔' : '✘'} no Railway.`}</p>
       <div id="palaceTest"></div>
+      ${c.palace?.configured ? `<h4>Endereço de um jogo</h4>
+      <p class="muted">Abre um jogo na Palace com a sua conta de administrador e mostra o endereço por onde ele abre (os códigos secretos ficam tapados). Serve para ver se o endereço traz a "jurisdição" que esconde "Comprar Rodadas Grátis" e o turbo.</p>
+      <div class="form-actions"><label class="field adm-inline">Jogo <input id="liName" value="Gates of Olympus" maxlength="80"></label>
+        <button class="ghost-btn btn-sm" data-action="launch-inspect">Ver endereço de um jogo</button>
+        <button class="ghost-btn btn-sm" data-action="launch-copy">Copiar resultado</button></div>
+      <pre class="raw-odds hidden" id="liOut"></pre>` : ''}
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
       <p class="muted">Quando o mesmo jogo existe nas duas versões: <b>Standard</b> é o motor próprio da BigBang (cópia, funciona em qualquer plano); <b>Premium</b> é o jogo original do fornecedor (precisa de saldo pré-pago na conta BigBang e paga uma % de GGR mais alta). Os Premium não têm modo demonstração.</p>
       <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
@@ -1722,6 +1728,19 @@ document.addEventListener('click', async (e) => {
       toast(r.premium ? 'Versões Premium (originais)' : 'Versões Standard', `${r.premiumGames} jogos Premium de ${r.games}`);
     } catch (err) { toast('Erro', err.message, 'error'); }
     loadTab();
+  } else if (action === 'launch-inspect') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/launch-inspect', { method: 'POST', body: { name: $('#liName').value } });
+      const out = $('#liOut');
+      out.textContent = JSON.stringify(r, null, 2);
+      out.classList.remove('hidden');
+      toast(r.jurisdiction.length ? `Jurisdição no endereço: ${r.jurisdiction.join(', ')}` : 'Sem jurisdição no endereço', r.game.name);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'launch-copy') {
+    const t = $('#liOut')?.textContent || '';
+    if (t) { try { await navigator.clipboard.writeText(t); toast('Copiado', 'Cole aqui na conversa.'); } catch { toast('Erro', 'Selecione o texto e copie à mão.', 'error'); } }
   } else if (action === 'palace-test') {
     actionEl.disabled = true;
     try {
