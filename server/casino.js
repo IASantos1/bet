@@ -237,7 +237,7 @@ export function createCasino(db, {
    * redirects, with every secret-looking value masked. Used to see whether the provider's address
    * carries a jurisdiction setting (the one that hides "buy free spins" and turbo in regulated markets).
    */
-  async function inspectLaunch(user, { name = 'Gates of Olympus' } = {}) {
+  async function inspectLaunch(user, { name = 'Gates of Olympus', jurisdiction = '', open = false } = {}) {
     const list = (await games()).games;
     const want = String(name || '').toLowerCase().trim();
     const isPragmatic = (g) => /pragmatic/i.test(g.provider);
@@ -249,6 +249,14 @@ export function createCasino(db, {
     const found = new Set();
     let url = first;
     for (let i = 0; i < 4 && url; i += 1) {
+      // Trial: ask Pragmatic for another jurisdiction (e.g. UK) on its own game address.
+      if (jurisdiction && /pragmatic/i.test(new URL(url).host) && /playGame\.do$/i.test(new URL(url).pathname)) {
+        const u = new URL(url);
+        u.searchParams.set('jurisdiction', jurisdiction);
+        url = u.toString();
+        // To look at the game itself: the admin's browser opens it from here (not used up by us first).
+        if (open) return { game: { name: game.name, provider: game.provider, code: game.code }, openUrl: url, tried: jurisdiction };
+      }
       hops.push(maskUrl(url));
       for (const m of String(url).matchAll(/jurisdiction=([^&#"']*)/gi)) found.add(decodeURIComponent(m[1]));
       let res;
@@ -258,10 +266,17 @@ export function createCasino(db, {
       // The page itself may build the game address in script: the jurisdiction set there.
       const text = (await res.text().catch(() => '')).slice(0, 200_000);
       for (const m of text.matchAll(/["']?jurisdiction["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{1,12})/gi)) found.add(m[1]);
-      hops.push({ status: res.status, note: 'página final (não redireciona)' });
+      // The words around each setting that may switch the buy feature or turbo, secrets masked.
+      const around = [];
+      for (const m of text.matchAll(/jurisdiction|turbo|buy|purchase|ante/gi)) {
+        if (around.length >= 15) break;
+        const bit = text.slice(Math.max(0, m.index - 60), m.index + 80).replace(/\s+/g, ' ').replace(/[A-Za-z0-9+/=_-]{25,}/g, mask);
+        if (!around.some((a) => a.includes(m[0]) && a.slice(0, 40) === bit.slice(0, 40))) around.push(bit);
+      }
+      hops.push({ status: res.status, note: 'página final (não redireciona)', around });
       break;
     }
-    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found] };
+    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found], tried: jurisdiction || null };
   }
 
   // ---------- single wallet ----------

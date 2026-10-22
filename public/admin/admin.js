@@ -855,9 +855,12 @@ function adminCasino(c) {
     : `A Palace não está configurada: defina <strong>CASINO_API_URL</strong> ${c.palace?.urlSet ? '✔' : '✘'} e <strong>CASINO_API_TOKEN</strong> ${c.palace?.tokenSet ? '✔' : '✘'} no Railway.`}</p>
       <div id="palaceTest"></div>
       ${c.palace?.configured ? `<h4>Endereço de um jogo</h4>
-      <p class="muted">Abre um jogo na Palace com a sua conta de administrador e mostra o endereço por onde ele abre (os códigos secretos ficam tapados). Serve para ver se o endereço traz a "jurisdição" que esconde "Comprar Rodadas Grátis" e o turbo.</p>
+      <p class="muted">Abre um jogo na Palace com a sua conta de administrador e mostra o endereço por onde ele abre (os códigos secretos ficam tapados). Serve para ver se o endereço traz a "jurisdição" que esconde "Comprar Rodadas Grátis" e o turbo.
+        Escreva uma jurisdição (ex.: UK) para a pedir à Pragmatic e use "Abrir jogo" para ver se os botões desaparecem.</p>
       <div class="form-actions"><label class="field adm-inline">Jogo <input id="liName" value="Gates of Olympus" maxlength="80"></label>
+        <label class="field adm-inline">Jurisdição <input id="liJur" placeholder="ex.: UK" maxlength="12" size="6"></label>
         <button class="ghost-btn btn-sm" data-action="launch-inspect">Ver endereço de um jogo</button>
+        <button class="ghost-btn btn-sm" data-action="launch-open">Abrir jogo</button>
         <button class="ghost-btn btn-sm" data-action="launch-copy">Copiar resultado</button></div>
       <pre class="raw-odds hidden" id="liOut"></pre>` : ''}
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
@@ -1731,13 +1734,21 @@ document.addEventListener('click', async (e) => {
   } else if (action === 'launch-inspect') {
     actionEl.disabled = true;
     try {
-      const r = await api('/api/admin/casino/launch-inspect', { method: 'POST', body: { name: $('#liName').value } });
+      const r = await api('/api/admin/casino/launch-inspect', { method: 'POST', body: { name: $('#liName').value, jurisdiction: $('#liJur').value } });
       const out = $('#liOut');
       out.textContent = JSON.stringify(r, null, 2);
       out.classList.remove('hidden');
       toast(r.jurisdiction.length ? `Jurisdição no endereço: ${r.jurisdiction.join(', ')}` : 'Sem jurisdição no endereço', r.game.name);
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
+  } else if (action === 'launch-open') {
+    if (!$('#liJur').value.trim()) return toast('Jurisdição', 'Escreva a jurisdição a testar (ex.: UK).', 'error');
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const r = await api('/api/admin/casino/launch-inspect', { method: 'POST', body: { name: $('#liName').value, jurisdiction: $('#liJur').value, open: true } });
+      if (!r.openUrl) throw new Error('Escreva a jurisdição a testar (ex.: UK).');
+      if (tab) tab.location = r.openUrl; else window.location.assign(r.openUrl);
+    } catch (err) { tab?.close(); toast('Erro', err.message, 'error'); }
   } else if (action === 'launch-copy') {
     const t = $('#liOut')?.textContent || '';
     if (t) { try { await navigator.clipboard.writeText(t); toast('Copiado', 'Cole aqui na conversa.'); } catch { toast('Erro', 'Selecione o texto e copie à mão.', 'error'); } }

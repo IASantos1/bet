@@ -2178,7 +2178,11 @@ export function createApp(db, {
   // Opens one game for the admin and shows its address (secrets masked): does it carry a jurisdiction?
   admin.post('/casino/launch-inspect', wrap(async (req, res) => {
     if (!casino?.enabled) throw new HttpError(503, 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.');
-    res.json(await casino.inspectLaunch(req.user, { name: String(req.body?.name || 'Gates of Olympus').slice(0, 80) }));
+    res.json(await casino.inspectLaunch(req.user, {
+      name: String(req.body?.name || 'Gates of Olympus').slice(0, 80),
+      jurisdiction: String(req.body?.jurisdiction || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12),
+      open: req.body?.open === true,
+    }));
   }));
   admin.post('/casino/palace-test', wrap(async (_req, res) => {
     if (!casino?.enabled) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.' }] });
