@@ -1631,3 +1631,5 @@ body.maint-on { overflow: hidden; }
 .tn-card.home strong { border-radius: 8px 8px 0 0; padding-top: 6px; }
 .tn-card.away strong { border-radius: 0 0 8px 8px; padding-bottom: 6px; }
 .event-row .tn-card em, .event-row .tn-card strong { font-size: 13px; }
+.stats-back { display: block; margin: 12px 0 8px; background: none; border: 0; padding: 0; color: var(--text-2); font-weight: 800; font-size: 13px; }
+.match-views { margin-bottom: 12px; }
