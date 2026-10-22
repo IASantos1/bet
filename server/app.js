@@ -436,6 +436,28 @@ export function createApp(db, {
   }
   app.locals.expirePalaceSpins = expirePalaceSpins;
 
+  // A Palace game open holds the player's balance in the casino. The game page asks for the balance
+  // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
+  // without "leaving" (tab closed, phone locked), and the money comes back to the wallet by itself.
+  const casinoSeen = new Map(); // user id → last time the open game asked for the balance
+  const bootAt = Date.now();
+  const CASINO_IDLE_MS = 3 * 60_000;
+  async function returnIdleCasino(now = Date.now()) {
+    if (!casino?.enabled) return 0;
+    let n = 0;
+    for (const u of db.prepare('SELECT * FROM users WHERE casino_active = 1').all()) {
+      if (now - (casinoSeen.get(u.id) ?? bootAt) < CASINO_IDLE_MS) continue;
+      try {
+        const back = await casino.leaveGame(u);
+        casinoSeen.delete(u.id);
+        n += 1;
+        console.log(`casino: jogo fechado sem sair — ${(back / 100).toFixed(2)} € devolvidos à carteira do utilizador ${u.id}`);
+      } catch (err) { console.error(`casino: devolver saldo do utilizador ${u.id}: ${err.message}`); }
+    }
+    return n;
+  }
+  app.locals.returnIdleCasino = returnIdleCasino;
+
   // ---------- events ----------
 
 
@@ -1418,6 +1440,7 @@ export function createApp(db, {
       // A Palace slot open (Transfer mode): the balance is in that casino meanwhile.
       const s = req.query.fs ? spinsRow(db, Number(req.query.fs), req.user.id) : null;
       const u = userById(req.user.id);
+      if (u.casino_active) casinoSeen.set(u.id, Date.now());
       const away = u.casino_active && casino?.enabled ? await casino.casinoBalanceCents(u) : 0;
       // Free spins: the rounds left (what the player sees), what they won, and whether they ended.
       if (s && s.status === 'active' && s.palace_cents !== null && casino?.enabled) await settlePalaceSpins(s);
@@ -1430,6 +1453,7 @@ export function createApp(db, {
       return res.json({ balance: cents(userById(req.user.id).balance_cents + away), freeSpins: fs, inCasino: !!u.casino_active });
     }
     const u = userById(req.user.id);
+    if (u.casino_active) casinoSeen.set(u.id, Date.now());
     const casinoCents = u.casino_active ? await casino.casinoBalanceCents(u) : 0;
     res.json({ balance: cents(u.balance_cents + casinoCents), inCasino: !!u.casino_active });
   }));
@@ -1475,6 +1499,7 @@ export function createApp(db, {
         }
         const pu = userById(req.user.id);
         if (pu.balance_cents <= 0 && !pu.casino_active) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
+        casinoSeen.set(pu.id, Date.now());
         const { url, casinoCents } = await casino.enterGame(pu, { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl });
         return res.json({ url, balance: cents(casinoCents), transfer: true });
       }
@@ -1501,6 +1526,7 @@ export function createApp(db, {
     const gameCode = str(req.body.gameCode, 80);
     if (!Number.isInteger(providerId) || !gameCode) throw new HttpError(400, 'Jogo inválido.');
     // The game runs in an iframe; its "home" button lands on a page that sends the tab back to the casino.
+    casinoSeen.set(req.user.id, Date.now());
     const { url, casinoCents } = await casino.enterGame(req.user, { providerId, gameCode, returnUrl: `${origin}/casino-return.html` });
     res.json({ url, balance: cents(casinoCents) });
   }));
@@ -1928,8 +1954,13 @@ export function createApp(db, {
     res.json({ ok: true, banned });
   });
 
-  admin.get('/users/:id', (req, res) => {
+  admin.get('/users/:id', wrap(async (req, res) => {
     const u = playerRow(req.params.id);
+    // A game open: the balance is in the casino meanwhile (not lost), shown live.
+    let inCasino = null;
+    if (u.casino_active && casino?.enabled) {
+      try { inCasino = cents(await casino.casinoBalanceCents(u)); } catch { inCasino = 'indisponível'; }
+    }
     const bets = withLegs(db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id DESC LIMIT 50').all(u.id));
     const txs = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(u.id)
       .map((t) => ({ id: t.id, type: t.type, amount: cents(t.amount_cents), balanceAfter: cents(t.balance_after_cents), description: t.description, createdAt: t.created_at }));
@@ -1939,12 +1970,13 @@ export function createApp(db, {
       .map((d) => ({ id: d.id, kind: d.kind, fileName: d.file_name, mimeType: d.mime_type, size: d.file_size, status: d.status, createdAt: d.created_at, reviewedAt: d.reviewed_at }));
     const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = ?').get(u.id, type).s);
     res.json({
-      user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked }, bets, transactions: txs, withdrawals, documents,
+      user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked, inCasino }, bets, transactions: txs, withdrawals, documents,
       withdraw: withdrawEligibility(db, u),
       promotions: playerPromos(db, u.id), limits: limitsView(currentLimits(db, u)),
-      totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout') },
+      totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout'),
+        casinoOut: -sum('casino_out'), casinoIn: sum('casino_in') },
     });
-  });
+  }));
 
   const KYC = ['not_submitted', 'pending', 'approved', 'rejected'];
   admin.post('/users/:id/kyc', (req, res) => {

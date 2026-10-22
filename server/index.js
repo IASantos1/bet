@@ -182,6 +182,8 @@ if (goalApi.enabled) console.log(`[goal-api] estatísticas ativas (até ${config
 const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
+// A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
+setInterval(() => app.locals.returnIdleCasino().catch((err) => console.warn(`casino: ${err.message}`)), 60_000).unref();
 const server = app.listen(config.port, () => {
   console.log(`ClassicBet a correr em http://localhost:${config.port} (${config.env}, pagamentos: ${config.paymentsMode})`);
 });
