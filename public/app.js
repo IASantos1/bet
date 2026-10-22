@@ -1268,10 +1268,14 @@ async function playCasino(mode) {
  * Covers over the "buy free spins" panel of some Pragmatic games, made from the game's own artwork
  * (as the game looks where that panel does not exist). The game frame keeps the proportion the cover
  * was made for, so it always lands on the same spot; the cover also takes the clicks there.
- * land: computer, landscape. box: left, top, width, height in % of the frame.
+ * land: computer, landscape; port: phone held upright. box: left, top, width, height in % of the frame.
+ * A side without img only keeps the proportion (the game then lays out as in the reference picture).
  */
 const GAME_SKINS = {
-  vs20olympgate: { land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] } },
+  vs20olympgate: {
+    land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] },
+    port: { ratio: 940 / 1672 },
+  },
 };
 function gameSkin(g) {
   const mode = state.config?.casinoSkins;
@@ -1279,11 +1283,17 @@ function gameSkin(g) {
   return GAME_SKINS[g.code] || null;
 }
 function skinned(g, frame) {
-  const s = gameSkin(g)?.land;
+  const s = gameSkin(g);
   if (!s) return frame;
-  const [l, t, w, h] = s.box;
-  return `<div class="skin-wrap"><div class="skin-box" style="--r:${s.ratio}">${frame}
-    <img class="skin-land" src="${s.img}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"></div></div>`;
+  const cover = (side) => {
+    const c = s[side];
+    if (!c?.img) return '';
+    const [l, t, w, h] = c.box;
+    return `<img class="skin-${side}" src="${c.img}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
+  };
+  const vars = [s.land && `--rl:${s.land.ratio}`, s.port && `--rp:${s.port.ratio}`].filter(Boolean).join(';');
+  const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port'].filter(Boolean).join(' ');
+  return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${cover('land')}${cover('port')}</div></div>`;
 }
 
 function casinoPlayPage() {
