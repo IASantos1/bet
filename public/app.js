@@ -1176,9 +1176,10 @@ document.addEventListener('load', (e) => {
 }, true);
 
 // A cover waits for the game itself: Pragmatic first shows its loading bar and an intro screen, which the
-// cover must not sit on. It shows on the first touch inside the game (the intro is closed with a touch;
-// not before 2 s after the page loaded), on a message from the game saying it is ready, or after the
-// cover's delay at the latest (set per cover in Admin → Películas).
+// cover must not sit on. Set per cover in Admin → Películas: either once the game starts (\`after\` s
+// after the first touch inside it, the one that closes the intro; never before 2 s after the page
+// loaded), with \`delay\` s after loading as a fallback when nobody touches (0 = none); or \`delay\` s
+// after the page loaded. A message from the game saying it is ready also shows it.
 let skinTimer = null;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
 function showSkin() {
@@ -1192,7 +1193,7 @@ function armSkin() {
   clearTimeout(skinTimer);
   if (!side || g.skinReady) return;
   g.frameAt = Date.now();
-  skinTimer = setTimeout(showSkin, side.delay * 1000);
+  if (!side.touch || side.delay > 0) skinTimer = setTimeout(showSkin, side.delay * 1000);
 }
 function skinSoon(ms) {
   const g = state.casinoSession;
@@ -1203,7 +1204,8 @@ function skinSoon(ms) {
 // A touch inside the game moves the focus into its frame: this page loses it.
 window.addEventListener('blur', () => setTimeout(() => {
   const g = state.casinoSession;
-  if (document.activeElement?.id === 'casinoFrame' && skinSide(gameSkin(g || {}))?.touch) skinSoon(700);
+  const side = skinSide(gameSkin(g || {}));
+  if (document.activeElement?.id === 'casinoFrame' && side?.touch) skinSoon(side.after * 1000);
 }));
 window.addEventListener('message', (e) => {
   const f = $('#casinoFrame');
@@ -1319,7 +1321,7 @@ function gameSkin(g) {
   if (!mine.length) return null;
   const side = (k) => {
     const list = mine.filter((s) => s.side === k);
-    return list.length ? { ratio: list[0].ratio, covers: list, delay: list[0].delay ?? 8, touch: list[0].touch !== false } : null;
+    return list.length ? { ratio: list[0].ratio, covers: list, delay: list[0].delay ?? 8, touch: list[0].touch !== false, after: list[0].after ?? 0.5 } : null;
   };
   return { land: side('land'), port: side('port') };
 }
@@ -1328,11 +1330,23 @@ function skinned(g, frame) {
   if (!s) return frame;
   const covers = (side) => (s[side]?.covers || []).map((c) => {
     const [l, t, w, h] = c.box;
-    return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
+    return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" data-box="${[l, t, w, h].join(',')}">`;
   }).join('');
-  const vars = [s.land && `--rl:${s.land.ratio}`, s.port && `--rp:${s.port.ratio}`].filter(Boolean).join(';');
+  const vars = [s.land ? s.land.ratio : '', s.port ? s.port.ratio : ''].join(',');
   const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port', !g.skinReady && 'skin-wait'].filter(Boolean).join(' ');
-  return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${covers('land')}${covers('port')}</div></div>`;
+  return `<div class="${cls}"><div class="skin-box" data-ratios="${vars}">${frame}${covers('land')}${covers('port')}</div></div>`;
+}
+/** Places the covers (the CSP refuses style="" in the page's HTML; the CSSOM is fine). */
+function placeSkins() {
+  for (const box of $$('.skin-box[data-ratios]')) {
+    const [rl, rp] = box.dataset.ratios.split(',');
+    if (rl) box.style.setProperty('--rl', rl);
+    if (rp) box.style.setProperty('--rp', rp);
+  }
+  for (const img of $$('.skin-land[data-box], .skin-port[data-box]')) {
+    const [l, t, w, h] = img.dataset.box.split(',');
+    Object.assign(img.style, { left: `${l}%`, top: `${t}%`, width: `${w}%`, height: `${h}%` });
+  }
 }
 
 function casinoPlayPage() {
@@ -2669,6 +2683,7 @@ function render({ keepScroll = false } = {}) {
   $('#content').dataset.page = page;
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
+  if (immersive) placeSkins();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
   showMaintenance(page);

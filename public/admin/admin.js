@@ -1904,7 +1904,7 @@ function adminSkins(d) {
   const cards = d.skins.map((s) => `<div class="skin-card">
       <div class="skin-thumb"><img src="${esc(s.img)}" alt=""></div>
       <div class="grow"><strong>${esc(s.name)}</strong><small class="muted">${esc(SIDE_LABEL[s.side])} · ${esc(s.code)}</small>
-        <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')} · aparece até ${s.delay} s${s.touch ? ' ou ao 1.º toque' : ''}</small></div>
+        <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')} · ${s.touch ? `aparece ${s.after} s depois de o jogo começar${s.delay ? ` (ou aos ${s.delay} s)` : ''}` : `aparece ${s.delay} s depois de carregar`}</small></div>
       <label class="adm-switch"><input type="checkbox" data-action="skin-enabled" data-id="${s.id}"${s.enabled ? ' checked' : ''}> Ativa</label>
       <button class="ghost-btn btn-sm" data-action="skin-edit" data-id="${s.id}">Editar</button>
       <button class="danger-btn btn-sm" data-action="skin-delete" data-id="${s.id}" data-name="${esc(s.name)}">Apagar</button>
@@ -1956,9 +1956,16 @@ function skinEditorHtml() {
         <div class="skin-canvas-empty" id="skEmpty"></div></div>
       <h4>Quando aparece no site</h4>
       <p class="muted">Antes do jogo, a Pragmatic mostra a barra de carregamento e um ecrã de entrada: a película espera por eles.</p>
-      <div class="form-actions">
-        <label class="field adm-inline">No máximo <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s depois de o jogo carregar</label>
-        <label class="adm-switch"><input type="checkbox" id="skTouch"${e.touch ? ' checked' : ''}> ou logo ao 1.º toque no jogo (fechar o ecrã de entrada)</label></div>
+      <div class="sk-when">
+        <label class="field adm-inline">Aparece <select id="skWhen">
+          <option value="touch"${e.touch ? ' selected' : ''}>depois de o jogo começar (1.º toque no jogo)</option>
+          <option value="time"${e.touch ? '' : ' selected'}>um tempo fixo depois de o jogo carregar</option></select></label>
+        <label class="field adm-inline sk-touch-only${e.touch ? '' : ' hidden'}">Atraso depois do toque <input type="number" id="skAfter" min="0" max="30" step="0.1" value="${e.after}" class="sk-num"> s</label>
+        <label class="field adm-inline"><span id="skDelayLabel">${e.touch ? 'Se ninguém tocar, aparece na mesma depois de' : 'Aparece'}</span>
+          <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s <small class="muted" id="skDelayHint">${e.touch ? '(0 = nunca)' : 'depois de o jogo carregar'}</small></label>
+        <button type="button" class="ghost-btn btn-sm" data-action="skin-measure">⏱ Medir: carregue quando o jogo começar</button>
+        <small class="muted" id="skMeasure">Abra o jogo aqui: o cronómetro conta desde que o jogo carregou.</small>
+      </div>
       <details class="sk-msgs"><summary>Mensagens do jogo (para afinar)</summary><pre id="skMsgs" class="raw-odds">Ainda nenhuma: abra o jogo aqui.</pre></details>
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" id="skEnabled"${e.enabled ? ' checked' : ''}> Ativa</label>
         <button class="primary-btn" data-action="skin-save">Guardar película</button></div>
@@ -1987,7 +1994,7 @@ async function openSkinEditor(skin = null) {
     id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
     ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
     box: skin?.box || null, ratio: skin?.ratio || null, cover: skin?.img || null, gameUrl: null,
-    delay: skin?.delay ?? 8, touch: skin ? skin.touch : true,
+    delay: skin?.delay ?? 8, touch: skin ? skin.touch : true, after: skin?.after ?? 0.5, loadedAt: null,
   };
   try {
     if (skin?.ref) skinEd.ref = await loadImg(skin.ref);
@@ -2017,6 +2024,8 @@ function buildStage() {
     <div class="sk-zone hidden"></div><div class="sk-touch"></div>`;
   $('#skEmpty').textContent = bg ? '' : 'Abra o jogo (passo 3) ou carregue uma captura do nosso site.';
   st.classList.toggle('hidden', !bg && !e.cover);
+  // The stopwatch counts from the moment the game's page loaded.
+  $('.sk-game', st)?.addEventListener('load', () => { if (skinEd) skinEd.loadedAt = Date.now(); });
   wireStage();
   updateStage();
 }
@@ -2121,7 +2130,7 @@ async function saveSkin() {
   if (!e.zone) throw new Error('Marque a zona a tapar.');
   const { w, h } = skinSize();
   const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked,
-    delay: Number($('#skDelay').value) || 0, touch: $('#skTouch').checked,
+    delay: Number($('#skDelay').value) || 0, touch: $('#skWhen').value === 'touch', after: Number($('#skAfter').value) || 0,
     ratio: w / h, box: [e.zone.x / w * 100, e.zone.y / h * 100, e.zone.w / w * 100, e.zone.h / h * 100] };
   if (e.clean) {
     body.image = skinCover();
@@ -2175,6 +2184,15 @@ async function skinAction(action, el) {
     el.disabled = false;
     return;
   }
+  if (action === 'skin-measure') {
+    if (!skinEd.loadedAt) { toast('Cronómetro', 'Abra primeiro o jogo aqui (passo 3).', 'error'); return; }
+    const secs = Math.round((Date.now() - skinEd.loadedAt) / 100) / 10;
+    // A fixed time: what was measured plus a little margin (slower phones and connections).
+    const pick = Math.ceil((secs + 1.5) * 2) / 2;
+    if ($('#skWhen').value === 'time') $('#skDelay').value = pick;
+    $('#skMeasure').textContent = `O jogo começou ${secs} s depois de carregar${$('#skWhen').value === 'time' ? ` → tempo fixo ${pick} s (com margem)` : ''}.`;
+    return;
+  }
   if (action === 'skin-save') {
     el.disabled = true;
     try { await saveSkin(); toast('Película guardada'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
@@ -2211,6 +2229,13 @@ async function skinChange(t) {
   if (t.id === 'skScale') { e.sBase = null; t.value = 0; return; }
   if (t.id === 'skDiff') { e.diff = t.checked; updateStage(); return; }
   if (t.id === 'skPreview') { e.preview = t.checked; updateStage(); return; }
+  if (t.id === 'skWhen') {
+    const touch = t.value === 'touch';
+    document.querySelectorAll('.sk-touch-only').forEach((n) => n.classList.toggle('hidden', !touch));
+    $('#skDelayLabel').textContent = touch ? 'Se ninguém tocar, aparece na mesma depois de' : 'Aparece';
+    $('#skDelayHint').textContent = touch ? '(0 = nunca)' : 'depois de o jogo carregar';
+    return;
+  }
   if (t.id === 'skSide') {
     e.side = t.value;
     if (!e.ref) { e.ratio = null; e.zone = null; fitClean(); buildStage(); }

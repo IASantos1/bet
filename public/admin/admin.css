@@ -743,3 +743,5 @@
 .skin-stage.hidden, .skin-stage .sk-zone.hidden { display: none; }
 .skin-canvas-empty { padding: 30px 16px; color: #aaa; text-align: center; }
 .skin-canvas-empty:empty { display: none; }
+.hidden { display: none !important; }
+.sk-when { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 8px; }
