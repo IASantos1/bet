@@ -284,16 +284,28 @@ test('launch inspect: follows the game address, hides secrets, finds the jurisdi
     }
     hops.push(u.host);
     assert.equal(opts.redirect, 'manual');
-    if (u.host === 'launch.example') return new Response('', { status: 302, headers: { location: 'https://game.example/html5?jurisdiction=UK&lang=pt&mgckey=SECRETSECRET' } });
-    return new Response('<script>var cfg={"jurisdiction":"UK"}</script>', { status: 200 });
+    if (u.host === 'launch.example') return new Response('', { status: 302, headers: { location: 'https://aes-pragmatic.com/gs2c/playGame.do?symbol=vs20doghouse&token=SECRETSECRETSECRETSECRETSECRET' } });
+    if (u.pathname.endsWith('playGame.do')) {
+      return new Response('', { status: 302, headers: { location: `https://aes-pragmatic.com/gs2c/game/load?jurisdiction=${u.searchParams.get('jurisdiction') || '99'}&lang=pt` } });
+    }
+    return new Response(`<script>var cfg={"jurisdiction":"${u.searchParams.get('jurisdiction')}","buyFeature":true}</script>`, { status: 200 });
   };
   const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl });
   const r = await casino.inspectLaunch(player(db), { name: 'The Dog House' });
   assert.equal(r.game.code, 'vs20doghouse');
-  assert.deepEqual(hops, ['launch.example', 'game.example']);
-  assert.deepEqual(r.jurisdiction, ['UK']);
+  assert.deepEqual(hops, ['launch.example', 'aes-pragmatic.com', 'aes-pragmatic.com']);
+  assert.deepEqual(r.jurisdiction, ['99']);
+  assert.ok(r.hops.at(-1).around.some((a) => a.includes('buyFeature')));
   const text = JSON.stringify(r);
   assert.ok(!text.includes('abcdefghijklmnopqrstuvwxyz123') && !text.includes('SECRETSECRET'), 'secrets are masked');
   assert.ok(text.includes('vs20doghouse') && text.includes('"lang","pt"'));
+
+  // Asking for another jurisdiction: it is set on Pragmatic's address; "open" hands it over unused.
+  const uk = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK' });
+  assert.deepEqual(uk.jurisdiction, ['UK']);
+  hops.length = 0;
+  const open = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK', open: true });
+  assert.match(open.openUrl, /playGame\.do\?.*jurisdiction=UK/);
+  assert.deepEqual(hops, ['launch.example']);
   db.close();
 });
