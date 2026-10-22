@@ -1,3 +1,4 @@
+import { createPaint } from './skin-paint.js';
 // Bet62 administration — a separate page at /admin with its own login. Talks to /api/admin/*.
 
 const SPORT_META = {
@@ -1954,6 +1955,12 @@ function skinEditorHtml() {
         (setas do teclado: 1 px; Shift: 10 px). "Marcar zona": arraste sobre o que quer tapar. Para o telemóvel, faça-o com o admin aberto no telemóvel.</p>
       <div class="skin-stage-wrap"><div class="skin-stage" id="skStage" tabindex="0"></div>
         <div class="skin-canvas-empty" id="skEmpty"></div></div>
+      <h4>5. Editar a imagem da película</h4>
+      <p class="muted">Pintar, carimbo, esfumar, desfocar, borracha, restaurar, copiar/cortar/colar (também Ctrl+V de uma imagem),
+        espelhar e ajustes de luz, brilho, contraste, realces, sombras, saturação, temperatura, matiz, desfoque, nitidez e bordas.
+        Veja o resultado por cima do jogo com "Ver resultado".</p>
+      <div class="form-actions"><button type="button" class="ghost-btn btn-sm" data-action="skin-paint">✏️ ${e.paint ? 'Recomeçar a edição a partir da captura' : 'Editar a imagem'}</button></div>
+      <div id="skPaint" class="sk-paint"></div>
       <h4>Quando aparece no site</h4>
       <p class="muted">Antes do jogo, a Pragmatic mostra a barra de carregamento e um ecrã de entrada: a película espera por eles.</p>
       <div class="sk-when">
@@ -1990,6 +1997,7 @@ function skinSize() {
 }
 
 async function openSkinEditor(skin = null) {
+  skinEd?.paint?.destroy();
   skinEd = {
     id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
     ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
@@ -2020,10 +2028,10 @@ function buildStage() {
   const bg = e.gameUrl ? `<iframe class="sk-game" src="${esc(e.gameUrl)}" allow="autoplay; fullscreen" referrerpolicy="origin"></iframe>`
     : e.ref ? `<img class="sk-ref" src="${e.ref.src}" alt="" draggable="false">` : '';
   st.innerHTML = `${bg}${e.clean ? `<img class="sk-clean" src="${e.clean.src}" alt="" draggable="false">` : ''}
-    ${!e.ref && !e.gameUrl && e.cover && e.zone ? `<img class="sk-cover" src="${esc(e.cover)}" alt="">` : ''}
+    <img class="sk-cover hidden" alt="">
     <div class="sk-zone hidden"></div><div class="sk-touch"></div>`;
   $('#skEmpty').textContent = bg ? '' : 'Abra o jogo (passo 3) ou carregue uma captura do nosso site.';
-  st.classList.toggle('hidden', !bg && !e.cover);
+  st.classList.toggle('hidden', !bg && !e.cover && !e.paintUrl);
   // The stopwatch counts from the moment the game's page loaded.
   $('.sk-game', st)?.addEventListener('load', () => { if (skinEd) skinEd.loadedAt = Date.now(); });
   wireStage();
@@ -2038,7 +2046,7 @@ function updateStage() {
   if (clean) {
     const cw = e.clean.naturalWidth * e.s, ch = e.clean.naturalHeight * e.s;
     Object.assign(clean.style, { left: pct(e.x, w), top: pct(e.y, h), width: pct(cw, w), height: pct(ch, h) });
-    clean.style.opacity = e.preview || e.diff ? 1 : e.op;
+    clean.style.opacity = e.preview && e.paintUrl ? 0 : e.preview || e.diff ? 1 : e.op;
     clean.style.mixBlendMode = e.diff && !e.preview ? 'difference' : 'normal';
     // "Ver resultado": only the zone of the clean picture shows, as the players will see it.
     if (e.preview && e.zone) {
@@ -2047,8 +2055,14 @@ function updateStage() {
       clean.style.clipPath = `inset(${t}% ${r}% ${b}% ${l}%)`;
     } else clean.style.clipPath = '';
   }
-  const cover = $('.sk-cover', st);
-  if (cover && e.zone) Object.assign(cover.style, { left: pct(e.zone.x, w), top: pct(e.zone.y, h), width: pct(e.zone.w, w), height: pct(e.zone.h, h) });
+  // The edited cover (or the saved one when there is nothing else to show), over the zone.
+  const cover = $('.sk-cover', st), src = e.paintUrl || (!e.ref && !e.gameUrl && !e.clean ? e.cover : null);
+  const showCover = !!(src && e.zone && (e.preview || !e.clean));
+  cover.classList.toggle('hidden', !showCover);
+  if (showCover) {
+    if (cover.getAttribute('src') !== src) cover.src = src;
+    Object.assign(cover.style, { left: pct(e.zone.x, w), top: pct(e.zone.y, h), width: pct(e.zone.w, w), height: pct(e.zone.h, h) });
+  }
   const z = $('.sk-zone', st);
   z.classList.toggle('hidden', !e.zone || e.preview);
   if (e.zone) Object.assign(z.style, { left: pct(e.zone.x, w), top: pct(e.zone.y, h), width: pct(e.zone.w, w), height: pct(e.zone.h, h) });
@@ -2105,14 +2119,20 @@ function fitClean() {
   const n = $('#skScaleN'); if (n) n.value = e.s.toFixed(4);
 }
 
-/** The cover: the marked zone of the clean picture at the clean picture's own resolution, soft edges. */
-function skinCover() {
+/** The marked zone of the clean picture at the clean picture's own resolution (no soft edges). */
+function coverBase() {
   const e = skinEd, z = e.zone;
   const sw = z.w / e.s, sh = z.h / e.s;
   const k = Math.min(1, 1600 / Math.max(sw, sh));
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
-  const ctx = c.getContext('2d');
-  ctx.drawImage(e.clean, (z.x - e.x) / e.s, (z.y - e.y) / e.s, sw, sh, 0, 0, c.width, c.height);
+  c.getContext('2d').drawImage(e.clean, (z.x - e.x) / e.s, (z.y - e.y) / e.s, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** The cover: the marked zone of the clean picture, soft edges. */
+function skinCover() {
+  const e = skinEd, z = e.zone;
+  const c = coverBase(), ctx = c.getContext('2d');
   const img = ctx.getImageData(0, 0, c.width, c.height), f = Math.max(2, Math.round(4 * c.width / z.w));
   for (let y = 0; y < c.height; y += 1) {
     for (let x = 0; x < c.width; x += 1) {
@@ -2132,7 +2152,11 @@ async function saveSkin() {
   const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked,
     delay: Number($('#skDelay').value) || 0, touch: $('#skWhen').value === 'touch', after: Number($('#skAfter').value) || 0,
     ratio: w / h, box: [e.zone.x / w * 100, e.zone.y / h * 100, e.zone.w / w * 100, e.zone.h / h * 100] };
-  if (e.clean) {
+  if (e.paint) {
+    body.image = e.paint.output().toDataURL('image/png');
+    if (e.clean) body.align = { x: e.x, y: e.y, s: e.s };
+    if (e.clean && e.cleanNew) body.cleanImage = asJpeg(e.clean, 0.95);
+  } else if (e.clean) {
     body.image = skinCover();
     body.align = { x: e.x, y: e.y, s: e.s };
     if (e.cleanNew) body.cleanImage = asJpeg(e.clean, 0.95);
@@ -2144,7 +2168,7 @@ async function saveSkin() {
 
 async function skinAction(action, el) {
   if (action === 'skin-new') { openSkinEditor(); return; }
-  if (action === 'skin-back') { loadTab(); return; }
+  if (action === 'skin-back') { skinEd?.paint?.destroy(); loadTab(); return; }
   if (action === 'skin-edit') {
     try { const d = await api('/api/admin/skins'); openSkinEditor(d.skins.find((s) => s.id === Number(el.dataset.id))); } catch (err) { toast('Erro', err.message, 'error'); }
     return;
@@ -2182,6 +2206,30 @@ async function skinAction(action, el) {
       toast('Jogo aberto', 'Feche o ecrã de entrada do jogo em "Usar o jogo" e depois alinhe e marque a zona.');
     } catch (err) { toast('Erro', err.message, 'error'); }
     el.disabled = false;
+    return;
+  }
+  if (action === 'skin-paint') {
+    const e = skinEd;
+    if (!e.zone) { toast('Editar', 'Marque primeiro a zona a tapar.', 'error'); return; }
+    if (e.paint && !confirm('Recomeçar a edição a partir da captura? Perde o que pintou.')) return;
+    let base = null;
+    try {
+      if (e.clean) base = coverBase();
+      else if (e.cover) {
+        const img = await loadImg(e.cover);
+        base = document.createElement('canvas'); base.width = img.naturalWidth; base.height = img.naturalHeight;
+        base.getContext('2d').drawImage(img, 0, 0);
+      }
+    } catch (err) { toast('Erro', err.message, 'error'); return; }
+    if (!base) { toast('Editar', 'Carregue a captura limpa (passo 4).', 'error'); return; }
+    e.paint?.destroy();
+    const host = $('#skPaint');
+    e.paint = createPaint(host, base, { onChange: () => { if (skinEd?.paint) { skinEd.paintUrl = skinEd.paint.output().toDataURL('image/png'); updateStage(); } } });
+    e.paintUrl = e.paint.output().toDataURL('image/png');
+    e.preview = true; $('#skPreview').checked = true;
+    el.textContent = '✏️ Recomeçar a edição a partir da captura';
+    updateStage();
+    host.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
   if (action === 'skin-measure') {
