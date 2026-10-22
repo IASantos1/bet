@@ -626,6 +626,11 @@ test('películas: the admin makes a cover; the site gets it only when they are s
   assert.deepEqual((await client()('GET', '/api/config')).body.skins, []);
   await adm('POST', '/api/admin/casino/skins', { mode: 'admin' });
   assert.ok((await client()('GET', '/api/config')).body.skins.some((k) => k.code === 'vs20x'));
+  // When it shows: at most N s after the game loaded, or on the first touch.
+  const timed = await adm('POST', '/api/admin/skins', { id: s.id, code: 'vs20x', side: 'port', ratio: 0.5, box: [10, 20, 30, 5], delay: 5.5, touch: false });
+  assert.deepEqual([timed.body.skin.delay, timed.body.skin.touch], [5.5, false]);
+  const live = (await client()('GET', '/api/config')).body.skins.find((k) => k.code === 'vs20x');
+  assert.deepEqual([live.delay, live.touch], [5.5, false]);
   await adm('POST', `/api/admin/skins/${s.id}/enabled`, { on: false });
   assert.ok(!(await client()('GET', '/api/config')).body.skins.some((k) => k.code === 'vs20x'));
   assert.equal((await adm('POST', `/api/admin/skins/${s.id}/delete`, {})).status, 200);

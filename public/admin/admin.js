@@ -1904,7 +1904,7 @@ function adminSkins(d) {
   const cards = d.skins.map((s) => `<div class="skin-card">
       <div class="skin-thumb"><img src="${esc(s.img)}" alt=""></div>
       <div class="grow"><strong>${esc(s.name)}</strong><small class="muted">${esc(SIDE_LABEL[s.side])} · ${esc(s.code)}</small>
-        <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')}</small></div>
+        <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')} · aparece até ${s.delay} s${s.touch ? ' ou ao 1.º toque' : ''}</small></div>
       <label class="adm-switch"><input type="checkbox" data-action="skin-enabled" data-id="${s.id}"${s.enabled ? ' checked' : ''}> Ativa</label>
       <button class="ghost-btn btn-sm" data-action="skin-edit" data-id="${s.id}">Editar</button>
       <button class="danger-btn btn-sm" data-action="skin-delete" data-id="${s.id}" data-name="${esc(s.name)}">Apagar</button>
@@ -1954,6 +1954,12 @@ function skinEditorHtml() {
         (setas do teclado: 1 px; Shift: 10 px). "Marcar zona": arraste sobre o que quer tapar. Para o telemóvel, faça-o com o admin aberto no telemóvel.</p>
       <div class="skin-stage-wrap"><div class="skin-stage" id="skStage" tabindex="0"></div>
         <div class="skin-canvas-empty" id="skEmpty"></div></div>
+      <h4>Quando aparece no site</h4>
+      <p class="muted">Antes do jogo, a Pragmatic mostra a barra de carregamento e um ecrã de entrada: a película espera por eles.</p>
+      <div class="form-actions">
+        <label class="field adm-inline">No máximo <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s depois de o jogo carregar</label>
+        <label class="adm-switch"><input type="checkbox" id="skTouch"${e.touch ? ' checked' : ''}> ou logo ao 1.º toque no jogo (fechar o ecrã de entrada)</label></div>
+      <details class="sk-msgs"><summary>Mensagens do jogo (para afinar)</summary><pre id="skMsgs" class="raw-odds">Ainda nenhuma: abra o jogo aqui.</pre></details>
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" id="skEnabled"${e.enabled ? ' checked' : ''}> Ativa</label>
         <button class="primary-btn" data-action="skin-save">Guardar película</button></div>
     </div>`;
@@ -1981,6 +1987,7 @@ async function openSkinEditor(skin = null) {
     id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
     ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
     box: skin?.box || null, ratio: skin?.ratio || null, cover: skin?.img || null, gameUrl: null,
+    delay: skin?.delay ?? 8, touch: skin ? skin.touch : true,
   };
   try {
     if (skin?.ref) skinEd.ref = await loadImg(skin.ref);
@@ -2114,6 +2121,7 @@ async function saveSkin() {
   if (!e.zone) throw new Error('Marque a zona a tapar.');
   const { w, h } = skinSize();
   const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked,
+    delay: Number($('#skDelay').value) || 0, touch: $('#skTouch').checked,
     ratio: w / h, box: [e.zone.x / w * 100, e.zone.y / h * 100, e.zone.w / w * 100, e.zone.h / h * 100] };
   if (e.clean) {
     body.image = skinCover();
@@ -2222,3 +2230,14 @@ async function skinChange(t) {
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
 }
+
+// What the game says to the page around it (postMessage): shown in the editor, to find a "ready" signal.
+window.addEventListener('message', (ev) => {
+  const f = $('#skStage iframe'), out = $('#skMsgs');
+  if (!f || !out || ev.source !== f.contentWindow) return;
+  let text = '';
+  try { text = typeof ev.data === 'string' ? ev.data : JSON.stringify(ev.data); } catch { text = String(ev.data); }
+  if (out.dataset.n === undefined) { out.textContent = ''; out.dataset.n = '0'; }
+  out.dataset.n = String(Number(out.dataset.n) + 1);
+  out.textContent = `${new Date().toLocaleTimeString('pt-PT')}  ${String(text).slice(0, 300)}\n${out.textContent}`.slice(0, 6000);
+});

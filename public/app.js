@@ -1169,7 +1169,49 @@ const uncoverGame = () => {
   if (state.casinoSession) state.casinoSession.loaded = true;
   $('#casinoCover')?.classList.add('gone');
 };
-document.addEventListener('load', (e) => { if (e.target?.id === 'casinoFrame') setTimeout(uncoverGame, 300); }, true);
+document.addEventListener('load', (e) => {
+  if (e.target?.id !== 'casinoFrame') return;
+  setTimeout(uncoverGame, 300);
+  armSkin();
+}, true);
+
+// A cover waits for the game itself: Pragmatic first shows its loading bar and an intro screen, which the
+// cover must not sit on. It shows on the first touch inside the game (the intro is closed with a touch;
+// not before 2 s after the page loaded), on a message from the game saying it is ready, or after the
+// cover's delay at the latest (set per cover in Admin → Películas).
+let skinTimer = null;
+const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
+function showSkin() {
+  const g = state.casinoSession;
+  if (!g || g.skinReady) return;
+  g.skinReady = true;
+  $('.skin-wrap')?.classList.remove('skin-wait');
+}
+function armSkin() {
+  const g = state.casinoSession, side = g && skinSide(gameSkin(g));
+  clearTimeout(skinTimer);
+  if (!side || g.skinReady) return;
+  g.frameAt = Date.now();
+  skinTimer = setTimeout(showSkin, side.delay * 1000);
+}
+function skinSoon(ms) {
+  const g = state.casinoSession;
+  if (!g?.frameAt || g.skinReady) return;
+  clearTimeout(skinTimer);
+  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 2000 - Date.now()));
+}
+// A touch inside the game moves the focus into its frame: this page loses it.
+window.addEventListener('blur', () => setTimeout(() => {
+  const g = state.casinoSession;
+  if (document.activeElement?.id === 'casinoFrame' && skinSide(gameSkin(g || {}))?.touch) skinSoon(700);
+}));
+window.addEventListener('message', (e) => {
+  const f = $('#casinoFrame');
+  if (!f || e.source !== f.contentWindow) return;
+  const text = typeof e.data === 'string' ? e.data : (() => { try { return JSON.stringify(e.data); } catch { return ''; } })();
+  if (state.user?.role === 'admin') console.info('[jogo → site]', String(text).slice(0, 300));
+  if (/game.?ready|loaded|load.?(end|complete)|game.?start/i.test(text)) skinSoon(300);
+});
 
 const warmOrigins = new Set();
 function warmOrigin(url) {
@@ -1275,7 +1317,10 @@ function gameSkin(g) {
   if (g.demo || !g.code || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
   const mine = (state.config?.skins || []).filter((s) => s.code === g.code);
   if (!mine.length) return null;
-  const side = (k) => { const list = mine.filter((s) => s.side === k); return list.length ? { ratio: list[0].ratio, covers: list } : null; };
+  const side = (k) => {
+    const list = mine.filter((s) => s.side === k);
+    return list.length ? { ratio: list[0].ratio, covers: list, delay: list[0].delay ?? 8, touch: list[0].touch !== false } : null;
+  };
   return { land: side('land'), port: side('port') };
 }
 function skinned(g, frame) {
@@ -1286,7 +1331,7 @@ function skinned(g, frame) {
     return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
   }).join('');
   const vars = [s.land && `--rl:${s.land.ratio}`, s.port && `--rp:${s.port.ratio}`].filter(Boolean).join(';');
-  const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port'].filter(Boolean).join(' ');
+  const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port', !g.skinReady && 'skin-wait'].filter(Boolean).join(' ');
   return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${covers('land')}${covers('port')}</div></div>`;
 }
 
