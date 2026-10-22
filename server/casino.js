@@ -40,6 +40,18 @@ export class CasinoError extends Error {
   }
 }
 
+// Values that look secret (tokens, keys, signatures, sessions) are shown only by their first characters.
+const SECRET_PARAM = /token|key|sig|hash|auth|session|sid|secret|pass|ticket|mgc|jwt|code|user|player/i;
+const mask = (v) => (v.length <= 4 ? '•••' : `${v.slice(0, 3)}…(${v.length})`);
+/** A URL split for display: host, path and parameters, secrets masked. */
+export function maskUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { return { url: '(endereço inválido)' }; }
+  const params = [...u.searchParams].map(([k, v]) => [k, SECRET_PARAM.test(k) || /^[A-Za-z0-9+/=_-]{25,}$/.test(v) ? mask(v) : v.slice(0, 200)]);
+  const path = u.pathname.split('/').map((seg) => (/^[A-Za-z0-9_-]{25,}$/.test(seg) ? mask(seg) : seg)).join('/');
+  return { host: u.host, path, params };
+}
+
 export function createCasino(db, {
   baseUrl, token, lang = 6, fetchImpl = globalThis.fetch, log = () => {}, cacheMs = 60 * 60_000, fsBetParam = '',
 } = {}) {
@@ -220,6 +232,38 @@ export function createCasino(db, {
     return data.game_url;
   }
 
+  /**
+   * Admin check: opens one game for the admin and shows the address it opens at, following up to three
+   * redirects, with every secret-looking value masked. Used to see whether the provider's address
+   * carries a jurisdiction setting (the one that hides "buy free spins" and turbo in regulated markets).
+   */
+  async function inspectLaunch(user, { name = 'Gates of Olympus' } = {}) {
+    const list = (await games()).games;
+    const want = String(name || '').toLowerCase().trim();
+    const isPragmatic = (g) => /pragmatic/i.test(g.provider);
+    const game = list.find((g) => g.name.toLowerCase() === want && isPragmatic(g)) || list.find((g) => g.name.toLowerCase().includes(want))
+      || list.find(isPragmatic);
+    if (!game) throw new HttpError(404, 'Jogo não encontrado no catálogo.');
+    const first = await launch(user, { providerId: game.providerId, gameCode: game.code, returnUrl: '' });
+    const hops = [];
+    const found = new Set();
+    let url = first;
+    for (let i = 0; i < 4 && url; i += 1) {
+      hops.push(maskUrl(url));
+      for (const m of String(url).matchAll(/jurisdiction=([^&#"']*)/gi)) found.add(decodeURIComponent(m[1]));
+      let res;
+      try { res = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) }); } catch { break; }
+      const loc = res.headers.get('location');
+      if (loc && res.status >= 300 && res.status < 400) { url = new URL(loc, url).toString(); continue; }
+      // The page itself may build the game address in script: the jurisdiction set there.
+      const text = (await res.text().catch(() => '')).slice(0, 200_000);
+      for (const m of text.matchAll(/["']?jurisdiction["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{1,12})/gi)) found.add(m[1]);
+      hops.push({ status: res.status, note: 'página final (não redireciona)' });
+      break;
+    }
+    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found] };
+  }
+
   // ---------- single wallet ----------
 
   const locks = new Map();
@@ -339,7 +383,7 @@ export function createCasino(db, {
   }
 
   return {
-    enabled, games, gamesPage, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo,
+    enabled, games, gamesPage, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo, inspectLaunch,
     enterGame, leaveGame, syncBack, fsEnterGame, fsBalanceCents, fsWithdrawAll,
   };
 }

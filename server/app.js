@@ -2175,6 +2175,11 @@ export function createApp(db, {
     const all = bb ? await bb.games() : null;
     res.json({ premium: req.body?.on === true, games: all?.games.length ?? 0, premiumGames: all?.games.filter((g) => g.premium).length ?? 0 });
   }));
+  // Opens one game for the admin and shows its address (secrets masked): does it carry a jurisdiction?
+  admin.post('/casino/launch-inspect', wrap(async (req, res) => {
+    if (!casino?.enabled) throw new HttpError(503, 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.');
+    res.json(await casino.inspectLaunch(req.user, { name: String(req.body?.name || 'Gates of Olympus').slice(0, 80) }));
+  }));
   admin.post('/casino/palace-test', wrap(async (_req, res) => {
     if (!casino?.enabled) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.' }] });
     res.json({ steps: await casino.diagnose() });
