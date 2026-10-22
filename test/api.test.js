@@ -607,3 +607,34 @@ test('a WinHouse game in play that no live read confirmed for a while is not on 
   assert.ok(ids.includes(fresh));
   assert.ok(!ids.includes(frozen));
 });
+
+test('películas: the admin makes a cover; the site gets it only when they are switched on', async () => {
+  const adm = await adminClient();
+  const png = 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000d49444154789c6360000002000100e221bc330000000049454e44ae426082', 'hex').toString('base64');
+  // The two that come with the site (Gates of Olympus, computer and phone).
+  const first = (await adm('GET', '/api/admin/skins')).body;
+  assert.deepEqual(first.skins.map((s) => [s.code, s.side]), [['vs20olympgate', 'land'], ['vs20olympgate', 'port']]);
+  assert.equal((await adm('POST', '/api/admin/skins', { code: 'vs20x', side: 'land', ratio: 1.76, box: [1, 2, 3, 4] })).status, 400, 'no picture');
+  assert.equal((await adm('POST', '/api/admin/skins', { code: 'vs20x', side: 'up', ratio: 1.76, box: [1, 2, 3, 4], image: png })).status, 400);
+  const made = await adm('POST', '/api/admin/skins', { code: 'vs20x', name: 'Jogo X', side: 'port', ratio: 0.5, box: [10, 20, 30, 5], image: png, refImage: png, align: { x: 1, y: -2, s: 0.7 } });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const s = made.body.skin;
+  assert.deepEqual([s.side, s.box, s.align, !!s.ref, s.clean], ['port', [10, 20, 30, 5], { x: 1, y: -2, s: 0.7 }, true, null]);
+  const img = await fetch(base + s.img);
+  assert.equal(img.headers.get('content-type'), 'image/png');
+  // Off: the site gets none; for admins only: listed (the page decides by role).
+  assert.deepEqual((await client()('GET', '/api/config')).body.skins, []);
+  await adm('POST', '/api/admin/casino/skins', { mode: 'admin' });
+  assert.ok((await client()('GET', '/api/config')).body.skins.some((k) => k.code === 'vs20x'));
+  // When it shows: at most N s after the game loaded, or on the first touch.
+  const timed = await adm('POST', '/api/admin/skins', { id: s.id, code: 'vs20x', side: 'port', ratio: 0.5, box: [10, 20, 30, 5], delay: 5.5, touch: false });
+  assert.deepEqual([timed.body.skin.delay, timed.body.skin.touch], [5.5, false]);
+  const live = (await client()('GET', '/api/config')).body.skins.find((k) => k.code === 'vs20x');
+  assert.deepEqual([live.delay, live.touch], [5.5, false]);
+  await adm('POST', `/api/admin/skins/${s.id}/enabled`, { on: false });
+  assert.ok(!(await client()('GET', '/api/config')).body.skins.some((k) => k.code === 'vs20x'));
+  assert.equal((await adm('POST', `/api/admin/skins/${s.id}/delete`, {})).status, 200);
+  assert.equal((await adm('GET', '/api/admin/skins')).body.skins.length, 2);
+  assert.equal((await client()('POST', '/api/admin/skins', { code: 'x' })).status, 401);
+  await adm('POST', '/api/admin/casino/skins', { mode: 'off' });
+});

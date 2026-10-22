@@ -1169,7 +1169,51 @@ const uncoverGame = () => {
   if (state.casinoSession) state.casinoSession.loaded = true;
   $('#casinoCover')?.classList.add('gone');
 };
-document.addEventListener('load', (e) => { if (e.target?.id === 'casinoFrame') setTimeout(uncoverGame, 300); }, true);
+document.addEventListener('load', (e) => {
+  if (e.target?.id !== 'casinoFrame') return;
+  setTimeout(uncoverGame, 300);
+  armSkin();
+}, true);
+
+// A cover waits for the game itself: Pragmatic first shows its loading bar and an intro screen, which the
+// cover must not sit on. Set per cover in Admin → Películas: either once the game starts (\`after\` s
+// after the first touch inside it, the one that closes the intro; never before 2 s after the page
+// loaded), with \`delay\` s after loading as a fallback when nobody touches (0 = none); or \`delay\` s
+// after the page loaded. A message from the game saying it is ready also shows it.
+let skinTimer = null;
+const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
+function showSkin() {
+  const g = state.casinoSession;
+  if (!g || g.skinReady) return;
+  g.skinReady = true;
+  $('.skin-wrap')?.classList.remove('skin-wait');
+}
+function armSkin() {
+  const g = state.casinoSession, side = g && skinSide(gameSkin(g));
+  clearTimeout(skinTimer);
+  if (!side || g.skinReady) return;
+  g.frameAt = Date.now();
+  if (!side.touch || side.delay > 0) skinTimer = setTimeout(showSkin, side.delay * 1000);
+}
+function skinSoon(ms) {
+  const g = state.casinoSession;
+  if (!g?.frameAt || g.skinReady) return;
+  clearTimeout(skinTimer);
+  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 2000 - Date.now()));
+}
+// A touch inside the game moves the focus into its frame: this page loses it.
+window.addEventListener('blur', () => setTimeout(() => {
+  const g = state.casinoSession;
+  const side = skinSide(gameSkin(g || {}));
+  if (document.activeElement?.id === 'casinoFrame' && side?.touch) skinSoon(side.after * 1000);
+}));
+window.addEventListener('message', (e) => {
+  const f = $('#casinoFrame');
+  if (!f || e.source !== f.contentWindow) return;
+  const text = typeof e.data === 'string' ? e.data : (() => { try { return JSON.stringify(e.data); } catch { return ''; } })();
+  if (state.user?.role === 'admin') console.info('[jogo → site]', String(text).slice(0, 300));
+  if (/game.?ready|loaded|load.?(end|complete)|game.?start/i.test(text)) skinSoon(300);
+});
 
 const warmOrigins = new Set();
 function warmOrigin(url) {
@@ -1265,35 +1309,44 @@ async function playCasino(mode) {
 // ---------- casino player (the game runs inside the page) ----------
 
 /**
- * Covers over the "buy free spins" panel of some Pragmatic games, made from the game's own artwork
- * (as the game looks where that panel does not exist). The game frame keeps the proportion the cover
- * was made for, so it always lands on the same spot; the cover also takes the clicks there.
- * land: computer, landscape; port: phone held upright. box: left, top, width, height in % of the frame.
- * A side without img only keeps the proportion (the game then lays out as in the reference picture).
+ * Covers ("películas") over parts of some games, made in Admin → Películas from the game's own
+ * artwork. The game frame keeps the proportion the cover was made for, so it always lands on the
+ * same spot; the cover also takes the clicks there. land: computer, landscape; port: phone upright.
+ * box: left, top, width, height in % of the frame.
  */
-const GAME_SKINS = {
-  vs20olympgate: {
-    land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] },
-    port: { img: '/casino/skins/vs20olympgate-port.png', ratio: 1206 / 1884, box: [12.023, 58.652, 75.622, 11.465] },
-  },
-};
 function gameSkin(g) {
   const mode = state.config?.casinoSkins;
-  if (g.demo || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
-  return GAME_SKINS[g.code] || null;
+  if (g.demo || !g.code || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
+  const mine = (state.config?.skins || []).filter((s) => s.code === g.code);
+  if (!mine.length) return null;
+  const side = (k) => {
+    const list = mine.filter((s) => s.side === k);
+    return list.length ? { ratio: list[0].ratio, covers: list, delay: list[0].delay ?? 8, touch: list[0].touch !== false, after: list[0].after ?? 0.5 } : null;
+  };
+  return { land: side('land'), port: side('port') };
 }
 function skinned(g, frame) {
   const s = gameSkin(g);
   if (!s) return frame;
-  const cover = (side) => {
-    const c = s[side];
-    if (!c?.img) return '';
+  const covers = (side) => (s[side]?.covers || []).map((c) => {
     const [l, t, w, h] = c.box;
-    return `<img class="skin-${side}" src="${c.img}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%">`;
-  };
-  const vars = [s.land && `--rl:${s.land.ratio}`, s.port && `--rp:${s.port.ratio}`].filter(Boolean).join(';');
-  const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port'].filter(Boolean).join(' ');
-  return `<div class="${cls}"><div class="skin-box" style="${vars}">${frame}${cover('land')}${cover('port')}</div></div>`;
+    return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" data-box="${[l, t, w, h].join(',')}">`;
+  }).join('');
+  const vars = [s.land ? s.land.ratio : '', s.port ? s.port.ratio : ''].join(',');
+  const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port', !g.skinReady && 'skin-wait'].filter(Boolean).join(' ');
+  return `<div class="${cls}"><div class="skin-box" data-ratios="${vars}">${frame}${covers('land')}${covers('port')}</div></div>`;
+}
+/** Places the covers (the CSP refuses style="" in the page's HTML; the CSSOM is fine). */
+function placeSkins() {
+  for (const box of $$('.skin-box[data-ratios]')) {
+    const [rl, rp] = box.dataset.ratios.split(',');
+    if (rl) box.style.setProperty('--rl', rl);
+    if (rp) box.style.setProperty('--rp', rp);
+  }
+  for (const img of $$('.skin-land[data-box], .skin-port[data-box]')) {
+    const [l, t, w, h] = img.dataset.box.split(',');
+    Object.assign(img.style, { left: `${l}%`, top: `${t}%`, width: `${w}%`, height: `${h}%` });
+  }
 }
 
 function casinoPlayPage() {
@@ -2630,6 +2683,7 @@ function render({ keepScroll = false } = {}) {
   $('#content').dataset.page = page;
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
+  if (immersive) placeSkins();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
   showMaintenance(page);
