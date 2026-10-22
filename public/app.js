@@ -1089,7 +1089,7 @@ async function openGame(index) {
   const g = state.casino.games[index];
   if (!g) return;
   if (!state.user) return openAuth('login');
-  state.casinoSession = { name: g.name, provider: g.provider, url: null };
+  state.casinoSession = { name: g.name, provider: g.provider, code: g.code, url: null };
   location.hash = '#/casino/jogar';
   try {
     const r = await api('/api/casino/launch', { method: 'POST', body: { providerId: g.providerId, gameCode: g.code } });
@@ -1238,7 +1238,7 @@ async function playCasino(mode) {
   const g = d?.game;
   if (!g) return;
   if (mode !== 'demo' && !state.user) return openAuth('login');
-  state.casinoSession = { name: g.name, provider: g.provider, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null,
+  state.casinoSession = { name: g.name, provider: g.provider, code: g.code || null, image: g.image || null, url: null, gameId: g.id, demo: mode === 'demo', fs: mode === 'fs' ? d.freeSpins?.id : null,
     fsLeft: d.freeSpins?.spinsLeft ?? null, fsSpins: d.freeSpins?.spins ?? null, fsBet: d.freeSpins?.spinValue ?? null, fsWon: 0, fsEnded: false };
   location.hash = '#/casino/jogar';
   try {
@@ -1263,6 +1263,28 @@ async function playCasino(mode) {
 }
 
 // ---------- casino player (the game runs inside the page) ----------
+
+/**
+ * Covers over the "buy free spins" panel of some Pragmatic games, made from the game's own artwork
+ * (as the game looks where that panel does not exist). The game frame keeps the proportion the cover
+ * was made for, so it always lands on the same spot; the cover also takes the clicks there.
+ * land: computer, landscape. box: left, top, width, height in % of the frame.
+ */
+const GAME_SKINS = {
+  vs20olympgate: { land: { img: '/casino/skins/vs20olympgate-land.png', ratio: 1162 / 660, box: [1.549, 12.121, 14.802, 69.394] } },
+};
+function gameSkin(g) {
+  const mode = state.config?.casinoSkins;
+  if (g.demo || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
+  return GAME_SKINS[g.code] || null;
+}
+function skinned(g, frame) {
+  const s = gameSkin(g)?.land;
+  if (!s) return frame;
+  const [l, t, w, h] = s.box;
+  return `<div class="skin-wrap"><div class="skin-box" style="--r:${s.ratio}">${frame}
+    <img class="skin-land" src="${s.img}" alt="" draggable="false" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"></div></div>`;
+}
 
 function casinoPlayPage() {
   const g = state.casinoSession;
@@ -1292,8 +1314,8 @@ function casinoPlayPage() {
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}${fsNote}
     <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
-    <iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
-      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe></div>
+    ${skinned(g, `<iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
+      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>`)}</div>
   </div>`;
 }
 

@@ -578,6 +578,8 @@ export function createApp(db, {
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
+      // Covers over some Pragmatic games (the "buy free spins" panel): off, admins only (trial) or everyone.
+      casinoSkins: getSetting(db, 'casino.skins', 'off'),
     });
   });
 
@@ -2191,6 +2193,13 @@ export function createApp(db, {
     res.json(await telegram.promoteNext({ force: true }));
   }));
 
+  /** Covers over the "buy free spins" panel of some Pragmatic games: off | admin (trial) | all. */
+  admin.post('/casino/skins', (req, res) => {
+    const mode = ['off', 'admin', 'all'].includes(req.body?.mode) ? req.body.mode : 'off';
+    setSetting(db, 'casino.skins', mode);
+    res.json({ mode });
+  });
+
   /** Who serves the slots: BigBang (everything) or Palace (slots) + BigBang (live tables). */
   admin.post('/casino/mode', wrap(async (req, res) => {
     const on = req.body?.split === true;
@@ -2246,7 +2255,7 @@ export function createApp(db, {
         serverDelay: loopDelay(),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
-        split: !!getSetting(db, 'casino.split', false), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token },
+        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token },
       });
     }
     if (!casinoOn()) {
