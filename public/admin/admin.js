@@ -1746,7 +1746,7 @@ document.addEventListener('click', async (e) => {
     const tab = window.open('about:blank', '_blank');
     try {
       const r = await api('/api/admin/casino/launch-inspect', { method: 'POST', body: { name: $('#liName').value, jurisdiction: $('#liJur').value, open: true } });
-      if (!r.openUrl) throw new Error('Escreva a jurisdição a testar (ex.: UK).');
+      if (!r.openUrl) throw new Error(r.error || 'A Pragmatic não devolveu o endereço do jogo.');
       if (tab) tab.location = r.openUrl; else window.location.assign(r.openUrl);
     } catch (err) { tab?.close(); toast('Erro', err.message, 'error'); }
   } else if (action === 'launch-copy') {

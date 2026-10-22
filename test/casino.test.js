@@ -286,26 +286,25 @@ test('launch inspect: follows the game address, hides secrets, finds the jurisdi
     assert.equal(opts.redirect, 'manual');
     if (u.host === 'launch.example') return new Response('', { status: 302, headers: { location: 'https://aes-pragmatic.com/gs2c/playGame.do?symbol=vs20doghouse&token=SECRETSECRETSECRETSECRETSECRET' } });
     if (u.pathname.endsWith('playGame.do')) {
-      return new Response('', { status: 302, headers: { location: `https://aes-pragmatic.com/gs2c/game/load?jurisdiction=${u.searchParams.get('jurisdiction') || '99'}&lang=pt` } });
+      return new Response('', { status: 302, headers: { location: 'https://aes-pragmatic.com/gs2c/game/load?ssid=abc' } });
     }
-    return new Response(`<script>var cfg={"jurisdiction":"${u.searchParams.get('jurisdiction')}","buyFeature":true}</script>`, { status: 200 });
+    return new Response('<script>var cfg={"buyFeature":true}; go("/gs2c/html5Game.do?symbol=vs20doghouse&amp;jurisdictionID=99&amp;lang=pt&amp;mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH")</script>', { status: 200 });
   };
   const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl });
   const r = await casino.inspectLaunch(player(db), { name: 'The Dog House' });
   assert.equal(r.game.code, 'vs20doghouse');
   assert.deepEqual(hops, ['launch.example', 'aes-pragmatic.com', 'aes-pragmatic.com']);
   assert.deepEqual(r.jurisdiction, ['99']);
+  assert.ok(!JSON.stringify(r).includes('AUTHTOKENAUTHTOKEN'));
   assert.ok(r.hops.at(-1).around.some((a) => a.includes('buyFeature')));
   const text = JSON.stringify(r);
   assert.ok(!text.includes('abcdefghijklmnopqrstuvwxyz123') && !text.includes('SECRETSECRET'), 'secrets are masked');
-  assert.ok(text.includes('vs20doghouse') && text.includes('"lang","pt"'));
+  assert.ok(text.includes('"symbol","vs20doghouse"'));
 
-  // Asking for another jurisdiction: it is set on Pragmatic's address; "open" hands it over unused.
+  // Another jurisdiction: set on the game address the page loads; "open" hands that address over.
   const uk = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK' });
-  assert.deepEqual(uk.jurisdiction, ['UK']);
-  hops.length = 0;
+  assert.deepEqual(uk.hops.at(-1).params.find(([k]) => k === 'jurisdictionID'), ['jurisdictionID', 'UK']);
   const open = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK', open: true });
-  assert.match(open.openUrl, /playGame\.do\?.*jurisdiction=UK/);
-  assert.deepEqual(hops, ['launch.example']);
+  assert.equal(open.openUrl, 'https://aes-pragmatic.com/gs2c/html5Game.do?symbol=vs20doghouse&jurisdictionID=UK&lang=pt&mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH');
   db.close();
 });

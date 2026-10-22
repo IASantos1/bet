@@ -249,23 +249,15 @@ export function createCasino(db, {
     const found = new Set();
     let url = first;
     for (let i = 0; i < 4 && url; i += 1) {
-      // Trial: ask Pragmatic for another jurisdiction (e.g. UK) on its own game address.
-      if (jurisdiction && /pragmatic/i.test(new URL(url).host) && /playGame\.do$/i.test(new URL(url).pathname)) {
-        const u = new URL(url);
-        u.searchParams.set('jurisdiction', jurisdiction);
-        url = u.toString();
-        // To look at the game itself: the admin's browser opens it from here (not used up by us first).
-        if (open) return { game: { name: game.name, provider: game.provider, code: game.code }, openUrl: url, tried: jurisdiction };
-      }
       hops.push(maskUrl(url));
-      for (const m of String(url).matchAll(/jurisdiction=([^&#"']*)/gi)) found.add(decodeURIComponent(m[1]));
+      for (const m of String(url).matchAll(/jurisdiction(?:ID)?=([^&#"']*)/gi)) found.add(decodeURIComponent(m[1]));
       let res;
       try { res = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) }); } catch { break; }
       const loc = res.headers.get('location');
       if (loc && res.status >= 300 && res.status < 400) { url = new URL(loc, url).toString(); continue; }
       // The page itself may build the game address in script: the jurisdiction set there.
       const text = (await res.text().catch(() => '')).slice(0, 200_000);
-      for (const m of text.matchAll(/["']?jurisdiction["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{1,12})/gi)) found.add(m[1]);
+      for (const m of text.matchAll(/["']?jurisdiction(?:ID)?["']?\s*[:=]\s*["']?([A-Za-z0-9_-]{1,12}?)(?=["'&;,\s]|$)/gi)) found.add(m[1]);
       // The words around each setting that may switch the buy feature or turbo, secrets masked.
       const around = [];
       for (const m of text.matchAll(/jurisdiction|turbo|buy|purchase|ante/gi)) {
@@ -274,9 +266,19 @@ export function createCasino(db, {
         if (!around.some((a) => a.includes(m[0]) && a.slice(0, 40) === bit.slice(0, 40))) around.push(bit);
       }
       hops.push({ status: res.status, note: 'página final (não redireciona)', around });
+      // Trial: the page loads the game itself at an address with jurisdictionID=…; the same address
+      // with another jurisdiction (e.g. UK), for the admin's browser to open.
+      const inner = text.match(/["']([^"'\s]*jurisdictionID=[^"'\s]*)["']/i);
+      if (jurisdiction && inner) {
+        const g = new URL(inner[1].replace(/&amp;/g, '&'), url);
+        g.searchParams.set('jurisdictionID', jurisdiction);
+        if (open) return { game: { name: game.name, provider: game.provider, code: game.code }, openUrl: g.toString(), tried: jurisdiction };
+        hops.push({ note: `endereço do jogo com jurisdição ${jurisdiction}`, ...maskUrl(g.toString()) });
+      }
       break;
     }
-    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found], tried: jurisdiction || null };
+    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found], tried: jurisdiction || null,
+      ...(open ? { error: 'A página da Pragmatic não trouxe o endereço do jogo com jurisdictionID.' } : {}) };
   }
 
   // ---------- single wallet ----------
