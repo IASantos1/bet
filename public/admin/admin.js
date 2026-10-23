@@ -56,6 +56,7 @@ const TABS = [
   { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
   { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
   { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
+  { id: 'colecoes', label: 'Coleções do casino', icon: 'casino', section: 'Avançado' },
   { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
@@ -715,6 +716,7 @@ async function loadTab() {
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
     else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
     else if (tab === 'banners') { banEd = null; main.innerHTML = adminBanners(await api('/api/admin/banners')); }
+    else if (tab === 'colecoes') { colEd = null; main.innerHTML = adminCollections(await api('/api/admin/collections')); }
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
@@ -1378,6 +1380,7 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
   if (action.startsWith('skin-')) { skinAction(action, actionEl); return; }
   if (action.startsWith('ban-')) { banAction(action, actionEl); return; }
+  if (action.startsWith('col-')) { colAction(action, actionEl); return; }
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
@@ -1842,6 +1845,7 @@ let fsSearchTimer = null;
 document.addEventListener('change', async (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinChange(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banChange(e.target); return; }
+  if (colEd && e.target.id === 'colProv') { colProvider(e.target.value); return; }
   if (e.target.dataset?.action === 'casino-skins') {
     try {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
@@ -1868,6 +1872,7 @@ document.addEventListener('change', async (e) => {
 document.addEventListener('input', (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
+  if (colEd && e.target.id === 'colSearch') { colSearch(e.target.value.trim()); return; }
   if (e.target.form?.id === 'cpForm' && e.target.name === 'body') { campaignCount(); return; }
   const modal = e.target.id === 'amGameSearch';
   if (e.target.id !== 'fsGameSearch' && !modal) return;
@@ -2501,6 +2506,147 @@ async function banAction(action, el) {
         imageD: banEd.imageD || undefined, imageM: banEd.imageM || undefined, removeM: banEd.removeM || undefined,
       } });
       toast('Banner guardado'); banEd = null; loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
+  }
+}
+
+// ---------- coleções: rows of games chosen by the operator ----------
+// A title, the games (searched by name or picked from a provider's list) in the order wanted, where the
+// row goes in the casino ("no topo" or "depois do Top 10 e Jackpots"), the dates it runs and on/off.
+
+const COL_PLACE = { top: 'No topo do casino (antes de "Em destaque")', middle: 'Depois do "Top 10" e dos "Jackpots"' };
+let colEd = null;
+
+function adminCollections(d) {
+  state.collections = d.collections;
+  const list = d.collections;
+  const rows = list.map((c, i) => {
+    const [cls, label] = banState(c);
+    return `<div class="ban-card">
+      <div class="col-thumbs">${c.games.slice(0, 4).map((g) => `<span>${g.image ? `<img src="${esc(g.image)}" alt="">` : '🎰'}</span>`).join('')}</div>
+      <div class="grow"><strong>${esc(c.title)}</strong><small class="${cls}">${esc(label)}</small>
+        <small class="muted">${c.games.length} jogos · ${c.place === 'top' ? 'no topo' : 'depois do Top 10'}</small></div>
+      <div class="ban-order"><button class="ghost-btn btn-sm" data-action="col-move" data-id="${c.id}" data-dir="-1" ${i ? '' : 'disabled'}>↑</button>
+        <button class="ghost-btn btn-sm" data-action="col-move" data-id="${c.id}" data-dir="1" ${i < list.length - 1 ? '' : 'disabled'}>↓</button></div>
+      <label class="adm-switch"><input type="checkbox" data-action="col-enabled" data-id="${c.id}"${c.enabled ? ' checked' : ''}> Ativa</label>
+      <button class="ghost-btn btn-sm" data-action="col-edit" data-id="${c.id}">Editar</button>
+      <button class="danger-btn btn-sm" data-action="col-delete" data-id="${c.id}" data-name="${esc(c.title)}">Apagar</button></div>`;
+  }).join('');
+  return `<div class="panel"><h3>Coleções do casino</h3>
+    <p class="muted">Filas de jogos escolhidos por si (ex.: "Especial Halloween", "Exclusivos Bet62", "Jogos da semana"), com datas para entrar e sair sozinhas.</p>
+    <div class="form-actions"><button class="primary-btn btn-sm" data-action="col-new">+ Nova coleção</button>
+      <a class="ghost-btn btn-sm" href="/#/casino" target="_blank" rel="noopener">Ver o casino ↗</a></div>
+    <div class="ban-list">${rows || '<p class="muted">Ainda não há coleções.</p>'}</div></div>`;
+}
+
+async function openCollectionEditor(c = null) {
+  colEd = { id: c?.id || null, games: (c?.games || []).map((g) => ({ ...g })) };
+  $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="col-back">‹ Coleções</button></div>
+    <div class="panel col-ed"><h3>${c ? 'Editar coleção' : 'Nova coleção'}</h3>
+      <div class="ban-grid">
+        <label class="field"><span>Título</span><input id="colTitle" maxlength="60" value="${esc(c?.title || '')}" placeholder="Ex.: 🎃 Especial Halloween"></label>
+        <label class="field"><span>Onde aparece</span><select id="colPlace">${Object.entries(COL_PLACE).map(([v, t]) => `<option value="${v}"${(c?.place || 'middle') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="field"><span>Começa</span><input type="datetime-local" id="colStart" value="${toLocal(c?.startsAt)}"><small class="muted">Vazio = já.</small></label>
+        <label class="field"><span>Termina</span><input type="datetime-local" id="colEnd" value="${toLocal(c?.endsAt)}"><small class="muted">Vazio = sem fim.</small></label>
+        <label class="adm-switch"><input type="checkbox" id="colEnabled"${c ? (c.enabled ? ' checked' : '') : ' checked'}> Ativa</label>
+      </div>
+      <h4>Jogos da coleção <small class="muted" id="colCount"></small></h4>
+      <div class="col-chosen" id="colChosen"></div>
+      <h4>Juntar jogos</h4>
+      <div class="form-actions"><input id="colSearch" class="col-search" placeholder="Procurar jogo (ex.: Halloween, Book, Bonanza)…" autocomplete="off">
+        <label class="field adm-inline">ou por fornecedor <select id="colProv"><option value="">Escolher…</option></select></label></div>
+      <div class="sk-game-grid col-results" id="colResults"></div>
+      <div class="form-actions"><button class="primary-btn" data-action="col-save">Guardar coleção</button></div>
+    </div>`;
+  colChosen();
+  try {
+    const cat = await api('/api/casino/games?limit=1');
+    const provs = [...(cat.providers || [])].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt'));
+    $('#colProv')?.insertAdjacentHTML('beforeend', provs.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join(''));
+  } catch { /* the search still works */ }
+}
+
+function colChosen() {
+  const box = $('#colChosen');
+  if (!box) return;
+  $('#colCount').textContent = `(${colEd.games.length})`;
+  box.innerHTML = colEd.games.length ? colEd.games.map((g, i) => `<div class="col-item${g.missing ? ' missing' : ''}">
+      <span class="col-n">${i + 1}</span><span class="sk-game-img">${g.image ? `<img src="${esc(g.image)}" alt="">` : '🎰'}</span>
+      <span class="grow"><strong>${esc(g.name)}</strong><small class="muted">${esc(g.provider || '')}</small></span>
+      <button class="ghost-btn btn-sm" data-action="col-up" data-i="${i}" ${i ? '' : 'disabled'} title="Para a frente">←</button>
+      <button class="ghost-btn btn-sm" data-action="col-down" data-i="${i}" ${i < colEd.games.length - 1 ? '' : 'disabled'} title="Para trás">→</button>
+      <button class="danger-btn btn-sm" data-action="col-rm" data-i="${i}" title="Tirar">✕</button></div>`).join('')
+    : '<p class="muted">Ainda sem jogos: procure em baixo e toque nos jogos para os juntar.</p>';
+  $$('#colResults .sk-game-card').forEach((b) => b.classList.toggle('on', colEd.games.some((g) => g.id === Number(b.dataset.id))));
+}
+
+const colCard = (g) => `<button type="button" class="sk-game-card${colEd.games.some((x) => x.id === g.id) ? ' on' : ''}" data-action="col-add" data-id="${g.id}"
+    data-name="${esc(g.name)}" data-provider="${esc(g.provider)}" data-image="${esc(g.image || '')}">
+    <span class="sk-game-img">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span><span class="sk-game-name">${esc(g.name)}</span></button>`;
+
+let colTimer = null;
+function colSearch(q) {
+  clearTimeout(colTimer);
+  colTimer = setTimeout(async () => {
+    const box = $('#colResults');
+    if (!box) return;
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    try {
+      const r = await api(`/api/casino/games?limit=48&q=${encodeURIComponent(q)}`);
+      box.innerHTML = r.games.length ? r.games.map(colCard).join('') : '<p class="muted">Nenhum jogo encontrado.</p>';
+    } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+  }, 250);
+}
+async function colProvider(provider) {
+  const box = $('#colResults');
+  if (!box || !provider) return;
+  box.innerHTML = '<p class="muted">A carregar…</p>';
+  try {
+    const r = await api(`/api/casino/games?limit=60&provider=${encodeURIComponent(provider)}`);
+    box.innerHTML = r.games.map(colCard).join('') + (r.total > r.games.length ? `<p class="muted">Mostram-se os 60 mais populares de ${r.total}: procure pelo nome para os outros.</p>` : '');
+  } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+}
+
+async function colAction(action, el) {
+  if (action === 'col-new') { openCollectionEditor(); return; }
+  if (action === 'col-back') { colEd = null; loadTab(); return; }
+  if (action === 'col-edit') { openCollectionEditor((state.collections || []).find((c) => c.id === Number(el.dataset.id))); return; }
+  if (action === 'col-enabled') {
+    try { await api(`/api/admin/collections/${el.dataset.id}/enabled`, { method: 'POST', body: { on: el.checked } }); toast(el.checked ? 'Coleção ativa' : 'Coleção desligada'); loadTab(); } catch (err) { el.checked = !el.checked; toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'col-delete') {
+    if (!confirm(`Apagar a coleção ${el.dataset.name}?`)) return;
+    try { await api(`/api/admin/collections/${el.dataset.id}/delete`, { method: 'POST', body: {} }); toast('Coleção apagada'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'col-move') {
+    const ids = (state.collections || []).map((c) => c.id), i = ids.indexOf(Number(el.dataset.id)), j = i + Number(el.dataset.dir);
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    try { await api('/api/admin/collections/order', { method: 'POST', body: { ids } }); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (!colEd) return;
+  if (action === 'col-add') {
+    const id = Number(el.dataset.id);
+    if (colEd.games.some((g) => g.id === id)) colEd.games = colEd.games.filter((g) => g.id !== id);
+    else colEd.games.push({ id, name: el.dataset.name, provider: el.dataset.provider, image: el.dataset.image || null });
+    colChosen();
+    return;
+  }
+  const i = Number(el.dataset.i), g = colEd.games;
+  if (action === 'col-rm') { g.splice(i, 1); colChosen(); return; }
+  if (action === 'col-up' && i > 0) { [g[i - 1], g[i]] = [g[i], g[i - 1]]; colChosen(); return; }
+  if (action === 'col-down' && i < g.length - 1) { [g[i + 1], g[i]] = [g[i], g[i + 1]]; colChosen(); return; }
+  if (action === 'col-save') {
+    el.disabled = true;
+    try {
+      await api('/api/admin/collections', { method: 'POST', body: {
+        id: colEd.id, title: $('#colTitle').value, place: $('#colPlace').value, enabled: $('#colEnabled').checked,
+        startsAt: fromLocal($('#colStart').value), endsAt: fromLocal($('#colEnd').value), games: colEd.games.map((x) => x.id),
+      } });
+      toast('Coleção guardada'); colEd = null; loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
   }
 }

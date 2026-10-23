@@ -796,3 +796,15 @@
 .ban-noimg { display: grid; place-items: center; height: 100%; color: #8a94a3; }
 .ban-card .warn { color: #ffc400; }
 @media (max-width: 800px) { .ban-prev { grid-template-columns: 1fr; } }
+/* Coleções do casino */
+.col-thumbs { display: grid; grid-template-columns: repeat(4, 40px); gap: 4px; }
+.col-thumbs span { width: 40px; height: 40px; border-radius: 6px; overflow: hidden; background: #0d1114; display: grid; place-items: center; }
+.col-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+.col-chosen { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.col-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line, #2a2f37); border-radius: 8px; }
+.col-item.missing { opacity: .55; }
+.col-item .sk-game-img { width: 44px; height: 44px; flex: none; font-size: 20px; }
+.col-item .grow { display: flex; flex-direction: column; min-width: 0; }
+.col-n { width: 22px; text-align: center; color: #9aa4b2; font-weight: 700; }
+.col-search { flex: 1; min-width: 240px; }
+.col-results { margin-bottom: 14px; max-height: 60vh; overflow: auto; }
