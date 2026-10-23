@@ -321,3 +321,44 @@ test('launch inspect: follows the game address, hides secrets, finds the jurisdi
   assert.equal(open.openUrl, 'https://aes-pragmatic.com/gs2c/html5Game.do?symbol=vs20doghouse&jurisdictionID=UK&lang=pt&mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH');
   db.close();
 });
+
+test('os meus jogos: o jogo aberto fica em "jogados recentemente" e o coração guarda os favoritos', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const games = [{ id: 11, name: 'Gates of Olympus', provider: 'Pragmatic Play', demo: true }, { id: 12, name: 'Roleta Ao Vivo', provider: 'Evolution', demo: false }];
+  const bigbang = {
+    enabled: true, game: async (id) => games.find((g) => g.id === Number(id)) || null, launch: async ({ gameId }) => `https://bb.example/play/${gameId}`,
+    games: async () => ({ games, providers: [] }), related: async () => [], ensurePlayer: async () => {},
+  };
+  const app = createApp(db, { bigbang, loginAttempts: 100, registrations: 100 });
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let cookie = '';
+  const call = async (method, path, body) => {
+    const res = await fetch(base + path, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const set = res.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return { status: res.status, body: await res.json() };
+  };
+  try {
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body, { recent: [], favorites: [] });
+    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui2@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+    await call('POST', '/api/wallet/deposit', { amount: 50 });
+    // A demo does not count; real money does (slot and live table), the last one first.
+    assert.equal((await call('POST', '/api/casino/launch', { gameId: 11, demo: true })).status, 200);
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body.recent, []);
+    for (const id of [11, 12, 11]) assert.equal((await call('POST', '/api/casino/launch', { gameId: id })).status, 200);
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body.recent.map((g) => g.id), [11, 12]);
+    // Favourites: on, off, an unknown game refused.
+    assert.equal((await call('POST', '/api/casino/favorite', { gameId: 12 })).status, 200);
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body.favorites.map((g) => g.id), [12]);
+    await call('POST', '/api/casino/favorite', { gameId: 12, on: false });
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body.favorites, []);
+    assert.equal((await call('POST', '/api/casino/favorite', { gameId: 99 })).status, 404);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+    db.close();
+  }
+});

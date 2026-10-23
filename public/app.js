@@ -920,6 +920,33 @@ const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
     <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
 
+// ---------- "Os meus jogos": played recently (open straight away, ▶) and favourites (♥) ----------
+function ensureCasinoMine(force = false) {
+  if (!state.user) { state.casinoMine = null; return; }
+  const who = state.user.id;
+  if (!force && state.casinoMine?.for === who && Date.now() - state.casinoMine.at < 60_000) return;
+  state.casinoMine = { ...(state.casinoMine?.for === who ? state.casinoMine : { recent: [], favorites: [] }), for: who, at: Date.now() };
+  api('/api/casino/mine').then((r) => {
+    if (state.user?.id !== who) return;
+    const before = JSON.stringify([state.casinoMine.recent.map((g) => g.id), state.casinoMine.favorites.map((g) => g.id)]);
+    Object.assign(state.casinoMine, { recent: r.recent || [], favorites: r.favorites || [] });
+    const now = JSON.stringify([state.casinoMine.recent.map((g) => g.id), state.casinoMine.favorites.map((g) => g.id)]);
+    if (now !== before && currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
+  }).catch(() => {});
+}
+const isFavorite = (id) => !!state.casinoMine?.favorites.some((g) => g.id === id);
+/** A game played recently: one touch opens it again (the ▶ on the picture). */
+const recentCard = (g) => `<button class="game-card recent-card" data-play-id="${g.id}" title="Jogar outra vez">
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}<span class="play-badge" aria-hidden="true">▶</span></div>
+    <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
+function myGamesRows() {
+  const m = state.casinoMine;
+  if (!state.user || !m) return '';
+  const row = (id, title, cards) => `<section class="section casino-row"><div class="section-head"><h2>${title}</h2></div>${carousel(id, cards)}</section>`;
+  return `${m.recent.length ? row('casinoRecent', 'Jogados recentemente', m.recent.map(recentCard)) : ''}
+    ${m.favorites.length ? row('casinoFavs', '♥ Os meus favoritos', m.favorites.map(lobbyCard)) : ''}`;
+}
+
 /** The casino's tabs: the lobby, then the house tabs that have games (Populares, Novos Jogos, Slots…). */
 function casinoTabs(f) {
   const cats = (state.casinoLobby?.categories || []).map((c) => [c.key, c.label]);
@@ -1075,6 +1102,7 @@ function casinoPage() {
   const c = state.casino;
   ensureFreeSpins();
   ensureCasinoBanners();
+  ensureCasinoMine();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
@@ -1114,7 +1142,7 @@ function casinoPage() {
       <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
       ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
     </div>
-    ${lobby || `${provHead}<section class="section">
+    ${lobby ? myGamesRows() + lobby : `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
     </section>`}
@@ -1295,6 +1323,8 @@ function casinoGamePage(id) {
     api(`/api/casino/game/${id}`).then((d) => {
       if (state.casinoGame?.id !== id) return;
       state.casinoGame.data = d;
+      // Opened from "Jogados recentemente": the game starts straight away.
+      if (state.casinoAutoPlay === id) { state.casinoAutoPlay = null; if (state.user) { playCasino('real'); return; } }
       // "Jogar" ready ahead: the player created at BigBang now (once), so the real game opens with one call.
       if (state.user && !state.casinoPrepared) { state.casinoPrepared = true; api('/api/casino/prepare', { method: 'POST', body: {} }).catch(() => { state.casinoPrepared = false; }); }
       // "Testar" ready ahead: the demo's address asked now, while the player reads the page.
@@ -1322,7 +1352,7 @@ function casinoGamePage(id) {
         <div class="cg-art">${art}</div>
       </div>
       <div class="cg-body">
-        <h1>${esc(g.name)}</h1>
+        <h1>${esc(g.name)}${state.user ? `<button class="cg-fav${isFavorite(g.id) ? ' on' : ''}" data-action="cg-fav" data-id="${g.id}" aria-pressed="${isFavorite(g.id)}" title="${isFavorite(g.id) ? 'Tirar dos favoritos' : 'Juntar aos favoritos'}">${isFavorite(g.id) ? '♥' : '♡'}</button>` : ''}</h1>
         <div class="cg-provider">${esc(g.provider)}</div>
         <p class="cg-tags">${tags.map(esc).join(', ')}</p>
         <div class="cg-actions">
@@ -1357,6 +1387,11 @@ async function playCasino(mode) {
     // Never covered for long: a game whose page does not report loading shows itself anyway.
     setTimeout(uncoverGame, 20_000);
     if (r.freeSpins) { Object.assign(state.casinoSession, { fsLeft: r.freeSpins.spinsLeft, fsSpins: r.freeSpins.spins }); updateHeader(); }
+    // This game goes to the front of "Jogados recentemente" (seen when the player comes back).
+    if (mode !== 'demo' && state.casinoMine) {
+      state.casinoMine.recent = [g, ...state.casinoMine.recent.filter((x) => x.id !== g.id)];
+      state.casinoMine.at = 0;
+    }
     if (currentRoute().sub === 'jogar') render({ keepScroll: true });
   } catch (err) {
     state.casinoSession = null;
@@ -3085,6 +3120,15 @@ document.addEventListener('click', async (e) => {
   // a country above keeps it open).
   if (e.target.closest('#leftSidebar a[href]:not([data-sport-link])')) setSideMenu(false);
 
+  const replay = e.target.closest('[data-play-id]');
+  if (replay) {
+    const id = Number(replay.dataset.playId);
+    state.casinoAutoPlay = id;
+    // Already loaded (came back from it): play now; else the game page plays it as soon as it loads.
+    if (state.casinoGame?.id === id && state.casinoGame.data?.game) { state.casinoAutoPlay = null; playCasino('real'); }
+    else location.hash = `#/casino/jogo/${id}`;
+    return;
+  }
   const gameId = e.target.closest('[data-game-id]');
   if (gameId) { location.hash = `#/casino/jogo/${gameId.dataset.gameId}`; return; }
   const game = e.target.closest('[data-game]');
@@ -3185,6 +3229,17 @@ document.addEventListener('click', async (e) => {
   else if (action === 'register') openAuth('register');
   else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
   else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
+  else if (action === 'cg-fav') {
+    const id = Number(actionEl.dataset.id), on = !isFavorite(id);
+    const g = state.casinoGame?.id === id ? state.casinoGame.data?.game : null;
+    // Shown at once; put back if the server refuses.
+    const m = state.casinoMine;
+    if (m) m.favorites = on ? [g || { id, name: '', provider: '' }, ...m.favorites] : m.favorites.filter((x) => x.id !== id);
+    render({ keepScroll: true });
+    api('/api/casino/favorite', { method: 'POST', body: { gameId: id, on } })
+      .then(() => { toast(on ? 'Juntado aos favoritos' : 'Tirado dos favoritos'); ensureCasinoMine(true); })
+      .catch((err) => { toast('Erro', err.message, 'error'); ensureCasinoMine(true); });
+  }
   else if (action === 'car-prev' || action === 'car-next') {
     const track = $(`#${actionEl.dataset.target} .car-track`);
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
