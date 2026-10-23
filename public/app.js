@@ -947,11 +947,49 @@ function myGamesRows() {
     ${m.favorites.length ? row('casinoFavs', '♥ Os meus favoritos', m.favorites.map(lobbyCard)) : ''}`;
 }
 
-/** The casino's tabs: the lobby, then the house tabs that have games (Populares, Novos Jogos, Slots…). */
+// The casino's tabs, as chips above the banner: the lobby first, then the kinds of game most looked
+// for (Slots, Casino ao Vivo, Roleta, Blackjack…), then the rest of the house tabs that have games.
+const CAT_ICON = {
+  '': '✨', slots: '🎰', 'ao-vivo': '🔴', roleta: '🎡', blackjack: '🃏', jackpots: '💰', crash: '🚀', populares: '🔥', novos: '🆕',
+  baccarat: '🎴', megaways: '⚡', instantaneos: '🎯', mesa: '♠️', exclusivos: '⭐', 'alta-volatilidade': '🌋', 'jackpot-progressivo': '🏆',
+};
+const CAT_ORDER = ['slots', 'ao-vivo', 'roleta', 'blackjack', 'jackpots', 'crash', 'populares', 'novos'];
+function casinoCats() {
+  const cats = (state.casinoLobby?.categories || []).map((c) => ({ ...c, at: CAT_ORDER.includes(c.key) ? CAT_ORDER.indexOf(c.key) : 99 }))
+    .sort((a, b) => a.at - b.at);
+  return state.casino.bigbang && cats.length ? [{ key: '', label: 'Início' }, ...cats]
+    : [{ key: '', label: 'Todos' }, { key: 'Slots', label: 'Slots' }, { key: 'Ao Vivo', label: 'Ao Vivo' }];
+}
 function casinoTabs(f) {
-  const cats = (state.casinoLobby?.categories || []).map((c) => [c.key, c.label]);
-  const tabs = state.casino.bigbang && cats.length ? [['', 'Início'], ...cats] : [['', 'Todos'], ['Slots', 'Slots'], ['Ao Vivo', 'Ao Vivo']];
-  return tabs.map(([k, l]) => `<button class="casino-tab${f.category === k && !f.provider ? ' active' : ''}" data-casino-cat="${k}">${esc(l)}</button>`).join('');
+  return `<nav class="casino-chips" data-hscroll="casinoChips" aria-label="Tipos de jogo">${casinoCats().map((c) => `<button class="casino-chip${f.category === c.key && !f.provider && !f.q ? ' active' : ''}" data-casino-cat="${esc(c.key)}">
+    <span aria-hidden="true">${CAT_ICON[c.key] || CAT_ICON[String(c.key).toLowerCase()] || '🎲'}</span>${esc(c.label)}</button>`).join('')}</nav>`;
+}
+
+/**
+ * The casino menu (on the left, like the sports one; on phones behind the ☰ button): search, the
+ * tabs and every provider.
+ */
+function casinoSideMenu() {
+  const c = state.casino;
+  const f = state.casinoFilter;
+  const onLobby = currentRoute().page === 'casino' && !currentRoute().sub;
+  const link = (attr, val, icon, label, on, extra = '') => `<button class="side-link${on ? ' active' : ''}" ${attr}="${esc(val)}"${extra}><span>${icon}</span> ${esc(label)}</button>`;
+  return `<div class="sidebar-head"><span>CASINO</span><button class="close-mobile" data-close-menu aria-label="Fechar">×</button></div>
+    <div class="side-search"><input class="search-input" id="casinoSearch" type="search" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off" enterkeyhint="search"></div>
+    ${casinoCats().map((x) => link('data-casino-cat', x.key, CAT_ICON[x.key] || '🎲', x.label, onLobby && f.category === x.key && !f.provider && !f.q)).join('')}
+    ${c.providers?.length ? `<div class="side-divider"></div><div class="sidebar-head">FORNECEDORES</div>
+    ${c.providers.map((p) => link('data-casino-prov', p.id, '🎲', `${p.name}${p.maintenance ? ' (manutenção)' : ''}`, onLobby && f.provider === String(p.id), p.maintenance ? ' disabled' : '')).join('')}` : ''}
+    <div class="side-divider"></div><div class="sidebar-head">EXPLORAR</div>
+    <a class="side-link" href="#/desporto"><span>⚽</span> Desporto</a>
+    <a class="side-link" href="#/ao-vivo"><span class="red-icon">●</span> Ao Vivo</a>
+    <a class="side-link" href="#/promocoes"><span>🎁</span> Promoções</a>
+    <a class="side-link" href="#/perfil/jogo-responsavel"><span>🛡️</span> Jogo responsável</a>`;
+}
+function renderCasinoSide() {
+  const box = $('#casinoSide');
+  if (!box) return;
+  // Changed in place: the search box keeps its focus and what is being typed.
+  if (box.firstChild) morph(box, casinoSideMenu()); else box.innerHTML = casinoSideMenu();
 }
 
 async function loadCasinoLobby() {
@@ -1008,8 +1046,12 @@ function casinoBanners() {
     const tag = b.link ? `a href="${esc(b.link)}"${ext ? ' target="_blank" rel="noopener"' : ''}` : 'div';
     const copy = b.title || b.subtitle || b.cta
       ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
-    return `<${tag} class="cban-slide" data-cban="${i}">
-      <picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>${copy}</${tag.split(' ')[0]}>`;
+    // A video plays muted in a loop (as a picture would show); computer and phone can differ.
+    const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
+    const media = b.video?.d || b.video?.m
+      ? `${b.video.d ? vid(b.img.d, 'cban-d') : `<img class="cban-d" src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}">`}${b.img.m !== b.img.d ? (b.video.m ? vid(b.img.m, 'cban-m') : `<img class="cban-m" src="${esc(b.img.m)}" alt="">`) : ''}`
+      : `<picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>`;
+    return `<${tag} class="cban-slide${b.img.m !== b.img.d && (b.video?.d || b.video?.m) ? ' two' : ''}" data-cban="${i}">${media}${copy}</${tag.split(' ')[0]}>`;
   };
   const many = list.length > 1;
   return `<section class="cban" aria-roledescription="carrossel" aria-label="Promoções do casino">
@@ -1134,22 +1176,35 @@ function casinoPage() {
   // One provider or one tab open: its name, how many games and the way back to the lobby.
   const prov = c.bigbang && f.provider ? c.providers.find((p) => String(p.id) === f.provider) : null;
   const cat = c.bigbang && !prov && f.category ? (state.casinoLobby?.categories || []).find((x) => x.key === f.category) : null;
-  const head = prov?.name || cat?.label;
+  const head = f.q ? `Resultados para “${f.q}”` : prov?.name || cat?.label;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  return `<div class="page-title"><h1>Casino</h1></div>${filtered ? '' : casinoBanners()}${freeSpinsBar()}
-    <div class="casino-filters">
-      <div class="casino-tabs">${casinoTabs(f)}</div>
-      <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
-    </div>
-    <div class="sport-strip casino-provs">
-      <button class="sport-pill${!f.provider ? ' active' : ''}" data-casino-prov="">Todos os fornecedores</button>
-      ${c.providers.map((p) => `<button class="sport-pill${f.provider === String(p.id) ? ' active' : ''}" data-casino-prov="${p.id}" ${p.maintenance ? 'disabled title="Em manutenção"' : ''}>${esc(p.name)}${p.maintenance ? ' (manutenção)' : ''}</button>`).join('')}
-    </div>
+  // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
+  // Search and providers are in the casino menu (on the left; ☰ on phones).
+  return `${casinoTabs(f)}${filtered ? '' : casinoBanners()}${freeSpinsBar()}
     ${lobby ? myGamesRows() + lobby : `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
     </section>`}
+    ${footer()}`;
+}
+
+/** A collection's own page (#/casino/colecao/ID, e.g. the button of a banner): its games. */
+function casinoCollectionPage(id) {
+  const cur = state.casinoCollection;
+  if (cur?.id !== id || Date.now() - cur.at > 5 * 60_000) {
+    state.casinoCollection = { id, at: Date.now(), data: cur?.id === id ? cur.data : null };
+    api(`/api/casino/collection/${id}`).then((d) => { if (state.casinoCollection?.id === id) state.casinoCollection.data = d; })
+      .catch((err) => { if (state.casinoCollection?.id === id) state.casinoCollection.data = { error: err.message }; })
+      .finally(() => { const r = currentRoute(); if (r.page === 'casino' && r.sub === 'colecao' && Number(r.rest) === id) render({ keepScroll: true }); });
+  }
+  const d = state.casinoCollection.data;
+  const chips = casinoTabs({ category: null });
+  if (!d) return `${chips}<div class="loading">A carregar…</div>`;
+  if (d.error) return `${chips}<div class="panel empty">${esc(d.error)}<div class="hero-actions"><a class="outline-btn" href="#/casino">Voltar ao casino</a></div></div>${footer()}`;
+  return `${chips}<div class="section-head casino-prov-head"><h2>${esc(d.title)} <small class="muted">· ${d.games.length} jogos</small></h2>
+      <a class="link-btn" href="#/casino">‹ Voltar ao casino</a></div>
+    <section class="section"><div class="game-grid grid">${d.games.map(lobbyCard).join('')}</div></section>
     ${footer()}`;
 }
 
@@ -2745,7 +2800,7 @@ function render({ keepScroll = false } = {}) {
   if (page === 'bilhete') { openSharedTicket(sub); return; }
   const pages = {
     b: () => sharedBetPage(sub),
-    home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: () => (sub === 'jogo' && rest ? casinoGamePage(Number(rest)) : casinoPage()),
+    home: homePage, desporto: () => sportsPage(sub, rest), 'ao-vivo': livePage, casino: () => (sub === 'jogo' && rest ? casinoGamePage(Number(rest)) : sub === 'colecao' && rest ? casinoCollectionPage(Number(rest)) : casinoPage()),
     promocoes: promosPage, perfil: () => accountPage(sub), jogo: () => matchPage(sub), apostas: myBetsPage,
   };
   if (page !== 'jogo') leaveMatch();
@@ -2768,6 +2823,7 @@ function render({ keepScroll = false } = {}) {
   document.body.classList.toggle('immersive', immersive);
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
+  if (page === 'casino' && !immersive) renderCasinoSide();
   // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
   // scores): only the person scrolling moves them, never the refresh.
   const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
@@ -3169,10 +3225,20 @@ document.addEventListener('click', async (e) => {
   }
   const cgPlay = e.target.closest('[data-cg-play]');
   if (cgPlay) { playCasino(cgPlay.dataset.cgPlay); return; }
+  // A tab or provider (from the chips, a row or the casino menu): its games on the casino page.
   const cat = e.target.closest('[data-casino-cat]');
-  if (cat) { Object.assign(state.casinoFilter, { category: cat.dataset.casinoCat, provider: '' }); loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
-  const prov = e.target.closest('[data-casino-prov]');
-  if (prov) { Object.assign(state.casinoFilter, { provider: prov.dataset.casinoProv, category: '' }); loadCasino({ reset: true }); window.scrollTo({ top: 0 }); return; }
+  const prov = !cat && e.target.closest('[data-casino-prov]');
+  if (cat || prov) {
+    Object.assign(state.casinoFilter, cat ? { category: cat.dataset.casinoCat, provider: '', q: '' } : { provider: prov.dataset.casinoProv, category: '', q: '' });
+    const box = $('#casinoSearch');
+    if (box) box.value = '';
+    setSideMenu(false);
+    if (location.hash !== '#/casino') location.hash = '#/casino';
+    loadCasino({ reset: true });
+    window.scrollTo({ top: 0 });
+    return;
+  }
+  if (e.target.closest('[data-close-menu]')) { setSideMenu(false); return; }
 
   // Profile: the phone accordion (a tap on the open section closes it), switches and buttons.
   const acc = e.target.closest('[data-pf-acc]');
@@ -3359,7 +3425,11 @@ let casinoSearchTimer = null;
 document.addEventListener('input', (e) => {
   if (e.target.id === 'casinoSearch') {
     clearTimeout(casinoSearchTimer);
-    casinoSearchTimer = setTimeout(() => { state.casinoFilter.q = e.target.value.trim(); loadCasino({ reset: true }); }, 350);
+    casinoSearchTimer = setTimeout(() => {
+      Object.assign(state.casinoFilter, { q: e.target.value.trim(), category: '', provider: '' });
+      if (location.hash !== '#/casino') location.hash = '#/casino';
+      loadCasino({ reset: true });
+    }, 350);
   }
   if (e.target.id === 'searchInput') renderSearch(e.target.value);
   if (e.target.id === 'stake') renderSlip();
@@ -3448,6 +3518,8 @@ function bindChrome() {
     renderSlip();
   });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
+  // Search typed in the phone menu: Enter puts the menu away to show the games found.
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'casinoSearch') { e.target.blur(); setSideMenu(false); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
   // A game touched (or hovered): its page starts loading before the tap ends.

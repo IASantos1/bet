@@ -790,7 +790,7 @@
 .ban-pv { border-radius: 12px; overflow: hidden; }
 .ban-pv .cban-slide { border-radius: 12px; overflow: hidden; background: #0d1114; }
 .ban-pv .cban-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ban-pv.m .cban-slide { aspect-ratio: 3 / 2; }
+.ban-pv.m .cban-slide { aspect-ratio: 4 / 5; }
 .ban-pv.m .cban-copy { max-width: 100%; justify-content: flex-end; padding: 0 14px 18px; background: linear-gradient(0deg, rgba(0, 0, 0, .7), transparent 75%); }
 .ban-pv .cban-terms { margin: 6px 2px 0; }
 .ban-noimg { display: grid; place-items: center; height: 100%; color: #8a94a3; }
@@ -808,3 +808,4 @@
 .col-n { width: 22px; text-align: center; color: #9aa4b2; font-weight: 700; }
 .col-search { flex: 1; min-width: 240px; }
 .col-results { margin-bottom: 14px; max-height: 60vh; overflow: auto; }
+.ban-pv .cban-slide video, .ban-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }

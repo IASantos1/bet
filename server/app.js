@@ -15,6 +15,7 @@ import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
 import { createBanners, BannerError } from './banners.js';
 import { createCollections, CollectionError } from './collections.js';
+import { createSeasonal } from './seasonal.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -311,7 +312,7 @@ export function createApp(db, {
 
   // Admin → Películas sends pictures (the cover, the screenshots): a larger body there only.
   app.use('/api/admin/skins', express.json({ limit: '16mb' }));
-  app.use('/api/admin/banners', express.json({ limit: '8mb' }));
+  app.use('/api/admin/banners', express.json({ limit: '36mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -444,9 +445,20 @@ export function createApp(db, {
 
   // Covers over parts of casino games (Admin → Películas).
   const skins = createSkins(db, { seedDir: path.join(PUBLIC_DIR, 'casino', 'skins') });
-  const sendImage = (res, img) => {
+  const sendImage = (res, img, req = null) => {
     if (!img) throw new HttpError(404, 'Imagem não encontrada.');
-    res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(img.data);
+    res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').set('Accept-Ranges', 'bytes');
+    // Videos: Safari (iPhone) asks for them in pieces and plays nothing without a 206 answer.
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req?.headers.range || '');
+    const size = img.data.length;
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? Number(m[1]) : size - Number(m[2]);
+      let end = m[1] && m[2] ? Number(m[2]) : size - 1;
+      start = Math.max(0, start); end = Math.min(size - 1, end);
+      if (start > end) return res.status(416).set('Content-Range', `bytes */${size}`).end();
+      return res.status(206).set('Content-Range', `bytes ${start}-${end}/${size}`).send(img.data.subarray(start, end + 1));
+    }
+    res.send(img.data);
   };
   app.get('/api/casino/skin/:id', (req, res) => sendImage(res, skins.image(req.params.id)));
 
@@ -487,7 +499,15 @@ export function createApp(db, {
   const banners = createBanners(db);
   const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
-  app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which)));
+  app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which), req));
+  // Seasonal banners that come with the site (Halloween…), with the collection of games they open.
+  const seasonal = createSeasonal(db, { banners, collections, dir: path.join(PUBLIC_DIR, 'casino', 'banners') });
+  // A collection's own page (#/casino/colecao/ID): its games, while it runs.
+  app.get('/api/casino/collection/:id', wrap(async (req, res) => {
+    const c = collections.open(req.params.id);
+    if (!c || !bb) throw new HttpError(404, 'Esta seleção de jogos já terminou.');
+    res.json({ id: c.id, title: c.title, endsAt: c.endsAt, games: (await Promise.all(c.games.map((id) => bb.game(id)))).filter(Boolean) });
+  }));
 
   // A Palace game open holds the player's balance in the casino. The game page asks for the balance
   // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
@@ -1472,10 +1492,13 @@ export function createApp(db, {
   // The lobby (BigBang): rows of games — Populares, Novos, Slots, Ao vivo, Crash — 10 each.
   app.get('/api/casino/lobby', wrap(async (req, res) => {
     if (!casinoOn() || !bb) return res.json({ enabled: casinoOn(), rows: [] });
+    await seasonal.ensure(() => bb.games());
     const data = await collections.intoLobby(await bb.lobby({ n: 10 }), (id) => bb.game(id));
     if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
     res.json(data);
   }));
+
+  if (bb) setTimeout(() => seasonal.ensure(() => bb.games()), 5_000).unref?.();
 
   // One game: its card, games of the same provider and whether the player's free spins work in it.
   app.get('/api/casino/game/:id', wrap(async (req, res) => {
