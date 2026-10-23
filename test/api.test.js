@@ -638,3 +638,26 @@ test('películas: the admin makes a cover; the site gets it only when they are s
   assert.equal((await client()('POST', '/api/admin/skins', { code: 'x' })).status, 401);
   await adm('POST', '/api/admin/casino/skins', { mode: 'off' });
 });
+
+test('banners do casino: o admin cria; o site mostra os que estão no ar para quem os deve ver', async () => {
+  const adm = await adminClient();
+  const png = 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000d49444154789c6360000002000100e221bc330000000049454e44ae426082', 'hex').toString('base64');
+  assert.equal((await adm('POST', '/api/admin/banners', { title: 'Sem imagem' })).status, 400);
+  assert.equal((await adm('POST', '/api/admin/banners', { title: 'X', imageD: png, link: 'javascript:alert(1)' })).status, 400, 'only #/ or https links');
+  const a = (await adm('POST', '/api/admin/banners', { title: 'Free Spins', subtitle: '100 rodadas', cta: 'Jogar', link: '#/promocoes', terms: 'Dep. mín. 20 €', imageD: png })).body.banner;
+  const b = (await adm('POST', '/api/admin/banners', { title: 'Só visitantes', imageD: png, imageM: png, audience: 'guest' })).body.banner;
+  const c = (await adm('POST', '/api/admin/banners', { title: 'Futuro', imageD: png, startsAt: new Date(Date.now() + 86_400_000).toISOString() })).body.banner;
+  assert.equal(a.img.m, a.img.d, 'without a phone picture the computer one is used');
+  const guest = (await client()('GET', '/api/casino/banners')).body.banners.map((x) => x.title);
+  assert.deepEqual(guest, ['Free Spins', 'Só visitantes']);
+  const player = await newPlayer();
+  assert.deepEqual((await player('GET', '/api/casino/banners')).body.banners.map((x) => x.title), ['Free Spins']);
+  // Order, switch off, image, delete.
+  await adm('POST', '/api/admin/banners/order', { ids: [b.id, a.id, c.id] });
+  assert.deepEqual((await client()('GET', '/api/casino/banners')).body.banners.map((x) => x.title), ['Só visitantes', 'Free Spins']);
+  await adm('POST', `/api/admin/banners/${b.id}/enabled`, { on: false });
+  assert.deepEqual((await client()('GET', '/api/casino/banners')).body.banners.map((x) => x.title), ['Free Spins']);
+  assert.equal((await fetch(base + a.img.d)).headers.get('content-type'), 'image/png');
+  for (const x of [a, b, c]) assert.equal((await adm('POST', `/api/admin/banners/${x.id}/delete`, {})).status, 200);
+  assert.equal((await client()('POST', '/api/admin/banners', { title: 'x' })).status, 401);
+});

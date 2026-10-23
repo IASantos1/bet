@@ -13,6 +13,7 @@ import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
+import { createBanners, BannerError } from './banners.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -309,6 +310,7 @@ export function createApp(db, {
 
   // Admin → Películas sends pictures (the cover, the screenshots): a larger body there only.
   app.use('/api/admin/skins', express.json({ limit: '16mb' }));
+  app.use('/api/admin/banners', express.json({ limit: '8mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -446,6 +448,11 @@ export function createApp(db, {
     res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(img.data);
   };
   app.get('/api/casino/skin/:id', (req, res) => sendImage(res, skins.image(req.params.id)));
+
+  // Banners at the top of the casino (Admin → Banners): the ones running now for this visitor.
+  const banners = createBanners(db);
+  app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
+  app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which)));
 
   // A Palace game open holds the player's balance in the casino. The game page asks for the balance
   // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
@@ -2204,6 +2211,22 @@ export function createApp(db, {
     if (!telegram?.enabled) throw new HttpError(409, 'Telegram não está configurado: defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHANNEL_ID no Railway.');
     res.json(await telegram.promoteNext({ force: true }));
   }));
+
+  // ---------- banners (top of the casino) ----------
+  const bannerErr = (fn) => (req, res) => {
+    try { fn(req, res); } catch (err) { throw err instanceof BannerError ? new HttpError(400, err.message) : err; }
+  };
+  admin.get('/banners', (_req, res) => res.json({ banners: banners.all() }));
+  admin.post('/banners', bannerErr((req, res) => res.json({ banner: banners.save(req.body || {}) })));
+  admin.post('/banners/order', (req, res) => res.json({ banners: banners.reorder(Array.isArray(req.body?.ids) ? req.body.ids : []) }));
+  admin.post('/banners/:id/enabled', (req, res) => {
+    if (!banners.setEnabled(req.params.id, req.body?.on === true)) throw new HttpError(404, 'Banner não encontrado.');
+    res.json({ ok: true });
+  });
+  admin.post('/banners/:id/delete', (req, res) => {
+    if (!banners.remove(req.params.id)) throw new HttpError(404, 'Banner não encontrado.');
+    res.json({ ok: true });
+  });
 
   // ---------- películas (covers over parts of casino games) ----------
   const skinErr = (fn) => (req, res) => {
