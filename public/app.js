@@ -1128,7 +1128,7 @@ function casinoPage() {
     ? `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2></div>
       <div class="game-grid grid">${r.games.map(lobbyCard).join('')}</div></section>`
     : `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
-      ${r.key === 'provider' ? `<button class="link-btn" data-casino-prov="${esc(r.provider)}">Ver mais (${r.total}) ›</button>`
+      ${r.key === 'collection' ? '' : r.key === 'provider' ? `<button class="link-btn" data-casino-prov="${esc(r.provider)}">Ver mais (${r.total}) ›</button>`
         : `<button class="link-btn" data-casino-cat="${esc(r.key)}">Ver mais (${r.total}) ›</button>`}</div>
       ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`)).join('');
   // One provider or one tab open: its name, how many games and the way back to the lobby.

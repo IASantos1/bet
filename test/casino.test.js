@@ -362,3 +362,22 @@ test('os meus jogos: o jogo aberto fica em "jogados recentemente" e o coração 
     db.close();
   }
 });
+
+test('coleções: o admin escolhe os jogos e onde a fila aparece; só no ar entre as datas', async () => {
+  const { createCollections } = await import('../server/collections.js');
+  const db = openDb(':memory:');
+  const col = createCollections(db);
+  assert.throws(() => col.save({ title: '', games: [1] }), /título/);
+  assert.throws(() => col.save({ title: 'X', games: [] }), /pelo menos um jogo/);
+  const a = col.save({ title: 'Halloween', games: [3, 1, 3, 99], place: 'middle' });
+  assert.deepEqual(a.games, [3, 1, 99], 'no game twice, in the order chosen');
+  col.save({ title: 'Topo', games: [2], place: 'top' });
+  col.save({ title: 'Amanhã', games: [1], startsAt: new Date(Date.now() + 86_400_000).toISOString() });
+  const games = new Map([[1, { id: 1, name: 'A' }], [2, { id: 2, name: 'B' }], [3, { id: 3, name: 'C' }]]);
+  const lobby = { rows: [{ key: 'destaques', games: [] }, { key: 'top10', games: [] }, { key: 'jackpots', games: [] }, { key: 'provider', games: [] }] };
+  const out = await col.intoLobby(lobby, async (id) => games.get(id) || null);
+  assert.deepEqual(out.rows.map((r) => r.title || r.key), ['Topo', 'destaques', 'top10', 'jackpots', 'Halloween', 'provider']);
+  assert.deepEqual(out.rows[4].games.map((g) => g.id), [3, 1], 'a game no longer in the catalogue is left out');
+  col.setEnabled(a.id, false);
+  assert.ok(!(await col.intoLobby(lobby, async (id) => games.get(id))).rows.some((r) => r.title === 'Halloween'));
+});

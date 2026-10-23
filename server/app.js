@@ -14,6 +14,7 @@ import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
 import { createBanners, BannerError } from './banners.js';
+import { createCollections, CollectionError } from './collections.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -484,6 +485,7 @@ export function createApp(db, {
 
   // Banners at the top of the casino (Admin → Banners): the ones running now for this visitor.
   const banners = createBanners(db);
+  const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
   app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which)));
 
@@ -1470,7 +1472,7 @@ export function createApp(db, {
   // The lobby (BigBang): rows of games — Populares, Novos, Slots, Ao vivo, Crash — 10 each.
   app.get('/api/casino/lobby', wrap(async (req, res) => {
     if (!casinoOn() || !bb) return res.json({ enabled: casinoOn(), rows: [] });
-    const data = await bb.lobby({ n: 10 });
+    const data = await collections.intoLobby(await bb.lobby({ n: 10 }), (id) => bb.game(id));
     if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
     res.json(data);
   }));
@@ -2262,6 +2264,30 @@ export function createApp(db, {
   });
   admin.post('/banners/:id/delete', (req, res) => {
     if (!banners.remove(req.params.id)) throw new HttpError(404, 'Banner não encontrado.');
+    res.json({ ok: true });
+  });
+
+  // ---------- coleções (rows of games chosen by the operator) ----------
+  const collectionErr = (fn) => (req, res) => {
+    try { fn(req, res); } catch (err) { throw err instanceof CollectionError ? new HttpError(400, err.message) : err; }
+  };
+  admin.get('/collections', wrap(async (_req, res) => {
+    const list = collections.all();
+    // Each collection with its games' names and pictures (the editor shows them).
+    const games = async (ids) => (await Promise.all(ids.map(async (id) => {
+      const g = bb ? await bb.game(id) : null;
+      return g ? { id: g.id, name: g.name, provider: g.provider, image: g.image } : { id, name: `Jogo ${id} (fora do catálogo)`, provider: '', image: null, missing: true };
+    })));
+    res.json({ collections: await Promise.all(list.map(async (c) => ({ ...c, games: await games(c.games) }))) });
+  }));
+  admin.post('/collections', collectionErr((req, res) => res.json({ collection: collections.save(req.body || {}) })));
+  admin.post('/collections/order', (req, res) => res.json({ collections: collections.reorder(Array.isArray(req.body?.ids) ? req.body.ids : []) }));
+  admin.post('/collections/:id/enabled', (req, res) => {
+    if (!collections.setEnabled(req.params.id, req.body?.on === true)) throw new HttpError(404, 'Coleção não encontrada.');
+    res.json({ ok: true });
+  });
+  admin.post('/collections/:id/delete', (req, res) => {
+    if (!collections.remove(req.params.id)) throw new HttpError(404, 'Coleção não encontrada.');
     res.json({ ok: true });
   });
 
