@@ -1677,3 +1677,13 @@ body.maint-on { overflow: hidden; }
   .cban-copy { max-width: 100%; justify-content: flex-end; padding: 0 16px 34px; background: linear-gradient(0deg, rgba(0, 0, 0, .7), transparent 75%); }
   .cban-btn { display: none; }
 }
+
+/* "Os meus jogos": ▶ on games played recently, ♥ on the game page */
+.recent-card .game-art { position: relative; }
+.recent-card .play-badge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px; border-radius: 50%;
+  display: grid; place-items: center; padding-left: 4px; font-size: 20px; color: #fff; background: rgba(0, 0, 0, .55);
+  border: 2px solid rgba(255, 255, 255, .85); box-shadow: 0 4px 14px rgba(0, 0, 0, .4); transition: transform .15s, background .15s; }
+.recent-card:hover .play-badge { transform: translate(-50%, -50%) scale(1.1); background: #2fbf71; }
+.cg-fav { margin-left: 10px; vertical-align: middle; border: 1px solid var(--line, #2a2f37); background: transparent; color: #e5484d;
+  width: 38px; height: 38px; border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer; }
+.cg-fav.on { background: rgba(229, 72, 77, .12); border-color: #e5484d; }

@@ -449,6 +449,35 @@ export function createApp(db, {
   };
   app.get('/api/casino/skin/:id', (req, res) => sendImage(res, skins.image(req.params.id)));
 
+  // "Os meus jogos": the games each player opened (with real money or free spins), newest first, and
+  // the ones they marked with the heart.
+  db.exec(`CREATE TABLE IF NOT EXISTS casino_recent (user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, played_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, game_id))`);
+  db.exec(`CREATE TABLE IF NOT EXISTS casino_favorites (user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, game_id))`);
+  const RECENT_KEEP = 20;
+  function notePlayed(userId, gameId) {
+    db.prepare(`INSERT INTO casino_recent (user_id, game_id, played_at) VALUES (?, ?, ?)
+      ON CONFLICT(user_id, game_id) DO UPDATE SET played_at = excluded.played_at`).run(userId, Number(gameId), nowIso());
+    db.prepare(`DELETE FROM casino_recent WHERE user_id = ? AND game_id NOT IN
+      (SELECT game_id FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?)`).run(userId, userId, RECENT_KEEP);
+  }
+  app.get('/api/casino/mine', wrap(async (req, res) => {
+    if (!req.user || !bb) return res.json({ recent: [], favorites: [] });
+    const games = async (rows) => (await Promise.all(rows.map((r) => bb.game(r.game_id)))).filter(Boolean);
+    res.json({
+      recent: await games(db.prepare('SELECT game_id FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?').all(req.user.id, RECENT_KEEP)),
+      favorites: await games(db.prepare('SELECT game_id FROM casino_favorites WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)),
+    });
+  }));
+  app.post('/api/casino/favorite', requireUser, wrap(async (req, res) => {
+    const id = Number(req.body?.gameId);
+    if (!Number.isInteger(id) || !bb || !(await bb.game(id))) throw new HttpError(404, 'Jogo não encontrado.');
+    if (req.body?.on === false) db.prepare('DELETE FROM casino_favorites WHERE user_id = ? AND game_id = ?').run(req.user.id, id);
+    else db.prepare('INSERT OR IGNORE INTO casino_favorites (user_id, game_id, created_at) VALUES (?, ?, ?)').run(req.user.id, id, nowIso());
+    res.json({ favorite: req.body?.on !== false });
+  }));
+
   // Banners at the top of the casino (Admin → Banners): the ones running now for this visitor.
   const banners = createBanners(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
@@ -1516,12 +1545,14 @@ export function createApp(db, {
             if (fund) db.prepare('UPDATE casino_spins SET palace_cents = NULL WHERE id = ?').run(fs.id);
             throw err;
           }
+          notePlayed(req.user.id, g.id);
           return res.json({ url: out.url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left, spins: fs.spins }, balance: cents(userById(req.user.id).balance_cents), transfer: true });
         }
         const pu = userById(req.user.id);
         if (pu.balance_cents <= 0 && !pu.casino_active) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
         casinoSeen.set(pu.id, Date.now());
         const { url, casinoCents } = await casino.enterGame(pu, { providerId: g.palace.providerId, gameCode: g.palace.code, returnUrl });
+        notePlayed(pu.id, g.id);
         return res.json({ url, balance: cents(casinoCents), transfer: true });
       }
       if (req.body.demo) {
@@ -1536,10 +1567,12 @@ export function createApp(db, {
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
         chooseSpinsGame(db, u.id, s.id, g.id); // the picked game is the only one from now on
         const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl });
+        notePlayed(u.id, g.id);
         return res.json({ url, freeSpins: { id: s.id, spinsLeft: s.spins_left ?? s.spins, spins: s.spins }, balance: cents(u.balance_cents) });
       }
       if (u.balance_cents <= 0) throw new HttpError(400, 'Saldo insuficiente. Faça um depósito para jogar.', { needsDeposit: true });
       const url = await bb.launch({ gameId: g.id, token: playerToken(u.id), returnUrl });
+      notePlayed(u.id, g.id);
       return res.json({ url, balance: cents(u.balance_cents) });
     }
     if (!req.user) throw new HttpError(401, 'Inicie sessão para continuar.');
