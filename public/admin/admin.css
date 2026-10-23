@@ -808,3 +808,4 @@
 .col-n { width: 22px; text-align: center; color: #9aa4b2; font-weight: 700; }
 .col-search { flex: 1; min-width: 240px; }
 .col-results { margin-bottom: 14px; max-height: 60vh; overflow: auto; }
+.ban-pv .cban-slide video, .ban-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }

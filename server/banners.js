@@ -1,19 +1,20 @@
-// Banners at the top of the casino (a carousel), made in Admin → Banners: a picture for computers and one
-// for phones, a title, a line of text, a button with a link, the terms (shown under the banner, as SRIJ
+// Banners at the top of the casino (a carousel), made in Admin → Banners: a picture (or a short video,
+// MP4/WEBM, played muted in a loop) for computers and one for phones, a title, a line of text, a button with a link, the terms (shown under the banner, as SRIJ
 // asks for any offer), dates when it runs, who sees it and the order.
 
 import { nowIso } from './db.js';
 
-const IMAGE = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/;
+const IMAGE = /^data:(image\/(?:png|jpeg|webp)|video\/(?:mp4|webm));base64,([A-Za-z0-9+/=]+)$/;
 const AUDIENCES = new Set(['all', 'guest', 'user']);
 
 export class BannerError extends Error {}
 
 function decode(dataUrl) {
   const m = IMAGE.exec(String(dataUrl || ''));
-  if (!m) throw new BannerError('Imagem inválida (PNG, JPG ou WEBP).');
+  if (!m) throw new BannerError('Ficheiro inválido (imagem PNG, JPG ou WEBP, ou vídeo MP4 ou WEBM).');
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 3_000_000) throw new BannerError('Imagem demasiado grande (máximo 3 MB).');
+  const video = m[1].startsWith('video/');
+  if (buf.length > (video ? 12_000_000 : 3_000_000)) throw new BannerError(video ? 'Vídeo demasiado grande (máximo 12 MB).' : 'Imagem demasiado grande (máximo 3 MB).');
   return { mime: m[1], buf };
 }
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
@@ -37,7 +38,7 @@ export function createBanners(db) {
     link TEXT NOT NULL DEFAULT '', terms TEXT NOT NULL DEFAULT '', audience TEXT NOT NULL DEFAULT 'all',
     starts_at TEXT, ends_at TEXT, sort INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
     image_d BLOB, mime_d TEXT, image_m BLOB, mime_m TEXT, updated_at TEXT NOT NULL)`);
-  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at,
+  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m,
     image_d IS NOT NULL AS has_d, image_m IS NOT NULL AS has_m`;
   const row = (r) => {
     const v = encodeURIComponent(r.updated_at);
@@ -47,6 +48,8 @@ export function createBanners(db) {
       id: r.id, title: r.title, subtitle: r.subtitle, cta: r.cta, link: r.link, terms: r.terms, audience: r.audience,
       startsAt: r.starts_at, endsAt: r.ends_at, sort: r.sort, enabled: !!r.enabled, updatedAt: r.updated_at,
       img: { d: d || m, m: m || d },
+      // Which side is a video (played muted in a loop) rather than a picture.
+      video: { d: /^video\//.test((d ? r.mime_d : r.mime_m) || ''), m: /^video\//.test((m ? r.mime_m : r.mime_d) || '') },
     };
   };
 
@@ -58,7 +61,7 @@ export function createBanners(db) {
         AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)
         AND (image_d IS NOT NULL OR image_m IS NOT NULL) ORDER BY sort, id`).all(now, now)
       .filter((r) => r.audience === 'all' || r.audience === (signedIn ? 'user' : 'guest'))
-      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img }) => ({ id, title, subtitle, cta, link: href, terms, img }));
+      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img, video }) => ({ id, title, subtitle, cta, link: href, terms, img, video }));
   }
 
   function image(id, which) {

@@ -1008,8 +1008,12 @@ function casinoBanners() {
     const tag = b.link ? `a href="${esc(b.link)}"${ext ? ' target="_blank" rel="noopener"' : ''}` : 'div';
     const copy = b.title || b.subtitle || b.cta
       ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
-    return `<${tag} class="cban-slide" data-cban="${i}">
-      <picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>${copy}</${tag.split(' ')[0]}>`;
+    // A video plays muted in a loop (as a picture would show); computer and phone can differ.
+    const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
+    const media = b.video?.d || b.video?.m
+      ? `${b.video.d ? vid(b.img.d, 'cban-d') : `<img class="cban-d" src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}">`}${b.img.m !== b.img.d ? (b.video.m ? vid(b.img.m, 'cban-m') : `<img class="cban-m" src="${esc(b.img.m)}" alt="">`) : ''}`
+      : `<picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>`;
+    return `<${tag} class="cban-slide${b.img.m !== b.img.d && (b.video?.d || b.video?.m) ? ' two' : ''}" data-cban="${i}">${media}${copy}</${tag.split(' ')[0]}>`;
   };
   const many = list.length > 1;
   return `<section class="cban" aria-roledescription="carrossel" aria-label="Promoções do casino">

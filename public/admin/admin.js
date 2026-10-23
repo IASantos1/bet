@@ -2388,7 +2388,7 @@ function adminBanners(d) {
   const rows = list.map((b, i) => {
     const [cls, label] = banState(b);
     return `<div class="ban-card">
-      <div class="ban-thumb"><img src="${esc(b.img.d)}" alt=""></div>
+      <div class="ban-thumb">${b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
       <div class="grow"><strong>${esc(b.title || '(sem título)')}</strong>
         <small class="${cls}">${esc(label)}</small>
         <small class="muted">${esc(BAN_AUD[b.audience])}${b.link ? ` · ${esc(b.link)}` : ''}</small></div>
@@ -2411,13 +2411,14 @@ function adminBanners(d) {
 const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
 function openBannerEditor(b = null) {
-  banEd = { id: b?.id || null, imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false };
+  banEd = { id: b?.id || null, imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false,
+    vidD: !!b?.video?.d, vidM: !!(b?.video?.m && b.img.m !== b.img.d) };
   $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ban-back">‹ Banners</button></div>
     <div class="panel ban-ed"><h3>${b ? 'Editar banner' : 'Novo banner'}</h3>
       <div class="ban-grid">
-        <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*">
-          <small class="muted">Recomendado 1920×560 (ou 1440×420). JPG ou WEBP.</small></label>
-        <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*">
+        <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
+          <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
+        <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
           <small class="muted">Recomendado 1080×720. Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
         <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
         <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
@@ -2443,16 +2444,25 @@ function openBannerEditor(b = null) {
 function banPreview() {
   if (!banEd) return;
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
-  const d = banEd.imageD || banEd.srcD, m = banEd.imageM || (banEd.removeM ? null : banEd.srcM) || d;
-  const slide = (src) => `<div class="cban-slide">${src ? `<img src="${esc(src)}" alt="">` : '<div class="ban-noimg">Carregue a imagem</div>'}
+  const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
+  const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
+  const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
+  const slide = (src) => `<div class="cban-slide">${src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>'}
     ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
   $('#banPvD').innerHTML = slide(d);
   $('#banPvM').innerHTML = slide(m);
 }
 
-/** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). */
+/** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). A video as it is. */
 async function bannerImage(file) {
+  if (/^video\//.test(file.type)) {
+    if (file.size > 12_000_000) throw new Error('Vídeo demasiado grande (máximo 12 MB).');
+    const url = await readFile(file);
+    const v = document.createElement('video'); v.muted = true; v.src = url;
+    await new Promise((ok) => { v.onloadedmetadata = ok; v.onerror = ok; });
+    return { url, w: v.videoWidth || 1, h: v.videoHeight || 1, video: true };
+  }
   const img = await loadImg(await readFile(file));
   const k = Math.min(1, 2400 / img.naturalWidth);
   const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
@@ -2464,7 +2474,7 @@ async function banChange(t) {
   if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
     try {
       const r = await bannerImage(t.files[0]);
-      if (t.id === 'banImgD') banEd.imageD = r.url; else { banEd.imageM = r.url; banEd.removeM = false; }
+      if (t.id === 'banImgD') { banEd.imageD = r.url; banEd.vidD = !!r.video; } else { banEd.imageM = r.url; banEd.vidM = !!r.video; banEd.removeM = false; }
       const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 720, ratio = r.w / r.h;
       if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×720'} fica perfeito).`);
     } catch (err) { toast('Erro', err.message, 'error'); }

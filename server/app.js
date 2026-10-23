@@ -311,7 +311,7 @@ export function createApp(db, {
 
   // Admin → Películas sends pictures (the cover, the screenshots): a larger body there only.
   app.use('/api/admin/skins', express.json({ limit: '16mb' }));
-  app.use('/api/admin/banners', express.json({ limit: '8mb' }));
+  app.use('/api/admin/banners', express.json({ limit: '36mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -444,9 +444,20 @@ export function createApp(db, {
 
   // Covers over parts of casino games (Admin → Películas).
   const skins = createSkins(db, { seedDir: path.join(PUBLIC_DIR, 'casino', 'skins') });
-  const sendImage = (res, img) => {
+  const sendImage = (res, img, req = null) => {
     if (!img) throw new HttpError(404, 'Imagem não encontrada.');
-    res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').send(img.data);
+    res.set('Content-Type', img.mime).set('Cache-Control', 'public, max-age=31536000, immutable').set('Accept-Ranges', 'bytes');
+    // Videos: Safari (iPhone) asks for them in pieces and plays nothing without a 206 answer.
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req?.headers.range || '');
+    const size = img.data.length;
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? Number(m[1]) : size - Number(m[2]);
+      let end = m[1] && m[2] ? Number(m[2]) : size - 1;
+      start = Math.max(0, start); end = Math.min(size - 1, end);
+      if (start > end) return res.status(416).set('Content-Range', `bytes */${size}`).end();
+      return res.status(206).set('Content-Range', `bytes ${start}-${end}/${size}`).send(img.data.subarray(start, end + 1));
+    }
+    res.send(img.data);
   };
   app.get('/api/casino/skin/:id', (req, res) => sendImage(res, skins.image(req.params.id)));
 
@@ -487,7 +498,7 @@ export function createApp(db, {
   const banners = createBanners(db);
   const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
-  app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which)));
+  app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which), req));
 
   // A Palace game open holds the player's balance in the casino. The game page asks for the balance
   // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
