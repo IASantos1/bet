@@ -2,11 +2,12 @@
 // in the order chosen, where the row goes in the casino lobby, the dates it runs and whether it is on.
 //   place 'top':    before "Em destaque" (the first row of the lobby)
 //   place 'middle': after "Top 10 da semana" and "Jackpots", before the providers
+//   place 'link':   no row in the lobby; opened only by its address (#/casino/colecao/ID), e.g. from a banner
 
 import { nowIso } from './db.js';
 
 export class CollectionError extends Error {}
-const PLACES = new Set(['top', 'middle']);
+const PLACES = new Set(['top', 'middle', 'link']);
 const MAX_GAMES = 60;
 
 function when(v) {
@@ -55,6 +56,9 @@ export function createCollections(db) {
     return get(Number(lastInsertRowid));
   }
 
+  /** A collection open now (for its own page), or null when it is off or out of its dates. */
+  const open = (id) => live().find((c) => c.id === Number(id)) || null;
+
   const setEnabled = (id, on) => db.prepare('UPDATE casino_collections SET enabled = ?, updated_at = ? WHERE id = ?').run(on ? 1 : 0, nowIso(), Number(id)).changes > 0;
   const remove = (id) => db.prepare('DELETE FROM casino_collections WHERE id = ?').run(Number(id)).changes > 0;
   function reorder(ids) {
@@ -83,5 +87,5 @@ export function createCollections(db) {
     return { ...lobby, rows: [...top, ...rows] };
   }
 
-  return { all, get, live, save, setEnabled, remove, reorder, intoLobby };
+  return { all, get, live, open, save, setEnabled, remove, reorder, intoLobby };
 }

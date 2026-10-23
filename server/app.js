@@ -15,6 +15,7 @@ import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
 import { createBanners, BannerError } from './banners.js';
 import { createCollections, CollectionError } from './collections.js';
+import { createSeasonal } from './seasonal.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -499,6 +500,14 @@ export function createApp(db, {
   const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
   app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which), req));
+  // Seasonal banners that come with the site (Halloween…), with the collection of games they open.
+  const seasonal = createSeasonal(db, { banners, collections, dir: path.join(PUBLIC_DIR, 'casino', 'banners') });
+  // A collection's own page (#/casino/colecao/ID): its games, while it runs.
+  app.get('/api/casino/collection/:id', wrap(async (req, res) => {
+    const c = collections.open(req.params.id);
+    if (!c || !bb) throw new HttpError(404, 'Esta seleção de jogos já terminou.');
+    res.json({ id: c.id, title: c.title, endsAt: c.endsAt, games: (await Promise.all(c.games.map((id) => bb.game(id)))).filter(Boolean) });
+  }));
 
   // A Palace game open holds the player's balance in the casino. The game page asks for the balance
   // every 2 s (every 30 s in a background tab): when nothing asks for 3 minutes, the game was closed
@@ -1483,10 +1492,13 @@ export function createApp(db, {
   // The lobby (BigBang): rows of games — Populares, Novos, Slots, Ao vivo, Crash — 10 each.
   app.get('/api/casino/lobby', wrap(async (req, res) => {
     if (!casinoOn() || !bb) return res.json({ enabled: casinoOn(), rows: [] });
+    await seasonal.ensure(() => bb.games());
     const data = await collections.intoLobby(await bb.lobby({ n: 10 }), (id) => bb.game(id));
     if (data.error && req.user?.role !== 'admin') data.error = 'O casino está temporariamente indisponível.';
     res.json(data);
   }));
+
+  if (bb) setTimeout(() => seasonal.ensure(() => bb.games()), 5_000).unref?.();
 
   // One game: its card, games of the same provider and whether the player's free spins work in it.
   app.get('/api/casino/game/:id', wrap(async (req, res) => {

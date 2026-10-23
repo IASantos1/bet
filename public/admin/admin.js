@@ -2419,7 +2419,7 @@ function openBannerEditor(b = null) {
         <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
           <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
         <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
-          <small class="muted">Recomendado 1080×720. Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
+          <small class="muted">Recomendado 1080×1350 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
         <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
         <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
         <label class="field"><span>Texto do botão</span><input id="banCta" maxlength="30" value="${esc(b?.cta || '')}" placeholder="Ex.: Jogar agora"></label>
@@ -2475,8 +2475,8 @@ async function banChange(t) {
     try {
       const r = await bannerImage(t.files[0]);
       if (t.id === 'banImgD') { banEd.imageD = r.url; banEd.vidD = !!r.video; } else { banEd.imageM = r.url; banEd.vidM = !!r.video; banEd.removeM = false; }
-      const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 720, ratio = r.w / r.h;
-      if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×720'} fica perfeito).`);
+      const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 1350, ratio = r.w / r.h;
+      if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×1350'} fica perfeito).`);
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
   banPreview();
@@ -2524,7 +2524,7 @@ async function banAction(action, el) {
 // A title, the games (searched by name or picked from a provider's list) in the order wanted, where the
 // row goes in the casino ("no topo" or "depois do Top 10 e Jackpots"), the dates it runs and on/off.
 
-const COL_PLACE = { top: 'No topo do casino (antes de "Em destaque")', middle: 'Depois do "Top 10" e dos "Jackpots"' };
+const COL_PLACE = { top: 'No topo do casino (antes de "Em destaque")', middle: 'Depois do "Top 10" e dos "Jackpots"', link: 'Só pela ligação (ex.: o botão de um banner)' };
 let colEd = null;
 
 function adminCollections(d) {
@@ -2535,7 +2535,7 @@ function adminCollections(d) {
     return `<div class="ban-card">
       <div class="col-thumbs">${c.games.slice(0, 4).map((g) => `<span>${g.image ? `<img src="${esc(g.image)}" alt="">` : '🎰'}</span>`).join('')}</div>
       <div class="grow"><strong>${esc(c.title)}</strong><small class="${cls}">${esc(label)}</small>
-        <small class="muted">${c.games.length} jogos · ${c.place === 'top' ? 'no topo' : 'depois do Top 10'}</small></div>
+        <small class="muted">${c.games.length} jogos · ${c.place === 'top' ? 'no topo' : c.place === 'link' ? `só pela ligação · #/casino/colecao/${c.id}` : 'depois do Top 10'}</small></div>
       <div class="ban-order"><button class="ghost-btn btn-sm" data-action="col-move" data-id="${c.id}" data-dir="-1" ${i ? '' : 'disabled'}>↑</button>
         <button class="ghost-btn btn-sm" data-action="col-move" data-id="${c.id}" data-dir="1" ${i < list.length - 1 ? '' : 'disabled'}>↓</button></div>
       <label class="adm-switch"><input type="checkbox" data-action="col-enabled" data-id="${c.id}"${c.enabled ? ' checked' : ''}> Ativa</label>
