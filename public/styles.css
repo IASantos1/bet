@@ -1687,3 +1687,12 @@ body.maint-on { overflow: hidden; }
 .cg-fav { margin-left: 10px; vertical-align: middle; border: 1px solid var(--line, #2a2f37); background: transparent; color: #e5484d;
   width: 38px; height: 38px; border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer; }
 .cg-fav.on { background: rgba(229, 72, 77, .12); border-color: #e5484d; }
+
+/* Top 10 da semana: the rank number behind each card */
+.casino-top .car-track { gap: 8px; }
+.top-card { position: relative; display: flex; align-items: flex-end; padding-left: 40px; }
+.top-card .game-card { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; }
+.top-n { position: absolute; left: -4px; bottom: 34px; font-size: 118px; line-height: .8; font-weight: 900; letter-spacing: -8px;
+  color: var(--bg, #f0f2f5); -webkit-text-stroke: 3px var(--muted, #8a94a3); font-family: Impact, 'Arial Black', sans-serif; z-index: 0; user-select: none; }
+.top-card:nth-child(-n+3) .top-n { -webkit-text-stroke-color: #ffc400; }
+@media (max-width: 700px) { .casino-top .car-track { grid-auto-columns: 48vw; } .top-card { padding-left: 30px; } .top-n { font-size: 86px; bottom: 30px; -webkit-text-stroke-width: 2px; } }

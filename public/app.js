@@ -1120,7 +1120,11 @@ function casinoPage() {
   // The lobby: the featured games all at once (a grid), then one row per provider in the house
   // order (Pragmatic Play, Evolution, Playtech…), each with "Ver mais" (every game of that provider).
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
-  const lobby = rows.map((r, i) => (r.layout === 'grid'
+  // Top 10: a big rank number beside each game, as the big operators show it.
+  const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
+  const lobby = rows.map((r, i) => (r.layout === 'top'
+    ? `<section class="section casino-row casino-top"><div class="section-head"><h2>🔥 ${esc(r.title)}</h2></div>${carousel(`casinoRow${i}`, r.games.map(topCard))}</section>`
+    : r.layout === 'grid'
     ? `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2></div>
       <div class="game-grid grid">${r.games.map(lobbyCard).join('')}</div></section>`
     : `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
