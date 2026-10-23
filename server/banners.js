@@ -98,6 +98,13 @@ export function createBanners(db) {
     return get(Number(lastInsertRowid));
   }
 
+  /** Puts a new picture or video on one side of a banner ('d' computer, 'm' phone). */
+  function setImage(id, which, dataUrl) {
+    const f = decode(dataUrl);
+    const col = which === 'm' ? ['image_m', 'mime_m'] : ['image_d', 'mime_d'];
+    return db.prepare(`UPDATE casino_banners SET ${col[0]} = ?, ${col[1]} = ?, updated_at = ? WHERE id = ?`).run(f.buf, f.mime, nowIso(), Number(id)).changes > 0;
+  }
+
   const setEnabled = (id, on) => db.prepare('UPDATE casino_banners SET enabled = ?, updated_at = ? WHERE id = ?').run(on ? 1 : 0, nowIso(), Number(id)).changes > 0;
   const remove = (id) => db.prepare('DELETE FROM casino_banners WHERE id = ?').run(Number(id)).changes > 0;
   /** New order: the ids from first to last. */
@@ -107,5 +114,5 @@ export function createBanners(db) {
     return all();
   }
 
-  return { all, live, image, get, save, setEnabled, remove, reorder };
+  return { all, live, image, get, save, setImage, setEnabled, remove, reorder };
 }

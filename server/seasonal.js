@@ -11,6 +11,8 @@ import { getSetting, setSetting } from './db.js';
 export const SEASONAL = [
   {
     key: 'halloween-2026',
+    // Raised when the videos change: the banner already made gets the new ones.
+    media: 2,
     // Until 31 October at midnight (Lisbon is on winter time, UTC+0, from 25 October).
     endsAt: '2026-11-01T00:00:00.000Z',
     collection: {
@@ -41,22 +43,35 @@ export function createSeasonal(db, { banners, collections, dir }) {
   /** Sets up the campaigns not done yet (the ones still running), given the catalogue's games. */
   async function ensure(loadGames, now = Date.now()) {
     if (busy) return busy;
-    const todo = SEASONAL.filter((c) => !getSetting(db, `casino.seasonal.${c.key}`, false) && Date.parse(c.endsAt) > now);
+    const running = SEASONAL.filter((c) => Date.parse(c.endsAt) > now);
+    const file = (c, n) => `data:${c.banner.mime};base64,${fs.readFileSync(path.join(dir, n)).toString('base64')}`;
+    // Made before with older videos (true = the first ones): the same banner gets the new ones.
+    for (const c of running) {
+      const done = getSetting(db, `casino.seasonal.${c.key}`, false);
+      if (!done || Number(done === true ? 1 : done) >= (c.media || 1)) continue;
+      try {
+        for (const b of banners.all().filter((x) => x.terms === c.banner.terms && /^#\/casino\/colecao\//.test(x.link))) {
+          banners.setImage(b.id, 'd', file(c, c.banner.d));
+          banners.setImage(b.id, 'm', file(c, c.banner.m));
+        }
+        setSetting(db, `casino.seasonal.${c.key}`, c.media || 1);
+      } catch (err) { console.error(`banners sazonais: ${err.message}`); }
+    }
+    const todo = running.filter((c) => !getSetting(db, `casino.seasonal.${c.key}`, false));
     if (!todo.length) return null;
     busy = (async () => {
       const catalog = (await loadGames())?.games || [];
       for (const c of todo) {
         const games = pickGames(catalog, c.collection.games);
         if (!games.length) continue; // the catalogue has none of them (yet): tried again later
-        const file = (n) => fs.readFileSync(path.join(dir, n)).toString('base64');
         const col = collections.save({ title: c.collection.title, games, place: 'link', endsAt: c.endsAt });
         banners.save({
           title: '', subtitle: '', cta: '', link: `#/casino/colecao/${col.id}`, terms: c.banner.terms, audience: 'all',
-          endsAt: c.endsAt, imageD: `data:${c.banner.mime};base64,${file(c.banner.d)}`, imageM: `data:${c.banner.mime};base64,${file(c.banner.m)}`,
+          endsAt: c.endsAt, imageD: file(c, c.banner.d), imageM: file(c, c.banner.m),
         });
         // First in the carousel.
         banners.reorder([banners.all().at(-1).id, ...banners.all().slice(0, -1).map((b) => b.id)]);
-        setSetting(db, `casino.seasonal.${c.key}`, true);
+        setSetting(db, `casino.seasonal.${c.key}`, c.media || 1);
       }
     })().catch((err) => console.error(`campanhas do casino: ${err.message}`)).finally(() => { busy = null; });
     return busy;
