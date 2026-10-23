@@ -55,6 +55,7 @@ const TABS = [
   { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
   { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
+  { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
   { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
@@ -713,6 +714,7 @@ async function loadTab() {
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
     else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
+    else if (tab === 'banners') { banEd = null; main.innerHTML = adminBanners(await api('/api/admin/banners')); }
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
@@ -1375,6 +1377,7 @@ document.addEventListener('click', async (e) => {
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
   if (action === 'user-back') { state.userDetail = null; loadTab(); return; }
   if (action.startsWith('skin-')) { skinAction(action, actionEl); return; }
+  if (action.startsWith('ban-')) { banAction(action, actionEl); return; }
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
@@ -1838,6 +1841,7 @@ document.addEventListener('click', async (e) => {
 let fsSearchTimer = null;
 document.addEventListener('change', async (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinChange(e.target); return; }
+  if (banEd && e.target.closest?.('.ban-ed')) { banChange(e.target); return; }
   if (e.target.dataset?.action === 'casino-skins') {
     try {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
@@ -1863,6 +1867,7 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('input', (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
+  if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
   if (e.target.form?.id === 'cpForm' && e.target.name === 'body') { campaignCount(); return; }
   const modal = e.target.id === 'amGameSearch';
   if (e.target.id !== 'fsGameSearch' && !modal) return;
@@ -2357,4 +2362,145 @@ async function showProviderGames(provider, more = false) {
     $('.sk-prov-more', box)?.remove();
     if (skinEd.provOffset < r.total) box.insertAdjacentHTML('beforeend', `<button type="button" class="ghost-btn btn-sm sk-prov-more" data-action="skin-prov-more">Mostrar mais (${r.total - skinEd.provOffset})</button>`);
   } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+}
+
+// ---------- banners at the top of the casino ----------
+// Each banner: a picture for computers (1920×560) and one for phones (1080×720), title, text, button and
+// link, the terms (shown under the banner with 18+), the dates it runs, who sees it and the order.
+
+const BAN_AUD = { all: 'Todos', guest: 'Só visitantes (sem sessão)', user: 'Só jogadores com sessão' };
+let banEd = null;
+const banState = (b) => {
+  const now = new Date().toISOString();
+  if (!b.enabled) return ['muted', 'Desligado'];
+  if (b.startsAt && b.startsAt > now) return ['warn', `Começa ${fmtDateTime(b.startsAt)}`];
+  if (b.endsAt && b.endsAt <= now) return ['muted', 'Terminou'];
+  return ['ok-text', b.endsAt ? `No ar até ${fmtDateTime(b.endsAt)}` : 'No ar'];
+};
+
+function adminBanners(d) {
+  const list = d.banners;
+  const rows = list.map((b, i) => {
+    const [cls, label] = banState(b);
+    return `<div class="ban-card">
+      <div class="ban-thumb"><img src="${esc(b.img.d)}" alt=""></div>
+      <div class="grow"><strong>${esc(b.title || '(sem título)')}</strong>
+        <small class="${cls}">${esc(label)}</small>
+        <small class="muted">${esc(BAN_AUD[b.audience])}${b.link ? ` · ${esc(b.link)}` : ''}</small></div>
+      <div class="ban-order"><button class="ghost-btn btn-sm" data-action="ban-move" data-id="${b.id}" data-dir="-1" ${i ? '' : 'disabled'} title="Subir">↑</button>
+        <button class="ghost-btn btn-sm" data-action="ban-move" data-id="${b.id}" data-dir="1" ${i < list.length - 1 ? '' : 'disabled'} title="Descer">↓</button></div>
+      <label class="adm-switch"><input type="checkbox" data-action="ban-enabled" data-id="${b.id}"${b.enabled ? ' checked' : ''}> Ativo</label>
+      <button class="ghost-btn btn-sm" data-action="ban-edit" data-id="${b.id}">Editar</button>
+      <button class="danger-btn btn-sm" data-action="ban-delete" data-id="${b.id}" data-name="${esc(b.title || 'este banner')}">Apagar</button>
+    </div>`;
+  }).join('');
+  state.banners = list;
+  return `<div class="panel"><h3>Banners do casino</h3>
+    <p class="muted">O carrossel no topo da página do casino. Mudam sozinhos a cada 6 s; o jogador também os passa com as setas ou com o dedo.
+      Por baixo aparece sempre "18+ Jogue com responsabilidade" e as condições do banner (regras do SRIJ para ofertas).</p>
+    <div class="form-actions"><button class="primary-btn btn-sm" data-action="ban-new">+ Novo banner</button>
+      <a class="ghost-btn btn-sm" href="/#/casino" target="_blank" rel="noopener">Ver o casino ↗</a></div>
+    <div class="ban-list">${rows || '<p class="muted">Ainda não há banners.</p>'}</div></div>`;
+}
+
+const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+
+function openBannerEditor(b = null) {
+  banEd = { id: b?.id || null, imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false };
+  $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ban-back">‹ Banners</button></div>
+    <div class="panel ban-ed"><h3>${b ? 'Editar banner' : 'Novo banner'}</h3>
+      <div class="ban-grid">
+        <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*">
+          <small class="muted">Recomendado 1920×560 (ou 1440×420). JPG ou WEBP.</small></label>
+        <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*">
+          <small class="muted">Recomendado 1080×720. Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
+        <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
+        <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
+        <label class="field"><span>Texto do botão</span><input id="banCta" maxlength="30" value="${esc(b?.cta || '')}" placeholder="Ex.: Jogar agora"></label>
+        <label class="field"><span>Ligação</span><input id="banLink" maxlength="300" value="${esc(b?.link || '')}" placeholder="#/casino/jogo/123 · #/promocoes · https://…">
+          <small class="muted">Página do site (#/…) ou endereço https://. Vazio = banner sem ligação.</small></label>
+        <label class="field ban-wide"><span>Condições (aparecem por baixo do banner)</span><input id="banTerms" maxlength="300" value="${esc(b?.terms || '')}" placeholder="Ex.: Depósito mín. 20 €. Rodadas de 0,20 €. Validade 7 dias. Termos e condições aplicáveis."></label>
+        <label class="field"><span>Começa</span><input type="datetime-local" id="banStart" value="${toLocal(b?.startsAt)}"><small class="muted">Vazio = já.</small></label>
+        <label class="field"><span>Termina</span><input type="datetime-local" id="banEnd" value="${toLocal(b?.endsAt)}"><small class="muted">Vazio = sem fim.</small></label>
+        <label class="field"><span>Quem vê</span><select id="banAud">${Object.entries(BAN_AUD).map(([v, t]) => `<option value="${v}"${(b?.audience || 'all') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="adm-switch"><input type="checkbox" id="banEnabled"${b ? (b.enabled ? ' checked' : '') : ' checked'}> Ativo</label>
+      </div>
+      <h4>Pré-visualização</h4>
+      <div class="ban-prev">
+        <div><small class="muted">Computador</small><div class="ban-pv d" id="banPvD"></div></div>
+        <div><small class="muted">Telemóvel</small><div class="ban-pv m" id="banPvM"></div></div>
+      </div>
+      <div class="form-actions"><button class="primary-btn" data-action="ban-save">Guardar banner</button></div>
+    </div>`;
+  banPreview();
+}
+
+function banPreview() {
+  if (!banEd) return;
+  const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
+  const d = banEd.imageD || banEd.srcD, m = banEd.imageM || (banEd.removeM ? null : banEd.srcM) || d;
+  const slide = (src) => `<div class="cban-slide">${src ? `<img src="${esc(src)}" alt="">` : '<div class="ban-noimg">Carregue a imagem</div>'}
+    ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
+    <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
+  $('#banPvD').innerHTML = slide(d);
+  $('#banPvM').innerHTML = slide(m);
+}
+
+/** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). */
+async function bannerImage(file) {
+  const img = await loadImg(await readFile(file));
+  const k = Math.min(1, 2400 / img.naturalWidth);
+  const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return { url: c.toDataURL('image/jpeg', 0.88), w: img.naturalWidth, h: img.naturalHeight };
+}
+
+async function banChange(t) {
+  if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
+    try {
+      const r = await bannerImage(t.files[0]);
+      if (t.id === 'banImgD') banEd.imageD = r.url; else { banEd.imageM = r.url; banEd.removeM = false; }
+      const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 720, ratio = r.w / r.h;
+      if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×720'} fica perfeito).`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+  }
+  banPreview();
+}
+
+const fromLocal = (v) => (v ? new Date(v).toISOString() : null);
+
+async function banAction(action, el) {
+  if (action === 'ban-new') { openBannerEditor(); return; }
+  if (action === 'ban-back') { banEd = null; loadTab(); return; }
+  if (action === 'ban-edit') { openBannerEditor((state.banners || []).find((b) => b.id === Number(el.dataset.id))); return; }
+  if (action === 'ban-rm-m') { banEd.removeM = true; banEd.imageM = null; el.remove(); banPreview(); return; }
+  if (action === 'ban-enabled') {
+    try { await api(`/api/admin/banners/${el.dataset.id}/enabled`, { method: 'POST', body: { on: el.checked } }); toast(el.checked ? 'Banner ativo' : 'Banner desligado'); loadTab(); } catch (err) { el.checked = !el.checked; toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'ban-delete') {
+    if (!confirm(`Apagar ${el.dataset.name}?`)) return;
+    try { await api(`/api/admin/banners/${el.dataset.id}/delete`, { method: 'POST', body: {} }); toast('Banner apagado'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'ban-move') {
+    const ids = (state.banners || []).map((b) => b.id), i = ids.indexOf(Number(el.dataset.id)), j = i + Number(el.dataset.dir);
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    try { await api('/api/admin/banners/order', { method: 'POST', body: { ids } }); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'ban-save') {
+    if (!banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
+    el.disabled = true;
+    try {
+      await api('/api/admin/banners', { method: 'POST', body: {
+        id: banEd.id, title: $('#banTitle').value, subtitle: $('#banSub').value, cta: $('#banCta').value, link: $('#banLink').value.trim(),
+        terms: $('#banTerms').value, audience: $('#banAud').value, enabled: $('#banEnabled').checked,
+        startsAt: fromLocal($('#banStart').value), endsAt: fromLocal($('#banEnd').value),
+        imageD: banEd.imageD || undefined, imageM: banEd.imageM || undefined, removeM: banEd.removeM || undefined,
+      } });
+      toast('Banner guardado'); banEd = null; loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
+  }
 }

@@ -776,3 +776,23 @@
 .sk-game-name { font-size: 12px; line-height: 1.25; }
 .sk-has { position: absolute; top: 8px; left: 8px; background: #2fbf71; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
 .sk-prov-more { margin-top: 10px; }
+/* Banners do casino */
+.ban-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.ban-card { display: flex; align-items: center; gap: 14px; padding: 10px; border: 1px solid var(--line, #2a2f37); border-radius: 10px; flex-wrap: wrap; }
+.ban-card .grow { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.ban-thumb { width: 180px; aspect-ratio: 1920 / 560; border-radius: 6px; overflow: hidden; background: #0d1114; }
+.ban-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ban-order { display: flex; gap: 4px; }
+.ban-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 14px; align-items: start; }
+.ban-grid .ban-wide { grid-column: 1 / -1; }
+.ban-ed .field > span { font-weight: 700; }
+.ban-prev { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 14px; }
+.ban-pv { border-radius: 12px; overflow: hidden; }
+.ban-pv .cban-slide { border-radius: 12px; overflow: hidden; background: #0d1114; }
+.ban-pv .cban-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ban-pv.m .cban-slide { aspect-ratio: 3 / 2; }
+.ban-pv.m .cban-copy { max-width: 100%; justify-content: flex-end; padding: 0 14px 18px; background: linear-gradient(0deg, rgba(0, 0, 0, .7), transparent 75%); }
+.ban-pv .cban-terms { margin: 6px 2px 0; }
+.ban-noimg { display: grid; place-items: center; height: 100%; color: #8a94a3; }
+.ban-card .warn { color: #ffc400; }
+@media (max-width: 800px) { .ban-prev { grid-template-columns: 1fr; } }

@@ -958,6 +958,66 @@ function ensureFreeSpins() {
   }
 }
 
+// ---------- banners at the top of the casino (Admin → Banners) ----------
+// Loaded again when the visitor signs in or out (some banners are only for guests or for players).
+function ensureCasinoBanners() {
+  const who = state.user ? `u${state.user.id}` : 'guest';
+  if (state.cbanFor === who && Date.now() - (state.cbanAt || 0) < 5 * 60_000) return;
+  state.cbanFor = who;
+  state.cbanAt = Date.now();
+  api('/api/casino/banners').then((r) => {
+    const before = JSON.stringify(state.casinoBanners || []);
+    state.casinoBanners = r.banners || [];
+    if (JSON.stringify(state.casinoBanners) !== before && currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
+  }).catch(() => {});
+}
+
+/** The carousel: one slide per banner (its phone picture on small screens), arrows, dots and the terms. */
+function casinoBanners() {
+  const list = state.casinoBanners || [];
+  if (!list.length) return '';
+  const slide = (b, i) => {
+    const ext = /^https:/i.test(b.link);
+    const tag = b.link ? `a href="${esc(b.link)}"${ext ? ' target="_blank" rel="noopener"' : ''}` : 'div';
+    const copy = b.title || b.subtitle || b.cta
+      ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
+    return `<${tag} class="cban-slide" data-cban="${i}">
+      <picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>${copy}</${tag.split(' ')[0]}>`;
+  };
+  const many = list.length > 1;
+  return `<section class="cban" aria-roledescription="carrossel" aria-label="Promoções do casino">
+    <div class="cban-track" id="cbanTrack" data-hscroll="cban">${list.map(slide).join('')}</div>
+    ${many ? `<button class="cban-btn prev" data-action="cban-go" data-dir="-1" aria-label="Anterior">‹</button>
+      <button class="cban-btn next" data-action="cban-go" data-dir="1" aria-label="Seguinte">›</button>
+      <div class="cban-dots">${list.map((_, i) => `<button class="${i ? '' : 'on'}" data-action="cban-dot" data-i="${i}" aria-label="Banner ${i + 1}"></button>`).join('')}</div>` : ''}
+  </section>
+  <p class="cban-terms" id="cbanTerms">${cbanTerms(list[0])}</p>`;
+}
+const cbanTerms = (b) => `<b>18+</b> Jogue com responsabilidade.${b?.terms ? ` ${esc(b.terms)}` : ''}`;
+/** Which slide is showing (the track scrolls by whole slides). */
+const cbanIndex = (t) => Math.round(t.scrollLeft / Math.max(1, t.clientWidth));
+function cbanGo(i) {
+  const t = $('#cbanTrack');
+  if (!t) return;
+  const n = t.children.length;
+  t.scrollTo({ left: ((i % n) + n) % n * t.clientWidth, behavior: 'smooth' });
+}
+// The dots and the terms follow the slide on screen (by arrow, dot, swipe or the timer).
+document.addEventListener('scroll', (e) => {
+  if (e.target?.id !== 'cbanTrack') return;
+  const i = cbanIndex(e.target);
+  $$('.cban-dots button').forEach((b, k) => b.classList.toggle('on', k === i));
+  const terms = $('#cbanTerms');
+  const b = (state.casinoBanners || [])[i];
+  if (terms && b) terms.innerHTML = cbanTerms(b);
+}, true);
+// Turns every 6 s, unless the pointer is on it or the tab is hidden.
+setInterval(() => {
+  const t = $('#cbanTrack');
+  if (!t || document.hidden || t.matches(':hover') || t.children.length < 2) return;
+  cbanGo(cbanIndex(t) + 1);
+}, 6000);
+
 /** A personal, expandable casino banner shown only while the player has active free spins. */
 function freeSpinsBar() {
   const d = state.fsActive;
@@ -1014,6 +1074,7 @@ function openFreeSpins() {
 function casinoPage() {
   const c = state.casino;
   ensureFreeSpins();
+  ensureCasinoBanners();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
@@ -1044,7 +1105,7 @@ function casinoPage() {
   const head = prov?.name || cat?.label;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  return `<div class="page-title"><h1>Casino</h1></div>${freeSpinsBar()}
+  return `<div class="page-title"><h1>Casino</h1></div>${filtered ? '' : casinoBanners()}${freeSpinsBar()}
     <div class="casino-filters">
       <div class="casino-tabs">${casinoTabs(f)}</div>
       <input class="search-input casino-search" id="casinoSearch" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off">
@@ -3122,6 +3183,8 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
+  else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
+  else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
   else if (action === 'car-prev' || action === 'car-next') {
     const track = $(`#${actionEl.dataset.target} .car-track`);
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
