@@ -239,6 +239,32 @@ export function createBigBang(db, {
     const i = HITS.findIndex((h) => name.includes(h));
     return i < 0 ? 0 : HITS.length - i;
   };
+  // Top 10 of the week: rounds played here in 7 days (BigBang) plus 5 per player who opened the game
+  // (Palace slots and live tables count by players). Refreshed every 10 minutes.
+  db.exec(`CREATE TABLE IF NOT EXISTS casino_plays (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, played_at TEXT NOT NULL)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_casino_plays_at ON casino_plays (played_at)');
+  let week = { at: 0, map: new Map() };
+  function weekMap() {
+    if (Date.now() - week.at > 10 * 60_000) {
+      const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const map = new Map();
+      for (const r of db.prepare(`SELECT game_id, COUNT(DISTINCT COALESCE(round_id, transaction_id)) AS n FROM casino_moves
+          WHERE game_id IS NOT NULL AND amount_cents < 0 AND created_at >= ? GROUP BY game_id`).all(since)) map.set(Number(r.game_id), r.n);
+      for (const r of db.prepare('SELECT game_id, COUNT(DISTINCT user_id) AS n FROM casino_plays WHERE played_at >= ? GROUP BY game_id').all(since)) {
+        map.set(Number(r.game_id), (map.get(Number(r.game_id)) || 0) + r.n * 5);
+      }
+      week = { at: Date.now(), map };
+    }
+    return week.map;
+  }
+  /** The 10 most played this week; while there is little play, the market's hits complete it. */
+  function topWeek(list, n = 10) {
+    const w = weekMap();
+    const played = list.filter((g) => w.get(g.id)).sort((a, b) => w.get(b.id) - w.get(a.id) || a.id - b.id);
+    const taken = new Set(played.map((g) => g.id));
+    return [...played, ...mixedPopular(list).filter((g) => !taken.has(g.id) && g.type !== 'live')].slice(0, n);
+  }
+
   /** Most popular first: rounds played here, then the market's hits, then premium games. */
   function byPopularity(list) {
     const p = playsMap();
@@ -292,6 +318,10 @@ export function createBigBang(db, {
       }
     }
     const rows = featured.length ? [{ key: 'destaques', title: 'Em destaque', layout: 'grid', total: featured.length, games: featured }] : [];
+    const top = topWeek(all.games);
+    if (top.length >= 5) rows.push({ key: 'top10', title: 'Top 10 da semana', layout: 'top', total: top.length, games: top });
+    const jackpots = byPopularity(inCategory(all.games, 'jackpots'));
+    if (jackpots.length) rows.push({ key: 'jackpots', title: '💰 Jackpots', total: jackpots.length, games: jackpots.slice(0, n) });
     for (const p of all.providers) {
       const list = popular.filter((g) => g.providerId === p.id);
       if (list.length) rows.push({ key: 'provider', provider: p.id, title: p.name, total: list.length, games: list.slice(0, n) });

@@ -453,12 +453,16 @@ export function createApp(db, {
   // the ones they marked with the heart.
   db.exec(`CREATE TABLE IF NOT EXISTS casino_recent (user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, played_at TEXT NOT NULL,
     PRIMARY KEY (user_id, game_id))`);
+  db.exec(`CREATE TABLE IF NOT EXISTS casino_plays (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, played_at TEXT NOT NULL)`);
   db.exec(`CREATE TABLE IF NOT EXISTS casino_favorites (user_id INTEGER NOT NULL, game_id INTEGER NOT NULL, created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, game_id))`);
   const RECENT_KEEP = 20;
   function notePlayed(userId, gameId) {
     db.prepare(`INSERT INTO casino_recent (user_id, game_id, played_at) VALUES (?, ?, ?)
       ON CONFLICT(user_id, game_id) DO UPDATE SET played_at = excluded.played_at`).run(userId, Number(gameId), nowIso());
+    // Every opening, for the "Top 10 da semana" (players per game in 7 days); kept 30 days.
+    db.prepare('INSERT INTO casino_plays (user_id, game_id, played_at) VALUES (?, ?, ?)').run(userId, Number(gameId), nowIso());
+    if (Math.random() < 0.02) db.prepare('DELETE FROM casino_plays WHERE played_at < ?').run(new Date(Date.now() - 30 * 86_400_000).toISOString());
     db.prepare(`DELETE FROM casino_recent WHERE user_id = ? AND game_id NOT IN
       (SELECT game_id FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?)`).run(userId, userId, RECENT_KEEP);
   }

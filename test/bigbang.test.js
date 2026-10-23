@@ -291,6 +291,34 @@ test('lobby: the featured titles in their order (exact title, named provider), l
   assert.equal((await bb.games()).games.filter((x) => x.name === 'Big Bass Splash').length, 1);
   // Providers: Pragmatic Play, Evolution, Games Global (Microgaming), Play'n GO, NetEnt, Spribe, then PG Soft.
   assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft']);
+  // Top 10 of the week: while nothing was played here, the market's hits (no live tables); then the jackpots.
+  assert.deepEqual(lobby.rows.slice(1, 3).map((r) => [r.key, r.layout]), [['top10', 'top'], ['jackpots', undefined]]);
+  const top = lobby.rows[1].games;
+  assert.equal(top.length, 9, "the 9 games that are not live tables (at most 10)");
+  assert.ok(top.every((x) => x.type !== 'live'));
+  assert.deepEqual(lobby.rows[2].games.map((x) => x.name), ['Mega Moolah']);
+});
+
+test('top 10 da semana: the games played here this week come first (rounds, and players who opened them)', async () => {
+  const db = openDb(':memory:');
+  const names = ['Sweet Bonanza', 'Gates of Olympus', 'Big Bass Splash', 'Book of Dead', 'Fortune Tiger', 'Starburst', 'Wolf Gold'];
+  const games = names.map((n, i) => ({ id: i + 1, name: `g${i}`, title: n, provider: 'Pragmatic', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: `https://x/${i}.webp`, game_type: 'slot', is_premium: false }));
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    const json = (data) => ({ ok: true, status: 200, json: async () => data });
+    if (u.pathname.endsWith('/games')) return json({ success: true, data: games, pagination: { total: games.length } });
+    return json({ success: true, data: [] });
+  };
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl });
+  await bb.games();
+  // Starburst opened by 2 players this week; Wolf Gold by 1 (and by 3 more a month ago: not counted).
+  const at = (days) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const ins = db.prepare('INSERT INTO casino_plays (user_id, game_id, played_at) VALUES (?, ?, ?)');
+  ins.run(1, 6, at(1)); ins.run(2, 6, at(2)); ins.run(1, 6, at(3)); ins.run(1, 7, at(1));
+  for (const u of [2, 3, 4]) ins.run(u, 7, at(20));
+  const top = (await bb.lobby()).rows.find((r) => r.key === 'top10').games.map((x) => x.name);
+  assert.deepEqual(top.slice(0, 2), ['Starburst', 'Wolf Gold']);
+  assert.equal(new Set(top).size, top.length);
 });
 
 test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic Play), Live apart, no duplicate games; Populares mixes providers', async () => {
