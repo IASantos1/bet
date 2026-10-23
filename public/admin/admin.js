@@ -2419,7 +2419,7 @@ function openBannerEditor(b = null) {
         <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
           <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
         <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
-          <small class="muted">Recomendado 1080×1350 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
+          <small class="muted">Recomendado 1080×1440 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
         <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
         <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
         <label class="field"><span>Texto do botão</span><input id="banCta" maxlength="30" value="${esc(b?.cta || '')}" placeholder="Ex.: Jogar agora"></label>
@@ -2475,8 +2475,8 @@ async function banChange(t) {
     try {
       const r = await bannerImage(t.files[0]);
       if (t.id === 'banImgD') { banEd.imageD = r.url; banEd.vidD = !!r.video; } else { banEd.imageM = r.url; banEd.vidM = !!r.video; banEd.removeM = false; }
-      const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 1350, ratio = r.w / r.h;
-      if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×1350'} fica perfeito).`);
+      const want = t.id === 'banImgD' ? 1920 / 560 : 1080 / 1440, ratio = r.w / r.h;
+      if (Math.abs(ratio - want) / want > 0.15) toast('Formato', `A imagem tem ${r.w}×${r.h}: é cortada para caber (${t.id === 'banImgD' ? '1920×560' : '1080×1440'} fica perfeito).`);
     } catch (err) { toast('Erro', err.message, 'error'); }
   }
   banPreview();
