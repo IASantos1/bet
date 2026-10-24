@@ -30,6 +30,18 @@ export const SEASONAL = [
   },
 ];
 
+// Destaques that come with the site: one game shown big between the rows ("Joga agora!"), each in its
+// own dates, so the casino changes by itself (Halloween, then November, then Christmas). A game the
+// catalogue does not have is looked for again later; a destaque whose end has passed is not made.
+export const SEASONAL_SPOTLIGHTS = [
+  { key: 'halloween-2026-bigbass', game: [{ provider: /pragmatic|reel ?kingdom/i, name: /^big bass halloween splash 1000$|^big bass halloween.*1000/i }],
+    tagline: 'O pescador mais assustador voltou! 🎃🎣', endsAt: '2026-11-01T00:00:00.000Z' },
+  { key: 'nov-2026-olympus', game: [{ provider: /pragmatic/i, name: /^gates of olympus super scatter$/i }],
+    tagline: 'Zeus voltou com Super Scatters! ⚡', startsAt: '2026-11-01T00:00:00.000Z', endsAt: '2026-12-01T00:00:00.000Z' },
+  { key: 'natal-2026', game: [{ provider: /pragmatic|reel ?kingdom/i, name: /^big bass christmas bash$/i }, { provider: /pragmatic/i, name: /^sweet bonanza xmas$/i }],
+    tagline: 'O Natal chegou ao casino! 🎄', startsAt: '2026-12-01T00:00:00.000Z', endsAt: '2026-12-27T00:00:00.000Z' },
+];
+
 /** The first game of the catalogue matching each rule, in the rules' order (each game once). */
 export function pickGames(catalog, rules) {
   const ids = [];
@@ -40,7 +52,7 @@ export function pickGames(catalog, rules) {
   return ids;
 }
 
-export function createSeasonal(db, { banners, collections, dir }) {
+export function createSeasonal(db, { banners, collections, spotlights = null, dir }) {
   let busy = null;
   /** Sets up the campaigns not done yet (the ones still running), given the catalogue's games. */
   async function ensure(loadGames, now = Date.now()) {
@@ -61,9 +73,16 @@ export function createSeasonal(db, { banners, collections, dir }) {
       } catch (err) { console.error(`banners sazonais: ${err.message}`); }
     }
     const todo = running.filter((c) => !getSetting(db, `casino.seasonal.${c.key}`, false));
-    if (!todo.length) return null;
+    const spots = spotlights ? SEASONAL_SPOTLIGHTS.filter((x) => Date.parse(x.endsAt) > now && !getSetting(db, `casino.spotlight.${x.key}`, false)) : [];
+    if (!todo.length && !spots.length) return null;
     busy = (async () => {
       const catalog = (await loadGames())?.games || [];
+      for (const x of spots) {
+        const [gameId] = pickGames(catalog, x.game);
+        if (!gameId) continue; // not in the catalogue (yet): looked for again later
+        spotlights.save({ gameId, tagline: x.tagline, cta: 'Joga agora!', after: 'novos', startsAt: x.startsAt, endsAt: x.endsAt });
+        setSetting(db, `casino.spotlight.${x.key}`, true);
+      }
       for (const c of todo) {
         const games = pickGames(catalog, c.collection.games);
         if (!games.length) continue; // the catalogue has none of them (yet): tried again later
