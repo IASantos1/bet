@@ -100,6 +100,8 @@ export function featuredGames(popular) {
 
 // ---------- the filter tabs ----------
 const has = (re) => (g) => re.test(g.name);
+// A theme keeps slots only (a "Dragon Tiger" table is not an Asian slot).
+const slot = (re) => (g) => g.type !== 'live' && !TABLE.test(g.name) && re.test(g.name);
 const TABLE = /\b(roulette|roleta|blackjack|black jack|baccarat|bacar[aá]|poker|craps|sic ?bo|dragon ?tiger|teen ?patti|andar ?bahar|hold'?em|casino war|red dog|pai gow)/i;
 const CRASH = /\b(aviator|aviatrix|jet ?x\d*|spaceman|crash|zeppelin|space ?xy|limbo|balloon)\b/i;
 const INSTANT = /\b(mines?|plinko|dice|keno|hi-?lo|goal|hotline|mini roulette|scratch|coin ?flip|tower|limbo|bingo|penalty)\b/i;
@@ -129,6 +131,12 @@ export const CATEGORIES = [
   ['exclusivos', 'Jogos Exclusivos', (g, ctx) => !!ctx?.exclusive?.has(g.id)],
   ['alta-volatilidade', 'Jogos de Alta Volatilidade', (g) => g.type !== 'live' && HIGH_VOL.test(g.name)],
   ['jackpot-progressivo', 'Jogos de Jackpot Progressivo', (g) => PROGRESSIVE.test(g.name)],
+  // Themes: rows of the lobby ("Pesca", "Grécia Antiga"…) and their "Ver todos", not tabs.
+  ['pesca', 'Pesca', slot(/\b(big bass|fish(ing|in|erman)?|angler|carp|trout|bass)\b/i), 'theme'],
+  ['grecia', 'Grécia Antiga', slot(/olympus|zeus|athena|hades|poseidon|hercules|medusa|spartan?|pegasus|kraken|titans?|apollo|aphrodite|olympian/i), 'theme'],
+  ['egito', 'Egito Antigo', slot(/egypt|pharaoh|cleopatra|anubis|horus|tomb|pyramid|book of (dead|ra)|sphinx|scarab|\bnile\b|tutankh/i), 'theme'],
+  ['doces', 'Doces e Fruta', slot(/sweet|candy|sugar|lollipop|cake|fruit|cherr|juicy|jelly/i), 'theme'],
+  ['asia', 'Fortuna Asiática', slot(/dragon|tiger|koi|panda|cai ?shen|dynasty|samurai|geisha|mahjong|lantern|neko|fortune (ox|rabbit|mouse)/i), 'theme'],
 ];
 export const categoryOf = (key) => CATEGORIES.find(([k]) => k === key) || null;
 

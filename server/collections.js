@@ -59,6 +59,7 @@ export function createCollections(db) {
   /** A collection open now (for its own page), or null when it is off or out of its dates. */
   const open = (id) => live().find((c) => c.id === Number(id)) || null;
 
+  const setPlace = (id, place) => PLACES.has(place) && db.prepare('UPDATE casino_collections SET place = ?, updated_at = ? WHERE id = ?').run(place, nowIso(), Number(id)).changes > 0;
   const setEnabled = (id, on) => db.prepare('UPDATE casino_collections SET enabled = ?, updated_at = ? WHERE id = ?').run(on ? 1 : 0, nowIso(), Number(id)).changes > 0;
   const remove = (id) => db.prepare('DELETE FROM casino_collections WHERE id = ?').run(Number(id)).changes > 0;
   function reorder(ids) {
@@ -87,5 +88,5 @@ export function createCollections(db) {
     return { ...lobby, rows: [...top, ...rows] };
   }
 
-  return { all, get, live, open, save, setEnabled, remove, reorder, intoLobby };
+  return { all, get, live, open, save, setPlace, setEnabled, remove, reorder, intoLobby };
 }

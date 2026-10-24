@@ -234,10 +234,10 @@ test('lobby: featured block first, then providers in the house order; tabs with 
   const row = (key) => lobby.rows.find((r) => r.key === key);
   assert.deepEqual(lobby.rows.map((r) => r.key), ['destaques', 'provider', 'provider']);
   // None of the 30 featured titles is here: the block fills with the most popular, providers in turns.
-  assert.equal(row('destaques').layout, 'grid');
+  assert.equal(row('destaques').title, 'Escolhas da semana');
   assert.deepEqual(row('destaques').games.map((g) => g.id), [4821, 9001, 4822]);
   // Neither provider is in the house list: alphabetical.
-  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => [r.provider, r.title, r.total]), [['habanero', 'Habanero', 2], ['pragmaticlive', 'Pragmatic Live', 1]]);
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => [r.provider, r.title, r.total]), [['habanero', 'Jogos da Habanero', 2], ['pragmaticlive', 'Jogos da Pragmatic Live', 1]]);
   // Tabs in the house order, the empty ones left out.
   assert.deepEqual(lobby.categories.map((c) => [c.key, c.total]), [['populares', 3], ['novos', 3], ['slots', 2], ['ao-vivo', 1], ['roleta', 1]]);
   assert.equal(lobby.categories[1].label, 'Novos Jogos');
@@ -290,13 +290,16 @@ test('lobby: the featured titles in their order (exact title, named provider), l
   assert.equal(lobby.rows[0].games.find((x) => x.name === 'Big Bass Splash').id, 12);
   assert.equal((await bb.games()).games.filter((x) => x.name === 'Big Bass Splash').length, 1);
   // Providers: Pragmatic Play, Evolution, Games Global (Microgaming), Play'n GO, NetEnt, Spribe, then PG Soft.
-  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft']);
-  // Top 10 of the week: while nothing was played here, the market's hits (no live tables); then the jackpots.
-  assert.deepEqual(lobby.rows.slice(1, 3).map((r) => [r.key, r.layout]), [['top10', 'top'], ['jackpots', undefined]]);
-  const top = lobby.rows[1].games;
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft'].map((p) => `Jogos da ${p}`));
+  // "Acabados de chegar" (newest first, no live tables), the Top 10 of the week (while nothing was played
+  // here, the market's hits, no live tables) and the jackpots.
+  assert.deepEqual(lobby.rows.slice(1, 4).map((r) => [r.key, r.title]), [['novos', 'Acabados de chegar'], ['top10', 'Top 10 em Portugal esta semana'], ['jackpots', 'Jogos com Jackpot']]);
+  assert.equal(lobby.rows[1].games[0].id, 13);
+  assert.ok(lobby.rows[1].games.every((x) => x.type !== 'live'));
+  const top = lobby.rows[2].games;
   assert.equal(top.length, 9, "the 9 games that are not live tables (at most 10)");
   assert.ok(top.every((x) => x.type !== 'live'));
-  assert.deepEqual(lobby.rows[2].games.map((x) => x.name), ['Mega Moolah']);
+  assert.deepEqual(lobby.rows[3].games.map((x) => x.name), ['Mega Moolah']);
 });
 
 test('top 10 da semana: the games played here this week come first (rounds, and players who opened them)', async () => {
@@ -354,7 +357,7 @@ test('catalogue: one provider per brand (Pragmatic / PragmaticPlay / Pragmatic P
   const pop = (await bb.gamesPage({ category: 'populares', limit: 5 })).games;
   assert.deepEqual(pop.map((x) => x.name), ['Fortune Tiger', 'Aviator', 'Gates of Olympus', 'Mega Roulette', 'Fortune Ox']);
   const lobby = await bb.lobby({ n: 5 });
-  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Spribe', 'PG Soft', 'Pragmatic Play Live']);
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Spribe', 'PG Soft', 'Pragmatic Play Live'].map((p) => `Jogos da ${p}`));
 });
 
 test('hidden games: by name or id, out of the lists, the game page and "do mesmo estilo"', async () => {
