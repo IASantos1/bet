@@ -916,8 +916,9 @@ function casinoGameCard(g, i) {
 const CASINO_PAGE = 24;
 
 /** A lobby card (BigBang): opens the game's page. */
-const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}">
-    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+const isExclusive = (id) => !!state.casinoLobby?.exclusive?.includes(id);
+const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}" title="${esc(g.name)}">
+    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}${isExclusive(g.id) ? '<span class="excl-badge">Exclusivo</span>' : ''}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
 
 // ---------- "Os meus jogos": played recently (open straight away, ▶) and favourites (♥) ----------
@@ -928,9 +929,10 @@ function ensureCasinoMine(force = false) {
   state.casinoMine = { ...(state.casinoMine?.for === who ? state.casinoMine : { recent: [], favorites: [] }), for: who, at: Date.now() };
   api('/api/casino/mine').then((r) => {
     if (state.user?.id !== who) return;
-    const before = JSON.stringify([state.casinoMine.recent.map((g) => g.id), state.casinoMine.favorites.map((g) => g.id)]);
-    Object.assign(state.casinoMine, { recent: r.recent || [], favorites: r.favorites || [] });
-    const now = JSON.stringify([state.casinoMine.recent.map((g) => g.id), state.casinoMine.favorites.map((g) => g.id)]);
+    const ids = (x) => JSON.stringify([x.recent, x.favorites, x.forYou || [], ...(x.because || []).map((b) => b.games)].map((l) => l.map((g) => g.id)));
+    const before = ids(state.casinoMine);
+    Object.assign(state.casinoMine, { recent: r.recent || [], favorites: r.favorites || [], forYou: r.forYou || [], because: r.because || [] });
+    const now = ids(state.casinoMine);
     if (now !== before && currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
   }).catch(() => {});
 }
@@ -938,13 +940,15 @@ const isFavorite = (id) => !!state.casinoMine?.favorites.some((g) => g.id === id
 /** A game played recently: one touch opens it again (the ▶ on the picture). */
 const recentCard = (g) => `<button class="game-card recent-card" data-play-id="${g.id}" title="Jogar outra vez">
     <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}<span class="play-badge" aria-hidden="true">▶</span></div>
-    <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
-function myGamesRows() {
-  const m = state.casinoMine;
-  if (!state.user || !m) return '';
-  const row = (id, title, cards) => `<section class="section casino-row"><div class="section-head"><h2>${title}</h2></div>${carousel(id, cards)}</section>`;
-  return `${m.recent.length ? row('casinoRecent', 'Jogados recentemente', m.recent.map(recentCard)) : ''}
-    ${m.favorites.length ? row('casinoFavs', '♥ Os meus favoritos', m.favorites.map(lobbyCard)) : ''}`;
+    <div class="game-info"><strong>${esc(g.name)}</strong><small>${g.playedAt ? playedAgo(g.playedAt) : esc(g.provider)}</small></div></button>`;
+/** "há 5 minutos", "há 1 hora", "há 3 dias". */
+function playedAgo(iso) {
+  const m = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  if (m < 60) return `há ${m} ${m === 1 ? 'minuto' : 'minutos'}`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `há ${h} ${h === 1 ? 'hora' : 'horas'}`;
+  const d = Math.round(h / 24);
+  return `há ${d} ${d === 1 ? 'dia' : 'dias'}`;
 }
 
 // The casino's tabs, as chips above the banner: the lobby first, then the kinds of game most looked
@@ -1159,30 +1163,45 @@ function casinoPage() {
       ${footer()}`;
   }
   const more = c.games.length < c.total;
-  // The lobby: the featured games all at once (a grid), then one row per provider in the house
-  // order (Pragmatic Play, Evolution, Playtech…), each with "Ver mais" (every game of that provider).
+  // The lobby: rows of games that scroll sideways, each with "Ver todos".
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
-  // Top 10: a big rank number beside each game, as the big operators show it.
+  // Top 10: the place on the corner of each game.
   const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
-  const lobby = rows.map((r, i) => (r.layout === 'top'
-    ? `<section class="section casino-row casino-top"><div class="section-head"><h2>🔥 ${esc(r.title)}</h2></div>${carousel(`casinoRow${i}`, r.games.map(topCard))}</section>`
-    : r.layout === 'grid'
-    ? `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2></div>
-      <div class="game-grid grid">${r.games.map(lobbyCard).join('')}</div></section>`
-    : `<section class="section casino-row"><div class="section-head"><h2>${esc(r.title)}</h2>
-      ${r.key === 'collection' ? '' : r.key === 'provider' ? `<button class="link-btn" data-casino-prov="${esc(r.provider)}">Ver mais (${r.total}) ›</button>`
-        : `<button class="link-btn" data-casino-cat="${esc(r.key)}">Ver mais (${r.total}) ›</button>`}</div>
-      ${carousel(`casinoRow${i}`, r.games.map(lobbyCard))}</section>`)).join('');
+  // "Ver todos": a tab, a provider or a collection's own page.
+  const seeAll = (r) => (r.key === 'collection' ? `<a class="see-all" href="#/casino/colecao/${r.id}">Ver todos</a>`
+    : r.key === 'provider' ? `<button class="see-all" data-casino-prov="${esc(r.provider)}">Ver todos</button>`
+    : r.more ? `<button class="see-all" data-casino-cat="${esc(r.more)}">Ver todos</button>` : '');
+  const row = (r, i, cards = r.games.map(lobbyCard)) => `<section class="section casino-row${r.layout === 'top' ? ' casino-top' : ''}${r.key === 'recent' ? ' casino-recent' : ''}">
+      <div class="section-head"><h2>${esc(r.title)}</h2>${seeAll(r)}</div>${carousel(`casinoRow${i}`, cards)}</section>`;
+  // The order of the big operators: the week's picks, then the player's own (played recently, the
+  // seasonal collection, "Sabemos que vais gostar", "Porque jogaste …", favourites), then the rest.
+  const m = state.user ? state.casinoMine : null;
+  const picks = rows.filter((r) => r.key === 'destaques');
+  const lead = rows.slice(0, rows.findIndex((r) => r.key === 'destaques') + 1 || 0).filter((r) => r.key === 'collection');
+  const rest = rows.filter((r) => !picks.includes(r) && !lead.includes(r));
+  const because = m?.because || [];
+  const order = [
+    ...picks,
+    m?.recent.length && { key: 'recent', title: 'Jogaste recentemente', games: m.recent },
+    ...lead,
+    m?.forYou?.length >= 3 && { key: 'foryou', title: 'Sabemos que vais gostar', games: m.forYou },
+    because[0] && { key: 'because', title: `Porque jogaste ${because[0].game.name}`, games: because[0].games },
+    m?.favorites.length && { key: 'favs', title: 'Os teus favoritos', games: m.favorites },
+    because[1] && { key: 'because', title: `Porque jogaste ${because[1].game.name}`, games: because[1].games },
+    ...rest,
+  ].filter(Boolean);
+  const lobby = order.map((r, i) => (r.layout === 'top' ? row(r, i, r.games.map(topCard)) : r.key === 'recent' ? row(r, i, r.games.map(recentCard)) : row(r, i))).join('');
   // One provider or one tab open: its name, how many games and the way back to the lobby.
   const prov = c.bigbang && f.provider ? c.providers.find((p) => String(p.id) === f.provider) : null;
   const cat = c.bigbang && !prov && f.category ? (state.casinoLobby?.categories || []).find((x) => x.key === f.category) : null;
-  const head = f.q ? `Resultados para “${f.q}”` : prov?.name || cat?.label;
+  const theme = !cat && f.category ? state.casinoLobby?.rows?.find((r) => r.more === f.category) : null;
+  const head = f.q ? `Resultados para “${f.q}”` : prov?.name || cat?.label || theme?.title;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
   // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
   // Search and providers are in the casino menu (on the left; ☰ on phones).
   return `${casinoTabs(f)}${filtered ? '' : casinoBanners()}${freeSpinsBar()}
-    ${lobby ? myGamesRows() + lobby : `${provHead}<section class="section">
+    ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
     </section>`}

@@ -11,12 +11,14 @@ import { getSetting, setSetting } from './db.js';
 export const SEASONAL = [
   {
     key: 'halloween-2026',
-    // Raised when the videos change: the banner already made gets the new ones.
-    media: 2,
+    // Raised when something below changes: the banner and collection already made get it.
+    rev: 3,
     // Until 31 October at midnight (Lisbon is on winter time, UTC+0, from 25 October).
     endsAt: '2026-11-01T00:00:00.000Z',
     collection: {
       title: '🎃 Jogos de Halloween',
+      // A row near the top of the lobby (with "Ver todos"), and the banner's button opens it.
+      place: 'top',
       games: [
         { provider: /pragmatic/i, name: /^big bass halloween splash 1000$|^big bass halloween.*1000/i },
         { provider: /amusnet|egt/i, name: /^halloween$/i },
@@ -45,16 +47,17 @@ export function createSeasonal(db, { banners, collections, dir }) {
     if (busy) return busy;
     const running = SEASONAL.filter((c) => Date.parse(c.endsAt) > now);
     const file = (c, n) => `data:${c.banner.mime};base64,${fs.readFileSync(path.join(dir, n)).toString('base64')}`;
-    // Made before with older videos (true = the first ones): the same banner gets the new ones.
+    // Made by an older version (true = the first): the same banner and collection get the changes.
     for (const c of running) {
       const done = getSetting(db, `casino.seasonal.${c.key}`, false);
-      if (!done || Number(done === true ? 1 : done) >= (c.media || 1)) continue;
+      if (!done || Number(done === true ? 1 : done) >= (c.rev || 1)) continue;
       try {
         for (const b of banners.all().filter((x) => x.terms === c.banner.terms && /^#\/casino\/colecao\//.test(x.link))) {
           banners.setImage(b.id, 'd', file(c, c.banner.d));
           banners.setImage(b.id, 'm', file(c, c.banner.m));
+          collections.setPlace(b.link.split('/').pop(), c.collection.place);
         }
-        setSetting(db, `casino.seasonal.${c.key}`, c.media || 1);
+        setSetting(db, `casino.seasonal.${c.key}`, c.rev || 1);
       } catch (err) { console.error(`banners sazonais: ${err.message}`); }
     }
     const todo = running.filter((c) => !getSetting(db, `casino.seasonal.${c.key}`, false));
@@ -64,14 +67,14 @@ export function createSeasonal(db, { banners, collections, dir }) {
       for (const c of todo) {
         const games = pickGames(catalog, c.collection.games);
         if (!games.length) continue; // the catalogue has none of them (yet): tried again later
-        const col = collections.save({ title: c.collection.title, games, place: 'link', endsAt: c.endsAt });
+        const col = collections.save({ title: c.collection.title, games, place: c.collection.place, endsAt: c.endsAt });
         banners.save({
           title: '', subtitle: '', cta: '', link: `#/casino/colecao/${col.id}`, terms: c.banner.terms, audience: 'all',
           endsAt: c.endsAt, imageD: file(c, c.banner.d), imageM: file(c, c.banner.m),
         });
         // First in the carousel.
         banners.reorder([banners.all().at(-1).id, ...banners.all().slice(0, -1).map((b) => b.id)]);
-        setSetting(db, `casino.seasonal.${c.key}`, c.media || 1);
+        setSetting(db, `casino.seasonal.${c.key}`, c.rev || 1);
       }
     })().catch((err) => console.error(`campanhas do casino: ${err.message}`)).finally(() => { busy = null; });
     return busy;

@@ -342,14 +342,16 @@ test('os meus jogos: o jogo aberto fica em "jogados recentemente" e o coração 
     return { status: res.status, body: await res.json() };
   };
   try {
-    assert.deepEqual((await call('GET', '/api/casino/mine')).body, { recent: [], favorites: [] });
+    assert.deepEqual((await call('GET', '/api/casino/mine')).body, { recent: [], favorites: [], forYou: [], because: [] });
     await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui2@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
     await call('POST', '/api/wallet/deposit', { amount: 50 });
     // A demo does not count; real money does (slot and live table), the last one first.
     assert.equal((await call('POST', '/api/casino/launch', { gameId: 11, demo: true })).status, 200);
     assert.deepEqual((await call('GET', '/api/casino/mine')).body.recent, []);
     for (const id of [11, 12, 11]) assert.equal((await call('POST', '/api/casino/launch', { gameId: id })).status, 200);
-    assert.deepEqual((await call('GET', '/api/casino/mine')).body.recent.map((g) => g.id), [11, 12]);
+    const mine = (await call('GET', '/api/casino/mine')).body;
+    assert.deepEqual(mine.recent.map((g) => g.id), [11, 12]);
+    assert.ok(mine.recent.every((g) => Date.parse(g.playedAt)), 'when each was played ("há 5 minutos")');
     // Favourites: on, off, an unknown game refused.
     assert.equal((await call('POST', '/api/casino/favorite', { gameId: 12 })).status, 200);
     assert.deepEqual((await call('GET', '/api/casino/mine')).body.favorites.map((g) => g.id), [12]);

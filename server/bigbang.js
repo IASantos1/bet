@@ -317,18 +317,30 @@ export function createBigBang(db, {
         if (!taken.has(g.id)) { featured.push(g); taken.add(g.id); }
       }
     }
-    const rows = featured.length ? [{ key: 'destaques', title: 'Em destaque', layout: 'grid', total: featured.length, games: featured }] : [];
+    // As the big operators lay it out: the week's picks, what just arrived, the Top 10, the jackpots,
+    // the house exclusives, the themes (Pesca, Grécia Antiga…) and one row per provider.
+    const c = ctx();
+    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: featured.slice(0, Math.max(n, 12)) }] : [];
+    const fresh = byNewest(all.games.filter((g) => g.type !== 'live'));
+    if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: fresh.slice(0, n) });
     const top = topWeek(all.games);
-    if (top.length >= 5) rows.push({ key: 'top10', title: 'Top 10 da semana', layout: 'top', total: top.length, games: top });
+    if (top.length >= 5) rows.push({ key: 'top10', title: 'Top 10 em Portugal esta semana', layout: 'top', total: top.length, games: top });
     const jackpots = byPopularity(inCategory(all.games, 'jackpots'));
-    if (jackpots.length) rows.push({ key: 'jackpots', title: '💰 Jackpots', total: jackpots.length, games: jackpots.slice(0, n) });
+    if (jackpots.length) rows.push({ key: 'jackpots', more: 'jackpots', title: 'Jogos com Jackpot', total: jackpots.length, games: jackpots.slice(0, n) });
+    const own = byPopularity(inCategory(all.games, 'exclusivos', c));
+    if (own.length) rows.push({ key: 'exclusivos', more: 'exclusivos', title: 'Apenas na Bet62', total: own.length, games: own.slice(0, n) });
+    const themes = CATEGORIES.filter((x) => x[3] === 'theme').map(([key, label]) => ({ key, label, list: byPopularity(inCategory(all.games, key, c)) }))
+      .filter((t) => t.list.length >= 6);
+    const provRows = [];
     for (const p of all.providers) {
       const list = popular.filter((g) => g.providerId === p.id);
-      if (list.length) rows.push({ key: 'provider', provider: p.id, title: p.name, total: list.length, games: list.slice(0, n) });
+      if (list.length) provRows.push({ key: 'provider', provider: p.id, title: `Jogos da ${p.name}`, total: list.length, games: list.slice(0, n) });
     }
-    const c = ctx();
-    const categories = CATEGORIES.map(([key, label]) => ({ key, label, total: inCategory(all.games, key, c).length })).filter((x) => x.total);
-    return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, categories, rows };
+    // A theme after every two providers, so the long list of providers has some variety.
+    themes.forEach((t, i) => provRows.splice(Math.min(provRows.length, 2 + i * 3), 0, { key: 'theme', more: t.key, title: t.label, total: t.list.length, games: t.list.slice(0, n) }));
+    rows.push(...provRows);
+    const categories = CATEGORIES.filter((x) => x[3] !== 'theme').map(([key, label]) => ({ key, label, total: inCategory(all.games, key, c).length })).filter((x) => x.total);
+    return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, categories, rows, exclusive: [...c.exclusive] };
   }
 
   async function gamesPage({ offset = 0, limit = 24, provider = '', category = '', q = '', sort = '' } = {}) {
@@ -356,6 +368,19 @@ export function createBigBang(db, {
     const h = hidden();
     const same = catalog.games.filter((x) => x.providerId === g.providerId && x.id !== g.id && x.category === g.category && shown(x, h));
     return byPopularity(same).slice(0, n);
+  }
+
+  /**
+   * "Sabemos que vais gostar": popular games of the providers the player plays most (the ones in
+   * `playedIds`, most recent first), not played yet.
+   */
+  async function forYou(playedIds, n = 12) {
+    await games();
+    const h = hidden();
+    const played = new Set(playedIds.map(Number));
+    const provs = new Set(playedIds.map((id) => catalog.byId.get(Number(id))?.providerId).filter(Boolean).slice(0, 3));
+    if (!provs.size) return [];
+    return mixedPopular(catalog.games.filter((g) => provs.has(g.providerId) && !played.has(g.id) && g.type !== 'live' && shown(g, h))).slice(0, n);
   }
 
   // ---------- players and launch ----------
@@ -488,5 +513,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, related, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }

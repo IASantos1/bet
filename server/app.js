@@ -480,12 +480,17 @@ export function createApp(db, {
       (SELECT game_id FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?)`).run(userId, userId, RECENT_KEEP);
   }
   app.get('/api/casino/mine', wrap(async (req, res) => {
-    if (!req.user || !bb) return res.json({ recent: [], favorites: [] });
-    const games = async (rows) => (await Promise.all(rows.map((r) => bb.game(r.game_id)))).filter(Boolean);
-    res.json({
-      recent: await games(db.prepare('SELECT game_id FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?').all(req.user.id, RECENT_KEEP)),
-      favorites: await games(db.prepare('SELECT game_id FROM casino_favorites WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)),
-    });
+    if (!req.user || !bb) return res.json({ recent: [], favorites: [], forYou: [], because: [] });
+    const recentRows = db.prepare('SELECT game_id, played_at FROM casino_recent WHERE user_id = ? ORDER BY played_at DESC LIMIT ?').all(req.user.id, RECENT_KEEP);
+    const recent = (await Promise.all(recentRows.map(async (r) => { const g = await bb.game(r.game_id); return g && { ...g, playedAt: r.played_at }; }))).filter(Boolean);
+    const favorites = (await Promise.all(db.prepare('SELECT game_id FROM casino_favorites WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
+      .map((r) => bb.game(r.game_id)))).filter(Boolean);
+    // "Porque jogaste …": games like the last one played and like the first favourite (none already played).
+    const mine = new Set([...recent, ...favorites].map((g) => g.id));
+    const seeds = [recent[0], favorites.find((g) => g.id !== recent[0]?.id) || recent[1]].filter(Boolean);
+    const because = (await Promise.all(seeds.map(async (g) => ({ game: { id: g.id, name: g.name }, games: (await (bb.related?.(g) ?? [])).filter((x) => !mine.has(x.id)) }))))
+      .filter((b) => b.games.length >= 3);
+    res.json({ recent, favorites, forYou: await (bb.forYou?.([...recent, ...favorites].map((g) => g.id)) ?? []), because });
   }));
   app.post('/api/casino/favorite', requireUser, wrap(async (req, res) => {
     const id = Number(req.body?.gameId);
