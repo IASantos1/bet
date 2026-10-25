@@ -22,17 +22,21 @@ import { nowIso } from './db.js';
 
 const SPORT_NAME = {
   futebol: 'Soccer', futsal: 'Futsal', basquetebol: 'Basketball', hoquei: 'Ice Hockey', voleibol: 'Volleyball',
-  andebol: 'Handball', esports: 'ESports',
+  andebol: 'Handball', esports: 'ESports', futamericano: 'American Football', basebol: 'Baseball', raguebi: 'Rugby', mma: 'Fighting',
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
 const VERSION = 2; // entries saved by an older version are looked up again
 const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball',
-  futamericano: 'american-football', basebol: 'baseball', raguebi: 'rugby' };
+  futamericano: 'american-football', basebol: 'baseball', raguebi: 'rugby', mma: 'mma' };
+// MMA has fighters, not teams: their photo is looked up by name (API-MMA), shown like a badge.
+const PEOPLE_SPORTS = new Set(['mma']);
 // API-Football leagues whose whole team list (one request each, a few dozen badges) is kept in
 // team_directory, so the teams of these leagues need no request of their own. Refreshed monthly.
 const LEAGUE_PACKS = {
   futebol: [94, 95, 39, 40, 140, 141, 135, 136, 78, 79, 61, 62, 88, 144, 179, 203, 197, 207, 218, 119, 113, 103, 106, 345, 283, 210,
     71, 72, 128, 253, 262, 307, 2, 3, 848, 96],
+  futamericano: [1], // NFL
+  basebol: [1], // MLB
 };
 const PACK_RETRY_MS = 30 * 86_400_000;
 // API-Football league ids whose official logo the site shows (the home page's league row): kept here
@@ -288,13 +292,17 @@ export function createTeamLogos(db, {
     const known = [name, ...alt];
     const kept = directoryLogo(sport, known);
     if (kept) return keepFile(kept);
-    const terms = [...new Set([...nameVariants(name), ...alt.slice(0, 1)].map((v) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // A fighter written "Last, First" is also looked up as "First Last".
+    const person = PEOPLE_SPORTS.has(sport) ? [String(name).split(/\s*,\s*/).reverse().join(' ')] : [];
+    const terms = [...new Set([...person, ...nameVariants(name), ...alt.slice(0, 1)].map((v) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-zA-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()))];
     for (const q of terms) {
       // The search takes letters, digits and spaces only, 3 at least.
       if (q.length < 3 || !apifCan(sport) || minuteCalls >= apiFootballPerMinute) continue;
-      const teams = (await apiCall(sport, `teams?search=${encodeURIComponent(q)}`)).map((x) => x.team || x);
-      const t = teams.find((x) => httpsUrl(x.logo) && known.some((n) => sameTeam({ strTeam: x.name, strTeamShort: x.code }, n)));
+      const people = PEOPLE_SPORTS.has(sport);
+      const teams = (await apiCall(sport, `${people ? 'fighters' : 'teams'}?search=${encodeURIComponent(q)}`))
+        .map((x) => x.team || x).map((x) => (people ? { ...x, logo: x.photo, code: x.nickname } : x));
+      const t = teams.find((x) => httpsUrl(x.logo) && [...known, ...person].some((n) => sameTeam({ strTeam: x.name, strTeamShort: x.code }, n)));
       if (t) {
         for (const v of nameVariants(t.name)) dirPut.run(sport, loose(v), t.name, t.logo, null);
         return keepFile(t.logo);
@@ -380,6 +388,7 @@ export function createTeamLogos(db, {
 
   /** Looks one team up: a result of its sport with the team's own name (one with a badge first). */
   async function lookUp(sport, name) {
+    if (PEOPLE_SPORTS.has(sport)) return { logo: null, colors: null, kit: null, alt: [] }; // TheSportsDB has teams only
     const want = SPORT_NAME[sport];
     for (const variant of nameVariants(name)) {
       const teams = (await search(variant)).filter((t) => (!want || t.strSport === want) && sameTeam(t, name));
