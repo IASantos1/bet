@@ -583,12 +583,18 @@ export function createApp(db, {
   // match winner instead — home / away ("2 vias"), or 1 / X / 2 — so the game is not shown without odds.
   const WINNER_GROUP = /(vencedor|resultado|winner|result|1x2|2 vias|moneyline)/i;
   const NOT_WHOLE_MATCH = /(parte|tempo|\bset\b|quarto|per[ií]odo|entrada|inning|half|quarter|period|\btotal\b|handicap|\bmais\b|\bmenos\b|\bover\b|\bunder\b|\bpar\b|[ií]mpar|exato|correct|dupla|double|empate anula|draw no bet|\d\s*[.ºª])/i;
-  function providerWinner(rows) {
+  const WHOLE_NOTE = /\s*\((incl[^)]*|including[^)]*|prolongamento|overtime|ot|entradas? extras?|extra innings|super over)\)/gi;
+  const teamKey = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  function providerWinner(rows, e = {}) {
     const groups = new Map();
     for (const s of rows) {
       const sp = s.market === 'x' ? splitSpecial(s.code) : null;
-      const short = sp && { 1: '1', 2: '2', x: 'X' }[sp.label.trim().toLowerCase()];
-      if (!short || !WINNER_GROUP.test(sp.group) || NOT_WHOLE_MATCH.test(sp.group)) continue;
+      if (!sp) continue;
+      // "1" / "2" / "X", or the team's own name.
+      const label = teamKey(sp.label);
+      const short = { 1: '1', 2: '2', x: 'X' }[sp.label.trim().toLowerCase()] || (label && label === teamKey(e.home) ? '1' : label && label === teamKey(e.away) ? '2' : null);
+      const group = sp.group.replace(WHOLE_NOTE, '');
+      if (!short || !WINNER_GROUP.test(group) || NOT_WHOLE_MATCH.test(group)) continue;
       if (!groups.has(sp.id)) groups.set(sp.id, []);
       groups.get(sp.id).push({ ...s, short });
     }
@@ -623,7 +629,7 @@ export function createApp(db, {
         clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
         selections: rows.some((s) => s.market === main)
           ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
-          : providerWinner(rows).map((s) => ({ ...pub(s), code: s.short })),
+          : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
         // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
         homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,

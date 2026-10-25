@@ -231,3 +231,19 @@ test('a game with no winner of ours shows the provider\'s winner on its card: ho
   assert.deepEqual(again.selections.map((s) => s.code), ['1', 'X', '2']);
   server.close();
 });
+
+test('a card shows the winner named after the teams (baseball, incl. extra innings)', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const ins = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+    VALUES ('basebol', 'Dominican Republic. LIDOM', ?, ?, ?, 'scheduled', 'winhouse', ?, ?, ?)`);
+  const a = Number(ins.run('Tigres del Licey', 'Aguilas Cibaenas', soon, 'b1', nowIso(), nowIso()).lastInsertRowid);
+  const add = (id, code, odds) => db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, 'x', ?, ?, 1)").run(id, code, odds);
+  add(a, '40~Vencedor (incl. entradas extra)~Tigres del Licey', 175); add(a, '40~Vencedor (incl. entradas extra)~Aguilas Cibaenas', 205);
+  add(a, '41~1.ª entrada - Vencedor~1', 190); add(a, '41~1.ª entrada - Vencedor~2', 180);
+  const { server, call } = await start(db);
+  const ev = (await call('GET', '/api/events')).body.events.find((x) => x.id === a);
+  assert.deepEqual(ev.selections.map((s) => [s.code, s.odds]), [['1', 1.75], ['2', 2.05]]);
+  server.close();
+});
