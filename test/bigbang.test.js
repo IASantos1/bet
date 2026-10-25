@@ -538,3 +538,13 @@ test('free spins on Palace: one picked game, own casino account, winnings above 
     assert.equal((await post('/api/casino/launch', { gameId: bass, freeSpins: fsId })).status, 400);   // no 6th spin
   } finally { server.close(); }
 });
+
+test('Halloween Dice (does not work) is hidden, also in a list the operator already changed, once', () => {
+  const db = openDb(':memory:');
+  setSetting(db, 'casino.hidden', ['Divine 9']);
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
+  assert.deepEqual(bb.hiddenList(), ['Divine 9', 'Halloween Dice']);
+  setSetting(db, 'casino.hidden', ['Divine 9']); // the operator shows it again
+  assert.deepEqual(createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl }).hiddenList(), ['Divine 9']);
+  assert.ok(createBigBang(openDb(':memory:'), { apiKey: KEY }).hiddenList().includes('Halloween Dice'));
+});

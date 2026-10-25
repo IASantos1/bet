@@ -11,7 +11,7 @@
 // real money (BigBang plays them with a virtual balance).
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { CATEGORIES, categoryOf, dropCrossDuplicates, featuredGames, houseNames, sortProviders, titleKey as nameKey } from './casinolobby.js';
-import { getSetting } from './db.js';
+import { getSetting, setSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
@@ -31,7 +31,12 @@ export function signMove(p, key) {
 
 const TYPE_LABEL = { slot: 'Slots', live: 'Ao Vivo', crash: 'Crash' };
 /** Hidden until the operator changes the list (admin → Casino). */
-export const HIDDEN_DEFAULT = ['Berry Berry Bonanza', 'Divine 9'];
+export const HIDDEN_DEFAULT = ['Berry Berry Bonanza', 'Divine 9', 'Halloween Dice'];
+/**
+ * Games found not to work, put once into the operator's list too (when it was already changed in the
+ * admin, the defaults above no longer apply); taking one out of the list in the admin shows it again.
+ */
+const HIDDEN_LATER = [['2026-10-halloween-dice', 'Halloween Dice']];
 /**
  * Games known as hits across the market (first = most popular), for the "Populares" order before
  * Bet62 has its own numbers; the rounds played here in the last 30 days weigh far more.
@@ -86,6 +91,12 @@ export function createBigBang(db, {
 } = {}) {
   const key = String(apiKey || '').trim();
   const enabled = !!key;
+  for (const [tag, name] of HIDDEN_LATER) {
+    if (getSetting(db, `casino.hidden.added.${tag}`, false)) continue;
+    const list = getSetting(db, 'casino.hidden', null);
+    if (Array.isArray(list) && !list.some((x) => nameKey(x) === nameKey(name))) setSetting(db, 'casino.hidden', [...list, name]);
+    setSetting(db, `casino.hidden.added.${tag}`, true);
+  }
   const sandbox = key.startsWith('ek_test_');
   const root = String(baseUrl || '').replace(/\/+$/, '');
   let catalog = { at: 0, games: [], byId: new Map(), providers: [] };
