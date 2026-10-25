@@ -578,6 +578,25 @@ export function createApp(db, {
   const marketKeyOf = (s) => (s.market === 'x' ? `x:${splitSpecial(s.code)?.id}` : s.market);
   const isHidden = (hidden, sport, s) => !!hidden[sport]?.includes(marketKeyOf(s));
 
+  // No winner of ours (a sport whose market names we do not know): the cards show the provider's own
+  // match winner instead — home / away ("2 vias"), or 1 / X / 2 — so the game is not shown without odds.
+  const WINNER_GROUP = /(vencedor|resultado|winner|result|1x2|2 vias|moneyline)/i;
+  const NOT_WHOLE_MATCH = /(parte|tempo|\bset\b|quarto|per[ií]odo|entrada|inning|half|quarter|period|\btotal\b|handicap|\bmais\b|\bmenos\b|\bover\b|\bunder\b|\bpar\b|[ií]mpar|exato|correct|dupla|double|empate anula|draw no bet|\d\s*[.ºª])/i;
+  function providerWinner(rows) {
+    const groups = new Map();
+    for (const s of rows) {
+      const sp = s.market === 'x' ? splitSpecial(s.code) : null;
+      const short = sp && { 1: '1', 2: '2', x: 'X' }[sp.label.trim().toLowerCase()];
+      if (!short || !WINNER_GROUP.test(sp.group) || NOT_WHOLE_MATCH.test(sp.group)) continue;
+      if (!groups.has(sp.id)) groups.set(sp.id, []);
+      groups.get(sp.id).push({ ...s, short });
+    }
+    const full = [...groups.values()].filter((g) => g.some((s) => s.short === '1') && g.some((s) => s.short === '2'));
+    // Home / away first (most of these sports have no draw), then a 1 / X / 2.
+    const pick = full.find((g) => !g.some((s) => s.short === 'X')) || full[0] || [];
+    return pick.sort((a, b) => '1X2'.indexOf(a.short) - '1X2'.indexOf(b.short));
+  }
+
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
     const events = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     if (!events.length) return [];
@@ -601,7 +620,9 @@ export function createApp(db, {
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         // A watched WinHouse match: the tracker knows the period ("Intervalo", "45+2'"), the live list does not.
         clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
-        selections: rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub),
+        selections: rows.some((s) => s.market === main)
+          ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
+          : providerWinner(rows).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
         // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
         homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,

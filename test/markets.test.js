@@ -211,3 +211,23 @@ test('a market the operator hides leaves the match page and the slip; showing it
   server.close();
   admin.server.close();
 });
+
+test('a game with no winner of ours shows the provider\'s winner on its card: home / away before a 1X2', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+    VALUES ('criquete', 'IMC. World Cup Over 40s', 'Rest of the Caribbean', 'Scotland', ?, 'scheduled', 'winhouse', 'c1', ?, ?)`).run(soon, nowIso(), nowIso()).lastInsertRowid);
+  const add = (code, odds) => db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, 'x', ?, ?, 1)").run(id, code, odds);
+  add('20~Resultado do Jogo de Críquete (1x2)~1', 152); add('20~Resultado do Jogo de Críquete (1x2)~x', 3000); add('20~Resultado do Jogo de Críquete (1x2)~2', 232);
+  add('31~1.ª entrada - Vencedor~1', 190); add('31~1.ª entrada - Vencedor~2', 180);
+  add('10~Resultado final 2 vias~1', 152); add('10~Resultado final 2 vias~2', 231);
+  const { server, call } = await start(db);
+  const ev = (await call('GET', '/api/events')).body.events.find((e) => e.id === id);
+  assert.deepEqual(ev.selections.map((s) => [s.code, s.odds]), [['1', 1.52], ['2', 2.31]]);
+  // With the two-way one hidden by the operator, the 1X2 takes its place.
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('markets.hidden', ?, ?)").run(JSON.stringify({ criquete: ['x:10'] }), nowIso());
+  const again = (await call('GET', '/api/events')).body.events.find((e) => e.id === id);
+  assert.deepEqual(again.selections.map((s) => s.code), ['1', 'X', '2']);
+  server.close();
+});
