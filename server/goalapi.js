@@ -180,28 +180,35 @@ export function normalizeStandings(raw, fx) {
   const ids = new Set([fx.home.id, fx.away.id].filter(Boolean));
   const names = [fx.home.name, fx.away.name];
   const ours = (r) => ids.has(String(r.teamId || r.team?.id)) || names.some((n) => loose(n) === loose(r.teamName || r.team?.name));
-  // Several tables can come in one answer (Argentina: two zones, and each again for another phase),
-  // not always told apart by name: a new one starts where the name changes, a position is taken
-  // again or a team comes back. Ours: the one with both teams, then the one with the most games played.
+  // A competition in groups sends each group's table, by name (leagueRound), in any order; some
+  // (Argentina) send each again for another phase, still empty, under the same name. So: the rows by
+  // group name, each team once in its group (the row with the most games; between rows with none, one
+  // whose place no other team holds), and ours is the group with our teams (then the most games played).
   const teamOf = (r) => String(r.teamId || r.team?.id || loose(r.teamName || r.team?.name));
-  const tables = [];
-  let cur = null;
+  const played = (r) => num(r.overallLeaguePlayed) || 0;
+  const groups = new Map();
   for (const r of rows) {
-    const name = r.leagueRound || r.group || r.groupName || r.stage || '';
-    const pos = num(r.overallLeaguePosition);
-    if (!cur || name !== cur.name || (pos !== null && cur.positions.has(pos)) || cur.teams.has(teamOf(r))) {
-      cur = { name, rows: [], teams: new Set(), positions: new Set(), played: 0 };
-      tables.push(cur);
-    }
-    cur.rows.push(r);
-    cur.teams.add(teamOf(r));
-    if (pos !== null) cur.positions.add(pos);
-    cur.played += num(r.overallLeaguePlayed) || 0;
+    const name = r.leagueRound || r.group || r.groupName || '';
+    if (!groups.has(name)) groups.set(name, new Map());
+    const teams = groups.get(name);
+    if (!teams.has(teamOf(r))) teams.set(teamOf(r), []);
+    teams.get(teamOf(r)).push(r);
   }
-  const score = (t) => t.rows.filter(ours).length * 1e6 + t.played;
-  const best = [...tables].sort((a, b) => score(b) - score(a))[0];
-  const group = best.name;
-  const list = best.rows;
+  const pick = (teams) => {
+    const out = [];
+    const taken = new Set();
+    const lists = [...teams.values()].map((l) => [...l].sort((x, y) => played(y) - played(x)))
+      .sort((x, y) => played(y[0]) - played(x[0]));
+    for (const l of lists) {
+      const r = l.find((x) => played(x) === played(l[0]) && !taken.has(num(x.overallLeaguePosition))) || l[0];
+      taken.add(num(r.overallLeaguePosition));
+      out.push(r);
+    }
+    return out;
+  };
+  const tables = [...groups].map(([name, teams]) => [name, pick(teams)]);
+  const score = ([, l]) => l.filter(ours).length * 1e6 + l.reduce((n, r) => n + played(r), 0);
+  const [group, list] = tables.sort((x, y) => score(y) - score(x))[0];
   const table = list.map((r) => ({
     position: num(r.overallLeaguePosition), team: r.teamName || r.team?.name, played: num(r.overallLeaguePlayed),
     won: num(r.overallLeagueW), drawn: num(r.overallLeagueD), lost: num(r.overallLeagueL),
