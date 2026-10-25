@@ -25,6 +25,7 @@ import { expireDue, runCashback, seedFsGames } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
+import { createBackups } from './backups.js';
 
 const db = openDb(config.dbPath);
 startLoopDelay();
@@ -32,6 +33,9 @@ if (!config.dbPersistent) {
   console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `
     + 'Crie um Volume no Railway (Settings → Volumes) para guardar saldos, apostas e utilizadores.');
 }
+// A copy of the database a day (backups.js), downloadable from the admin panel.
+const backups = createBackups(db, { dbPath: config.dbPath, keep: config.backupKeep, log: (msg) => console.log(`[cópias] ${msg}`) });
+const stopBackups = backups.start();
 setRequestsPerMinute(config.feed.maxRequestsPerMinute);
 const log = (msg) => console.warn(`[feed] ${msg}`);
 const liveSocket = config.feed.token && config.feed.liveWs
@@ -179,7 +183,7 @@ const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] $
 if (brevo.configured) console.log(`Brevo: emails de ${config.brevo.senderEmail}${brevo.smsConfigured ? ', SMS ligado' : ''}`);
 const goalApi = createGoalApi(db, { ...config.goalApi, log: (m) => console.warn(`[goal-api] ${m}`) });
 if (goalApi.enabled) console.log(`[goal-api] estatísticas ativas (até ${config.goalApi.daily} pedidos por dia)`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, boardCacheMs: 2000 });
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
@@ -190,6 +194,7 @@ const server = app.listen(config.port, () => {
 
 const shutdown = () => {
   stopFeed();
+  stopBackups();
   stopTennis();
   stopSports.forEach((stop) => stop());
   tennisLive?.stop();

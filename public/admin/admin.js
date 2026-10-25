@@ -678,7 +678,7 @@ function go(tab) {
 
 // ---------- tabs ----------
 
-function dashboard(s, settle) {
+function dashboard(s, settle, backups = null) {
   const card = (icon, label, value, sub = '', tone = '') => `<div class="adm-card ${tone}"><span class="adm-card-icon">${adminIcon(icon, 19)}</span><small>${esc(label)}</small><strong>${esc(value)}</strong>${sub ? `<em>${esc(sub)}</em>` : ''}</div>`;
   const alert = s.pendingWithdrawals ? `<button class="adm-alert" data-tab="levantamentos"><span class="adm-alert-icon">${adminIcon('warning', 17)}</span><span>${s.pendingWithdrawals} levantamento(s) pendente(s) a aguardar aprovação — total ${esc(money(s.pendingWithdrawalAmount))}</span><span class="adm-alert-arrow">→</span></button>` : '';
   const sm = settle?.summary || {};
@@ -699,9 +699,22 @@ function dashboard(s, settle) {
       ${card('wallet', 'Pago hoje', money(sm.paidToday), '', 'gold')}
       ${card('trend', 'Margem hoje', money(sm.marginToday), '', 'green')}
     </div>
+    ${backupsPanel(backups)}
     <div class="panel adm-shortcut-panel"><div class="adm-panel-heading"><div><span class="adm-eyebrow">ACESSO RÁPIDO</span><h3>Atalhos de operação</h3></div><span class="adm-panel-count">${TABS.length - 1} secções</span></div><div class="adm-shortcuts">
       ${TABS.filter((t) => t.id !== 'painel').map((t) => `<button class="ghost-btn adm-shortcut" data-tab="${t.id}"><span>${adminIcon(t.icon, 16)}</span>${esc(t.label)}<i>${adminIcon('trend', 13)}</i></button>`).join('')}
     </div></div>`;
+}
+
+/** Copies of the database: the day's own, one now, and each to download (to keep somewhere else). */
+function backupsPanel(b) {
+  if (!b?.enabled) return '';
+  const size = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${(n / 1e6).toFixed(1)} MB`);
+  const rows = (b.list || []).map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(fmtDateTime(x.at))}</td><td class="num">${esc(size(x.bytes))}</td>
+    <td><a class="ghost-btn btn-sm" href="/api/admin/backups/${encodeURIComponent(x.name)}" download>Descarregar</a></td></tr>`).join('');
+  return `<div class="panel"><div class="section-head"><h3>Cópias de segurança da base de dados</h3><button class="primary-btn btn-sm" data-action="backup-now">Fazer cópia agora</button></div>
+    <p class="muted">Uma cópia por dia (depois das ${b.hour}h), guardadas as últimas ${b.keep} no volume. Descarregue uma de vez em quando e guarde-a fora do servidor
+      (computador, Google Drive…): se o volume se perder, é com ela que tudo volta.${b.lastError ? ` <b>Última falhou:</b> ${esc(b.lastError.message)}` : ''}</p>
+    ${rows ? `<div class="table-wrap"><table><thead><tr><th>Cópia</th><th>Feita</th><th class="num">Tamanho</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Ainda não há cópias.</p>'}</div>`;
 }
 
 async function loadTab() {
@@ -713,7 +726,7 @@ async function loadTab() {
     const badge = $('.adm-nav[data-tab="levantamentos"] .adm-badge');
     if (badge) badge.textContent = s.pendingWithdrawals;
     const tab = state.tab;
-    if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null));
+    if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null));
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
@@ -1636,6 +1649,14 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     actionEl.textContent = 'Testar ligação';
+  } else if (action === 'backup-now') {
+    actionEl.disabled = true;
+    actionEl.textContent = 'A copiar…';
+    try {
+      const { copy } = await api('/api/admin/backups', { method: 'POST', body: {} });
+      toast('Cópia feita', `${copy.name} · ${(copy.bytes / 1e6).toFixed(1)} MB`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
   } else if (action === 'settlement-run') {
     actionEl.disabled = true;
     try {

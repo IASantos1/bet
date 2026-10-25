@@ -156,7 +156,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -1763,6 +1763,19 @@ export function createApp(db, {
       }, null, 2);
       res.json({ raw: text.length > 40_000 ? `${text.slice(0, 40_000)}\n…` : text });
     } catch (err) { next(err); }
+  });
+
+  // Copies of the database (backups.js): the list, one now, and a download.
+  admin.get('/backups', (_req, res) => res.json(backups?.status() || { enabled: false, list: [] }));
+  admin.post('/backups', (_req, res) => {
+    if (!backups) throw new HttpError(503, 'Cópias indisponíveis.');
+    res.json({ copy: backups.run({ manual: true }), ...backups.status() });
+  });
+  admin.get('/backups/:name', (req, res) => {
+    const file = backups?.fileOf(req.params.name);
+    if (!file) throw new HttpError(404, 'Cópia não encontrada.');
+    res.set('Cache-Control', 'no-store');
+    res.download(file, req.params.name);
   });
 
   // Market catalogue: what the provider really returns, sampled on real games of each sport.

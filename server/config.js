@@ -37,6 +37,8 @@ export const config = {
   port: int(env.PORT, 8080),
   // The database must live on persistent storage, or every deploy starts from an empty one (balances,
   // bets, users gone). On Railway, attach a Volume: its mount path is used automatically.
+  // Daily copies of the database next to it (backups.js): how many are kept.
+  backupKeep: Math.max(1, int(env.BACKUP_KEEP, 3)),
   dbPath: env.DB_PATH || (env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(env.RAILWAY_VOLUME_MOUNT_PATH, 'classicbet.db') : 'data/classicbet.db'),
   // Whether that storage survives a deploy: a Railway volume, or a DB_PATH chosen by the operator.
   dbPersistent: !!env.DB_PATH || !!env.RAILWAY_VOLUME_MOUNT_PATH || !env.RAILWAY_ENVIRONMENT,
