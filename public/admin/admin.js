@@ -2702,8 +2702,8 @@ function adminSpotlights(d) {
 }
 
 function openSpotlightEditor(s = null) {
-  spotEd = { id: s?.id || null, game: s?.game || null, imageD: null, imageM: null, srcD: s?.img?.d || null, srcM: s?.img && s.img.m !== s.img.d ? s.img.m : null,
-    vidD: !!s?.video?.d, vidM: !!(s?.video?.m && s?.img?.m !== s?.img?.d), removeD: false, removeM: false };
+  spotEd = { id: s?.id || null, game: s?.game || null, imageD: null, imageM: null, srcD: s?.img?.d || null, srcM: s?.img?.m || null,
+    vidD: !!s?.video?.d, vidM: !!s?.video?.m, removeD: false, removeM: false };
   const after = state.spotAfter || {};
   $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="spot-back">‹ Destaques</button></div>
     <div class="panel ban-ed spot-ed"><h3>${s ? 'Editar destaque' : 'Novo destaque'}</h3>
@@ -2720,9 +2720,10 @@ function openSpotlightEditor(s = null) {
         <label class="field"><span>Começa</span><input type="datetime-local" id="spotStart" value="${toLocal(s?.startsAt)}"><small class="muted">Vazio = já.</small></label>
         <label class="field"><span>Termina</span><input type="datetime-local" id="spotEnd" value="${toLocal(s?.endsAt)}"><small class="muted">Vazio = sem fim.</small></label>
         <label class="field"><span>Imagem própria para computador (opcional)</span><input type="file" id="spotImgD" accept="image/*,video/mp4,video/webm">
-          <small class="muted">1920×640 ou vídeo curto MP4/WEBM. Sem ela, usa a arte do jogo. ${spotEd.srcD ? '<button type="button" class="link-btn" data-action="spot-rm-d">Remover</button>' : ''}</small></label>
+          <small class="muted">1920×700 ou vídeo curto MP4/WEBM. Sem ela, usa a arte do jogo. ${spotEd.srcD ? '<button type="button" class="link-btn" data-action="spot-rm-d">Remover</button>' : ''}</small></label>
         <label class="field"><span>Imagem própria para telemóvel (opcional)</span><input type="file" id="spotImgM" accept="image/*,video/mp4,video/webm">
-          <small class="muted">1080×1170. Sem ela, usa a do computador. ${spotEd.srcM ? '<button type="button" class="link-btn" data-action="spot-rm-m">Remover</button>' : ''}</small></label>
+          <small class="muted">1080×1170. Sem ela, usa a arte do jogo. ${spotEd.srcM ? '<button type="button" class="link-btn" data-action="spot-rm-m">Remover</button>' : ''}</small></label>
+        <label class="adm-switch"><input type="checkbox" id="spotBare"${s?.bare ? ' checked' : ''}> A imagem própria já tem o texto e o botão (não mostrar a frase nem o botão do site por cima)</label>
         <label class="adm-switch"><input type="checkbox" id="spotEnabled"${s ? (s.enabled ? ' checked' : '') : ' checked'}> Ativo</label>
       </div>
       <h4>Pré-visualização</h4>
@@ -2749,12 +2750,13 @@ function spotPreview() {
   const g = spotEd.game || { name: 'Jogo', provider: '', image: null };
   const tag = $('#spotTagline').value.trim(), cta = $('#spotCta').value.trim() || 'Joga agora!';
   const d = spotEd.removeD ? null : spotEd.imageD || spotEd.srcD;
-  const m = (spotEd.removeM ? null : spotEd.imageM || spotEd.srcM) || d;
+  const m = spotEd.removeM ? null : spotEd.imageM || spotEd.srcM;
+  const bare = $('#spotBare').checked;
   const isVid = (src) => (src === spotEd.srcD ? spotEd.vidD : src === spotEd.srcM ? spotEd.vidM : /^data:video\//.test(src || ''));
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
   const card = (src) => `<div class="spot${src ? ' own' : ''}"><div class="spot-card"><div class="spot-media">${src ? media(src)
       : g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt=""><img class="spot-wide" src="${esc(g.image)}" alt=""><img class="spot-art" src="${esc(g.image)}" alt="">` : ''}</div>
-    <div class="spot-copy">${tag ? `<strong>${esc(tag)}</strong>` : ''}<small>${esc(g.name)}${g.provider ? ` · ${esc(g.provider)}` : ''}</small><span class="spot-cta">${esc(cta)}</span></div></div></div>`;
+    ${src && bare ? '' : `<div class="spot-copy">${tag ? `<strong>${esc(tag)}</strong>` : ''}<small>${esc(g.name)}${g.provider ? ` · ${esc(g.provider)}` : ''}</small><span class="spot-cta">${esc(cta)}</span></div>`}</div></div>`;
   $('#spotPvD').innerHTML = card(d);
   $('#spotPvM').innerHTML = card(m);
 }
@@ -2823,7 +2825,7 @@ async function spotAction(action, el) {
     try {
       await api('/api/admin/spotlights', { method: 'POST', body: {
         id: spotEd.id, gameId: spotEd.game.id, tagline: $('#spotTagline').value, cta: $('#spotCta').value, after: $('#spotAfter').value,
-        audience: $('#spotAud').value, enabled: $('#spotEnabled').checked, startsAt: fromLocal($('#spotStart').value), endsAt: fromLocal($('#spotEnd').value),
+        audience: $('#spotAud').value, enabled: $('#spotEnabled').checked, bare: $('#spotBare').checked, startsAt: fromLocal($('#spotStart').value), endsAt: fromLocal($('#spotEnd').value),
         imageD: spotEd.imageD || undefined, imageM: spotEd.imageM || undefined, removeD: spotEd.removeD || undefined, removeM: spotEd.removeM || undefined,
       } });
       toast('Destaque guardado'); spotEd = null; loadTab();

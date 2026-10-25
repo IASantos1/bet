@@ -1729,33 +1729,36 @@ body.maint-on { overflow: hidden; }
 .excl-badge { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); padding: 4px 12px 3px; border-radius: 8px 8px 0 0; background: var(--casino-red);
   color: #fff; font-weight: 900; font-size: 13px; letter-spacing: .2px; white-space: nowrap; z-index: 1; }
 
-/* Destaque: one game shown big between the rows ("Joga agora!"), Admin → Destaques do casino */
+/* Destaque: one game shown big between the rows ("Joga agora!"), Admin → Destaques do casino. Each side
+   (computer, phone) shows its own picture or video, or else is built from the game's art. */
 .spot-card { position: relative; display: block; overflow: hidden; border-radius: 16px; aspect-ratio: 1920 / 700; background: #0d1114; color: #fff; text-decoration: none; isolation: isolate; }
 .spot-media { position: absolute; inset: 0; z-index: -1; }
+.spot-media.mb { display: none; }
 .spot-media img, .spot-media video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .spot-bg { filter: blur(22px) brightness(.55) saturate(1.3); transform: scale(1.25); }
 .spot-media .spot-art { display: none; position: absolute; width: auto; aspect-ratio: 2 / 3; border-radius: 14px; box-shadow: 0 18px 40px rgba(0, 0, 0, .55); }
 /* Computer: the game's art fills the right 60% of the card and fades into the text side. */
 .spot-media .spot-wide { position: absolute; right: 0; top: 0; width: 62%; height: 100%; object-fit: cover; object-position: center 28%;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 38%); mask-image: linear-gradient(90deg, transparent, #000 38%); }
-.spot.two .spot-m { display: none; }
 .spot-copy { position: absolute; inset: 0 auto 0 5%; width: 44%; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
-.spot.own .spot-copy { inset: auto 0 0 0; width: auto; padding: 60px 5% 26px; background: linear-gradient(0deg, rgba(0, 0, 0, .75), transparent); flex-direction: row; align-items: center; flex-wrap: wrap; }
-.spot.own .spot-copy strong { flex: 1 1 300px; }
 .spot-copy strong { font-size: clamp(20px, 2.4vw, 34px); line-height: 1.1; text-shadow: 0 2px 12px rgba(0, 0, 0, .6); }
 .spot-copy small { color: rgba(255, 255, 255, .8); font-weight: 700; }
-.spot.own .spot-copy small { display: none; }
 .spot-cta { align-self: flex-start; padding: 13px 34px; border-radius: 10px; background: var(--casino-red, #ef3340); color: #fff; font-weight: 900; font-size: 16px;
   box-shadow: 0 6px 18px rgba(239, 51, 64, .35); transition: transform .15s; }
 .spot-card:hover .spot-cta { transform: translateY(-2px); }
+@media (min-width: 701px) {
+  .spot.own-d .spot-copy { inset: auto 0 0 0; width: auto; padding: 60px 5% 26px; background: linear-gradient(0deg, rgba(0, 0, 0, .75), transparent); flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .spot.own-d .spot-copy strong { flex: 1 1 300px; }
+  .spot.own-d .spot-copy small, .spot.own-d.bare .spot-copy { display: none; }
+}
 @media (max-width: 700px) {
   .spot-card { aspect-ratio: 1 / 1.08; border-radius: 14px; }
+  .spot-media.dk { display: none; } .spot-media.mb { display: block; }
   .spot-media .spot-art { display: block; left: 50%; top: 7%; transform: translateX(-50%); height: 62%; }
   .spot-media .spot-wide { display: none; }
-  .spot-copy, .spot.own .spot-copy { inset: auto 0 0 0; width: auto; padding: 50px 16px 16px; background: linear-gradient(0deg, rgba(0, 0, 0, .8) 40%, transparent);
+  .spot-copy { inset: auto 0 0 0; width: auto; padding: 50px 16px 16px; background: linear-gradient(0deg, rgba(0, 0, 0, .8) 40%, transparent);
     flex-direction: column; align-items: stretch; gap: 6px; }
   .spot-copy strong { font-size: 22px; }
-  .spot-copy small { display: none; }
+  .spot-copy small, .spot.own-m.bare .spot-copy { display: none; }
   .spot-cta { align-self: stretch; text-align: center; margin-top: 6px; padding: 14px; }
-  .spot.two .spot-d { display: none; } .spot.two .spot-m { display: block; }
 }
