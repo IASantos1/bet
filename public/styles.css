@@ -1865,3 +1865,12 @@ html.light .boost-scale { color: var(--text-3); }
 html.light .boost-line { background: #dfe4ea; }
 html.light .boost-foot { border-top-color: var(--border); }
 html.light .boost-scale span.on, html.light .boost-foot .boost-pct { color: #c98400; }
+
+/* A football drawn faintly in light green behind the featured match, the bet builder cards and the
+   winning accumulators (as on the "Melhores escolhas" cards), in both themes. */
+.home-feature, .combo-card { position: relative; isolation: isolate; overflow: hidden; }
+.home-feature::after, .combo-card::after { content: ''; position: absolute; z-index: -1; right: -70px; top: 30px; width: 260px; height: 260px; pointer-events: none;
+  background: #3ee05a; -webkit-mask: url('/img/ball-bg.svg') center / contain no-repeat; mask: url('/img/ball-bg.svg') center / contain no-repeat; opacity: .12; transform: rotate(-12deg); }
+.home-feature::after { top: 40px; right: -60px; width: 300px; height: 300px; }
+.home-feature .match-card { background: transparent; }
+html.light .home-feature::after, html.light .combo-card::after { background: #22b14c; opacity: .13; }
