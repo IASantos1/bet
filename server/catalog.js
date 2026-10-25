@@ -100,7 +100,8 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
 
   /**
    * providers: [{ sport, source, rawOdds(ext), extra?(ext) → payloads[] }] (one sport each), or
-   * [{ source, sports() → [sport], gameMarkets(ext, { live }) → { markets }, wired(sport) → Set<marketId> }]
+   * [{ source, sports() → [sport], gameMarkets(ext, { live }) → { markets }, wired(sport) → Set<marketId>,
+   * wiredByName?(sport, { kind, code }) → bool (sports whose own market is known by its name) }]
    * (WinHouse: every sport it feeds, one game page per sampled game). Switched-off providers are left out.
    */
   async function run({ sample = 12, liveSample = 5, sport: only = null } = {}) {
@@ -129,7 +130,7 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
               try { cat = await p.gameMarkets(g.external_id, { live: g.live }); calls += 1; } catch (err) { errors.push(`${g.external_id}: ${err.message}`); continue; }
               for (const m of cat?.markets || []) {
                 const e = byId.get(m.marketId) || { kind: m.name || `Mercado ${m.marketId}`, family: `#${m.marketId}${m.code ? ` · ${m.code}` : ''}`, period: m.category || '—', source: p.source,
-                  marketId: m.marketId, lines: new Set(), selections: new Set(), events: new Set(), pre: 0, live: 0 };
+                  marketId: m.marketId, code: m.code || null, lines: new Set(), selections: new Set(), events: new Set(), pre: 0, live: 0 };
                 for (const sel of m.selections || []) {
                   const [, name, line] = /^(.*?)(?: \[([^\]]+)\])? @ /.exec(sel) || [null, sel, null];
                   if (name) e.selections.add(name.trim());
@@ -147,7 +148,7 @@ export function createMarketCatalog(db, providers, { log = () => {} } = {}) {
               markets: [...byId.values()].map((e) => ({
                 kind: e.kind, family: e.family, period: e.period, source: e.source,
                 lines: LIMIT(e.lines, 12), selections: LIMIT(e.selections, 14), bookmakers: 0,
-                events: e.events.size, pre: e.pre, live: e.live, wired: wired.has(e.marketId),
+                events: e.events.size, pre: e.pre, live: e.live, wired: wired.has(e.marketId) || !!p.wiredByName?.(sport, e),
               })).sort((a, b) => b.events - a.events || a.kind.localeCompare(b.kind)),
             });
           }

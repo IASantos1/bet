@@ -1164,3 +1164,12 @@ test('the winner named in Portuguese: "Resultado final 2 vias" is ours; the cric
   assert.deepEqual(pricesFor(rugby, 'raguebi'), { '1x2|1': 140, '1x2|X': 2000, '1x2|2': 300 });
   assert.deepEqual(pricesFor([odd(5, 'Vencedor do combate', '1', 1.3), odd(5, 'Vencedor do combate', '2', 3.5)], 'boxe'), { 'ml|1': 130, 'ml|2': 350 });
 });
+
+test('catalogue: the winner of the named-winner sports counts as settled automatically', async () => {
+  const { namedWinnerMarket } = await import('../server/winhouse.js');
+  assert.ok(namedWinnerMarket('futamericano', { name: 'Resultado final 2 vias (Prolongamento)' }));
+  assert.ok(!namedWinnerMarket('futamericano', { name: 'Total de Pontos (Prolongamento)' }));
+  assert.ok(namedWinnerMarket('mma', { name: '1x2', code: '1X2' }));
+  assert.ok(!namedWinnerMarket('criquete', { name: 'Resultado do Jogo de Críquete (1x2)' }));
+  assert.ok(!namedWinnerMarket('futebol', { name: '1x2' })); // football's go by id
+});
