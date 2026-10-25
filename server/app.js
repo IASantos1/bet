@@ -44,6 +44,7 @@ import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
 import { createMatchPicks } from './picks.js';
+import { newSecret, verifyCode, otpauthUrl } from './totp.js';
 import { playableServers, createVideoProxy, createStreamRelay } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
@@ -156,7 +157,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -1080,6 +1081,10 @@ export function createApp(db, {
     // A player brought from the previous platform: the old hash (bcrypt) is replaced by ours now.
     if (isLegacyHash(user.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(used), user.id);
     if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
+    // An administrator with two-step sign-in: the authenticator app's code too.
+    if (user.role === 'admin' && user.totp_on && !verifyCode(user.totp_secret, req.body.code)) {
+      throw new HttpError(401, req.body.code ? 'Código de verificação incorreto.' : 'Introduza o código de 6 dígitos da sua app de autenticação.', { need2fa: true });
+    }
     startSession(res, user.id, req);
     res.json({ user: userOut(user) });
   });
@@ -1763,6 +1768,41 @@ export function createApp(db, {
       }, null, 2);
       res.json({ raw: text.length > 40_000 ? `${text.slice(0, 40_000)}\n…` : text });
     } catch (err) { next(err); }
+  });
+
+  // Two-step sign-in of the administrator signed in (totp.js): set up, turned on (a right code), off.
+  admin.get('/2fa', (req, res) => res.json({ on: !!req.user.totp_on }));
+  admin.post('/2fa/setup', (req, res) => {
+    if (req.user.totp_on) throw new HttpError(409, 'A verificação em dois passos já está ativa. Desative-a primeiro.');
+    const secret = newSecret();
+    db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, req.user.id);
+    res.json({ secret, url: otpauthUrl(secret, req.user.email) });
+  });
+  admin.post('/2fa/enable', (req, res) => {
+    const u = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(req.user.id);
+    if (!u?.totp_secret) throw new HttpError(400, 'Comece por gerar a chave.');
+    if (!verifyCode(u.totp_secret, req.body.code)) throw new HttpError(400, 'Código incorreto. Confirme a hora do telemóvel e tente de novo.');
+    db.prepare('UPDATE users SET totp_on = 1 WHERE id = ?').run(req.user.id);
+    res.json({ on: true });
+  });
+  admin.post('/2fa/disable', (req, res) => {
+    if (!req.user.totp_on) return res.json({ on: false });
+    if (!verifyCode(req.user.totp_secret, req.body.code)) throw new HttpError(400, 'Código incorreto.');
+    db.prepare('UPDATE users SET totp_on = 0, totp_secret = NULL WHERE id = ?').run(req.user.id);
+    res.json({ on: false });
+  });
+
+  // Copies of the database (backups.js): the list, one now, and a download.
+  admin.get('/backups', (_req, res) => res.json(backups?.status() || { enabled: false, list: [] }));
+  admin.post('/backups', (_req, res) => {
+    if (!backups) throw new HttpError(503, 'Cópias indisponíveis.');
+    res.json({ copy: backups.run({ manual: true }), ...backups.status() });
+  });
+  admin.get('/backups/:name', (req, res) => {
+    const file = backups?.fileOf(req.params.name);
+    if (!file) throw new HttpError(404, 'Cópia não encontrada.');
+    res.set('Cache-Control', 'no-store');
+    res.download(file, req.params.name);
   });
 
   // Market catalogue: what the provider really returns, sampled on real games of each sport.

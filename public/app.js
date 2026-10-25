@@ -3147,7 +3147,19 @@ function showFormError(form, msg) {
 const formHandlers = {
   async login(form) {
     const d = formData(form);
-    const { user } = await api('/api/auth/login', { method: 'POST', body: { email: d.email, password: d.password } });
+    let user;
+    try {
+      ({ user } = await api('/api/auth/login', { method: 'POST', body: { email: d.email, password: d.password, code: d.code } }));
+    } catch (err) {
+      // An administrator with two-step sign-in: the code field appears.
+      if (err.data?.need2fa && !$('input[name="code"]', form)) {
+        const field = document.createElement('div');
+        field.className = 'field';
+        field.innerHTML = '<label>Código de verificação</label><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">';
+        $('button', form).before(field);
+      }
+      throw err;
+    }
     state.user = user;
     closeModal();
     toast('Sessão iniciada', `Bem-vindo, ${user.name.split(' ')[0]}.`);

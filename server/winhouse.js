@@ -957,7 +957,7 @@ export const clockText = (sport, minutes, raw, competition = '') => {
  * End of a match that left the live list (and stayed out for the confirmation time). Settles from
  * the last score seen only when it is clearly over; anything else goes to the operator.
  */
-export function finishVerdict(row) {
+export function finishVerdict(row, now = Date.now()) {
   const m = row.wh_minute;
   const h = row.home_score;
   const a = row.away_score;
@@ -995,6 +995,12 @@ export function finishVerdict(row) {
       return m >= 59 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'raguebi':
       return m >= 79 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'basebol': {
+      // No clock and no draws: a winner once it has been going at least 2h15 (a game lasts about three).
+      if (h === a) return { review: 'empate no último placar visto' };
+      const since = (now - Date.parse(row.start_time || '')) / 60_000;
+      return since >= 135 ? { home: h, away: a } : { review: `saiu do ao vivo ${Number.isFinite(since) ? Math.round(since) : '?'} min depois do início` };
+    }
     default:
       return { review: 'desporto sem regra de fim' };
   }
@@ -1467,6 +1473,7 @@ export function createWinHouseFeed(db, {
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
           spotVar(db, JSON.stringify(r.body), { gameId: row.external_id, eventId: row.id, via: 'tracker' });
           const s = normalizeWidgetData(r.body);
+          saveStats(row.id, s, false);
           // Over while still in the book's list (it lingers there a few minutes after the whistle):
           // finished and settled now, so it leaves "Ao vivo" at once.
           // Only near the end of play: a tracker that answers for the wrong match never closes one mid-game.
@@ -1539,6 +1546,17 @@ export function createWinHouseFeed(db, {
    * The match tracker says this live match is over, with a score not lower than the last one seen:
    * it is finished and its bets settled now (true), without waiting for the list's confirmation time.
    */
+  /**
+   * The tracker's corners, yellow cards and shots on target of a match (they settle those markets,
+   * markets.js statOutcome); `final` when the tracker says it is over. Kept only when it has them.
+   */
+  function saveStats(eventId, s, final) {
+    const pick = (key) => { const x = (s?.stats || []).find((t) => t.key === key); return x && Number.isInteger(x.home) && Number.isInteger(x.away) ? [x.home, x.away] : null; };
+    const stats = { corners: pick('corners'), yellow: pick('yellow_cards'), sot: pick('shots_on_target') };
+    if (!stats.corners && !stats.yellow && !stats.sot) return;
+    db.prepare('UPDATE events SET match_stats = ? WHERE id = ?').run(JSON.stringify({ ...stats, final, at: nowIso() }), eventId);
+  }
+
   function settleFromTracker(row, s, note) {
     if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) return false;
     const h = s.homeScore;
@@ -1548,6 +1566,8 @@ export function createWinHouseFeed(db, {
     tx(db, () => {
       // The half-time score first: it settles the first-half markets with the rest.
       if (s.halfTime) db.prepare('UPDATE events SET period_scores = ? WHERE id = ?').run(JSON.stringify([[s.halfTime.home, s.halfTime.away]]), row.id);
+      // The final counts (corners, cards, shots) settle their markets with the rest.
+      saveStats(row.id, s, true);
       const r = db.prepare(`UPDATE events SET status = 'finished', home_score = ?, away_score = ?, result = ?, review_reason = NULL,
           clock = 'Final', wh_missing_since = COALESCE(wh_missing_since, ?), live_odds_at = NULL, updated_at = ? WHERE id = ? AND status = 'live'`)
         .run(h, a, resultCode(h, a), nowIso(), nowIso(), row.id);

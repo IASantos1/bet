@@ -59,6 +59,10 @@ export function seed(db, log = () => {}, { sampleEvents = true } = {}) {
  * Without them, a development admin is created when there is none (never in production).
  */
 function seedAdmin(db, log) {
+  if (config.admin2faReset) {
+    const r = db.prepare("UPDATE users SET totp_on = 0, totp_secret = NULL WHERE role = 'admin' AND totp_on = 1").run();
+    log(`ADMIN_2FA_RESET: verificação em dois passos desligada em ${r.changes} administrador(es). Retire a variável e volte a ativá-la no painel.`);
+  }
   const email = config.adminEmail;
   const password = config.adminPassword;
   if (email && password) {
