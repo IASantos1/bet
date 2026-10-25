@@ -1836,22 +1836,22 @@ html.light .sport-tile.active { border-color: #4fd13f; box-shadow: 0 0 0 1px #4f
 .side-league.active, .sport-pill.active { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); }
 .side-league.active b { color: rgba(11, 26, 10, .6); }
 /* a colour per sport: a stripe in the side menu, the icon of the filter tiles */
-[data-sport-link="futebol"], [data-sport="futebol"] { --sport: #3ddc84; }
-[data-sport-link="basquetebol"], [data-sport="basquetebol"] { --sport: #ff8a3d; }
-[data-sport-link="tenis"], [data-sport="tenis"] { --sport: #e6ff3d; }
-[data-sport-link="hoquei"], [data-sport="hoquei"] { --sport: #5ad1ff; }
-[data-sport-link="dardos"], [data-sport="dardos"] { --sport: #ff5a5a; }
-[data-sport-link="esports"], [data-sport="esports"] { --sport: #b27cff; }
-[data-sport-link="voleibol"], [data-sport="voleibol"] { --sport: #ffd23d; }
-[data-sport-link="andebol"], [data-sport="andebol"] { --sport: #3dffc8; }
-[data-sport-link="mma"], [data-sport="mma"], [data-sport-link="boxe"], [data-sport="boxe"] { --sport: #ff3d5a; }
-[data-sport-link="basebol"], [data-sport="basebol"] { --sport: #ff6b6b; }
-[data-sport-link="futamericano"], [data-sport="futamericano"], [data-sport-link="raguebi"], [data-sport="raguebi"], [data-sport-link="criquete"], [data-sport="criquete"] { --sport: #c98b4a; }
-[data-sport-link="futsal"], [data-sport="futsal"], [data-sport-link="tenismesa"], [data-sport="tenismesa"], [data-sport-link="badminton"], [data-sport="badminton"] { --sport: #7cff6b; }
-html.light [data-sport-link="tenis"], html.light [data-sport="tenis"] { --sport: #b5c400; }
-html.light [data-sport-link="voleibol"], html.light [data-sport="voleibol"] { --sport: #e0a800; }
+[data-sport-link="futebol"], [data-sport="futebol"], [data-live-sport="futebol"] { --sport: #3ddc84; }
+[data-sport-link="basquetebol"], [data-sport="basquetebol"], [data-live-sport="basquetebol"] { --sport: #ff8a3d; }
+[data-sport-link="tenis"], [data-sport="tenis"], [data-live-sport="tenis"] { --sport: #e6ff3d; }
+[data-sport-link="hoquei"], [data-sport="hoquei"], [data-live-sport="hoquei"] { --sport: #5ad1ff; }
+[data-sport-link="dardos"], [data-sport="dardos"], [data-live-sport="dardos"] { --sport: #ff5a5a; }
+[data-sport-link="esports"], [data-sport="esports"], [data-live-sport="esports"] { --sport: #b27cff; }
+[data-sport-link="voleibol"], [data-sport="voleibol"], [data-live-sport="voleibol"] { --sport: #ffd23d; }
+[data-sport-link="andebol"], [data-sport="andebol"], [data-live-sport="andebol"] { --sport: #3dffc8; }
+[data-sport-link="mma"], [data-sport="mma"], [data-live-sport="mma"], [data-sport-link="boxe"], [data-sport="boxe"], [data-live-sport="boxe"] { --sport: #ff3d5a; }
+[data-sport-link="basebol"], [data-sport="basebol"], [data-live-sport="basebol"] { --sport: #ff6b6b; }
+[data-sport-link="futamericano"], [data-sport="futamericano"], [data-live-sport="futamericano"], [data-sport-link="raguebi"], [data-sport="raguebi"], [data-live-sport="raguebi"], [data-sport-link="criquete"], [data-sport="criquete"], [data-live-sport="criquete"] { --sport: #c98b4a; }
+[data-sport-link="futsal"], [data-sport="futsal"], [data-live-sport="futsal"], [data-sport-link="tenismesa"], [data-sport="tenismesa"], [data-live-sport="tenismesa"], [data-sport-link="badminton"], [data-sport="badminton"], [data-live-sport="badminton"] { --sport: #7cff6b; }
+html.light [data-sport-link="tenis"], html.light [data-sport="tenis"], html.light [data-live-sport="tenis"] { --sport: #b5c400; }
+html.light [data-sport-link="voleibol"], html.light [data-sport="voleibol"], html.light [data-live-sport="voleibol"] { --sport: #e0a800; }
 .side-link[data-sport-link] { box-shadow: inset 3px 0 0 var(--sport, transparent); }
-.sport-tile[data-sport] svg { color: var(--sport, var(--text)); }
+.sport-tile[data-sport] svg, .sport-tile[data-live-sport] svg { color: var(--sport, var(--text)); }
 
 .hero { background: radial-gradient(60% 80% at 85% 10%, rgba(124, 255, 107, .18), transparent 60%), radial-gradient(50% 60% at 10% 100%, rgba(255, 45, 117, .14), transparent 60%), var(--panel); }
 .match-hero { background: radial-gradient(70% 90% at 50% 0%, rgba(124, 255, 107, .16), transparent 65%), var(--panel); }
@@ -1865,3 +1865,12 @@ html.light .boost-scale { color: var(--text-3); }
 html.light .boost-line { background: #dfe4ea; }
 html.light .boost-foot { border-top-color: var(--border); }
 html.light .boost-scale span.on, html.light .boost-foot .boost-pct { color: #c98400; }
+
+/* A football drawn faintly in light green behind the featured match, the bet builder cards and the
+   winning accumulators (as on the "Melhores escolhas" cards), in both themes. */
+.home-feature, .combo-card { position: relative; isolation: isolate; overflow: hidden; }
+.home-feature::after, .combo-card::after { content: ''; position: absolute; z-index: -1; right: -70px; top: 30px; width: 260px; height: 260px; pointer-events: none;
+  background: #3ee05a; -webkit-mask: url('/img/ball-bg.svg') center / contain no-repeat; mask: url('/img/ball-bg.svg') center / contain no-repeat; opacity: .12; transform: rotate(-12deg); }
+.home-feature::after { top: 40px; right: -60px; width: 300px; height: 300px; }
+.home-feature .match-card { background: transparent; }
+html.light .home-feature::after, html.light .combo-card::after { background: #22b14c; opacity: .13; }
