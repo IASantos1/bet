@@ -24,7 +24,7 @@ export function payoutFor(stakeCents, oddsX100List, factor = 1) {
  * `picks` = [{ selectionId, odds }] where odds is the price the user saw; if any price moved the
  * whole slip is refused with 409 and the current prices, so the user can confirm them.
  */
-export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null }) {
+export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null, pick = null }) {
   const { limits } = config;
   if (!['single', 'multiple', 'builder'].includes(mode)) throw new HttpError(400, 'Tipo de aposta inválido.');
   if (!Array.isArray(picks) || picks.length === 0) throw new HttpError(400, 'O boletim está vazio.');
@@ -88,13 +88,15 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null 
     if (conflict) throw new HttpError(400, conflict);
   }
 
-  const factor = mode === 'builder' ? config.builderFactor : 1;
+  // A builder from the match page's "Melhores escolhas" (picks.js) carries its card's boost.
+  const boost = mode === 'builder' && pick?.pct > 0 ? pick : null;
+  const factor = mode === 'builder' ? config.builderFactor * (boost ? 1 + boost.pct / 100 : 1) : 1;
   const slips = mode === 'single' ? legs.map((l) => [l]) : [legs];
   const insertBet = db.prepare(
     `INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const setFunding = db.prepare('UPDATE bets SET real_stake_cents = ?, bonus_stake_cents = ?, freebet_stake_cents = ?, bonus_id = ?, freebet_id = ?, protected = ? WHERE id = ?');
-  const label = mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? `Criador de apostas (${legs.length} seleções)` : 'Aposta simples';
+  const label = mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? (boost ? `Melhor escolha +${boost.pct}% (${legs.length} seleções)` : `Criador de apostas (${legs.length} seleções)`) : 'Aposta simples';
   const insertLeg = db.prepare(
     `INSERT INTO bet_legs (bet_id, event_id, selection_id, market, code, odds_x100) VALUES (?, ?, ?, ?, ?, ?)`
   );
@@ -111,6 +113,7 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null 
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
     for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
+    if (boost) db.prepare('UPDATE bets SET pick_key = ? WHERE id = ?').run(boost.key, betId);
     // Paid with a free bet, or real money first and the bonus for the rest (a short balance rolls everything back).
     const fund = fundBet(db, user, { betId, stakeCents, totalOdds, freebetId, label });
     const isProtected = !freebetId && protects(db, user, { realCents: fund.real, stakeCents, totalOdds });
