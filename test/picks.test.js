@@ -106,6 +106,14 @@ test('a card placed from the match page is priced with its boost; a stale card i
     const plain = await call('POST', '/api/bets', { mode: 'builder', stake: 10, selections });
     assert.equal(plain.status, 201);
     assert.ok(db.prepare('SELECT total_odds FROM bets WHERE id = ?').get(plain.body.betIds[0]).total_odds < p.boosted);
+    // The same legs from "Construa o seu ganho"; then the tickets tell each kind apart.
+    const combo = await call('POST', '/api/bets', { mode: 'builder', stake: 10, origin: 'combo', selections });
+    assert.equal(combo.status, 201);
+    const tickets = new Map((await call('GET', '/api/bets')).body.bets.map((b) => [b.id, b]));
+    assert.equal(tickets.get(r.body.betIds[0]).origin, 'pick');
+    assert.equal(tickets.get(r.body.betIds[0]).pickPct, p.pct);
+    assert.equal(tickets.get(plain.body.betIds[0]).origin, null);
+    assert.equal(tickets.get(combo.body.betIds[0]).origin, 'combo');
   } finally { server.close(); }
 });
 

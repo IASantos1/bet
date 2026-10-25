@@ -1193,46 +1193,63 @@ img, video, iframe { max-width: 100%; }
 .tickets { display: grid; gap: 14px; }
 @media (min-width: 1300px) { .tickets { grid-template-columns: 1fr 1fr; align-items: start; } }
 
-.ticket { border: 1px solid var(--line); border-radius: 16px; background: var(--dim); overflow: hidden; box-shadow: 0 4px 18px rgba(0, 0, 0, .35); }
-.ticket.won { box-shadow: 0 8px 26px rgba(81, 197, 128, .22); }
-.ticket.lost { box-shadow: 0 8px 26px rgba(233, 90, 116, .18); }
-.ticket.cashout { box-shadow: 0 8px 26px rgba(226, 179, 60, .2); }
-.tk-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 16px 6px; }
-.tk-head strong { font-size: 18px; font-weight: 900; }
-.tk-dots { display: flex; gap: 4px; margin-top: 7px; flex-wrap: wrap; }
-.tk-dot { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 900; color: #fff; background: var(--brand); animation: tk-pulse 1.6s ease-in-out infinite; }
-.tk-dot.won { background: var(--up); animation: none; }
-.tk-dot.lost { background: #5a1f2b; border: 1px solid #8a2f42; animation: none; }
-.tk-dot.void { background: var(--row-hover); animation: none; }
-@keyframes tk-pulse { 50% { opacity: .55; } }
-.tk-badge { flex-shrink: 0; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .03em; }
-.tk-badge.pending { background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .25); }
-.tk-badge.won { background: var(--up); color: #fff; }
-.tk-badge.lost { background: #5a1f2b; color: #fff; border: 1px solid #8a2f42; }
-.tk-badge.void { background: var(--row-hover); }
-.tk-badge.cashout { background: var(--bet-now); color: #2a1f00; }
-.tk-legs > .tk-leg + .tk-leg { border-top: 1px solid var(--line); }
-.tk-leg { padding: 14px 16px; }
-.tk-leg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.tk-pick { flex: 1; min-width: 0; }
-.tk-pick strong { display: block; font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-pick small { display: block; color: var(--text-3); font-size: 11.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-odd { flex-shrink: 0; background: var(--brand); color: #fff; font-weight: 900; font-size: 13px; padding: 5px 10px; border-radius: 8px; }
-.lg-ic { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; font-size: 12px; font-weight: 900; color: #fff; }
-.lg-ic.won { background: var(--up); }
-.lg-ic.lost { background: var(--down); }
-.lg-ic.void { background: var(--row-hover); }
-.lg-ic.sport { font-size: 17px; }
-.tk-box { position: relative; display: block; border: 1px solid var(--line); border-radius: 12px; padding: 16px 12px 10px; text-align: center; }
-.tk-box.live { border-color: rgba(233, 90, 116, .7); }
-.tk-box-top { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); padding: 0 8px; background: var(--dim); color: var(--text-3); font-size: 10.5px; font-weight: 700; white-space: nowrap; max-width: 85%; overflow: hidden; text-overflow: ellipsis; }
-.tk-live { display: inline-flex; align-items: center; gap: 5px; color: var(--live); font-weight: 900; text-transform: uppercase; }
-.tk-box-body { font-size: 15px; font-weight: 900; letter-spacing: .02em; }
-.tk-box.live .tk-box-body { font-size: 18px; }
-.tk-sum { margin: 0 16px; border-top: 1px solid var(--line); }
-.tk-sum > div { display: flex; justify-content: space-between; padding: 9px 0; color: var(--text-3); font-size: 13.5px; }
-.tk-sum > div + div { border-top: 1px solid rgba(255, 255, 255, .05); }
-.tk-sum b { color: var(--text); font-weight: 900; }
+/* A ticket: a thin band of its kind's colour on top (own picks, builder, Melhores escolhas, Apostas vencedoras),
+   the status as a pill, the picks as rows, the money in three figures. */
+.ticket { --tone: var(--brand); --tone-soft: rgba(103, 120, 140, .16); position: relative; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.ticket::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--tone); }
+.ticket.t-builder { --tone: #3ee05a; --tone-soft: rgba(62, 224, 90, .14); }
+.ticket.t-pick { --tone: linear-gradient(90deg, #ff7a18, #ff2d75, #8e2de2); --tone-soft: rgba(255, 45, 117, .14); }
+.ticket.t-acca { --tone: #ffc83d; --tone-soft: rgba(255, 200, 61, .16); }
+.bt-head { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px; }
+.bt-ic { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; background: var(--tone-soft); }
+.bt-title { flex: 1; min-width: 0; }
+.bt-title strong { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 900; }
+.bt-title em { font-style: normal; font-size: 11px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; background: var(--row-hover); color: var(--text); }
+.bt-title small { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-status { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 900; }
+.bt-status.pending { background: rgba(255, 184, 0, .14); color: #ffcf4a; }
+.bt-status.pending::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #ffb800; }
+.bt-status.won { background: rgba(62, 224, 90, .16); color: #3ee05a; }
+.bt-status.lost { background: rgba(233, 90, 116, .16); color: #ff7d93; }
+.bt-status.cashout { background: rgba(255, 200, 61, .16); color: #ffc83d; }
+.bt-status.void { background: var(--row-hover); color: var(--text-2); }
+.bt-bar { display: flex; gap: 3px; margin: 0 16px 10px; }
+.bt-bar i { flex: 1; height: 4px; border-radius: 2px; background: var(--row-hover); }
+.bt-bar i.won { background: #3ee05a; } .bt-bar i.lost { background: #e95a74; } .bt-bar i.void { background: var(--text-4); }
+.bt-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 16px 10px; }
+.bt-tag { padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--dim); color: var(--text-2); }
+.bt-tag.boost { background: linear-gradient(90deg, #ff7a18, #ff2d75); color: #fff; }
+.bt-legs { border-top: 1px solid var(--line); }
+.bt-leg { display: flex; align-items: center; gap: 12px; padding: 11px 16px; color: inherit; text-decoration: none; }
+.bt-leg + .bt-leg { border-top: 1px solid var(--line); }
+.bt-leg:hover { background: var(--dim); }
+.bt-mark { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 900; color: #fff; border: 2px solid var(--text-4); }
+.bt-leg.live .bt-mark { border-color: var(--live); }
+.bt-leg.won .bt-mark { background: #2fbf60; border-color: #2fbf60; }
+.bt-leg.lost .bt-mark { background: #e95a74; border-color: #e95a74; }
+.bt-leg.void .bt-mark { background: var(--row-hover); border-color: var(--row-hover); }
+.bt-pick { flex: 1; min-width: 0; }
+.bt-pick strong { display: block; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-pick small { display: block; margin-top: 2px; color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-pick .bt-when { color: var(--text-4); }
+.bt-live { display: inline-flex; align-items: center; gap: 5px; color: var(--live); font-weight: 800; }
+.bt-odd { flex: none; font-size: 14px; font-weight: 900; }
+.bt-leg.lost .bt-pick strong { text-decoration: line-through; text-decoration-color: rgba(233, 90, 116, .6); }
+.bt-sum { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 1px; margin: 4px 16px 0; border-radius: 12px; overflow: hidden; background: var(--line); }
+.bt-sum > div { padding: 10px 12px; background: var(--dim); }
+.bt-sum small { display: block; color: var(--text-3); font-size: 11px; }
+.bt-sum b { display: block; margin-top: 2px; font-size: 15px; font-weight: 900; color: var(--text); }
+.bt-sum .ret { text-align: right; }
+.bt-sum .ret b { font-size: 17px; }
+.bt-sum b.green { color: #3ee05a; } .bt-sum b.red { color: #ff7d93; } .bt-sum b.gold { color: #ffc83d; }
+.bt-profit { margin: 8px 16px 0; text-align: right; font-size: 12px; font-weight: 800; }
+.bt-profit.green { color: #3ee05a; } .bt-profit.red { color: #ff7d93; }
+.ticket.won .bt-sum .ret { background: linear-gradient(135deg, rgba(62, 224, 90, .22), rgba(62, 224, 90, .08)); }
+.ticket.cashout .bt-sum .ret { background: linear-gradient(135deg, rgba(255, 200, 61, .22), rgba(255, 200, 61, .08)); }
+.bt-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 11px 16px 13px; border-top: 1px solid var(--line); color: var(--text-4); font-size: 11px; }
+html.light .bt-status.pending { color: #8a5d00; }
+html.light .bt-status.won { color: #16823a; } html.light .bt-status.lost { color: #c23651; } html.light .bt-status.cashout { color: #9a6a00; }
+html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html.light .bt-sum b.red, html.light .bt-profit.red { color: #c23651; } html.light .bt-sum b.gold { color: #9a6a00; }
 .co-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 12px 16px; width: calc(100% - 32px); padding: 14px; border-radius: 14px; border: 0;
   background: linear-gradient(135deg, #2f9d63, var(--up)); color: #fff; font-weight: 900; font-size: 15px; }
 .co-btn.locked { background: var(--card); border: 1px solid var(--line); color: var(--text-4); font-size: 13px; font-weight: 700; }
@@ -1242,17 +1259,11 @@ img, video, iframe { max-width: 100%; }
 .co-confirm b { color: var(--strong); font-size: 18px; font-weight: 900; }
 .co-confirm .ghost-btn { background: none; border: 0; color: #e6fff0; font-size: 12px; }
 .co-yes { background: #fff; color: #23824f; border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 900; }
-.tk-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; justify-content: space-between; padding: 12px 16px 14px; border-top: 1px solid var(--line); color: var(--text-4); font-size: 11px; }
 .tk-ref { background: none; border: 0; color: var(--text-3); font: 700 11px ui-monospace, Menlo, monospace; padding: 0; }
 .tk-share { margin-left: auto; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text-2); font-weight: 800; font-size: 11.5px; padding: 5px 12px; }
 .tk-share:hover { color: var(--text); border-color: var(--text-4); }
 .shared-ticket { max-width: 560px; }
 .shared-actions { margin: 14px 0 6px; }
-.tk-foot small { width: 100%; }
-.tk-ok { width: 100%; }
-.tk-ok { display: inline-flex; width: auto; padding: 5px 11px; border-radius: 999px; border: 1px solid rgba(103, 120, 140, .5); background: rgba(103, 120, 140, .12); color: var(--text-2); font-weight: 800; }
-.tk-ok.won { border-color: rgba(81, 197, 128, .5); background: rgba(81, 197, 128, .12); color: var(--up); }
-.tk-sum b.tk-cash { color: var(--bet-now); }
 
 /* ---------- casino cards as in the big apps: tall artwork filling the card, name underneath ---------- */
 .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px 12px; }

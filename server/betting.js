@@ -113,7 +113,7 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
     for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
-    if (boost) db.prepare('UPDATE bets SET pick_key = ? WHERE id = ?').run(boost.key, betId);
+    if (boost) db.prepare('UPDATE bets SET pick_key = ?, pick_pct = ? WHERE id = ?').run(boost.key, boost.pct || 0, betId);
     // Paid with a free bet, or real money first and the bonus for the rest (a short balance rolls everything back).
     const fund = fundBet(db, user, { betId, stakeCents, totalOdds, freebetId, label });
     const isProtected = !freebetId && protects(db, user, { realCents: fund.real, stakeCents, totalOdds });
