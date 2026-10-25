@@ -1885,3 +1885,17 @@ html.light .boost-scale span.on, html.light .boost-foot .boost-pct { color: #c98
 .home-feature::after { top: 40px; right: -60px; width: 300px; height: 300px; }
 .home-feature .match-card { background: transparent; }
 html.light .home-feature::after, html.light .combo-card::after { background: #22b14c; opacity: .13; }
+
+/* Ready-made combinations (builder, Melhores escolhas, Apostas vencedoras): the picks joined by a line
+   through their markers, in the ticket's colour, instead of rows split apart, so the ticket reads as one combination. */
+.ticket.t-builder { --link: #3ee05a; } .ticket.t-pick { --link: #ff2d75; } .ticket.t-acca { --link: #ffc83d; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg { position: relative; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg + .bt-leg { border-top: 0; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg:not(:last-child)::after,
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg:not(:first-child)::before { content: ''; position: absolute; left: 25px; width: 2px; background: var(--link); opacity: .7; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg:not(:last-child)::after { top: 50%; bottom: 0; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg:not(:first-child)::before { top: 0; bottom: 50%; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-mark { position: relative; z-index: 1; background: var(--panel); border-color: var(--link); }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.won .bt-mark { background: #2fbf60; border-color: #2fbf60; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.lost .bt-mark { background: #e95a74; border-color: #e95a74; }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.void .bt-mark { background: var(--row-hover); border-color: var(--row-hover); }

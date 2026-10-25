@@ -2492,7 +2492,7 @@ function ticketCard(b) {
   const first = b.legs[0];
   // A builder is one match: it is named once, at the top.
   const sub = builder ? `${SPORT_META[first.sport]?.icon || '⚽'} ${esc(first.match)} · ${legState(first, open)}`
-    : n > 1 ? `${n} seleções` : esc(first.competition || '');
+    : n > 1 ? `${tone === 'own' ? '' : '🔗 Combinação · '}${n} seleções` : esc(first.competition || '');
   const done = b.legs.filter((l) => l.status !== 'open').length;
   const bar = n > 1 ? `<div class="bt-bar" title="${done} de ${n} resolvidas">${b.legs.map((l) => `<i class="${l.status}"></i>`).join('')}</div>` : '';
   const legs = b.legs.map((l) => {
