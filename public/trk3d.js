@@ -44,6 +44,11 @@ function buildStadium(scene, q, maxAniso = 4) {
     const arc = (x, z, r, a0, a1) => { g.beginPath(); g.arc(X(x), Z(z), r * PX, a0, a1); g.stroke(); };
     const spot = (x, z) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(X(x), Z(z), Math.max(1.5, 0.13 * PX), 0, Math.PI * 2); g.fill(); };
     rect(-HL, -HW, HL, HW); line(0, -HW, 0, HW); arc(0, 0, 9.15, 0, Math.PI * 2); spot(0, 0);
+    // BET62 faint in the centre circle (painted on the grass, as a sponsor's logo)
+    { g.save(); g.globalAlpha = 0.2; g.font = `900 ${Math.round(5.2 * PX)}px system-ui, -apple-system, 'Segoe UI', Arial, sans-serif`;
+      g.textBaseline = 'middle'; const wb = g.measureText('BET').width, w6 = g.measureText('62').width;
+      const x0 = X(0) - (wb + w6) / 2, y0 = Z(0);
+      g.fillStyle = '#ffffff'; g.fillText('BET', x0, y0); g.fillStyle = '#9fb2c8'; g.fillText('62', x0 + wb, y0); g.restore(); }
     for (const s of [-1, 1]) {
       const gx = s * HL;
       rect(s < 0 ? gx : gx - 16.5, -20.16, s < 0 ? gx + 16.5 : gx, 20.16);
@@ -240,7 +245,9 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
   let raf = 0;
   let onScreen = true;
 
-  function placeAt(p) { ball.position.copy(p); shadow.position.set(p.x, 0.05, p.z); shadow.scale.setScalar(Math.max(0.4, 1 - (p.y - BR) / 12)); }
+  // the ball pulses gently while it is shown (so it is found at a glance)
+  let pulse = 1;
+  function placeAt(p) { ball.position.copy(p); ball.scale.setScalar(pulse); shadow.position.set(p.x, 0.05, p.z); shadow.scale.setScalar(pulse * Math.max(0.4, 1 - (p.y - BR) / 12)); }
   function drawTrail(now) {
     if (trail) { scene.remove(trail); trail.geometry.dispose(); trail = null; }
     if (!move) return false;
@@ -287,7 +294,9 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
       busy = k < 1;
     }
     ball.visible = shadow.visible = !hidden;
+    pulse = 1 + 0.14 * Math.sin(now / 200);
     placeAt(pos);
+    busy = busy || !hidden;
     busy = drawTrail(now) || busy;
     busy = styleZone(now) || busy;
     renderer.render(scene, camera);
