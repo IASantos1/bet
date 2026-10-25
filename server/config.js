@@ -131,9 +131,9 @@ export const config = {
     liveWsUrl: env.BZZOIRO_MULTI_WS_URL || 'wss://sports.bzzoiro.com/ws/live/',
   },
   // Sports Addon: basketball, ice hockey, darts and CS2 (same token). SPORTS_ADDON lists the ones
-  // to import; empty string turns them all off.
+  // to import; empty string turns them all off. Video games (CS2, "esports") are never imported.
   sportsAddon: {
-    sports: (env.SPORTS_ADDON ?? 'basquetebol,hoquei,dardos,esports').split(',').map((s) => s.trim()).filter(Boolean),
+    sports: (env.SPORTS_ADDON ?? 'basquetebol,hoquei,dardos').split(',').map((s) => s.trim()).filter((s) => s && s !== 'esports'),
     days: int(env.SPORTS_DAYS, 3),
   },
   // PropLine (api.prop-line.com): second odds source, only for markets the main provider does not

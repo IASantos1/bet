@@ -176,7 +176,7 @@ export function extraPrices(odds, { sport = null, limit = 3000, ids = null } = {
   let n = 0;
   for (const o of odds) {
     // Our own markets stay ours; only their lines we do not settle (2.25, 1.75…) go to the operator.
-    if ((own.has(o.marketId) && ownKey(o, sport)) || n >= limit) continue;
+    if (((own.has(o.marketId) || NAMED_WINNER_SPORTS.has(sport)) && ownKey(o, sport)) || n >= limit) continue;
     const v = x100(o.price);
     if (!v) continue;
     if (!titles.has(o.marketId)) titles.set(o.marketId, clean(String(o.marketName || '').replace(/\s*\[[^\]]*\]/g, ' '), 70) || `Mercado ${o.marketId}`);
@@ -480,7 +480,31 @@ export const SOURCE = 'winhouse';
 /** WinHouse sport_id → our sport (only the sports Bet62 shows and can settle). */
 export const SPORTS = {
   1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
+  3: 'basebol', 10: 'boxe', 12: 'raguebi', 16: 'futamericano', 21: 'criquete', 22: 'dardos', 117: 'mma',
 };
+/**
+ * Sports whose markets WinHouse numbers differently from one game to the next: the match winner is
+ * recognised by its name ("Winner", "Vencedor", "1x2"…), taken as ours and settled on the final
+ * score; every other market of theirs goes to the operator ('x'). A 1X2 is only taken where a draw
+ * is a final result (no overtime): rugby and fights; elsewhere only the two-way winner.
+ */
+export const NAMED_WINNER_SPORTS = new Set(['basebol', 'boxe', 'raguebi', 'futamericano', 'criquete', 'dardos', 'mma']);
+const DRAW_FINAL = new Set(['raguebi', 'boxe', 'mma']);
+const PERIOD_IN_NAME = /\b(half|quarter|period|set|inning|innings|round|over|leg|frame|map|1st|2nd|3rd|4th|5th|first|second|third|parte|tempo|quarto|per[ií]odo|entrada|assalto|pjes|çerek|cerek)\b|\d+\s*(st|nd|rd|th|º|ª)/i;
+const WINNER_NAME = /^(match )?(winner|vencedor|moneyline|money line|home\/away|12|fitues|fituesi)( (of )?(the )?(match|fight|game|jogo|combate|luta|encontro))?( \(?incl(uding|\.)? (overtime|ot|extra innings|super over)\)?)?$/i;
+const RESULT_NAME = /^(1x2|match result|full ?time result|resultado|resultado final|result)$/i;
+/** A named-winner sport's own key for one odd ('ml|1', '1x2|X'…), or null. */
+function namedWinnerKey(o, sport) {
+  const name = String(o.marketName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const code = String(o.marketCode || '').toLowerCase().trim();
+  if (o.special || PERIOD_IN_NAME.test(name) || /\b(total|handicap|spread|over|under|method|m[eé]todo|ko|round|draw no bet|odd|even)\b/i.test(name)) return null;
+  const sel = String(o.selection).toLowerCase().trim();
+  const side = { 1: '1', 2: '2', w1: '1', w2: '2', home: '1', away: '2' }[sel] || (sel === 'x' || sel === 'draw' || sel === 'empate' ? 'X' : null);
+  if (!side) return null;
+  if (WINNER_NAME.test(name) || code === '12' || code === 'w' || code === 'ml') return side === 'X' ? null : `ml|${side}`;
+  if ((RESULT_NAME.test(name) || code === '1x2') && DRAW_FINAL.has(sport)) return `1x2|${side}`;
+  return null;
+}
 
 // Women's, youth and minor competitions can be left out (WINHOUSE_BLOCK_WOMEN / _YOUTH / _MINOR).
 const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
@@ -488,7 +512,7 @@ const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|junior|juniors|júni
 // Virtual / e-football (FIFA 4x4, 5x5, subsoccer, cyber…), the small table tennis circuits
 // (ATT, Setka Cup, TT Cup…) and UTR tennis: played around the clock, of little interest.
 const MINOR = new RegExp([
-  String.raw`\b(e-?soccer|e-?football|e-?sports? battle|cyber|subsoccer|sub soccer|h2h gg|gt leagues|esoccer)\b`,
+  String.raw`\b(e-?soccer|e-?football|e-?sports? battle|cyber|subsoccer|sub soccer|h2h gg|gt leagues|esoccer|e-?basketball|ebasket|e-?hockey|e-?tennis|e-?volley|e-?cricket|e-?baseball|e-?nfl|e-?ufc|virtual|simulated|simulation|srl)\b`,
   String.raw`\b\d\s?x\s?\d\b`,
   String.raw`\bfifa\b(?!\s*(world cup|club world cup|intercontinental|series|copa do mundo|mundial))`,
   String.raw`\b(att|setka cup|tt cup|win cup|tt elite series|tt star series|pro tennis series|utr)\b`,
@@ -570,6 +594,7 @@ export const HOCKEY_TREE = [];
 export const LEAGUE_TREES = {
   futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE, hoquei: HOCKEY_TREE,
   voleibol: [], andebol: [], futsal: [], badminton: [], tenismesa: [], dardos: [],
+  futamericano: [], basebol: [], raguebi: [], criquete: [], boxe: [], mma: [],
 };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -712,6 +737,8 @@ function ownKey(o, sport) {
   } else if (sport === 'voleibol') {
     // Volleyball has no draw: only the two winners of its "1x2" are offered.
     if (o.marketId === 1001) return (c = { 1: '1', 2: '2' }[sel]) ? `ml|${c}` : null;
+  } else if (NAMED_WINNER_SPORTS.has(sport)) {
+    return namedWinnerKey(o, sport);
   }
   return null;
 }
@@ -945,6 +972,12 @@ export function finishVerdict(row) {
       return m >= 58 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'futsal':
       return m >= 38 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'futamericano':
+      // Four quarters of 15 minutes; a tie at the end goes to overtime (or is a rare final tie): checked.
+      if (h === a) return { review: 'empate no último placar visto' };
+      return m >= 59 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'raguebi':
+      return m >= 79 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     default:
       return { review: 'desporto sem regra de fim' };
   }

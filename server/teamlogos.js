@@ -26,7 +26,8 @@ const SPORT_NAME = {
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
 const VERSION = 2; // entries saved by an older version are looked up again
-const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball' };
+const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball',
+  futamericano: 'american-football', basebol: 'baseball', raguebi: 'rugby' };
 // API-Football leagues whose whole team list (one request each, a few dozen badges) is kept in
 // team_directory, so the teams of these leagues need no request of their own. Refreshed monthly.
 const LEAGUE_PACKS = {
@@ -329,7 +330,7 @@ export function createTeamLogos(db, {
   }
 
   /**
-   * Another sport's league logo (basketball, ice hockey, volleyball, handball), found once by name with
+   * Another sport's league logo (basketball, ice hockey, volleyball, handball, American football, baseball, rugby), found once by name with
    * that sport's API-Sports (one request of its daily allowance) and kept: { type, body } or null.
    * A league not found is not asked for again for a month.
    */

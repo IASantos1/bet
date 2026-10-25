@@ -90,12 +90,26 @@ const NOT = /^(russia)?(mhl|ohl|whl|qmjhl|ushl)/;
 
 /** The sports with a country → leagues tree built this way (the first ones are also filtered by it). */
 export const FILTERED_SPORTS = Object.keys(SPORTS);
-export const COUNTRY_SPORTS = [...FILTERED_SPORTS, ...TOURNAMENT_SPORTS];
+// American football, baseball, rugby, cricket, boxing and MMA: every competition, under the country its
+// name starts with ("USA. NFL", "Japan. NPB"), the big bare ones under theirs, else Internacional.
+const OPEN_SPORTS = new Set(['futamericano', 'basebol', 'raguebi', 'criquete', 'boxe', 'mma']);
+const OPEN_BARE = [
+  [/^(nfl|ncaa|mlb|ufl|xfl|ufc)/, 'United States'], [/^(npb)/, 'Japan'], [/^(kbo)/, 'South Korea'], [/^(cfl)/, 'Canada'],
+  [/^(ipl|ranjitrophy)/, 'India'], [/^(bbl|bigbash|sheffieldshield)/, 'Australia'], [/^(premiership|top14|prod2|superrugby|urc|unitedrugby|sixnations|championscup)/, 'Europe'],
+];
+export const COUNTRY_SPORTS = [...FILTERED_SPORTS, ...TOURNAMENT_SPORTS, ...OPEN_SPORTS];
 
 /** The country (as the sidebar shows it) of a league or tournament of this sport, or null when not covered. */
 export function leagueCountry(sport, name) {
   const k = key(name);
   if (TOURNAMENT_SPORTS.has(sport)) return k ? HOSTS.find(([re]) => re.test(k))?.[1] || 'World' : null;
+  if (OPEN_SPORTS.has(sport)) {
+    if (!k) return null;
+    for (const [country, aliases] of Object.entries(ALIASES)) if (aliases.some((x) => k.startsWith(x) && k.length > x.length)) return country;
+    const own = /^([^.]{3,30})\.\s+\S/.exec(String(name).trim())?.[1];
+    if (own && /^(boxing|box|mma|ufc|rugby|cricket|baseball|american football|football|international|world|friendl)/i.test(own.trim())) return OPEN_BARE.find(([re]) => re.test(k))?.[1] || 'World';
+    return OPEN_BARE.find(([re]) => re.test(k))?.[1] || (own ? own.trim() : HOSTS.find(([re]) => re.test(k))?.[1] || 'World');
+  }
   const s = SPORTS[sport];
   if (!s || !k || NOT.test(k)) return null;
   for (const country of s.countries) {
