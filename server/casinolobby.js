@@ -140,6 +140,44 @@ export const CATEGORIES = [
 ];
 export const categoryOf = (key) => CATEGORIES.find(([k]) => k === key) || null;
 
+// ---------- variety: one game of a family per row ----------
+// "Gates of Olympus", "Gates of Olympus 1000", "… Dice", "… Super Scatter", "… Xmas 1000" are one family:
+// its first two words, numbers and small words aside ("big bass", "sweet bonanza", "gates olympus").
+const SMALL = new Set(['of', 'the', 'and', 'de', 'da', 'do', 'in', 'on', 'a', 'o']);
+export function familyKey(name) {
+  const words = String(name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/).filter((w) => w && !SMALL.has(w) && !/^\d+$/.test(w));
+  return words.slice(0, 2).join(' ') || compact(name);
+}
+/**
+ * The first `n` of `list` with at most `cap` games of a family (a number, or a function of the family);
+ * the others only when there is room left.
+ */
+export function diversify(list, n = list.length, cap = 1) {
+  const out = [];
+  const rest = [];
+  const count = new Map();
+  for (const g of list) {
+    if (out.length >= n) break;
+    const k = familyKey(g.name);
+    const c = count.get(k) || 0;
+    if (c < (typeof cap === 'function' ? cap(k) : cap)) { out.push(g); count.set(k, c + 1); } else rest.push(g);
+  }
+  for (const g of rest) { if (out.length >= n) break; out.push(g); }
+  return out;
+}
+// Themes a game shares with others ("Porque jogaste …"): the lobby's themes and a few seasons.
+const SEASONS = [
+  ['halloween', /hallow|zombie|witch|pumpkin|vampire|ghost|monster|spooky|horror|dracula|skull|muertos|haunted/i],
+  ['natal', /christmas|x-?mas|santa|jingle|snow/i],
+];
+export function themesOf(g) {
+  const out = new Set();
+  for (const [key, , test, kind] of CATEGORIES) if (kind === 'theme' && test(g)) out.add(key);
+  for (const [key, re] of SEASONS) if (re.test(g.name || '')) out.add(key);
+  return out;
+}
+
 // ---------- no game twice ----------
 const COPY_WORDS = /\b(premium|standard|mobile|desktop|hd|new)\b|\(.*?\)/gi;
 /** A game's name as a key: copies ("Starburst (Premium)", "Starburst™") give the same one. */

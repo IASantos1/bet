@@ -487,12 +487,18 @@ export function createApp(db, {
     const recent = (await Promise.all(recentRows.map(async (r) => { const g = await bb.game(r.game_id); return g && { ...g, playedAt: r.played_at }; }))).filter(Boolean);
     const favorites = (await Promise.all(db.prepare('SELECT game_id FROM casino_favorites WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
       .map((r) => bb.game(r.game_id)))).filter(Boolean);
-    // "Porque jogaste …": games like the last one played and like the first favourite (none already played).
-    const mine = new Set([...recent, ...favorites].map((g) => g.id));
+    // "Sabemos que vais gostar" and "Porque jogaste …" (like the last game played, like the first favourite):
+    // none already played, and no game twice across these rows.
+    const seen = new Set([...recent, ...favorites].map((g) => g.id));
+    const take = (list, n = 12) => { const out = list.filter((x) => !seen.has(x.id)).slice(0, n); out.forEach((x) => seen.add(x.id)); return out; };
+    const forYou = take(await (bb.forYou?.([...recent, ...favorites].map((g) => g.id), 24) ?? []));
     const seeds = [recent[0], favorites.find((g) => g.id !== recent[0]?.id) || recent[1]].filter(Boolean);
-    const because = (await Promise.all(seeds.map(async (g) => ({ game: { id: g.id, name: g.name }, games: (await (bb.related?.(g) ?? [])).filter((x) => !mine.has(x.id)) }))))
-      .filter((b) => b.games.length >= 3);
-    res.json({ recent, favorites, forYou: await (bb.forYou?.([...recent, ...favorites].map((g) => g.id)) ?? []), because });
+    const because = [];
+    for (const g of seeds) {
+      const games = take(await (bb.related?.(g, 30) ?? []));
+      if (games.length >= 3) because.push({ game: { id: g.id, name: g.name }, games });
+    }
+    res.json({ recent, favorites, forYou, because });
   }));
   app.post('/api/casino/favorite', requireUser, wrap(async (req, res) => {
     const id = Number(req.body?.gameId);

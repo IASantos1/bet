@@ -10,7 +10,7 @@
 // A sandbox key (ek_test_…) works the same; its callbacks carry "sandbox": true and never move
 // real money (BigBang plays them with a virtual balance).
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { CATEGORIES, categoryOf, dropCrossDuplicates, featuredGames, houseNames, sortProviders, titleKey as nameKey } from './casinolobby.js';
+import { CATEGORIES, categoryOf, diversify, dropCrossDuplicates, familyKey, featuredGames, houseNames, sortProviders, themesOf, titleKey as nameKey } from './casinolobby.js';
 import { getSetting, setSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
@@ -273,7 +273,8 @@ export function createBigBang(db, {
     const w = weekMap();
     const played = list.filter((g) => w.get(g.id)).sort((a, b) => w.get(b.id) - w.get(a.id) || a.id - b.id);
     const taken = new Set(played.map((g) => g.id));
-    return [...played, ...mixedPopular(list).filter((g) => !taken.has(g.id) && g.type !== 'live')].slice(0, n);
+    // the hits that fill it: one game of a family (not five Gates of Olympus)
+    return [...played, ...diversify(mixedPopular(list).filter((g) => !taken.has(g.id) && g.type !== 'live'), n)].slice(0, n);
   }
 
   /** Most popular first: rounds played here, then the market's hits, then premium games. */
@@ -331,24 +332,25 @@ export function createBigBang(db, {
     // As the big operators lay it out: the week's picks, what just arrived, the Top 10, the jackpots,
     // the house exclusives, the themes (Pesca, Grécia Antiga…) and one row per provider.
     const c = ctx();
-    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: featured.slice(0, Math.max(n, 12)) }] : [];
+    // Every row shows one game of a family (Gates of Olympus once, not its 1000, Dice, Super Scatter…).
+    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: diversify(featured, Math.max(n, 12)) }] : [];
     const fresh = byNewest(all.games.filter((g) => g.type !== 'live'));
-    if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: fresh.slice(0, n) });
+    if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: diversify(fresh, n) });
     const top = topWeek(all.games);
     if (top.length >= 5) rows.push({ key: 'top10', title: 'Top 10 em Portugal esta semana', layout: 'top', total: top.length, games: top });
     const jackpots = byPopularity(inCategory(all.games, 'jackpots'));
-    if (jackpots.length) rows.push({ key: 'jackpots', more: 'jackpots', title: 'Jogos com Jackpot', total: jackpots.length, games: jackpots.slice(0, n) });
+    if (jackpots.length) rows.push({ key: 'jackpots', more: 'jackpots', title: 'Jogos com Jackpot', total: jackpots.length, games: diversify(jackpots, n) });
     const own = byPopularity(inCategory(all.games, 'exclusivos', c));
-    if (own.length) rows.push({ key: 'exclusivos', more: 'exclusivos', title: 'Apenas na Bet62', total: own.length, games: own.slice(0, n) });
+    if (own.length) rows.push({ key: 'exclusivos', more: 'exclusivos', title: 'Apenas na Bet62', total: own.length, games: diversify(own, n) });
     const themes = CATEGORIES.filter((x) => x[3] === 'theme').map(([key, label]) => ({ key, label, list: byPopularity(inCategory(all.games, key, c)) }))
       .filter((t) => t.list.length >= 6);
     const provRows = [];
     for (const p of all.providers) {
       const list = popular.filter((g) => g.providerId === p.id);
-      if (list.length) provRows.push({ key: 'provider', provider: p.id, title: `Jogos da ${p.name}`, total: list.length, games: list.slice(0, n) });
+      if (list.length) provRows.push({ key: 'provider', provider: p.id, title: `Jogos da ${p.name}`, total: list.length, games: diversify(list, n) });
     }
     // A theme after every two providers, so the long list of providers has some variety.
-    themes.forEach((t, i) => provRows.splice(Math.min(provRows.length, 2 + i * 3), 0, { key: 'theme', more: t.key, title: t.label, total: t.list.length, games: t.list.slice(0, n) }));
+    themes.forEach((t, i) => provRows.splice(Math.min(provRows.length, 2 + i * 3), 0, { key: 'theme', more: t.key, title: t.label, total: t.list.length, games: diversify(t.list, n) }));
     rows.push(...provRows);
     const categories = CATEGORIES.filter((x) => x[3] !== 'theme').map(([key, label]) => ({ key, label, total: inCategory(all.games, key, c).length })).filter((x) => x.total);
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: all.games.length, categories, rows, exclusive: [...c.exclusive] };
@@ -374,11 +376,22 @@ export function createBigBang(db, {
   }
 
   /** Games of the same provider (the detail page's "Do mesmo estilo"). */
+  /**
+   * Games like `g` ("Do mesmo estilo", "Porque jogaste …"): its own family first (at most two: other Big Bass
+   * for a Big Bass), then the games of its themes (Halloween, fishing, Ancient Greece…), then its provider's
+   * hits; one game of each other family, the most popular first.
+   */
   async function related(g, n = 12) {
     await games();
     const h = hidden();
-    const same = catalog.games.filter((x) => x.providerId === g.providerId && x.id !== g.id && x.category === g.category && shown(x, h));
-    return byPopularity(same).slice(0, n);
+    const live = g.type === 'live';
+    const pool = byPopularity(catalog.games.filter((x) => x.id !== g.id && (x.type === 'live') === live && shown(x, h)));
+    const fam = familyKey(g.name);
+    const themes = themesOf(g);
+    const score = (x, i) => (familyKey(x.name) === fam ? 100 : 0) + [...themesOf(x)].filter((t) => themes.has(t)).length * 40
+      + (x.providerId === g.providerId ? 15 : 0) - i / 1000;
+    const sorted = pool.map((x, i) => [score(x, i), x]).filter(([s]) => s > 0).sort((a, b) => b[0] - a[0]).map(([, x]) => x);
+    return diversify(sorted, n, (k) => (k === fam ? 2 : 1));
   }
 
   /**
@@ -391,7 +404,10 @@ export function createBigBang(db, {
     const played = new Set(playedIds.map(Number));
     const provs = new Set(playedIds.map((id) => catalog.byId.get(Number(id))?.providerId).filter(Boolean).slice(0, 3));
     if (!provs.size) return [];
-    return mixedPopular(catalog.games.filter((g) => provs.has(g.providerId) && !played.has(g.id) && g.type !== 'live' && shown(g, h))).slice(0, n);
+    // one game of a family: not their game's ten versions
+    const playedFamilies = new Set([...played].map((id) => familyKey(catalog.byId.get(id)?.name)));
+    const list = mixedPopular(catalog.games.filter((g) => provs.has(g.providerId) && !played.has(g.id) && g.type !== 'live' && shown(g, h)));
+    return diversify(list.filter((g) => !playedFamilies.has(familyKey(g.name))), n);
   }
 
   // ---------- players and launch ----------
