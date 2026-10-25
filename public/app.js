@@ -415,7 +415,7 @@ function matchCard(e, extraClass = '') {
 }
 
 function homeSpotlight(event) {
-  return `<div class="home-feature">
+  return `<div class="home-feature" data-ball="${esc(event.sport)}">
     <div class="home-feature-label">JOGO EM DESTAQUE</div>
     ${matchCard(event, 'home-feature-match')}
     <a class="home-feature-link" href="#/jogo/${event.id}">Ver jogo completo <span aria-hidden="true">→</span></a>
@@ -786,7 +786,7 @@ async function loadFeatured() {
 const shortWhen = (iso) => fmtWhen(iso).replace(' ', ', ');
 
 function builderCard(b, i) {
-  return `<div class="combo-card builder">
+  return `<div class="combo-card builder" data-ball="${esc(b.legs[0]?.sport || 'futebol')}">
     <div class="combo-head"><div><strong>${esc(b.match)}</strong><small>${esc(shortWhen(b.startTime))}</small></div><span class="combo-icon">${ICON_SLIP}</span></div>
     <ul class="combo-legs">${b.legs.map((l) => `<li><span>${esc(l.marketName)} - </span><b>${esc(l.label)}</b></li>`).join('')}</ul>
     <button class="combo-btn" data-builder="${i}"><strong>${fmtOdds(b.odds)}</strong><small>CRIADOR DE APOSTAS</small></button>
@@ -794,7 +794,7 @@ function builderCard(b, i) {
 }
 
 function accaCard(a, i, list = 'accas') {
-  return `<div class="combo-card acca${a.big ? ' big' : ''}">
+  return `<div class="combo-card acca${a.big ? ' big' : ''}" data-ball="${esc(a.legs[0]?.sport || 'futebol')}">
     ${a.big ? '<div class="acca-badge">⭐ Grandes favoritos</div>' : ''}
     ${a.legs.map((l) => `<div class="acca-leg">
       <div class="acca-when">${SPORT_META[l.sport]?.icon || '⚽'} ${esc(shortWhen(l.startTime))}, ${esc(l.home)} - ${esc(l.away)}</div>

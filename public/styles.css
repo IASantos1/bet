@@ -1927,3 +1927,19 @@ html.light .combo-legs li::after { background: #22b14c; }
 .combo-legs li::before { left: -30px; }
 .combo-legs li::after { left: -17px; width: 13px; }
 .acca-leg:not(:has(+ .acca-leg))::after { content: ''; position: absolute; left: 7px; top: 14px; bottom: 24px; width: 2px; background: var(--link); opacity: .75; }
+
+/* The ball behind a card is its sport's (a basketball on a basketball match…); football's otherwise. */
+[data-ball="badminton"]::after { -webkit-mask-image: url('/img/balls/badminton.svg'); mask-image: url('/img/balls/badminton.svg'); }
+[data-ball="basebol"]::after { -webkit-mask-image: url('/img/balls/basebol.svg'); mask-image: url('/img/balls/basebol.svg'); }
+[data-ball="basquetebol"]::after { -webkit-mask-image: url('/img/balls/basquetebol.svg'); mask-image: url('/img/balls/basquetebol.svg'); }
+[data-ball="boxe"]::after { -webkit-mask-image: url('/img/balls/boxe.svg'); mask-image: url('/img/balls/boxe.svg'); }
+[data-ball="criquete"]::after { -webkit-mask-image: url('/img/balls/criquete.svg'); mask-image: url('/img/balls/criquete.svg'); }
+[data-ball="dardos"]::after { -webkit-mask-image: url('/img/balls/dardos.svg'); mask-image: url('/img/balls/dardos.svg'); }
+[data-ball="esports"]::after { -webkit-mask-image: url('/img/balls/esports.svg'); mask-image: url('/img/balls/esports.svg'); }
+[data-ball="futamericano"]::after { -webkit-mask-image: url('/img/balls/futamericano.svg'); mask-image: url('/img/balls/futamericano.svg'); }
+[data-ball="hoquei"]::after { -webkit-mask-image: url('/img/balls/hoquei.svg'); mask-image: url('/img/balls/hoquei.svg'); }
+[data-ball="mma"]::after { -webkit-mask-image: url('/img/balls/mma.svg'); mask-image: url('/img/balls/mma.svg'); }
+[data-ball="raguebi"]::after { -webkit-mask-image: url('/img/balls/raguebi.svg'); mask-image: url('/img/balls/raguebi.svg'); }
+[data-ball="tenis"]::after { -webkit-mask-image: url('/img/balls/tenis.svg'); mask-image: url('/img/balls/tenis.svg'); }
+[data-ball="tenismesa"]::after { -webkit-mask-image: url('/img/balls/tenismesa.svg'); mask-image: url('/img/balls/tenismesa.svg'); }
+[data-ball="voleibol"]::after { -webkit-mask-image: url('/img/balls/voleibol.svg'); mask-image: url('/img/balls/voleibol.svg'); }
