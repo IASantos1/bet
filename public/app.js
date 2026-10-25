@@ -15,6 +15,12 @@ const SPORT_META = {
   futsal: { name: 'Futsal', icon: '⚽' },
   tenismesa: { name: 'Ténis de mesa', icon: '🏓' },
   badminton: { name: 'Badminton', icon: '🏸' },
+  futamericano: { name: 'Futebol Americano', icon: '🏈' },
+  basebol: { name: 'Basebol', icon: '⚾' },
+  raguebi: { name: 'Râguebi', icon: '🏉' },
+  criquete: { name: 'Críquete', icon: '🏏' },
+  boxe: { name: 'Boxe', icon: '🥊' },
+  mma: { name: 'MMA', icon: '🥋' },
 };
 /** Sport icons (filter tiles): Phosphor Icons (bold, MIT) as "P:" paths on a 256 grid, "F:" the same
  * with a line under it (futsal), "S:" filled shapes and plain strings line drawings on a 24 grid. */
@@ -31,6 +37,12 @@ const SPORT_SVG = {
   esports: 'P:M176,116H152a12,12,0,0,1,0-24h24a12,12,0,0,1,0,24ZM104,92h-4V88a12,12,0,0,0-24,0v4H72a12,12,0,0,0,0,24h4v4a12,12,0,0,0,24,0v-4h4a12,12,0,0,0,0-24ZM244.76,202.94a40,40,0,0,1-61,5.35,7,7,0,0,1-.53-.56L144.67,164H111.33L72.81,207.73c-.17.19-.35.38-.53.56A40,40,0,0,1,4.62,173.05a1.18,1.18,0,0,1,0-.2L21,88.79A63.88,63.88,0,0,1,83.88,36H172a64.08,64.08,0,0,1,62.93,52.48,1.8,1.8,0,0,1,0,.19l16.36,84.17a1.77,1.77,0,0,1,0,.2A39.74,39.74,0,0,1,244.76,202.94ZM172,140a40,40,0,0,0,0-80H83.89A39.9,39.9,0,0,0,44.62,93.06a1.55,1.55,0,0,0,0,.21l-16.34,84a16,16,0,0,0,13,18.44,16.07,16.07,0,0,0,13.86-4.21L96.9,144.07a12,12,0,0,1,9-4.07Zm55.76,37.31-7-35.95a63.84,63.84,0,0,1-44.27,22.46l24.41,27.72a16,16,0,0,0,26.85-14.23Z',
   tenismesa: 'P:M243.93,195.71a20,20,0,0,0-8-14.41L203,155.17l12.1-12.1a43.66,43.66,0,0,0,12.11-39.4,103.52,103.52,0,0,0-36.81-60.23A106.19,106.19,0,0,0,122.52,20,104.29,104.29,0,0,0,20,122.52a106.17,106.17,0,0,0,23.43,67.85,103.52,103.52,0,0,0,60.23,36.81,43.64,43.64,0,0,0,39.39-12.11L155.17,203l26.13,32.95a20,20,0,0,0,14.41,8c.55,0,1.1.07,1.66.07a20,20,0,0,0,14.13-5.86l26.64-26.64A19.94,19.94,0,0,0,243.93,195.71ZM44,122.86C44.6,80,80,44.6,122.86,44a81.92,81.92,0,0,1,65.2,31L75,188.06a81.92,81.92,0,0,1-31-65.2ZM197.71,218l-32.1-40.49A12,12,0,0,0,156.9,173l-.69,0a12,12,0,0,0-8.49,3.51L126.09,198.1h0a19.72,19.72,0,0,1-17.75,5.54,76.28,76.28,0,0,1-11.68-3.33L200.31,96.66a76.28,76.28,0,0,1,3.33,11.68,19.72,19.72,0,0,1-5.54,17.75l-21.63,21.63a12,12,0,0,0,1,17.89L218,197.71Z',
   badminton: '<path d="M8 14l-3-9 4 1 3-3 3 3 4-1-3 9z"/><path d="M8 14h8M9 14v2a3 3 0 0 0 6 0v-2"/>',
+  futamericano: '<ellipse cx="12" cy="12" rx="10" ry="5.6" transform="rotate(-45 12 12)"/><path d="M9.5 14.5l5-5M10.3 11.7l2 2M12.3 9.7l2 2"/>',
+  basebol: '<circle cx="12" cy="12" r="9"/><path d="M7 4.6a9 9 0 0 1 0 14.8M17 4.6a9 9 0 0 0 0 14.8M5.2 9h2.6M5.2 15h2.6M16.2 9h2.6M16.2 15h2.6"/>',
+  raguebi: '<ellipse cx="12" cy="12" rx="10" ry="6"/><path d="M2.6 12h18.8M9 10.3v3.4M12 10.3v3.4M15 10.3v3.4"/>',
+  criquete: '<path d="M14.5 3.5l3 3-9 9-3-3z"/><path d="M5.5 12.5l-2.5 2.5 3 3 2.5-2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  boxe: '<path d="M7 11V8a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5H9.5A3.5 3.5 0 0 1 6 14.5V13a2 2 0 0 1 1-2z"/><path d="M7 11h5a2 2 0 0 1 0 4H9M8 18v3h9v-3"/>',
+  mma: '<path d="M8.3 3h7.4L21 8.3v7.4L15.7 21H8.3L3 15.7V8.3z"/><path d="M8 12h8M12 8v8"/>',
   resultados: 'P:M229,45a12,12,0,0,0-12.85,1.84c-24.71,21.41-44.53,13.31-74.82-1.68C113.19,31.27,78.17,13.94,40.14,46.88A12,12,0,0,0,36,56V224a12,12,0,0,0,24,0V181.71c22.84-17.13,42.1-9.11,70.68,5,16.23,8,34.74,17.2,54.8,17.2,14.72,0,30.28-4.94,46.38-18.88A12,12,0,0,0,236,176V56A12,12,0,0,0,229,45ZM185.48,83.91A63,63,0,0,0,212,78.08v32.15c-11,8.26-21.2,10.67-32,9.37V83.66C181.81,83.81,183.64,83.91,185.48,83.91ZM156,78.08v34.09c-4.64-2-9.5-4.4-14.68-7A255.21,255.21,0,0,0,116,93.83V59.75c4.64,2,9.5,4.4,14.68,7A252.91,252.91,0,0,0,156,78.08ZM92,52.32V88.24a63.33,63.33,0,0,0-32,5.61V61.68C71,53.42,81.2,51,92,52.32ZM86.52,148A63,63,0,0,0,60,153.86V121.7c11-8.25,21.2-10.66,32-9.36v35.94C90.19,148.13,88.36,148,86.52,148ZM116,153.86V119.77c4.64,2,9.5,4.4,14.68,7A252.91,252.91,0,0,0,156,138.1v34.09c-4.64-2.05-9.5-4.4-14.68-7A250.66,250.66,0,0,0,116,153.86Zm64,25.76V143.68c1.81.14,3.64.24,5.48.24A62.85,62.85,0,0,0,212,138.07v32.19C201,178.52,190.8,180.92,180,179.62Z',
 };
 function sportIcon(k) {
@@ -379,7 +391,7 @@ function sideBadge(e, side, size = '') {
   const logo = e[`${side}Logo`];
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
   // Players (tennis, darts…) have no shirt: initials when there is no photo nor flag.
-  const solo = ['tenis', 'tenismesa', 'badminton', 'dardos'].includes(e.sport);
+  const solo = ['tenis', 'tenismesa', 'badminton', 'dardos', 'boxe', 'mma'].includes(e.sport);
   // No badge: the team's real kit picture (the drawn shirt if it does not load).
   const kitImg = e[`${side}KitImg`];
   if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
@@ -532,7 +544,8 @@ function footer() {
 // ---------- pages ----------
 
 // Sports in the order the site shows them: football always first.
-const SPORT_ORDER = ['futebol', 'tenis', 'basquetebol', 'hoquei', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton', 'dardos', 'esports'];
+const SPORT_ORDER = ['futebol', 'basquetebol', 'tenis', 'futamericano', 'hoquei', 'boxe', 'voleibol', 'andebol', 'dardos', 'mma', 'raguebi', 'futsal',
+  'basebol', 'criquete', 'tenismesa', 'badminton'];
 const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
 
 /** Featured by the operator first, then big leagues (tier), then the earliest. */
@@ -600,7 +613,7 @@ const TOP_LEAGUES = [
   ['futebol', /champions league/i, null], ['futebol', /europa league/i, null], ['futebol', /conference league/i, null],
   ['futebol', /eredivisie/i, 'netherlands'], ['futebol', /s[eé]rie a|brasileir/i, 'brazil'],
   ['basquetebol', /\bnba\b/i, null], ['basquetebol', /euroleague|euroliga/i, null],
-  ['hoquei', /\bnhl\b/i, null], ['andebol', /ehf champions league|^champions league/i, null], ['voleibol', /superlega|cev champions league/i, null],
+  ['futamericano', /\bnfl\b/i, null], ['hoquei', /\bnhl\b/i, null], ['andebol', /ehf champions league|^champions league/i, null], ['voleibol', /superlega|cev champions league/i, null],
 ];
 function popularLeagues(max = 16) {
   const all = [];
@@ -636,7 +649,7 @@ const LEAGUE_LOGOS = [
 ];
 const leagueLogoId = (l) => (l.sport !== 'futebol' ? null : LEAGUE_LOGOS.find(([re, country]) => re.test(leagueShort(l.name))
   && (!country || String(l.country || '').toLowerCase().trim() === country))?.[2] || null);
-const LOGO_SPORTS = new Set(['basquetebol', 'hoquei', 'voleibol', 'andebol']);
+const LOGO_SPORTS = new Set(['basquetebol', 'hoquei', 'voleibol', 'andebol', 'futamericano', 'basebol', 'raguebi']);
 function leagueBadge(l) {
   const k = String(l.country || '').toLowerCase().trim();
   const code = COUNTRY_FLAG[k];

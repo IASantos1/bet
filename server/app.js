@@ -71,7 +71,8 @@ const ADMIN_HTML = readPublic('admin/index.html').replace(/(\/(?:admin\/admin|st
 const COOKIE = 'cb_session';
 const REF_COOKIE = 'b62_ref'; // the referral code a visitor arrived with (affiliates)
 const REF_DAYS = 30;
-const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'esports', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton'];
+const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton',
+  'futamericano', 'basebol', 'raguebi', 'criquete', 'boxe', 'mma'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // ---------- helpers ----------

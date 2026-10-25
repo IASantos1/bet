@@ -79,8 +79,8 @@ test('items: teams, start time from WinHouse local time, logos only from its CDN
   assert.deepEqual(ev.prices, { '1x2|1': 124, '1x2|X': 506, '1x2|2': 1990, 'dc|12': 118, 'dc|X2': 398, 'ou|O2.5': 160, 'ou|U2.5': 225, 'ou|O4': 222, 'ou|U4': 168, 'dc|1X': 101 });
   // A suspended (1.00) selection closes its whole market.
   assert.deepEqual(pricesFor([{ marketId: 1001, selection: '1', price: 1.5 }, { marketId: 1001, selection: 'x', price: 1 }, { marketId: 1001, selection: '2', price: 3 }], 'futebol'), {});
-  // Unsupported sports (cricket 21) are skipped.
-  assert.equal(normalizeItem({ id: 1, sport_id: 21, name: 'A - B', game_date: '2026-10-05', game_time: '21:00:00' }), null);
+  // Unsupported sports (e.g. 999) are skipped.
+  assert.equal(normalizeItem({ id: 1, sport_id: 999, name: 'A - B', game_date: '2026-10-05', game_time: '21:00:00' }), null);
   assert.deepEqual(pricesFor([{ marketId: 1022, selection: '1', price: 4.01 }, { marketId: 1022, selection: '2', price: 1.25 }, { marketId: 1672, selection: 'over 159.5', price: 1.87 }, { marketId: 1672, selection: 'under 159.5', price: 1.87 }], 'basquetebol'),
     { 'ml|1': 401, 'ml|2': 125, 'ou|O159.5': 187, 'ou|U159.5': 187 });
 });
@@ -1117,4 +1117,39 @@ test('each sport\'s live clock', () => {
   assert.equal(clockText('hoquei', 62, ''), 'Prol. 18:00');
   // Set sports: the page shows the set, not a clock.
   assert.equal(clockText('tenismesa', 12, ''), null);
+});
+
+test('more sports: NFL, baseball, rugby, cricket, boxing, MMA and darts; the winner found by its name; video games out', async () => {
+  const { extraPrices } = await import('../server/winhouse.js');
+  const { leagueCountry } = await import('../server/countryleagues.js');
+  const odd = (marketName, marketCode, selection, price, special = null) => ({ marketId: 4000 + marketName.length, marketName, marketCode, selection, price, special });
+  const item = (sport_id, league) => normalizeItem({ id: 7, sport_id, league, name: 'Kansas City Chiefs - Buffalo Bills', game_date: '2026-10-05', game_time: '21:00:00' });
+  assert.equal(item(16, 'USA. NFL').sport, 'futamericano');
+  assert.deepEqual([3, 10, 12, 21, 22, 117].map((id) => item(id, 'L').sport), ['basebol', 'boxe', 'raguebi', 'criquete', 'dardos', 'mma']);
+  // Video games stay out, whatever the sport.
+  assert.ok(blockedGame({ sport_id: 1, league: 'Esoccer Battle - 8 mins' }));
+  assert.ok(blockedGame({ sport_id: 16, league: 'Virtual NFL' }));
+  assert.ok(blockedGame({ sport_id: 2, league: 'eBasketball H2H GG League' }));
+  assert.ok(!blockedGame({ sport_id: 16, league: 'USA. NFL' }));
+  // NFL: the two-way winner is ours (settled on the final score); a 1X2 (regulation) and the rest go to the operator.
+  const nfl = [odd('Winner (incl. overtime)', 'W_Incl_OT', '1', 1.6), odd('Winner (incl. overtime)', 'W_Incl_OT', '2', 2.3),
+    odd('1x2', '1x2', '1', 1.7), odd('1x2', '1x2', 'x', 15), odd('1x2', '1x2', '2', 2.4),
+    odd('1st Half - Winner', 'HT_W', '1', 1.7), odd('1st Half - Winner', 'HT_W', '2', 2.1), odd('Total', 'TG_O/U', 'over', 1.9, '45.5')];
+  assert.deepEqual(pricesFor(nfl, 'futamericano'), { 'ml|1': 160, 'ml|2': 230 });
+  const rest = Object.keys(extraPrices(nfl, { sport: 'futamericano' }));
+  assert.ok(rest.some((k) => /^x\|\d+~1x2~/.test(k)) && rest.some((k) => k.includes('1st Half')) && !rest.some((k) => k.includes('Winner (incl')));
+  // Rugby and fights: a draw is a result, so the 1X2 is ours there.
+  const rugby = [odd('1x2', '1x2', '1', 1.5), odd('1x2', '1x2', 'x', 21), odd('1x2', '1x2', '2', 2.6)];
+  assert.deepEqual(pricesFor(rugby, 'raguebi'), { '1x2|1': 150, '1x2|X': 2100, '1x2|2': 260 });
+  assert.deepEqual(pricesFor([odd('Fight Winner', '12', '1', 1.3), odd('Fight Winner', '12', '2', 3.4)], 'mma'), { 'ml|1': 130, 'ml|2': 340 });
+  // End of a game: NFL and rugby by the clock; a tie, or a sport without a clock, goes to the operator.
+  assert.deepEqual(finishVerdict({ sport: 'futamericano', wh_minute: 60, home_score: 27, away_score: 24 }), { home: 27, away: 24 });
+  assert.ok(finishVerdict({ sport: 'futamericano', wh_minute: 60, home_score: 24, away_score: 24 }).review);
+  assert.deepEqual(finishVerdict({ sport: 'raguebi', wh_minute: 80, home_score: 20, away_score: 20 }), { home: 20, away: 20 });
+  assert.ok(finishVerdict({ sport: 'boxe', wh_minute: null, home_score: 1, away_score: 0 }).review);
+  // Their competitions under a country in the menu.
+  assert.equal(leagueCountry('futamericano', 'USA. NFL'), 'United States');
+  assert.equal(leagueCountry('basebol', 'MLB'), 'United States');
+  assert.equal(leagueCountry('raguebi', 'France. Top 14'), 'France');
+  assert.equal(leagueCountry('boxe', 'Boxing. Heavyweight'), 'World');
 });
