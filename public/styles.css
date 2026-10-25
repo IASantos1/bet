@@ -1768,3 +1768,25 @@ body.maint-on { overflow: hidden; }
   .spot-copy small, .spot.own-m.bare .spot-copy { display: none; }
   .spot-cta { align-self: stretch; text-align: center; margin-top: 6px; padding: 14px; }
 }
+
+/* "Melhores escolhas" on a football match page: boosted ready-made builders */
+.picks-section { margin: 4px 0 18px; }
+.picks-title { margin: 0 0 12px; font-size: 22px; font-weight: 900; letter-spacing: -.01em; font-stretch: condensed; }
+.pick-card { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 0 16px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); min-height: 100%; overflow: hidden; }
+.pick-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 -16px; padding: 14px 16px 0 0; }
+.pick-ribbon { display: inline-flex; align-items: center; gap: 7px; padding: 7px 18px 7px 14px; background: #6c47f5; color: #fff; font-weight: 900; font-size: 15px; letter-spacing: .01em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 100%, 0 100%); text-transform: uppercase; white-space: nowrap; }
+.pick-ribbon.super { background: linear-gradient(90deg, #8e2de2, #e5304b); }
+.pick-ribbon svg { width: 18px; height: 18px; flex: none; }
+.pick-ribbon.in-slip { margin: -10px 0 8px -12px; font-size: 12px; padding: 5px 14px 5px 10px; }
+.pick-hot { flex: none; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.pick-legs { list-style: none; margin: 0; padding: 0 0 0 18px; display: grid; gap: 12px; position: relative; }
+.pick-legs::before { content: ''; position: absolute; left: 5px; top: 10px; bottom: 10px; border-left: 1.5px dashed var(--text-4); }
+.pick-legs li { position: relative; font-size: 15px; line-height: 1.35; color: var(--text-2); }
+.pick-legs li::before { content: ''; position: absolute; left: -18px; top: 4px; width: 8px; height: 8px; border-radius: 50%; border: 2.5px solid var(--text); background: var(--panel); }
+.pick-legs b { color: var(--text); }
+.pick-btn { margin-top: auto; display: flex; justify-content: center; align-items: baseline; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); cursor: pointer; }
+.pick-btn s { color: var(--text-3); font-size: 18px; }
+.pick-btn b { color: var(--green); font-size: 21px; font-weight: 900; }
+.pick-btn:hover { background: var(--row-hover); }
+@media (max-width: 700px) { .pick-ribbon { font-size: 13px; padding: 6px 14px 6px 12px; } .pick-hot { font-size: 13px; padding: 4px 8px; } .pick-legs li { font-size: 14px; } }

@@ -81,7 +81,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, insights: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -888,7 +888,9 @@ async function openSharedTicket(ids) {
 
 // A leg the others make certain (double chance covering the result) counts as 1.00, as on the server.
 const impliedLeg = (l, legs) => l.market === 'dc' && legs.some((r) => r.market === '1x2' && String(l.code).includes(r.code));
-const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * (impliedLeg(l, b.legs) ? 1 : l.odds), 1) * (state.config?.builderFactor ?? 1) * 100) / 100;
+// A card of "Melhores escolhas" carries its boost (b.boost.pct), priced as the server does.
+const builderTotal = (b) => Math.round(b.legs.reduce((p, l) => p * (impliedLeg(l, b.legs) ? 1 : l.odds), 1) * (state.config?.builderFactor ?? 1)
+  * (1 + (b.boost?.pct || 0) / 100) * 100) / 100;
 
 function resultsPage() {
   setTimeout(async () => {
@@ -2693,7 +2695,8 @@ function renderBuilderSlip() {
   $$('.bet-tabs button').forEach((x) => x.classList.remove('active'));
   const changed = b.legs.some((l) => l.newOdds);
   $('#betItems').innerHTML = `<div class="bet-item${changed ? ' warn' : ''}">
-      <div class="bet-item-top"><span>${esc(b.competition)} · Criador de apostas</span><span><span class="odd">${fmtOdds(builderTotal(b))}</span><button class="remove-bet" data-remove-builder aria-label="Remover">×</button></span></div>
+      ${b.boost ? `<div class="pick-ribbon in-slip${b.boost.pct >= 20 ? ' super' : ''}">${ICON_ROCKET}${b.boost.pct}% ${b.boost.pct >= 20 ? 'SUPER BOOST' : 'BOOST'}</div>` : ''}
+      <div class="bet-item-top"><span>${esc(b.competition)} · ${b.boost ? 'Melhor escolha' : 'Criador de apostas'}</span><span><span class="odd">${fmtOdds(builderTotal(b))}</span><button class="remove-bet" data-remove-builder aria-label="Remover">×</button></span></div>
       <strong>${esc(b.match)}</strong>
       ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small>${l.newOdds ? ` <small class="note">${fmtOdds(l.odds)} → ${fmtOdds(l.newOdds)}</small>` : ''}</div>`).join('')}
     </div>`;
@@ -2770,7 +2773,7 @@ async function placeBet() {
     const res = await api('/api/bets', {
       method: 'POST',
       body: b
-        ? { mode: 'builder', stake, freebetId: freebet?.id, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
+        ? { mode: 'builder', stake, freebetId: freebet?.id, pickKey: b.boost?.key, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
         : { mode: state.mode, stake, freebetId: freebet?.id, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
     });
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
@@ -3295,6 +3298,8 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  const pickBtn = e.target.closest('[data-pick]');
+  if (pickBtn) { addPick(Number(pickBtn.dataset.pick)); return; }
   const builderBtn = e.target.closest('[data-builder]');
   if (builderBtn) { addBuilder(Number(builderBtn.dataset.builder)); return; }
   const accaBtn = e.target.closest('[data-acca]');
@@ -3724,7 +3729,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -3771,6 +3776,7 @@ async function loadMatch(id, { quiet = false } = {}) {
     if (state.match.clipHold && marketsReopened(state.match.clipHold, open)) state.match.clipHold.release();
     if (event.status !== 'scheduled') loadMatchExtras(id);
     if (event.sport === 'futebol' && !state.match.insights) loadMatchInsights(id);
+    if (event.sport === 'futebol' && event.status === 'scheduled' && !state.match.picks) loadMatchPicks(id);
     if (event.status === 'live' && (!wasLive || !state.match.es)) startMatchStream(id);
     renderSlip();
     if (currentRoute().page === 'jogo') render({ keepScroll: true });
@@ -3789,6 +3795,42 @@ async function loadMatchExtras(id) {
 }
 
 // Head-to-head, league table and last five games (GOAL API); asked once per match page.
+/** "Melhores escolhas": the match's boosted ready-made builders (shown above its markets). */
+async function loadMatchPicks(id) {
+  state.match.picks = [];
+  try {
+    const { picks } = await api(`/api/events/${id}/picks`);
+    if (state.match.id !== id) return;
+    state.match.picks = picks;
+    if (picks.length && currentRoute().page === 'jogo' && state.match.tab !== 'estatisticas') render({ keepScroll: true });
+  } catch { /* the page works without them */ }
+}
+
+const ICON_ROCKET = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2c.8-.8.8-2.2 0-3s-2.2-.8-3 0z"/><path d="M12 15l-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22 22 0 0 1-4 2z"/><path d="M9 12H4s.5-3 2-4c1.6-1.1 5 0 5 0M12 15v5s3-.5 4-2c1.1-1.6 0-5 0-5"/></svg>';
+
+function pickCard(p, i) {
+  return `<div class="pick-card${p.super ? ' super' : ''}">
+    <div class="pick-top"><span class="pick-ribbon${p.super ? ' super' : ''}">${ICON_ROCKET}${p.pct}% ${p.super ? 'SUPER BOOST' : 'BOOST'}</span>
+      ${p.popular ? `<span class="pick-hot">🔥 ${esc(p.popular)}</span>` : ''}</div>
+    <ul class="pick-legs">${p.legs.map((l) => `<li><span>${esc(l.marketName)} - </span><b>${esc(l.label)}</b></li>`).join('')}</ul>
+    <button class="pick-btn" data-pick="${i}"><s>${fmtOdds(p.odds)}</s><b>${fmtOdds(p.boosted)}</b></button>
+  </div>`;
+}
+function picksSection() {
+  const p = state.match.picks;
+  return p?.length ? `<section class="picks-section"><h2 class="picks-title">MELHORES ESCOLHAS</h2>${carousel('picksCar', p.map(pickCard))}</section>` : '';
+}
+/** A card of "Melhores escolhas" into the slip, as a builder with its boost. */
+function addPick(i) {
+  const e = state.match.data;
+  const p = state.match.picks?.[i];
+  if (!e || !p) return;
+  if (state.slip.length || state.builder) toast('Boletim', 'A melhor escolha substituiu as seleções anteriores.');
+  state.slip = [];
+  state.builder = { eventId: e.id, match: `${e.home} × ${e.away}`, competition: e.competition, startTime: e.startTime, legs: p.legs.map((l) => ({ ...l })), boost: { key: p.key, pct: p.pct } };
+  saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
+}
+
 async function loadMatchInsights(id) {
   state.match.insights = { loading: true };
   try {
@@ -4276,7 +4318,7 @@ function marketsView(e) {
   const chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
     .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
   const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk, e.sport) === m.cat);
-  return `<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
+  return `${m.cat === 'todos' && e.status === 'scheduled' ? picksSection() : ''}<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
 }
 
 function marketBlocks(e, markets) {

@@ -43,6 +43,7 @@ import { TENNIS_SOURCE } from './tennis.js';
 import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
+import { createMatchPicks } from './picks.js';
 import { playableServers, createVideoProxy, createStreamRelay } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
@@ -727,6 +728,9 @@ export function createApp(db, {
     prefetch: winhouseFeed?.readPageNow ? (ids) => { for (const id of ids) winhouseFeed.readPageNow(id).catch(() => {}); } : null,
   });
   app.get('/api/featured', (_req, res) => res.json(featured.get()));
+  // "Melhores escolhas" of a football match (picks.js): boosted ready-made builders.
+  const matchPicks = createMatchPicks(db);
+  app.get('/api/events/:id/picks', (req, res) => res.json({ picks: matchPicks.forEvent(req.params.id) }));
 
   // A shared ticket (the Telegram button #/bilhete/1-2-3): its picks with current prices, for the
   // slip; a closed pick or a game already started is left out.
@@ -1430,12 +1434,18 @@ export function createApp(db, {
       ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
       : [];
     const freebetId = req.body.freebetId ? Number(req.body.freebetId) : null;
+    // A card of "Melhores escolhas": its boost, while the card is still offered with these picks.
+    let pick = null;
+    if (req.body.mode === 'builder' && req.body.pickKey) {
+      pick = matchPicks.boostOf(String(req.body.pickKey).slice(0, 80), picks.map((p) => p.selectionId));
+      if (!pick) throw new HttpError(409, 'Esta escolha já não está disponível com boost. Atualize a página do jogo.');
+    }
     const selOf = db.prepare('SELECT s.market, s.code, e.sport FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id = ?');
     const hidden = hiddenMarkets();
     if (picks.some((p) => { const r = selOf.get(Number(p.selectionId)); return r && isHidden(hidden, r.sport, r); })) {
       throw new HttpError(409, 'Este mercado já não está disponível. Retire-o do boletim.');
     }
-    const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId }));
+    const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId, pick }));
     const u = userById(req.user.id);
     res.status(201).json({ betIds, balance: cents(u.balance_cents), user: userOut(u) });
   });
