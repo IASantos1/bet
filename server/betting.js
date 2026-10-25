@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome, statOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
 import { postTransaction } from './wallet.js';
@@ -189,6 +189,7 @@ function payBoost(db, bet, won, payoutCents) {
  * and records it in the settlements log. Runs inside a transaction. Returns the bets touched.
  * `source` says who triggered it: 'feed' (provider result), 'admin' or 'engine' (automatic rules).
  */
+const parseStats = (v) => { try { const s = JSON.parse(v || 'null'); return s && typeof s === 'object' ? s : null; } catch { return null; } };
 const parsePeriodScores = (v) => { try { const p = JSON.parse(v || 'null'); return Array.isArray(p) ? p : null; } catch { return null; } };
 
 /**
@@ -210,7 +211,7 @@ export function periodsOf(ev) {
 }
 
 export function settleEvent(db, eventId, { source = 'engine', userId = null, note = null } = {}) {
-  const ev = db.prepare('SELECT sport, home, away, status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores, live_detail FROM events WHERE id = ?').get(eventId);
+  const ev = db.prepare('SELECT sport, home, away, status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores, live_detail, match_stats FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
   const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open'").all(eventId);
   const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
@@ -222,7 +223,9 @@ export function settleEvent(db, eventId, { source = 'engine', userId = null, not
       const tennis = ev.sport === 'tenis' && TENNIS_AUTO[splitSpecial(leg.code)?.id];
       const out = ev.status === 'cancelled' ? 'void'
         : tennis ? tennisOutcome(leg.code, { sets: periods, home: ev.home_score, away: ev.away_score, retired: !!ev.retired })
-          : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away });
+          : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away })
+            // Corners, yellow cards, shots on target: from the tracker's counts.
+            || statOutcome(leg.code, parseStats(ev.match_stats));
       if (out) setLeg.run(out, leg.id);
       continue;
     }

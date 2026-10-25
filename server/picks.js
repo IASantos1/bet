@@ -2,8 +2,8 @@
 // each with a price boost (10% "Boost", or 20% "Super Boost" on the two longest), as the big books
 // show them.
 //
-// The legs come from different kinds of market (result, first half, goals, corners, shots, cards,
-// specials), never two of one kind in a card, and the cards differ from each other: a pair of
+// The legs come from different kinds of market (result, first half, goals, corners, shots, cards),
+// all settled from the result or the match tracker's counts (no leg left to void), never two of one kind in a card, and the cards differ from each other: a pair of
 // markets is used once at most when the match has enough of them. Every leg tells the same story —
 // the favourite (when there is a clear one) winning, goals, the "over" of a statistic — so no card
 // contradicts itself, and each leg is priced low to middling (a line near 1.70 is chosen) so the
@@ -38,7 +38,6 @@ function seeded(seed) {
 const x = (s) => (s.market === 'x' ? splitSpecial(s.code) : null);
 // "Mais de (9.5)" / "Mais de 9.5" → 9.5 (an "over" line of a provider market).
 const overLine = (label) => { const m = /^mais de\s*\(?\s*([\d.]+)\s*\)?$/i.exec(String(label || '').trim()); return m ? Number(m[1]) : null; };
-const yes = (label) => /^(sim|yes|po)$/i.test(String(label || '').trim());
 // Of several lines, the one priced nearest 1.70 (not a long shot, not a certainty).
 const nearest = (list) => list.filter((s) => s.odds_x100 >= 125 && s.odds_x100 <= 260)
   .sort((a, b) => Math.abs(a.odds_x100 - 170) - Math.abs(b.odds_x100 - 170))[0] || null;
@@ -52,7 +51,6 @@ export function pickFamilies(sels, { fav, team }) {
   const add = (key, group, name, sel) => { if (sel) out.push({ key, group, name, sel }); };
   const group = (re) => sels.filter((s) => re.test(x(s)?.group || ''));
   const overOf = (list) => nearest(list.filter((s) => overLine(x(s).label) !== null));
-  const yesOf = (list) => list.find((s) => yes(x(s).label) && s.odds_x100 <= 320) || null;
   const sideOf = (list) => list.find((s) => x(s).label.trim().toLowerCase() === fav && s.odds_x100 <= 350) || null;
   if (fav) {
     add('result', 'result', 'Resultado Final', sels.find((s) => s.market === '1x2' && s.code === fav && s.odds_x100 <= 260));
@@ -66,12 +64,8 @@ export function pickFamilies(sels, { fav, team }) {
   add('goals', 'goals', 'Total de Golos Mais/Menos', nearest(sels.filter((s) => s.market === 'ou' && /^O[123]\.5$/.test(s.code))));
   add('htGoals', 'halfGoals', 'Total de Golos Mais/Menos - 1ª Parte', overOf(group(/^(1° Tempo - Total de Golos - Mais \/ Menos|1\.ª Parte · Total)$/i)));
   add('corners', 'corners', 'Cantos Mais/Menos', overOf(group(/^Cantos · Total$/i)));
-  add('htCorners', 'corners', 'Cantos Mais/Menos - 1ª Parte', overOf(group(/^Cantos · (1° Tempo|1\.ª Parte) · Total$/i)));
   add('shots', 'shots', 'Remates na baliza', overOf(group(/^Remates à Baliza · Total$/i)));
   add('cards', 'cards', 'Cartões Amarelos Mais/Menos', overOf(group(/^Cartões Amarelos · Total$/i)));
-  add('headed', 'special', 'Golo de cabeça', yesOf(group(/^Golo de Cabeça$/i)));
-  add('outside', 'special', 'Golo de fora da área', yesOf(group(/^Golo de Fora da Área$/i)));
-  add('penalty', 'special', 'Penálti assinalado', yesOf(group(/^Penálti Assinalado$/i)));
   return out;
 }
 

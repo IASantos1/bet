@@ -247,3 +247,32 @@ test('a card shows the winner named after the teams (baseball, incl. extra innin
   assert.deepEqual(ev.selections.map((s) => [s.code, s.odds]), [['1', 1.75], ['2', 2.05]]);
   server.close();
 });
+
+test('corners, yellow cards and shots on target settle from the tracker\'s counts; an "over" already passed is won at once', async () => {
+  const { statOutcome } = await import('../server/markets.js');
+  const live = { corners: [6, 4], yellow: [1, 1], sot: [5, 2], final: false };
+  const fin = { ...live, final: true };
+  assert.equal(statOutcome('1300017~Cantos · Total~Mais de (9.5)', live), 'won'); // 10 already
+  assert.equal(statOutcome('1300017~Cantos · Total~Menos de (9.5)', live), 'lost');
+  assert.equal(statOutcome('1300017~Cantos · Total~Mais de (10.5)', live), null); // could still happen
+  assert.equal(statOutcome('1300017~Cantos · Total~Mais de (10.5)', fin), 'lost');
+  assert.equal(statOutcome('1300015~Cantos · Total 1~Mais de (5.5)', live), 'won');
+  assert.equal(statOutcome('1300062~Cantos · Total 2~Menos de (4.5)', fin), 'won');
+  assert.equal(statOutcome('1500017~Cartões Amarelos · Total~Mais de (3.5)', fin), 'lost');
+  assert.equal(statOutcome('1800017~Remates à Baliza · Total~Mais de (6.5)', live), 'won');
+  assert.equal(statOutcome('1300017~Cantos · Total~Mais de (10)', fin), null); // whole lines: not read
+  assert.equal(statOutcome('1300099~Cantos · Total Asiático~Mais de (9.5)', fin), null); // other markets: not read
+  assert.equal(statOutcome('1300017~Cantos · Total~Mais de (9.5)', null), null);
+
+  // A finished match with the tracker's final counts settles a builder with a corners leg.
+  const db = openDb(':memory:');
+  seed(db);
+  const ev = db.prepare("SELECT id FROM events WHERE sport = 'futebol' AND status = 'scheduled' LIMIT 1").get();
+  const sel = Number(db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, 'x', '1300017~Cantos · Total~Mais de (8.5)', 170, 1)").run(ev.id).lastInsertRowid);
+  const bet = Number(db.prepare("INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (1, 'single', 100, 1.7, 170, ?)").run(nowIso()).lastInsertRowid);
+  db.prepare("INSERT INTO bet_legs (bet_id, event_id, selection_id, market, code, odds_x100) VALUES (?, ?, ?, 'x', '1300017~Cantos · Total~Mais de (8.5)', 170)").run(bet, ev.id, sel);
+  db.prepare("UPDATE events SET status = 'finished', home_score = 2, away_score = 1, match_stats = ? WHERE id = ?").run(JSON.stringify({ corners: [4, 3], final: true }), ev.id);
+  const { settleEvent } = await import('../server/betting.js');
+  settleEvent(db, ev.id);
+  assert.equal(db.prepare('SELECT status FROM bet_legs WHERE bet_id = ?').get(bet).status, 'lost'); // 7 corners: under 8.5
+});

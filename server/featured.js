@@ -1,7 +1,7 @@
 // Ready-made bets on the sports page, drawn at random from the pre-match board:
 //   builders  "Construa o seu ganho": one football match, three legs settled together (bet builder):
 //             the full-time result, one more market (double chance, both teams to score, cards,
-//             corners, shots on target, team to score first) and goals over / under 1.5–3.5.
+//             corners, shots on target: all settled automatically) and goals over / under 1.5–3.5.
 //             Six cards are kept: one whose match starts or whose price closes is replaced by a new one.
 //   accas     "Apostas vencedoras" on the sports page: four favourites from different matches
 //             (full-time result / winner): football of today, then of the next days; other sports
@@ -40,11 +40,12 @@ const dayOf = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format
 const SECOND = [
   { key: 'dc', name: 'Dupla hipótese', match: (s) => s.market === 'dc' },
   { key: 'btts', name: 'Ambas as equipas marcam', match: (s) => s.market === 'btts' },
-  { key: 'cards', name: 'Cartões', match: (s) => s.market === 'x' && /cart(ã|a)o|cartões|cards?\b|booking/i.test(splitSpecial(s.code)?.group || '') },
-  { key: 'corners', name: 'Cantos', match: (s) => s.market === 'x' && /cantos?|corners?/i.test(splitSpecial(s.code)?.group || '') },
-  { key: 'shots', name: 'Remates à baliza', match: (s) => s.market === 'x' && /remates?|shots?/i.test(splitSpecial(s.code)?.group || '') },
-  { key: 'first', name: 'Equipa a marcar primeiro', match: (s) => s.market === 'x' && /(primeir|first).*(gol|goal|marc|scor)|(marc|scor).*(primeir|first)/i.test(splitSpecial(s.code)?.group || '') },
+  // The provider's statistics markets the match tracker settles (markets.js statOutcome): totals, half lines.
+  { key: 'cards', name: 'Cartões', match: (s) => statLeg(s, /^Cartões Amarelos · Total( [12])?$/i) },
+  { key: 'corners', name: 'Cantos', match: (s) => statLeg(s, /^Cantos · Total( [12])?$/i) },
+  { key: 'shots', name: 'Remates à baliza', match: (s) => statLeg(s, /^Remates à Baliza · Total( [12])?$/i) },
 ];
+const statLeg = (s, re) => { const sp = s.market === 'x' ? splitSpecial(s.code) : null; return !!sp && re.test(sp.group) && /^(mais|menos) de\s*\(?\s*\d+\.5\s*\)?$/i.test(sp.label.trim()); };
 const GOAL_LINES = new Set(['O1.5', 'U1.5', 'O2.5', 'U2.5', 'O3.5', 'U3.5']);
 
 /** A double chance that covers the builder's full-time result (1 + 1X): won whenever that is, so it adds nothing. */

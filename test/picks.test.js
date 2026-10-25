@@ -27,7 +27,7 @@ function match(db) {
   return id;
 }
 
-test('market kinds for a match: the favourite\'s side, the "over" near 1.70, the "yes" of the specials', () => {
+test('market kinds for a match: the favourite\'s side, the "over" near 1.70', () => {
   const db = openDb(':memory:');
   const id = match(db);
   const sels = db.prepare('SELECT id, market, code, odds_x100 FROM selections WHERE event_id = ?').all(id);
@@ -38,7 +38,7 @@ test('market kinds for a match: the favourite\'s side, the "over" near 1.70, the
   assert.equal(by.goals.sel.code, 'O2.5'); // 1.75, the nearest to 1.70
   assert.match(by.corners.sel.code, /Mais de \(8\.5\)$/);
   assert.equal(by.teamCorners.name, 'Sporting CP Cantos Mais/Menos');
-  assert.match(by.headed.sel.code, /~Sim$/);
+  assert.ok(!by.headed && !by.htCorners); // not settled from the result or the tracker: left out
   assert.match(by.htResult.sel.code, /~1$/);
   // No clear favourite: no result legs.
   assert.ok(!pickFamilies(sels, { fav: null, team: () => '' }).some((f) => f.group === 'result'));

@@ -222,6 +222,32 @@ export function specialOutcome(code, { periods = null, home = null, away = null,
   return null;
 }
 
+// ---------- Football statistics markets, read from the match tracker's counts ----------
+// "Cantos · Total", "Cartões Amarelos · Total 1", "Remates à Baliza · Total 2"… with "Mais de (9.5)" /
+// "Menos de (9.5)", half lines only. `stats` = { corners: [h, a], yellow: [h, a], sot: [h, a], final }:
+// an "over" already passed is won (and an "under" lost) whenever it was read; the rest only from the
+// final counts (the tracker said the match is over). Anything else: null (it waits, as before).
+const STAT_GROUP = [[/^cantos · total( [12])?$/, 'corners'], [/^cartoes amarelos · total( [12])?$/, 'yellow'], [/^remates a baliza · total( [12])?$/, 'sot']];
+export function statOutcome(code, stats) {
+  const sp = splitSpecial(code);
+  if (!sp || !stats) return null;
+  const g = plain(sp.group);
+  const hit = STAT_GROUP.map(([re, key]) => [re.exec(g), key]).find(([m]) => m);
+  if (!hit) return null;
+  const [m, key] = hit;
+  const pair = stats[key];
+  if (!Array.isArray(pair) || !Number.isInteger(pair[0]) || !Number.isInteger(pair[1])) return null;
+  const side = m[1] ? Number(m[1].trim()) : 0;
+  const v = side ? pair[side - 1] : pair[0] + pair[1];
+  const ou = /^(mais|menos) de\s*\(?\s*(\d+\.5)\s*\)?$/.exec(plain(sp.label));
+  if (!ou) return null;
+  const line = Number(ou[2]);
+  const over = ou[1] === 'mais';
+  if (v > line) return over ? 'won' : 'lost';
+  if (!stats.final) return null;
+  return over ? 'lost' : 'won';
+}
+
 // ---------- Tennis: the provider's set and games markets, read from the sets ----------
 // WinHouse ids → how each is read. Set markets need the final score in sets (always there); a set's
 // winner needs that set over; games markets need every set over and adding up to the final score.

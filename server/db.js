@@ -497,7 +497,9 @@ function migrate(db) {
   // overtime seen; review_reason sends a match to the operator (Admin → Liquidação).
   for (const [c, type] of [['wh_seen_at', 'TEXT'], ['wh_minute', 'REAL'], ['wh_missing_since', 'TEXT'], ['wh_overtime', 'INTEGER NOT NULL DEFAULT 0'], ['review_reason', 'TEXT'],
     // Red cards of each side in play (from the match tracker), for the event cards.
-    ['red_home', 'INTEGER'], ['red_away', 'INTEGER'], ['cards_at', 'TEXT']]) {
+    ['red_home', 'INTEGER'], ['red_away', 'INTEGER'], ['cards_at', 'TEXT'],
+    // The tracker's corners, yellow cards and shots on target ({ corners: [h, a], …, minute, final }): they settle those markets.
+    ['match_stats', 'TEXT']]) {
     if (!cols.has(c)) db.exec(`ALTER TABLE events ADD COLUMN ${c} ${type}`);
   }
 
