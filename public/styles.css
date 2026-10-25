@@ -1626,12 +1626,14 @@ html.light {
   color-scheme: light;
   --page: #f2f4f7; --card: #ffffff; --panels: #ffffff; --dim: #eef1f5; --row-hover: #e2e7ee;
   --border: #d6dce4; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
-  --odd-cell: #e8edf4; --odd-price: #111827; --odd-hover: #d8e0ec; --odd-selected: #67788c; --odd-selected-price: #ffffff;
+  --odd-cell: #dce2ea; --odd-price: #111827; --odd-hover: #cdd5e0; --odd-selected: #67788c; --odd-selected-price: #ffffff;
   --nav: #ffffff; --nav-sep: #e4e8ee; --nav-label: #111827; --nav-sub: #6b7280;
   --text: #111827; --text-2: #374151; --text-3: #6b7280; --text-4: #9aa3ae;
   --strong: #111827;
 }
 html.light body { background: var(--page); color: var(--text); }
+/* event cards a touch grey (still lighter than their odds buttons) */
+html.light .match-card, html.light .comp-block { background: #f6f7f9; }
 html.light .topbar, html.light .mobile-nav { background: var(--nav); }
 html.light .cb-ring, html.light .game-card .game-art { background: #e6eaf0; }
 html.light .car-btn { background: #ffffffee; color: #111827; }
