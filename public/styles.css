@@ -1794,3 +1794,5 @@ html:not(.light) .pick-card::after { filter: invert(1); opacity: .07; }
 .pick-btn b { color: var(--green); font-size: 21px; font-weight: 900; }
 .pick-btn:hover { background: var(--row-hover); }
 @media (max-width: 700px) { .pick-ribbon { font-size: 13px; padding: 6px 14px 6px 12px; } .pick-hot { font-size: 13px; padding: 4px 8px; } .pick-legs li { font-size: 14px; } }
+.lg-badge.sport { background: var(--panel2); color: var(--text); }
+.lg-badge.sport svg { width: 22px; height: 22px; }

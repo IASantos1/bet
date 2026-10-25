@@ -650,6 +650,7 @@ const LEAGUE_LOGOS = [
 ];
 const leagueLogoId = (l) => (l.sport !== 'futebol' ? null : LEAGUE_LOGOS.find(([re, country]) => re.test(leagueShort(l.name))
   && (!country || String(l.country || '').toLowerCase().trim() === country))?.[2] || null);
+const ICON_LEAGUE_SPORTS = new Set(['mma', 'boxe', 'criquete', 'dardos']);
 const LOGO_SPORTS = new Set(['basquetebol', 'hoquei', 'voleibol', 'andebol', 'futamericano', 'basebol', 'raguebi']);
 function leagueBadge(l) {
   const k = String(l.country || '').toLowerCase().trim();
@@ -661,15 +662,25 @@ function leagueBadge(l) {
   const src = logo ? `/league-logo/${logo}` : LOGO_SPORTS.has(l.sport)
     ? `/league-logo/0?s=${l.sport}&n=${encodeURIComponent(l.name)}&c=${encodeURIComponent(l.country || '')}` : '';
   if (src) return `<span class="lg-badge logo"><img class="lg-logo" src="${esc(src)}" data-flag="${esc(flag)}" data-icon="${REGION_ICON[k] || '🌍'}" alt="" loading="lazy" decoding="async"></span>`;
+  // Fights, cricket and darts have no league logos (API-Sports has none): the sport's own icon.
+  if (ICON_LEAGUE_SPORTS.has(l.sport)) return `<span class="lg-badge sport">${sportIcon(l.sport)}</span>`;
   const pic = flag ? `<img src="${flag}" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
   return `<span class="lg-badge">${pic}</span>`;
+}
+// A league's name on its card: "UFC Fight Night. 31.10.26" is the event, not the date; WinHouse's
+// boxing "Fights" is the sport's.
+function leagueCardName(l) {
+  const short = leagueShort(l.name);
+  if (/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(short)) return String(l.name).split('.')[0].trim();
+  if (l.sport === 'boxe' && /^fights?$/i.test(short)) return 'Combates de boxe';
+  return short;
 }
 // The leagues people look for first, as cards (home page; the sports page, of the sport chosen there).
 function leagueRow(sport = '') {
   const leagues = popularLeagues(16, sport);
   if (!leagues.length) return '';
   return `<section class="lg-row" data-hscroll="leagueRow" aria-label="Ligas">
-    ${leagues.map((l) => `<a class="lg-card" href="#/desporto/liga/${encodeURIComponent(l.name)}">${leagueBadge(l)}<b>${esc(l.label || leagueShort(l.name))}</b></a>`).join('')}
+    ${leagues.map((l) => `<a class="lg-card" href="#/desporto/liga/${encodeURIComponent(l.name)}">${leagueBadge(l)}<b>${esc(l.label || leagueCardName(l))}</b></a>`).join('')}
   </section>`;
 }
 
