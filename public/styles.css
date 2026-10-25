@@ -1913,3 +1913,17 @@ html.light .home-feature::after, html.light .combo-card::after { background: #22
 .pick-legs li::before { border-color: #ff2d75; }
 html.light .combo-card.acca { --link: #e0a400; }
 html.light .combo-legs { border-left-color: #22b14c; } html.light .combo-legs li::before { border-color: #22b14c; }
+/* …and a short tick from that line to each pick, like the branches of a tree. */
+.combo-legs { padding-left: 22px; }
+.combo-legs li::before { left: -27.5px; }
+.combo-legs li::after { content: ''; position: absolute; left: -14px; top: 9.5px; width: 10px; height: 2px; border-radius: 1px; background: #3ee05a; }
+html.light .combo-legs li::after { background: #22b14c; }
+.pick-legs { padding-left: 28px; }
+.pick-legs li::before { left: -28.5px; }
+.pick-legs li::after { content: ''; position: absolute; left: -15px; top: 9.5px; width: 11px; height: 2px; border-radius: 1px; background: #ff2d75; }
+.acca-pick { position: relative; }
+.acca-pick::before { content: ''; position: absolute; left: -17px; top: 50%; width: 15px; height: 2px; margin-top: -1px; background: var(--link); }
+.ticket:is(.t-builder, .t-pick, .t-acca) .bt-mark::after { content: ''; position: absolute; left: 100%; top: 50%; width: 10px; height: 2px; margin: -1px 0 0 2px; background: var(--link); opacity: .7; }
+.combo-legs li::before { left: -30px; }
+.combo-legs li::after { left: -17px; width: 13px; }
+.acca-leg:not(:has(+ .acca-leg))::after { content: ''; position: absolute; left: 7px; top: 14px; bottom: 24px; width: 2px; background: var(--link); opacity: .75; }
