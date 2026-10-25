@@ -337,3 +337,30 @@ test('other sports: the league logo found once by name with that sport\'s API, k
   assert.equal(asked.length, n); // a miss is not asked again
   assert.ok(asked.slice(2).every((u) => u.startsWith('https://v1.hockey.api-sports.io/')));
 });
+
+test('MMA: the fighter\'s photo found by name with API-MMA and kept; NFL and baseball looked up like teams', async () => {
+  const db = openDb(':memory:');
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  const ins = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES (?, 'L', ?, ?, ?, 'scheduled', 'winhouse', ?, ?)`);
+  ins.run('mma', 'McGregor, Conor', 'Dustin Poirier', soon, nowIso(), nowIso());
+  const asked = [];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 7]);
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.includes('media.api-sports.io')) return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => png };
+    if (url.includes('thesportsdb')) return { ok: true, status: 200, json: async () => ({ teams: null }) };
+    const q = decodeURIComponent(new URL(url).searchParams.get('search') || '');
+    const response = {
+      'Conor McGregor': [{ id: 1, name: 'Conor McGregor', nickname: 'The Notorious', photo: 'https://media.api-sports.io/mma/fighters/1.png' }],
+      'Dustin Poirier': [{ id: 2, name: 'Dustin Poirier', nickname: 'The Diamond', photo: 'https://media.api-sports.io/mma/fighters/2.png' }],
+    }[q] || [];
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ errors: [], response }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: {} });
+  await logos.run();
+  assert.ok(logos.get('mma', 'McGregor, Conor').logo.startsWith('/team-logo/'));
+  assert.ok(logos.get('mma', 'Dustin Poirier').logo.startsWith('/team-logo/'));
+  assert.ok(asked.some((u) => u.startsWith('https://v1.mma.api-sports.io/fighters?search=Conor%20McGregor')));
+  assert.ok(!asked.some((u) => u.includes('thesportsdb'))); // fighters: no team search
+});
