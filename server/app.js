@@ -512,7 +512,7 @@ export function createApp(db, {
   app.get('/api/casino/spotlights', wrap(async (req, res) => {
     if (!bb) return res.json({ spotlights: [] });
     const list = await Promise.all(spotlights.live({ signedIn: !!req.user }).map(async (s) => ({ ...s, game: await bb.game(s.gameId) })));
-    res.json({ spotlights: list.filter((s) => s.game).map(({ id, tagline, cta, after, img, video, game }) => ({ id, tagline, cta, after, img, video, game })) });
+    res.json({ spotlights: list.filter((s) => s.game).map(({ id, tagline, cta, after, img, video, bare, game }) => ({ id, tagline, cta, after, img, video, bare, game })) });
   }));
   app.get('/api/casino/spotlight/:id/:which', (req, res) => sendImage(res, spotlights.image(req.params.id, req.params.which), req));
   // Seasonal banners that come with the site (Halloween…), with the collection of games they open.

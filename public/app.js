@@ -1060,14 +1060,16 @@ function ensureSpotlights() {
 function spotlightCard(s) {
   const g = s.game;
   const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="metadata"></video>`;
-  const own = s.img ? `${s.video?.d ? vid(s.img.d, 'spot-d') : `<img class="spot-d" src="${esc(s.img.d)}" alt="" loading="lazy">`}
-      ${s.img.m !== s.img.d ? (s.video?.m ? vid(s.img.m, 'spot-m') : `<img class="spot-m" src="${esc(s.img.m)}" alt="" loading="lazy">`) : ''}` : '';
-  // On computers the art fills the right of the card (fading into the text side); on phones it stands whole.
+  const own = (src, isVid) => (isVid ? vid(src, 'spot-own') : `<img class="spot-own" src="${esc(src)}" alt="" loading="lazy">`);
+  // Without its own picture: on computers the art fills the right of the card (fading into the text side);
+  // on phones it stands whole.
   const art = g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt="" loading="lazy"><img class="spot-wide" src="${esc(g.image)}" alt="" loading="lazy">
       <img class="spot-art" src="${esc(g.image)}" alt="" loading="lazy">` : '';
-  return `<section class="section spot${s.img ? ' own' : ''}${s.img && s.img.m !== s.img.d ? ' two' : ''}" data-key="spot${s.id}">
+  const d = s.img?.d, m = s.img?.m;
+  return `<section class="section spot${d ? ' own-d' : ''}${m ? ' own-m' : ''}${s.bare ? ' bare' : ''}" data-key="spot${s.id}">
     <a class="spot-card" href="#/casino/jogo/${g.id}" aria-label="${esc(`${g.name}: ${s.cta || 'Joga agora!'}`)}">
-      <div class="spot-media">${own || art}</div>
+      <div class="spot-media dk">${d ? own(d, s.video?.d) : art}</div>
+      <div class="spot-media mb">${m ? own(m, s.video?.m) : art}</div>
       <div class="spot-copy">${s.tagline ? `<strong>${esc(s.tagline)}</strong>` : ''}<small>${esc(g.name)} · ${esc(g.provider)}</small>
         <span class="spot-cta">${esc(s.cta || 'Joga agora!')}</span></div>
     </a></section>`;

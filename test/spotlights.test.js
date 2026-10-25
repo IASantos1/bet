@@ -21,8 +21,9 @@ test('destaques: guardar, datas, quem vê, e o cartão sem imagem própria', () 
   assert.deepEqual(s.live({ signedIn: false }).map((x) => x.gameId), [7, 8]);
   assert.equal(s.all().find((x) => x.gameId === 8).after, 'novos', 'uma fila desconhecida fica "Acabados de chegar"');
   const img = 'data:image/png;base64,' + Buffer.from('png').toString('base64');
-  const b = s.save({ id: a.id, gameId: 7, imageD: img });
-  assert.ok(b.img.d && b.img.m === b.img.d);
+  const b = s.save({ id: a.id, gameId: 7, imageD: img, bare: true });
+  assert.ok(b.img.d && b.img.m === null, 'só o computador tem imagem própria: o telemóvel usa a arte do jogo');
+  assert.equal(b.bare, true, 'a imagem já traz o texto e o botão');
   assert.equal(s.save({ id: a.id, gameId: 7, removeD: true }).img, null);
 });
 

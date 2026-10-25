@@ -817,6 +817,9 @@
 .spot-thumb img { object-fit: cover; width: 100%; height: 100%; }
 .spot-prev { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .spot-pv.d .spot-card { aspect-ratio: 1920 / 700; }
+.spot-pv .spot-media { display: block !important; }
+.spot-pv.d .spot.own .spot-copy { inset: auto 0 0 0; width: auto; padding: 50px 5% 20px; background: linear-gradient(0deg, rgba(0, 0, 0, .75), transparent); flex-direction: row; align-items: center; flex-wrap: wrap; }
+.spot-pv.d .spot.own .spot-copy small { display: none; }
 .spot-pv.m .spot-card { aspect-ratio: 1 / 1.08; max-width: 320px; }
 .spot-pv.m .spot-media .spot-art { display: block; left: 50%; top: 7%; transform: translateX(-50%); height: 62%; }
 .spot-pv.m .spot-media .spot-wide { display: none; }

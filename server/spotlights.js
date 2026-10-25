@@ -1,7 +1,8 @@
 // "Destaques" of the casino (Admin → Destaques do casino): one game shown big between the lobby rows,
 // as the big operators do ("Esta avozinha é badass!" · "Joga agora!"). A line of text, the button
 // (it opens the game), after which row it goes, the dates, who sees it and, optionally, a wide picture
-// or short video (computer and phone). Without one, the site builds the card from the game's own art.
+// or short video (computer and phone, each on its own). Without one, the site builds that side of the card from the
+// game's own art. "bare": the picture already carries its text and button, so the site shows neither over it.
 
 import { nowIso } from './db.js';
 import { decode, BannerError } from './banners.js';
@@ -31,7 +32,10 @@ export function createSpotlights(db) {
     after TEXT NOT NULL DEFAULT 'novos', audience TEXT NOT NULL DEFAULT 'all', starts_at TEXT, ends_at TEXT,
     sort INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
     image_d BLOB, mime_d TEXT, image_m BLOB, mime_m TEXT, updated_at TEXT NOT NULL)`);
-  const COLS = `id, game_id, tagline, cta, after, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m,
+  if (!db.prepare('PRAGMA table_info(casino_spotlights)').all().some((c) => c.name === 'bare')) {
+    db.exec('ALTER TABLE casino_spotlights ADD COLUMN bare INTEGER NOT NULL DEFAULT 0');
+  }
+  const COLS = `id, game_id, tagline, bare, cta, after, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m,
     image_d IS NOT NULL AS has_d, image_m IS NOT NULL AS has_m`;
   const row = (r) => {
     const v = encodeURIComponent(r.updated_at);
@@ -39,9 +43,9 @@ export function createSpotlights(db) {
     const m = r.has_m ? `/api/casino/spotlight/${r.id}/m?v=${v}` : null;
     return {
       id: r.id, gameId: r.game_id, tagline: r.tagline, cta: r.cta, after: r.after, audience: r.audience,
-      startsAt: r.starts_at, endsAt: r.ends_at, sort: r.sort, enabled: !!r.enabled, updatedAt: r.updated_at,
-      img: d || m ? { d: d || m, m: m || d } : null,
-      video: { d: /^video\//.test((d ? r.mime_d : r.mime_m) || ''), m: /^video\//.test((m ? r.mime_m : r.mime_d) || '') },
+      startsAt: r.starts_at, endsAt: r.ends_at, sort: r.sort, enabled: !!r.enabled, updatedAt: r.updated_at, bare: !!r.bare,
+      img: d || m ? { d, m } : null,
+      video: { d: /^video\//.test(r.mime_d || ''), m: /^video\//.test(r.mime_m || '') },
     };
   };
   const all = () => db.prepare(`SELECT ${COLS} FROM casino_spotlights ORDER BY sort, id`).all().map(row);
@@ -66,7 +70,7 @@ export function createSpotlights(db) {
     const fields = {
       game_id: gameId, tagline: text(input.tagline, 90), cta: text(input.cta, 30), after: AFTER[input.after] ? input.after : 'novos',
       audience: AUDIENCES.has(input.audience) ? input.audience : 'all', starts_at: when(input.startsAt), ends_at: when(input.endsAt),
-      enabled: input.enabled === false ? 0 : 1, updated_at: nowIso(),
+      enabled: input.enabled === false ? 0 : 1, bare: input.bare ? 1 : 0, updated_at: nowIso(),
     };
     if (fields.starts_at && fields.ends_at && fields.ends_at <= fields.starts_at) throw new SpotlightError('O fim tem de ser depois do início.');
     if (input.imageD) { const f = media(input.imageD); Object.assign(fields, { image_d: f.buf, mime_d: f.mime }); }
