@@ -491,13 +491,15 @@ export const SPORTS = {
 export const NAMED_WINNER_SPORTS = new Set(['basebol', 'boxe', 'raguebi', 'futamericano', 'criquete', 'dardos', 'mma']);
 const DRAW_FINAL = new Set(['raguebi', 'boxe', 'mma']);
 const PERIOD_IN_NAME = /\b(half|quarter|period|set|inning|innings|round|over|leg|frame|map|1st|2nd|3rd|4th|5th|first|second|third|parte|tempo|quarto|per[ií]odo|entrada|assalto|pjes|çerek|cerek)\b|\d+\s*(st|nd|rd|th|º|ª)/i;
-const WINNER_NAME = /^(match )?(winner|vencedor|moneyline|money line|home\/away|12|fitues|fituesi)( (of )?(the )?(match|fight|game|jogo|combate|luta|encontro))?( \(?incl(uding|\.)? (overtime|ot|extra innings|super over)\)?)?$/i;
-const RESULT_NAME = /^(1x2|match result|full ?time result|resultado|resultado final|result)$/i;
+// The book names them in English or in Portuguese: "Winner (incl. overtime)", "Resultado final 2 vias",
+// "Vencedor do combate" (two-way); "1x2", "Resultado final", "Resultado do Jogo de Críquete (1x2)" (three-way).
+const WINNER_NAME = /^(match )?(winner|vencedor|moneyline|money line|home\/away|12|fitues|fituesi)( (of |do |da )?(the )?(match|fight|game|jogo|combate|luta|encontro))?( \(?incl(uding|\.)? (overtime|ot|extra innings|super over|prolongamento)\)?)?$|\b2 vias\b|\b2-way\b|two.way/i;
+const RESULT_NAME = /^(1x2|match result|full ?time result|resultado|resultado final|result)$|\(1x2\)$|^resultado do (jogo|combate|encontro|desafio)\b/i;
 /** A named-winner sport's own key for one odd ('ml|1', '1x2|X'…), or null. */
 function namedWinnerKey(o, sport) {
   const name = String(o.marketName || '').toLowerCase().replace(/\s+/g, ' ').trim();
   const code = String(o.marketCode || '').toLowerCase().trim();
-  if (o.special || PERIOD_IN_NAME.test(name) || /\b(total|handicap|spread|over|under|method|m[eé]todo|ko|round|draw no bet|odd|even)\b/i.test(name)) return null;
+  if (o.special || PERIOD_IN_NAME.test(name) || /\b(total|handicap|spread|over|under|method|m[eé]todo|ko|round|ronda|draw no bet|empate anula|odd|even|par|[ií]mpar|mais|menos)\b/i.test(name)) return null;
   const sel = String(o.selection).toLowerCase().trim();
   const side = { 1: '1', 2: '2', w1: '1', w2: '2', home: '1', away: '2' }[sel] || (sel === 'x' || sel === 'draw' || sel === 'empate' ? 'X' : null);
   if (!side) return null;
