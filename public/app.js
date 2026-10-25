@@ -1041,6 +1041,36 @@ function ensureCasinoBanners() {
   }).catch(() => {});
 }
 
+// ---------- destaques: one game shown big between the rows (Admin → Destaques do casino) ----------
+function ensureSpotlights() {
+  const who = state.user ? `u${state.user.id}` : 'guest';
+  if (state.spotFor === who && Date.now() - (state.spotAt || 0) < 5 * 60_000) return;
+  state.spotFor = who;
+  state.spotAt = Date.now();
+  api('/api/casino/spotlights').then((r) => {
+    const before = JSON.stringify(state.spotlights || []);
+    state.spotlights = r.spotlights || [];
+    if (JSON.stringify(state.spotlights) !== before && currentRoute().page === 'casino' && !currentRoute().sub) render({ keepScroll: true });
+  }).catch(() => {});
+}
+/**
+ * The card: the operator's wide picture or video when there is one; otherwise the game's own art,
+ * blurred as the background and whole on the side. The line of text and "Joga agora!" (opens the game).
+ */
+function spotlightCard(s) {
+  const g = s.game;
+  const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="metadata"></video>`;
+  const own = s.img ? `${s.video?.d ? vid(s.img.d, 'spot-d') : `<img class="spot-d" src="${esc(s.img.d)}" alt="" loading="lazy">`}
+      ${s.img.m !== s.img.d ? (s.video?.m ? vid(s.img.m, 'spot-m') : `<img class="spot-m" src="${esc(s.img.m)}" alt="" loading="lazy">`) : ''}` : '';
+  const art = g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt="" loading="lazy"><img class="spot-art" src="${esc(g.image)}" alt="" loading="lazy">` : '';
+  return `<section class="section spot${s.img ? ' own' : ''}${s.img && s.img.m !== s.img.d ? ' two' : ''}" data-key="spot${s.id}">
+    <a class="spot-card" href="#/casino/jogo/${g.id}" aria-label="${esc(`${g.name}: ${s.cta || 'Joga agora!'}`)}">
+      <div class="spot-media">${own || art}</div>
+      <div class="spot-copy">${s.tagline ? `<strong>${esc(s.tagline)}</strong>` : ''}<small>${esc(g.name)} · ${esc(g.provider)}</small>
+        <span class="spot-cta">${esc(s.cta || 'Joga agora!')}</span></div>
+    </a></section>`;
+}
+
 /** The carousel: one slide per banner (its phone picture on small screens), arrows, dots and the terms. */
 function casinoBanners() {
   const list = state.casinoBanners || [];
@@ -1148,6 +1178,7 @@ function casinoPage() {
   const c = state.casino;
   ensureFreeSpins();
   ensureCasinoBanners();
+  ensureSpotlights();
   ensureCasinoMine();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
@@ -1190,7 +1221,15 @@ function casinoPage() {
     because[1] && { key: 'because', title: `Porque jogaste ${because[1].game.name}`, games: because[1].games },
     ...rest,
   ].filter(Boolean);
-  const lobby = order.map((r, i) => (r.layout === 'top' ? row(r, i, r.games.map(topCard)) : r.key === 'recent' ? row(r, i, r.games.map(recentCard)) : row(r, i))).join('');
+  // Destaques after the row they were set to follow (after the second row when that one is not shown).
+  const spots = state.spotlights || [];
+  const placed = new Set();
+  const lobby = order.map((r, i) => {
+    const html = r.layout === 'top' ? row(r, i, r.games.map(topCard)) : r.key === 'recent' ? row(r, i, r.games.map(recentCard)) : row(r, i);
+    const here = spots.filter((x) => !placed.has(x.id) && (x.after === r.key || (i === 1 && !order.some((o) => o.key === x.after))));
+    here.forEach((x) => placed.add(x.id));
+    return html + here.map(spotlightCard).join('');
+  }).join('');
   // One provider or one tab open: its name, how many games and the way back to the lobby.
   const prov = c.bigbang && f.provider ? c.providers.find((p) => String(p.id) === f.provider) : null;
   const cat = c.bigbang && !prov && f.category ? (state.casinoLobby?.categories || []).find((x) => x.key === f.category) : null;

@@ -57,6 +57,7 @@ const TABS = [
   { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
   { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
   { id: 'colecoes', label: 'Coleções do casino', icon: 'casino', section: 'Avançado' },
+  { id: 'destaques', label: 'Destaques do casino', icon: 'megaphone', section: 'Avançado' },
   { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
@@ -717,6 +718,7 @@ async function loadTab() {
     else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
     else if (tab === 'banners') { banEd = null; main.innerHTML = adminBanners(await api('/api/admin/banners')); }
     else if (tab === 'colecoes') { colEd = null; main.innerHTML = adminCollections(await api('/api/admin/collections')); }
+    else if (tab === 'destaques') { spotEd = null; main.innerHTML = adminSpotlights(await api('/api/admin/spotlights')); }
     else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
@@ -1381,6 +1383,7 @@ document.addEventListener('click', async (e) => {
   if (action.startsWith('skin-')) { skinAction(action, actionEl); return; }
   if (action.startsWith('ban-')) { banAction(action, actionEl); return; }
   if (action.startsWith('col-')) { colAction(action, actionEl); return; }
+  if (action.startsWith('spot-')) { spotAction(action, actionEl); return; }
   if (action === 'user-balance') { balanceModal(actionEl.dataset); return; }
   if (action === 'user-freebet') { giftModal(actionEl.dataset); return; }
   if (action === 'am-close') { closeAdminModal(); return; }
@@ -1846,6 +1849,7 @@ document.addEventListener('change', async (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinChange(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banChange(e.target); return; }
   if (colEd && e.target.id === 'colProv') { colProvider(e.target.value); return; }
+  if (spotEd && e.target.closest?.('.spot-ed')) { spotChange(e.target); return; }
   if (e.target.dataset?.action === 'casino-skins') {
     try {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
@@ -1873,6 +1877,8 @@ document.addEventListener('input', (e) => {
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
   if (colEd && e.target.id === 'colSearch') { colSearch(e.target.value.trim()); return; }
+  if (spotEd && e.target.id === 'spotSearch') { spotSearch(e.target.value.trim()); return; }
+  if (spotEd && e.target.closest?.('.spot-ed')) { spotPreview(); return; }
   if (e.target.form?.id === 'cpForm' && e.target.name === 'body') { campaignCount(); return; }
   const modal = e.target.id === 'amGameSearch';
   if (e.target.id !== 'fsGameSearch' && !modal) return;
@@ -2657,6 +2663,170 @@ async function colAction(action, el) {
         startsAt: fromLocal($('#colStart').value), endsAt: fromLocal($('#colEnd').value), games: colEd.games.map((x) => x.id),
       } });
       toast('Coleção guardada'); colEd = null; loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
+  }
+}
+
+// ---------- destaques: one game shown big between the casino rows ----------
+// The game (searched by name), a line of text, the button, after which row, the dates, who sees it and,
+// optionally, a wide picture or short video (without one the site uses the game's own art).
+
+let spotEd = null;
+
+function adminSpotlights(d) {
+  state.spotlights = d.spotlights;
+  state.spotAfter = d.after;
+  const list = d.spotlights;
+  const rows = list.map((s, i) => {
+    const [cls, label] = banState(s);
+    return `<div class="ban-card">
+      <div class="ban-thumb spot-thumb">${s.img ? (s.video?.d ? `<video src="${esc(s.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(s.img.d)}" alt="">`)
+        : s.game.image ? `<img src="${esc(s.game.image)}" alt="">` : ''}</div>
+      <div class="grow"><strong>${esc(s.game.name)}</strong>
+        <small>${esc(s.tagline || '(sem frase)')}</small>
+        <small class="${cls}">${esc(label)}</small>
+        <small class="muted">Depois de "${esc(d.after[s.after] || s.after)}" · ${esc(BAN_AUD[s.audience])}${s.img ? ' · imagem própria' : ' · arte do jogo'}</small></div>
+      <div class="ban-order"><button class="ghost-btn btn-sm" data-action="spot-move" data-id="${s.id}" data-dir="-1" ${i ? '' : 'disabled'} title="Subir">↑</button>
+        <button class="ghost-btn btn-sm" data-action="spot-move" data-id="${s.id}" data-dir="1" ${i < list.length - 1 ? '' : 'disabled'} title="Descer">↓</button></div>
+      <label class="adm-switch"><input type="checkbox" data-action="spot-enabled" data-id="${s.id}"${s.enabled ? ' checked' : ''}> Ativo</label>
+      <button class="ghost-btn btn-sm" data-action="spot-edit" data-id="${s.id}">Editar</button>
+      <button class="danger-btn btn-sm" data-action="spot-delete" data-id="${s.id}" data-name="${esc(s.game.name)}">Apagar</button>
+    </div>`;
+  }).join('');
+  return `<div class="panel"><h3>Destaques do casino</h3>
+    <p class="muted">Um jogo em grande entre as filas do casino, com uma frase e o botão "Joga agora!" (abre o jogo). Sem imagem própria,
+      o cartão faz-se com a arte do jogo. Vários destaques no ar ao mesmo tempo aparecem cada um depois da sua fila.</p>
+    <div class="form-actions"><button class="primary-btn btn-sm" data-action="spot-new">+ Novo destaque</button>
+      <a class="ghost-btn btn-sm" href="/#/casino" target="_blank" rel="noopener">Ver o casino ↗</a></div>
+    <div class="ban-list">${rows || '<p class="muted">Ainda não há destaques.</p>'}</div></div>`;
+}
+
+function openSpotlightEditor(s = null) {
+  spotEd = { id: s?.id || null, game: s?.game || null, imageD: null, imageM: null, srcD: s?.img?.d || null, srcM: s?.img && s.img.m !== s.img.d ? s.img.m : null,
+    vidD: !!s?.video?.d, vidM: !!(s?.video?.m && s?.img?.m !== s?.img?.d), removeD: false, removeM: false };
+  const after = state.spotAfter || {};
+  $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="spot-back">‹ Destaques</button></div>
+    <div class="panel ban-ed spot-ed"><h3>${s ? 'Editar destaque' : 'Novo destaque'}</h3>
+      <h4>1. O jogo</h4>
+      <div id="spotGame" class="spot-game"></div>
+      <div class="form-actions"><input id="spotSearch" class="col-search" placeholder="Procurar jogo (ex.: Big Bass, Gates of Olympus)…" autocomplete="off"></div>
+      <div class="sk-game-grid col-results" id="spotResults"></div>
+      <h4>2. O cartão</h4>
+      <div class="ban-grid">
+        <label class="field"><span>Frase</span><input id="spotTagline" maxlength="90" value="${esc(s?.tagline || '')}" placeholder="Ex.: Esta avozinha é badass!"></label>
+        <label class="field"><span>Texto do botão</span><input id="spotCta" maxlength="30" value="${esc(s?.cta || '')}" placeholder="Joga agora!"></label>
+        <label class="field"><span>Aparece depois de</span><select id="spotAfter">${Object.entries(after).map(([v, t]) => `<option value="${v}"${(s?.after || 'novos') === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        <label class="field"><span>Quem vê</span><select id="spotAud">${Object.entries(BAN_AUD).map(([v, t]) => `<option value="${v}"${(s?.audience || 'all') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="field"><span>Começa</span><input type="datetime-local" id="spotStart" value="${toLocal(s?.startsAt)}"><small class="muted">Vazio = já.</small></label>
+        <label class="field"><span>Termina</span><input type="datetime-local" id="spotEnd" value="${toLocal(s?.endsAt)}"><small class="muted">Vazio = sem fim.</small></label>
+        <label class="field"><span>Imagem própria para computador (opcional)</span><input type="file" id="spotImgD" accept="image/*,video/mp4,video/webm">
+          <small class="muted">1920×640 ou vídeo curto MP4/WEBM. Sem ela, usa a arte do jogo. ${spotEd.srcD ? '<button type="button" class="link-btn" data-action="spot-rm-d">Remover</button>' : ''}</small></label>
+        <label class="field"><span>Imagem própria para telemóvel (opcional)</span><input type="file" id="spotImgM" accept="image/*,video/mp4,video/webm">
+          <small class="muted">1080×1170. Sem ela, usa a do computador. ${spotEd.srcM ? '<button type="button" class="link-btn" data-action="spot-rm-m">Remover</button>' : ''}</small></label>
+        <label class="adm-switch"><input type="checkbox" id="spotEnabled"${s ? (s.enabled ? ' checked' : '') : ' checked'}> Ativo</label>
+      </div>
+      <h4>Pré-visualização</h4>
+      <div class="ban-prev spot-prev">
+        <div><small class="muted">Computador</small><div class="spot-pv d" id="spotPvD"></div></div>
+        <div><small class="muted">Telemóvel</small><div class="spot-pv m" id="spotPvM"></div></div>
+      </div>
+      <div class="form-actions"><button class="primary-btn" data-action="spot-save">Guardar destaque</button></div>
+    </div>`;
+  spotGame();
+  spotPreview();
+}
+
+function spotGame() {
+  const g = spotEd?.game;
+  const box = $('#spotGame');
+  if (!box) return;
+  box.innerHTML = g ? `<div class="spot-chosen">${g.image ? `<img src="${esc(g.image)}" alt="">` : '🎰'}<div><strong>${esc(g.name)}</strong><small class="muted">${esc(g.provider || '')}</small></div></div>`
+    : '<p class="muted">Procure o jogo abaixo e toque nele.</p>';
+}
+
+function spotPreview() {
+  if (!spotEd) return;
+  const g = spotEd.game || { name: 'Jogo', provider: '', image: null };
+  const tag = $('#spotTagline').value.trim(), cta = $('#spotCta').value.trim() || 'Joga agora!';
+  const d = spotEd.removeD ? null : spotEd.imageD || spotEd.srcD;
+  const m = (spotEd.removeM ? null : spotEd.imageM || spotEd.srcM) || d;
+  const isVid = (src) => (src === spotEd.srcD ? spotEd.vidD : src === spotEd.srcM ? spotEd.vidM : /^data:video\//.test(src || ''));
+  const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
+  const card = (src) => `<div class="spot${src ? ' own' : ''}"><div class="spot-card"><div class="spot-media">${src ? media(src)
+      : g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt=""><img class="spot-art" src="${esc(g.image)}" alt="">` : ''}</div>
+    <div class="spot-copy">${tag ? `<strong>${esc(tag)}</strong>` : ''}<small>${esc(g.name)}${g.provider ? ` · ${esc(g.provider)}` : ''}</small><span class="spot-cta">${esc(cta)}</span></div></div></div>`;
+  $('#spotPvD').innerHTML = card(d);
+  $('#spotPvM').innerHTML = card(m);
+}
+
+let spotTimer = null;
+function spotSearch(q) {
+  clearTimeout(spotTimer);
+  spotTimer = setTimeout(async () => {
+    const box = $('#spotResults');
+    if (!box) return;
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    try {
+      const r = await api(`/api/casino/games?limit=36&q=${encodeURIComponent(q)}`);
+      box.innerHTML = r.games.length ? r.games.map((g) => `<button type="button" class="sk-game-card${spotEd?.game?.id === g.id ? ' on' : ''}" data-action="spot-pick" data-id="${g.id}"
+          data-name="${esc(g.name)}" data-provider="${esc(g.provider)}" data-image="${esc(g.image || '')}">
+          <span class="sk-game-img">${g.image ? `<img src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</span><span class="sk-game-name">${esc(g.name)}</span></button>`).join('')
+        : '<p class="muted">Nenhum jogo encontrado.</p>';
+    } catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; }
+  }, 250);
+}
+
+async function spotChange(t) {
+  if ((t.id === 'spotImgD' || t.id === 'spotImgM') && t.files?.[0]) {
+    try {
+      const r = await bannerImage(t.files[0]);
+      if (t.id === 'spotImgD') Object.assign(spotEd, { imageD: r.url, vidD: !!r.video, removeD: false });
+      else Object.assign(spotEd, { imageM: r.url, vidM: !!r.video, removeM: false });
+    } catch (err) { toast('Erro', err.message, 'error'); }
+  }
+  spotPreview();
+}
+
+async function spotAction(action, el) {
+  if (action === 'spot-new') { openSpotlightEditor(); return; }
+  if (action === 'spot-back') { spotEd = null; loadTab(); return; }
+  if (action === 'spot-edit') { openSpotlightEditor((state.spotlights || []).find((s) => s.id === Number(el.dataset.id))); return; }
+  if (action === 'spot-enabled') {
+    try { await api(`/api/admin/spotlights/${el.dataset.id}/enabled`, { method: 'POST', body: { on: el.checked } }); toast(el.checked ? 'Destaque ativo' : 'Destaque desligado'); loadTab(); } catch (err) { el.checked = !el.checked; toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'spot-delete') {
+    if (!confirm(`Apagar o destaque de ${el.dataset.name}?`)) return;
+    try { await api(`/api/admin/spotlights/${el.dataset.id}/delete`, { method: 'POST', body: {} }); toast('Destaque apagado'); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'spot-move') {
+    const ids = (state.spotlights || []).map((s) => s.id), i = ids.indexOf(Number(el.dataset.id)), j = i + Number(el.dataset.dir);
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    try { await api('/api/admin/spotlights/order', { method: 'POST', body: { ids } }); loadTab(); } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (!spotEd) return;
+  if (action === 'spot-rm-d') { Object.assign(spotEd, { removeD: true, imageD: null }); el.remove(); spotPreview(); return; }
+  if (action === 'spot-rm-m') { Object.assign(spotEd, { removeM: true, imageM: null }); el.remove(); spotPreview(); return; }
+  if (action === 'spot-pick') {
+    spotEd.game = { id: Number(el.dataset.id), name: el.dataset.name, provider: el.dataset.provider, image: el.dataset.image || null };
+    $$('#spotResults .sk-game-card').forEach((b) => b.classList.toggle('on', b === el));
+    spotGame();
+    spotPreview();
+    return;
+  }
+  if (action === 'spot-save') {
+    if (!spotEd.game) { toast('Destaque', 'Escolha o jogo.', 'error'); return; }
+    el.disabled = true;
+    try {
+      await api('/api/admin/spotlights', { method: 'POST', body: {
+        id: spotEd.id, gameId: spotEd.game.id, tagline: $('#spotTagline').value, cta: $('#spotCta').value, after: $('#spotAfter').value,
+        audience: $('#spotAud').value, enabled: $('#spotEnabled').checked, startsAt: fromLocal($('#spotStart').value), endsAt: fromLocal($('#spotEnd').value),
+        imageD: spotEd.imageD || undefined, imageM: spotEd.imageM || undefined, removeD: spotEd.removeD || undefined, removeM: spotEd.removeM || undefined,
+      } });
+      toast('Destaque guardado'); spotEd = null; loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
   }
 }

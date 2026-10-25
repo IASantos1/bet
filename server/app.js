@@ -16,6 +16,7 @@ import { createSkins, SkinError } from './skins.js';
 import { createBanners, BannerError } from './banners.js';
 import { createCollections, CollectionError } from './collections.js';
 import { createSeasonal } from './seasonal.js';
+import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlights.js';
 import { createFeatured } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -313,6 +314,7 @@ export function createApp(db, {
   // Admin → Películas sends pictures (the cover, the screenshots): a larger body there only.
   app.use('/api/admin/skins', express.json({ limit: '16mb' }));
   app.use('/api/admin/banners', express.json({ limit: '36mb' }));
+  app.use('/api/admin/spotlights', express.json({ limit: '36mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -505,8 +507,16 @@ export function createApp(db, {
   const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
   app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which), req));
+  // Destaques: one game shown big between the lobby rows (Admin → Destaques do casino), with the game's card.
+  const spotlights = createSpotlights(db);
+  app.get('/api/casino/spotlights', wrap(async (req, res) => {
+    if (!bb) return res.json({ spotlights: [] });
+    const list = await Promise.all(spotlights.live({ signedIn: !!req.user }).map(async (s) => ({ ...s, game: await bb.game(s.gameId) })));
+    res.json({ spotlights: list.filter((s) => s.game).map(({ id, tagline, cta, after, img, video, game }) => ({ id, tagline, cta, after, img, video, game })) });
+  }));
+  app.get('/api/casino/spotlight/:id/:which', (req, res) => sendImage(res, spotlights.image(req.params.id, req.params.which), req));
   // Seasonal banners that come with the site (Halloween…), with the collection of games they open.
-  const seasonal = createSeasonal(db, { banners, collections, dir: path.join(PUBLIC_DIR, 'casino', 'banners') });
+  const seasonal = createSeasonal(db, { banners, collections, spotlights, dir: path.join(PUBLIC_DIR, 'casino', 'banners') });
   // A collection's own page (#/casino/colecao/ID): its games, while it runs.
   app.get('/api/casino/collection/:id', wrap(async (req, res) => {
     const c = collections.open(req.params.id);
@@ -2292,6 +2302,28 @@ export function createApp(db, {
   });
   admin.post('/banners/:id/delete', (req, res) => {
     if (!banners.remove(req.params.id)) throw new HttpError(404, 'Banner não encontrado.');
+    res.json({ ok: true });
+  });
+
+  // ---------- destaques (one game shown big between the casino rows) ----------
+  const spotErr = (fn) => (req, res) => {
+    try { fn(req, res); } catch (err) { throw err instanceof SpotlightError ? new HttpError(400, err.message) : err; }
+  };
+  admin.get('/spotlights', wrap(async (_req, res) => {
+    const list = await Promise.all(spotlights.all().map(async (s) => {
+      const g = bb ? await bb.game(s.gameId) : null;
+      return { ...s, game: g ? { id: g.id, name: g.name, provider: g.provider, image: g.image } : { id: s.gameId, name: `Jogo ${s.gameId} (fora do catálogo)`, missing: true } };
+    }));
+    res.json({ spotlights: list, after: SPOT_AFTER });
+  }));
+  admin.post('/spotlights', spotErr((req, res) => res.json({ spotlight: spotlights.save(req.body || {}) })));
+  admin.post('/spotlights/order', (req, res) => res.json({ spotlights: spotlights.reorder(Array.isArray(req.body?.ids) ? req.body.ids : []) }));
+  admin.post('/spotlights/:id/enabled', (req, res) => {
+    if (!spotlights.setEnabled(req.params.id, req.body?.on === true)) throw new HttpError(404, 'Destaque não encontrado.');
+    res.json({ ok: true });
+  });
+  admin.post('/spotlights/:id/delete', (req, res) => {
+    if (!spotlights.remove(req.params.id)) throw new HttpError(404, 'Destaque não encontrado.');
     res.json({ ok: true });
   });
 

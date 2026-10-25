@@ -9,7 +9,7 @@ const AUDIENCES = new Set(['all', 'guest', 'user']);
 
 export class BannerError extends Error {}
 
-function decode(dataUrl) {
+export function decode(dataUrl) {
   const m = IMAGE.exec(String(dataUrl || ''));
   if (!m) throw new BannerError('Ficheiro inválido (imagem PNG, JPG ou WEBP, ou vídeo MP4 ou WEBM).');
   const buf = Buffer.from(m[2], 'base64');
