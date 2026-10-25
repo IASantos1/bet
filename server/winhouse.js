@@ -177,6 +177,8 @@ export function extraPrices(odds, { sport = null, limit = 3000, ids = null } = {
   for (const o of odds) {
     // Our own markets stay ours; only their lines we do not settle (2.25, 1.75…) go to the operator.
     if (((own.has(o.marketId) || NAMED_WINNER_SPORTS.has(sport)) && ownKey(o, sport)) || n >= limit) continue;
+    // Shown home / away only: the draw of their three-way result is left out.
+    if (NAMED_WINNER_SPORTS.has(sport) && namedResult(o)) continue;
     const v = x100(o.price);
     if (!v) continue;
     if (!titles.has(o.marketId)) titles.set(o.marketId, clean(String(o.marketName || '').replace(/\s*\[[^\]]*\]/g, ' '), 70) || `Mercado ${o.marketId}`);
@@ -484,33 +486,39 @@ export const SPORTS = {
 };
 /**
  * Sports whose markets WinHouse numbers differently from one game to the next: the match winner is
- * recognised by its name ("Winner", "Vencedor", "1x2"…), taken as ours and settled on the final
- * score; every other market of theirs goes to the operator ('x'). A 1X2 is only taken where a draw
- * is a final result (no overtime): rugby and fights; elsewhere only the two-way winner.
+ * recognised by its name ("Winner", "Vencedor", "Resultado final 2 vias"…), taken as ours and settled
+ * on the final score; every other market of theirs goes to the operator ('x'). These sports are
+ * shown home / away only (no draw): the two-way winner is the main market; where the book gives only
+ * a 1X2 (fights), its home and away prices are taken as the winner (a draw voids the bet) and the
+ * draw is left out.
  */
 export const NAMED_WINNER_SPORTS = new Set(['basebol', 'boxe', 'raguebi', 'futamericano', 'criquete', 'dardos', 'mma']);
-const DRAW_FINAL = new Set(['raguebi', 'boxe', 'mma']);
-const PERIOD_IN_NAME = /\b(half|quarter|period|set|inning|innings|round|over|leg|frame|map|1st|2nd|3rd|4th|5th|first|second|third|parte|tempo|quarto|per[ií]odo|entrada|assalto|pjes|çerek|cerek)\b|\d+\s*(st|nd|rd|th|º|ª)/i;
+const PERIOD_IN_NAME = /\b(half|quarter|period|set|inning|innings|round|over|leg|frame|map|1st|2nd|3rd|4th|5th|first|second|third|parte|tempo|quarto|per[ií]odo|entrada|entradas|assalto|pjes|çerek|cerek)\b|\d+\s*(st|nd|rd|th|º|ª)/i;
+// "(incl. overtime)", "(Prolongamento)", "(incl. entradas extra)": the whole match, said in brackets.
+const WHOLE_MATCH_NOTE = /\s*\((incl[^)]*|including[^)]*|prolongamento|overtime|ot|entradas? extras?|extra innings|super over)\)/gi;
 // The book names them in English or in Portuguese: "Winner (incl. overtime)", "Resultado final 2 vias",
 // "Vencedor do combate" (two-way); "1x2", "Resultado final", "Resultado do Jogo de Críquete (1x2)" (three-way).
-const WINNER_NAME = /^(match )?(winner|vencedor|moneyline|money line|home\/away|12|fitues|fituesi)( (of |do |da )?(the )?(match|fight|game|jogo|combate|luta|encontro))?( \(?incl(uding|\.)? (overtime|ot|extra innings|super over|prolongamento)\)?)?$|\b2 vias\b|\b2-way\b|two.way/i;
+const WINNER_NAME = /^(match )?(winner|vencedor|moneyline|money line|home\/away|12|fitues|fituesi)( (of |do |da )?(the )?(match|fight|game|jogo|combate|luta|encontro|partida))?$|\b2 vias\b|\b2-way\b|two.way/i;
 const RESULT_NAME = /^(1x2|match result|full ?time result|resultado|resultado final|result)$|\(1x2\)$|^resultado do (jogo|combate|encontro|desafio)\b/i;
-/** A named-winner sport's own key for one odd ('ml|1', '1x2|X'…), or null. */
-function namedWinnerKey(o, sport) {
-  const name = String(o.marketName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const plainName = (o) => String(o.marketName || '').toLowerCase().replace(WHOLE_MATCH_NOTE, '').replace(/\s+/g, ' ').trim();
+const notWinner = (name) => PERIOD_IN_NAME.test(name)
+  || /\b(total|handicap|spread|over|under|method|m[eé]todo|ko|round|ronda|draw no bet|empate anula|odd|even|par|[ií]mpar|mais|menos)\b/i.test(name);
+/** The book's three-way result of a named-winner sport (its draw is left out, its 1 / 2 make the winner). */
+const namedResult = (o) => { const name = plainName(o); return !o.special && !notWinner(name) && (RESULT_NAME.test(name) || String(o.marketCode || '').toLowerCase().trim() === '1x2'); };
+/** A named-winner sport's own key for one odd ('ml|1' / 'ml|2'), or null. */
+function namedWinnerKey(o) {
+  const name = plainName(o);
   const code = String(o.marketCode || '').toLowerCase().trim();
-  if (o.special || PERIOD_IN_NAME.test(name) || /\b(total|handicap|spread|over|under|method|m[eé]todo|ko|round|ronda|draw no bet|empate anula|odd|even|par|[ií]mpar|mais|menos)\b/i.test(name)) return null;
-  const sel = String(o.selection).toLowerCase().trim();
-  const side = { 1: '1', 2: '2', w1: '1', w2: '2', home: '1', away: '2' }[sel] || (sel === 'x' || sel === 'draw' || sel === 'empate' ? 'X' : null);
+  if (o.special || notWinner(name)) return null;
+  const side = { 1: '1', 2: '2', w1: '1', w2: '2', home: '1', away: '2' }[String(o.selection).toLowerCase().trim()];
   if (!side) return null;
-  if (WINNER_NAME.test(name) || code === '12' || code === 'w' || code === 'ml') return side === 'X' ? null : `ml|${side}`;
-  if ((RESULT_NAME.test(name) || code === '1x2') && DRAW_FINAL.has(sport)) return `1x2|${side}`;
+  if (WINNER_NAME.test(name) || code === '12' || code === 'w' || code === 'ml' || namedResult(o)) return `ml|${side}`;
   return null;
 }
 
 /** Whether a market of a named-winner sport is the one we settle ourselves (its winner / 1X2): the catalogue's "Automática". */
 export const namedWinnerMarket = (sport, { name, code = null }) => NAMED_WINNER_SPORTS.has(sport)
-  && !!namedWinnerKey({ marketName: name, marketCode: code, selection: '1', special: null }, sport);
+  && !!namedWinnerKey({ marketName: name, marketCode: code, selection: '1', special: null });
 
 // Women's, youth and minor competitions can be left out (WINHOUSE_BLOCK_WOMEN / _YOUTH / _MINOR).
 const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
@@ -744,7 +752,7 @@ function ownKey(o, sport) {
     // Volleyball has no draw: only the two winners of its "1x2" are offered.
     if (o.marketId === 1001) return (c = { 1: '1', 2: '2' }[sel]) ? `ml|${c}` : null;
   } else if (NAMED_WINNER_SPORTS.has(sport)) {
-    return namedWinnerKey(o, sport);
+    return namedWinnerKey(o);
   }
   return null;
 }
@@ -764,6 +772,9 @@ export function pricesFor(odds, sport, ids = null) {
     if (!v) continue;
     const k = ownKey(o, sport);
     if (!k) continue;
+    // A named-winner sport's two-way winner beats the 1 / 2 of its three-way result.
+    const third = NAMED_WINNER_SPORTS.has(sport) && namedResult(o);
+    if (third && out[k] !== undefined) continue;
     out[k] = v;
     if (mine && o.oddId) mine.set(k, o.oddId);
   }

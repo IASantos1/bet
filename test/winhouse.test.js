@@ -1131,16 +1131,17 @@ test('more sports: NFL, baseball, rugby, cricket, boxing, MMA and darts; the win
   assert.ok(blockedGame({ sport_id: 16, league: 'Virtual NFL' }));
   assert.ok(blockedGame({ sport_id: 2, league: 'eBasketball H2H GG League' }));
   assert.ok(!blockedGame({ sport_id: 16, league: 'USA. NFL' }));
-  // NFL: the two-way winner is ours (settled on the final score); a 1X2 (regulation) and the rest go to the operator.
+  // NFL: the two-way winner is ours (settled on the final score); the 1X2 is left out (home / away only), the rest go to the operator.
   const nfl = [odd('Winner (incl. overtime)', 'W_Incl_OT', '1', 1.6), odd('Winner (incl. overtime)', 'W_Incl_OT', '2', 2.3),
     odd('1x2', '1x2', '1', 1.7), odd('1x2', '1x2', 'x', 15), odd('1x2', '1x2', '2', 2.4),
     odd('1st Half - Winner', 'HT_W', '1', 1.7), odd('1st Half - Winner', 'HT_W', '2', 2.1), odd('Total', 'TG_O/U', 'over', 1.9, '45.5')];
   assert.deepEqual(pricesFor(nfl, 'futamericano'), { 'ml|1': 160, 'ml|2': 230 });
   const rest = Object.keys(extraPrices(nfl, { sport: 'futamericano' }));
-  assert.ok(rest.some((k) => /^x\|\d+~1x2~/.test(k)) && rest.some((k) => k.includes('1st Half')) && !rest.some((k) => k.includes('Winner (incl')));
-  // Rugby and fights: a draw is a result, so the 1X2 is ours there.
+  assert.ok(!rest.some((k) => /^x\|\d+~1x2~/.test(k)) && rest.some((k) => k.includes('1st Half')) && !rest.some((k) => k.includes('Winner (incl')));
+  // Rugby and fights with a 1X2 only: its home and away are the winner, its draw is left out.
   const rugby = [odd('1x2', '1x2', '1', 1.5), odd('1x2', '1x2', 'x', 21), odd('1x2', '1x2', '2', 2.6)];
-  assert.deepEqual(pricesFor(rugby, 'raguebi'), { '1x2|1': 150, '1x2|X': 2100, '1x2|2': 260 });
+  assert.deepEqual(pricesFor(rugby, 'raguebi'), { 'ml|1': 150, 'ml|2': 260 });
+  assert.deepEqual(extraPrices(rugby, { sport: 'raguebi' }), {});
   assert.deepEqual(pricesFor([odd('Fight Winner', '12', '1', 1.3), odd('Fight Winner', '12', '2', 3.4)], 'mma'), { 'ml|1': 130, 'ml|2': 340 });
   // End of a game: NFL and rugby by the clock; a tie, or a sport without a clock, goes to the operator.
   assert.deepEqual(finishVerdict({ sport: 'futamericano', wh_minute: 60, home_score: 27, away_score: 24 }), { home: 27, away: 24 });
@@ -1154,14 +1155,19 @@ test('more sports: NFL, baseball, rugby, cricket, boxing, MMA and darts; the win
   assert.equal(leagueCountry('boxe', 'Boxing. Heavyweight'), 'World');
 });
 
-test('the winner named in Portuguese: "Resultado final 2 vias" is ours; the cricket 1X2 stays the provider\'s', () => {
+test('the winner named in Portuguese: "Resultado final 2 vias" is ours; a 1X2 only gives home / away', async () => {
+  const { extraPrices } = await import('../server/winhouse.js');
   const odd = (marketId, marketName, selection, price) => ({ marketId, marketName, marketCode: null, selection, price, special: null });
   const cricket = [odd(1, 'Resultado final 2 vias', '1', 1.52), odd(1, 'Resultado final 2 vias', '2', 2.31),
     odd(2, 'Resultado do Jogo de Críquete (1x2)', '1', 1.52), odd(2, 'Resultado do Jogo de Críquete (1x2)', 'x', 30), odd(2, 'Resultado do Jogo de Críquete (1x2)', '2', 2.32)];
-  assert.deepEqual(pricesFor(cricket, 'criquete'), { 'ml|1': 152, 'ml|2': 231 });
+  assert.deepEqual(pricesFor(cricket, 'criquete'), { 'ml|1': 152, 'ml|2': 231 }); // the two-way's prices, not the 1X2's
+  assert.deepEqual(pricesFor([...cricket].reverse(), 'criquete'), { 'ml|1': 152, 'ml|2': 231 });
+  assert.deepEqual(extraPrices(cricket, { sport: 'criquete' }), {}); // the 1X2 (and its draw) not shown
   const rugby = [odd(3, 'Resultado do Jogo de Râguebi (1x2)', '1', 1.4), odd(3, 'Resultado do Jogo de Râguebi (1x2)', 'x', 20), odd(3, 'Resultado do Jogo de Râguebi (1x2)', '2', 3),
     odd(4, '1.ª parte - Resultado final', '1', 1.5), odd(4, '1.ª parte - Resultado final', '2', 2.5)];
-  assert.deepEqual(pricesFor(rugby, 'raguebi'), { '1x2|1': 140, '1x2|X': 2000, '1x2|2': 300 });
+  assert.deepEqual(pricesFor(rugby, 'raguebi'), { 'ml|1': 140, 'ml|2': 300 });
+  // Baseball's winner "(incl. entradas extra)" is the whole match.
+  assert.deepEqual(pricesFor([odd(6, 'Vencedor (incl. entradas extra)', '1', 1.7), odd(6, 'Vencedor (incl. entradas extra)', '2', 2.1)], 'basebol'), { 'ml|1': 170, 'ml|2': 210 });
   assert.deepEqual(pricesFor([odd(5, 'Vencedor do combate', '1', 1.3), odd(5, 'Vencedor do combate', '2', 3.5)], 'boxe'), { 'ml|1': 130, 'ml|2': 350 });
 });
 
@@ -1170,6 +1176,6 @@ test('catalogue: the winner of the named-winner sports counts as settled automat
   assert.ok(namedWinnerMarket('futamericano', { name: 'Resultado final 2 vias (Prolongamento)' }));
   assert.ok(!namedWinnerMarket('futamericano', { name: 'Total de Pontos (Prolongamento)' }));
   assert.ok(namedWinnerMarket('mma', { name: '1x2', code: '1X2' }));
-  assert.ok(!namedWinnerMarket('criquete', { name: 'Resultado do Jogo de Críquete (1x2)' }));
+  assert.ok(namedWinnerMarket('criquete', { name: 'Resultado do Jogo de Críquete (1x2)' })); // its home / away
   assert.ok(!namedWinnerMarket('futebol', { name: '1x2' })); // football's go by id
 });
