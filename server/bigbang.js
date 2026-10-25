@@ -333,7 +333,7 @@ export function createBigBang(db, {
     // the house exclusives, the themes (Pesca, Grécia Antiga…) and one row per provider.
     const c = ctx();
     // Every row shows one game of a family (Gates of Olympus once, not its 1000, Dice, Super Scatter…).
-    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: diversify(featured, Math.max(n, 12)) }] : [];
+    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: diversify(featured) }] : [];
     const fresh = byNewest(all.games.filter((g) => g.type !== 'live'));
     if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: diversify(fresh, n) });
     const top = topWeek(all.games);

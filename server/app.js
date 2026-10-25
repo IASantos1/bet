@@ -490,12 +490,13 @@ export function createApp(db, {
     // "Sabemos que vais gostar" and "Porque jogaste …" (like the last game played, like the first favourite):
     // none already played, and no game twice across these rows.
     const seen = new Set([...recent, ...favorites].map((g) => g.id));
-    const take = (list, n = 12) => { const out = list.filter((x) => !seen.has(x.id)).slice(0, n); out.forEach((x) => seen.add(x.id)); return out; };
-    const forYou = take(await (bb.forYou?.([...recent, ...favorites].map((g) => g.id), 24) ?? []));
+    // (up to 40 each: the row shows 12, its "Ver todos" all of them)
+    const take = (list, n = 40) => { const out = list.filter((x) => !seen.has(x.id)).slice(0, n); out.forEach((x) => seen.add(x.id)); return out; };
+    const forYou = take(await (bb.forYou?.([...recent, ...favorites].map((g) => g.id), 60) ?? []));
     const seeds = [recent[0], favorites.find((g) => g.id !== recent[0]?.id) || recent[1]].filter(Boolean);
     const because = [];
     for (const g of seeds) {
-      const games = take(await (bb.related?.(g, 30) ?? []));
+      const games = take(await (bb.related?.(g, 60) ?? []));
       if (games.length >= 3) because.push({ game: { id: g.id, name: g.name }, games });
     }
     res.json({ recent, favorites, forYou, because });
