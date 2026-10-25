@@ -1624,16 +1624,16 @@ img, video, iframe { max-width: 100%; }
 /* Light theme (07:00–21:00, set by the page's clock, splash.js / app.js): the same layout on light surfaces. */
 html.light {
   color-scheme: light;
-  --page: #f2f4f7; --card: #ffffff; --panels: #ffffff; --dim: #eef1f5; --row-hover: #e2e7ee;
-  --border: #d6dce4; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
-  --odd-cell: #dce2ea; --odd-price: #111827; --odd-hover: #cdd5e0; --odd-selected: #67788c; --odd-selected-price: #ffffff;
+  --page: #ffffff; --card: #ffffff; --panels: #ffffff; --dim: #f5f7fa; --row-hover: #e8ecf1;
+  --border: #e3e7ed; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
+  --odd-cell: #f0f3f7; --odd-price: #111827; --odd-hover: #e3e8ef; --odd-selected: #67788c; --odd-selected-price: #ffffff;
   --nav: #ffffff; --nav-sep: #e4e8ee; --nav-label: #111827; --nav-sub: #6b7280;
   --text: #111827; --text-2: #374151; --text-3: #6b7280; --text-4: #9aa3ae;
   --strong: #111827;
 }
 html.light body { background: var(--page); color: var(--text); }
-/* event cards a touch grey (still lighter than their odds buttons) */
-html.light .match-card, html.light .comp-block { background: #f6f7f9; }
+/* all white: the cards stand off the page by a thin line and a soft shadow */
+html.light .match-card, html.light .comp-block, html.light .pick-card { box-shadow: 0 2px 10px rgba(17, 24, 39, .06); }
 html.light .topbar, html.light .mobile-nav { background: var(--nav); }
 html.light .cb-ring, html.light .game-card .game-art { background: #e6eaf0; }
 html.light .car-btn { background: #ffffffee; color: #111827; }
@@ -1641,8 +1641,6 @@ html.light .aff-side { background: radial-gradient(120% 90% at 100% 0, rgba(255,
 html.light .aff-side-top b { color: #111827; }
 html.light .pill.open, html.light .pill.pending, html.light .pill.scheduled { background: #e6eaf0; }
 html.light .game-art, html.light .fs-art { background: linear-gradient(160deg, #eef1f5, #dde3ea); }
-html.light .hero { background: radial-gradient(circle at 80% 20%, #dfe6ee 0, #eef1f5 28%, var(--dim) 70%); }
-html.light .match-hero { background: radial-gradient(circle at 50% 0%, #ffffff 0, #f4f6f9 45%, var(--dim) 80%); }
 html.light .fs-banner { --fs-accent: #4f6276; }
 
 /* Maintenance screen (admin switch): over the whole viewport, header and slip included. */
@@ -1798,3 +1796,72 @@ html:not(.light) .pick-card::after { filter: invert(1); opacity: .07; }
 @media (max-width: 700px) { .pick-ribbon { font-size: 13px; padding: 6px 14px 6px 12px; } .pick-hot { font-size: 13px; padding: 4px 8px; } .pick-legs li { font-size: 14px; } }
 .lg-badge.sport { background: var(--panel2); color: var(--text); }
 .lg-badge.sport svg { width: 22px; height: 22px; }
+
+/* ---------- Vivid accents: one signature colour (lime) for what the player acts on, a colour per sport,
+   gold for boosted prices, a pulsing live dot. Lime fills keep dark text; on the light theme the thin
+   lime marks (logo, underlines) turn a deeper green to stay readable on white. ---------- */
+:root { --viva: #7cff6b; --viva-ink: #0b1a0a; --viva-text: #7cff6b; --viva-glow: rgba(124, 255, 107, .35); --boost-price: #ffc83d; }
+html.light { --viva-text: #1f9d3a; --viva-glow: rgba(60, 200, 60, .28); --boost-price: #d98a00; }
+
+.brand-word span, .brand > span:last-child span { color: var(--viva-text); text-shadow: 0 0 14px var(--viva-glow); }
+html.light .brand-word span, html.light .brand > span:last-child span { text-shadow: none; }
+.topnav a:hover, .topnav a.active { border-bottom-color: var(--viva-text); }
+.section-head h2::before { content: ''; display: inline-block; width: 4px; height: 1em; margin-right: 8px; border-radius: 2px; background: var(--viva-text); vertical-align: -2px; }
+
+@keyframes livePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(233, 90, 116, .7); } 50% { box-shadow: 0 0 0 6px rgba(233, 90, 116, 0); } }
+.live-dot { animation: livePulse 1.4s infinite; }
+.match-card:has(.live-label) { border-color: rgba(233, 90, 116, .5); box-shadow: 0 0 18px rgba(233, 90, 116, .15); }
+
+.odd-btn.selected, .odd-btn.selected:hover:not(:disabled) { background: var(--viva); color: var(--viva-ink); box-shadow: 0 0 14px var(--viva-glow); }
+.odd-btn.selected small { color: var(--viva-ink); }
+html.light .odd-btn.selected { box-shadow: 0 0 0 1px #4fd13f, 0 4px 12px var(--viva-glow); }
+/* a price that moved flashes green (up) or red (down), then settles */
+@keyframes oddUp { from { background-color: rgba(81, 197, 128, .55); } }
+@keyframes oddDown { from { background-color: rgba(233, 90, 116, .55); } }
+.odd-btn.up:not(.selected) { animation: oddUp 1.8s ease-out; }
+.odd-btn.down:not(.selected) { animation: oddDown 1.8s ease-out; }
+
+.place-bet, .place-bet:hover:not(:disabled) { background: var(--viva); color: var(--viva-ink); box-shadow: 0 6px 22px var(--viva-glow); }
+.place-bet:disabled { box-shadow: none; }
+.primary-btn[data-action="register"], #registerBtn { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); box-shadow: 0 4px 16px var(--viva-glow); }
+
+.pick-card { border-color: rgba(255, 45, 117, .35); }
+.pick-ribbon { background: linear-gradient(90deg, #ff7a18, #ff2d75); box-shadow: 0 4px 16px rgba(255, 45, 117, .35); }
+.pick-ribbon.super { background: linear-gradient(90deg, #ffb800, #ff2d75, #8e2de2); }
+.pick-btn b { color: var(--boost-price); text-shadow: 0 0 12px rgba(255, 200, 61, .4); }
+html.light .pick-btn b { text-shadow: none; }
+
+.sport-tile.active { border-color: var(--viva); box-shadow: 0 0 0 1px var(--viva), 0 4px 18px var(--viva-glow); }
+html.light .sport-tile.active { border-color: #4fd13f; box-shadow: 0 0 0 1px #4fd13f, 0 4px 14px var(--viva-glow); }
+.side-league.active, .sport-pill.active { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); }
+.side-league.active b { color: rgba(11, 26, 10, .6); }
+/* a colour per sport: a stripe in the side menu, the icon of the filter tiles */
+[data-sport-link="futebol"], [data-sport="futebol"] { --sport: #3ddc84; }
+[data-sport-link="basquetebol"], [data-sport="basquetebol"] { --sport: #ff8a3d; }
+[data-sport-link="tenis"], [data-sport="tenis"] { --sport: #e6ff3d; }
+[data-sport-link="hoquei"], [data-sport="hoquei"] { --sport: #5ad1ff; }
+[data-sport-link="dardos"], [data-sport="dardos"] { --sport: #ff5a5a; }
+[data-sport-link="esports"], [data-sport="esports"] { --sport: #b27cff; }
+[data-sport-link="voleibol"], [data-sport="voleibol"] { --sport: #ffd23d; }
+[data-sport-link="andebol"], [data-sport="andebol"] { --sport: #3dffc8; }
+[data-sport-link="mma"], [data-sport="mma"], [data-sport-link="boxe"], [data-sport="boxe"] { --sport: #ff3d5a; }
+[data-sport-link="basebol"], [data-sport="basebol"] { --sport: #ff6b6b; }
+[data-sport-link="futamericano"], [data-sport="futamericano"], [data-sport-link="raguebi"], [data-sport="raguebi"], [data-sport-link="criquete"], [data-sport="criquete"] { --sport: #c98b4a; }
+[data-sport-link="futsal"], [data-sport="futsal"], [data-sport-link="tenismesa"], [data-sport="tenismesa"], [data-sport-link="badminton"], [data-sport="badminton"] { --sport: #7cff6b; }
+html.light [data-sport-link="tenis"], html.light [data-sport="tenis"] { --sport: #b5c400; }
+html.light [data-sport-link="voleibol"], html.light [data-sport="voleibol"] { --sport: #e0a800; }
+.side-link[data-sport-link] { box-shadow: inset 3px 0 0 var(--sport, transparent); }
+.sport-tile[data-sport] svg { color: var(--sport, var(--text)); }
+
+.hero { background: radial-gradient(60% 80% at 85% 10%, rgba(124, 255, 107, .18), transparent 60%), radial-gradient(50% 60% at 10% 100%, rgba(255, 45, 117, .14), transparent 60%), var(--panel); }
+.match-hero { background: radial-gradient(70% 90% at 50% 0%, rgba(124, 255, 107, .16), transparent 65%), var(--panel); }
+html.light .hero { background: radial-gradient(60% 80% at 85% 10%, rgba(124, 255, 107, .30), transparent 60%), radial-gradient(50% 60% at 10% 100%, rgba(255, 45, 117, .12), transparent 60%), var(--panel); }
+html.light .match-hero { background: radial-gradient(70% 90% at 50% 0%, rgba(124, 255, 107, .28), transparent 65%), var(--panel); }
+
+/* the multiple-boost box of the slip on the light theme (it kept its dark colours) */
+html.light .slip-boost { background: var(--dim); border-color: var(--border); }
+html.light .boost-head, html.light .boost-foot { color: var(--text-2); }
+html.light .boost-scale { color: var(--text-3); }
+html.light .boost-line { background: #dfe4ea; }
+html.light .boost-foot { border-top-color: var(--border); }
+html.light .boost-scale span.on, html.light .boost-foot .boost-pct { color: #c98400; }
