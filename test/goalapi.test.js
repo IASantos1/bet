@@ -61,6 +61,16 @@ test('league table picks the group with our teams; form counts the last five', (
     compact(fx('9', 'Celta', 'Getafe')));
   assert.equal(t.name, 'LaLiga · West');
   assert.deepEqual(t.rows.map((r) => [r.position, r.team, r.side]), [[1, 'Getafe', 'away'], [2, 'Celta', 'home']]);
+  // Argentina: four tables under one name (two zones, each twice, once still empty): only the zone
+  // with our teams and its games, each team once.
+  const z = (pos, team, played) => ({ ...row(pos, team, 'Clausura', played * 3), overallLeaguePlayed: String(played) });
+  const arg = normalizeStandings([
+    z(1, 'Tigre', 1), z(2, 'Lanus', 1), z(3, 'Belgrano', 1),
+    z(1, 'Rosario', 0), z(2, 'Tigre', 0), z(3, 'Velez', 0),
+    z(1, 'Platense', 2), z(2, 'River', 1), z(3, 'Boca', 0),
+    z(1, 'Newells', 0), z(2, 'Platense', 0), z(3, 'River', 0),
+  ], compact(fx('9', 'River', 'Platense')));
+  assert.deepEqual(arg.rows.map((r) => [r.position, r.team, r.played]), [[1, 'Platense', 2], [2, 'River', 1], [3, 'Boca', 0]]);
 
   const f = normalizeForm({ recentFixtures: ['W', 'W', 'D', 'L', 'W', 'L'].map((r, i) => ({ date: `2026-10-0${9 - i}`, opponent: `O${i}`, score: '1-0', isHome: i % 2 === 0, result: r })) });
   assert.equal(f.games.length, 5);
