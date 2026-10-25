@@ -1006,6 +1006,9 @@ export function finishVerdict(row, now = Date.now()) {
   }
 }
 
+/** Lets the server answer what is waiting (requests, timers) before a long loop goes on. */
+const breather = () => new Promise((resolve) => setImmediate(resolve));
+
 export function createWinHouseFeed(db, {
   client, tzOffsetMinutes = null, finishConfirmSeconds = 180, prematchStaleSeconds = 900, blockWomen = true, blockYouth = true, blockMinor = true, blockLeagues = '', footballLeagues: allowLeagues = undefined, basketballLeagues = undefined, tennisLeagues = undefined, hockeyLeagues = undefined,
   volleyballLeagues = undefined, handballLeagues = undefined, futsalLeagues = undefined,
@@ -1310,7 +1313,9 @@ export function createWinHouseFeed(db, {
     // Each game's entry as WinHouse sent it (without its odds), for the admin's "WinHouse data".
     liveRaw.clear();
     liveListAt = nowIso();
+    let n = 0;
     for (const raw of items) {
+      if (++n % 40 === 0) await breather();
       if (raw?.id !== undefined) { const { odd: _odd, ...fields } = raw; liveRaw.set(String(raw.id), fields); }
       let ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
       // A blocked game that already has bets keeps its score and clock (to be settled), with no prices.
@@ -1696,7 +1701,10 @@ export function createWinHouseFeed(db, {
     const now = Date.now();
     let created = 0;
     let priced = 0;
+    let n = 0;
     for (const raw of byId.values()) {
+      // Thousands of games: the server answers players in between (a bet waits for no list).
+      if (++n % 40 === 0) await breather();
       const ev = normalizeItem(raw, { tzOffsetMinutes: offset(), block });
       if (!ev || new Date(ev.startTime).getTime() <= now) continue;
       try {
