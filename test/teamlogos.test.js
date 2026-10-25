@@ -308,3 +308,32 @@ test('official league logos: only our leagues, downloaded once and kept', async 
   assert.equal(await down.leagueLogo(140), null);
   assert.equal(asked.filter((u) => u === 'down').length, 1);
 });
+
+test('other sports: the league logo found once by name with that sport\'s API, kept; misses kept a month', async () => {
+  const db = openDb(':memory:');
+  const asked = [];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]);
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.includes('media.api-sports.io')) return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => png };
+    const q = decodeURIComponent(new URL(url).searchParams.get('search') || '');
+    const response = {
+      BBL: [{ id: 15, name: 'BBL', logo: 'https://media.api-sports.io/basketball/leagues/15.png', country: { name: 'Germany' } },
+        { id: 99, name: 'BBL', logo: 'https://media.api-sports.io/basketball/leagues/99.png', country: { name: 'Bahrain' } }],
+    }[q] || [];
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ errors: [], response }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k' });
+  assert.equal(await logos.sportLeagueLogo('futebol', 'Premier League', 'England'), null);
+  const f = await logos.sportLeagueLogo('basquetebol', 'Germany. BBL', 'Germany');
+  assert.deepEqual(Buffer.from(f.body), png);
+  assert.ok(asked[0].startsWith('https://v1.basketball.api-sports.io/leagues?search=BBL'));
+  assert.equal(asked[1], 'https://media.api-sports.io/basketball/leagues/15.png');
+  await logos.sportLeagueLogo('basquetebol', 'Germany. BBL', 'Germany');
+  assert.equal(asked.length, 2); // kept: no new request
+  assert.equal(await logos.sportLeagueLogo('hoquei', 'Nowhere. XYZ League', 'Nowhere'), null);
+  const n = asked.length;
+  assert.equal(await logos.sportLeagueLogo('hoquei', 'Nowhere. XYZ League', 'Nowhere'), null);
+  assert.equal(asked.length, n); // a miss is not asked again
+  assert.ok(asked.slice(2).every((u) => u.startsWith('https://v1.hockey.api-sports.io/')));
+});

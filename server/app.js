@@ -728,7 +728,9 @@ export function createApp(db, {
   });
   // Official league logos (API-Football), kept here too; the page shows the country's flag when there is none.
   app.get('/league-logo/:id', async (req, res) => {
-    const f = await teamLogos?.leagueLogo?.(req.params.id).catch(() => null);
+    const sport = String(req.query.s || '');
+    const f = await (sport ? teamLogos?.sportLeagueLogo?.(sport, String(req.query.n || ''), String(req.query.c || ''))
+      : teamLogos?.leagueLogo?.(req.params.id))?.catch(() => null);
     if (!f) return res.status(404).end();
     res.set({ 'Content-Type': f.type, 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff' });
     res.end(Buffer.from(f.body));

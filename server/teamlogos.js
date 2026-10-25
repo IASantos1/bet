@@ -328,6 +328,52 @@ export function createTeamLogos(db, {
     return f;
   }
 
+  /**
+   * Another sport's league logo (basketball, ice hockey, volleyball, handball), found once by name with
+   * that sport's API-Sports (one request of its daily allowance) and kept: { type, body } or null.
+   * A league not found is not asked for again for a month.
+   */
+  db.exec('CREATE TABLE IF NOT EXISTS league_logos (league_key TEXT PRIMARY KEY, logo TEXT, checked_at TEXT NOT NULL)');
+  const leagueRowGet = db.prepare('SELECT logo, checked_at FROM league_logos WHERE league_key = ?');
+  const leagueRowPut = db.prepare('INSERT OR REPLACE INTO league_logos (league_key, logo, checked_at) VALUES (?, ?, ?)');
+  const leagueAsking = new Map();
+  async function sportLeagueLogo(sport, name, country = '') {
+    const short = String(name || '').replace(/^[^.]+\.\s+(?=\S)/, '').trim().slice(0, 80);
+    if (sport === 'futebol' || !API_SPORTS[sport] || loose(short).length < 2) return null;
+    const k = `${sport}|${loose(country)}|${loose(short)}`;
+    let row = leagueRowGet.get(k);
+    if (!row || (!row.logo && Date.now() - new Date(row.checked_at).getTime() > PACK_RETRY_MS)) {
+      if (!apifCan(sport)) return null;
+      if (!leagueAsking.has(k)) {
+        leagueAsking.set(k, findLeague(sport, short, country).then((logo) => { leagueRowPut.run(k, logo, nowIso()); })
+          .catch(() => {}).finally(() => leagueAsking.delete(k)));
+      }
+      await leagueAsking.get(k);
+      row = leagueRowGet.get(k);
+    }
+    if (!row?.logo) return null;
+    const path = await keepFile(row.logo);
+    return path.startsWith('/team-logo/') ? fileGet.get(path.slice(11)) || null : null;
+  }
+  async function findLeague(sport, short, country) {
+    const want = loose(short);
+    const land = loose(country);
+    const place = (l) => loose(l.country?.name || (typeof l.country === 'string' ? l.country : ''));
+    const words = short.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 3);
+    const terms = [...new Set([words.join(' '), ...[...words].sort((a, b) => b.length - a.length)])].filter((t) => t.length >= 3).slice(0, 2);
+    for (const q of terms) {
+      if (!apifCan(sport)) break;
+      const found = (await apiCall(sport, `leagues?search=${encodeURIComponent(q)}`)).map((x) => ({ ...(x.league || x), country: x.country || x.league?.country }))
+        .filter((l) => httpsUrl(l.logo) && (!land || ['europe', 'world', 'international'].includes(land) || !place(l) || place(l) === land
+          || (land === 'unitedstates' && place(l) === 'usa') || (land === 'czechrepublic' && place(l) === 'czechia')));
+      const theirs = (l) => loose(l.name);
+      const hit = found.find((l) => theirs(l) === want)
+        || found.find((l) => theirs(l).includes(want) || want.includes(theirs(l)));
+      if (hit) return hit.logo;
+    }
+    return null;
+  }
+
   /** A kept badge: { type, body } or null. */
   const file = (id) => (/^[0-9a-f]{20}$/.test(String(id)) ? fileGet.get(id) || null : null);
 
@@ -554,5 +600,5 @@ export function createTeamLogos(db, {
     return () => { clearTimeout(first); clearInterval(t); };
   }
 
-  return { get, run, start, wanted, file, leagueLogo, diagnose, apiFootballUsed: used };
+  return { get, run, start, wanted, file, leagueLogo, sportLeagueLogo, diagnose, apiFootballUsed: used };
 }
