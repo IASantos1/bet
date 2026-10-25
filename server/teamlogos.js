@@ -34,6 +34,10 @@ const LEAGUE_PACKS = {
     71, 72, 128, 253, 262, 307, 2, 3, 848, 96],
 };
 const PACK_RETRY_MS = 30 * 86_400_000;
+// API-Football league ids whose official logo the site shows (the home page's league row): kept here
+// like the team badges, fetched once from its media server (no key, no request of the daily quota).
+export const LEAGUE_LOGO_IDS = new Set([39, 40, 45, 140, 141, 143, 135, 136, 137, 78, 79, 81, 61, 62, 66, 94, 95, 96, 88, 89, 144, 179,
+  203, 197, 207, 218, 119, 113, 103, 106, 345, 2, 3, 848, 13, 11, 1, 4, 5, 71, 72, 128, 253, 262, 307, 98]);
 
 /** A GET with only the headers given (fetch adds its own, which API-Sports refuses). */
 export function plainGet(url, headers) {
@@ -313,6 +317,17 @@ export function createTeamLogos(db, {
     } catch { return url; }
   }
 
+  /** An API-Football league's official logo, kept here: { type, body } or null (not one of ours, or unreachable). */
+  const leagueMiss = new Map();
+  async function leagueLogo(id) {
+    const n = Number(id);
+    if (!LEAGUE_LOGO_IDS.has(n) || leagueMiss.get(n) > Date.now()) return null;
+    const path = await keepFile(`https://media.api-sports.io/football/leagues/${n}.png`);
+    const f = path.startsWith('/team-logo/') ? fileGet.get(path.slice(11)) || null : null;
+    if (!f) leagueMiss.set(n, Date.now() + 3_600_000); // unreachable: not asked again for an hour
+    return f;
+  }
+
   /** A kept badge: { type, body } or null. */
   const file = (id) => (/^[0-9a-f]{20}$/.test(String(id)) ? fileGet.get(id) || null : null);
 
@@ -539,5 +554,5 @@ export function createTeamLogos(db, {
     return () => { clearTimeout(first); clearInterval(t); };
   }
 
-  return { get, run, start, wanted, file, diagnose, apiFootballUsed: used };
+  return { get, run, start, wanted, file, leagueLogo, diagnose, apiFootballUsed: used };
 }

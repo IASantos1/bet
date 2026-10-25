@@ -286,3 +286,25 @@ test('a promoted club gets its own badge from another kept league, and a wrong o
   assert.equal(fileOf('Leeds United'), `/team-logo/${id('https://media.api-sports.io/football/teams/Leeds.png')}`);
   assert.equal(fileOf('Manchester United'), `/team-logo/${id('https://media.api-sports.io/football/teams/ManchesterUnited.png')}`);
 });
+
+test('official league logos: only our leagues, downloaded once and kept', async () => {
+  const db = openDb(':memory:');
+  const asked = [];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => png };
+  };
+  const logos = createTeamLogos(db, { fetchImpl });
+  assert.equal(await logos.leagueLogo(999999), null);
+  assert.equal(await logos.leagueLogo('abc'), null);
+  const f = await logos.leagueLogo(39);
+  assert.equal(f.type, 'image/png');
+  assert.deepEqual(Buffer.from(f.body), png);
+  await logos.leagueLogo('39');
+  assert.deepEqual(asked, ['https://media.api-sports.io/football/leagues/39.png']);
+  const down = createTeamLogos(db, { fetchImpl: async () => { asked.push('down'); throw new Error('offline'); } });
+  assert.equal(await down.leagueLogo(140), null);
+  assert.equal(await down.leagueLogo(140), null);
+  assert.equal(asked.filter((u) => u === 'down').length, 1);
+});
