@@ -364,3 +364,35 @@ test('MMA: the fighter\'s photo found by name with API-MMA and kept; NFL and bas
   assert.ok(asked.some((u) => u.startsWith('https://v1.mma.api-sports.io/fighters?search=Conor%20McGregor')));
   assert.ok(!asked.some((u) => u.includes('thesportsdb'))); // fighters: no team search
 });
+
+test('MMA: the fighters of a day\'s fights (one request) give their photos; a miss of the old lookup is asked again', async () => {
+  const db = openDb(':memory:');
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('mma', 'UFC Fight Night', 'Alex Pereira', 'Pereira Jr, Alex', ?, 'scheduled', 'winhouse', ?, ?)`).run(soon, nowIso(), nowIso());
+  // Searched before with no photo (the old lookup): marked for a month.
+  db.exec(`CREATE TABLE IF NOT EXISTS team_logos (team_key TEXT PRIMARY KEY, logo TEXT, colors TEXT, checked_at TEXT NOT NULL)`);
+  db.exec('ALTER TABLE team_logos ADD COLUMN kit TEXT'); db.exec('ALTER TABLE team_logos ADD COLUMN ver INTEGER NOT NULL DEFAULT 1');
+  db.exec('ALTER TABLE team_logos ADD COLUMN apif INTEGER NOT NULL DEFAULT 0'); db.exec('ALTER TABLE team_logos ADD COLUMN alt TEXT');
+  db.prepare("INSERT INTO team_logos (team_key, logo, colors, checked_at, ver, apif) VALUES ('mma|alexpereira', NULL, NULL, ?, 2, 1)").run(nowIso());
+  const asked = [];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 5]);
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.includes('media.api-sports.io')) return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => png };
+    if (url.includes('thesportsdb')) return { ok: true, status: 200, json: async () => ({ teams: null }) };
+    const response = url.includes('fights?date=') ? [{ id: 1, slug: 'UFC Fight Night', fighters: {
+      first: { id: 10, name: 'Alex Pereira', logo: 'https://media.api-sports.io/mma/fighters/10.png' },
+      second: { id: 11, name: 'Alex Pereira Jr', logo: 'https://media.api-sports.io/mma/fighters/11.png' } } }] : [];
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ errors: [], response }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: {} });
+  await logos.run();
+  assert.ok(asked.some((u) => u.startsWith('https://v1.mma.api-sports.io/fights?date=')));
+  assert.ok(logos.get('mma', 'Alex Pereira').logo.startsWith('/team-logo/'));
+  assert.ok(logos.get('mma', 'Pereira Jr, Alex').logo.startsWith('/team-logo/')); // "Last, First" found too
+  // The day is not read again within 12 hours.
+  const n = asked.filter((u) => u.includes('fights?date=')).length;
+  await logos.run();
+  assert.equal(asked.filter((u) => u.includes('fights?date=')).length, n);
+});

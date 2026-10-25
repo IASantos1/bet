@@ -178,6 +178,13 @@ export function createTeamLogos(db, {
     db.exec("UPDATE team_logos SET logo = NULL, apif = 0 WHERE logo LIKE '/team-logo/%'");
     db.prepare('INSERT INTO api_quota (name, day, used) VALUES (?, ?, 1)').run(m, new Date().toISOString().slice(0, 10));
   }
+  // The sports added later (fighters, NFL, baseball, rugby) were searched once without a result and
+  // marked for a month: looked up again with the fixed lookup.
+  if (!db.prepare("SELECT 1 FROM api_quota WHERE name = 'migrate:new-sports-1'").get()) {
+    db.exec(`UPDATE team_logos SET apif = 0, checked_at = '2000-01-01T00:00:00.000Z'
+      WHERE logo IS NULL AND (team_key LIKE 'mma|%' OR team_key LIKE 'futamericano|%' OR team_key LIKE 'basebol|%' OR team_key LIKE 'raguebi|%')`);
+    db.prepare("INSERT INTO api_quota (name, day, used) VALUES ('migrate:new-sports-1', ?, 1)").run(new Date().toISOString().slice(0, 10));
+  }
   const cache = new Map(db.prepare('SELECT team_key, logo, colors, kit, ver, apif, alt, checked_at FROM team_logos').all()
     .map((r) => [r.team_key, { logo: r.logo, colors: r.colors ? JSON.parse(r.colors) : null, kit: r.kit, ver: r.ver, apif: !!r.apif,
       alt: r.alt ? JSON.parse(r.alt) : [], checkedAt: r.checked_at }]));
@@ -246,7 +253,9 @@ export function createTeamLogos(db, {
 
   /** A badge from the kept league lists (no request): the team's name, or one of its other names. */
   function directoryLogo(sport, names) {
-    for (const n of names) for (const v of nameVariants(n)) {
+    // A fighter written "Last, First" is also "First Last".
+    const all = PEOPLE_SPORTS.has(sport) ? names.flatMap((n) => [n, String(n).split(/\s*,\s*/).reverse().join(' ')]) : names;
+    for (const n of all) for (const v of nameVariants(n)) {
       const row = dirGet.get(sport, loose(v));
       if (row) return row.logo;
     }
@@ -280,6 +289,36 @@ export function createTeamLogos(db, {
     packPut.run(sport, league, null, 0, nowIso()); // no season works: try again next month
     return false;
   }
+  /**
+   * MMA: every fighter of a day's fights, with their photo, in one request (fights?date=…), kept in
+   * team_directory like a league's teams; the days with fights here in the next four days, each
+   * read again after 12 hours (cards change).
+   */
+  const mmaDays = db.prepare(`SELECT DISTINCT substr(start_time, 1, 10) AS day FROM events
+    WHERE sport = 'mma' AND status IN ('scheduled', 'live') AND start_time < ? ORDER BY day LIMIT 5`);
+  function fightDaysDue() {
+    const old = Date.now() - 12 * 3_600_000;
+    return mmaDays.all(new Date(Date.now() + 4 * 86_400_000).toISOString()).map((r) => r.day).filter((day) => {
+      const p = packGet.get('mma', Number(day.replaceAll('-', '')));
+      return !p || new Date(p.fetched_at).getTime() < old;
+    });
+  }
+  async function loadFightDay(day) {
+    const list = await apiCall('mma', `fights?date=${day}`);
+    let n = 0;
+    for (const f of list) {
+      for (const side of [f?.fighters?.first, f?.fighters?.second]) {
+        const logo = httpsUrl(side?.logo || side?.photo || side?.image);
+        if (!side?.name || !logo) continue;
+        const names = [side.name, String(side.name).split(/\s*,\s*/).reverse().join(' ')];
+        for (const v of new Set(names.flatMap(nameVariants))) if (loose(v).length >= 3) dirPut.run('mma', loose(v), side.name, logo, null);
+        n += 1;
+      }
+    }
+    packPut.run('mma', Number(day.replaceAll('-', '')), null, n, nowIso());
+    return n;
+  }
+
   /** The next league lists to fetch (never fetched, or a month old). */
   function packsDue() {
     const old = Date.now() - PACK_RETRY_MS;
@@ -301,7 +340,7 @@ export function createTeamLogos(db, {
       if (q.length < 3 || !apifCan(sport) || minuteCalls >= apiFootballPerMinute) continue;
       const people = PEOPLE_SPORTS.has(sport);
       const teams = (await apiCall(sport, `${people ? 'fighters' : 'teams'}?search=${encodeURIComponent(q)}`))
-        .map((x) => x.team || x).map((x) => (people ? { ...x, logo: x.photo, code: x.nickname } : x));
+        .map((x) => x.team || x).map((x) => (people ? { ...x, logo: x.photo || x.logo || x.image, code: x.nickname } : x));
       const t = teams.find((x) => httpsUrl(x.logo) && [...known, ...person].some((n) => sameTeam({ strTeam: x.name, strTeamShort: x.code }, n)));
       if (t) {
         for (const v of nameVariants(t.name)) dirPut.run(sport, loose(v), t.name, t.logo, null);
@@ -346,9 +385,20 @@ export function createTeamLogos(db, {
   const leagueRowGet = db.prepare('SELECT logo, checked_at FROM league_logos WHERE league_key = ?');
   const leagueRowPut = db.prepare('INSERT OR REPLACE INTO league_logos (league_key, logo, checked_at) VALUES (?, ?, ?)');
   const leagueAsking = new Map();
+  // The big ones by their API-Sports id (no search needed): NFL and NCAA, MLB.
+  const KNOWN_LEAGUES = [
+    ['futamericano', /^(usa\.\s*)?nfl\b/i, 'https://media.api-sports.io/american-football/leagues/1.png'],
+    ['futamericano', /^(usa\.\s*)?ncaa\b/i, 'https://media.api-sports.io/american-football/leagues/2.png'],
+    ['basebol', /^(usa\.\s*)?mlb\b/i, 'https://media.api-sports.io/baseball/leagues/1.png'],
+  ];
   async function sportLeagueLogo(sport, name, country = '') {
     const short = String(name || '').replace(/^[^.]+\.\s+(?=\S)/, '').trim().slice(0, 80);
-    if (sport === 'futebol' || !API_SPORTS[sport] || loose(short).length < 2) return null;
+    if (sport === 'futebol' || !API_SPORTS[sport] || PEOPLE_SPORTS.has(sport) || loose(short).length < 2) return null;
+    const known = KNOWN_LEAGUES.find(([sp, re]) => sp === sport && re.test(String(name).trim()));
+    if (known) {
+      const path = await keepFile(known[2]);
+      return path.startsWith('/team-logo/') ? fileGet.get(path.slice(11)) || null : null;
+    }
     const k = `${sport}|${loose(country)}|${loose(short)}`;
     let row = leagueRowGet.get(k);
     if (!row || (!row.logo && Date.now() - new Date(row.checked_at).getTime() > PACK_RETRY_MS)) {
@@ -531,6 +581,17 @@ export function createTeamLogos(db, {
           }
         }
       }
+      // MMA: the fighters of the days with fights (one request a day).
+      if (apif) {
+        for (const day of fightDaysDue().slice(0, 2)) {
+          if (!apifCan('mma') || minuteCalls >= apiFootballPerMinute - 2) break;
+          try { await loadFightDay(day); } catch (err) {
+            log(`combates de MMA de ${day}: ${err.message}`);
+            if (err.rate) break;
+            packPut.run('mma', Number(day.replaceAll('-', '')), null, 0, nowIso()); // not asked again for 12 h
+          }
+        }
+      }
       try { found += await freePass(); } catch (err) { log(`emblemas das ligas guardadas: ${err.message}`); }
       try { if (apif) await prefetch(); } catch (err) { log(`descarga de emblemas: ${err.message}`); }
       for (const { sport, name, feedBadge } of wanted(perRun)) {
@@ -597,6 +658,8 @@ export function createTeamLogos(db, {
     steps.push({ name: 'Emblemas descarregados (guardados aqui)', ok: true,
       detail: `${count('SELECT COUNT(*) AS n FROM team_logo_files')} de ${dirLogos.all().length} das ligas guardadas · não gastam pedidos` });
     steps.push({ name: 'Equipas dos jogos', ok: withLogo > 0, detail: `${total} procuradas · ${withLogo} com emblema · ${local} guardados aqui (API-Football)` });
+    steps.push({ name: 'MMA: lutadores dos combates (API-MMA)', ok: true,
+      detail: `${count("SELECT COUNT(DISTINCT logo) AS n FROM team_directory WHERE sport = 'mma'")} lutadores com foto · ${count("SELECT COUNT(*) AS n FROM team_directory_packs WHERE sport = 'mma' AND teams > 0")} dias lidos` });
     steps.push({ name: 'Pedidos API-Football hoje (contados aqui)', ok: true, detail: Object.keys(API_SPORTS).map((sp) => `${sp} ${used(sp)}`).join(' · ') });
     steps.push({ name: 'Última procura', ok: Boolean(lastRun), detail: lastRun ? `${lastRun.at} · ${lastRun.asked} procuradas · ${lastRun.found} encontradas` : 'ainda não correu' });
     if (lastError) steps.push({ name: 'Último erro da API', ok: false, detail: `${lastError.at} · ${lastError.message}` });
