@@ -508,6 +508,10 @@ function namedWinnerKey(o, sport) {
   return null;
 }
 
+/** Whether a market of a named-winner sport is the one we settle ourselves (its winner / 1X2): the catalogue's "Automática". */
+export const namedWinnerMarket = (sport, { name, code = null }) => NAMED_WINNER_SPORTS.has(sport)
+  && !!namedWinnerKey({ marketName: name, marketCode: code, selection: '1', special: null }, sport);
+
 // Women's, youth and minor competitions can be left out (WINHOUSE_BLOCK_WOMEN / _YOUTH / _MINOR).
 const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
 const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|junior|juniors|júnior|juniores|juvenil|juvenis|youth|jugend|primavera|academy|academia)\b/i;
