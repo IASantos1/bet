@@ -451,7 +451,26 @@ export function openDb(file) {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
   migrate(db);
+  cacheStatements(db);
   return db;
+}
+
+/**
+ * Statements are compiled once and reused: the code prepares its SQL where it runs it (in the feed's
+ * loops over thousands of games, on every request), and compiling costs more than running. The most
+ * recently used 1000 are kept (SQL built with varying parts would otherwise pile up).
+ */
+function cacheStatements(db, max = 1000) {
+  const prepare = db.prepare.bind(db);
+  const cache = new Map();
+  db.prepare = (sql) => {
+    let stmt = cache.get(sql);
+    if (stmt) cache.delete(sql);
+    else stmt = prepare(sql);
+    cache.set(sql, stmt);
+    if (cache.size > max) cache.delete(cache.keys().next().value);
+    return stmt;
+  };
 }
 
 /** Additive migrations for databases created by earlier versions. */
