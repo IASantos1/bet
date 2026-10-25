@@ -726,6 +726,13 @@ export function createApp(db, {
     res.set({ 'Content-Type': f.type, 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff' });
     res.end(Buffer.from(f.body));
   });
+  // Official league logos (API-Football), kept here too; the page shows the country's flag when there is none.
+  app.get('/league-logo/:id', async (req, res) => {
+    const f = await teamLogos?.leagueLogo?.(req.params.id).catch(() => null);
+    if (!f) return res.status(404).end();
+    res.set({ 'Content-Type': f.type, 'Cache-Control': 'public, max-age=2592000, immutable', 'X-Content-Type-Options': 'nosniff' });
+    res.end(Buffer.from(f.body));
+  });
   app.get('/api/leagues', (_req, res) => {
     const out = {};
     for (const [sport, tree] of Object.entries(LEAGUE_TREES)) {

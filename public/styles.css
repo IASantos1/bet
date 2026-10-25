@@ -1605,6 +1605,9 @@ img, video, iframe { max-width: 100%; }
 .lg-badge { position: relative; flex: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--dim); display: grid; place-items: center; }
 .lg-badge img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .lg-badge i { font-style: normal; font-size: 20px; }
+/* The league's own logo: whole (not cut round), on white so dark logos show in the dark theme too. */
+.lg-badge.logo { background: #fff; border-color: #e3e6ea; }
+.lg-badge img.lg-logo { width: 28px; height: 28px; border-radius: 0; object-fit: contain; }
 .lg-badge em { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text); }
 .lg-badge em svg { width: 15px; height: 15px; }
 .sport-tile { position: relative; }

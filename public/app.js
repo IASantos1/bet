@@ -615,10 +615,34 @@ function popularLeagues(max = 16) {
   for (const l of [...all].sort((a, b) => b.count - a.count)) { if (picked.length >= max) break; take(l); }
   return picked.slice(0, max);
 }
+// Official logos (API-Football league ids, served from /league-logo/<id>): [regex on the league's own
+// name, country or null, id]. Football only; the others keep the country's flag.
+const LEAGUE_LOGOS = [
+  [/^premier league$/i, 'england', 39], [/^championship$/i, 'england', 40], [/^fa cup$/i, 'england', 45],
+  [/^(la ?liga|primera divisi[oó]n)$/i, 'spain', 140], [/segunda divisi[oó]n|la ?liga 2|laliga2/i, 'spain', 141], [/copa del rey/i, 'spain', 143],
+  [/^s[eé]rie a$/i, 'italy', 135], [/^s[eé]rie b$/i, 'italy', 136], [/coppa italia/i, 'italy', 137],
+  [/^bundesliga$/i, 'germany', 78], [/^2\.? ?bundesliga$/i, 'germany', 79], [/dfb.?pokal/i, 'germany', 81],
+  [/^ligue 1$/i, 'france', 61], [/^ligue 2$/i, 'france', 62], [/coupe de france/i, 'france', 66],
+  [/^(primeira liga|liga portugal( betclic)?|betclic)$/i, 'portugal', 94], [/(segunda liga|liga portugal 2)/i, 'portugal', 95], [/ta[cç]a de portugal/i, 'portugal', 96],
+  [/^eredivisie$/i, 'netherlands', 88], [/eerste divisie/i, 'netherlands', 89], [/(pro league|jupiler)/i, 'belgium', 144],
+  [/^premiership$/i, 'scotland', 179], [/s[uü]per lig/i, 'turkey', 203], [/super league/i, 'greece', 197], [/super league/i, 'switzerland', 207],
+  [/^bundesliga$/i, 'austria', 218], [/superliga/i, 'denmark', 119], [/allsvenskan/i, 'sweden', 113], [/eliteserien/i, 'norway', 103],
+  [/ekstraklasa/i, 'poland', 106], [/(czech liga|first league|chance liga)/i, 'czech republic', 345],
+  [/champions league/i, null, 2], [/europa league/i, null, 3], [/conference league/i, null, 848], [/libertadores/i, null, 13],
+  [/sudamericana/i, null, 11], [/world cup/i, null, 1], [/(euro championship|^euro\b)/i, null, 4], [/nations league/i, null, 5],
+  [/^s[eé]rie a$|brasileir/i, 'brazil', 71], [/^s[eé]rie b$/i, 'brazil', 72], [/liga profesional|primera divisi[oó]n/i, 'argentina', 128],
+  [/^(mls|major league soccer)$/i, 'usa', 253], [/liga mx/i, 'mexico', 262], [/(pro league|saudi)/i, 'saudi arabia', 307], [/j1 league/i, 'japan', 98],
+];
+const leagueLogoId = (l) => (l.sport !== 'futebol' ? null : LEAGUE_LOGOS.find(([re, country]) => re.test(leagueShort(l.name))
+  && (!country || String(l.country || '').toLowerCase().trim() === country))?.[2] || null);
 function leagueBadge(l) {
   const k = String(l.country || '').toLowerCase().trim();
   const code = COUNTRY_FLAG[k];
-  const pic = code ? `<img src="https://flagcdn.com/w80/${code}.png" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
+  const flag = code ? `https://flagcdn.com/w80/${code}.png` : '';
+  const logo = leagueLogoId(l);
+  // The league's own logo; if it cannot be loaded, the country's flag takes its place.
+  if (logo) return `<span class="lg-badge logo"><img class="lg-logo" src="/league-logo/${logo}" data-flag="${esc(flag)}" alt="" loading="lazy" decoding="async"></span>`;
+  const pic = flag ? `<img src="${flag}" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
   return `<span class="lg-badge">${pic}</span>`;
 }
 function leagueRow() {
@@ -3480,6 +3504,13 @@ document.addEventListener('error', (e) => {
 // A sidebar flag that fails to load becomes a globe (same size, so the list does not jump).
 document.addEventListener('error', (e) => {
   const img = e.target;
+  // A league logo that fails: the country's flag instead (or the globe).
+  if (img instanceof HTMLImageElement && img.classList.contains('lg-logo')) {
+    const badge = img.parentElement;
+    badge?.classList.remove('logo');
+    if (img.dataset.flag) { img.classList.remove('lg-logo'); img.src = img.dataset.flag; delete img.dataset.flag; } else img.replaceWith(Object.assign(document.createElement('i'), { textContent: '🌍' }));
+    return;
+  }
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('side-flag')) return;
   const globe = document.createElement('span');
   globe.className = 'side-flag globe';
