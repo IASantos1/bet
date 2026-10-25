@@ -1153,3 +1153,14 @@ test('more sports: NFL, baseball, rugby, cricket, boxing, MMA and darts; the win
   assert.equal(leagueCountry('raguebi', 'France. Top 14'), 'France');
   assert.equal(leagueCountry('boxe', 'Boxing. Heavyweight'), 'World');
 });
+
+test('the winner named in Portuguese: "Resultado final 2 vias" is ours; the cricket 1X2 stays the provider\'s', () => {
+  const odd = (marketId, marketName, selection, price) => ({ marketId, marketName, marketCode: null, selection, price, special: null });
+  const cricket = [odd(1, 'Resultado final 2 vias', '1', 1.52), odd(1, 'Resultado final 2 vias', '2', 2.31),
+    odd(2, 'Resultado do Jogo de Críquete (1x2)', '1', 1.52), odd(2, 'Resultado do Jogo de Críquete (1x2)', 'x', 30), odd(2, 'Resultado do Jogo de Críquete (1x2)', '2', 2.32)];
+  assert.deepEqual(pricesFor(cricket, 'criquete'), { 'ml|1': 152, 'ml|2': 231 });
+  const rugby = [odd(3, 'Resultado do Jogo de Râguebi (1x2)', '1', 1.4), odd(3, 'Resultado do Jogo de Râguebi (1x2)', 'x', 20), odd(3, 'Resultado do Jogo de Râguebi (1x2)', '2', 3),
+    odd(4, '1.ª parte - Resultado final', '1', 1.5), odd(4, '1.ª parte - Resultado final', '2', 2.5)];
+  assert.deepEqual(pricesFor(rugby, 'raguebi'), { '1x2|1': 140, '1x2|X': 2000, '1x2|2': 300 });
+  assert.deepEqual(pricesFor([odd(5, 'Vencedor do combate', '1', 1.3), odd(5, 'Vencedor do combate', '2', 3.5)], 'boxe'), { 'ml|1': 130, 'ml|2': 350 });
+});

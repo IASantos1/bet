@@ -573,6 +573,11 @@ export function createApp(db, {
     return SPORT_SPECS[sport]?.marketName?.[m] || PERIOD_NAMES[m] || MARKETS[m].name;
   };
 
+  // Markets the operator hid, per sport (admin → Catálogo de mercados): 'x:<provider id>' or ours ('ml', '1x2'…).
+  const hiddenMarkets = () => getSetting(db, 'markets.hidden', {}) || {};
+  const marketKeyOf = (s) => (s.market === 'x' ? `x:${splitSpecial(s.code)?.id}` : s.market);
+  const isHidden = (hidden, sport, s) => !!hidden[sport]?.includes(marketKeyOf(s));
+
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
     const events = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     if (!events.length) return [];
@@ -583,10 +588,11 @@ export function createApp(db, {
     ).all(...ids);
     const byEvent = new Map(ids.map((id) => [id, []]));
     for (const s of sels) byEvent.get(s.event_id).push(s);
+    const hidden = hiddenMarkets();
     const plFresh = (e) => e.pl_live_at && Date.now() - new Date(e.pl_live_at).getTime() <= config.liveOddsMaxAgeSeconds * 1000;
     return events.map((e) => {
       // In play a PropLine price shows only while its live confirmation is recent.
-      const rows = byEvent.get(e.id).map((s) => (s.src === 'pl' && e.status === 'live' && !plFresh(e) ? { ...s, active: 0 } : s));
+      const rows = byEvent.get(e.id).filter((s) => !isHidden(hidden, e.sport, s)).map((s) => (s.src === 'pl' && e.status === 'live' && !plFresh(e) ? { ...s, active: 0 } : s));
       // Main market on the cards: 1X2, or the match winner in sports without a draw.
       const main = rows.some((s) => s.market === '1x2') || !rows.some((s) => s.market === 'ml') ? '1x2' : 'ml';
       const pub = (s) => ({ id: s.id, market: s.market, code: s.code, label: selectionLabel(s.market, s.code, e.home, e.away), odds: s.odds_x100 / 100, active: !!s.active });
@@ -1403,6 +1409,11 @@ export function createApp(db, {
       ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
       : [];
     const freebetId = req.body.freebetId ? Number(req.body.freebetId) : null;
+    const selOf = db.prepare('SELECT s.market, s.code, e.sport FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id = ?');
+    const hidden = hiddenMarkets();
+    if (picks.some((p) => { const r = selOf.get(Number(p.selectionId)); return r && isHidden(hidden, r.sport, r); })) {
+      throw new HttpError(409, 'Este mercado já não está disponível. Retire-o do boletim.');
+    }
     const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId }));
     const u = userById(req.user.id);
     res.status(201).json({ betIds, balance: cents(u.balance_cents), user: userOut(u) });
@@ -1730,6 +1741,39 @@ export function createApp(db, {
     tennis && { sport: 'tenis', source: TENNIS_SOURCE, enabled: () => tennis.status().enabled, rawOdds: tennis.rawOdds },
     ...Object.entries(sports).map(([sport, f]) => ({ sport, source: f.source, enabled: () => f.status().enabled, rawOdds: f.rawOdds })),
   ].filter((p) => p && (p.rawOdds || p.gameMarkets)));
+  // Which markets show on the site, per sport: every market of the games open now, with how many
+  // games carry it; the operator hides the ones not wanted (a duplicate result, a market of no interest).
+  admin.get('/market-visibility', (_req, res) => {
+    const rows = db.prepare(`SELECT e.sport, s.market, CASE WHEN s.market = 'x' THEN substr(s.code, 1, instr(s.code, '~') - 1) ELSE '' END AS mid,
+        MIN(s.code) AS sample, COUNT(DISTINCT s.event_id) AS n
+      FROM selections s JOIN events e ON e.id = s.event_id
+      WHERE e.status IN ('scheduled', 'live') GROUP BY e.sport, s.market, mid`).all();
+    const hidden = hiddenMarkets();
+    const out = {};
+    for (const r of rows) {
+      const key = r.market === 'x' ? `x:${r.mid}` : r.market;
+      const name = r.market === 'x' ? splitSpecial(r.sample)?.group || `Mercado ${r.mid}` : marketName(r.sport, r.market);
+      (out[r.sport] ||= []).push({ key, name, own: r.market !== 'x', games: r.n, hidden: !!hidden[r.sport]?.includes(key) });
+    }
+    // Hidden ones with no game now stay listed, so they can be shown again.
+    for (const [sport, keys] of Object.entries(hidden)) {
+      for (const key of keys) if (!(out[sport] || []).some((m) => m.key === key)) (out[sport] ||= []).push({ key, name: key, own: !key.startsWith('x:'), games: 0, hidden: true });
+    }
+    for (const list of Object.values(out)) list.sort((a, b) => Number(b.own) - Number(a.own) || b.games - a.games || a.name.localeCompare(b.name));
+    res.json({ sports: out });
+  });
+  admin.post('/market-visibility', (req, res) => {
+    const sport = SPORTS.includes(req.body.sport) ? req.body.sport : null;
+    const key = typeof req.body.key === 'string' && /^(x:\d{1,12}|[a-z0-9]{1,8})$/.test(req.body.key) ? req.body.key : null;
+    if (!sport || !key) throw new HttpError(400, 'Mercado inválido.');
+    const all = { ...hiddenMarkets() };
+    const set = new Set(all[sport] || []);
+    if (req.body.hidden) set.add(key); else set.delete(key);
+    all[sport] = [...set];
+    if (!all[sport].length) delete all[sport];
+    setSetting(db, 'markets.hidden', all);
+    res.json({ ok: true });
+  });
   admin.get('/market-catalog', (_req, res) => res.json({ catalog: catalog.last(), running: catalog.running() }));
   admin.post('/market-catalog/run', async (req, res, next) => {
     try {

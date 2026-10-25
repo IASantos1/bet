@@ -187,3 +187,27 @@ test('other provider markets: shown on the match page, bet like the rest, settle
   admin.server.close();
   db.close();
 });
+
+test('a market the operator hides leaves the match page and the slip; showing it again brings it back', async () => {
+  const db = openDb(':memory:');
+  seed(db);
+  const { server, call } = await start(db);
+  const admin = await start(db);
+  await admin.call('POST', '/api/auth/login', { email: 'admin@classicbet.local', password: 'admin12345' });
+  const ev = (await call('GET', '/api/events')).body.events.find((e) => e.status === 'scheduled' && e.sport === 'futebol');
+  const btts = (await call('GET', `/api/events/${ev.id}`)).body.event.markets.find((m) => m.market === 'btts').selections[0];
+  const vis = (await admin.call('GET', '/api/admin/market-visibility')).body.sports.futebol;
+  assert.ok(vis.some((m) => m.key === 'btts' && m.own && !m.hidden && m.games > 0));
+  assert.equal((await admin.call('POST', '/api/admin/market-visibility', { sport: 'futebol', key: 'btts', hidden: true })).status, 200);
+  assert.ok(!(await call('GET', `/api/events/${ev.id}`)).body.event.markets.some((m) => m.market === 'btts'));
+  assert.ok((await admin.call('GET', '/api/admin/market-visibility')).body.sports.futebol.find((m) => m.key === 'btts').hidden);
+  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/wallet/deposit', { amount: 100 });
+  const r = await call('POST', '/api/bets', { mode: 'single', stake: 5, selections: [{ selectionId: btts.id, odds: btts.odds }] });
+  assert.equal(r.status, 409);
+  await admin.call('POST', '/api/admin/market-visibility', { sport: 'futebol', key: 'btts', hidden: false });
+  assert.ok((await call('GET', `/api/events/${ev.id}`)).body.event.markets.some((m) => m.market === 'btts'));
+  assert.equal((await call('POST', '/api/admin/market-visibility', { sport: 'futebol', key: 'btts', hidden: true })).status, 403);
+  server.close();
+  admin.server.close();
+});

@@ -721,7 +721,11 @@ async function loadTab() {
     else if (tab === 'banners') { banEd = null; main.innerHTML = adminBanners(await api('/api/admin/banners')); }
     else if (tab === 'colecoes') { colEd = null; main.innerHTML = adminCollections(await api('/api/admin/collections')); }
     else if (tab === 'destaques') { spotEd = null; main.innerHTML = adminSpotlights(await api('/api/admin/spotlights')); }
-    else if (tab === 'mercados') main.innerHTML = marketCatalog(await api('/api/admin/market-catalog'));
+    else if (tab === 'mercados') {
+      const [cat, vis] = await Promise.all([api('/api/admin/market-catalog'), api('/api/admin/market-visibility')]);
+      lastVisibility = vis.sports;
+      main.innerHTML = marketCatalog(cat);
+    }
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
     else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
@@ -772,6 +776,26 @@ async function loadTab() {
 // ---------- tab renderers ----------
 
 let lastCatalog = null;
+let lastVisibility = null; // sport → markets of the games open now, with visible / hidden
+
+/** Markets on the site, per sport: a switch each, to hide the ones not wanted (a duplicate result…). */
+function marketVisibility() {
+  const all = lastVisibility || {};
+  const sports = Object.keys(all).filter((k) => !catalogSport || k === catalogSport)
+    .sort((a, b) => (Object.keys(SPORT_META).indexOf(a) + 1 || 99) - (Object.keys(SPORT_META).indexOf(b) + 1 || 99));
+  const head = `<div class="panel"><h3>Mercados no site</h3>
+    <p class="muted">Todos os mercados dos jogos abertos agora, por desporto. Desligue os que não quer mostrar (por exemplo um
+    resultado repetido): deixam de aparecer nos jogos e no boletim de imediato, e voltam quando os ligar outra vez.
+    "Nosso" = liquidado sozinho pelo resultado; os outros são do fornecedor.</p></div>`;
+  if (!sports.length) return `${head}<div class="panel empty">Sem jogos abertos${catalogSport ? ' neste desporto' : ''}.</div>`;
+  return head + sports.map((sp) => {
+    const rows = all[sp].map((m) => `<tr${m.hidden ? ' class="muted"' : ''}><td>${esc(m.name)}${m.own ? ' <span class="pill won">Nosso</span>' : ''}</td>
+      <td class="num">${m.games}</td>
+      <td><label class="switch-line"><input type="checkbox" data-mv-sport="${esc(sp)}" data-mv-key="${esc(m.key)}"${m.hidden ? '' : ' checked'}> ${m.hidden ? 'Escondido' : 'Visível'}</label></td></tr>`).join('');
+    return `<div class="panel"><h3>${esc(`${SPORT_META[sp]?.icon || ''} ${SPORT_META[sp]?.name || sp}`.trim())} <small class="muted">· ${all[sp].length} mercados</small></h3>
+      <div class="table-wrap"><table><thead><tr><th>Mercado</th><th class="num">Jogos</th><th>No site</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).join('');
+}
 let catalogSport = ''; // '' = every sport
 
 function marketCatalog({ catalog, running }) {
@@ -787,10 +811,10 @@ function marketCatalog({ catalog, running }) {
       <button class="primary-btn" data-action="catalog-run" ${running ? 'disabled' : ''}>${running ? 'A consultar…' : catalogSport ? `Consultar ${esc(SPORT_META[catalogSport]?.name || catalogSport)} agora` : 'Consultar a API agora'}</button>
       ${catalog ? '<button class="ghost-btn" data-action="catalog-copy">Copiar resultado (JSON)</button>' : ''}</div>
     ${catalog ? `<p class="muted">Última consulta: ${esc(fmtDateTime(catalog.at))} · ${catalog.calls} pedidos.</p>` : ''}</div>`;
-  if (!catalog) return `${intro}<div class="panel empty">Ainda não foi feita nenhuma consulta.</div>`;
+  if (!catalog) return `${intro}${marketVisibility()}<div class="panel empty">Ainda não foi feita nenhuma consulta.</div>`;
   const sports = catalog.sports.filter((sp) => !sp.disabled && (!catalogSport || sp.sport === catalogSport));
-  if (!sports.length) return `${intro}<div class="panel empty">${catalogSport ? 'Ainda sem resultados para este desporto: carregue em "Consultar".' : 'Nenhuma fonte de odds ligada com jogos para consultar.'}</div>`;
-  return intro + sports.map((sp) => {
+  if (!sports.length) return `${intro}${marketVisibility()}<div class="panel empty">${catalogSport ? 'Ainda sem resultados para este desporto: carregue em "Consultar".' : 'Nenhuma fonte de odds ligada com jogos para consultar.'}</div>`;
+  return intro + marketVisibility() + sports.map((sp) => {
     const name = `${SPORT_META[sp.sport]?.icon || ''} ${SPORT_META[sp.sport]?.name || sp.sport}`;
     if (sp.disabled) return `<div class="panel"><h3>${esc(name)}</h3><p class="muted">Desligado (sem token ou sem Sports Addon).</p></div>`;
     const rows = sp.markets.map((m) => `<tr><td><b>${esc(m.kind)}</b>${m.family !== m.kind ? `<br><small class="muted">${esc(m.family)}</small>` : ''}</td>
@@ -1857,6 +1881,19 @@ document.addEventListener('change', async (e) => {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
       toast('Película', { off: 'Desligada', admin: 'Só para administradores', all: 'Ligada para todos' }[r.mode]);
     } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  // Markets on the site: show / hide one.
+  if (e.target.dataset?.mvKey) {
+    const { mvSport: sport, mvKey: key } = e.target.dataset;
+    const hidden = !e.target.checked;
+    try {
+      await api('/api/admin/market-visibility', { method: 'POST', body: { sport, key, hidden } });
+      const m = lastVisibility?.[sport]?.find((x) => x.key === key);
+      if (m) m.hidden = hidden;
+      $('#adminMain').innerHTML = marketCatalog({ catalog: lastCatalog, running: false });
+      toast('Mercados', hidden ? 'Mercado escondido no site.' : 'Mercado visível no site.');
+    } catch (err) { e.target.checked = !e.target.checked; toast('Erro', err.message, 'error'); }
     return;
   }
   // Market catalogue: show (and consult) one sport only.
