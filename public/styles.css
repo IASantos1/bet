@@ -1754,9 +1754,12 @@ body.maint-on { overflow: hidden; }
 @media (max-width: 700px) {
   .spot-card { aspect-ratio: 1 / 1.08; border-radius: 14px; }
   .spot-media.dk { display: none; } .spot-media.mb { display: block; }
-  .spot-media .spot-art { display: block; left: 50%; top: 7%; transform: translateX(-50%); height: 62%; }
-  .spot-media .spot-wide { display: none; }
-  .spot-copy { inset: auto 0 0 0; width: auto; padding: 50px 16px 16px; background: linear-gradient(0deg, rgba(0, 0, 0, .8) 40%, transparent);
+  /* Phone, no picture of its own: the game's art fills the whole card, sharp (the card takes the art's
+     own 2:3 shape, so nothing is cut), the text and the button over its lower part. */
+  .spot:not(.own-m) .spot-card { aspect-ratio: 2 / 3; }
+  .spot-media .spot-art { display: block; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 0; box-shadow: none; }
+  .spot-media.mb .spot-bg, .spot-media .spot-wide { display: none; }
+  .spot-copy { inset: auto 0 0 0; width: auto; padding: 70px 16px 16px; background: linear-gradient(0deg, rgba(0, 0, 0, .88) 35%, rgba(0, 0, 0, .45) 70%, transparent);
     flex-direction: column; align-items: stretch; gap: 6px; }
   .spot-copy strong { font-size: 22px; }
   .spot-copy small, .spot.own-m.bare .spot-copy { display: none; }
