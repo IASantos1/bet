@@ -92,6 +92,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!res.ok) {
     const err = new Error(data?.error || `Erro ${res.status}. Tente novamente.`);
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data;
@@ -678,7 +679,7 @@ function go(tab) {
 
 // ---------- tabs ----------
 
-function dashboard(s, settle, backups = null) {
+function dashboard(s, settle, backups = null, totp = null) {
   const card = (icon, label, value, sub = '', tone = '') => `<div class="adm-card ${tone}"><span class="adm-card-icon">${adminIcon(icon, 19)}</span><small>${esc(label)}</small><strong>${esc(value)}</strong>${sub ? `<em>${esc(sub)}</em>` : ''}</div>`;
   const alert = s.pendingWithdrawals ? `<button class="adm-alert" data-tab="levantamentos"><span class="adm-alert-icon">${adminIcon('warning', 17)}</span><span>${s.pendingWithdrawals} levantamento(s) pendente(s) a aguardar aprovação — total ${esc(money(s.pendingWithdrawalAmount))}</span><span class="adm-alert-arrow">→</span></button>` : '';
   const sm = settle?.summary || {};
@@ -699,10 +700,38 @@ function dashboard(s, settle, backups = null) {
       ${card('wallet', 'Pago hoje', money(sm.paidToday), '', 'gold')}
       ${card('trend', 'Margem hoje', money(sm.marginToday), '', 'green')}
     </div>
+    ${securityPanel(totp)}
     ${backupsPanel(backups)}
     <div class="panel adm-shortcut-panel"><div class="adm-panel-heading"><div><span class="adm-eyebrow">ACESSO RÁPIDO</span><h3>Atalhos de operação</h3></div><span class="adm-panel-count">${TABS.length - 1} secções</span></div><div class="adm-shortcuts">
       ${TABS.filter((t) => t.id !== 'painel').map((t) => `<button class="ghost-btn adm-shortcut" data-tab="${t.id}"><span>${adminIcon(t.icon, 16)}</span>${esc(t.label)}<i>${adminIcon('trend', 13)}</i></button>`).join('')}
     </div></div>`;
+}
+
+/** The authenticator code field of the sign-in form (added once, when the server asks for it). */
+function codeField(form) {
+  if ($('input[name="code"]', form)) { $('input[name="code"]', form).focus(); return; }
+  const field = document.createElement('div');
+  field.className = 'field';
+  field.innerHTML = '<label>Código de verificação</label><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">';
+  $('button', form).before(field);
+  $('input', field).focus();
+}
+
+/** Two-step sign-in of this administrator: on / off, and setting it up with an authenticator app. */
+function securityPanel(t) {
+  if (!t) return '';
+  const setup = state.totpSetup;
+  const body = t.on
+    ? `<p class="muted">Ativa: para entrar no painel é pedido o código de 6 dígitos da sua app. Para desativar, introduza um código atual.</p>
+      <div class="form-actions"><input id="totpCode" inputmode="numeric" maxlength="6" placeholder="Código" class="adm-inline-input"><button class="ghost-btn btn-sm" data-action="totp-disable">Desativar</button></div>`
+    : setup
+      ? `<p class="muted">1. Na app (Google Authenticator, Microsoft Authenticator…) escolha <b>Introduzir chave de configuração</b> e escreva esta chave — ou, no telemóvel, toque em <a href="${esc(setup.url)}">abrir na app</a>.</p>
+        <p class="totp-secret">${esc(setup.secret.replace(/(.{4})/g, '$1 ').trim())}</p>
+        <p class="muted">2. Escreva o código de 6 dígitos que a app mostra:</p>
+        <div class="form-actions"><input id="totpCode" inputmode="numeric" maxlength="6" placeholder="000000" class="adm-inline-input"><button class="primary-btn btn-sm" data-action="totp-enable">Ativar</button></div>`
+      : `<p class="muted">Desligada. Com ela, quem souber a palavra-passe não entra sem o código do seu telemóvel. Se perder o telemóvel: variável <code>ADMIN_2FA_RESET=1</code> no Railway e redeploy.</p>
+        <div class="form-actions"><button class="primary-btn btn-sm" data-action="totp-setup">Ativar verificação em dois passos</button></div>`;
+  return `<div class="panel"><div class="section-head"><h3>Segurança da conta: verificação em dois passos</h3><span class="pill ${t.on ? 'won' : ''}">${t.on ? 'Ativa' : 'Desligada'}</span></div>${body}</div>`;
 }
 
 /** Copies of the database: the day's own, one now, and each to download (to keep somewhere else). */
@@ -726,7 +755,7 @@ async function loadTab() {
     const badge = $('.adm-nav[data-tab="levantamentos"] .adm-badge');
     if (badge) badge.textContent = s.pendingWithdrawals;
     const tab = state.tab;
-    if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null));
+    if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null), await api('/api/admin/2fa').catch(() => null));
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
@@ -1291,7 +1320,7 @@ const handlers = {
     const d = formData(form);
     const box = $('.form-error', form);
     try {
-      const { user } = await api('/api/auth/login', { method: 'POST', body: { email: d.email, password: d.password } });
+      const { user } = await api('/api/auth/login', { method: 'POST', body: { email: d.email, password: d.password, code: d.code } });
       if (user.role !== 'admin') {
         await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
         throw new Error('Esta conta não é de administrador.');
@@ -1302,6 +1331,8 @@ const handlers = {
       state.user = user;
       go(location.hash.slice(1) || 'painel');
     } catch (err) {
+      // Two-step sign-in on: the code field appears (the email and password stay).
+      if (err.data?.need2fa) codeField(form);
       box.textContent = err.message;
       box.classList.remove('hidden');
     }
@@ -1649,6 +1680,17 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     actionEl.textContent = 'Testar ligação';
+  } else if (action === 'totp-setup') {
+    try { state.totpSetup = await api('/api/admin/2fa/setup', { method: 'POST', body: {} }); } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'totp-enable' || action === 'totp-disable') {
+    const code = $('#totpCode')?.value.trim();
+    try {
+      await api(`/api/admin/2fa/${action === 'totp-enable' ? 'enable' : 'disable'}`, { method: 'POST', body: { code } });
+      state.totpSetup = null;
+      toast('Segurança', action === 'totp-enable' ? 'Verificação em dois passos ativa.' : 'Verificação em dois passos desligada.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'backup-now') {
     actionEl.disabled = true;
     actionEl.textContent = 'A copiar…';

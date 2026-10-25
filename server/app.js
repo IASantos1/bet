@@ -44,6 +44,7 @@ import { SPORT_SPECS, sportTeamImage } from './sports.js';
 import { leagueTier } from './leagues.js';
 import { createMarketCatalog } from './catalog.js';
 import { createMatchPicks } from './picks.js';
+import { newSecret, verifyCode, otpauthUrl } from './totp.js';
 import { playableServers, createVideoProxy, createStreamRelay } from './rapidstream.js';
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
@@ -1080,6 +1081,10 @@ export function createApp(db, {
     // A player brought from the previous platform: the old hash (bcrypt) is replaced by ours now.
     if (isLegacyHash(user.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(used), user.id);
     if (user.banned_at) throw new HttpError(403, 'Esta conta está bloqueada. Contacte o apoio.');
+    // An administrator with two-step sign-in: the authenticator app's code too.
+    if (user.role === 'admin' && user.totp_on && !verifyCode(user.totp_secret, req.body.code)) {
+      throw new HttpError(401, req.body.code ? 'Código de verificação incorreto.' : 'Introduza o código de 6 dígitos da sua app de autenticação.', { need2fa: true });
+    }
     startSession(res, user.id, req);
     res.json({ user: userOut(user) });
   });
@@ -1763,6 +1768,28 @@ export function createApp(db, {
       }, null, 2);
       res.json({ raw: text.length > 40_000 ? `${text.slice(0, 40_000)}\n…` : text });
     } catch (err) { next(err); }
+  });
+
+  // Two-step sign-in of the administrator signed in (totp.js): set up, turned on (a right code), off.
+  admin.get('/2fa', (req, res) => res.json({ on: !!req.user.totp_on }));
+  admin.post('/2fa/setup', (req, res) => {
+    if (req.user.totp_on) throw new HttpError(409, 'A verificação em dois passos já está ativa. Desative-a primeiro.');
+    const secret = newSecret();
+    db.prepare('UPDATE users SET totp_secret = ? WHERE id = ?').run(secret, req.user.id);
+    res.json({ secret, url: otpauthUrl(secret, req.user.email) });
+  });
+  admin.post('/2fa/enable', (req, res) => {
+    const u = db.prepare('SELECT totp_secret FROM users WHERE id = ?').get(req.user.id);
+    if (!u?.totp_secret) throw new HttpError(400, 'Comece por gerar a chave.');
+    if (!verifyCode(u.totp_secret, req.body.code)) throw new HttpError(400, 'Código incorreto. Confirme a hora do telemóvel e tente de novo.');
+    db.prepare('UPDATE users SET totp_on = 1 WHERE id = ?').run(req.user.id);
+    res.json({ on: true });
+  });
+  admin.post('/2fa/disable', (req, res) => {
+    if (!req.user.totp_on) return res.json({ on: false });
+    if (!verifyCode(req.user.totp_secret, req.body.code)) throw new HttpError(400, 'Código incorreto.');
+    db.prepare('UPDATE users SET totp_on = 0, totp_secret = NULL WHERE id = ?').run(req.user.id);
+    res.json({ on: false });
   });
 
   // Copies of the database (backups.js): the list, one now, and a download.

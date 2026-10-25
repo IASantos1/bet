@@ -957,7 +957,7 @@ export const clockText = (sport, minutes, raw, competition = '') => {
  * End of a match that left the live list (and stayed out for the confirmation time). Settles from
  * the last score seen only when it is clearly over; anything else goes to the operator.
  */
-export function finishVerdict(row) {
+export function finishVerdict(row, now = Date.now()) {
   const m = row.wh_minute;
   const h = row.home_score;
   const a = row.away_score;
@@ -995,6 +995,12 @@ export function finishVerdict(row) {
       return m >= 59 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'raguebi':
       return m >= 79 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'basebol': {
+      // No clock and no draws: a winner once it has been going at least 2h15 (a game lasts about three).
+      if (h === a) return { review: 'empate no último placar visto' };
+      const since = (now - Date.parse(row.start_time || '')) / 60_000;
+      return since >= 135 ? { home: h, away: a } : { review: `saiu do ao vivo ${Number.isFinite(since) ? Math.round(since) : '?'} min depois do início` };
+    }
     default:
       return { review: 'desporto sem regra de fim' };
   }

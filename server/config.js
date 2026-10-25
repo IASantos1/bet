@@ -47,6 +47,8 @@ export const config = {
   adminEmail: unquote(env.ADMIN_EMAIL).toLowerCase(),
   // Surrounding spaces and line breaks (common when pasting into a hosting panel) are dropped.
   adminPassword: unquote(env.ADMIN_PASSWORD),
+  // ADMIN_2FA_RESET=1: the administrators' two-step sign-in is turned off at start-up (a lost phone).
+  admin2faReset: env.ADMIN_2FA_RESET === '1',
 
   // "demo": deposits are credited instantly (no real money moves).
   // "disabled": deposits are refused until a real payment provider is integrated.

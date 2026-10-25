@@ -565,6 +565,9 @@ function migrate(db) {
   if (!userCols.has('promo_asked_at')) db.exec('ALTER TABLE users ADD COLUMN promo_asked_at TEXT');
   // The player's emblem (profile picture), drawn at random on sign-up: 'robo' or 'hood'.
   if (!userCols.has('avatar')) db.exec('ALTER TABLE users ADD COLUMN avatar TEXT');
+  // Administrators' two-step sign-in (totp.js): the authenticator app's secret, and whether it is on.
+  if (!userCols.has('totp_secret')) db.exec('ALTER TABLE users ADD COLUMN totp_secret TEXT');
+  if (!userCols.has('totp_on')) db.exec('ALTER TABLE users ADD COLUMN totp_on INTEGER NOT NULL DEFAULT 0');
   // Withdrawals paid through Revolut: where the payout is (processing / paid / failed), its
   // Revolut transaction and why it failed.
   const wdCols = new Set(db.prepare('PRAGMA table_info(withdrawals)').all().map((c) => c.name));

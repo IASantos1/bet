@@ -1148,6 +1148,10 @@ test('more sports: NFL, baseball, rugby, cricket, boxing, MMA and darts; the win
   assert.ok(finishVerdict({ sport: 'futamericano', wh_minute: 60, home_score: 24, away_score: 24 }).review);
   assert.deepEqual(finishVerdict({ sport: 'raguebi', wh_minute: 80, home_score: 20, away_score: 20 }), { home: 20, away: 20 });
   assert.ok(finishVerdict({ sport: 'boxe', wh_minute: null, home_score: 1, away_score: 0 }).review);
+  const start = '2026-10-25T20:00:00Z';
+  assert.deepEqual(finishVerdict({ sport: 'basebol', start_time: start, home_score: 5, away_score: 3 }, Date.parse('2026-10-25T23:00:00Z')), { home: 5, away: 3 });
+  assert.ok(finishVerdict({ sport: 'basebol', start_time: start, home_score: 5, away_score: 3 }, Date.parse('2026-10-25T21:00:00Z')).review); // too soon
+  assert.ok(finishVerdict({ sport: 'basebol', start_time: start, home_score: 3, away_score: 3 }, Date.parse('2026-10-25T23:00:00Z')).review);
   // Their competitions under a country in the menu.
   assert.equal(leagueCountry('futamericano', 'USA. NFL'), 'United States');
   assert.equal(leagueCountry('basebol', 'MLB'), 'United States');
