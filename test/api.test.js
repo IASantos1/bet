@@ -661,3 +661,16 @@ test('banners do casino: o admin cria; o site mostra os que estão no ar para qu
   for (const x of [a, b, c]) assert.equal((await adm('POST', `/api/admin/banners/${x.id}/delete`, {})).status, 200);
   assert.equal((await client()('POST', '/api/admin/banners', { title: 'x' })).status, 401);
 });
+
+test('a winning accumulator keeps where it came from; an origin that does not fit the bet is ignored', async () => {
+  const adm = await adminClient();
+  const p = await newPlayer(50);
+  const a = await createEvent(adm);
+  const b = await createEvent(adm, { 1: 1.5, X: 3, 2: 4 });
+  const acca = await p('POST', '/api/bets', { mode: 'multiple', stake: 5, origin: 'acca', selections: [{ selectionId: sel(a, '1').id, odds: 2 }, { selectionId: sel(b, '1').id, odds: 1.5 }] });
+  const single = await p('POST', '/api/bets', { mode: 'single', stake: 5, origin: 'acca', selections: [{ selectionId: sel(a, '2').id, odds: sel(a, '2').odds }] });
+  assert.deepEqual([acca.status, single.status], [201, 201]);
+  const bets = new Map((await p('GET', '/api/bets')).body.bets.map((x) => [x.id, x]));
+  assert.equal(bets.get(acca.body.betIds[0]).origin, 'acca');
+  assert.equal(bets.get(single.body.betIds[0]).origin, null);
+});

@@ -823,9 +823,13 @@ function addBuilder(i) {
   if (!b) return;
   if (state.slip.length) toast('Boletim', 'O criador de apostas substituiu as seleções anteriores.');
   state.slip = [];
-  state.builder = { eventId: b.eventId, match: b.match, competition: b.competition, startTime: b.startTime, legs: b.legs.map((l) => ({ ...l })) };
+  state.builder = { eventId: b.eventId, match: b.match, competition: b.competition, startTime: b.startTime, legs: b.legs.map((l) => ({ ...l })), combo: legKey(b.legs) };
   saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
 }
+// The picks of a ready-made bet, to tell later whether the slip still holds exactly them.
+const legKey = (legs) => legs.map((l) => l.selectionId).sort((a, b) => a - b).join('-');
+/** 'acca' while the slip is exactly one of the "Apostas vencedoras" as a multiple. */
+const slipOrigin = () => (state.mode === 'multiple' && state.slip[0]?.acca && state.slip[0].acca === legKey(state.slip) ? 'acca' : undefined);
 
 /** A ready-made multiple: its four picks into the slip (replacing other picks on those matches). */
 function addAcca(i, list = 'accas') {
@@ -834,8 +838,9 @@ function addAcca(i, list = 'accas') {
   state.builder = null;
   const events = new Set(a.legs.map((l) => l.eventId));
   state.slip = state.slip.filter((s) => !events.has(s.eventId));
+  const acca = legKey(a.legs);
   for (const l of a.legs) {
-    state.slip.push({ selectionId: l.selectionId, eventId: l.eventId, market: l.market, marketName: l.marketName, code: l.code, label: l.label, odds: l.odds, match: `${l.home} vs ${l.away}`, competition: l.competition });
+    state.slip.push({ acca, selectionId: l.selectionId, eventId: l.eventId, market: l.market, marketName: l.marketName, code: l.code, label: l.label, odds: l.odds, match: `${l.home} vs ${l.away}`, competition: l.competition });
   }
   state.mode = 'multiple';
   saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
@@ -2460,47 +2465,68 @@ async function loadBets({ quiet = false } = {}) {
   } catch (err) { if (!quiet) toast('Erro', err.message, 'error'); }
 }
 
-const TICKET_BADGE = { open: ['Pendente', 'pending'], won: ['Ganha', 'won'], lost: ['Perdida', 'lost'], void: ['Anulada', 'void'], cashout: ['Cash Out', 'cashout'] };
-const LEG_ICON = { won: '<span class="lg-ic won">✓</span>', lost: '<span class="lg-ic lost">✕</span>', void: '<span class="lg-ic void">—</span>' };
+const TICKET_BADGE = { open: ['Em aberto', 'pending'], won: ['Ganha', 'won'], lost: ['Perdida', 'lost'], void: ['Anulada', 'void'], cashout: ['Cash Out', 'cashout'] };
+// What the ticket is: the player's own picks, a bet builder, or one of the ready-made bets (its colour and icon).
+const TICKET_KIND = {
+  single: ['Simples', '🎯', 'own'], multiple: ['Múltipla', '🔗', 'own'], builder: ['Criador de apostas', '🧩', 'builder'],
+  combo: ['Construa o seu ganho', '🧩', 'builder'], pick: ['Melhores escolhas', '🔥', 'pick'], acca: ['Apostas vencedoras', '🏆', 'acca'],
+};
+const LEG_MARK = { won: '✓', lost: '✕', void: '—' };
 
-/** One ticket, as in Bet62Novo: type, per-leg status, each pick with its match box (live: clock and score), totals, cash out, reference. */
+/** Where a pick's match stands: its kick-off, the clock and score in play, or the final score. */
+function legState(l, open) {
+  if (open && l.eventStatus === 'live') return `<span class="bt-live"><i class="pulse-dot"></i>${esc(l.clock || 'Ao vivo')}${l.score ? ` · ${esc(l.score)}` : ''}</span>`;
+  if (l.eventStatus === 'finished') return `Terminado${l.score ? ` · ${esc(l.score)}` : ''}`;
+  if (l.eventStatus === 'cancelled') return 'Jogo cancelado';
+  if (l.eventStatus === 'live') return `Ao vivo${l.score ? ` · ${esc(l.score)}` : ''}`;
+  return esc(fmtWhen(l.startTime));
+}
+
+/** One ticket: what it is (own picks, builder, ready-made), its status, each pick with where its match stands, the money, cash out, reference. */
 function ticketCard(b) {
   const [badge, cls] = TICKET_BADGE[b.status] || TICKET_BADGE.open;
-  const multi = b.legs.length > 1;
-  const kind = b.type === 'builder' ? `Criador de apostas (${b.legs.length})` : multi ? `Múltipla (${b.legs.length})` : 'Simples';
-  const dots = multi ? `<div class="tk-dots">${b.legs.map((l) => `<span class="tk-dot ${l.status}">${l.status === 'won' ? '✓' : l.status === 'lost' ? '✕' : l.status === 'void' ? '—' : ''}</span>`).join('')}</div>` : '';
+  const open = b.status === 'open';
+  const builder = b.type === 'builder';
+  const [title, icon, tone] = TICKET_KIND[b.origin] || TICKET_KIND[b.type] || TICKET_KIND.single;
+  const n = b.legs.length;
+  const first = b.legs[0];
+  // A builder is one match: it is named once, at the top.
+  const sub = builder ? `${SPORT_META[first.sport]?.icon || '⚽'} ${esc(first.match)} · ${legState(first, open)}`
+    : n > 1 ? `${tone === 'own' ? '' : '🔗 Combinação · '}${n} seleções` : esc(first.competition || '');
+  const done = b.legs.filter((l) => l.status !== 'open').length;
+  const bar = n > 1 ? `<div class="bt-bar" title="${done} de ${n} resolvidas">${b.legs.map((l) => `<i class="${l.status}"></i>`).join('')}</div>` : '';
   const legs = b.legs.map((l) => {
-    const live = b.status === 'open' && l.eventStatus === 'live';
-    const icon = LEG_ICON[l.status] || `<span class="lg-ic sport">${SPORT_META[l.sport]?.icon || '⚽'}</span>`;
-    const top = live ? `<span class="tk-live"><i class="pulse-dot"></i>${esc(l.clock || 'Ao vivo')}</span>`
-      : l.eventStatus === 'finished' ? 'Terminado' : l.eventStatus === 'cancelled' ? 'Cancelado' : esc(fmtWhen(l.startTime));
-    const body = (live || l.eventStatus === 'finished' || l.eventStatus === 'live') && l.score ? esc(l.score) : l.eventStatus === 'cancelled' ? 'Jogo cancelado' : l.eventStatus === 'scheduled' ? 'Por começar' : '—';
-    return `<div class="tk-leg">
-      <div class="tk-leg-head">${icon}<div class="tk-pick"><strong>${esc(l.label || CODE_LABEL[l.code])}</strong><small>${esc(l.marketName && l.market !== '1x2' ? `${l.marketName} · ` : '')}${esc(l.match)}</small></div>
-        <span class="tk-odd">${fmtOdds(l.odds)}</span></div>
-      <a class="tk-box${live ? ' live' : ''}" href="#/jogo/${l.eventId}"><span class="tk-box-top">${top}</span><span class="tk-box-body">${body}</span></a>
-    </div>`;
+    const live = open && l.eventStatus === 'live';
+    return `<a class="bt-leg ${l.status}${live ? ' live' : ''}" href="#/jogo/${l.eventId}">
+      <span class="bt-mark">${LEG_MARK[l.status] || ''}</span>
+      <span class="bt-pick"><strong>${esc(l.label || CODE_LABEL[l.code])}</strong>
+        <small>${esc(l.marketName && l.market !== '1x2' ? l.marketName : 'Resultado final')}${builder ? '' : ` · ${esc(l.match)}`}</small>
+        ${builder ? '' : `<small class="bt-when">${legState(l, open)}</small>`}</span>
+      <b class="bt-odd">${fmtOdds(l.odds)}</b></a>`;
   }).join('');
-  const paid = b.status === 'won' || b.status === 'cashout' || b.status === 'void';
-  const ret = b.status === 'open' ? ['Retorno potencial', money(b.potential), '']
+  const ret = open ? ['Retorno potencial', money(b.potential), '']
     : b.status === 'lost' ? ['Retorno', money(0), 'red']
       : b.status === 'void' ? ['Reembolso', money(b.payout), '']
-        : b.status === 'cashout' ? ['Cash out', money(b.payout), 'tk-cash'] : ['Retorno', money(b.payout), 'green'];
-  const profit = b.status === 'open' ? null : (b.freebet ? b.payout : b.payout - b.stake);
-  return `<div class="ticket ${cls}">
-    <div class="tk-head"><div><strong>${kind}</strong>${dots}</div><span class="tk-badge ${cls}">${badge}</span></div>
-    ${b.freebet || b.bonusStake || b.protected || b.boostPct ? `<div class="bet-tags">${b.freebet ? '<span class="pill open">🎁 Free bet</span>' : ''}${b.bonusStake ? `<span class="pill open">${money(b.bonusStake)} com bónus</span>` : ''}${b.protected ? '<span class="pill open">🛡️ Primeira aposta protegida</span>' : ''}${b.boostPct ? `<span class="pill open">🚀 Boost +${b.boostPct}%${b.boost ? ` · ${money(b.boost)}` : ''}</span>` : ''}</div>` : ''}
-    <div class="tk-legs">${legs}</div>
-    <div class="tk-sum">
-      <div><span>Aposta</span><b>${money(b.stake)}${b.freebet ? ' (free bet)' : ''}</b></div>
-      <div><span>Odd total</span><b>${fmtOdds(b.totalOdds)}</b></div>
-      <div><span>${ret[0]}</span><b class="${ret[2]}">${ret[1]}</b></div>
-      ${profit !== null ? `<div><span>Lucro / prejuízo</span><b class="${profit > 0 ? 'green' : profit < 0 ? 'red' : ''}">${profit > 0 ? '+' : ''}${money(profit)}</b></div>` : ''}
+        : b.status === 'cashout' ? ['Cash out', money(b.payout), 'gold'] : ['Ganhou', money(b.payout), 'green'];
+  const profit = open ? null : (b.freebet ? b.payout : b.payout - b.stake);
+  const tags = [b.pickPct ? `<span class="bt-tag boost">🔥 ${b.pickPct >= 20 ? 'Super Boost' : 'Boost'} +${b.pickPct}% incluído na odd</span>` : '', b.boostPct ? `<span class="bt-tag boost">🚀 ${b.boostPct >= 20 ? 'Super Boost' : 'Boost'} +${b.boostPct}%${b.boost ? ` · ${money(b.boost)}` : ''}</span>` : '',
+    b.freebet ? '<span class="bt-tag">🎁 Free bet</span>' : '', b.bonusStake ? `<span class="bt-tag">${money(b.bonusStake)} com bónus</span>` : '',
+    b.protected ? '<span class="bt-tag">🛡️ Primeira aposta protegida</span>' : ''].join('');
+  return `<div class="ticket ${cls} t-${tone}">
+    <div class="bt-head"><span class="bt-ic">${icon}</span>
+      <div class="bt-title"><strong>${title}${n > 1 && !builder ? ` <em>${n}</em>` : ''}</strong><small>${sub}</small></div>
+      <span class="bt-status ${cls}">${badge}</span></div>
+    ${bar}${tags ? `<div class="bt-tags">${tags}</div>` : ''}
+    <div class="bt-legs">${legs}</div>
+    <div class="bt-sum">
+      <div><small>Aposta</small><b>${money(b.stake)}</b></div>
+      <div><small>Odd total</small><b>${fmtOdds(b.totalOdds)}</b></div>
+      <div class="ret"><small>${ret[0]}</small><b class="${ret[2]}">${ret[1]}</b></div>
     </div>
+    ${profit !== null && profit !== 0 ? `<div class="bt-profit ${profit > 0 ? 'green' : 'red'}">${profit > 0 ? 'Lucro' : 'Prejuízo'} ${profit > 0 ? '+' : ''}${money(profit)}</div>` : ''}
     ${b.id ? cashoutBlock(b) : ''}
-    <div class="tk-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">🎟️ Ref ${esc(b.ref)}</button><span>${esc(fmtDateTime(b.createdAt))}</span>
-      ${b.settledAt && b.status !== 'open' ? `<small>Resolvida: ${esc(fmtDateTime(b.settledAt))}</small>` : ''}
-      ${b.status === 'open' ? '<span class="tk-ok">✔ Aposta confirmada</span>' : b.status === 'won' ? '<span class="tk-ok won">🏆 Bilhete vencedor</span>' : ''}
+    <div class="bt-foot"><button class="tk-ref" data-copy="${esc(b.ref)}" title="Copiar referência">Ref ${esc(b.ref)}</button>
+      <span>${esc(fmtDateTime(b.settledAt && !open ? b.settledAt : b.createdAt))}</span>
       ${b.id ? `<button class="tk-share" data-share-bet="${b.id}">↗ Partilhar</button>` : ''}</div>
   </div>`;
 }
@@ -2789,8 +2815,8 @@ async function placeBet() {
     const res = await api('/api/bets', {
       method: 'POST',
       body: b
-        ? { mode: 'builder', stake, freebetId: freebet?.id, pickKey: b.boost?.key, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
-        : { mode: state.mode, stake, freebetId: freebet?.id, selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
+        ? { mode: 'builder', stake, freebetId: freebet?.id, pickKey: b.boost?.key, origin: b.combo && b.combo === legKey(b.legs) ? 'combo' : undefined, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
+        : { mode: state.mode, stake, freebetId: freebet?.id, origin: slipOrigin(), selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
     });
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
     if (freebet) { state.freebetId = null; loadPromos(); }

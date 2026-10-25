@@ -1457,6 +1457,9 @@ export function createApp(db, {
       throw new HttpError(409, 'Este mercado já não está disponível. Retire-o do boletim.');
     }
     const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId, pick }));
+    // A ready-made bet keeps where it came from (its ticket shows it): a winning accumulator or a featured builder.
+    const origin = { multiple: 'acca', builder: 'combo' }[req.body.mode] === req.body.origin ? req.body.origin : null;
+    if (origin && !pick) for (const id of betIds) db.prepare('UPDATE bets SET origin = ? WHERE id = ?').run(origin, id);
     const u = userById(req.user.id);
     res.status(201).json({ betIds, balance: cents(u.balance_cents), user: userOut(u) });
   });
@@ -1520,6 +1523,9 @@ export function createApp(db, {
       freebet: cents(b.freebet_stake_cents || 0), bonusStake: cents(b.bonus_stake_cents || 0), protected: !!b.protected,
       ref: `BT62-${String(b.id).padStart(6, '0')}`, manual: b.manual_at ? { at: b.manual_at, note: b.manual_note } : null,
       boostPct: b.boost_pct || 0, boost: cents(b.boost_cents || 0),
+      // 'pick' (Melhores escolhas), 'acca' (Apostas vencedoras), 'combo' (Construa o seu ganho) or null.
+      origin: b.pick_key ? 'pick' : b.origin || null,
+      pickPct: b.pick_pct || 0,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
         id: l.id, match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,

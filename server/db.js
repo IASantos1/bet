@@ -594,6 +594,10 @@ function migrate(db) {
   const betCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
   // The link a player shares a ticket by (#/b/<token>): made the first time it is shared.
   if (!betCols.has('share_token')) db.exec('ALTER TABLE bets ADD COLUMN share_token TEXT');
+  // Where a bet was built: 'acca' (Apostas vencedoras) or 'combo' (Construa o seu ganho); null for the player's own picks.
+  if (!betCols.has('origin')) db.exec('ALTER TABLE bets ADD COLUMN origin TEXT');
+  // The price boost of a "Melhores escolhas" card, in % (already in the bet's odds; shown on the ticket).
+  if (!betCols.has('pick_pct')) db.exec('ALTER TABLE bets ADD COLUMN pick_pct INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_bets_share ON bets(share_token)');
   for (const [c, type] of [['real_stake_cents', 'INTEGER'], ['bonus_stake_cents', 'INTEGER NOT NULL DEFAULT 0'], ['freebet_stake_cents', 'INTEGER NOT NULL DEFAULT 0'],
     ['bonus_id', 'INTEGER'], ['freebet_id', 'INTEGER'], ['protected', 'INTEGER NOT NULL DEFAULT 0'], ['real_payout_cents', 'INTEGER']]) {
