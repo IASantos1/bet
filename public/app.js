@@ -615,9 +615,10 @@ const TOP_LEAGUES = [
   ['basquetebol', /\bnba\b/i, null], ['basquetebol', /euroleague|euroliga/i, null],
   ['futamericano', /\bnfl\b/i, null], ['hoquei', /\bnhl\b/i, null], ['andebol', /ehf champions league|^champions league/i, null], ['voleibol', /superlega|cev champions league/i, null],
 ];
-function popularLeagues(max = 16) {
+function popularLeagues(max = 16, only = '') {
   const all = [];
   for (const [sport, tree] of Object.entries(state.leagueTree || {})) {
+    if (only && sport !== only) continue;
     for (const c of tree) for (const l of c.leagues) if (l.count) all.push({ sport, country: c.country, ...l });
   }
   const picked = [];
@@ -663,8 +664,9 @@ function leagueBadge(l) {
   const pic = flag ? `<img src="${flag}" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
   return `<span class="lg-badge">${pic}</span>`;
 }
-function leagueRow() {
-  const leagues = popularLeagues();
+// The leagues people look for first, as cards (home page; the sports page, of the sport chosen there).
+function leagueRow(sport = '') {
+  const leagues = popularLeagues(16, sport);
   if (!leagues.length) return '';
   return `<section class="lg-row" data-hscroll="leagueRow" aria-label="Ligas">
     ${leagues.map((l) => `<a class="lg-card" href="#/desporto/liga/${encodeURIComponent(l.name)}">${leagueBadge(l)}<b>${esc(l.label || leagueShort(l.name))}</b></a>`).join('')}
@@ -743,6 +745,7 @@ function sportsPage(sub, rest = '') {
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
+    ${leagueRow(state.sport || '')}
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
       ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
@@ -3043,7 +3046,8 @@ async function loadLeagues() {
     state.leagueTree = leagues;
     renderSidebar();
     // A league page opened before the trees arrived: now its sport is known.
-    if (first && (currentRoute().sub === 'liga' || currentRoute().page === 'home')) render({ keepScroll: true });
+    const r = currentRoute();
+    if (first && (r.sub === 'liga' || r.page === 'home' || (r.page === 'desporto' && !r.sub))) render({ keepScroll: true });
   } catch { /* the sidebar works without it */ }
 }
 
