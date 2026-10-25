@@ -1899,3 +1899,17 @@ html.light .home-feature::after, html.light .combo-card::after { background: #22
 .ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.won .bt-mark { background: #2fbf60; border-color: #2fbf60; }
 .ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.lost .bt-mark { background: #e95a74; border-color: #e95a74; }
 .ticket:is(.t-builder, .t-pick, .t-acca) .bt-leg.void .bt-mark { background: var(--row-hover); border-color: var(--row-hover); }
+
+/* The ready-made combinations on the pages are joined the same way: one line through every pick
+   (gold on "Apostas vencedoras", green on "Construa o seu ganho", pink on "Melhores escolhas"). */
+.combo-card.acca { --link: #ffc83d; }
+.acca-leg { position: relative; padding-left: 26px; }
+.acca-leg::before { content: ''; position: absolute; z-index: 1; left: 1px; top: 2px; width: 10px; height: 10px; border-radius: 50%; border: 2.5px solid var(--link); background: var(--panel); }
+.acca-leg:has(+ .acca-leg)::after { content: ''; position: absolute; left: 7px; top: 14px; bottom: -14px; width: 2px; background: var(--link); opacity: .75; }
+.acca-pick { border-left: 2px solid var(--link); }
+.combo-legs { border-left: 2px solid #3ee05a; }
+.combo-legs li::before { left: -22px; border: 2.5px solid #3ee05a; }
+.pick-legs::before { border-left: 2px solid #ff2d75; }
+.pick-legs li::before { border-color: #ff2d75; }
+html.light .combo-card.acca { --link: #e0a400; }
+html.light .combo-legs { border-left-color: #22b14c; } html.light .combo-legs li::before { border-color: #22b14c; }
