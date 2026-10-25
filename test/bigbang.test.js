@@ -280,10 +280,11 @@ test('lobby: the featured titles in their order (exact title, named provider), l
   const bb = createBigBang(openDb(':memory:'), { apiKey: KEY, fetchImpl });
   const lobby = await bb.lobby({ n: 5 });
   const featured = lobby.rows[0].games.map((x) => x.name);
-  // The house list's order first (Gates of Olympus, Sweet Bonanza, Gates of Olympus 1000, Big Bass Splash, …),
-  // then the most popular of the rest (Fortune Tiger) to fill the block.
-  assert.deepEqual(featured.slice(0, 10), ['Gates of Olympus', 'Sweet Bonanza', 'Gates of Olympus 1000', 'Big Bass Splash', 'Book of Dead',
+  // The house list's order first (Gates of Olympus, Sweet Bonanza, Big Bass Splash, …), one game of a family
+  // (Gates of Olympus 1000 only after the others), then the most popular of the rest (Fortune Tiger).
+  assert.deepEqual(featured.slice(0, 9), ['Gates of Olympus', 'Sweet Bonanza', 'Big Bass Splash', 'Book of Dead',
     "Gonzo's Quest™", 'Aviator', 'Crazy Time', 'European Roulette', 'Blackjack Classic']);
+  assert.equal(featured.at(-1), 'Gates of Olympus 1000');
   assert.ok(featured.includes('Mega Moolah') && featured.includes('Fortune Tiger'));
   assert.equal(new Set(featured).size, featured.length, 'no game twice');
   // Big Bass Splash once (Pragmatic Play comes before Reel Kingdom in the house order).
@@ -547,4 +548,30 @@ test('Halloween Dice (does not work) is hidden, also in a list the operator alre
   setSetting(db, 'casino.hidden', ['Divine 9']); // the operator shows it again
   assert.deepEqual(createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl }).hiddenList(), ['Divine 9']);
   assert.ok(createBigBang(openDb(':memory:'), { apiKey: KEY }).hiddenList().includes('Halloween Dice'));
+});
+
+test('variety: one game of a family per row; "Porque jogaste" brings the family, the theme, then the provider', async () => {
+  const g = (id, title, prov = 'Pragmatic') => ({ id, name: `g${id}`, title, provider: prov, category: prov, category_title: prov, thumbnail: `https://x/${id}.webp`, game_type: 'slot', is_premium: false });
+  const list = [
+    g(1, 'Gates of Olympus'), g(2, 'Gates of Olympus 1000'), g(3, 'Gates of Olympus Dice'), g(4, 'Gates of Olympus Super Scatter'),
+    g(5, 'Big Bass Halloween 3'), g(6, 'Big Bass Splash'), g(7, 'Big Bass Bonanza'), g(8, 'Big Bass Halloween'), g(9, 'Sweet Bonanza'),
+    g(10, 'Zeus vs Hades'), g(11, 'Fruity Halloween', 'Habanero'), g(12, 'Sugar Rush'),
+  ];
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    const json = (data) => ({ ok: true, status: 200, json: async () => data });
+    if (u.pathname.endsWith('/games')) return json({ success: true, data: list, pagination: { total: list.length } });
+    if (u.pathname.endsWith('/categories')) return json({ success: true, data: [] });
+    return { ok: false, status: 404, json: async () => ({ success: false }) };
+  };
+  const bb = createBigBang(openDb(':memory:'), { apiKey: KEY, fetchImpl });
+  const lobby = await bb.lobby({ n: 5 });
+  const prag = lobby.rows.find((r) => r.key === 'provider' && r.provider === 'pragmatic').games.map((x) => x.name);
+  assert.equal(prag.filter((n) => n.startsWith('Gates of Olympus')).length, 1, 'one Gates of Olympus in the row');
+  assert.equal(prag.filter((n) => n.startsWith('Big Bass')).length, 1);
+  const rel = (await bb.related(await bb.game(5))).map((x) => x.name);
+  // two of its family (other Big Bass), then Halloween games, then the provider's others, one per family
+  assert.deepEqual(rel.slice(0, 2).every((n) => n.startsWith('Big Bass')), true);
+  assert.ok(rel.indexOf('Fruity Halloween') < rel.indexOf('Sweet Bonanza'), 'the Halloween theme before the provider');
+  assert.equal(rel.slice(0, 8).filter((n) => n.startsWith('Gates of Olympus')).length, 1, 'one Gates of Olympus while there are other families');
 });
