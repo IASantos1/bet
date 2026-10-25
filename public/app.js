@@ -1271,19 +1271,25 @@ function casinoCollectionPage(id) {
 }
 
 /** Loads the next block of games (or the first block after a filter change). */
+// Each new filter (a tab, a provider, a search) replaces the request still on its way: only the answer
+// to the latest one is shown ("Mostrar mais" waits for the one loading).
+let casinoReq = 0;
 async function loadCasino({ reset = false } = {}) {
   const c = state.casino;
-  if (c.loading) return;
+  if (c.loading && !reset) return;
   const f = state.casinoFilter;
   const offset = reset ? 0 : c.games.length;
+  const mine = ++casinoReq;
   c.loading = true;
   if (reset) c.games = [];
   if (currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
   try {
     const qs = new URLSearchParams({ offset, limit: CASINO_PAGE, provider: f.provider || '', category: f.category || '', q: f.q || '' });
     const data = await api(`/api/casino/games?${qs}`);
-    state.casino = { ...data, games: reset ? data.games : [...c.games, ...data.games], loaded: true, loading: false };
+    if (mine !== casinoReq) return; // another filter was chosen meanwhile
+    state.casino = { ...data, games: reset ? data.games : [...state.casino.games, ...data.games], loaded: true, loading: false };
   } catch {
+    if (mine !== casinoReq) return;
     state.casino = { enabled: false, games: [], providers: [], total: 0, loaded: true, loading: false };
   }
   const { page, sub } = currentRoute();
