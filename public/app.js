@@ -600,6 +600,7 @@ const TOP_LEAGUES = [
   ['futebol', /champions league/i, null], ['futebol', /europa league/i, null], ['futebol', /conference league/i, null],
   ['futebol', /eredivisie/i, 'netherlands'], ['futebol', /s[eé]rie a|brasileir/i, 'brazil'],
   ['basquetebol', /\bnba\b/i, null], ['basquetebol', /euroleague|euroliga/i, null],
+  ['hoquei', /\bnhl\b/i, null], ['andebol', /ehf champions league|^champions league/i, null], ['voleibol', /superlega|cev champions league/i, null],
 ];
 function popularLeagues(max = 16) {
   const all = [];
@@ -635,13 +636,17 @@ const LEAGUE_LOGOS = [
 ];
 const leagueLogoId = (l) => (l.sport !== 'futebol' ? null : LEAGUE_LOGOS.find(([re, country]) => re.test(leagueShort(l.name))
   && (!country || String(l.country || '').toLowerCase().trim() === country))?.[2] || null);
+const LOGO_SPORTS = new Set(['basquetebol', 'hoquei', 'voleibol', 'andebol']);
 function leagueBadge(l) {
   const k = String(l.country || '').toLowerCase().trim();
   const code = COUNTRY_FLAG[k];
   const flag = code ? `https://flagcdn.com/w80/${code}.png` : '';
   const logo = leagueLogoId(l);
   // The league's own logo; if it cannot be loaded, the country's flag takes its place.
-  if (logo) return `<span class="lg-badge logo"><img class="lg-logo" src="/league-logo/${logo}" data-flag="${esc(flag)}" alt="" loading="lazy" decoding="async"></span>`;
+  // Other sports: looked up by name on the server (API-Sports of that sport).
+  const src = logo ? `/league-logo/${logo}` : LOGO_SPORTS.has(l.sport)
+    ? `/league-logo/0?s=${l.sport}&n=${encodeURIComponent(l.name)}&c=${encodeURIComponent(l.country || '')}` : '';
+  if (src) return `<span class="lg-badge logo"><img class="lg-logo" src="${esc(src)}" data-flag="${esc(flag)}" data-icon="${REGION_ICON[k] || '🌍'}" alt="" loading="lazy" decoding="async"></span>`;
   const pic = flag ? `<img src="${flag}" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
   return `<span class="lg-badge">${pic}</span>`;
 }
@@ -3508,7 +3513,7 @@ document.addEventListener('error', (e) => {
   if (img instanceof HTMLImageElement && img.classList.contains('lg-logo')) {
     const badge = img.parentElement;
     badge?.classList.remove('logo');
-    if (img.dataset.flag) { img.classList.remove('lg-logo'); img.src = img.dataset.flag; delete img.dataset.flag; } else img.replaceWith(Object.assign(document.createElement('i'), { textContent: '🌍' }));
+    if (img.dataset.flag) { img.classList.remove('lg-logo'); img.src = img.dataset.flag; delete img.dataset.flag; } else img.replaceWith(Object.assign(document.createElement('i'), { textContent: img.dataset.icon || '🌍' }));
     return;
   }
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('side-flag')) return;
