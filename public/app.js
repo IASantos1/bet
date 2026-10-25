@@ -1062,7 +1062,9 @@ function spotlightCard(s) {
   const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="metadata"></video>`;
   const own = s.img ? `${s.video?.d ? vid(s.img.d, 'spot-d') : `<img class="spot-d" src="${esc(s.img.d)}" alt="" loading="lazy">`}
       ${s.img.m !== s.img.d ? (s.video?.m ? vid(s.img.m, 'spot-m') : `<img class="spot-m" src="${esc(s.img.m)}" alt="" loading="lazy">`) : ''}` : '';
-  const art = g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt="" loading="lazy"><img class="spot-art" src="${esc(g.image)}" alt="" loading="lazy">` : '';
+  // On computers the art fills the right of the card (fading into the text side); on phones it stands whole.
+  const art = g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt="" loading="lazy"><img class="spot-wide" src="${esc(g.image)}" alt="" loading="lazy">
+      <img class="spot-art" src="${esc(g.image)}" alt="" loading="lazy">` : '';
   return `<section class="section spot${s.img ? ' own' : ''}${s.img && s.img.m !== s.img.d ? ' two' : ''}" data-key="spot${s.id}">
     <a class="spot-card" href="#/casino/jogo/${g.id}" aria-label="${esc(`${g.name}: ${s.cta || 'Joga agora!'}`)}">
       <div class="spot-media">${own || art}</div>

@@ -2753,7 +2753,7 @@ function spotPreview() {
   const isVid = (src) => (src === spotEd.srcD ? spotEd.vidD : src === spotEd.srcM ? spotEd.vidM : /^data:video\//.test(src || ''));
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
   const card = (src) => `<div class="spot${src ? ' own' : ''}"><div class="spot-card"><div class="spot-media">${src ? media(src)
-      : g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt=""><img class="spot-art" src="${esc(g.image)}" alt="">` : ''}</div>
+      : g.image ? `<img class="spot-bg" src="${esc(g.image)}" alt=""><img class="spot-wide" src="${esc(g.image)}" alt=""><img class="spot-art" src="${esc(g.image)}" alt="">` : ''}</div>
     <div class="spot-copy">${tag ? `<strong>${esc(tag)}</strong>` : ''}<small>${esc(g.name)}${g.provider ? ` · ${esc(g.provider)}` : ''}</small><span class="spot-cta">${esc(cta)}</span></div></div></div>`;
   $('#spotPvD').innerHTML = card(d);
   $('#spotPvM').innerHTML = card(m);

@@ -12,7 +12,7 @@ export const SEASONAL = [
   {
     key: 'halloween-2026',
     // Raised when something below changes: the banner and collection already made get it.
-    rev: 3,
+    rev: 4,
     // Until 31 October at midnight (Lisbon is on winter time, UTC+0, from 25 October).
     endsAt: '2026-11-01T00:00:00.000Z',
     collection: {
