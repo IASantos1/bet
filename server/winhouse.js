@@ -1,3 +1,4 @@
+import { readableName, readableTeam } from './teamnames.js';
 import { divisionOf } from './footballdivisions.js';
 import { tourOf } from './tennistours.js';
 import { leagueCountry, FILTERED_SPORTS } from './countryleagues.js';
@@ -821,8 +822,9 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
   if (!sport) return null;
   if (block && blockedGame(ev, block)) return null;
   const [n1, n2] = String(ev.name || '').split(/\s+-\s+/);
-  const home = String(ev.home_team || n1 || '').trim().slice(0, 80);
-  const away = String(ev.away_team || n2 || '').trim().slice(0, 80);
+  // Names in Chinese characters come in Latin letters (the club's usual name when we know it).
+  const home = readableTeam(String(ev.home_team || n1 || '').trim(), sport).slice(0, 80);
+  const away = readableTeam(String(ev.away_team || n2 || '').trim(), sport).slice(0, 80);
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ev.game_date || ''));
   const t = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(String(ev.game_time || ''));
   if (!home || !away || !d || !t) return null;
@@ -833,7 +835,7 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
   // The badge, under whichever name the list gives it; any https image address (no quotes or spaces).
   const safeLogo = (...vs) => vs.find((u) => typeof u === 'string' && /^https:\/\/[\w.-]+\/[\w./%+=?&-]+$/.test(u.trim()))?.trim() || null;
   return {
-    externalId: String(ev.id), sport, competition: String(ev.league || 'WinHouse').slice(0, 80), home, away,
+    externalId: String(ev.id), sport, competition: readableName(String(ev.league || 'WinHouse')).slice(0, 80), home, away,
     startTime: new Date(start).toISOString(), localStart: `${d[0]}T${t[1]}:${t[2]}`,
     homeScore: score ? Number(score[1]) : null, awayScore: score ? Number(score[2]) : null,
     minutes, clockRaw: ev.current_minute || null,
@@ -1020,6 +1022,13 @@ export function createWinHouseFeed(db, {
     voleibol: volleyballLeagues, andebol: handballLeagues, futsal: futsalLeagues })
     .filter(([, list]) => list !== undefined).map(([sp, list]) => [sp, allowedLeagues(list, LEAGUE_TREES[sp], sp)]));
   const block = { women: blockWomen, youth: blockYouth, minor: blockMinor, extra: leagueTerms(blockLeagues), leagues: Object.keys(allow).length ? allow : null };
+  // Games kept from before names in Chinese characters came in Latin letters: renamed once, now.
+  for (const r of db.prepare("SELECT id, sport, home, away, competition FROM events WHERE source = ?").all(SOURCE)) {
+    const names = [readableTeam(r.home, r.sport), readableTeam(r.away, r.sport), readableName(r.competition)];
+    if (names[0] !== r.home || names[1] !== r.away || names[2] !== r.competition) {
+      db.prepare('UPDATE events SET home = ?, away = ?, competition = ? WHERE id = ?').run(...names.map((n) => n.slice(0, 80)), r.id);
+    }
+  }
   const state = {
     enabled: !!client?.enabled, last: {}, lastError: null, lastErrorAt: null,
     offset: Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : null, offsetSource: Number.isFinite(tzOffsetMinutes) ? 'WINHOUSE_TZ_OFFSET_MINUTES' : null,
