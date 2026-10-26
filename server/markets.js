@@ -232,10 +232,19 @@ const wonIf = (v) => (v === null ? null : v ? 'won' : 'lost');
  * while): markets about players, goal times, cards… and quarter lines are never guessed.
  */
 export function specialOutcome(code, {
-  periods = null, home = null, away = null, regHome = null, regAway = null, homeName = '', awayName = '', retired = false, sport = null,
+  periods = null, home = null, away = null, regHome = null, regAway = null, homeName = '', awayName = '', retired = false, sport = null, stats = null,
 } = {}) {
   const sp = splitSpecial(code);
   if (!sp) return null;
+  // WinHouse's numbered markets are read by their number.
+  if (sp.id >= 1_000_000) {
+    if (retired) return null;
+    const full = Number.isInteger(home) && Number.isInteger(away) ? [home, away] : null;
+    const ft = Number.isInteger(regHome) && Number.isInteger(regAway) ? [regHome, regAway] : full;
+    const out = whOutcome(code, { periods, ft, stats });
+    // A number not listed there: read by its name below (as conservatively as any other market).
+    if (out !== undefined) return out;
+  }
   const g = plain(sp.group);
   const l = plain(sp.label);
   if (NOT_SCORE.test(g)) return null;
@@ -250,7 +259,7 @@ export function specialOutcome(code, {
   const winnerOnly = (out) => (retired ? null : out);
 
   // Half time / full time: "1/1", "X/2"…
-  if (/(intervalo|half.?time|1st half|1.o tempo|primeiro tempo|\bht\b).{0,6}(final|full.?time|\bft\b|resultado final)|\bht\s*\/\s*ft\b/.test(g)) {
+  if (/(intervalo|half.?time|1st half|1.? ?o? ?tempo|primeiro tempo|\bht\b)\s*[-/]\s*(final|fim do jogo|full.?time|\bft\b|resultado final)/.test(g)) {
     const m = /^([12x]|casa|fora|empate|home|away|draw)\s*\/\s*([12x]|casa|fora|empate|home|away|draw)$/.exec(l);
     const p1 = Array.isArray(periods) ? periods[0] : null;
     if (!m || !okScore(p1) || !ft) return null;
@@ -274,6 +283,14 @@ export function specialOutcome(code, {
   const res = resultCode(h, a);
   const side = sideOf(l, homeName, awayName);
 
+  // "Ambas Marcam & Total de Golos - Mais / Menos (2.5)": "Sim/Mais de (2.5)".
+  if (/&/.test(g) && /(ambas|both)/.test(g)) {
+    const m = /^(sim|nao)\s*\/\s*(.+)$/.exec(l);
+    const ou = m ? ouOf(m[2]) : null;
+    if (!ou) return null;
+    const total = overUnder(`${ou[0]}${ou[1]}`, h + a);
+    return total === 'void' ? null : winnerOnly(wonIf((m[1] === 'sim') === (h > 0 && a > 0) && total === 'won'));
+  }
   // "1x2 & Total": "1&Mais de (1.5)".
   if (/&/.test(g) || /&/.test(l)) {
     const m = /^([12x]|casa|fora|empate)\s*&\s*(.+)$/.exec(l);
@@ -301,10 +318,12 @@ export function specialOutcome(code, {
     const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(l);
     return m ? winnerOnly(wonIf(Number(m[1]) === h && Number(m[2]) === a)) : null;
   }
-  if (/(golos exatos|exact goals|numero exato|total exato|exact total)/.test(g)) {
+  if (/(golos exatos|exact goals|numero exato|total exato|exact total|golos - exato)/.test(g)) {
     const m = /^(\d{1,2})(\+)?$/.exec(l);
     if (!m) return null;
-    return winnerOnly(wonIf(m[2] ? h + a >= Number(m[1]) : h + a === Number(m[1])));
+    // "Equipa Casa - Total de Golos - Exato": that team's goals.
+    const v = /(casa|home|equipa 1)/.test(g) ? h : /(fora|away|equipa 2)/.test(g) ? a : h + a;
+    return winnerOnly(wonIf(m[2] ? v >= Number(m[1]) : v === Number(m[1])));
   }
   if (/(impar|\bpar\b|odd|even)/.test(g) && /^(impar|par|odd|even)$/.test(l)) {
     return winnerOnly(wonIf(/^(impar|odd)$/.test(l) === ((h + a) % 2 === 1)));
@@ -316,12 +335,12 @@ export function specialOutcome(code, {
       const sd = sideOf(eu[1], homeName, awayName);
       return sd ? winnerOnly(wonIf(sd === resultCode(h + Number(eu[2]), a + Number(eu[3])))) : null;
     }
-    // Asian / two-way: "1 (-1.5)", "Casa (+1)", "<team> -0.5".
+    // Asian / two-way: "1 (-1.5)", "2 (-1.5)": the book gives the home side's line for both.
     const as = /^(.+?)\s*\(?\s*([-+]?\d+(?:[.,]\d+)?)\s*\)?$/.exec(l);
     const sd = as ? sideOf(as[1], homeName, awayName) : null;
     const line = as ? halfLine(as[2]) : null;
     if ((sd !== '1' && sd !== '2') || line === null || /europe|3.?way/.test(g)) return null;
-    return winnerOnly(handicap(hcpCode(sd, line), h, a));
+    return winnerOnly(handicap(hcpCode(sd, sd === '1' ? line : -line), h, a));
   }
   if (/(vencedor|resultado|1x2|winner|ganha|moneyline|\bml\b)/.test(g) && !/(total|mais|menos|over|under)/.test(g)) {
     if (!side) return null;
@@ -329,11 +348,12 @@ export function specialOutcome(code, {
       // A two-way winner after a draw: void when the market says so; after a regulation draw (the
       // match went on to overtime) it is not known whether the market counted overtime: the operator.
       if (/(2.?way|dois resultados|two way|empate anula)/.test(g)) return 'void';
-      if (!n && hasReg && !withOt) return null;
+      // After overtime (or penalties) a draw means the final score lacks the decider: the operator.
+      if (!n && (withOt || hasReg)) return null;
     }
     return wonIf(side === res);
   }
-  if (/(total|mais|menos|over|under|golos|goals|pontos|points)/.test(g)) {
+  if (/(total|totais|mais|menos|over|under|golos|goals|pontos|points)/.test(g)) {
     const ou = ouOf(l);
     if (!ou) return null;
     // One team's total: "Total 1", "Casa - Total", "<team> total"…
@@ -418,7 +438,8 @@ export function tennisOutcome(code, { sets = null, home = null, away = null, ret
   const ou = () => (/^(mais|over|acima)\b/.test(l) ? 'O' : /^(menos|under|abaixo)\b/.test(l) ? 'U' : null);
   const side = () => (/^1\b/.test(l) ? '1' : /^2\b/.test(l) ? '2' : null);
   const total = (t) => { const o = ou(); const v = lineOf(); return o && v !== null && v >= 0 ? overUnder(`${o}${v}`, t) : null; };
-  const hcp = (h, a) => { const sd = side(); const v = lineOf(); return sd && v !== null && /\(/.test(l) ? handicap(hcpCode(sd, v), h, a) : null; };
+  // The book gives the home side's line for both selections ("2 (-1.5)" is the away side +1.5).
+  const hcp = (h, a) => { const sd = side(); const v = lineOf(); return sd && v !== null && /\(/.test(l) ? handicap(hcpCode(sd, sd === '1' ? v : -v), h, a) : null; };
   if (retired || !Number.isInteger(home) || !Number.isInteger(away)) {
     // After a retirement only a set that was over stands.
     if (!(kind === 'set1' || kind === 'set2')) return null;
@@ -448,4 +469,286 @@ export function tennisOutcome(code, { sets = null, home = null, away = null, ret
   if (kind === 'p1-games-ou') return total(g1);
   if (kind === 'p2-games-ou') return total(g2);
   return null;
+}
+
+// ---------- WinHouse's numbered markets (7-digit ids), read by their number ----------
+// The id says what is counted and over which part of the match: 10xxxxx the match, 11xxxxx / 73xxxxx
+// the 1st half, 12xxxxx / 74xxxxx the 2nd half (goals or points); 13xxxxx corners, 15xxxxx yellow
+// cards, 18xxxxx shots on target (the whole match, from the tracker's final counts). The last five
+// digits are the market (1 = 1X2, 17 = total, 2854 = asian handicap…). Selections come as the book
+// writes them, partly translated ("W1 and TU - Sim (1.5)", "0:1 W1", "Multi goal 1-2"); a line in
+// brackets at the end. Handicap lines are the home side's for both selections. Anything not listed
+// here, or that cannot be read safely (quarter lines, goal times, next / last goal…), returns null.
+const WH_SCORE_SCOPE = { 10: 0, 11: 1, 73: 1, 12: 2, 74: 2 };
+const WH_STAT_SCOPE = { 13: 'corners', 15: 'yellow', 18: 'sot' };
+// Markets read on the score of each half (needs both halves).
+const WH_HALVES = new Set([18, 32, 43, 44, 49, 71, 371, 829, 860, 3007, 3009, 3011, 3239, 2422, 2424, 9404, 9897, 10037, 10038, 10046, 10047, 10048, 10091, 10092, 10096, 10264]);
+// Markets that may be read on statistics (corners, cards, shots): the plain score markets.
+const WH_STAT_OK = new Set([1, 2, 8, 9, 15, 17, 27, 62, 87, 88, 89, 99, 2854, 8427, 8429]);
+// Result + a team's total: which team's total.
+const WH_TEAM_TOTAL = { 2987: 1, 2989: 2, 10106: 1, 10107: 1, 10108: 1, 9429: 2, 9430: 1, 9431: 2, 9432: 2, 9433: 1 };
+
+/** "w1" / "1" → '1', "x" → 'X', "w2" / "2" → '2'. */
+const whSide = (v) => ({ 1: '1', w1: '1', x: 'X', 2: '2', w2: '2' })[v] ?? null;
+/** "1x" / "12" / "2x" / "x2" → the results it covers. */
+const whDouble = (v) => ({ '1x': ['1', 'X'], x1: ['1', 'X'], 12: ['1', '2'], 21: ['1', '2'], '2x': ['X', '2'], x2: ['X', '2'] })[v] ?? null;
+/** "1-2" / "2-3" → [1, 2]. */
+const whRange = (v) => { const m = /^(\d+)\s*-\s*(\d+)$/.exec(v); return m ? [Number(m[1]), Number(m[2])] : null; };
+/** A result side or double chance ("w1", "1x", "x") against the score. */
+function whResult(v, h, a) {
+  const res = resultCode(h, a);
+  const s = whSide(v);
+  if (s) return s === res;
+  const d = whDouble(v);
+  return d ? d.includes(res) : null;
+}
+/** "mais de" / "to" → true, "menos de" / "tu" → false. */
+const whOver = (v) => (/^(mais de|mais|to|over)$/.test(v) ? true : /^(menos de|menos|tu|under)$/.test(v) ? false : null);
+/** Over / under a half line on a total: true / false; null on a whole line hit exactly or no line. */
+const whOu = (over, line, total) => {
+  if (over === null || line === null || !Number.isInteger(line * 2)) return null;
+  if (total === line) return null;
+  return over === total > line;
+};
+
+// Every market number read below.
+const KNOWN_SUBS = new Set([1, 2, 8, 9, 15, 17, 18, 19, 27, 32, 43, 44, 49, 62, 71, 87, 88, 89, 99, 136, 275, 285, 371, 829, 852, 858, 860,
+  2422, 2424, 2440, 2444, 2663, 2665, 2667, 2854, 2866, 2867, 2876, 2878, 2987, 2989, 3005, 3007, 3009, 3011, 3239, 3309, 3311,
+  7961, 8427, 8429, 8801, 8803, 8863, 8931, 9322, 9404, 9429, 9430, 9431, 9432, 9433, 9897, 9898, 9913, 9914, 9915, 9939,
+  10037, 10038, 10039, 10040, 10046, 10047, 10048, 10091, 10092, 10096, 10106, 10107, 10108, 10161, 10264]);
+
+/**
+ * A WinHouse market with a 7-digit id: 'won' | 'lost' | 'void', or null (the operator decides);
+ * undefined when the number is not one read here (its name is tried instead).
+ * `periods`: the halves' scores; `ft`: the full-time score; `stats`: the tracker's counts.
+ */
+export function whOutcome(code, { periods = null, ft = null, stats = null } = {}) {
+  const sp = splitSpecial(code);
+  if (!sp || sp.id < 1_000_000 || sp.id > 9_999_999) return null;
+  const prefix = Math.floor(sp.id / 100_000);
+  const sub = sp.id % 100_000;
+  let pair = null;
+  if (prefix in WH_SCORE_SCOPE) {
+    const n = WH_SCORE_SCOPE[prefix];
+    pair = n === 0 ? ft : Array.isArray(periods) ? periods[n - 1] : null;
+  } else if (prefix in WH_STAT_SCOPE) {
+    // The whole match's counts, once final; the halves are not counted apart.
+    if (!WH_STAT_OK.has(sub)) return undefined;
+    if (!stats?.final) return null;
+    pair = stats[WH_STAT_SCOPE[prefix]];
+  } else return undefined;
+  if (!KNOWN_SUBS.has(sub)) return undefined;
+  if (!okScore(pair)) return null;
+  const [p1, p2] = Array.isArray(periods) ? periods : [];
+  if (WH_HALVES.has(sub) && (!(prefix in WH_SCORE_SCOPE) || !okScore(p1) || !okScore(p2))) return null;
+  const [h, a] = pair;
+  const t = h + a;
+
+  // The selection: "<body> - Sim (1.5)" → body, yes, line.
+  let l = plain(sp.label);
+  let line = null;
+  const lm = /\s*\(\s*([-+]?\d+(?:[.,]\d+)?)\s*\)$/.exec(l);
+  if (lm) { line = Number(lm[1].replace(',', '.')); l = l.slice(0, lm.index).trim(); }
+  let yes = null;
+  const ym = /^(.*?)\s*-?\s*\b(sim|nao)$/.exec(l);
+  if (ym) { yes = ym[2] === 'sim'; l = ym[1].trim(); }
+  const answer = (c) => (c === null || c === undefined ? null : (yes === null ? c : c === yes) ? 'won' : 'lost');
+  const half = Number.isInteger(line * 2) ? line : null;
+  const hcpSide = (h1, a1) => { // "1" / "2" with the home side's line
+    const s = whSide(l);
+    if ((s !== '1' && s !== '2') || half === null) return null;
+    return handicap(hcpCode(s, s === '1' ? half : -half), h1, a1);
+  };
+  const team = (n) => (n === 1 ? h : a);
+  const halves = (fn) => fn(p1, p2);
+
+  switch (sub) {
+    case 1: return answer(whSide(l) ? whSide(l) === resultCode(h, a) : null); // 1X2
+    case 2: case 2854: return hcpSide(h, a); // handicap / asian handicap
+    case 8: return answer(whDouble(l) ? whDouble(l).includes(resultCode(h, a)) : null);
+    case 9: return answer(yes === null ? null : h === a); // draw
+    case 15: case 17: case 62: case 99: case 8427: case 8429: { // totals, asian totals (whole and half lines)
+      const v = sub === 15 || sub === 8427 ? h : sub === 62 || sub === 8429 ? a : t;
+      const over = whOver(l);
+      if (over === null || half === null) return null;
+      return overUnder(`${over ? 'O' : 'U'}${half}`, v);
+    }
+    case 19: return answer(yes === null ? null : h > 0 && a > 0); // both teams score
+    case 27: { // european handicap "0:1 W1"
+      const m = /^(\d+)\s*:\s*(\d+)\s+(w1|w2|x)$/.exec(l);
+      return m ? answer(whSide(m[3]) === resultCode(h + Number(m[1]), a + Number(m[2]))) : null;
+    }
+    case 87: case 88: case 89: { // 3-way totals: over / exactly / under a whole line
+      const v = sub === 88 ? h : sub === 89 ? a : t;
+      if (!Number.isInteger(line)) return null;
+      if (/^(mais de|mais)$/.test(l)) return answer(v > line);
+      if (/^(exatamente|exactly)$/.test(l)) return answer(v === line);
+      if (/^(menos de|menos)$/.test(l)) return answer(v < line);
+      return null;
+    }
+    case 136: case 8863: { // correct score "1-0", "Correct Score 1-0 (17Way)"
+      const m = /(\d+)\s*[-:]\s*(\d+)/.exec(l.replace(/\(17way\)/, ''));
+      return m && !/(other|outro)/.test(l) ? answer(Number(m[1]) === h && Number(m[2]) === a) : null;
+    }
+    case 852: return answer(yes === null ? null : (h > a && a === 0) || (a > h && h === 0)); // win to nil
+    case 2866: case 2867: return answer(yes === null ? null : sub === 2866 ? h > a && a === 0 : a > h && h === 0);
+    case 7961: case 8801: case 8803: { // multi goal "Multi goal 1-2" (match / team 1 / team 2)
+      const r = whRange(l.replace(/^multi goal\s*/, ''));
+      const v = sub === 8801 ? h : sub === 8803 ? a : t;
+      return r ? answer(v >= r[0] && v <= r[1]) : null;
+    }
+    case 9939: { // exact number: "2 - Sim", "1 or Less - Sim", "5 or More - Não", "From 1 To 2 - Sim"
+      let m;
+      if ((m = /^(\d+)$/.exec(l))) return answer(t === Number(m[1]));
+      if ((m = /^(\d+) or less$/.exec(l))) return answer(t <= Number(m[1]));
+      if ((m = /^(\d+) or more$/.exec(l))) return answer(t >= Number(m[1]));
+      if ((m = /^from (\d+) to (\d+)$/.exec(l))) return answer(t >= Number(m[1]) && t <= Number(m[2]));
+      return null;
+    }
+    case 3309: case 3311: { // a team's exact goals: "0", "1", "2", "Team 1 Total - or More Goals (3)"
+      const v = sub === 3309 ? h : a;
+      if (/^\d+$/.test(l) && line === null) return answer(v === Number(l));
+      if (/or more goals$/.test(l) && Number.isInteger(line)) return answer(v >= line);
+      return null;
+    }
+    case 2663: case 2665: case 2667: { // result + match total: "W1 and TU - Sim (1.5)", "X and TO"
+      const m = /^(w1|w2|1x|2x|x2|x|12) and (to|tu)$/.exec(l);
+      if (!m) return null;
+      const ou = whOu(whOver(m[2]), half, t);
+      const r = whResult(m[1], h, a);
+      return ou === null || r === null ? null : answer(r && ou);
+    }
+    case 2987: case 2989: case 10106: case 10107: case 10108: case 9429: case 9430: case 9431: case 9432: case 9433: {
+      // result + a team's total: "W1 and Total 1 Mais de - Sim (1.5)", "1X and Mais de - Sim (0.5)"
+      const m = /^(w1|w2|1x|2x|x2|x|12) and (?:total [12] )?(mais de|menos de)$/.exec(l);
+      if (!m) return null;
+      const ou = whOu(whOver(m[2]), half, team(WH_TEAM_TOTAL[sub]));
+      const r = whResult(m[1], h, a);
+      return ou === null || r === null ? null : answer(r && ou);
+    }
+    case 2444: { // total and both teams score: "both To Score + TO - Sim (2.5)"
+      const m = /^both to score \+ (to|tu)$/.exec(l);
+      const ou = m ? whOu(whOver(m[1]), half, t) : null;
+      return ou === null ? null : answer(h > 0 && a > 0 && ou);
+    }
+    case 9322: { // "away team Least One Team Not To Score and 1X" (at least one team not to score)
+      const m = /least one team not to score and (1x|2x|x2|12)$/.exec(l);
+      return m ? answer(!(h > 0 && a > 0) && whResult(m[1], h, a)) : null;
+    }
+    case 858: { // "… Least One Team Will Not Score + TU - Sim (2.5)"
+      const m = /least one team will not score \+ (to|tu)$/.exec(l);
+      const ou = m ? whOu(whOver(m[1]), half, t) : null;
+      return ou === null ? null : answer(!(h > 0 && a > 0) && ou);
+    }
+    case 2440: { // "Only Team 1", "Only Team 2", "no Goals"
+      if (/^only team 1$/.test(l)) return answer(h > 0 && a === 0);
+      if (/^only team 2$/.test(l)) return answer(a > 0 && h === 0);
+      if (/^nao goals$/.test(l)) return answer(t === 0);
+      return null;
+    }
+    case 8931: { // at least one team over the line
+      const o = whOver(l);
+      return o === true && half !== null && !Number.isInteger(half) ? answer(Math.max(h, a) > half) : null;
+    }
+    case 285: { // each team over / under the line
+      const o = whOver(l);
+      if (o === null || half === null || Number.isInteger(half)) return null;
+      return answer(o ? h > half && a > half : h < half && a < half);
+    }
+    case 275: { // any team to win by: "By Goal(s) - Sim (1)", "By or More Goals - Sim (2)", "1-2 Goal(s) - Sim"
+      const d = Math.abs(h - a);
+      if (/^by goal\(?s\)?$/.test(l) && Number.isInteger(line)) return answer(d === line);
+      if (/^by or more goals$/.test(l) && Number.isInteger(line)) return answer(d >= line);
+      const r = whRange(l.replace(/\s*goal\(?s\)?$/, ''));
+      return r ? answer(d >= r[0] && d <= r[1]) : null;
+    }
+    case 10039: case 10040: return answer(yes === null ? null : (sub === 10039 ? h - a : a - h) === 1 || h === a);
+    case 10161: return answer(yes === null ? null : h === a && h > 0); // score draw
+    case 9898: { // "W1 or 0-0 - Sim"
+      const m = /^(w1|w2|x) or (\d+)\s*-\s*(\d+)$/.exec(l);
+      return m ? answer(whSide(m[1]) === resultCode(h, a) || (Number(m[2]) === h && Number(m[3]) === a)) : null;
+    }
+    case 9913: { // result or total: "W1 or Mais de (1.5)"
+      const m = /^(w1|w2|x) or (mais de|menos de)$/.exec(l);
+      const ou = m ? whOu(whOver(m[2]), half, t) : null;
+      return ou === null ? null : answer(whSide(m[1]) === resultCode(h, a) || ou);
+    }
+    case 9914: { // result or both teams score: "W1 or both To Score", "X or both Not To Score"
+      const m = /^(w1|w2|x) or both (not )?to score$/.exec(l);
+      return m ? answer(whSide(m[1]) === resultCode(h, a) || (h > 0 && a > 0) === !m[2]) : null;
+    }
+    case 9915: { // both teams score or total: "both To Score or Mais de (0.5)"
+      const m = /^both (not )?to score or (mais de|menos de)$/.exec(l);
+      const ou = m ? whOu(whOver(m[2]), half, t) : null;
+      return ou === null ? null : answer((h > 0 && a > 0) === !m[1] || ou);
+    }
+    case 3005: { // "W1 and Number Of Goals 2-3 - Sim"
+      const m = /^(w1|w2|x) and number of goals (\d+)\s*-\s*(\d+)$/.exec(l);
+      return m ? answer(whSide(m[1]) === resultCode(h, a) && t >= Number(m[2]) && t <= Number(m[3])) : null;
+    }
+    case 2876: case 2878: { // a team scores N goals: "0 - 1 Goals - Sim"
+      const r = whRange(l.replace(/\s*goals?$/, ''));
+      const v = sub === 2876 ? h : a;
+      return r ? answer(v >= r[0] && v <= r[1]) : null;
+    }
+    // ----- read on both halves -----
+    case 18: { // which half has more goals: "1 > 2", "1 = 2", "1 < 2"
+      const m = /^1\s*([<=>])\s*2$/.exec(l);
+      if (!m) return null;
+      const x = p1[0] + p1[1]; const y = p2[0] + p2[1];
+      return answer(m[1] === '>' ? x > y : m[1] === '<' ? x < y : x === y);
+    }
+    case 32: return answer(yes === null ? null : halves((x, y) => x[0] + x[1] > 0 && y[0] + y[1] > 0));
+    case 860: return answer(yes === null ? null : halves((x, y) => x[0] > 0 && x[1] > 0 && y[0] > 0 && y[1] > 0));
+    case 9897: return answer(yes === null ? null : halves((x, y) => (x[0] > 0 && x[1] > 0) || (y[0] > 0 && y[1] > 0)));
+    case 10037: case 10038: { const i = sub === 10037 ? 0 : 1; return answer(yes === null ? null : p1[i] > 0 && p2[i] > 0); }
+    case 9404: {
+      const m = /^team ([12])$/.exec(l);
+      if (!m) return null;
+      const i = Number(m[1]) - 1;
+      return answer(p1[i] > 0 && p2[i] > 0);
+    }
+    case 10096: return answer(yes === null ? null : !(p1[0] > 0 && p2[0] > 0) && !(p1[1] > 0 && p2[1] > 0));
+    case 10046: case 10047: { const s = sub === 10046 ? '1' : '2'; return answer(yes === null ? null : resultCode(...p1) === s && resultCode(...p2) === s); }
+    case 43: case 44: { const s = sub === 43 ? '1' : '2'; return answer(yes === null ? null : resultCode(...p1) === s || resultCode(...p2) === s); }
+    case 10048: return answer(yes === null ? null : p1[0] === p1[1] && p2[0] === p2[1]);
+    case 49: return answer(yes === null ? null : p1[0] === p1[1] || p2[0] === p2[1]);
+    case 3239: { const r1 = resultCode(...p1); const r2 = resultCode(...p2); return answer(yes === null ? null : r1 !== 'X' && r2 !== 'X' && r1 !== r2); }
+    case 10091: case 10092: { const s = sub === 10091 ? '1' : '2'; return answer(yes === null ? null : resultCode(...p1) === s && resultCode(h, a) !== s); }
+    case 2422: case 2424: { // a team's goals: "first half > second half"
+      const i = sub === 2422 ? 0 : 1;
+      const m = /^first half ([<=>]) second half$/.exec(l);
+      if (!m) return null;
+      return answer(m[1] === '>' ? p1[i] > p2[i] : m[1] === '<' ? p1[i] < p2[i] : p1[i] === p2[i]);
+    }
+    case 71: { // half / half: "W1/W2"
+      const m = /^(w1|w2|x)\s*\/\s*(w1|w2|x)$/.exec(l);
+      return m ? answer(whSide(m[1]) === resultCode(...p1) && whSide(m[2]) === resultCode(...p2)) : null;
+    }
+    case 829: { // HT-FT + total: "W1/W1 and TO - Sim (2.5)"
+      const m = /^(w1|w2|x)\s*\/\s*(w1|w2|x) and (to|tu)$/.exec(l);
+      const ou = m ? whOu(whOver(m[3]), half, t) : null;
+      return ou === null ? null : answer(whSide(m[1]) === resultCode(...p1) && whSide(m[2]) === resultCode(h, a) && ou);
+    }
+    case 3007: { // the 1st half's or the match's result: "W1 - Sim"
+      const s = whSide(l);
+      return s ? answer(resultCode(...p1) === s || resultCode(h, a) === s) : null;
+    }
+    case 3009: { // match result + 1st half total: "W1 and Mais de - Sim (1.5)"
+      const m = /^(w1|w2|x) and (mais de|menos de)$/.exec(l);
+      const ou = m ? whOu(whOver(m[2]), half, p1[0] + p1[1]) : null;
+      return ou === null ? null : answer(whSide(m[1]) === resultCode(h, a) && ou);
+    }
+    case 3011: { // "first half Mais de 0.5 and second half Mais de 1.5 - Sim"
+      const m = /^first half (mais de|menos de) (\d+\.5) and second half (mais de|menos de) (\d+\.5)$/.exec(l);
+      if (!m) return null;
+      return answer(whOu(whOver(m[1]), Number(m[2]), p1[0] + p1[1]) && whOu(whOver(m[3]), Number(m[4]), p2[0] + p2[1]));
+    }
+    case 371: case 10264: { // the highest / lowest scoring half's total
+      const v = (sub === 371 ? Math.max : Math.min)(p1[0] + p1[1], p2[0] + p2[1]);
+      const o = whOver(l);
+      return o === null || half === null ? null : overUnder(`${o ? 'O' : 'U'}${half}`, v);
+    }
+    default: return undefined;
+  }
 }
