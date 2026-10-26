@@ -452,3 +452,8 @@ desporto (pré-jogo e ao vivo), lê as odds que o fornecedor devolve e lista, po
 família, período, linhas, seleções, número de casas e em quantos jogos aparece, marcando os que a
 Bet62 já oferece. "Copiar resultado (JSON)" exporta a tabela. Serve para decidir que mercados ligar
 com base no que a API entrega de facto (a cobertura varia por liga).
+
+## Créditos
+
+Os ícones de ténis de mesa e badminton (`public/sporticons.js`) são do [Twemoji](https://github.com/jdecked/twemoji)
+(Copyright Twitter, Inc. e outros contribuidores), licença [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), com sombreado acrescentado.
