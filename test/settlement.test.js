@@ -184,7 +184,8 @@ test('tennis: set and games markets read from complete sets only; anything parti
   assert.equal(r('2721~Menos / Mais sets~Mais de 2.5'), 'won');
   assert.equal(r('2721~Menos / Mais sets~Menos de 2.5'), 'lost');
   assert.equal(r('1874~Handicap Asiático de Set~1 (-1.5)'), 'lost');
-  assert.equal(r('1874~Handicap Asiático de Set~2 (1.5)'), 'won');
+  assert.equal(r('1874~Handicap Asiático de Set~2 (-1.5)'), 'won'); // the home side's line: away +1.5
+  assert.equal(r('1874~Handicap Asiático de Set~2 (1.5)'), 'lost'); // away -1.5
   // A set's winner.
   assert.equal(r('1081~1.º set - Vencedor~1'), 'won');
   assert.equal(r('1082~2° Set - Vencedor~1'), 'lost');
@@ -195,7 +196,7 @@ test('tennis: set and games markets read from complete sets only; anything parti
   assert.equal(r('1279~Total de Jogos - Ímpar / Par~Par'), 'lost');
   assert.equal(r('1881~Handicap asiático de Jogos~1 (-1.5)'), 'lost'); // 16 - 1.5 < 15
   assert.equal(r('1881~Handicap asiático de Jogos~1 (-0.5)'), 'won');
-  assert.equal(r('1881~Handicap asiático de Jogos~2 (1.0)'), 'void');  // 15 + 1 = 16
+  assert.equal(r('1881~Handicap asiático de Jogos~2 (-1.0)'), 'void');  // away +1: 15 + 1 = 16
   assert.equal(r('1881~Handicap asiático de Jogos~1 (-0.25)'), null);  // quarter line: operator
   assert.equal(r('1872~Jogador 1 - Total de Jogos - Mais/Menos~Mais de 15.5'), 'won');
   assert.equal(r('1878~Jogador 2 - Total de Jogos - Mais/Menos~Mais de 15.5'), 'lost');
@@ -259,7 +260,8 @@ test('provider markets read from the score: every family that the score decides,
   assert.equal(so('1~Golos Exatos~4+', fb), 'lost');
   // Handicaps: asian (half and whole lines), european.
   assert.equal(so('1011~Handicap Asiático~1 (-1.5)', fb), 'lost');
-  assert.equal(so('1011~Handicap Asiático~2 (+1)', fb), 'void');
+  assert.equal(so('1011~Handicap Asiático~2 (-1)', fb), 'void'); // the home side's line: away +1
+  assert.equal(so('1011~Handicap Asiático~2 (-1.5)', fb), 'won');
   assert.equal(so('1011~Handicap Asiático~2 (+1.25)', fb), null);
   assert.equal(so('1~Handicap Europeu~X (0:1)', fb), 'won');
   assert.equal(so('1~Handicap Europeu~1 (0:1)', fb), 'lost');
@@ -298,4 +300,56 @@ test('provider markets read from the score: every family that the score decides,
   assert.equal(so('9~Total~Mais de (0.5)', { home: 1, away: 0, sport: 'mma' }), null);
   // A retired tennis match: only the winner stands.
   assert.equal(so('1~Total de sets~Mais de (2.5)', { home: 1, away: 0, retired: true }), null);
+});
+
+test('WinHouse numbered markets (the catalog\'s real names and selections) settle from the score, halves and counts', async () => {
+  const { extraPrices } = await import('../server/winhouse.js');
+  const { specialOutcome } = await import('../server/markets.js');
+  // The selection as the site stores it: the page's market and selection through the same reader.
+  const code = (mid, market, sel, special = null) => {
+    const keys = Object.keys(extraPrices([{ oddId: 1, price: 1.9, selection: sel, marketId: mid, marketName: market, special }], { sport: 'futebol' }));
+    assert.equal(keys.length, 1, `${market} ${sel}`);
+    return keys[0].slice(2);
+  };
+  // 2-1 (1-1 at half time, 1-0 after it); 7 corners (4-3), 5 yellow cards (2-3), final.
+  const ctx = { home: 2, away: 1, periods: [[1, 1], [1, 0]], sport: 'futebol', stats: { corners: [4, 3], yellow: [2, 3], final: true } };
+  const so = (mid, market, sel, special) => specialOutcome(code(mid, market, sel, special), ctx);
+  const cases = [
+    [1000087, '3 vias Total', 'over', '2', 'won'], [1000087, '3 vias Total', 'Exactly', '3', 'won'], [1000087, '3 vias Total', 'under', '3', 'lost'],
+    [1000088, 'Total Individual 3 vias 1', 'Exactly', '2', 'won'], [1000089, 'Total Individual 3 vias 2', 'under', '1', 'lost'],
+    [1009939, 'Número Exato', '3 - yes', null, 'won'], [1009939, 'Número Exato', '1 or Less - no', null, 'won'], [1009939, 'Número Exato', '4 or More - yes', null, 'lost'],
+    [1002866, 'Equipa 1 Vence Sem Sofrer Golos', 'yes', null, 'lost'], [1000852, 'Vence Sem Sofrer', 'no', null, 'won'],
+    [1010106, '1X + Equipa 1 Total', '1X and over - yes', '1.5', 'won'], [1009429, 'Dupla hipótese + Equipa 2 Total', '12 and over - yes', '1.5', 'lost'],
+    [1007961, 'Multi Golo', 'Multi goal 2-3', null, 'won'], [1007961, 'Multi Golo', 'Multi goal 0-2', null, 'lost'],
+    [1002444, 'Total e Ambas Marcam', 'both To Score + TO - yes', '2.5', 'won'], [1002987, 'W1 + Total 1', 'W1 and Total 1 over - yes', '1.5', 'won'],
+    [1002989, 'W2 + Total 2', 'W2 and Total 2 under - no', '1.5', 'won'],
+    [1012, '1° Tempo / Fim do jogo', 'x/1', null, 'won'], [1064, '2° Tempo - 1x2', '1', null, 'won'], [1500, '2° Tempo - Ambas Marcam', 'no', null, 'won'],
+    [1100015, '1° Tempo · Total 1', 'over', '0.5', 'won'], [1200062, '2° Tempo · Total 2', 'under', '0.5', 'won'],
+    [1100136, '1° Tempo · Resultado Exato', '1-1', null, 'won'], [1108863, '1° Tempo · Resultado Exato (17Way)', 'Correct Score 1-0 (17Way)', null, 'lost'],
+    [1010037, 'Equipa 1 Marca em Ambos os Tempos', 'yes', null, 'won'], [1010038, 'Equipa 2 Marca em Ambos os Tempos', 'yes', null, 'lost'],
+    [1010046, 'Equipa 1 Vence Ambos os Tempos', 'yes', null, 'lost'], [1000043, 'Equipa 1 Vence Qualquer Tempo', 'yes', null, 'won'],
+    [1000018, 'Marca em Cada Tempo', '1 > 2', null, 'won'], [1000071, 'Tempo/Tempo', 'X/W1', null, 'won'], [1010048, 'Empate em Ambos os Tempos', 'no', null, 'won'],
+    [1003239, 'Tempos Vencidos por Equipas Diferentes', 'yes', null, 'lost'], [1000032, 'Golo em Ambos os Tempos', 'yes', null, 'won'],
+    [1000860, 'Ambas Marcam em Ambos os Tempos', 'yes', null, 'lost'], [1003011, 'Total por Tempos', 'first half over 0.5 and second half over 1.5 - yes', null, 'lost'],
+    [1000275, 'Alguma Equipa Vence por', 'By Goal(s) - yes', '1', 'won'], [1002440, 'Golos da Equipa', 'no Goals', null, 'lost'],
+    [1009913, 'Resultado do Jogo ou Total', 'W2 or over', '2.5', 'won'], [1009914, 'Resultado do Jogo ou Ambas Marcam', 'X or both Not To Score', null, 'lost'],
+    [1003005, 'Resultado + Número de Golos', 'W1 and Number Of Goals 2-3 - yes', null, 'won'], [1002876, 'Equipa 1 Marca N Golos', '1 - 2 Goals - yes', null, 'won'],
+    [1000829, 'HT-FT + Total', 'W1/W1 and TO - yes', '2.5', 'lost'], [1003007, 'Resultado do 1° Tempo ou do Jogo', 'W1 - yes', null, 'won'],
+    [1004, 'Handicap', '2', '0:2', 'won'], [1736, '1° Tempo - Handicap', 'x', '0:1', 'lost'], [2054, 'Ambas Marcam & Total de Golos - Mais / Menos (2.5)', 'yes/over', '2.5', 'won'],
+    [2413, '1x2 & Total de Golos - Mais / Menos 2.5', '1&over', '2.5', 'won'], [1209, 'Equipa Fora - Total de Golos - Exato', '1', null, 'won'],
+    // Corners and yellow cards: the whole match, from the final counts.
+    [1300001, 'Cantos · 1X2', '1', null, 'won'], [1300002, 'Cantos · Handicap', '2', '-1.5', 'won'], [1300027, 'Cantos · Handicap europeu', '0:1 X', null, 'won'],
+    [1300087, 'Cantos · 3 vias Total', 'Exactly', '7', 'won'], [1500008, 'Cartões Amarelos · Dupla hipótese', '2X', null, 'won'],
+    [1500017, 'Cartões Amarelos · Total', 'over', '4.5', 'won'], [1300099, 'Cantos · Total Asiático', 'over', '7.25', null],
+  ];
+  for (const [mid, market, sel, special, want] of cases) assert.equal(so(mid, market, sel, special), want, `${market} · ${sel} ${special ?? ''}`);
+  // Never guessed: goal times, next / last goal, corners of a half, counts not final.
+  for (const [mid, market, sel] of [[1008015, 'Tempo do Primeiro Golo', '1-27 Mins'], [1000154, 'Último Golo', 'Team 1'], [1198, 'Próximo golo', '1'],
+    [1600017, 'Cantos · 1° Tempo · Total', 'over'], [1010034, 'Alguma Equipa Vence de Reviravolta', 'yes'], [1009406, 'Resultado Após Dois Golos', '2:0'],
+    [1000303, 'Resultado no Minuto', 'W1 In Minute'], [1002418, 'Mantém a Baliza a Zeros', 'Team 1']]) {
+    assert.equal(so(mid, market, sel, mid === 1600017 ? '3.5' : null), null, market);
+  }
+  assert.equal(specialOutcome(code(1300001, 'Cantos · 1X2', '1'), { ...ctx, stats: { corners: [4, 3], final: false } }), null);
+  // Without the halves: the half markets wait.
+  assert.equal(specialOutcome(code(1010037, 'Equipa 1 Marca em Ambos os Tempos', 'yes'), { ...ctx, periods: null }), null);
 });
