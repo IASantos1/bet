@@ -59,6 +59,8 @@ function sportIcon(k) {
   if (kind === 'S:') return `<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true">${v.slice(2)}</svg>`;
   return `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${v}</svg>`;
 }
+/** A sport's colour icon at a given size (lists, headings, menu), its emoji when it has none. */
+const sportBadge = (k, size = 18) => colourSportIcon(k, size) || SPORT_META[k]?.icon || '🏆';
 // The tennis mini court (live tracker) is hidden for now; true shows it again (its code is kept).
 const TENNIS_COURT = false;
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
@@ -519,8 +521,8 @@ function groupByCompetition(events, { after = 0, insert = '' } = {}) {
     const [sport, comp] = key.split('|');
     const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
     const icon = logo
-      ? `<span class="league-logo" data-icon="${SPORT_META[sport]?.icon || '🏆'}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
-      : `<span class="league-logo">${SPORT_META[sport]?.icon || '🏆'}</span>`;
+      ? `<span class="league-logo" data-sport-icon="${esc(sport)}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
+      : `<span class="league-logo">${sportBadge(sport)}</span>`;
     const head = (n) => `<div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${n}</span></div>`;
     if (pending && seen + list.length >= after) {
       const cut = after - seen;
@@ -800,7 +802,7 @@ function accaCard(a, i, list = 'accas') {
   return `<div class="combo-card acca${a.big ? ' big' : ''}" data-ball="${esc(a.legs[0]?.sport || 'futebol')}">
     ${a.big ? '<div class="acca-badge">⭐ Grandes favoritos</div>' : ''}
     ${a.legs.map((l) => `<div class="acca-leg">
-      <div class="acca-when">${SPORT_META[l.sport]?.icon || '⚽'} ${esc(shortWhen(l.startTime))}, ${esc(l.home)} - ${esc(l.away)}</div>
+      <div class="acca-when">${sportBadge(l.sport, 14)} ${esc(shortWhen(l.startTime))}, ${esc(l.home)} - ${esc(l.away)}</div>
       <div class="acca-pick"><div><small>${esc(l.market === 'ml' ? 'Vencedor' : 'Resultado no fim do tempo regulamentar')}</small><b>${esc(l.label)}</b></div><span>${fmtOdds(l.odds)}</span></div>
     </div>`).join('')}
     <div class="acca-last">Início do último jogo: ${esc(shortWhen(a.lastStart))}</div>
@@ -959,7 +961,7 @@ function livePage() {
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const blocks = sports.map((sp) => {
     const list = live.filter((e) => e.sport === sp).sort(byPriority);
-    return `<section class="section"><div class="section-head"><h2>${SPORT_META[sp]?.icon || ''} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
+    return `<section class="section"><div class="section-head"><h2>${sportBadge(sp, 22)} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
       <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
   }).join('');
   const empty = state.liveTv ? 'Nenhum jogo com transmissão ao vivo neste momento.' : 'Não há eventos ao vivo neste momento.';
@@ -2494,7 +2496,7 @@ function ticketCard(b) {
   const n = b.legs.length;
   const first = b.legs[0];
   // A builder is one match: it is named once, at the top.
-  const sub = builder ? `${SPORT_META[first.sport]?.icon || '⚽'} ${esc(first.match)} · ${legState(first, open)}`
+  const sub = builder ? `${sportBadge(first.sport, 14)} ${esc(first.match)} · ${legState(first, open)}`
     : n > 1 ? `${tone === 'own' ? '' : '🔗 Combinação · '}${n} seleções` : esc(first.competition || '');
   const done = b.legs.filter((l) => l.status !== 'open').length;
   const bar = n > 1 ? `<div class="bt-bar" title="${done} de ${n} resolvidas">${b.legs.map((l) => `<i class="${l.status}"></i>`).join('')}</div>` : '';
@@ -2902,7 +2904,7 @@ function renderSidebar() {
   $('#sportLinks').innerHTML = Object.entries(SPORT_META)
     .map(([k, v]) => {
       const tree = !!state.leagueTree?.[k];
-      return `<a class="side-link" href="#/desporto" data-sport-link="${k}"${tree ? ` data-side-open="${k}"` : ''}><span>${v.icon}</span> ${v.name} <b>${counts[k] || ''}</b>${tree ? `<i class="caret">${state.sideOpen[k] ? '▾' : '▸'}</i>` : ''}</a>${sideTree(k)}`;
+      return `<a class="side-link" href="#/desporto" data-sport-link="${k}"${tree ? ` data-side-open="${k}"` : ''}><span>${sportBadge(k, 20)}</span> ${v.name} <b>${counts[k] || ''}</b>${tree ? `<i class="caret">${state.sideOpen[k] ? '▾' : '▸'}</i>` : ''}</a>${sideTree(k)}`;
     }).join('');
   const live = state.events.filter((e) => e.status === 'live').length;
   $('#liveCount').textContent = live || '';
@@ -3627,7 +3629,7 @@ document.addEventListener('error', (e) => {
 // A league badge that fails to load falls back to the sport icon.
 document.addEventListener('error', (e) => {
   const img = e.target;
-  if (img instanceof HTMLImageElement && img.classList.contains('league-img')) img.parentElement.textContent = img.parentElement.dataset.icon;
+  if (img instanceof HTMLImageElement && img.classList.contains('league-img')) img.parentElement.innerHTML = sportBadge(img.parentElement.dataset.sportIcon);
 }, true);
 // A 204 response is a "successful" empty image: treat zero-size loads the same way.
 document.addEventListener('load', (e) => {
@@ -4036,7 +4038,7 @@ function matchPage(sub) {
 
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero">
-      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-icon="⚽"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : SPORT_META[e.sport]?.icon || '⚽'} ${esc(e.competition)}</div>
+      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
         <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>

@@ -1,5 +1,7 @@
 // Full-colour sport icons for the filter tiles: the real look of each ball, glove or board, drawn on a
-// 64 grid. Each icon takes an id prefix so its gradients stay unique when it appears more than once.
+// 64 grid. Table tennis and badminton are Twemoji graphics (Copyright Twitter, Inc. and other
+// contributors, CC-BY 4.0, https://creativecommons.org/licenses/by/4.0/), shading added.
+// Each icon takes an id prefix so its gradients stay unique when it appears more than once.
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const pt = (cx, cy, r, deg) => [r2(cx + r * Math.cos((deg * Math.PI) / 180)), r2(cy + r * Math.sin((deg * Math.PI) / 180))];
@@ -35,19 +37,65 @@ function stitches(a, b, c, d, n, len) {
   }).join('');
 }
 
-/** The classic black-and-white football (also futsal and, in other colours, handball). */
+// A real football is a truncated icosahedron: 12 pentagons and 20 hexagons. Built once in 3D, turned
+// so a pentagon faces us (a little tilted, like the emoji) and drawn face by face with light on it.
+const BALL_FACES = (() => {
+  const f = (1 + Math.sqrt(5)) / 2;
+  const ico = [[0, 1, f], [0, 1, -f], [0, -1, f], [0, -1, -f], [1, f, 0], [1, -f, 0], [-1, f, 0], [-1, -f, 0], [f, 0, 1], [f, 0, -1], [-f, 0, 1], [-f, 0, -1]];
+  const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+  const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  const unit = (p) => { const l = Math.hypot(...p); return p.map((v) => v / l); };
+  const lerp = (p, q, t) => p.map((v, i) => v + (q[i] - v) * t);
+  const near = (i, j) => Math.abs(Math.hypot(...sub(ico[i], ico[j])) - 2) < 1e-6;
+  const faces = [];
+  ico.forEach((v, i) => {
+    const ring = ico.map((_, j) => j).filter((j) => j !== i && near(i, j)).map((j) => lerp(v, ico[j], 1 / 3));
+    const n = unit(v); const u = unit(sub(ring[0], v)); const w = cross(n, u);
+    ring.sort((p, q) => Math.atan2(dot(sub(p, v), w), dot(sub(p, v), u)) - Math.atan2(dot(sub(q, v), w), dot(sub(q, v), u)));
+    faces.push({ pent: true, pts: ring });
+  });
+  for (let i = 0; i < 12; i += 1) for (let j = i + 1; j < 12; j += 1) for (let k = j + 1; k < 12; k += 1) {
+    if (near(i, j) && near(j, k) && near(i, k)) {
+      const [A, B, C] = [ico[i], ico[j], ico[k]];
+      faces.push({ pent: false, pts: [lerp(A, B, 1 / 3), lerp(A, B, 2 / 3), lerp(B, C, 1 / 3), lerp(B, C, 2 / 3), lerp(C, A, 1 / 3), lerp(C, A, 2 / 3)] });
+    }
+  }
+  // The view: pentagon 0 towards us with a point up, then tipped back a little.
+  const z = unit(ico[0]); const up = unit(sub(ico[4], ico[0])); const y0 = unit(sub(up, z.map((v) => v * dot(up, z)))); const x0 = cross(y0, z);
+  const tilt = (-14 * Math.PI) / 180; const side = (10 * Math.PI) / 180;
+  const view = (p) => {
+    const q = unit(p); let [x, y, d] = [dot(q, x0), dot(q, y0), dot(q, z)];
+    [y, d] = [y * Math.cos(tilt) - d * Math.sin(tilt), y * Math.sin(tilt) + d * Math.cos(tilt)];
+    [x, d] = [x * Math.cos(side) + d * Math.sin(side), -x * Math.sin(side) + d * Math.cos(side)];
+    return [x, -y, d];
+  };
+  const light = unit([-0.45, -0.55, 0.7]);
+  return faces.map((fc) => {
+    // Each edge bulges out a little, as on a pumped ball: points along it pushed onto the sphere.
+    const ring = fc.pts;
+    const pts = [];
+    ring.forEach((p, i) => { const q = ring[(i + 1) % ring.length]; for (let t = 0; t < 1; t += 0.25) pts.push(view(lerp(p, q, t))); });
+    const c = view(ring.reduce((s2, p) => s2.map((v, i) => v + p[i] / ring.length), [0, 0, 0]));
+    return { pent: fc.pent, pts, z: c[2], lit: Math.max(0, dot(unit(c), light)) };
+  }).filter((fc) => fc.z > -0.15).sort((p, q) => p.z - q.z);
+})();
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mixHex = (a, b, t) => `rgb(${hex2rgb(a).map((v, i) => Math.round(v + (hex2rgb(b)[i] - v) * t)).join(',')})`;
+
+/** The football (also futsal and, in other colours, handball): the real panels, lit from the top left. */
 function soccer(id, base, edge, patch) {
-  const inner = pentagon(32, 32, 9.4, -90);
-  const outer = [0, 1, 2, 3, 4].map((k) => { const [x, y] = pt(32, 32, 27, -90 + k * 72); return pentagon(x, y, 9.4, 90 + k * 72); });
-  const seams = [0, 1, 2, 3, 4].map((k) => {
-    const [x1, y1] = pt(32, 32, 9.4, -90 + k * 72); const [x2, y2] = pt(32, 32, 17.6, -90 + k * 72);
-    const [x3, y3] = pt(32, 32, 20, -54 + k * 72); const [x4, y4] = pt(32, 32, 29, -54 + k * 72);
-    return `M${x1} ${y1}L${x2} ${y2}M${x3} ${y3}L${x4} ${y4}`;
+  const faces = BALL_FACES.map((fc) => {
+    const d = `M${fc.pts.map(([x, y]) => `${r2(32 + x * 29)} ${r2(32 + y * 29)}`).join('L')}Z`;
+    const fill = fc.pent ? mixHex(patch, '#4b515c', fc.lit * 0.4) : mixHex(edge, base, Math.min(1, 0.25 + fc.lit));
+    return `<path d="${d}" fill="${fill}"/>`;
   }).join('');
-  return `<defs>${radial(`${id}g`, base, edge)}<clipPath id="${id}c"><circle cx="32" cy="32" r="28.5"/></clipPath></defs>
-<circle cx="32" cy="32" r="29" fill="url(#${id}g)"/>
-<g clip-path="url(#${id}c)"><path d="${inner}${outer.join('')}" fill="${patch}"/><path d="${seams}" stroke="${patch}" stroke-width="1.6" opacity=".55" fill="none"/></g>
-<circle cx="32" cy="32" r="29" fill="none" stroke="#1f2937" stroke-opacity=".35" stroke-width="1.4"/>${shine(22, 18, 7, 4)}`;
+  const seams = BALL_FACES.filter((fc) => !fc.pent).map((fc) => `M${fc.pts.map(([x, y]) => `${r2(32 + x * 29)} ${r2(32 + y * 29)}`).join('L')}Z`).join('');
+  return `<defs><clipPath id="${id}c"><circle cx="32" cy="32" r="29"/></clipPath>
+<radialGradient id="${id}s" cx="40%" cy="36%" r="68%"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></radialGradient></defs>
+<g clip-path="url(#${id}c)"><circle cx="32" cy="32" r="29" fill="${edge}"/>${faces}<path d="${seams}" fill="none" stroke="#3b4250" stroke-opacity=".55" stroke-width=".7" stroke-linejoin="round"/>
+<circle cx="32" cy="32" r="29" fill="url(#${id}s)"/></g>
+<circle cx="32" cy="32" r="29" fill="none" stroke="#1f2937" stroke-opacity=".45" stroke-width="1.2"/><ellipse cx="22" cy="16" rx="8" ry="4.5" fill="#fff" opacity=".45" transform="rotate(-30 22 16)"/>`;
 }
 
 /** Ball split in six swirled panels, like a volleyball. */
@@ -111,15 +159,10 @@ const ICONS = {
 <path d="M17.5 25.5h4v5h5v4h-5v5h-4v-5h-5v-4h5z" fill="#d1d5db"/>
 <circle cx="45" cy="25.5" r="2.9" fill="#22c55e"/><circle cx="51" cy="31.5" r="2.9" fill="#ef4444"/><circle cx="39" cy="31.5" r="2.9" fill="#3b82f6"/><circle cx="45" cy="37.5" r="2.9" fill="#facc15"/>
 <circle cx="26" cy="42" r="3.6" fill="#0b0d11"/><circle cx="38" cy="42" r="3.6" fill="#0b0d11"/><path d="M29.5 22h5" stroke="#9ca3af" stroke-width="1.6" stroke-linecap="round"/>`,
-  tenismesa: (id) => `<defs>${radial(`${id}r`, '#ff5a52', '#a40f12')}${linear(`${id}w`, '#e8b47a', '#a8692c')}</defs>
-<path d="M36 37l5-5 18 18a3.5 3.5 0 0 1 0 5l-0 0a3.5 3.5 0 0 1-5 0z" fill="url(#${id}w)" stroke="#6b3b12" stroke-width="1"/>
-<circle cx="27" cy="27" r="21" fill="#1f2937"/><circle cx="27" cy="27" r="19.4" fill="url(#${id}r)"/>${shine(20, 18, 7, 4)}
-<circle cx="53" cy="12" r="7" fill="#fff" stroke="#cbd5e1" stroke-width="1"/><circle cx="51" cy="10" r="2.2" fill="#fff" opacity=".9"/><path d="M48 15a7 7 0 0 0 11-5" stroke="#e2e8f0" stroke-width="1.4" fill="none"/>`,
-  badminton: (id) => `<defs>${linear(`${id}f`, '#ffffff', '#d7dce3', '1', '0')}${radial(`${id}k`, '#fff8e8', '#d8c7a4', '40%', '20%')}</defs>
-<path d="M10 9c3-3 6-3 8 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 8 0L41 42H23z" fill="url(#${id}f)" stroke="#94a3b8" stroke-width="1"/>
-<path d="M18 9l7 33M25 9l3 33M32 9v33M39 9l-3 33M46 9l-7 33" stroke="#94a3b8" stroke-width="1" fill="none"/>
-<path d="M14 25h36" stroke="#cbd5e1" stroke-width="1"/><rect x="22" y="40" width="20" height="5" rx="1.5" fill="#e11d48"/>
-<path d="M23 45h18v3a9 9 0 0 1-18 0z" fill="url(#${id}k)" stroke="#a8977a" stroke-width="1"/>`,
+  // Table tennis and badminton: the Twemoji drawings (36 grid), with shading added.
+  tenismesa: (id) => `<defs>${radial(`${id}r`, '#ff5f6d', '#b81d33', '30%', '25%')}${linear(`${id}w`, '#e8b896', '#b97a5c')}${radial(`${id}b`, '#ffffff', '#b8c4cc', '35%', '30%')}</defs>
+<g transform="scale(1.7778)"><path fill="url(#${id}r)" d="M23.106 5.971C17.615.48 8.384-.521 3.307 4.557-1.77 9.634-.77 18.865 4.721 24.356c3.554 3.554 7.785 4.323 11.707 3.058l-.015.013.13-.052c.264-.088.527-.179.788-.284a24.449 24.449 0 0 1 2.942-.806c1.848-.38 3.541 1.606 4.955 3.021 1.414 1.414 4.242 5.657 4.949 6.364.707.707 1.414 0 2.122-.707l.707-.707.707-.707c.707-.708 1.414-1.415.707-2.122-.707-.707-4.95-3.535-6.364-4.949-1.414-1.414-3.4-3.107-3.021-4.955a24.32 24.32 0 0 1 .653-2.481c1.974-4.222 1.537-8.952-2.582-13.071z"/><path fill="url(#${id}w)" d="M15.564 27.655c.289-.07.578-.149.864-.241l-.015.013.13-.052c.264-.088.527-.179.788-.284a24.449 24.449 0 0 1 2.942-.806c1.848-.38 3.541 1.606 4.955 3.021 1.414 1.414 4.242 5.657 4.949 6.364.707.707 1.414 0 2.122-.707l.707-.707.707-.707c.707-.708 1.414-1.415.707-2.122-.707-.707-4.95-3.535-6.364-4.949-1.414-1.414-3.4-3.107-3.021-4.955a24.32 24.32 0 0 1 .653-2.481c.357-.764.633-1.543.824-2.334L15.564 27.655z"/><path fill="#FFCC4D" d="m20.277 22.942 1.414-1.414 12.022 12.021-1.414 1.414z"/><circle cx="31.5" cy="6.5" r="3.5" fill="url(#${id}b)"/><ellipse cx="9" cy="8" rx="5" ry="2.6" transform="rotate(-45 9 8)" fill="#fff" opacity=".28"/></g>`,
+  badminton: (id) => `<g transform="scale(1.7778)"><path fill="#55ACEE" d="M30.385 29A.98.98 0 0 1 29 30.385L15.5 16.884a.979.979 0 0 1 1.384-1.384L30.385 29z"/><path fill="#292F33" d="M35.561 33.439a1.5 1.5 0 1 1-2.121 2.121l-5.656-5.656a1.5 1.5 0 1 1 2.121-2.121l5.656 5.656z"/><g fill="#99AAB5"><path d="m2.447 5.2.707-.707L15.178 16.51l-.707.707zm1.417-2.83.707-.707 12.728 12.728-.708.707z"/><path d="M1.035 9.441 9.52.956l.707.707-8.485 8.485zm.707 3.535L12.35 2.37l.707.707L2.449 13.684zm2.122 2.122L15.177 3.785l.707.707L4.571 15.805zm2.828 1.415 9.899-9.9.707.707-9.9 9.9zm2.828 1.413 8.485-8.485.707.707-8.485 8.486z"/><path d="m1.035 8.027.707-.707L12.35 17.926l-.707.707zM7.4 1.663l.706-.707 10.607 10.606-.707.708z"/></g><path fill="#55ACEE" d="M2.468 2.468c-3.471 3.472-3.119 9.452.786 13.357 3.906 3.906 9.885 4.257 13.356.786 3.472-3.472 3.121-9.45-.786-13.356C11.919-.651 5.94-1.003 2.468 2.468zm12.846 12.846c-2.733 2.733-7.535 2.364-10.725-.825C1.4 11.3 1.032 6.499 3.765 3.765c2.734-2.734 7.535-2.364 10.724.825s3.559 7.991.825 10.724z"/><g fill="#269"><path d="M17.298 14.391a1 1 0 0 1 0 1.414l-1.415 1.415a1 1 0 1 1-1.414-1.415l1.414-1.414a1 1 0 0 1 1.415 0z"/><path d="M18.005 16.512a1 1 0 1 1-1.414 1.415l-.707-.707a1.001 1.001 0 0 1 1.415-1.415l.706.707z"/></g><path fill="#269" d="M29.56 27.44c.586.585-.122.828-.707 1.414-.586.585-.829 1.292-1.414.707a1.5 1.5 0 1 1 2.121-2.121z"/><path fill="#BE1931" d="M21.81 3.182a2 2 0 0 0 0 2.828l.707.707.707-.707 1.414-1.414.709-.707-.709-.707a2 2 0 0 0-2.828 0z"/><path fill="#99AAB5" d="m22.52 6.716 2.83-2.828.707.707-2.83 2.829z"/><path fill="#E1E8ED" d="m23.225 7.424 2.83-2.828c1.473.488 9.125 5.069 8.861 5.334-.758.759-1.912.201-1.912.201s.844.806.117 1.532-1.531-.118-1.531-.118.969.741.149 1.564c-.826.826-1.562-.149-1.562-.149s.729.981.098 1.613c-.633.631-1.514-.199-1.514-.199s.418.998-.342 1.756c-.362.364-4.609-7.33-5.194-8.706z"/><path fill="#CCD6DD" d="M26.414 7.823c.578-.683 5.432 3.727 4.58 4.579-.853.851-5.275-3.759-4.58-4.579zm1.705 7.448c.68-.443-3.072-5.816-3.535-5.427-.031.026-.045.072-.053.126.883 1.626 2.006 3.594 2.824 4.867.336.342.616.53.764.434zm.272-9.233c-.391.462 4.984 4.214 5.427 3.535.115-.178-.17-.541-.656-.97a91.171 91.171 0 0 0-4.285-2.571c-.24-.065-.418-.074-.486.006zm-2.989 2.859c.426-.429 4.641 4.589 4.002 5.093-.638.5-4.515-4.576-4.002-5.093zm2.041-2.041c-.428.426 4.59 4.64 5.092 4.002.502-.639-4.574-4.516-5.092-4.002z"/></g>`,
   futamericano: (id) => `<defs>${radial(`${id}g`, '#b35a26', '#5a240b', '40%', '35%')}</defs>
 <g transform="rotate(-40 32 32)"><ellipse cx="32" cy="32" rx="29" ry="17" fill="url(#${id}g)" stroke="#3b1606" stroke-width="1.4"/>
 <path d="M13 21c2.6 6 2.6 16 0 22M51 21c-2.6 6-2.6 16 0 22" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
