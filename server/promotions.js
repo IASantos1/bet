@@ -839,7 +839,8 @@ export function bonusView(b) {
     endedAt: b.ended_at, cancelReason: b.cancel_reason,
   };
 }
-export const freebetView = (f) => ({ id: f.id, amount: eur(f.amount_cents), source: f.source, status: f.status, minOdds: f.min_odds_x100 / 100, expiresAt: f.expires_at, createdAt: f.created_at, betId: f.bet_id });
+// One still marked active past its date shows as expired (the job that closes it runs every 5 minutes).
+export const freebetView = (f) => ({ id: f.id, amount: eur(f.amount_cents), source: f.source, status: f.status === 'active' && f.expires_at <= nowIso() ? 'expired' : f.status, minOdds: f.min_odds_x100 / 100, expiresAt: f.expires_at, createdAt: f.created_at, betId: f.bet_id });
 
 /** The campaigns as the promotions page shows them (only what the player may read). */
 export function publicCampaigns(db, now = nowIso()) {
