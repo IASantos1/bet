@@ -911,14 +911,14 @@ html:not(.light) .acca-badge { color: #f3c64a; }
 html.splash-on { overflow: hidden; }
 .splash { position: fixed; inset: 0; z-index: 10000; background: #050608; display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none; overflow: hidden; cursor: pointer; animation: splash-in .3s ease-out both; transition: opacity .3s; }
 .splash.out { opacity: 0; pointer-events: none; }
-.splash::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 65% 55% at 50% 50%, rgba(103, 120, 140, .30) 0%, rgba(103, 120, 140, .10) 45%, transparent 70%); animation: splash-pulse 2.5s ease-in-out infinite; }
-.splash::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 200px; pointer-events: none; background: radial-gradient(ellipse 60% 100% at 50% 100%, rgba(103, 120, 140, .16) 0%, transparent 70%); }
+.splash::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 65% 55% at 50% 50%, rgba(124, 255, 107, .22) 0%, rgba(124, 255, 107, .07) 45%, transparent 70%); animation: splash-pulse 2.5s ease-in-out infinite; }
+.splash::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 200px; pointer-events: none; background: radial-gradient(ellipse 60% 100% at 50% 100%, rgba(124, 255, 107, .12) 0%, transparent 70%); }
 .splash-brand { position: relative; display: flex; align-items: flex-end; line-height: 1; font-weight: 900; font-style: italic; letter-spacing: -.04em; animation: splash-brand .5s .05s ease-out both; }
 .splash-bet { color: #fff; font-size: clamp(72px, 13vw, 100px); }
-.splash-62 { color: #9fb2c8; font-size: clamp(92px, 17vw, 130px); line-height: .92; text-shadow: 0 0 48px rgba(159, 178, 200, .55), 0 0 100px rgba(103, 120, 140, .35); }
+.splash-62 { color: #7cff6b; font-size: clamp(92px, 17vw, 130px); line-height: .92; text-shadow: 0 0 48px rgba(124, 255, 107, .55), 0 0 100px rgba(60, 200, 60, .35); }
 .splash-sub { position: relative; margin-top: 14px; color: var(--text-2); font-size: clamp(13px, 2.6vw, 16px); font-weight: 700; letter-spacing: .38em; text-transform: uppercase; animation: splash-fade .4s .35s ease-out both; }
 .splash-bar { position: relative; width: min(220px, 50vw); height: 3px; margin-top: 26px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; animation: splash-fade .3s .3s both; }
-.splash-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--brand), #9fb2c8); transform-origin: left; animation: splash-load 1.1s .3s linear both; }
+.splash-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3ee05a, #7cff6b); box-shadow: 0 0 10px rgba(124, 255, 107, .6); transform-origin: left; animation: splash-load 1.1s .3s linear both; }
 .splash-tag { position: absolute; bottom: 56px; left: 16px; right: 16px; margin: 0; text-align: center; color: rgba(255, 255, 255, .45); font-size: 12px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; animation: splash-fade .4s .5s both; }
 .splash-skip { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 16px); right: calc(env(safe-area-inset-right, 0px) + 18px); min-height: 38px; padding: 0 15px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 800; cursor: pointer; }
 .splash-skip:hover, .splash-skip:focus-visible { border-color: rgba(255, 255, 255, .55); color: #fff; outline: none; }

@@ -190,34 +190,158 @@ const PERIOD_WORD = /(\d+)\s*\.?\s*[ºo°]?\s*(?:set|tempo|parte|periodo|quarto|
 const FIRST_WORD = /\b(primeiro|primeira|1st|first)\s+(set|tempo|parte|periodo|quarto|period|half|quarter|mapa|map)\b/;
 const SECOND_WORD = /\b(segundo|segunda|2nd|second)\s+(set|tempo|parte|periodo|quarto|period|half|quarter|mapa|map)\b/;
 
+// Markets about something other than the score (players, goal times, cards, corners, shots…): never
+// read from the score; corners, yellow cards and shots have their own reader (statOutcome).
+const NOT_SCORE = /(canto|corner|cartao|cartoes|card|booking|amarel|vermelh|remate|shot|falta|foul|fora de jogo|offside|penalt|substitu|lancamento|throw|livre|free.?kick|marcador|scorer|jogador|player|minuto|minute|primeiro golo|first goal|ultimo golo|last goal|proximo golo|next goal|golo de cabeca|header|metodo|method|corrida|race to|primeiro a|first to|\baces?\b|break|tie.?break|posse|possession|assist|defesa|\bsaves?\b|knock.?out|ronda|round|decisao|decision|kills?\b|torre|tower|dragao|dragon|baron|pistol|wicket|innings?|entrada|180|checkout|tempo de|time of|intervalo de|interval of|quando|when|qual|which|como|how|metade com mais|highest scoring|vence (ambas|as duas)|win both|vence a zero|win to nil|baliza inviolada|clean sheet|margem|margin|sem sofrer|to nil)/;
+/** Sports whose main score counts sets or maps; sports where only the winner is read from it. */
+const SET_SCORE = new Set(['tenis', 'voleibol', 'tenismesa', 'badminton', 'dardos', 'esports']);
+const WINNER_ONLY = new Set(['boxe', 'mma', 'criquete']);
+const HOME_WORDS = ['1', 'casa', 'home', 'equipa da casa', 'home team', 'w1', 'p1'];
+const DRAW_WORDS = ['x', 'empate', 'draw'];
+const AWAY_WORDS = ['2', 'fora', 'away', 'visitante', 'equipa visitante', 'away team', 'w2', 'p2'];
+/** A side named by a selection: '1' | 'X' | '2', or null. */
+function sideOf(v, homeName, awayName) {
+  const s = plain(v);
+  if (HOME_WORDS.includes(s) || (homeName && s === plain(homeName))) return '1';
+  if (DRAW_WORDS.includes(s)) return 'X';
+  if (AWAY_WORDS.includes(s) || (awayName && s === plain(awayName))) return '2';
+  return null;
+}
+/** A line we can settle: whole or half ("2.5", "-1", "+0.5"); quarter lines (2.25) split the stake, so null. */
+const halfLine = (v) => { const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) && Number.isInteger(n * 2) ? n : null; };
+/** "Mais de (2.5)" / "Over 2.5" / "Menos 1,5" → ['O' | 'U', line], or null. */
+function ouOf(l) {
+  const m = /^(mais|over|acima|menos|under|abaixo)\b\D*?([-+]?\d+(?:[.,]\d+)?)\s*\)?$/.exec(l);
+  const line = m ? halfLine(m[2]) : null;
+  return line === null || line < 0 ? null : [/^(mais|over|acima)$/.test(m[1]) ? 'O' : 'U', line];
+}
+const okScore = (s) => Array.isArray(s) && Number.isInteger(s[0]) && Number.isInteger(s[1]);
+const yesNo = (l) => (/^(sim|yes)$/.test(l) ? true : /^(nao|no)$/.test(l) ? false : null);
+/** The period a market is about ("1.º tempo", "2nd half", "Set 3"), or null. */
+const n0 = (g) => PERIOD_WORD.exec(g)?.[1] || (FIRST_WORD.test(g) ? '1' : SECOND_WORD.test(g) ? '2' : null);
+const wonIf = (v) => (v === null ? null : v ? 'won' : 'lost');
+
 /**
- * A provider market ('x') read automatically when it is a period's winner or total ("1.º set -
- * Vencedor" → "2", "2.º tempo - Total" → "Mais (1.5)") or the match winner, from the period
- * scores (`periods`: [[home, away], …]) or the final score. 'won' | 'lost' | 'void', or null when
- * it cannot be read (it waits; the settlement engine voids it after a while).
+ * A provider market ('x') read automatically from the score: the match's or a period's (half, set,
+ * quarter, map) winner, double chance, draw no bet, totals (match and either team, half and whole
+ * lines), handicaps (asian half / whole lines, european "1 (0:1)"), both teams to score, odd / even,
+ * correct score, exact total, half time / full time, "1x2 & total" and "a goal in both halves".
+ * `periods`: [[home, away], …]; full-time markets use the regulation score where the sport has one
+ * (`regHome` / `regAway`, ice hockey) unless they include overtime. 'won' | 'lost' | 'void', or null
+ * when it cannot be read safely (it waits for the operator; the settlement engine voids it after a
+ * while): markets about players, goal times, cards… and quarter lines are never guessed.
  */
-export function specialOutcome(code, { periods = null, home = null, away = null, homeName = '', awayName = '' } = {}) {
+export function specialOutcome(code, {
+  periods = null, home = null, away = null, regHome = null, regAway = null, homeName = '', awayName = '', retired = false, sport = null,
+} = {}) {
   const sp = splitSpecial(code);
   if (!sp) return null;
   const g = plain(sp.group);
   const l = plain(sp.label);
-  const n = PERIOD_WORD.exec(g)?.[1] || (FIRST_WORD.test(g) ? '1' : SECOND_WORD.test(g) ? '2' : null);
-  let score = null;
-  if (n) score = Array.isArray(periods) ? periods[Number(n) - 1] : null;
-  else if (/^(vencedor|vencedor do jogo|resultado final|1x2|winner|match winner)$/.test(g)) score = [home, away];
-  if (!score || !Number.isInteger(score[0]) || !Number.isInteger(score[1])) return null;
-  const [h, a] = score;
-  if (/(vencedor|resultado|1x2|winner|ganha)/.test(g) && !/(total|handicap|mais|menos|over|under)/.test(g)) {
-    const side = ['1', 'casa', 'home', plain(homeName)].includes(l) ? '1' : ['x', 'empate', 'draw'].includes(l) ? 'X'
-      : ['2', 'fora', 'away', plain(awayName)].includes(l) ? '2' : null;
-    if (!side) return null;
-    return side === resultCode(h, a) ? 'won' : 'lost';
+  if (NOT_SCORE.test(g)) return null;
+  // Combat sports and cricket: only the winner is read (their "score" says nothing of rounds or runs).
+  if (WINNER_ONLY.has(sport) && (n0(g) || !/^(vencedor|vencedor do (jogo|combate)|winner|match winner|1x2|resultado final)$/.test(g))) return null;
+  const full = Number.isInteger(home) && Number.isInteger(away) ? [home, away] : null;
+  const withOt = /(prolongamento|overtime|incl|extra|\bot\b|penaltis|penalties)/.test(g);
+  const hasReg = Number.isInteger(regHome) && Number.isInteger(regAway);
+  // "Regulation time" markets need the regulation score (only kept where the sport has overtime).
+  if (/(tempo regulamentar|regular time|regulation|tempo normal|normal time)/.test(g) && !hasReg && !n0(g)) return null;
+  const ft = !withOt && hasReg ? [regHome, regAway] : full;
+  const winnerOnly = (out) => (retired ? null : out);
+
+  // Half time / full time: "1/1", "X/2"…
+  if (/(intervalo|half.?time|1st half|1.o tempo|primeiro tempo|\bht\b).{0,6}(final|full.?time|\bft\b|resultado final)|\bht\s*\/\s*ft\b/.test(g)) {
+    const m = /^([12x]|casa|fora|empate|home|away|draw)\s*\/\s*([12x]|casa|fora|empate|home|away|draw)$/.exec(l);
+    const p1 = Array.isArray(periods) ? periods[0] : null;
+    if (!m || !okScore(p1) || !ft) return null;
+    return wonIf(sideOf(m[1], homeName, awayName) === resultCode(p1[0], p1[1]) && sideOf(m[2], homeName, awayName) === resultCode(ft[0], ft[1]));
   }
-  const ou = /\b(mais|over|acima|menos|under|abaixo)\b\D*(\d+(?:[.,]\d+)?)/.exec(l);
-  if (/(total|mais|menos|over|under)/.test(g) && ou) {
-    const line = Number(ou[2].replace(',', '.'));
-    if (!Number.isFinite(line)) return null;
-    return overUnder(`${/^(mais|over|acima)$/.test(ou[1]) ? 'O' : 'U'}${line}`, h + a);
+  // A goal in both halves.
+  if (/(golo em ambas as partes|golo nas duas partes|goal in both halves|golos em ambas)/.test(g)) {
+    const [p1, p2] = Array.isArray(periods) ? periods : [];
+    if (!okScore(p1) || !okScore(p2) || yesNo(l) === null) return null;
+    return winnerOnly(wonIf(yesNo(l) === (p1[0] + p1[1] > 0 && p2[0] + p2[1] > 0)));
+  }
+
+  const n = n0(g);
+  // Where the score counts sets (tennis, volleyball…) or maps, a full-time total, handicap or odd /
+  // even is read only when it is about them ("Total de sets"), never about games or points.
+  if (SET_SCORE.has(sport) && !n && /(total|mais|menos|over|under|handicap|impar|\bpar\b|odd|even|exat|exact)/.test(g)
+    && !/(resultado exato|resultado correto|correct score|exact score)/.test(g) && (sport === 'dardos' || !/\b(sets?|mapas?|maps?)\b/.test(g))) return null;
+  const score = n ? (Array.isArray(periods) ? periods[Number(n) - 1] : null) : ft;
+  if (!okScore(score)) return null;
+  const [h, a] = score;
+  const res = resultCode(h, a);
+  const side = sideOf(l, homeName, awayName);
+
+  // "1x2 & Total": "1&Mais de (1.5)".
+  if (/&/.test(g) || /&/.test(l)) {
+    const m = /^([12x]|casa|fora|empate)\s*&\s*(.+)$/.exec(l);
+    if (!m || !/(1x2|resultado|vencedor|winner)/.test(g) || !/(total|mais|menos|over|under)/.test(g)) return null;
+    const ou = ouOf(m[2]);
+    if (!ou) return null;
+    const total = overUnder(`${ou[0]}${ou[1]}`, h + a);
+    if (total === 'void') return null;
+    return winnerOnly(wonIf(sideOf(m[1], homeName, awayName) === res && total === 'won'));
+  }
+  if (/(dupla hipotese|double chance)/.test(g)) {
+    const m = /^([12x])\s*(?:ou|or|\/|-)?\s*([12x])$/.exec(l);
+    if (!m || m[1] === m[2]) return null;
+    return winnerOnly(wonIf([m[1].toUpperCase(), m[2].toUpperCase()].includes(res)));
+  }
+  if (/(empate anula|draw no bet|\bdnb\b)/.test(g)) {
+    if (side !== '1' && side !== '2') return null;
+    return winnerOnly(res === 'X' ? 'void' : wonIf(side === res));
+  }
+  if (/(ambas|both teams|btts)/.test(g)) {
+    if (yesNo(l) === null || /(total|vencedor|resultado|winner|1x2)/.test(g)) return null;
+    return winnerOnly(wonIf(yesNo(l) === (h > 0 && a > 0)));
+  }
+  if (/(resultado exato|resultado correto|correct score|exact score|placar exato)/.test(g)) {
+    const m = /^(\d{1,2})\s*[:-]\s*(\d{1,2})$/.exec(l);
+    return m ? winnerOnly(wonIf(Number(m[1]) === h && Number(m[2]) === a)) : null;
+  }
+  if (/(golos exatos|exact goals|numero exato|total exato|exact total)/.test(g)) {
+    const m = /^(\d{1,2})(\+)?$/.exec(l);
+    if (!m) return null;
+    return winnerOnly(wonIf(m[2] ? h + a >= Number(m[1]) : h + a === Number(m[1])));
+  }
+  if (/(impar|\bpar\b|odd|even)/.test(g) && /^(impar|par|odd|even)$/.test(l)) {
+    return winnerOnly(wonIf(/^(impar|odd)$/.test(l) === ((h + a) % 2 === 1)));
+  }
+  if (/handicap/.test(g)) {
+    // European: "1 (0:1)" / "X (1:0)" — the start added to the score, then a three-way result.
+    const eu = /^([12x]|casa|fora|empate|home|away|draw|.+?)\s*\(\s*(\d+)\s*[:-]\s*(\d+)\s*\)$/.exec(l);
+    if (eu) {
+      const sd = sideOf(eu[1], homeName, awayName);
+      return sd ? winnerOnly(wonIf(sd === resultCode(h + Number(eu[2]), a + Number(eu[3])))) : null;
+    }
+    // Asian / two-way: "1 (-1.5)", "Casa (+1)", "<team> -0.5".
+    const as = /^(.+?)\s*\(?\s*([-+]?\d+(?:[.,]\d+)?)\s*\)?$/.exec(l);
+    const sd = as ? sideOf(as[1], homeName, awayName) : null;
+    const line = as ? halfLine(as[2]) : null;
+    if ((sd !== '1' && sd !== '2') || line === null || /europe|3.?way/.test(g)) return null;
+    return winnerOnly(handicap(hcpCode(sd, line), h, a));
+  }
+  if (/(vencedor|resultado|1x2|winner|ganha|moneyline|\bml\b)/.test(g) && !/(total|mais|menos|over|under)/.test(g)) {
+    if (!side) return null;
+    if (res === 'X' && side !== 'X') {
+      // A two-way winner after a draw: void when the market says so; after a regulation draw (the
+      // match went on to overtime) it is not known whether the market counted overtime: the operator.
+      if (/(2.?way|dois resultados|two way|empate anula)/.test(g)) return 'void';
+      if (!n && hasReg && !withOt) return null;
+    }
+    return wonIf(side === res);
+  }
+  if (/(total|mais|menos|over|under|golos|goals|pontos|points)/.test(g)) {
+    const ou = ouOf(l);
+    if (!ou) return null;
+    // One team's total: "Total 1", "Casa - Total", "<team> total"…
+    const one = /(total 1\b|equipa 1|team 1|\bcasa\b|\bhome\b)/.test(g) || (homeName && g.includes(plain(homeName)));
+    const two = /(total 2\b|equipa 2|team 2|\bfora\b|\baway\b|visitante)/.test(g) || (awayName && g.includes(plain(awayName)));
+    if (one && two) return null;
+    const t = one ? h : two ? a : h + a;
+    return winnerOnly(overUnder(`${ou[0]}${ou[1]}`, t));
   }
   return null;
 }
@@ -227,7 +351,9 @@ export function specialOutcome(code, { periods = null, home = null, away = null,
 // "Menos de (9.5)", half lines only. `stats` = { corners: [h, a], yellow: [h, a], sot: [h, a], final }:
 // an "over" already passed is won (and an "under" lost) whenever it was read; the rest only from the
 // final counts (the tracker said the match is over). Anything else: null (it waits, as before).
-const STAT_GROUP = [[/^cantos · total( [12])?$/, 'corners'], [/^cartoes amarelos · total( [12])?$/, 'yellow'], [/^remates a baliza · total( [12])?$/, 'sot']];
+// The book names them in Portuguese or English ("Corners · Total", "Yellow Cards · Total 1"…).
+const STAT_GROUP = [[/^(?:cantos|corners) · total( [12])?$/, 'corners'], [/^(?:cartoes amarelos|yellow cards) · total( [12])?$/, 'yellow'],
+  [/^(?:remates a baliza|shots on target) · total( [12])?$/, 'sot']];
 export function statOutcome(code, stats) {
   const sp = splitSpecial(code);
   if (!sp || !stats) return null;

@@ -1183,3 +1183,38 @@ test('catalogue: the winner of the named-winner sports counts as settled automat
   assert.ok(namedWinnerMarket('criquete', { name: 'Resultado do Jogo de Críquete (1x2)' })); // its home / away
   assert.ok(!namedWinnerMarket('futebol', { name: '1x2' })); // football's go by id
 });
+
+test('corners and cards: decided in play settle at once (a lost leg loses the ticket); the rest from the tracker\'s final counts', async () => {
+  const lists = { live: [football(70, 60, '1-0', ODD)], trackers: { 70: { status: 'inprogress', period: '2', home_score: 1, away_score: 0, corner: [6, 4], yelc: [1, 1] } } };
+  const t = setupFeed(lists);
+  await t.feed.syncLive();
+  const ev = t.row(70).id;
+  const add = (code) => t.db.prepare("INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, 'x', ?, 180, 1)").run(ev, code);
+  ['1300017~Cantos · Total~Menos de (9.5)', '1300017~Corners · Total~Mais de (8.5)', '1500017~Cartões Amarelos · Total~Mais de (4.5)', '1500017~Cartões Amarelos · Total~Menos de (4.5)'].forEach(add);
+  const underCorners = t.bet(70, 'x', '1300017~Cantos · Total~Menos de (9.5)');
+  const overCorners = t.bet(70, 'x', '1300017~Corners · Total~Mais de (8.5)');
+  const overCards = t.bet(70, 'x', '1500017~Cartões Amarelos · Total~Mais de (4.5)');
+  const underCards = t.bet(70, 'x', '1500017~Cartões Amarelos · Total~Menos de (4.5)');
+  // A tracker with another score (another game) settles nothing.
+  lists.trackers[70].home_score = 3;
+  await t.feed.readCards();
+  assert.equal(t.betStatus(underCorners), 'open');
+  lists.trackers[70].home_score = 1;
+  await t.feed.readCards({ now: Date.now() + 61_000 });
+  // 10 corners at the 60th minute: the under is lost now, the over (English name) won now; cards still open.
+  assert.deepEqual([t.betStatus(underCorners), t.betStatus(overCorners), t.betStatus(overCards), t.betStatus(underCards)], ['lost', 'won', 'open', 'open']);
+  // The match leaves the list and is settled on its last score; the tracker had no final word yet.
+  lists.live = [football(70, 90.5, '1-0', ODD)];
+  await t.feed.syncLive();
+  lists.live = [];
+  lists.trackers = {};
+  await t.feed.syncLive();
+  await t.feed.syncLive();
+  assert.equal(t.row(70).status, 'finished');
+  assert.deepEqual([t.betStatus(overCards), t.betStatus(underCards)], ['open', 'open']);
+  // Then the tracker says it is over: its final counts (3 yellow cards) settle the cards legs, the over lost.
+  lists.trackers[70] = { status: 'Ended', home_score: 1, away_score: 0, corner: [7, 4], yelc: [2, 1] };
+  assert.deepEqual(await t.feed.finalStats(), { asked: 1, settled: 1 });
+  assert.deepEqual([t.betStatus(overCards), t.betStatus(underCards)], ['lost', 'won']);
+  assert.deepEqual(await t.feed.finalStats({ now: Date.now() + 200_000 }), { asked: 0, settled: 0 }); // nothing left
+});
