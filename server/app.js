@@ -58,7 +58,7 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 // files stamped (app.js?v=…), so a browser can never keep running an old script after a deploy,
 // and the footer shows it so the running version can be checked.
 const readPublic = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
-export const APP_VERSION = ['app.js', 'styles.css', 'splash.js', 'trkclips.js', 'trk3dmath.js', 'trk3d.js', 'admin/admin.js', 'admin/admin.css']
+export const APP_VERSION = ['app.js', 'styles.css', 'splash.js', 'trkclips.js', 'trk3dmath.js', 'sporticons.js', 'trk3d.js', 'admin/admin.js', 'admin/admin.css']
   .reduce((h, f) => h.update(readPublic(f)), createHash('sha256')).digest('hex').slice(0, 8);
 // The scripts' own imports are versioned too (assets.js), and the app's modules are announced in the
 // page (modulepreload) so they download alongside app.js instead of after it.
