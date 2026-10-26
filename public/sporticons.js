@@ -35,19 +35,65 @@ function stitches(a, b, c, d, n, len) {
   }).join('');
 }
 
-/** The classic black-and-white football (also futsal and, in other colours, handball). */
+// A real football is a truncated icosahedron: 12 pentagons and 20 hexagons. Built once in 3D, turned
+// so a pentagon faces us (a little tilted, like the emoji) and drawn face by face with light on it.
+const BALL_FACES = (() => {
+  const f = (1 + Math.sqrt(5)) / 2;
+  const ico = [[0, 1, f], [0, 1, -f], [0, -1, f], [0, -1, -f], [1, f, 0], [1, -f, 0], [-1, f, 0], [-1, -f, 0], [f, 0, 1], [f, 0, -1], [-f, 0, 1], [-f, 0, -1]];
+  const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+  const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  const unit = (p) => { const l = Math.hypot(...p); return p.map((v) => v / l); };
+  const lerp = (p, q, t) => p.map((v, i) => v + (q[i] - v) * t);
+  const near = (i, j) => Math.abs(Math.hypot(...sub(ico[i], ico[j])) - 2) < 1e-6;
+  const faces = [];
+  ico.forEach((v, i) => {
+    const ring = ico.map((_, j) => j).filter((j) => j !== i && near(i, j)).map((j) => lerp(v, ico[j], 1 / 3));
+    const n = unit(v); const u = unit(sub(ring[0], v)); const w = cross(n, u);
+    ring.sort((p, q) => Math.atan2(dot(sub(p, v), w), dot(sub(p, v), u)) - Math.atan2(dot(sub(q, v), w), dot(sub(q, v), u)));
+    faces.push({ pent: true, pts: ring });
+  });
+  for (let i = 0; i < 12; i += 1) for (let j = i + 1; j < 12; j += 1) for (let k = j + 1; k < 12; k += 1) {
+    if (near(i, j) && near(j, k) && near(i, k)) {
+      const [A, B, C] = [ico[i], ico[j], ico[k]];
+      faces.push({ pent: false, pts: [lerp(A, B, 1 / 3), lerp(A, B, 2 / 3), lerp(B, C, 1 / 3), lerp(B, C, 2 / 3), lerp(C, A, 1 / 3), lerp(C, A, 2 / 3)] });
+    }
+  }
+  // The view: pentagon 0 towards us with a point up, then tipped back a little.
+  const z = unit(ico[0]); const up = unit(sub(ico[4], ico[0])); const y0 = unit(sub(up, z.map((v) => v * dot(up, z)))); const x0 = cross(y0, z);
+  const tilt = (-14 * Math.PI) / 180; const side = (10 * Math.PI) / 180;
+  const view = (p) => {
+    const q = unit(p); let [x, y, d] = [dot(q, x0), dot(q, y0), dot(q, z)];
+    [y, d] = [y * Math.cos(tilt) - d * Math.sin(tilt), y * Math.sin(tilt) + d * Math.cos(tilt)];
+    [x, d] = [x * Math.cos(side) + d * Math.sin(side), -x * Math.sin(side) + d * Math.cos(side)];
+    return [x, -y, d];
+  };
+  const light = unit([-0.45, -0.55, 0.7]);
+  return faces.map((fc) => {
+    // Each edge bulges out a little, as on a pumped ball: points along it pushed onto the sphere.
+    const ring = fc.pts;
+    const pts = [];
+    ring.forEach((p, i) => { const q = ring[(i + 1) % ring.length]; for (let t = 0; t < 1; t += 0.25) pts.push(view(lerp(p, q, t))); });
+    const c = view(ring.reduce((s2, p) => s2.map((v, i) => v + p[i] / ring.length), [0, 0, 0]));
+    return { pent: fc.pent, pts, z: c[2], lit: Math.max(0, dot(unit(c), light)) };
+  }).filter((fc) => fc.z > -0.15).sort((p, q) => p.z - q.z);
+})();
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mixHex = (a, b, t) => `rgb(${hex2rgb(a).map((v, i) => Math.round(v + (hex2rgb(b)[i] - v) * t)).join(',')})`;
+
+/** The football (also futsal and, in other colours, handball): the real panels, lit from the top left. */
 function soccer(id, base, edge, patch) {
-  const inner = pentagon(32, 32, 9.4, -90);
-  const outer = [0, 1, 2, 3, 4].map((k) => { const [x, y] = pt(32, 32, 27, -90 + k * 72); return pentagon(x, y, 9.4, 90 + k * 72); });
-  const seams = [0, 1, 2, 3, 4].map((k) => {
-    const [x1, y1] = pt(32, 32, 9.4, -90 + k * 72); const [x2, y2] = pt(32, 32, 17.6, -90 + k * 72);
-    const [x3, y3] = pt(32, 32, 20, -54 + k * 72); const [x4, y4] = pt(32, 32, 29, -54 + k * 72);
-    return `M${x1} ${y1}L${x2} ${y2}M${x3} ${y3}L${x4} ${y4}`;
+  const faces = BALL_FACES.map((fc) => {
+    const d = `M${fc.pts.map(([x, y]) => `${r2(32 + x * 29)} ${r2(32 + y * 29)}`).join('L')}Z`;
+    const fill = fc.pent ? mixHex(patch, '#4b515c', fc.lit * 0.4) : mixHex(edge, base, Math.min(1, 0.25 + fc.lit));
+    return `<path d="${d}" fill="${fill}"/>`;
   }).join('');
-  return `<defs>${radial(`${id}g`, base, edge)}<clipPath id="${id}c"><circle cx="32" cy="32" r="28.5"/></clipPath></defs>
-<circle cx="32" cy="32" r="29" fill="url(#${id}g)"/>
-<g clip-path="url(#${id}c)"><path d="${inner}${outer.join('')}" fill="${patch}"/><path d="${seams}" stroke="${patch}" stroke-width="1.6" opacity=".55" fill="none"/></g>
-<circle cx="32" cy="32" r="29" fill="none" stroke="#1f2937" stroke-opacity=".35" stroke-width="1.4"/>${shine(22, 18, 7, 4)}`;
+  const seams = BALL_FACES.filter((fc) => !fc.pent).map((fc) => `M${fc.pts.map(([x, y]) => `${r2(32 + x * 29)} ${r2(32 + y * 29)}`).join('L')}Z`).join('');
+  return `<defs><clipPath id="${id}c"><circle cx="32" cy="32" r="29"/></clipPath>
+<radialGradient id="${id}s" cx="40%" cy="36%" r="68%"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></radialGradient></defs>
+<g clip-path="url(#${id}c)"><circle cx="32" cy="32" r="29" fill="${edge}"/>${faces}<path d="${seams}" fill="none" stroke="#3b4250" stroke-opacity=".55" stroke-width=".7" stroke-linejoin="round"/>
+<circle cx="32" cy="32" r="29" fill="url(#${id}s)"/></g>
+<circle cx="32" cy="32" r="29" fill="none" stroke="#1f2937" stroke-opacity=".45" stroke-width="1.2"/><ellipse cx="22" cy="16" rx="8" ry="4.5" fill="#fff" opacity=".45" transform="rotate(-30 22 16)"/>`;
 }
 
 /** Ball split in six swirled panels, like a volleyball. */
@@ -111,15 +157,22 @@ const ICONS = {
 <path d="M17.5 25.5h4v5h5v4h-5v5h-4v-5h-5v-4h5z" fill="#d1d5db"/>
 <circle cx="45" cy="25.5" r="2.9" fill="#22c55e"/><circle cx="51" cy="31.5" r="2.9" fill="#ef4444"/><circle cx="39" cy="31.5" r="2.9" fill="#3b82f6"/><circle cx="45" cy="37.5" r="2.9" fill="#facc15"/>
 <circle cx="26" cy="42" r="3.6" fill="#0b0d11"/><circle cx="38" cy="42" r="3.6" fill="#0b0d11"/><path d="M29.5 22h5" stroke="#9ca3af" stroke-width="1.6" stroke-linecap="round"/>`,
-  tenismesa: (id) => `<defs>${radial(`${id}r`, '#ff5a52', '#a40f12')}${linear(`${id}w`, '#e8b47a', '#a8692c')}</defs>
-<path d="M36 37l5-5 18 18a3.5 3.5 0 0 1 0 5l-0 0a3.5 3.5 0 0 1-5 0z" fill="url(#${id}w)" stroke="#6b3b12" stroke-width="1"/>
-<circle cx="27" cy="27" r="21" fill="#1f2937"/><circle cx="27" cy="27" r="19.4" fill="url(#${id}r)"/>${shine(20, 18, 7, 4)}
-<circle cx="53" cy="12" r="7" fill="#fff" stroke="#cbd5e1" stroke-width="1"/><circle cx="51" cy="10" r="2.2" fill="#fff" opacity=".9"/><path d="M48 15a7 7 0 0 0 11-5" stroke="#e2e8f0" stroke-width="1.4" fill="none"/>`,
-  badminton: (id) => `<defs>${linear(`${id}f`, '#ffffff', '#d7dce3', '1', '0')}${radial(`${id}k`, '#fff8e8', '#d8c7a4', '40%', '20%')}</defs>
-<path d="M10 9c3-3 6-3 8 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 7 0 2-3 5-3 8 0L41 42H23z" fill="url(#${id}f)" stroke="#94a3b8" stroke-width="1"/>
-<path d="M18 9l7 33M25 9l3 33M32 9v33M39 9l-3 33M46 9l-7 33" stroke="#94a3b8" stroke-width="1" fill="none"/>
-<path d="M14 25h36" stroke="#cbd5e1" stroke-width="1"/><rect x="22" y="40" width="20" height="5" rx="1.5" fill="#e11d48"/>
-<path d="M23 45h18v3a9 9 0 0 1-18 0z" fill="url(#${id}k)" stroke="#a8977a" stroke-width="1"/>`,
+  tenismesa: (id) => `<defs>${radial(`${id}r`, '#ff6b5e', '#b3121a', '38%', '30%')}${linear(`${id}w`, '#f1c48c', '#a96a2e', '0', '1')}${radial(`${id}b`, '#ffffff', '#d9dee6', '35%', '30%')}</defs>
+<g transform="rotate(45 25 26)"><rect x="38" y="20" width="27" height="12" rx="5" fill="url(#${id}w)" stroke="#7a4516" stroke-width="1.1"/>
+<path d="M48 20.5v11M54 20.5v11" stroke="#7a4516" stroke-opacity=".4" stroke-width="1"/></g>
+<circle cx="25" cy="26" r="21" fill="#2a1a12"/><circle cx="25" cy="26" r="19.3" fill="url(#${id}r)"/>
+<ellipse cx="18" cy="18" rx="8" ry="4.5" transform="rotate(-45 18 18)" fill="#fff" opacity=".3"/>
+<circle cx="52" cy="13" r="7.5" fill="url(#${id}b)" stroke="#aeb6c2" stroke-width=".9"/><ellipse cx="49.6" cy="10.4" rx="2.6" ry="1.8" fill="#fff"/>`,
+  badminton: (id) => `<defs>${linear(`${id}f`, '#ffffff', '#cfd6df', '1', '0')}${radial(`${id}k`, '#fffaf0', '#d9c39b', '35%', '30%')}${linear(`${id}h`, '#2b2f3a', '#0f1218')}<clipPath id="${id}n"><ellipse cx="22" cy="20" rx="12.4" ry="15.6" transform="rotate(-40 22 20)"/></clipPath></defs>
+<path d="M30.6 31.4l2.2 2.4-13.4 15-2.2-2.4z" fill="#9ca3af"/>
+<path d="M16.8 45.4l3.4 3.6-8.4 8.6a2.6 2.6 0 0 1-3.7 0l-.1-.1a2.6 2.6 0 0 1 0-3.7z" fill="url(#${id}h)"/>
+<g clip-path="url(#${id}n)" stroke="#e5e7eb" stroke-width=".7" opacity=".9">${[...Array(12)].map((_, i) => `<path d="M${i * 3.6} 0v44M0 ${i * 3.6}h44"/>`).join('')}</g>
+<ellipse cx="22" cy="20" rx="13.6" ry="16.8" transform="rotate(-40 22 20)" fill="none" stroke="#1d4ed8" stroke-width="2.6"/>
+<g transform="translate(47 41) scale(.82) rotate(22)">
+<path d="M-10-16c2-2.4 3.4-2.4 5 0 1.6-2.4 3.4-2.4 5 0 1.6-2.4 3.4-2.4 5 0 1.6-2.4 3-2.4 5 0L4 8h-8z" fill="url(#${id}f)" stroke="#94a3b8" stroke-width=".9" stroke-linejoin="round"/>
+<path d="M-5-16l2 24M0-16v24M5-16l-2 24M-7.4-4h14.8" stroke="#94a3b8" stroke-width=".8" fill="none"/>
+<rect x="-4.8" y="6.6" width="9.6" height="3.4" rx="1" fill="#e11d48"/>
+<path d="M-4.4 10h8.8v1.6a4.4 4.4 0 0 1-8.8 0z" fill="url(#${id}k)" stroke="#a8977a" stroke-width=".8"/></g>`,
   futamericano: (id) => `<defs>${radial(`${id}g`, '#b35a26', '#5a240b', '40%', '35%')}</defs>
 <g transform="rotate(-40 32 32)"><ellipse cx="32" cy="32" rx="29" ry="17" fill="url(#${id}g)" stroke="#3b1606" stroke-width="1.4"/>
 <path d="M13 21c2.6 6 2.6 16 0 22M51 21c-2.6 6-2.6 16 0 22" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/>
