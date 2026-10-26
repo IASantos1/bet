@@ -1947,3 +1947,4 @@ html.light .combo-legs li::after { background: #22b14c; }
 .sport-ico { flex: none; vertical-align: -0.22em; }
 .section-head h2 .sport-ico { vertical-align: -0.2em; margin-right: 2px; }
 .side-link > span:first-child { display: inline-grid; place-items: center; }
+.bt-title .bt-when { display: block; margin-top: 3px; color: var(--text-3); font-size: 12px; font-weight: 700; }

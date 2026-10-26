@@ -2495,8 +2495,9 @@ function ticketCard(b) {
   const [title, icon, tone] = TICKET_KIND[b.origin] || TICKET_KIND[b.type] || TICKET_KIND.single;
   const n = b.legs.length;
   const first = b.legs[0];
-  // A builder is one match: it is named once, at the top.
-  const sub = builder ? `${sportBadge(first.sport, 14)} ${esc(first.match)} · ${legState(first, open)}`
+  // A builder is one match: it is named once, at the top, with where it stands on a line of its own (a
+  // long name is cut short, never the clock and score).
+  const sub = builder ? `${sportBadge(first.sport, 14)} ${esc(first.match)}`
     : n > 1 ? `${tone === 'own' ? '' : '🔗 Combinação · '}${n} seleções` : esc(first.competition || '');
   const done = b.legs.filter((l) => l.status !== 'open').length;
   const bar = n > 1 ? `<div class="bt-bar" title="${done} de ${n} resolvidas">${b.legs.map((l) => `<i class="${l.status}"></i>`).join('')}</div>` : '';
@@ -2519,7 +2520,7 @@ function ticketCard(b) {
     b.protected ? '<span class="bt-tag">🛡️ Primeira aposta protegida</span>' : ''].join('');
   return `<div class="ticket ${cls} t-${tone}">
     <div class="bt-head"><span class="bt-ic">${icon}</span>
-      <div class="bt-title"><strong>${title}${n > 1 && !builder ? ` <em>${n}</em>` : ''}</strong><small>${sub}</small></div>
+      <div class="bt-title"><strong>${title}${n > 1 && !builder ? ` <em>${n}</em>` : ''}</strong><small>${sub}</small>${builder ? `<span class="bt-when">${legState(first, open)}</span>` : ''}</div>
       <span class="bt-status ${cls}">${badge}</span></div>
     ${bar}${tags ? `<div class="bt-tags">${tags}</div>` : ''}
     <div class="bt-legs">${legs}</div>
