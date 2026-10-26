@@ -261,6 +261,8 @@ test('corners, yellow cards and shots on target settle from the tracker\'s count
   assert.equal(statOutcome('1500017~Cartões Amarelos · Total~Mais de (3.5)', fin), 'lost');
   assert.equal(statOutcome('1800017~Remates à Baliza · Total~Mais de (6.5)', live), 'won');
   assert.equal(statOutcome('1300017~Cantos · Total~Mais de (10)', fin), null); // whole lines: not read
+  assert.equal(statOutcome('1300017~Corners · Total~Mais de (10.5)', fin), 'lost'); // named in English
+  assert.equal(statOutcome('1500015~Yellow Cards · Total 1~Mais de (0.5)', live), 'won');
   assert.equal(statOutcome('1300099~Cantos · Total Asiático~Mais de (9.5)', fin), null); // other markets: not read
   assert.equal(statOutcome('1300017~Cantos · Total~Mais de (9.5)', null), null);
 

@@ -227,7 +227,9 @@ export function specialOutcome(code, { periods = null, home = null, away = null,
 // "Menos de (9.5)", half lines only. `stats` = { corners: [h, a], yellow: [h, a], sot: [h, a], final }:
 // an "over" already passed is won (and an "under" lost) whenever it was read; the rest only from the
 // final counts (the tracker said the match is over). Anything else: null (it waits, as before).
-const STAT_GROUP = [[/^cantos · total( [12])?$/, 'corners'], [/^cartoes amarelos · total( [12])?$/, 'yellow'], [/^remates a baliza · total( [12])?$/, 'sot']];
+// The book names them in Portuguese or English ("Corners · Total", "Yellow Cards · Total 1"…).
+const STAT_GROUP = [[/^(?:cantos|corners) · total( [12])?$/, 'corners'], [/^(?:cartoes amarelos|yellow cards) · total( [12])?$/, 'yellow'],
+  [/^(?:remates a baliza|shots on target) · total( [12])?$/, 'sot']];
 export function statOutcome(code, stats) {
   const sp = splitSpecial(code);
   if (!sp || !stats) return null;

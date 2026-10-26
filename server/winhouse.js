@@ -4,7 +4,7 @@ import { tourOf } from './tennistours.js';
 import { leagueCountry, FILTERED_SPORTS } from './countryleagues.js';
 import { createHmac } from 'node:crypto';
 import { nowIso, tx } from './db.js';
-import { settleEvent, resultCode } from './betting.js';
+import { settleEvent, settleLiveStats, resultCode } from './betting.js';
 import { leagueTier } from './leagues.js';
 import { normalizeWidgetData, redCardsOf, spotVar } from './whtracker.js';
 import { createWinHouseHealth } from './whhealth.js';
@@ -1477,8 +1477,10 @@ export function createWinHouseFeed(db, {
   async function readCards({ now = Date.now(), cardsPerCycle = 12, everyMs = 60_000 } = {}) {
     if (typeof client.tracker !== 'function') return { asked: 0, updated: 0 };
     const due = new Date(now - everyMs).toISOString();
-    const rows = db.prepare(`SELECT * FROM events WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
-      AND (cards_at IS NULL OR cards_at < ?) ORDER BY COALESCE(cards_at, '') LIMIT ?`).all(SOURCE, due, cardsPerCycle);
+    // Matches with open statistics legs first: their counts settle tickets.
+    const rows = db.prepare(`SELECT * FROM events e WHERE source = ? AND status = 'live' AND sport IN ('futebol', 'futsal')
+      AND (cards_at IS NULL OR cards_at < ?)
+      ORDER BY EXISTS (SELECT 1 FROM bet_legs l WHERE l.event_id = e.id AND l.market = 'x' AND l.status = 'open') DESC, COALESCE(cards_at, '') LIMIT ?`).all(SOURCE, due, cardsPerCycle);
     let updated = 0;
     for (const row of rows) {
       let red = null;
@@ -1487,7 +1489,9 @@ export function createWinHouseFeed(db, {
         if (r?.ok && r.body && typeof r.body === 'object' && !Array.isArray(r.body)) {
           spotVar(db, JSON.stringify(r.body), { gameId: row.external_id, eventId: row.id, via: 'tracker' });
           const s = normalizeWidgetData(r.body);
-          saveStats(row.id, s, false);
+          // The counts so far settle the statistics legs already decided (a lost one loses its ticket now),
+          // only when the tracker's score is the match's (never on a tracker answering for another game).
+          if (saveStats(row.id, s, false) && sameScore(row, s)) tx(db, () => settleLiveStats(db, row.id));
           // Over while still in the book's list (it lingers there a few minutes after the whistle):
           // finished and settled now, so it leaves "Ao vivo" at once.
           // Only near the end of play: a tracker that answers for the wrong match never closes one mid-game.
@@ -1567,9 +1571,14 @@ export function createWinHouseFeed(db, {
   function saveStats(eventId, s, final) {
     const pick = (key) => { const x = (s?.stats || []).find((t) => t.key === key); return x && Number.isInteger(x.home) && Number.isInteger(x.away) ? [x.home, x.away] : null; };
     const stats = { corners: pick('corners'), yellow: pick('yellow_cards'), sot: pick('shots_on_target') };
-    if (!stats.corners && !stats.yellow && !stats.sot) return;
+    if (!stats.corners && !stats.yellow && !stats.sot) return false;
     db.prepare('UPDATE events SET match_stats = ? WHERE id = ?').run(JSON.stringify({ ...stats, final, at: nowIso() }), eventId);
+    return true;
   }
+
+  /** The tracker gives the match's own score (both known and equal). */
+  const sameScore = (row, s) => Number.isInteger(s.homeScore) && Number.isInteger(s.awayScore)
+    && s.homeScore === row.home_score && s.awayScore === row.away_score;
 
   function settleFromTracker(row, s, note) {
     if (!s || !TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`)) return false;
@@ -1643,6 +1652,41 @@ export function createWinHouseFeed(db, {
     }
     if (confirmed) log(`WinHouse: ${confirmed} jogo(s) em revisão confirmados pelo tracker`);
     return { asked, confirmed };
+  }
+
+  /**
+   * Statistics legs (corners, cards, shots) on a match that ended without the tracker's final counts
+   * (it was settled on the list's last score, or the tracker's last answer had no counts): the tracker
+   * is asked for them, each match at most every 2 minutes, a few a run, up to `withinMs` after the end
+   * (then the settlement engine voids what is left). Once it says the match is over, its counts settle
+   * those legs, lost ones included.
+   */
+  const statsAsked = new Map();
+  async function finalStats({ now = Date.now(), perRun = 6, withinMs = 2 * 3_600_000 } = {}) {
+    if (typeof client.tracker !== 'function') return { asked: 0, settled: 0 };
+    const isFinal = (v) => { try { return JSON.parse(v || 'null')?.final === true; } catch { return false; } };
+    const rows = db.prepare(`SELECT * FROM events e WHERE source = ? AND status = 'finished' AND sport IN ('futebol', 'futsal') AND updated_at >= ?
+      AND EXISTS (SELECT 1 FROM bet_legs l WHERE l.event_id = e.id AND l.market = 'x' AND l.status = 'open') ORDER BY updated_at LIMIT 50`)
+      .all(SOURCE, new Date(now - withinMs).toISOString())
+      .filter((row) => !isFinal(row.match_stats) && now - (statsAsked.get(row.id) || 0) >= 120_000).slice(0, perRun);
+    let settled = 0;
+    for (const row of rows) {
+      statsAsked.set(row.id, now);
+      try {
+        const r = await client.tracker(row.external_id);
+        if (!r?.ok || !r.body || typeof r.body !== 'object' || Array.isArray(r.body)) continue;
+        const s = normalizeWidgetData(r.body);
+        if (!TRACKER_ENDED.test(`${s.status ?? ''} ${s.period ?? ''}`) || !sameScore(row, s)) continue;
+        tx(db, () => {
+          if (!saveStats(row.id, s, true)) return;
+          settleEvent(db, row.id, { source: 'feed', note: 'WinHouse: cantos, cartões e remates finais do tracker' });
+          settled += 1;
+        });
+      } catch { /* asked again in 2 minutes */ }
+    }
+    if (statsAsked.size > 500) statsAsked.clear();
+    if (settled) log(`WinHouse: ${settled} jogo(s) com cantos/cartões liquidados pelo tracker`);
+    return { asked: rows.length, settled };
   }
 
   // Future games: each sport's full list, every `futureMinutes` (sooner than prices go stale).
@@ -1968,9 +2012,10 @@ export function createWinHouseFeed(db, {
     const reviews = guard('revisão', confirmReviews);
     const fast = guard('fim dos jogos', fastFinish);
     const cards = guard('cartões', readCards);
+    const stats = guard('estatísticas finais', finalStats);
     const tennis = guard('pontos do ténis', readTennis);
     live().then(pre).then(details).then(liveDetails).then(streams);
-    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(fast, 10_000), setInterval(cards, 20_000), setInterval(tennis, 3_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
+    const timers = [setInterval(streams, 60_000), setInterval(reviews, 60_000), setInterval(fast, 10_000), setInterval(cards, 20_000), setInterval(stats, 60_000), setInterval(tennis, 3_000), setInterval(live, liveMs), setInterval(pre, prematchMs), setInterval(details, detailMs), setInterval(liveDetails, liveDetailMs)];
     return () => timers.forEach(clearInterval);
   }
 
@@ -1991,5 +2036,5 @@ export function createWinHouseFeed(db, {
     liveDown: () => health.down(),
     /** A game of this sport in WinHouse's last live list (its raw entry), or null. */
     rawLiveOfSport: (sport) => [...liveRaw.values()].find((r) => SPORTS[Number(r.sport_id)] === sport) || null,
-    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, setTrackerState: (fn) => { trackerState = fn; }, source: SOURCE };
+    liveListAt: () => liveListAt, syncLive, syncPrematch, syncDetails, readPageNow, syncLiveDetails, finishMissing, confirmReviews, fastFinish, readCards, finalStats, readTennis, start, status, applyCoefs, syncStreams, streamOf, setOddsPush: (p) => { oddsPush = p; }, setTrackerState: (fn) => { trackerState = fn; }, source: SOURCE };
 }

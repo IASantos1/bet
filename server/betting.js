@@ -210,6 +210,28 @@ export function periodsOf(ev) {
   return periods;
 }
 
+/**
+ * A match in play: its statistics legs (corners, yellow cards, shots on target) already decided by the
+ * tracker's counts are settled now: an "over" passed is won, an "under" passed is lost, and a ticket
+ * with a lost leg is lost at once. The rest wait for the final counts. Returns the tickets touched.
+ */
+export function settleLiveStats(db, eventId) {
+  const ev = db.prepare('SELECT status, match_stats FROM events WHERE id = ?').get(eventId);
+  const stats = ev?.status === 'live' ? parseStats(ev.match_stats) : null;
+  if (!stats) return 0;
+  const legs = db.prepare("SELECT id, bet_id, code FROM bet_legs WHERE event_id = ? AND market = 'x' AND status = 'open'").all(eventId);
+  const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
+  const bets = new Set();
+  for (const leg of legs) {
+    const out = statOutcome(leg.code, { ...stats, final: false });
+    if (!out) continue;
+    setLeg.run(out, leg.id);
+    bets.add(leg.bet_id);
+  }
+  for (const id of bets) settleBet(db, id);
+  return bets.size;
+}
+
 export function settleEvent(db, eventId, { source = 'engine', userId = null, note = null } = {}) {
   const ev = db.prepare('SELECT sport, home, away, status, home_score, away_score, reg_home_score, reg_away_score, home_games, away_games, retired, period_scores, live_detail, match_stats FROM events WHERE id = ?').get(eventId);
   if (!ev || (ev.status !== 'finished' && ev.status !== 'cancelled')) return 0;
