@@ -245,7 +245,7 @@ export function settleEvent(db, eventId, { source = 'engine', userId = null, not
       const tennis = ev.sport === 'tenis' && TENNIS_AUTO[splitSpecial(leg.code)?.id];
       const out = ev.status === 'cancelled' ? 'void'
         : tennis ? tennisOutcome(leg.code, { sets: periods, home: ev.home_score, away: ev.away_score, retired: !!ev.retired })
-          : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, homeName: ev.home, awayName: ev.away })
+          : specialOutcome(leg.code, { periods, home: ev.home_score, away: ev.away_score, regHome: ev.reg_home_score, regAway: ev.reg_away_score, homeName: ev.home, awayName: ev.away, retired: !!ev.retired, sport: ev.sport })
             // Corners, yellow cards, shots on target: from the tracker's counts.
             || statOutcome(leg.code, parseStats(ev.match_stats));
       if (out) setLeg.run(out, leg.id);

@@ -227,3 +227,75 @@ test('tennis: set and games markets read from complete sets only; anything parti
   assert.equal(balance(), 10_000 - 1_000 + 2_000);
   db.close();
 });
+
+test('provider markets read from the score: every family that the score decides, nothing guessed', async () => {
+  const { specialOutcome: so } = await import('../server/markets.js');
+  const fb = { home: 2, away: 1, periods: [[1, 1], [1, 0]], homeName: 'Benfica', awayName: 'Porto' };
+  // Double chance, draw no bet (full time and a half).
+  assert.equal(so('1~Dupla Hipótese~1X', fb), 'won');
+  assert.equal(so('1~Double Chance~X2', fb), 'lost');
+  assert.equal(so('1~1° Tempo - Dupla Hipótese~12', fb), 'lost'); // 1-1 at half time
+  assert.equal(so('1~Empate Anula Aposta~Benfica', fb), 'won');
+  assert.equal(so('1~1° Tempo - Empate anula aposta~1', fb), 'void');
+  // Both teams to score, a goal in both halves.
+  assert.equal(so('1~Ambas as equipas marcam~Sim', fb), 'won');
+  assert.equal(so('1~2° Tempo - Ambas Marcam~Sim', fb), 'lost');
+  assert.equal(so('1000032~Goal In Both Halves~Sim', fb), 'won');
+  assert.equal(so('1000032~Goal In Both Halves~Não', { ...fb, periods: [[0, 0], [2, 1]] }), 'won');
+  // Totals: match, team, half; whole lines push, quarter lines wait.
+  assert.equal(so('1018~Total Goals - Over / Under~Mais de (2.5)', fb), 'won');
+  assert.equal(so('1018~Total Goals - Over / Under~Menos de (3)', fb), 'void');
+  assert.equal(so('1018~Total Goals - Over / Under~Mais de (2.25)', fb), null);
+  assert.equal(so('1~Total de Golos - Equipa da Casa~Mais de (1.5)', fb), 'won');
+  assert.equal(so('1~Porto - Total de golos~Mais de (0.5)', fb), 'won');
+  assert.equal(so('1~Total 2~Mais de (1.5)', fb), 'lost');
+  assert.equal(so('1054~1° Tempo - Total de Golos - Mais / Menos~Menos de (1.5)', fb), 'lost');
+  // Odd / even, correct score, exact goals.
+  assert.equal(so('1~Total de Golos Ímpar/Par~Ímpar', fb), 'won');
+  assert.equal(so('1~Resultado Exato~2:1', fb), 'won');
+  assert.equal(so('1~1° Tempo - Resultado Exato~1-1', fb), 'won');
+  assert.equal(so('1~Resultado Exato~Outro', fb), null);
+  assert.equal(so('1~Golos Exatos~3', fb), 'won');
+  assert.equal(so('1~Golos Exatos~4+', fb), 'lost');
+  // Handicaps: asian (half and whole lines), european.
+  assert.equal(so('1011~Handicap Asiático~1 (-1.5)', fb), 'lost');
+  assert.equal(so('1011~Handicap Asiático~2 (+1)', fb), 'void');
+  assert.equal(so('1011~Handicap Asiático~2 (+1.25)', fb), null);
+  assert.equal(so('1~Handicap Europeu~X (0:1)', fb), 'won');
+  assert.equal(so('1~Handicap Europeu~1 (0:1)', fb), 'lost');
+  // Half time / full time, "1x2 & total".
+  assert.equal(so('1012~1st Half / Fulltime~X/1', fb), 'won');
+  assert.equal(so('1012~1st Half / Fulltime~1/1', fb), 'lost');
+  assert.equal(so('2412~1x2 & Total Goals - Over / Under 1.5~1&Mais de (1.5)', fb), 'won');
+  assert.equal(so('2412~1x2 & Total Goals - Over / Under 1.5~2&Mais de (1.5)', fb), 'lost');
+  // Winner of a half / the match.
+  assert.equal(so('1014~1° Tempo - 1x2~X', fb), 'won');
+  assert.equal(so('1~2° Tempo - 1x2~1', fb), 'won');
+  // Never read from the score: players, goal times, next goal, corners (their own reader)…
+  for (const c of ['1000050~Next Goal~Casa', '1008201~Golo de Cabeça~Sim', '1~Marcador a qualquer momento~Ronaldo', '1~Minuto do primeiro golo~1-15',
+    '1300017~Cantos · Total~Mais de (8.5)', '1~Margem de vitória~Casa por 1', '1~Equipa vence a zero~Sim', '1~Metade com mais golos~2.º tempo']) {
+    assert.equal(so(c, fb), null, c);
+  }
+  // Without the period's score: waits.
+  assert.equal(so('1~1° Tempo - Ambas Marcam~Sim', { ...fb, periods: null }), null);
+  // Ice hockey: full-time markets on the regulation score; with overtime on the final one.
+  const hk = { home: 3, away: 2, regHome: 2, regAway: 2, periods: null };
+  assert.equal(so('1~Total~Mais de (4.5)', hk), 'lost');
+  assert.equal(so('1~Total (incl. prolongamento)~Mais de (4.5)', hk), 'won');
+  assert.equal(so('1000300~European Handicap Including Overtime~1 (0:1)', hk), 'lost'); // 3-3: draw
+  assert.equal(so('1~Vencedor~1', hk), null); // regulation draw: did the market count overtime? the operator
+  assert.equal(so('1~Vencedor (incl. prolongamento)~1', hk), 'won');
+  // Sports scored in sets: games / points totals are never read from the sets; sets totals are.
+  const tn = { home: 2, away: 1, periods: [[6, 4], [3, 6], [6, 2]], sport: 'tenis' };
+  assert.equal(so('9~Total de Jogos~Mais de (20.5)', tn), null);
+  assert.equal(so('9~Total de sets~Mais de (2.5)', tn), 'won');
+  assert.equal(so('9~Resultado Exato~2:1', tn), 'won');
+  assert.equal(so('9~3.º set - Total de jogos~Mais de (8.5)', tn), 'lost');
+  assert.equal(so('9~Total de pontos~Mais de (180.5)', { home: 3, away: 1, sport: 'voleibol' }), null);
+  // Combat sports and cricket: the winner only.
+  assert.equal(so('9~Vencedor~1', { home: 1, away: 0, sport: 'boxe' }), 'won');
+  assert.equal(so('9~Total de rondas~Mais de (8.5)', { home: 1, away: 0, sport: 'boxe' }), null);
+  assert.equal(so('9~Total~Mais de (0.5)', { home: 1, away: 0, sport: 'mma' }), null);
+  // A retired tennis match: only the winner stands.
+  assert.equal(so('1~Total de sets~Mais de (2.5)', { home: 1, away: 0, retired: true }), null);
+});
