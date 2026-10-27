@@ -360,6 +360,18 @@ Object.assign(COUNTRY_FLAG, {
   montenegro: 'me', nicaragua: 'ni', nigeria: 'ng', 'new zealand': 'nz', panama: 'pa', singapore: 'sg', thailand: 'th',
   tanzania: 'tz', tunisia: 'tn', uzbekistan: 'uz', vietnam: 'vn', philippines: 'ph', lithuania: 'lt', rwanda: 'rw', malaysia: 'my', 'hong kong': 'hk', 'chinese taipei': 'tw', macau: 'mo',
 });
+// Countries whose cups are listed too (footballdivisions.js CUP_ONLY).
+Object.assign(COUNTRY_FLAG, {
+  russia: 'ru', bolivia: 'bo', lithuania: 'lt', latvia: 'lv', malta: 'mt', moldova: 'md', albania: 'al', armenia: 'am',
+  azerbaijan: 'az', kosovo: 'xk', andorra: 'ad', 'san marino': 'sm', gibraltar: 'gi', liechtenstein: 'li', 'el salvador': 'sv',
+  'dominican republic': 'do', algeria: 'dz', 'south africa': 'za', ghana: 'gh', kenya: 'ke', zambia: 'zm', uganda: 'ug',
+  cameroon: 'cm', senegal: 'sn', 'ivory coast': 'ci', mozambique: 'mz', 'cape verde': 'cv', iraq: 'iq',
+  'united arab emirates': 'ae', oman: 'om', lebanon: 'lb', syria: 'sy', malaysia: 'my', 'hong kong': 'hk', myanmar: 'mm',
+  cambodia: 'kh', bangladesh: 'bd', mongolia: 'mn', kyrgyzstan: 'kg', tajikistan: 'tj', turkmenistan: 'tm', philippines: 'ph',
+  rwanda: 'rw', ethiopia: 'et', libya: 'ly', sudan: 'sd', zimbabwe: 'zw', botswana: 'bw', haiti: 'ht',
+  'trinidad and tobago': 'tt', cuba: 'cu', 'chinese taipei': 'tw', macau: 'mo', brunei: 'bn', nepal: 'np', 'sri lanka': 'lk',
+  pakistan: 'pk', palestine: 'ps', yemen: 'ye',
+});
 const REGION_ICON = { africa: '🌍', europe: '🌍', 'south america': '🌎', 'north america': '🌎', asia: '🌏', world: '🌐', atp: '🎾', wta: '🎾', challengers: '🎾' };
 // Sidebar countries in Portuguese (the league tree names them in English, as the provider does).
 const COUNTRY_PT = {
@@ -382,6 +394,20 @@ const COUNTRY_PT = {
   'south america': 'América do Sul', 'north america': 'América do Norte', asia: 'Ásia', russia: 'Rússia', bolivia: 'Bolívia',
   philippines: 'Filipinas', rwanda: 'Ruanda', lithuania: 'Lituânia', malaysia: 'Malásia', 'hong kong': 'Hong Kong', 'chinese taipei': 'Taipé Chinesa', macau: 'Macau',
 };
+Object.assign(COUNTRY_PT, {
+  russia: 'Rússia', bolivia: 'Bolívia', lithuania: 'Lituânia', latvia: 'Letónia', malta: 'Malta', moldova: 'Moldávia',
+  albania: 'Albânia', armenia: 'Arménia', azerbaijan: 'Azerbaijão', kosovo: 'Kosovo', andorra: 'Andorra',
+  'san marino': 'São Marino', gibraltar: 'Gibraltar', liechtenstein: 'Liechtenstein', 'el salvador': 'El Salvador',
+  'dominican republic': 'República Dominicana', algeria: 'Argélia', 'south africa': 'África do Sul', ghana: 'Gana',
+  kenya: 'Quénia', zambia: 'Zâmbia', uganda: 'Uganda', cameroon: 'Camarões', senegal: 'Senegal',
+  'ivory coast': 'Costa do Marfim', mozambique: 'Moçambique', 'cape verde': 'Cabo Verde', iraq: 'Iraque',
+  'united arab emirates': 'Emirados Árabes Unidos', oman: 'Omã', lebanon: 'Líbano', syria: 'Síria', malaysia: 'Malásia',
+  'hong kong': 'Hong Kong', myanmar: 'Myanmar', cambodia: 'Camboja', bangladesh: 'Bangladesh', mongolia: 'Mongólia',
+  kyrgyzstan: 'Quirguistão', tajikistan: 'Tajiquistão', turkmenistan: 'Turquemenistão', philippines: 'Filipinas',
+  rwanda: 'Ruanda', ethiopia: 'Etiópia', libya: 'Líbia', sudan: 'Sudão', zimbabwe: 'Zimbabué', botswana: 'Botsuana',
+  haiti: 'Haiti', 'trinidad and tobago': 'Trindade e Tobago', cuba: 'Cuba', 'chinese taipei': 'Taipé Chinesa', macau: 'Macau',
+  brunei: 'Brunei', nepal: 'Nepal', 'sri lanka': 'Sri Lanka', pakistan: 'Paquistão', palestine: 'Palestina', yemen: 'Iémen',
+});
 const countryLabel = (country) => COUNTRY_PT[String(country || '').toLowerCase().trim()] || country;
 
 /** A round flag for a sidebar country (or a globe for a continent / world competitions). */

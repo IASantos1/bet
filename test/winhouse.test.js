@@ -886,8 +886,11 @@ test('football divisions: first and second division and the cups of every covere
   assert.equal(d('England. FA Cup. Women'), null);
   assert.equal(d('Spain. Copa de la Reina'), null);
   assert.equal(d('England. Premier League Cup U21'), null);
-  assert.equal(d('Mongolia. Cup'), null);
+  assert.equal(d('Mongolia. Cup'), 'Mongolia/3');                  // every country's cup, divisions covered or not
+  assert.equal(d('Russia. Cup'), 'Russia/3');
+  assert.equal(d('Russia. Premier League'), null);
   assert.equal(d('Mongolia. Premier League'), null);
+  assert.equal(d('Atlantis. Cup'), null);
   assert.ok(DIVISION_COUNTRIES.length >= 80);
 });
 
