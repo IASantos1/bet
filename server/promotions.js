@@ -433,10 +433,11 @@ const asValue = (s) => s.spins_left !== null && s.spins_left !== undefined;
  */
 export const spinsBalance = (s) => s.balance_cents;
 /**
- * The balance the game itself is shown: one spin's bet at a time (none when they are used up), so
- * the game cannot open with or place a bigger bet. The spins left are shown on our page.
+ * The balance the game itself is shown: the spins left at their bet. (One spin's bet only was
+ * tried: the game keeps its own count from what it was shown when it opened, so it then said
+ * "insufficient funds" after the first spin.) Any other bet is refused before it is taken.
  */
-export const spinsShown = (s) => (asValue(s) ? Math.min(spinsBalance(s), s.spins_left >= 1 ? spinBet(s, s.chosen_game) : 0) : spinsBalance(s));
+export const spinsShown = (s) => spinsBalance(s);
 
 /**
  * Ends a free-spins grant: what the spins won is paid as real money (the free spins themselves are
