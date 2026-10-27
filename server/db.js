@@ -533,6 +533,8 @@ function migrate(db) {
   // The game the player picked among the eligible ones (only that one afterwards), and for a
   // Palace game the money put on the player's free-spins casino account (null: not there).
   if (!fsCols.has('chosen_game')) db.exec('ALTER TABLE casino_spins ADD COLUMN chosen_game INTEGER');
+  // A Palace game picked for free spins is played on BigBang's copy of it (the fixed bet enforced there).
+  if (!fsCols.has('play_game')) db.exec('ALTER TABLE casino_spins ADD COLUMN play_game INTEGER');
   if (!fsCols.has('palace_cents')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_cents INTEGER');
   // Palace: whether the last fall of that balance may still have its win to come, and when it last moved.
   if (!fsCols.has('palace_pending')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_pending INTEGER');

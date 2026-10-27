@@ -10,9 +10,9 @@ import { onDeposit, savePromoConfig, expireDue, playerPromos, promoConfig } from
 const KEY = 'live_key_123';
 
 /** A fake BigBang API: catalogue, players, launch. */
-function fakeApi() {
+function fakeApi(extra = []) {
   const calls = [];
-  const games = [
+  const games = [...extra,
     { id: 4821, name: 'SGHotHotFruit', title: 'Hot Hot Fruit', provider: 'Habanero', category: 'Habanero', category_title: 'Habanero', thumbnail: 'https://x/hhf.webp', game_type: 'slot', is_premium: false },
     { id: 4822, name: 'SGOlympus', title: '1000 Olympus Rivals', provider: 'Habanero', category: 'Habanero', category_title: 'Habanero', thumbnail: 'https://x/oly.webp', game_type: 'slot', is_premium: false },
     { id: 9001, name: 'LiveRoulette', title: 'Roleta ao Vivo', provider: 'Pragmatic Live', category: 'PragmaticLive', category_title: 'Pragmatic Live', thumbnail: null, game_type: 'live', is_premium: false },
@@ -105,7 +105,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   tx(db, () => postTransaction(db, u, 2000, 'deposit', 'd2'));
   assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 2000, ref: 'pi_fs2', choice: 'casino' })), null);
   const fs = playerToken(u, s.id);
-  assert.equal(bb.walletUser(fs).body.balance, '1.00');
+  assert.equal(bb.walletUser(fs).body.balance, '0.20'); // the game sees one spin's bet at a time
   // A game outside the list, or a bet above the game's spin: refused.
   assert.equal(bb.walletChange(move(fs, -0.2, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
   assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /aposta fixa de 0,20 €/);
@@ -118,7 +118,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   assert.equal(bal(db, u), 3000); // the real balance untouched while they run
   const mine = tx(db, () => playerPromos(db, u)).activeSpins;
   assert.deepEqual([mine.spins, mine.spinsLeft, mine.winnings], [5, 3, 1.5]);
-  assert.equal(bb.walletUser(fs).body.balance, '0.60'); // 3 × €0.20: the €1.50 won is kept apart, never played
+  assert.equal(bb.walletUser(fs).body.balance, '0.20'); // one spin's bet (3 left): the €1.50 won is kept apart, never played
   // The last spins: they end and the €1.50 won is paid as real money.
   for (const t of ['f4', 'f5', 'f6']) bb.walletChange(move(fs, -0.2, t));
   assert.equal(db.prepare('SELECT paid_cents FROM casino_spins WHERE id = ?').get(s.id).paid_cents, 150);
@@ -212,11 +212,11 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     const u = await (await fetch(`${base}/api/casino/bb/user?username=b62_${uid}`)).json();
     assert.equal(u.balance, '20.00');
     const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
-    assert.equal((await res.json()).balance, '2.00'); // the game is told 10 spins × €0.20: the €3 won is kept apart
+    assert.equal((await res.json()).balance, '0.20'); // the game is told one spin's bet (10 left): the €3 won is kept apart
     // The previous platform's callback paths answer the same.
     assert.equal((await (await fetch(`${base}/api/casino/bigbang/user-data?username=b62_${uid}`)).json()).balance, '20.00');
     const res2 = await fetch(`${base}/api/casino/bigbang/balance-change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 0, 'cb2', { game_id: 4822 })) });
-    assert.equal((await res2.json()).balance, '2.00');
+    assert.equal((await res2.json()).balance, '0.20');
     // The player ends the free spins: the €3 won is paid.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
     assert.equal(claim.body.paid, 3);
@@ -475,7 +475,52 @@ test('no game twice: the copy with portrait artwork wins over a landscape one', 
   assert.deepEqual(dropCrossDuplicates([g(1, 'EGT', true), g(2, 'EGT', false)]).map((x) => x.id), [2]);
 });
 
-test('free spins on Palace: one picked game, own casino account, winnings above the value paid', async () => {
+test('free spins on a Palace slot are played on BigBang\'s copy (fixed bet enforced, one spin\'s bet shown); no copy: refused', async () => {
+  const { palaceId } = await import('../server/bigbang.js');
+  const db = openDb(':memory:');
+  const games = [
+    { providerId: 7, provider: 'Pragmatic Play', code: 'bigbass', name: 'Big Bass Splash', image: null, category: 'Slots' },
+    { providerId: 7, provider: 'Pragmatic Play', code: 'olympus', name: 'Gates of Olympus', image: null, category: 'Slots' },
+  ];
+  const copy = { id: 5001, name: 'vs10txbigbass', title: 'Big Bass Splash', provider: 'Pragmatic', category: 'Pragmatic', category_title: 'Pragmatic Play', thumbnail: null, game_type: 'slot', is_premium: false };
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi([copy]).fetchImpl, palace: async () => games, split: () => true });
+  const [bass, oly] = [palaceId(7, 'bigbass'), palaceId(7, 'olympus')];
+  const calls = [];
+  const casino = {
+    enabled: true, casinoBalanceCents: async () => 0, syncBack: async () => 0, leaveGame: async () => 0,
+    fsEnterGame: async () => { calls.push('palace'); return { url: 'https://palace/fs', fsCents: 100 }; },
+    fsBalanceCents: async () => 100, fsWithdrawAll: async () => 0,
+  };
+  const uid = player(db, 5);
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run((await import('../server/security.js')).hashPassword('segredo123'), uid);
+  const email = db.prepare('SELECT email FROM users WHERE id = ?').get(uid).email;
+  const fsId = Number(db.prepare(`INSERT INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, expires_at, created_at)
+    VALUES (?, 'fs1', 5, 5, 20, 100, 100, ?, '{}', 0, ?, ?)`).run(uid, JSON.stringify([bass, oly]), new Date(Date.now() + 86_400_000).toISOString(), nowIso()).lastInsertRowid);
+  const server = createApp(db, { bigbang: bb, casino, loginAttempts: 100 }).listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'segredo123' }) });
+    const cookie = login.headers.get('set-cookie')?.split(';')[0];
+    const post = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => ({ status: r.status, j })));
+    assert.equal((await post('/api/casino/launch', { gameId: oly, freeSpins: fsId })).status, 400);   // no BigBang copy: refused
+    const r = await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
+    assert.equal(r.status, 200);
+    assert.match(r.j.url, /^https:\/\/g\/real\/5001\//);
+    assert.deepEqual(calls, []);                                                                        // nothing put on Palace
+    const fs = playerToken(uid, fsId);
+    assert.equal(bb.walletUser(fs).body.balance, '0.20');                                              // the game opens at €0.20
+    const move = (amount, txId) => { const p = { username: fs, amount, game: 'vs10txbigbass', game_category: 'Pragmatic', transaction_id: txId, round_id: txId, type: 'round', round_end: true, game_id: 5001 }; return { ...p, signature: signMove(p, KEY) }; };
+    const big = bb.walletChange(move(-1, 'b1'));
+    assert.equal(big.status, 400);
+    assert.match(big.body.error, /aposta fixa de 0,20 €/);
+    assert.equal(bb.walletChange(move(-0.2, 'b2')).status, 200);
+    assert.equal(bb.walletChange(move(1.5, 'b3')).body.balance, '0.20');                              // the win is kept apart
+    const s = db.prepare('SELECT spins_left, won_cents, chosen_game, play_game FROM casino_spins WHERE id = ?').get(fsId);
+    assert.deepEqual([s.spins_left, s.won_cents, s.chosen_game, s.play_game], [4, 150, bass, 5001]);
+  } finally { server.close(); }
+});
+
+test('free spins already on Palace (before BigBang copies): one picked game, own casino account, winnings above the value paid', async () => {
   const { palaceId } = await import('../server/bigbang.js');
   const db = openDb(':memory:');
   const games = [
@@ -497,6 +542,9 @@ test('free spins on Palace: one picked game, own casino account, winnings above 
   const email = db.prepare('SELECT email FROM users WHERE id = ?').get(uid).email;
   const fsId = Number(db.prepare(`INSERT INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, expires_at, created_at)
     VALUES (?, 'fs1', 5, 5, 20, 100, 100, ?, '{}', 0, ?, ?)`).run(uid, JSON.stringify([bass, oly]), new Date(Date.now() + 86_400_000).toISOString(), nowIso()).lastInsertRowid);
+  // Funded there before this release: they go on there until they end.
+  db.prepare('UPDATE casino_spins SET palace_cents = 100, palace_pending = 0, palace_at = ? WHERE id = ?').run(nowIso(), fsId);
+  fsAccount = 100;
   const server = createApp(db, { bigbang: bb, casino, loginAttempts: 100 }).listen(0);
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -507,7 +555,7 @@ test('free spins on Palace: one picked game, own casino account, winnings above 
     assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass, oly]);   // both to pick from
     const r = await post('/api/casino/launch', { gameId: bass, freeSpins: fsId });
     assert.deepEqual([r.status, r.j.url, r.j.freeSpins.spinsLeft], [200, 'https://palace/fs', 5]);
-    assert.deepEqual(calls[0], ['enter', 'bigbass', 100]);                                              // the value goes there, once
+    assert.deepEqual(calls[0], ['enter', 'bigbass', 0]);                                                // the value is already there
     assert.equal(db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(uid).balance_cents, 500); // own balance stays
     assert.deepEqual((await get('/api/me/free-spins/active')).games.map((g) => g.id), [bass]);         // only the picked game now
     assert.equal((await post('/api/casino/launch', { gameId: oly, freeSpins: fsId })).status, 409);    // no other game

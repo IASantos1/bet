@@ -15,7 +15,7 @@ import { getSetting, setSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
-import { spinsMove, spinsRow, spinsBalance, countCasinoWager, undoCasinoWager } from './promotions.js';
+import { spinsMove, spinsRow, spinsShown, countCasinoWager, undoCasinoWager } from './promotions.js';
 
 // The player's id at BigBang, also sent as its username (the callbacks name the player by username).
 // "bet62_…" players were created with the display name as username: still understood, no longer made.
@@ -375,6 +375,19 @@ export function createBigBang(db, {
     return g && shown(g, hidden()) ? g : null;
   }
 
+  /**
+   * BigBang's own copy of a Palace slot (same provider and title, else same title): free spins are
+   * played there, where a bet other than the fixed one is refused before it is taken.
+   */
+  async function twin(g) {
+    if (!g || g.source !== 'palace') return null;
+    await games();
+    const copies = [...catalog.byId.values()].filter((x) => x.source !== 'palace' && x.type !== 'live');
+    const premiumFirst = preferPremium();
+    const pick = (list) => list.find((x) => x.premium === premiumFirst) || list[0] || null;
+    return pick(copies.filter((x) => titleKey(x) === titleKey(g))) || pick(copies.filter((x) => nameKey(x.name) === nameKey(g.name)));
+  }
+
   /** Games of the same provider (the detail page's "Do mesmo estilo"). */
   /**
    * Games like `g` ("Do mesmo estilo", "Porque jogaste …"): its own family first (at most two: other Big Bass
@@ -472,7 +485,7 @@ export function createBigBang(db, {
     if (t.spinsId) {
       const s = spinsRow(db, t.spinsId, u.id);
       if (!s) return { status: 404, body: { error: 'unknown user' } };
-      cents = s.status === 'active' && s.expires_at > nowIso() ? spinsBalance(s) : 0;
+      cents = s.status === 'active' && s.expires_at > nowIso() ? spinsShown(s) : 0;
     }
     return { status: 200, body: { username, balance: euros(cents), currency: 'EUR' } };
   }
@@ -545,5 +558,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }

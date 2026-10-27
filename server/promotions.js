@@ -421,10 +421,10 @@ export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, r
 
 export const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
 /** The games these free spins can be played in now: the one the player picked, else all eligible. */
-export const playableGames = (s) => (s.chosen_game ? [s.chosen_game] : spinGames(s));
+export const playableGames = (s) => (s.chosen_game ? [s.chosen_game, ...(s.play_game ? [s.play_game] : [])] : spinGames(s));
 const spinBets = (s) => { try { return JSON.parse(s.game_bets || '{}') || {}; } catch { return {}; } };
-/** The bet (cents) one spin of this game is played at. */
-export const spinBet = (s, gameId) => Number(spinBets(s)[gameId]) || s.spin_value_cents;
+/** The bet (cents) one spin of this game is played at (BigBang's copy of a Palace game: that game's). */
+export const spinBet = (s, gameId) => Number(spinBets(s)[s.play_game && Number(gameId) === s.play_game ? s.chosen_game : gameId]) || s.spin_value_cents;
 /** Grants counted in spins (won_cents kept apart); older ones mixed winnings into the balance. */
 const asValue = (s) => s.spins_left !== null && s.spins_left !== undefined;
 /**
@@ -432,6 +432,11 @@ const asValue = (s) => s.spins_left !== null && s.spins_left !== undefined;
  * they won is kept apart (never played again) and paid as real money when they end.
  */
 export const spinsBalance = (s) => s.balance_cents;
+/**
+ * The balance the game itself is shown: one spin's bet at a time (none when they are used up), so
+ * the game cannot open with or place a bigger bet. The spins left are shown on our page.
+ */
+export const spinsShown = (s) => (asValue(s) ? Math.min(spinsBalance(s), s.spins_left >= 1 ? spinBet(s, s.chosen_game) : 0) : spinsBalance(s));
 
 /**
  * Ends a free-spins grant: what the spins won is paid as real money (the free spins themselves are
@@ -518,10 +523,10 @@ export function spinsMove(db, user, spinsId, move) {
  * spins end (all spins played, expired, or ended by the player).
  */
 function spinValueMove(db, user, s, move) {
-  const shown = () => spinsBalance(spinsRow(db, s.id, user.id));
+  const shown = () => spinsShown(spinsRow(db, s.id, user.id));
   const refuse = (error, detail) => {
     fsAudit(db, { spinsId: s.id, userId: user.id, action: 'refused', txId: move.txId, round: move.round, cents: move.cents, spinsLeft: s.spins_left, detail: detail || error });
-    return { error, balance: spinsBalance(s) };
+    return { error, balance: spinsShown(s) };
   };
   if (move.cents < 0) {
     const stake = -move.cents;
