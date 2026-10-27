@@ -101,6 +101,72 @@ const D = [
 ];
 
 /**
+ * Countries without a covered division whose cups are still taken in (every country's cup is
+ * offered): [country as the sidebar shows it, the ways WinHouse writes it].
+ */
+const CUP_ONLY = [
+  ['Russia', ['russia']],
+  ['Bolivia', ['bolivia']],
+  ['Lithuania', ['lithuania']],
+  ['Latvia', ['latvia']],
+  ['Malta', ['malta']],
+  ['Moldova', ['moldova']],
+  ['Albania', ['albania']],
+  ['Armenia', ['armenia']],
+  ['Azerbaijan', ['azerbaijan']],
+  ['Kosovo', ['kosovo']],
+  ['Andorra', ['andorra']],
+  ['San Marino', ['sanmarino']],
+  ['Gibraltar', ['gibraltar']],
+  ['Liechtenstein', ['liechtenstein']],
+  ['El Salvador', ['elsalvador']],
+  ['Dominican Republic', ['dominicanrepublic']],
+  ['Algeria', ['algeria']],
+  ['South Africa', ['southafrica']],
+  ['Ghana', ['ghana']],
+  ['Kenya', ['kenya']],
+  ['Zambia', ['zambia']],
+  ['Uganda', ['uganda']],
+  ['Cameroon', ['cameroon']],
+  ['Senegal', ['senegal']],
+  ['Ivory Coast', ['ivorycoast', 'cotedivoire']],
+  ['Mozambique', ['mozambique']],
+  ['Cape Verde', ['capeverde', 'caboverde']],
+  ['Iraq', ['iraq']],
+  ['United Arab Emirates', ['unitedarabemirates', 'uae']],
+  ['Oman', ['oman']],
+  ['Lebanon', ['lebanon']],
+  ['Syria', ['syria']],
+  ['Malaysia', ['malaysia']],
+  ['Hong Kong', ['hongkong']],
+  ['Myanmar', ['myanmar']],
+  ['Cambodia', ['cambodia']],
+  ['Bangladesh', ['bangladesh']],
+  ['Mongolia', ['mongolia']],
+  ['Kyrgyzstan', ['kyrgyzstan']],
+  ['Tajikistan', ['tajikistan']],
+  ['Turkmenistan', ['turkmenistan']],
+  ['Philippines', ['philippines']],
+  ['Rwanda', ['rwanda']],
+  ['Ethiopia', ['ethiopia']],
+  ['Libya', ['libya']],
+  ['Sudan', ['sudan']],
+  ['Zimbabwe', ['zimbabwe']],
+  ['Botswana', ['botswana']],
+  ['Haiti', ['haiti']],
+  ['Trinidad and Tobago', ['trinidadandtobago']],
+  ['Cuba', ['cuba']],
+  ['Chinese Taipei', ['chinesetaipei', 'taiwan']],
+  ['Macau', ['macau', 'macao']],
+  ['Brunei', ['brunei']],
+  ['Nepal', ['nepal']],
+  ['Sri Lanka', ['srilanka']],
+  ['Pakistan', ['pakistan']],
+  ['Palestine', ['palestine']],
+  ['Yemen', ['yemen']],
+];
+
+/**
  * Only the first division: the Middle East and the smaller leagues (the second division of these
  * draws little betting). Every other covered country keeps its first and second division.
  */
@@ -114,26 +180,39 @@ export const FIRST_ONLY = new Set([
   'Tunisia', 'Uzbekistan', 'Venezuela', 'Vietnam',
 ]);
 
-const rules = D.map(([country, aliases, first, second]) => ({
-  country,
-  aliases,
-  tiers: [first, FIRST_ONLY.has(country) ? [] : second].map((names) => (names.length ? new RegExp(`^(${[...new Set(names)].join('|')})${STAGE}$`) : null)),
-}));
+const rules = [
+  ...D.map(([country, aliases, first, second]) => ({
+    country,
+    aliases,
+    tiers: [first, FIRST_ONLY.has(country) ? [] : second].map((names) => (names.length ? new RegExp(`^(${[...new Set(names)].join('|')})${STAGE}$`) : null)),
+  })),
+  ...CUP_ONLY.filter(([country]) => !D.some(([c]) => c === country)).map(([country, aliases]) => ({ country, aliases, tiers: [] })),
+];
 
-/** The countries covered, as the sidebar shows them. */
+/** The countries covered (divisions and cups), as the sidebar shows them. */
 export const DIVISION_COUNTRIES = rules.map((r) => r.country);
 
+// The country's cups ("Paraguay. Cup", "Spain. Copa del Rey", "Portugal. Taça da Liga", "Germany.
+// DFB Pokal", "Copa Argentina"), never the women's or youth ones.
+const CUP = /(cup|cupen|pokal)$|^(super)?(copa|taca|coppa|coupe|beker|kupa|kupok|puchar|pokal)/;
+const NOT_CUP = /women|woman|female|femenin|feminin|reina|youth|junior|reserve|amateur|regional|u\d{2}/;
+
 /**
- * The country and division (1 or 2) of a league, from its name ("England. Championship" → England, 2);
- * null when it is not one of the covered divisions.
+ * The country and division of a league, from its name ("England. Championship" → England, 2):
+ * 1 and 2 the first and second division, 3 the country's cups; null when it is none of them.
  */
 export function divisionOf(name) {
   const k = key(name);
   for (const r of rules) {
     for (const a of r.aliases) {
-      if (!k.startsWith(a)) continue;
-      const rest = k.slice(a.length);
-      for (let i = 0; i < r.tiers.length; i++) if (r.tiers[i]?.test(rest)) return { country: r.country, division: i + 1 };
+      if (k.startsWith(a)) {
+        const rest = k.slice(a.length);
+        for (let i = 0; i < r.tiers.length; i++) if (r.tiers[i]?.test(rest)) return { country: r.country, division: i + 1 };
+        if (rest && CUP.test(rest) && !NOT_CUP.test(rest)) return { country: r.country, division: 3 };
+      }
+      // The cup named after the country: "Copa Argentina", "Taça de Portugal".
+      const named = /^(copa|taca|coppa|coupe)(de|del|do|da)?(.+)$/.exec(k);
+      if (named && named[3] === a && !NOT_CUP.test(k)) return { country: r.country, division: 3 };
     }
   }
   return null;
