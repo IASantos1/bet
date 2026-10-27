@@ -32,12 +32,12 @@ function setup({ spins = 5, conversion } = {}) {
 test('A–D, I: 5 points are 5 spins; a spin takes one; a win never gives points back; at zero no more spins', () => {
   const t = setup();
   assert.deepEqual([t.row().spins, t.row().spins_left], [5, 5]); // A
-  assert.equal(t.bb.walletUser(t.fs).body.balance, '0.20'); // one spin's bet shown to the game (5 left)
+  assert.equal(t.bb.walletUser(t.fs).body.balance, '1.00'); // 5 × €0.20
   assert.equal(t.bb.walletChange(move(t.fs, -0.2, 's1')).status, 200);
   assert.equal(t.row().spins_left, 4); // B
   t.bb.walletChange(move(t.fs, 3, 'w1'));
   assert.deepEqual([t.row().spins_left, t.row().won_cents], [4, 300]); // C, I: the win is kept apart
-  assert.equal(t.bb.walletUser(t.fs).body.balance, '0.20'); // the win is never played again
+  assert.equal(t.bb.walletUser(t.fs).body.balance, '0.80'); // the win is never played again
   for (const id of ['s2', 's3', 's4', 's5']) t.bb.walletChange(move(t.fs, -0.2, id));
   assert.equal(t.row().spins_left, 0); // D
   assert.equal(t.row().status, 'closed');

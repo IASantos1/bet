@@ -105,7 +105,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   tx(db, () => postTransaction(db, u, 2000, 'deposit', 'd2'));
   assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 2000, ref: 'pi_fs2', choice: 'casino' })), null);
   const fs = playerToken(u, s.id);
-  assert.equal(bb.walletUser(fs).body.balance, '0.20'); // the game sees one spin's bet at a time
+  assert.equal(bb.walletUser(fs).body.balance, '1.00'); // 5 × €0.20
   // A game outside the list, or a bet above the game's spin: refused.
   assert.equal(bb.walletChange(move(fs, -0.2, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
   assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /aposta fixa de 0,20 €/);
@@ -118,7 +118,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   assert.equal(bal(db, u), 3000); // the real balance untouched while they run
   const mine = tx(db, () => playerPromos(db, u)).activeSpins;
   assert.deepEqual([mine.spins, mine.spinsLeft, mine.winnings], [5, 3, 1.5]);
-  assert.equal(bb.walletUser(fs).body.balance, '0.20'); // one spin's bet (3 left): the €1.50 won is kept apart, never played
+  assert.equal(bb.walletUser(fs).body.balance, '0.60'); // 3 × €0.20: the €1.50 won is kept apart, never played
   // The last spins: they end and the €1.50 won is paid as real money.
   for (const t of ['f4', 'f5', 'f6']) bb.walletChange(move(fs, -0.2, t));
   assert.equal(db.prepare('SELECT paid_cents FROM casino_spins WHERE id = ?').get(s.id).paid_cents, 150);
@@ -212,11 +212,11 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     const u = await (await fetch(`${base}/api/casino/bb/user?username=b62_${uid}`)).json();
     assert.equal(u.balance, '20.00');
     const res = await fetch(`${base}/api/casino/bb/balance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 3, 'cb1', { game_id: 4822 })) });
-    assert.equal((await res.json()).balance, '0.20'); // the game is told one spin's bet (10 left): the €3 won is kept apart
+    assert.equal((await res.json()).balance, '2.00'); // the game is told 10 spins × €0.20: the €3 won is kept apart
     // The previous platform's callback paths answer the same.
     assert.equal((await (await fetch(`${base}/api/casino/bigbang/user-data?username=b62_${uid}`)).json()).balance, '20.00');
     const res2 = await fetch(`${base}/api/casino/bigbang/balance-change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(move(`b62_${uid}_fs${fsId}`, 0, 'cb2', { game_id: 4822 })) });
-    assert.equal((await res2.json()).balance, '0.20');
+    assert.equal((await res2.json()).balance, '2.00');
     // The player ends the free spins: the €3 won is paid.
     const claim = await call('POST', `/api/me/free-spins/${fsId}/claim`, {});
     assert.equal(claim.body.paid, 3);
@@ -475,7 +475,7 @@ test('no game twice: the copy with portrait artwork wins over a landscape one', 
   assert.deepEqual(dropCrossDuplicates([g(1, 'EGT', true), g(2, 'EGT', false)]).map((x) => x.id), [2]);
 });
 
-test('free spins on a Palace slot are played on BigBang\'s copy (fixed bet enforced, one spin\'s bet shown); no copy: refused', async () => {
+test('free spins on a Palace slot are played on BigBang\'s copy (fixed bet enforced); no copy: refused', async () => {
   const { palaceId } = await import('../server/bigbang.js');
   const db = openDb(':memory:');
   const games = [
@@ -508,13 +508,13 @@ test('free spins on a Palace slot are played on BigBang\'s copy (fixed bet enfor
     assert.match(r.j.url, /^https:\/\/g\/real\/5001\//);
     assert.deepEqual(calls, []);                                                                        // nothing put on Palace
     const fs = playerToken(uid, fsId);
-    assert.equal(bb.walletUser(fs).body.balance, '0.20');                                              // the game opens at €0.20
+    assert.equal(bb.walletUser(fs).body.balance, '1.00');                                              // 5 spins × €0.20
     const move = (amount, txId) => { const p = { username: fs, amount, game: 'vs10txbigbass', game_category: 'Pragmatic', transaction_id: txId, round_id: txId, type: 'round', round_end: true, game_id: 5001 }; return { ...p, signature: signMove(p, KEY) }; };
     const big = bb.walletChange(move(-1, 'b1'));
     assert.equal(big.status, 400);
     assert.match(big.body.error, /aposta fixa de 0,20 €/);
     assert.equal(bb.walletChange(move(-0.2, 'b2')).status, 200);
-    assert.equal(bb.walletChange(move(1.5, 'b3')).body.balance, '0.20');                              // the win is kept apart
+    assert.equal(bb.walletChange(move(1.5, 'b3')).body.balance, '0.80');                              // the win is kept apart
     const s = db.prepare('SELECT spins_left, won_cents, chosen_game, play_game FROM casino_spins WHERE id = ?').get(fsId);
     assert.deepEqual([s.spins_left, s.won_cents, s.chosen_game, s.play_game], [4, 150, bass, 5001]);
   } finally { server.close(); }
