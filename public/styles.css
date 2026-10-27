@@ -1953,3 +1953,4 @@ html.light .combo-legs li::after { background: #22b14c; }
 .venue-col h4 { margin: 0 0 8px; font-size: 14px; }
 .h2h-bar .l { background: var(--down, #e5484d); }
 @media (max-width: 640px) { .venue-grid { grid-template-columns: 1fr; } }
+.stand-tabs { margin: 0 0 10px; }

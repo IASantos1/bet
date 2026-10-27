@@ -151,3 +151,15 @@ test('at home / away: the season split from the table when it has one, else the 
   assert.deepEqual([season.source, season.played, season.won, season.goalsFor, season.games.length], ['season', 7, 4, 11, 2]);
   assert.equal(normalizeVenue({ recentFixtures: [] }, 't', true), null);
 });
+
+test('league table: each team\'s home and away split when the table has one', async () => {
+  const { normalizeStandings } = await import('../server/goalapi.js');
+  const fx = { home: { id: '1', name: 'Genoa' }, away: { id: '2', name: 'Juventus' }, league: 'Serie A' };
+  const t = normalizeStandings([
+    { teamId: '1', teamName: 'Genoa', overallLeaguePosition: '12', overallLeaguePlayed: '9', overallLeagueW: '3', homeLeagueW: '3', homeLeagueD: '1', homeLeagueL: '0', homeLeagueGF: '7', homeLeagueGA: '2', awayLeagueW: '0', awayLeagueD: '1', awayLeagueL: '4' },
+    { teamId: '2', teamName: 'Juventus', overallLeaguePosition: '2', overallLeaguePlayed: '9' },
+  ], fx);
+  assert.deepEqual(t.rows[1].home, { played: 4, won: 3, drawn: 1, lost: 0, goalsFor: 7, goalsAgainst: 2, points: 10 });
+  assert.equal(t.rows[1].away.points, 1);
+  assert.equal(t.rows[0].home, null); // no split for this team
+});

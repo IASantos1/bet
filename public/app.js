@@ -3351,6 +3351,8 @@ document.addEventListener('click', async (e) => {
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
   const statTabBtn = e.target.closest('[data-stat-tab]');
   if (statTabBtn) { state.match.statTab = statTabBtn.dataset.statTab; render({ keepScroll: true }); return; }
+  const standBtn = e.target.closest('[data-stand-view]');
+  if (standBtn) { state.match.standView = standBtn.dataset.standView; render({ keepScroll: true }); return; }
 
   const remove = e.target.closest('[data-remove]');
   if (remove) {
@@ -4667,9 +4669,18 @@ function venueView(e, v) {
 function standingsView(e, t) {
   const key = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const side = (r) => r.side || (key(r.team) === key(e.home) ? 'home' : key(r.team) === key(e.away) ? 'away' : null);
-  return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3><div class="table-wrap"><table class="standings">
+  // Geral / Casa / Fora: the same table, with each team's games at home or away only (when the
+  // league table splits them), ranked by those points.
+  const split = t.rows.some((r) => r.home && r.away);
+  const view = split && ['home', 'away'].includes(state.match.standView) ? state.match.standView : 'all';
+  const rows = view === 'all' ? t.rows : t.rows.filter((r) => r[view]).map((r) => ({ ...r, ...r[view] }))
+    .sort((x, y) => (y.points - x.points) || ((y.goalsFor - y.goalsAgainst) - (x.goalsFor - x.goalsAgainst)) || (y.goalsFor - x.goalsFor))
+    .map((r, i) => ({ ...r, position: i + 1 }));
+  const menu = split ? `<div class="market-cats stand-tabs">${[['all', 'Geral'], ['home', 'Casa'], ['away', 'Fora']]
+    .map(([k, l]) => `<button class="${view === k ? 'active' : ''}" data-stand-view="${k}">${l}</button>`).join('')}</div>` : '';
+  return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3>${menu}<div class="table-wrap"><table class="standings">
     <thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num"><span class="fr W">V</span></th><th class="num"><span class="fr D">E</span></th><th class="num"><span class="fr L">D</span></th><th class="num">G</th><th class="num">Pts</th></tr></thead>
-    <tbody>${t.rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td class="st-team">${esc(r.team)}</td><td class="num">${r.played ?? ''}</td>
+    <tbody>${rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td class="st-team">${esc(r.team)}</td><td class="num">${r.played ?? ''}</td>
       <td class="num"><span class="fr W">${r.won ?? 0}</span></td><td class="num"><span class="fr D">${r.drawn ?? 0}</span></td><td class="num"><span class="fr L">${r.lost ?? 0}</span></td>
       <td class="num">${r.goalsFor ?? ''}-${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td></tr>`).join('')}</tbody>
   </table></div></div>`;

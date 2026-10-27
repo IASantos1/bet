@@ -209,7 +209,17 @@ export function normalizeStandings(raw, fx) {
   const tables = [...groups].map(([name, teams]) => [name, pick(teams)]);
   const score = ([, l]) => l.filter(ours).length * 1e6 + l.reduce((n, r) => n + played(r), 0);
   const [group, list] = tables.sort((x, y) => score(y) - score(x))[0];
+  // Each side's split at home and away, when the table has it ("homeLeagueW", "home_league_W"…).
+  const split = (r, side) => {
+    const pick = (...ks) => { for (const k of ks) { const v = num(r[k]); if (v !== null) return v; } return null; };
+    const f = (k) => pick(`${side}League${k}`, `${side}_league_${k}`);
+    const won = f('W'); const drawn = f('D'); const lost = f('L');
+    if (won === null || drawn === null || lost === null) return null;
+    return { played: pick(`${side}LeaguePlayed`, `${side}LeaguePayed`, `${side}_league_payed`, `${side}_league_played`) ?? won + drawn + lost,
+      won, drawn, lost, goalsFor: f('GF'), goalsAgainst: f('GA'), points: f('PTS') ?? won * 3 + drawn };
+  };
   const table = list.map((r) => ({
+    home: split(r, 'home'), away: split(r, 'away'),
     position: num(r.overallLeaguePosition), team: r.teamName || r.team?.name, played: num(r.overallLeaguePlayed),
     won: num(r.overallLeagueW), drawn: num(r.overallLeagueD), lost: num(r.overallLeagueL),
     goalsFor: num(r.overallLeagueGF), goalsAgainst: num(r.overallLeagueGA), points: num(r.overallLeaguePTS),
