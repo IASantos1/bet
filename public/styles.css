@@ -1948,3 +1948,8 @@ html.light .combo-legs li::after { background: #22b14c; }
 .section-head h2 .sport-ico { vertical-align: -0.2em; margin-right: 2px; }
 .side-link > span:first-child { display: inline-grid; place-items: center; }
 .bt-title .bt-when { display: block; margin-top: 3px; color: var(--text-3); font-size: 12px; font-weight: 700; }
+/* H2H: each side at home / away, side by side (one under the other on a phone). */
+.venue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.venue-col h4 { margin: 0 0 8px; font-size: 14px; }
+.h2h-bar .l { background: var(--down, #e5484d); }
+@media (max-width: 640px) { .venue-grid { grid-template-columns: 1fr; } }

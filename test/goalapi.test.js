@@ -109,13 +109,16 @@ test('insights: only big and medium leagues, answers kept, daily limit kept', as
   };
   const goal = createGoalApi(db, { key: 'k', daily: 50, fetchImpl });
   assert.equal(goal.covers(ev('A', 'B', { competition: 'Vietnam. V.League 2' })), false);
-  assert.deepEqual(await goal.insights(ev('A', 'B', { competition: 'Vietnam. V.League 2' })), { h2h: null, standings: null, form: null });
+  assert.deepEqual(await goal.insights(ev('A', 'B', { competition: 'Vietnam. V.League 2' })), { h2h: null, standings: null, form: null, venue: null });
   assert.equal(calls.length, 0);
 
   const r = await goal.insights(ev('Real Madrid', 'Barcelona'));
   assert.equal(r.h2h.homeWins, 1);
   assert.equal(r.standings.rows[0].side, 'home');
   assert.equal(r.form.home.won, 1);
+  // At home / away: the home side's games at home (the away side has none away here).
+  assert.deepEqual([r.venue.home.source, r.venue.home.won, r.venue.home.goalsFor, r.venue.home.goalsAgainst], ['recent', 1, 2, 0]);
+  assert.equal(r.venue.away, null);
   assert.ok(calls.includes('/v1/h2h/t-Real%20Madrid%20CF/t-FC%20Barcelona/direct'));
   const first = calls.length;
   await goal.insights(ev('Real Madrid', 'Barcelona'));
@@ -125,12 +128,26 @@ test('insights: only big and medium leagues, answers kept, daily limit kept', as
   // No requests beyond the daily limit.
   const tight = createGoalApi(openDb(':memory:'), { key: 'k', daily: 1, fetchImpl });
   const before = calls.length;
-  assert.deepEqual(await tight.insights(ev('Real Madrid', 'Barcelona')), { h2h: null, standings: null, form: null });
+  assert.deepEqual(await tight.insights(ev('Real Madrid', 'Barcelona')), { h2h: null, standings: null, form: null, venue: null });
   assert.equal(calls.length - before, 1);
 });
 
 test('without a key nothing is asked', async () => {
   const goal = createGoalApi(openDb(':memory:'), { key: '', fetchImpl: async () => { throw new Error('no call'); } });
   assert.equal(goal.enabled, false);
-  assert.deepEqual(await goal.insights(ev('Real Madrid', 'Barcelona')), { h2h: null, standings: null, form: null });
+  assert.deepEqual(await goal.insights(ev('Real Madrid', 'Barcelona')), { h2h: null, standings: null, form: null, venue: null });
+});
+
+test('at home / away: the season split from the table when it has one, else the recent games at that venue', async () => {
+  const { normalizeVenue } = await import('../server/goalapi.js');
+  const games = { recentFixtures: [
+    { date: '2026-10-20', opponent: 'X', score: '1-2', isHome: false, result: 'W' },
+    { date: '2026-10-13', opponent: 'Y', score: '0-0', isHome: true, result: 'D' },
+    { date: '2026-10-06', opponent: 'Z', score: '3-1', isHome: false, result: 'L' },
+  ] };
+  const away = normalizeVenue(games, 't', false);
+  assert.deepEqual([away.source, away.played, away.won, away.lost, away.goalsFor, away.goalsAgainst], ['recent', 2, 1, 1, 3, 4]);
+  const season = normalizeVenue(games, 't', false, { awayLeagueW: '4', awayLeagueD: '2', awayLeagueL: '1', awayLeagueGF: '11', awayLeagueGA: '6' });
+  assert.deepEqual([season.source, season.played, season.won, season.goalsFor, season.games.length], ['season', 7, 4, 11, 2]);
+  assert.equal(normalizeVenue({ recentFixtures: [] }, 't', true), null);
 });

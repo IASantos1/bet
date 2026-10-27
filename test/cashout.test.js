@@ -20,7 +20,7 @@ function match(db, odds = 200) {
   return { id, sel };
 }
 /** A bet placed `ageSec` seconds ago. */
-function bet(db, u, picks, { mode = 'single', stake = 1000, ageSec = 120 } = {}) {
+function bet(db, u, picks, { mode = 'single', stake = 1000, ageSec = 300 } = {}) {
   const [id] = tx(db, () => placeBets(db, { id: u }, { mode, stakeCents: stake, picks }));
   db.prepare('UPDATE bets SET created_at = ? WHERE id = ?').run(new Date(Date.now() - ageSec * 1000).toISOString(), id);
   return id;
@@ -76,14 +76,23 @@ test('cash out in play: needs a fresh live price newer than the last goal, and w
   const o = cashoutOffer(db, row(db, id));
   assert.equal(o.status, 'available');
   assert.equal(o.live, true);
+  // In play: its own margin, never above 90% of the potential return.
+  assert.equal(o.valueCents, Math.min(Math.floor(1000 * cashoutConfig(db).liveFactor), Math.floor(2000 * cashoutConfig(db).liveMaxPct)));
   // A goal 10 s ago: the price is older than the goal → suspended.
   db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(ago(10), m.id);
   assert.match(cashoutOffer(db, row(db, id)).reason, /revisão/);
-  // A new price after the goal, but the lock (30 s) is not over yet.
-  db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(ago(2), m.id);
+  // A new price after the goal, but the lock (90 s) is not over yet.
+  db.prepare('UPDATE events SET live_odds_at = ?, score_at = ? WHERE id = ?').run(ago(2), ago(60), m.id);
   assert.match(cashoutOffer(db, row(db, id)).reason, /revisão/);
-  db.prepare('UPDATE events SET score_at = ?, live_odds_at = ? WHERE id = ?').run(ago(60), ago(2), m.id);
+  db.prepare('UPDATE events SET score_at = ?, live_odds_at = ? WHERE id = ?').run(ago(100), ago(2), m.id);
   assert.equal(cashoutOffer(db, row(db, id)).status, 'available');
+  // The last part of the game (from 85% of the 90 minutes): closed.
+  db.prepare('UPDATE events SET wh_minute = 77 WHERE id = ?').run(m.id);
+  assert.match(cashoutOffer(db, row(db, id)).reason, /reta final/);
+  db.prepare('UPDATE events SET wh_minute = 60 WHERE id = ?').run(m.id);
+  // A bet placed 1 minute ago: in play only after 3 minutes.
+  const young = bet(db, u, [{ selectionId: m.sel, odds: 2 }], { ageSec: 60 });
+  assert.match(cashoutOffer(db, row(db, young)).reason, /min depois de apostar/);
   // An old live price: suspended. Off in play: unavailable.
   db.prepare('UPDATE events SET live_odds_at = ? WHERE id = ?').run(ago(3600), m.id);
   assert.equal(cashoutOffer(db, row(db, id)).status, 'suspended');

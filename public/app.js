@@ -4614,7 +4614,7 @@ function matchStatsView(e) {
   const ins = m.insights || {};
   const tabs = [];
   if (e.status !== 'scheduled') tabs.push(['aovivo', e.status === 'live' ? 'Ao vivo' : 'Jogo']);
-  if (ins.h2h || ins.form?.home || ins.form?.away) tabs.push(['h2h', 'H2H']);
+  if (ins.h2h || ins.form?.home || ins.form?.away || ins.venue) tabs.push(['h2h', 'H2H']);
   if (ins.standings?.rows?.length) tabs.push(['classificacao', 'Classificação']);
   if (!tabs.length) {
     return ins.loading ? '<div class="loading">A carregar estatísticas…</div>' : '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
@@ -4645,7 +4645,23 @@ function h2hView(e, ins) {
       ${f.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
     </div>`;
   };
-  return `<div class="insight-stack">${direct}${form('home')}${form('away')}</div>`;
+  return `<div class="insight-stack">${direct}${venueView(e, ins.venue)}${form('home')}${form('away')}</div>`;
+}
+
+/** At home and away: the home side's record at home next to the away side's record away. */
+function venueView(e, v) {
+  if (!v) return '';
+  const side = (s, name, where) => {
+    if (!s) return `<div class="venue-col"><h4>${esc(name)} <small class="muted">${where}</small></h4><p class="muted">Sem dados.</p></div>`;
+    const pct = (n) => (s.played ? Math.round((n / s.played) * 100) : 0);
+    return `<div class="venue-col"><h4>${esc(name)} <small class="muted">${where}</small></h4>
+      <div class="form-sum"><span class="fr W">${s.won} V</span><span class="fr D">${s.drawn} E</span><span class="fr L">${s.lost} D</span></div>
+      <div class="h2h-bar"><i class="h" data-w="${pct(s.won)}"></i><i class="d" data-w="${pct(s.drawn)}"></i><i class="l" data-w="${pct(s.lost)}"></i></div>
+      <p class="muted h2h-goals">${s.source === 'season' ? 'Época' : `Últimos ${s.played} jogos`}: ${pct(s.won)}% de vitórias${s.goalsFor !== null && s.goalsFor !== undefined ? ` · golos ${s.goalsFor}-${s.goalsAgainst}` : ''}</p>
+      ${s.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
+    </div>`;
+  };
+  return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, e.home, 'em casa')}${side(v.away, e.away, 'fora')}</div></div>`;
 }
 
 function standingsView(e, t) {
