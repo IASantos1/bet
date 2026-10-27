@@ -9,7 +9,8 @@ const key = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-�
 
 // A league name may end with its stage and group ("Clausura. Group A", "Apertura. Zona B",
 // "Clausura. Playoffs"): still the same division.
-const STAGE = '(apertura|clausura|torneo|playoffs?|playout|championshipround|championshipgroup|relegationround|relegationgroup|regularseason|firstphase|secondphase|finalphase|championship|relegation|(group|grupo|zone|zona)[a-z0-9]?)*';
+const STAGE = '(apertura|clausura|torneo|intermedio|liguilla|cuadrangulares|hexagonal|reclasificacion|(eastern|western|northern|southern)conference|playoffs?|playout|championshipround|championshipgroup|relegationround|relegationgroup|regularseason|groupstage|firstphase|secondphase|finalphase|championship|relegation|knockoutstage|final|semifinals?|quarterfinals?|roundof\\d+|\\d?(st|nd|rd|th)?round|(group|grupo|groupe|gruppe|girone|zone|zona|serie|series|conference|division|pool)(north|south|east|west|norte|sul|sur|este|oeste|centro|center|central|[a-z]|\\d{1,2})?)*';
+const STAGE_END = new RegExp(`${STAGE}$`);
 
 /**
  * [country as the sidebar shows it (English, as WinHouse writes it), the ways WinHouse writes the
@@ -71,7 +72,7 @@ const D = [
   ['Luxembourg', ['luxembourg'], ['nationaldivision', 'bglligue', 'divisionnationale'], ['promotiondhonneur', 'promotionhonneur']],
   ['North Macedonia', ['northmacedonia', 'macedonia'], ['firstleague', '1stleague', 'prvaliga', 'firstmacedonianleague'], ['secondleague', '2ndleague', 'vtoraliga']],
   ['Morocco', ['morocco'], ['botolapro', 'botola', 'botolapro1'], ['botola2', 'botolapro2']],
-  ['Mexico', ['mexico'], ['ligamx'], ['ligadeexpansion', 'ligaexpansionmx', 'expansionmx', 'ascensomx']],
+  ['Mexico', ['mexico'], ['ligamx'], ['ligadeexpansion', 'ligadeexpansionmx', 'ligaexpansionmx', 'expansionmx', 'ascensomx']],
   ['Montenegro', ['montenegro'], ['firstleague', '1stleague', 'prvaliga', '1cfl'], ['secondleague', '2ndleague', 'drugaliga', '2cfl']],
   ['Nicaragua', ['nicaragua'], ['primeradivision', 'ligaprimera'], ['segundadivision']],
   ['Nigeria', ['nigeria'], ['professionalleague', 'npfl', 'premierleague'], ['nationalleague', 'nnl']],
@@ -209,10 +210,11 @@ export function divisionOf(name) {
       if (k.startsWith(a)) {
         const rest = k.slice(a.length);
         for (let i = 0; i < r.tiers.length; i++) if (r.tiers[i]?.test(rest)) return { country: r.country, division: i + 1 };
-        if (rest && CUP.test(rest) && !NOT_CUP.test(rest)) return { country: r.country, division: 3 };
+        const cup = rest.replace(STAGE_END, ''); // "Cup. Group A" → "Cup"
+        if (cup && CUP.test(cup) && !NOT_CUP.test(cup)) return { country: r.country, division: 3 };
       }
       // The cup named after the country: "Copa Argentina", "Taça de Portugal".
-      const named = /^(copa|taca|coppa|coupe)(de|del|do|da)?(.+)$/.exec(k);
+      const named = /^(copa|taca|coppa|coupe)(de|del|do|da)?(.+)$/.exec(k.replace(STAGE_END, ''));
       if (named && named[3] === a && !NOT_CUP.test(k)) return { country: r.country, division: 3 };
     }
   }

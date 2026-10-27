@@ -871,6 +871,18 @@ test('football divisions: first and second division and the cups of every covere
   assert.equal(d('Argentina. Primera Division. Clausura. Group A'), 'Argentina/1');
   assert.equal(d('Argentina. Liga Profesional. Clausura. Zona B'), 'Argentina/1');
   assert.equal(d('Argentina. Primera Division. Clausura. Playoffs'), 'Argentina/1');
+  // Groups, zones and stages in every country, leagues and cups.
+  for (const [name, want] of [
+    ['Argentina. Primera Division. Clausura. Group D', 'Argentina/1'], ['Brazil. Serie B. Group C', 'Brazil/2'],
+    ['Chile. Primera B. Zone North', 'Chile/2'], ['Colombia. Categoria Primera A. Cuadrangulares. Group B', 'Colombia/1'],
+    ['Ecuador. Serie A. Second Phase. Group 2', 'Ecuador/1'], ['Paraguay. Primera Division. Clausura. Group A', 'Paraguay/1'],
+    ['Uruguay. Primera Division. Intermedio. Group A', 'Uruguay/1'], ['Mexico. Liga de Expansion MX. Apertura. Group A', 'Mexico/2'],
+    ['USA. MLS. Eastern Conference', 'United States/1'], ['Belgium. Pro League. Championship Round', 'Belgium/1'],
+    ['Paraguay. Cup. Group A', 'Paraguay/3'], ['Copa Argentina. Round of 16', 'Argentina/3'], ['Brazil. Copa do Brasil. Quarterfinals', 'Brazil/3'],
+    ['Russia. Cup. Group C', 'Russia/3'],
+    ['Italy. Serie C. Group A', null], ['Brazil. Serie C', null], ['Sweden. Division 1', null], ['Argentina. Primera B Metropolitana', null],
+    ['England. FA Cup. Women. Group A', null],
+  ]) assert.equal(d(name), want, name);
   assert.equal(d('Northern Ireland. Premiership'), 'Northern Ireland/1');
   assert.equal(d('Ireland. Premier Division'), 'Ireland/1');
   assert.equal(d('South Korea. K League 2'), 'South Korea/2');
