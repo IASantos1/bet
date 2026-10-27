@@ -123,17 +123,27 @@ const rules = D.map(([country, aliases, first, second]) => ({
 /** The countries covered, as the sidebar shows them. */
 export const DIVISION_COUNTRIES = rules.map((r) => r.country);
 
+// The country's cups ("Paraguay. Cup", "Spain. Copa del Rey", "Portugal. Taça da Liga", "Germany.
+// DFB Pokal", "Copa Argentina"), never the women's or youth ones.
+const CUP = /(cup|cupen|pokal)$|^(super)?(copa|taca|coppa|coupe|beker|kupa|kupok|puchar|pokal)/;
+const NOT_CUP = /women|woman|female|femenin|feminin|reina|youth|junior|reserve|amateur|regional|u\d{2}/;
+
 /**
- * The country and division (1 or 2) of a league, from its name ("England. Championship" → England, 2);
- * null when it is not one of the covered divisions.
+ * The country and division of a league, from its name ("England. Championship" → England, 2):
+ * 1 and 2 the first and second division, 3 the country's cups; null when it is none of them.
  */
 export function divisionOf(name) {
   const k = key(name);
   for (const r of rules) {
     for (const a of r.aliases) {
-      if (!k.startsWith(a)) continue;
-      const rest = k.slice(a.length);
-      for (let i = 0; i < r.tiers.length; i++) if (r.tiers[i]?.test(rest)) return { country: r.country, division: i + 1 };
+      if (k.startsWith(a)) {
+        const rest = k.slice(a.length);
+        for (let i = 0; i < r.tiers.length; i++) if (r.tiers[i]?.test(rest)) return { country: r.country, division: i + 1 };
+        if (rest && CUP.test(rest) && !NOT_CUP.test(rest)) return { country: r.country, division: 3 };
+      }
+      // The cup named after the country: "Copa Argentina", "Taça de Portugal".
+      const named = /^(copa|taca|coppa|coupe)(de|del|do|da)?(.+)$/.exec(k);
+      if (named && named[3] === a && !NOT_CUP.test(k)) return { country: r.country, division: 3 };
     }
   }
   return null;

@@ -855,7 +855,7 @@ test('a finished match that WinHouse reports at 0 minutes keeps its last clock a
   assert.deepEqual([row.status, row.home_score, row.away_score], ['finished', 6, 1]);
 });
 
-test('football divisions: first and second division of every covered country, whatever the name; third tiers and cups out', async () => {
+test('football divisions: first and second division and the cups of every covered country, whatever the name; third tiers and women\'s cups out', async () => {
   const { divisionOf, DIVISION_COUNTRIES } = await import('../server/footballdivisions.js');
   const d = (n) => { const x = divisionOf(n); return x && `${x.country}/${x.division}`; };
   assert.equal(d('England. Premier League'), 'England/1');
@@ -877,7 +877,16 @@ test('football divisions: first and second division of every covered country, wh
   assert.equal(d('Uzbekistan. Super League'), 'Uzbekistan/1');
   assert.equal(d('Saudi Arabia. First Division'), null, 'Middle East: first division only');
   assert.equal(d('Qatar. Stars League'), 'Qatar/1');
-  assert.equal(d('Spain. Copa del Rey'), null);
+  assert.equal(d('Spain. Copa del Rey'), 'Spain/3');
+  assert.equal(d('Paraguay. Cup'), 'Paraguay/3');
+  assert.equal(d('Copa Argentina'), 'Argentina/3');
+  assert.equal(d('Portugal. League Cup'), 'Portugal/3');
+  assert.equal(d('Taça de Portugal'), 'Portugal/3');
+  assert.equal(d('Germany. DFB Pokal'), 'Germany/3');
+  assert.equal(d('England. FA Cup. Women'), null);
+  assert.equal(d('Spain. Copa de la Reina'), null);
+  assert.equal(d('England. Premier League Cup U21'), null);
+  assert.equal(d('Mongolia. Cup'), null);
   assert.equal(d('Mongolia. Premier League'), null);
   assert.ok(DIVISION_COUNTRIES.length >= 80);
 });
