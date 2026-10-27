@@ -1115,6 +1115,13 @@ test('each sport\'s live clock', () => {
   // Ice hockey: the period and the time left, then overtime.
   assert.equal(clockText('hoquei', 27.5, ''), '2.º P 12:30');
   assert.equal(clockText('hoquei', 62, ''), 'Prol. 18:00');
+  // Rugby: the minute. American football: the quarter and the time left (15-min quarters), then overtime.
+  assert.equal(clockText('raguebi', 57.3, ''), "57'");
+  assert.equal(clockText('futamericano', 21.75, ''), 'Q2 08:15');
+  assert.equal(clockText('futamericano', 63, ''), 'Prol. 07:00');
+  // Fights: the round and the time left in it (boxing 3 min, MMA 5 min).
+  assert.equal(clockText('boxe', 7.5, ''), '3.º assalto 01:30');
+  assert.equal(clockText('mma', 7.5, ''), '2.º assalto 02:30');
   // Set sports: the page shows the set, not a clock.
   assert.equal(clockText('tenismesa', 12, ''), null);
 });

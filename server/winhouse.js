@@ -933,14 +933,16 @@ const mmss = (secs) => `${String(Math.floor(secs / 60)).padStart(2, '0')}:${Stri
 
 /**
  * The clock a sport is shown with, from WinHouse's elapsed time (minutes, decimals for seconds):
- * football / handball / futsal the minute ("67'"); basketball the quarter and the time left in it
+ * football / handball / futsal / rugby the minute ("67'"); basketball the quarter and the time left in it
  * ("Q3 04:12", quarters of 12 min in the NBA, 10 elsewhere; overtime 5 min); ice hockey the period
- * and the time left ("2.º P 12:30", 20-min periods, then overtime). Set sports (tennis, table
+ * and the time left ("2.º P 12:30", 20-min periods, then overtime); American football the quarter and
+ * the time left ("Q2 08:15", 15-min quarters, 10-min overtime); boxing and MMA the round and the time
+ * left in it ("3.º assalto 01:20"). Set sports (tennis, table
  * tennis, badminton, volleyball) show the set on the page, from the score.
  */
 export const clockText = (sport, minutes, raw, competition = '') => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
-  if (['futebol', 'andebol', 'futsal'].includes(sport)) return `${Math.floor(minutes)}'`;
+  if (['futebol', 'andebol', 'futsal', 'raguebi'].includes(sport)) return `${Math.floor(minutes)}'`;
   const secs = Math.max(0, Math.round(minutes * 60));
   if (sport === 'basquetebol') {
     const q = (/\bNBA\b/i.test(competition) ? 12 : 10) * 60;
@@ -951,6 +953,17 @@ export const clockText = (sport, minutes, raw, competition = '') => {
   if (sport === 'hoquei') {
     if (secs < 3600) { const n = Math.floor(secs / 1200) + 1; return `${n}.º P ${mmss(n * 1200 - secs)}`; }
     return `Prol. ${mmss(Math.max(0, 3600 + 1200 - secs))}`;
+  }
+  if (sport === 'futamericano') {
+    // Four quarters of 15 minutes, then a 10-minute overtime.
+    if (secs < 3600) { const n = Math.floor(secs / 900) + 1; return `Q${n} ${mmss(n * 900 - secs)}`; }
+    return `Prol. ${mmss(Math.max(0, 3600 + 600 - secs))}`;
+  }
+  // Fights: the round, from the fight clock (boxing 3-minute rounds, MMA 5-minute ones).
+  if (sport === 'boxe' || sport === 'mma') {
+    const len = (sport === 'boxe' ? 3 : 5) * 60;
+    const n = Math.floor(secs / len) + 1;
+    return `${n}.º assalto ${mmss(n * len - secs)}`;
   }
   return null;
 };
