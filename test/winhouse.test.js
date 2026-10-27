@@ -868,6 +868,9 @@ test('football divisions: first and second division and the cups of every covere
   assert.equal(d('Czech Republic. Chance Liga'), 'Czech Republic/1');
   assert.equal(d('Mexico. Liga MX. Apertura'), 'Mexico/1');
   assert.equal(d('Argentina. Primera Division. Clausura'), 'Argentina/1');
+  assert.equal(d('Argentina. Primera Division. Clausura. Group A'), 'Argentina/1');
+  assert.equal(d('Argentina. Liga Profesional. Clausura. Zona B'), 'Argentina/1');
+  assert.equal(d('Argentina. Primera Division. Clausura. Playoffs'), 'Argentina/1');
   assert.equal(d('Northern Ireland. Premiership'), 'Northern Ireland/1');
   assert.equal(d('Ireland. Premier Division'), 'Ireland/1');
   assert.equal(d('South Korea. K League 2'), 'South Korea/2');

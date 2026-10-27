@@ -7,8 +7,9 @@
 /** "England. Premier League" → "englandpremierleague". */
 const key = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
 
-// A league name may end with its stage: still the same division.
-const STAGE = '(apertura|clausura|playoffs?|playout|championshipround|championshipgroup|relegationround|relegationgroup|regularseason|firstphase|secondphase|finalphase|championship|relegation)?';
+// A league name may end with its stage and group ("Clausura. Group A", "Apertura. Zona B",
+// "Clausura. Playoffs"): still the same division.
+const STAGE = '(apertura|clausura|torneo|playoffs?|playout|championshipround|championshipgroup|relegationround|relegationgroup|regularseason|firstphase|secondphase|finalphase|championship|relegation|(group|grupo|zone|zona)[a-z0-9]?)*';
 
 /**
  * [country as the sidebar shows it (English, as WinHouse writes it), the ways WinHouse writes the
