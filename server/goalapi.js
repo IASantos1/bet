@@ -209,7 +209,17 @@ export function normalizeStandings(raw, fx) {
   const tables = [...groups].map(([name, teams]) => [name, pick(teams)]);
   const score = ([, l]) => l.filter(ours).length * 1e6 + l.reduce((n, r) => n + played(r), 0);
   const [group, list] = tables.sort((x, y) => score(y) - score(x))[0];
+  // Each side's split at home and away, when the table has it ("homeLeagueW", "home_league_W"…).
+  const split = (r, side) => {
+    const pick = (...ks) => { for (const k of ks) { const v = num(r[k]); if (v !== null) return v; } return null; };
+    const f = (k) => pick(`${side}League${k}`, `${side}_league_${k}`);
+    const won = f('W'); const drawn = f('D'); const lost = f('L');
+    if (won === null || drawn === null || lost === null) return null;
+    return { played: pick(`${side}LeaguePlayed`, `${side}LeaguePayed`, `${side}_league_payed`, `${side}_league_played`) ?? won + drawn + lost,
+      won, drawn, lost, goalsFor: f('GF'), goalsAgainst: f('GA'), points: f('PTS') ?? won * 3 + drawn };
+  };
   const table = list.map((r) => ({
+    home: split(r, 'home'), away: split(r, 'away'),
     position: num(r.overallLeaguePosition), team: r.teamName || r.team?.name, played: num(r.overallLeaguePlayed),
     won: num(r.overallLeagueW), drawn: num(r.overallLeagueD), lost: num(r.overallLeagueL),
     goalsFor: num(r.overallLeagueGF), goalsAgainst: num(r.overallLeagueGA), points: num(r.overallLeaguePTS),
@@ -253,6 +263,32 @@ export function normalizeForm(raw, teamId = null) {
   if (!list.length) return null;
   const count = (r) => list.filter((f) => f.result === r).length;
   return { games: list, won: count('W'), drawn: count('D'), lost: count('L') };
+}
+
+/**
+ * A team's record at one venue (the home side at home, the away side away): won / drawn / lost,
+ * goals for and against, and its last games there. From the league table when it splits home and
+ * away (the season), else from the team's recent results. null without data.
+ */
+export function normalizeVenue(results, teamId, atHome, row = null) {
+  const pick = (...keys) => { for (const k of keys) { const v = num(row?.[k]); if (v !== null) return v; } return null; };
+  const side = atHome ? 'home' : 'away';
+  const games = (Array.isArray(results) ? results : ['recentFixtures', 'recent', 'results', 'fixtures', 'matches', 'lastMatches'].map((k) => results?.[k]).find(Array.isArray) || [])
+    .map((f) => formGame(f, teamId)).filter((g) => g && g.home === atHome)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const goals = (g) => { const [x, y] = g.score.split(/\s*[-:]\s*/).map(Number); return Number.isFinite(x) && Number.isFinite(y) ? (atHome ? [x, y] : [y, x]) : [0, 0]; };
+  const won = pick(`${side}LeagueW`, `${side}_league_W`, `${side}W`);
+  const drawn = pick(`${side}LeagueD`, `${side}_league_D`, `${side}D`);
+  const lost = pick(`${side}LeagueL`, `${side}_league_L`, `${side}L`);
+  if (won !== null && drawn !== null && lost !== null) {
+    return { source: 'season', played: won + drawn + lost, won, drawn, lost,
+      goalsFor: pick(`${side}LeagueGF`, `${side}_league_GF`, `${side}GF`), goalsAgainst: pick(`${side}LeagueGA`, `${side}_league_GA`, `${side}GA`), games: games.slice(0, 5) };
+  }
+  if (!games.length) return null;
+  const list = games.slice(0, 10);
+  const count = (r) => list.filter((g) => g.result === r).length;
+  return { source: 'recent', played: list.length, won: count('W'), drawn: count('D'), lost: count('L'),
+    goalsFor: list.reduce((n, g) => n + goals(g)[0], 0), goalsAgainst: list.reduce((n, g) => n + goals(g)[1], 0), games: list.slice(0, 5) };
 }
 
 export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.com/v1', daily = 900, fetchImpl = globalThis.fetch, log = () => {} } = {}) {
@@ -354,7 +390,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
 
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
   async function insights(ev) {
-    const empty = { h2h: null, standings: null, form: null };
+    const empty = { h2h: null, standings: null, form: null, venue: null };
     if (!covers(ev)) return empty;
     const fx = await link(ev).catch(() => null);
     if (!fx) return empty;
@@ -367,10 +403,16 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     ]);
     const formHome = normalizeForm(home, fx.home.id);
     const formAway = normalizeForm(away, fx.away.id);
+    // Each side's row of the table (its home / away split, when the table has one).
+    const rowOf = (team) => (Array.isArray(table) ? table : []).find((r) => (team.id && String(r.teamId || r.team?.id) === String(team.id))
+      || loose(r.teamName || r.team?.name) === loose(team.name)) || null;
+    const venueHome = normalizeVenue(home, fx.home.id, true, rowOf(fx.home));
+    const venueAway = normalizeVenue(away, fx.away.id, false, rowOf(fx.away));
     return {
       h2h: normalizeH2H(h2h, ev),
       standings: normalizeStandings(table, fx),
       form: formHome || formAway ? { home: formHome, away: formAway } : null,
+      venue: venueHome || venueAway ? { home: venueHome, away: venueAway } : null,
     };
   }
 

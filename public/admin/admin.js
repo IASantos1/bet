@@ -360,6 +360,9 @@ function cashoutPanel({ config: c, totals: t, recent }) {
         <label class="adm-switch"><input type="checkbox" name="live"${c.live ? ' checked' : ''}> Ao vivo</label></div>
       <div class="adm-grid">${num('factor', 'Fator (0.95 = 5% de margem)', '0.01')}${num('minAgeSeconds', 'Só depois de (s) da aposta')}${num('liveDelaySeconds', 'Atraso de aceitação ao vivo (s)')}
         ${num('goalLockSeconds', 'Bloqueio após golo/ponto (s)')}${num('minValue', 'Valor mínimo (€)', '0.01')}${num('maxValue', 'Valor máximo por aposta (€)', '0.01', 'sem limite')}</div>
+      <h4>Ao vivo (mais restrito)</h4>
+      <div class="adm-grid">${num('liveFactor', 'Fator ao vivo (0.85 = 15% de margem)', '0.01')}${num('liveMinAgeSeconds', 'Ao vivo só depois de (s) da aposta')}
+        ${num('lateLockPct', 'Fecha na reta final (0.85 = a partir de 85% do tempo)', '0.01')}${num('liveMaxPct', 'Máximo do retorno potencial (0.9 = 90%)', '0.01')}</div>
       <div class="form-actions"><button class="primary-btn">Guardar regras</button></div>
     </form>
     <p class="muted">Só simples e múltiplas pagas com dinheiro real (não free bets, bónus nem criador de apostas). Suspenso com mercado fechado, preço ao vivo antigo ou anterior ao último golo, e com o jogo a começar/terminado. Se o valor baixar durante o atraso, o jogador confirma o novo valor. Não conta para o rollover.</p>
@@ -1263,7 +1266,7 @@ const handlers = {
   async 'cashout-config'(form) {
     const d = formData(form);
     const body = { enabled: form.enabled.checked, prematch: form.prematch.checked, live: form.live.checked };
-    for (const k of ['factor', 'minAgeSeconds', 'liveDelaySeconds', 'goalLockSeconds', 'minValue', 'maxValue']) body[k] = d[k] === '' ? null : Number(d[k]);
+    for (const k of ['factor', 'minAgeSeconds', 'liveDelaySeconds', 'goalLockSeconds', 'minValue', 'maxValue', 'liveFactor', 'liveMinAgeSeconds', 'lateLockPct', 'liveMaxPct']) body[k] = d[k] === '' ? null : Number(d[k]);
     await api('/api/admin/cashout', { method: 'PUT', body });
     toast('Guardado', 'Regras do cash out atualizadas.');
     loadTab();

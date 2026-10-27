@@ -3351,6 +3351,8 @@ document.addEventListener('click', async (e) => {
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
   const statTabBtn = e.target.closest('[data-stat-tab]');
   if (statTabBtn) { state.match.statTab = statTabBtn.dataset.statTab; render({ keepScroll: true }); return; }
+  const standBtn = e.target.closest('[data-stand-view]');
+  if (standBtn) { state.match.standView = standBtn.dataset.standView; render({ keepScroll: true }); return; }
 
   const remove = e.target.closest('[data-remove]');
   if (remove) {
@@ -4614,7 +4616,7 @@ function matchStatsView(e) {
   const ins = m.insights || {};
   const tabs = [];
   if (e.status !== 'scheduled') tabs.push(['aovivo', e.status === 'live' ? 'Ao vivo' : 'Jogo']);
-  if (ins.h2h || ins.form?.home || ins.form?.away) tabs.push(['h2h', 'H2H']);
+  if (ins.h2h || ins.form?.home || ins.form?.away || ins.venue) tabs.push(['h2h', 'H2H']);
   if (ins.standings?.rows?.length) tabs.push(['classificacao', 'Classificação']);
   if (!tabs.length) {
     return ins.loading ? '<div class="loading">A carregar estatísticas…</div>' : '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
@@ -4645,15 +4647,40 @@ function h2hView(e, ins) {
       ${f.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
     </div>`;
   };
-  return `<div class="insight-stack">${direct}${form('home')}${form('away')}</div>`;
+  return `<div class="insight-stack">${direct}${venueView(e, ins.venue)}${form('home')}${form('away')}</div>`;
+}
+
+/** At home and away: the home side's record at home next to the away side's record away. */
+function venueView(e, v) {
+  if (!v) return '';
+  const side = (s, name, where) => {
+    if (!s) return `<div class="venue-col"><h4>${esc(name)} <small class="muted">${where}</small></h4><p class="muted">Sem dados.</p></div>`;
+    const pct = (n) => (s.played ? Math.round((n / s.played) * 100) : 0);
+    return `<div class="venue-col"><h4>${esc(name)} <small class="muted">${where}</small></h4>
+      <div class="form-sum"><span class="fr W">${s.won} V</span><span class="fr D">${s.drawn} E</span><span class="fr L">${s.lost} D</span></div>
+      <div class="h2h-bar"><i class="h" data-w="${pct(s.won)}"></i><i class="d" data-w="${pct(s.drawn)}"></i><i class="l" data-w="${pct(s.lost)}"></i></div>
+      <p class="muted h2h-goals">${s.source === 'season' ? 'Época' : `Últimos ${s.played} jogos`}: ${pct(s.won)}% de vitórias${s.goalsFor !== null && s.goalsFor !== undefined ? ` · golos ${s.goalsFor}-${s.goalsAgainst}` : ''}</p>
+      ${s.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
+    </div>`;
+  };
+  return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, e.home, 'em casa')}${side(v.away, e.away, 'fora')}</div></div>`;
 }
 
 function standingsView(e, t) {
   const key = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const side = (r) => r.side || (key(r.team) === key(e.home) ? 'home' : key(r.team) === key(e.away) ? 'away' : null);
-  return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3><div class="table-wrap"><table class="standings">
+  // Geral / Casa / Fora: the same table, with each team's games at home or away only (when the
+  // league table splits them), ranked by those points.
+  const split = t.rows.some((r) => r.home && r.away);
+  const view = split && ['home', 'away'].includes(state.match.standView) ? state.match.standView : 'all';
+  const rows = view === 'all' ? t.rows : t.rows.filter((r) => r[view]).map((r) => ({ ...r, ...r[view] }))
+    .sort((x, y) => (y.points - x.points) || ((y.goalsFor - y.goalsAgainst) - (x.goalsFor - x.goalsAgainst)) || (y.goalsFor - x.goalsFor))
+    .map((r, i) => ({ ...r, position: i + 1 }));
+  const menu = split ? `<div class="market-cats stand-tabs">${[['all', 'Geral'], ['home', 'Casa'], ['away', 'Fora']]
+    .map(([k, l]) => `<button class="${view === k ? 'active' : ''}" data-stand-view="${k}">${l}</button>`).join('')}</div>` : '';
+  return `<div class="panel"><h3>${esc(t.name || 'Classificação')}</h3>${menu}<div class="table-wrap"><table class="standings">
     <thead><tr><th>#</th><th>Equipa</th><th class="num">J</th><th class="num"><span class="fr W">V</span></th><th class="num"><span class="fr D">E</span></th><th class="num"><span class="fr L">D</span></th><th class="num">G</th><th class="num">Pts</th></tr></thead>
-    <tbody>${t.rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td class="st-team">${esc(r.team)}</td><td class="num">${r.played ?? ''}</td>
+    <tbody>${rows.map((r) => `<tr class="${side(r) ? 'ours' : ''}"><td>${r.position}</td><td class="st-team">${esc(r.team)}</td><td class="num">${r.played ?? ''}</td>
       <td class="num"><span class="fr W">${r.won ?? 0}</span></td><td class="num"><span class="fr D">${r.drawn ?? 0}</span></td><td class="num"><span class="fr L">${r.lost ?? 0}</span></td>
       <td class="num">${r.goalsFor ?? ''}-${r.goalsAgainst ?? ''}</td><td class="num"><b>${r.points ?? ''}</b></td></tr>`).join('')}</tbody>
   </table></div></div>`;

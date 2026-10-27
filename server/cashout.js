@@ -9,6 +9,9 @@
 //   · on/off for everything, and separately before the start and in play;
 //   · only real-money singles and multiples (not free bets, bonus money or bet builders);
 //   · never in the first `minAgeSeconds` after the bet is placed (no cash out on a stale price);
+//   · in play it is harder: its own margin (`liveFactor`), only `liveMinAgeSeconds` after the bet,
+//     closed from `lateLockPct` of a clock sport's regulation time (85% = from the 77th minute in
+//     football) and never above `liveMaxPct` of the potential return;
 //   · every open leg needs an open price: before the start, or in play with a live price newer than
 //     the last score change and at least `goalLockSeconds` after it (no cash out around a goal);
 //   · in play the request waits `liveDelaySeconds` and the value is worked out again (as bets in
@@ -24,12 +27,22 @@ import { postTransaction } from './wallet.js';
 
 export const CASHOUT_DEFAULTS = {
   enabled: config.cashout.enabled, prematch: true, live: true, factor: config.cashout.factor,
-  minAgeSeconds: 30, liveDelaySeconds: 5, goalLockSeconds: 30, minValue: 0.1, maxValue: null,
+  minAgeSeconds: 30, liveDelaySeconds: 8, goalLockSeconds: 90, minValue: 0.1, maxValue: null,
+  // In play it is harder: a bigger margin, only some minutes after the bet, closed in the last part
+  // of the game, and never more than a share of the potential return.
+  liveFactor: 0.85, liveMinAgeSeconds: 180, lateLockPct: 0.85, liveMaxPct: 0.9,
 };
+
+// Regulation length (minutes) of the clock sports: in play, cash out closes at `lateLockPct` of it.
+const GAME_MINUTES = { futebol: 90, futsal: 40, andebol: 60, hoquei: 60, raguebi: 80, futamericano: 60 };
+const gameMinutes = (sport, competition) => (sport === 'basquetebol' ? (/\bNBA\b/i.test(competition || '') ? 48 : 40) : GAME_MINUTES[sport] ?? null);
 
 export const cashoutConfig = (db) => ({ ...CASHOUT_DEFAULTS, ...(getSetting(db, 'cashout.config', {}) || {}) });
 
-const LIMITS = { factor: [0.5, 1], minAgeSeconds: [0, 3600], liveDelaySeconds: [0, 30], goalLockSeconds: [0, 600], minValue: [0, 10_000], maxValue: [1, 1_000_000, true] };
+const LIMITS = {
+  factor: [0.5, 1], minAgeSeconds: [0, 3600], liveDelaySeconds: [0, 30], goalLockSeconds: [0, 600], minValue: [0, 10_000], maxValue: [1, 1_000_000, true],
+  liveFactor: [0.5, 1], liveMinAgeSeconds: [0, 3600], lateLockPct: [0.3, 1], liveMaxPct: [0.3, 1],
+};
 export function saveCashoutConfig(db, input) {
   const c = cashoutConfig(db);
   for (const k of ['enabled', 'prematch', 'live']) if (input?.[k] !== undefined) c[k] = !!input[k];
@@ -47,7 +60,7 @@ export function saveCashoutConfig(db, input) {
 
 const legsOf = (db, betId) => db.prepare(
   `SELECT l.status AS leg_status, l.odds_x100 AS taken, s.odds_x100 AS now, s.active, s.src,
-          e.status AS ev_status, e.start_time, e.source, e.live_odds_at, e.pl_live_at, e.score_at
+          e.status AS ev_status, e.start_time, e.source, e.live_odds_at, e.pl_live_at, e.score_at, e.sport, e.competition, e.wh_minute
      FROM bet_legs l JOIN selections s ON s.id = l.selection_id JOIN events e ON e.id = l.event_id WHERE l.bet_id = ?`
 ).all(betId);
 
@@ -74,6 +87,9 @@ export function cashoutOffer(db, bet, { now = Date.now(), cfg = cashoutConfig(db
     } else if (l.ev_status === 'live') {
       if (!cfg.live) return { status: 'unavailable', reason: 'Cash out indisponível ao vivo' };
       live = true;
+      // The last part of the game: closed (the result is near).
+      const len = gameMinutes(l.sport, l.competition);
+      if (len && Number(l.wh_minute) >= len * cfg.lateLockPct) return { status: 'suspended', reason: 'Fechado na reta final do jogo' };
       if (l.source !== 'manual') {
         const liveAt = new Date((l.src === 'pl' ? l.pl_live_at : l.live_odds_at) || 0).getTime();
         const scoreAt = l.score_at ? new Date(l.score_at).getTime() : 0;
@@ -87,8 +103,11 @@ export function cashoutOffer(db, bet, { now = Date.now(), cfg = cashoutConfig(db
     }
     current *= l.now / 100;
   }
+  // In play: only some minutes after the bet, a bigger margin and at most a share of the potential return.
+  if (live && age < cfg.liveMinAgeSeconds) return { status: 'suspended', reason: `Ao vivo, disponível ${Math.ceil((cfg.liveMinAgeSeconds - age) / 60)} min depois de apostar` };
   const fair = Math.floor(bet.stake_cents * (taken / current));
-  let value = Math.min(bet.potential_cents, Math.floor(fair * cfg.factor));
+  let value = Math.min(bet.potential_cents, Math.floor(fair * (live ? cfg.liveFactor : cfg.factor)));
+  if (live) value = Math.min(value, Math.floor(bet.potential_cents * cfg.liveMaxPct));
   if (cfg.maxValue) value = Math.min(value, Math.round(cfg.maxValue * 100));
   if (value < Math.round(cfg.minValue * 100)) return { status: 'unavailable', reason: 'Valor demasiado baixo' };
   return { status: 'available', valueCents: value, fairCents: fair, live };
