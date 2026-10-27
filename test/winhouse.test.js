@@ -1252,3 +1252,12 @@ test('corners and cards: decided in play settle at once (a lost leg loses the ti
   assert.deepEqual([t.betStatus(overCards), t.betStatus(underCards)], ['lost', 'won']);
   assert.deepEqual(await t.feed.finalStats({ now: Date.now() + 200_000 }), { asked: 0, settled: 0 }); // nothing left
 });
+
+test('a game left out is noted with its league and why (admin → Ligas recusadas)', async () => {
+  const { normalizeItem, skippedLeagues, footballLeagues } = await import('../server/winhouse.js');
+  const ev = { id: 7, sport_id: 1, league: 'Argentina. Torneo Raro. Fecha 5', name: 'Boca - River', home_team: 'Boca', away_team: 'River', game_date: '2030-01-01', game_time: '20:00' };
+  assert.equal(normalizeItem(ev, { block: { leagues: footballLeagues('') } }), null);
+  const row = skippedLeagues('argentina').find((x) => x.league === ev.league);
+  assert.deepEqual([row.sport, row.reason, row.games, row.example], ['futebol', 'liga fora da lista', 1, 'Boca - River']);
+  assert.equal(skippedLeagues('paraguay').some((x) => x.league === ev.league), false);
+});

@@ -1227,6 +1227,8 @@ function winhousePanel(w) {
       <button class="ghost-btn btn-sm" data-action="winhouse-video">Ver vídeo (HLS)</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-discover">Descobrir rotas</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
+      <div class="form-actions"><label class="field adm-inline">Procurar liga (ex.: Argentina) <input id="whSkipQ" maxlength="60"></label>
+      <button class="ghost-btn btn-sm" data-action="winhouse-skipped">Ligas recusadas</button></div>
       <pre class="raw-odds hidden" id="whOut"></pre>` : ''}
     ${w?.enabled ? `<h4>Revisão VAR na WinHouse</h4>${w.varSeen?.length
     ? `<p>✅ A WinHouse já enviou VAR (${w.varSeen.length} exemplo(s)). Copie e envie para o ligarmos ao minicampo:</p><pre class="raw-odds">${esc(JSON.stringify(w.varSeen, null, 2))}</pre>`
@@ -1861,6 +1863,15 @@ document.addEventListener('click', async (e) => {
       toast(actionEl.dataset.now === '1' && f?.at ? `Jogos futuros: ${f.games} jogos até ${r.futureDays} dias` : `Guardado: ${r.futureDays} dias`);
       render();
     } catch (err) { toast('Erro', err.message, 'error'); } finally { actionEl.disabled = false; }
+  } else if (action === 'winhouse-skipped') {
+    // The competitions WinHouse sent that the site left out, with the reason and a game of each.
+    const box = $('#whOut');
+    try {
+      const { leagues } = await api(`/api/admin/winhouse/skipped?q=${encodeURIComponent($('#whSkipQ')?.value.trim() || '')}`);
+      box.textContent = leagues.length ? leagues.map((l) => `${l.sport} · ${l.league} — ${l.reason} (${l.games} jogo(s), ex.: ${l.example})`).join('\n')
+        : 'Nenhuma liga recusada desde o último arranque do servidor.';
+      box.classList.remove('hidden');
+    } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'winhouse-health') {
     const box = $('#whOut');
     actionEl.disabled = true;

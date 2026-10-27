@@ -291,8 +291,8 @@ function oddsButtons(e, { labels = 'code' } = {}) {
     // Nothing open (goal, penalty, card, VAR…): suspended until the book reopens.
     if (!open.length) return '<div class="odds-state suspended" aria-disabled="true">Suspenso</div>';
   }
-  // No main market but others to bet on: straight to them.
-  if (!sels.length && e.marketCount > 0 && isOpen(e)) return `<a class="odds-state bet-now" href="#/jogo/${e.id}">Ver mercados (+${e.marketCount})</a>`;
+  // No main market but others to bet on (pre-match too): straight to them, as in play.
+  if (!sels.length && e.marketCount > 0 && isOpen(e)) return `<a class="odds-state bet-now" href="#/jogo/${e.id}">Aposte já</a>`;
   if (!sels.length) return '<div class="odds-off">Apostas indisponíveis neste jogo</div>';
   return `<div class="odds${sels.length === 2 ? ' two' : ''}">${sels.map((s) => {
     const prev = state.previousOdds.get(s.id);

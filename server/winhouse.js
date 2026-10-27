@@ -670,19 +670,44 @@ export function liveGamesByRank(evs) {
  * { sport: Set of keys } (a Set alone: football's). A competition listed by name is shown even when
  * it is a women's one (WTA, "… Women"): it was picked on purpose.
  */
-export function blockedGame(ev, { women = true, youth = true, minor = true, extra = null, leagues = null } = {}) {
+export function blockedGame(ev, block = {}) { return !!blockReason(ev, block); }
+
+/** Why a game is left out: 'liga fora da lista', 'feminino', 'formação', 'virtual / menor', 'termo bloqueado'; null when it is taken in. */
+export function blockReason(ev, { women = true, youth = true, minor = true, extra = null, leagues = null } = {}) {
   const text = [ev?.league, ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ');
   const sport = ev?.sport || SPORTS[Number(ev?.sport_id)];
   const allow = leagues instanceof Set ? (sport === 'futebol' ? leagues : null) : leagues?.[sport] || null;
   const k = leagueKey(ev?.league);
-  if (allow && !allow.has(k)) return true;
+  if (allow && !allow.has(k)) return 'liga fora da lista';
   // Listed: the competition's own name does not count for the women's filter (the teams still do).
   // A league taken in only for its country is not "listed": "Germany. BBL Women" stays out.
   const listed = allow && (typeof allow.listed !== 'function' || allow.listed(k));
   const womenText = listed ? [ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ') : text;
-  return (women && WOMEN.test(womenText)) || (youth && YOUTH.test(text))
-    || (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text))))
-    || (!!extra && extra.test(text));
+  if (women && WOMEN.test(womenText)) return 'feminino';
+  if (youth && YOUTH.test(text)) return 'formação';
+  if (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text)))) return 'virtual / menor';
+  if (extra && extra.test(text)) return 'termo bloqueado';
+  return null;
+}
+
+// The competitions WinHouse sent that were left out (admin → Feed → "Ligas recusadas"), to see the
+// exact name of a league that does not show up and why.
+const skipped = new Map();
+function noteSkipped(ev, reason) {
+  const sport = SPORTS[Number(ev.sport_id)];
+  const k = `${sport}|${ev.league}|${reason}`;
+  const cur = skipped.get(k) || { sport, league: String(ev.league || '').slice(0, 120), reason, games: 0, example: null };
+  cur.games += 1;
+  cur.example = String(ev.name || `${ev.home_team || ''} - ${ev.away_team || ''}`).slice(0, 100);
+  cur.at = new Date().toISOString();
+  skipped.set(k, cur);
+  if (skipped.size > 3000) skipped.delete(skipped.keys().next().value);
+}
+/** The competitions left out, the most games first (optionally only those whose name has `q`). */
+export function skippedLeagues(q = '') {
+  const want = leagueKey(q);
+  return [...skipped.values()].filter((x) => !want || leagueKey(`${x.league} ${x.example}`).includes(want))
+    .sort((a, b) => b.games - a.games).slice(0, 300);
 }
 
 const x100 = (p) => { const n = Math.round(Number(p) * 100); return Number.isFinite(n) && n > 100 && n < 100_000 ? n : null; };
@@ -820,7 +845,8 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
   if (!ev || typeof ev !== 'object' || ev.id === undefined) return null;
   const sport = SPORTS[Number(ev.sport_id)];
   if (!sport) return null;
-  if (block && blockedGame(ev, block)) return null;
+  const why = block && blockReason(ev, block);
+  if (why) { noteSkipped(ev, why); return null; }
   const [n1, n2] = String(ev.name || '').split(/\s+-\s+/);
   // Names in Chinese characters come in Latin letters (the club's usual name when we know it).
   const home = readableTeam(String(ev.home_team || n1 || '').trim(), sport).slice(0, 80);
