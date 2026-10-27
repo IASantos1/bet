@@ -236,13 +236,21 @@ export function weekOf(ms) {
 // ---------- ledger / log ----------
 
 /** One promotional ledger line; returns false when (type, ref) was already recorded. */
-function ledger(db, { userId, bonusId = null, freebetId = null, type, amount, balanceAfter = null, description, ref = null }) {
+export function ledger(db, { userId, bonusId = null, freebetId = null, type, amount, balanceAfter = null, description, ref = null }) {
   const r = db.prepare(`INSERT OR IGNORE INTO promo_ledger (user_id, bonus_id, freebet_id, type, amount_cents, balance_after_cents, description, ref, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(userId, bonusId, freebetId, type, amount, balanceAfter, description, ref, nowIso());
   return r.changes > 0;
 }
-function log(db, userId, campaign, ref, outcome, reason = null) {
+export function log(db, userId, campaign, ref, outcome, reason = null) {
   db.prepare('INSERT INTO promo_log (user_id, campaign, ref, outcome, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(userId, campaign, ref, outcome, reason, nowIso());
+}
+/**
+ * One line of the Free Spins technical history (fs_audit). A provider transaction is written once
+ * per action: false when it was already there (the caller then does nothing twice).
+ */
+export function fsAudit(db, { spinsId = null, userId, action, txId = null, round = null, cents = 0, spinsLeft = null, detail = null }) {
+  return db.prepare(`INSERT OR IGNORE INTO fs_audit (spins_id, user_id, action, tx_id, round_id, cents, spins_left, detail, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(spinsId, userId, action, txId, round, cents, spinsLeft, detail, nowIso()).changes > 0;
 }
 
 // ---------- eligibility ----------
@@ -351,7 +359,7 @@ export function onDeposit(db, { userId, amountCents, ref, method = null, optIn =
 // ---------- casino free spins ----------
 
 export const spinsRow = (db, id, userId) => db.prepare('SELECT * FROM casino_spins WHERE id = ? AND user_id = ?').get(id, userId);
-const activeSpins = (db, userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
+export const activeSpins = (db, userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
 
 /** The free spins a deposit of `amountCents` would get now (the highest tier it reaches, up to maxDeposit). */
 export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = null } = {}) {
@@ -381,6 +389,7 @@ function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
   if (!r.changes) return null;
   const id = Number(r.lastInsertRowid);
   ledger(db, { userId, type: 'free_spin_credit', amount: offer.valueCents, balanceAfter: offer.valueCents, description: `${offer.spins} Free Spins creditadas (€${(offer.valueCents / 100).toFixed(2)})`, ref: `fs:${id}` });
+  fsAudit(db, { spinsId: id, userId, action: 'grant', cents: offer.valueCents, spinsLeft: offer.spins, detail: `depósito ${ref}` });
   log(db, userId, 'casinoFs', ref, 'granted');
   return { kind: 'casinoFs', ...db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id) };
 }
@@ -405,11 +414,12 @@ export function grantAdminSpins(db, userId, { spins, spinValueCents, days = 7, r
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`).run(userId, ref, n, n, spinValueCents, value, value, JSON.stringify(c.games), JSON.stringify(bets),
     new Date(Date.parse(now) + Math.min(365, Math.max(1, Number(days) || 7)) * DAY).toISOString(), now).lastInsertRowid);
   ledger(db, { userId, type: 'free_spin_credit', amount: value, balanceAfter: value, description: `${n} Free Spins do administrador (€${(value / 100).toFixed(2)})${note ? ` — ${note}` : ''}`, ref: `fs:${id}` });
+  fsAudit(db, { spinsId: id, userId, action: 'grant', cents: value, spinsLeft: n, detail: `administrador${note ? `: ${note}` : ''}` });
   log(db, userId, 'casinoFs', ref, 'granted', 'administrador');
   return db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id);
 }
 
-const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
+export const spinGames = (s) => { try { return JSON.parse(s.games) || []; } catch { return []; } };
 /** The games these free spins can be played in now: the one the player picked, else all eligible. */
 export const playableGames = (s) => (s.chosen_game ? [s.chosen_game] : spinGames(s));
 const spinBets = (s) => { try { return JSON.parse(s.game_bets || '{}') || {}; } catch { return {}; } };
@@ -430,8 +440,26 @@ export const spinsBalance = (s) => s.balance_cents;
 export function closeSpins(db, s, status = 'closed', reason = null) {
   if (s.status !== 'active') return 0;
   const win = asValue(s) ? s.won_cents : Math.max(0, s.balance_cents - s.value_cents);
+  const rule = conversionOf(s);
+  // An approved wagering rule: the winnings wait apart (pending) until it is met, never as real money now.
+  if (win > 0 && rule.type === 'wagering') {
+    const until = new Date(Date.now() + rule.days * DAY).toISOString();
+    db.prepare(`UPDATE casino_spins SET status = ?, balance_cents = 0, paid_cents = 0, ended_at = ?, cancel_reason = ?, pending_cents = ?,
+      wager_required_cents = ?, wager_done_cents = 0, wager_until = ?, wager_status = 'pending' WHERE id = ? AND status = 'active'`)
+      .run(status, nowIso(), reason, win, Math.round(win * rule.multiplier), until, s.id);
+    ledger(db, { userId: s.user_id, type: 'free_spin_pending', amount: win, description: `Ganhos das Free Spins pendentes: apostar €${(Math.round(win * rule.multiplier) / 100).toFixed(2)} até ${until.slice(0, 10)}`, ref: `fspend:${s.id}` });
+    fsAudit(db, { spinsId: s.id, userId: s.user_id, action: 'pending', cents: win, spinsLeft: s.spins_left ?? 0, detail: `requisito ${rule.multiplier}× = ${Math.round(win * rule.multiplier)} cêntimos até ${until}` });
+    if (s.balance_cents > 0 || status === 'expired') {
+      ledger(db, { userId: s.user_id, type: status === 'expired' ? 'free_spin_expiry' : 'free_spin_used', amount: -s.balance_cents, balanceAfter: 0,
+        description: status === 'expired' ? 'Free Spins expiradas' : 'Free Spins terminadas', ref: `fsend:${s.id}` });
+    }
+    fsAudit(db, { spinsId: s.id, userId: s.user_id, action: status === 'closed' ? 'completed' : status, spinsLeft: s.spins_left ?? 0, detail: reason });
+    log(db, s.user_id, 'casinoFs', s.ref, status, reason);
+    return 0;
+  }
   db.prepare('UPDATE casino_spins SET status = ?, balance_cents = 0, paid_cents = ?, ended_at = ?, cancel_reason = ? WHERE id = ? AND status = ?')
     .run(status, win, nowIso(), reason, s.id, 'active');
+  fsAudit(db, { spinsId: s.id, userId: s.user_id, action: status === 'closed' ? 'completed' : status, cents: win, spinsLeft: s.spins_left ?? 0, detail: reason });
   if (win > 0) {
     postTransaction(db, s.user_id, win, 'free_spin_win', 'Ganhos das Free Spins', `fs:${s.id}`);
     ledger(db, { userId: s.user_id, type: 'free_spin_win', amount: win, description: 'Ganhos das Free Spins pagos em saldo real', ref: `fswin:${s.id}` });
@@ -454,8 +482,14 @@ export function spinsMove(db, user, spinsId, move) {
   if (!s) return { error: 'unknown user', balance: 0 };
   if (s.status === 'active' && s.expires_at <= nowIso()) { closeSpins(db, s, 'expired', 'prazo terminado'); s = spinsRow(db, spinsId, user.id); }
   if (s.status !== 'active') {
+    // A cancelled spin after the end: its stake was promotional money, nothing is paid.
+    if (move.cents > 0 && isRollback(move)) {
+      fsAudit(db, { spinsId: s.id, userId: user.id, action: 'rollback', txId: move.txId, round: move.round, cents: move.cents, detail: 'depois do fim: não pago' });
+      return { balance: 0 };
+    }
     // A win of a round that was open when the free spins ended: paid as winnings (real money).
     if (move.cents > 0) {
+      fsAudit(db, { spinsId: s.id, userId: user.id, action: 'win', txId: move.txId, round: move.round, cents: move.cents, detail: 'ganho tardio pago em saldo real' });
       postTransaction(db, user.id, move.cents, 'free_spin_win', 'Ganhos das Free Spins', `casino:${move.txId}`);
       ledger(db, { userId: user.id, type: 'free_spin_win', amount: move.cents, description: 'Ganho de Free Spins depois de terminadas', ref: move.txId });
     }
@@ -485,28 +519,60 @@ export function spinsMove(db, user, spinsId, move) {
  */
 function spinValueMove(db, user, s, move) {
   const shown = () => spinsBalance(spinsRow(db, s.id, user.id));
+  const refuse = (error, detail) => {
+    fsAudit(db, { spinsId: s.id, userId: user.id, action: 'refused', txId: move.txId, round: move.round, cents: move.cents, spinsLeft: s.spins_left, detail: detail || error });
+    return { error, balance: spinsBalance(s) };
+  };
   if (move.cents < 0) {
     const stake = -move.cents;
-    if (!move.gameId || !playableGames(s).includes(move.gameId)) return { error: 'game not eligible for free spins', balance: spinsBalance(s) };
-    if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return { error: 'account not allowed', balance: spinsBalance(s) };
+    if (s.suspended_at) return refuse('free spins suspended', 'Free Spins suspensas');
+    if (!move.gameId || !playableGames(s).includes(move.gameId)) return refuse('game not eligible for free spins', `jogo ${move.gameId} não elegível`);
+    if (user.banned_at || (user.excluded_until && user.excluded_until > nowIso())) return refuse('account not allowed');
     const bet = spinBet(s, move.gameId);
-    if (stake > bet) {
+    // A fixed bet per spin: any other amount is refused before anything is taken (no spin used).
+    if (stake !== bet) {
       db.prepare('UPDATE casino_spins SET bet_warn_at = ? WHERE id = ?').run(nowIso(), s.id); // the game page tells the player
-      return { error: `free spins: each spin is €${(bet / 100).toFixed(2)}`, balance: spinsBalance(s) };
+      return refuse(fixedBetMessage(bet), `aposta €${(stake / 100).toFixed(2)} ≠ €${(bet / 100).toFixed(2)}`);
     }
-    if (s.spins_left < 1) return { error: 'free spins used up', balance: spinsBalance(s) };
-    db.prepare('UPDATE casino_spins SET spins_left = spins_left - 1, balance_cents = (spins_left - 1) * spin_value_cents WHERE id = ?').run(s.id);
+    // One spin, taken at most once: never below zero, and two bets at once cannot both take the last one.
+    const r = db.prepare('UPDATE casino_spins SET spins_left = spins_left - 1, balance_cents = (spins_left - 1) * spin_value_cents WHERE id = ? AND spins_left >= 1').run(s.id);
+    if (!r.changes) return refuse('free spins used up', 'sem rodadas');
+    fsAudit(db, { spinsId: s.id, userId: user.id, action: 'spin', txId: move.txId, round: move.round, cents: move.cents, spinsLeft: s.spins_left - 1, detail: move.game });
+  } else if (move.cents > 0 && isRollback(move)) {
+    // A spin the provider cancelled: its spin comes back (once), it is not a win.
+    const spun = move.round && db.prepare("SELECT 1 FROM fs_audit WHERE spins_id = ? AND action = 'spin' AND round_id = ?").get(s.id, move.round);
+    const again = move.round && db.prepare("SELECT 1 FROM fs_audit WHERE spins_id = ? AND action = 'rollback' AND round_id = ?").get(s.id, move.round);
+    if (spun && !again) {
+      db.prepare('UPDATE casino_spins SET spins_left = MIN(spins, spins_left + 1), balance_cents = MIN(spins, spins_left + 1) * spin_value_cents WHERE id = ?').run(s.id);
+    }
+    fsAudit(db, { spinsId: s.id, userId: user.id, action: 'rollback', txId: move.txId, round: move.round, cents: move.cents, spinsLeft: spinsRow(db, s.id, user.id).spins_left, detail: spun && !again ? 'rodada devolvida' : 'sem rodada a devolver' });
+    return { balance: shown() };
   } else if (move.cents > 0) {
+    // What a spin won is kept apart: it never buys spins back.
     db.prepare('UPDATE casino_spins SET won_cents = won_cents + ? WHERE id = ?').run(move.cents, s.id);
+    fsAudit(db, { spinsId: s.id, userId: user.id, action: 'win', txId: move.txId, round: move.round, cents: move.cents, spinsLeft: s.spins_left, detail: move.game });
   }
   const now = spinsRow(db, s.id, user.id);
   if (move.cents !== 0) {
     ledger(db, { userId: user.id, type: move.cents < 0 ? 'free_spin_used' : 'free_spin_win', amount: move.cents, balanceAfter: spinsBalance(now),
       description: `Free Spins · ${move.game}`, ref: move.txId });
   }
-  // Every spin played and the round over: they end, winnings paid.
+  // Every spin played and the round over: they end (winnings paid or set pending by the rule).
   if (now.spins_left < 1 && move.roundEnd !== 0) closeSpins(db, now, 'closed', 'Free Spins utilizadas');
   return { balance: shown() };
+}
+
+/** A provider move that cancels an earlier bet (rollback / refund), not a win. */
+const isRollback = (move) => /rollback|refund|cancel/i.test(String(move.type || ''));
+/** What the player is told when the bet is not the promotion's fixed bet. */
+export const fixedBetMessage = (betCents) => `Esta promoção utiliza uma aposta fixa de ${(betCents / 100).toFixed(2).replace('.', ',')} € por rodada. Ajusta o valor da aposta para continuar.`;
+/** The conversion rule of a grant: { type: 'none' } (winnings paid when it ends) or an approved wagering rule. */
+export function conversionOf(s) {
+  try {
+    const c = JSON.parse(s.conversion || 'null');
+    if (c?.type === 'wagering' && c.multiplier > 0 && c.days > 0) return c;
+  } catch { /* none */ }
+  return { type: 'none' };
 }
 
 /**
@@ -572,7 +638,66 @@ export const spinsView = (s, gameName = () => null) => ({
   spinsLeft: asValue(s) ? s.spins_left : Math.floor(Math.min(s.balance_cents, s.value_cents) / s.spin_value_cents),
   winnings: (asValue(s) ? s.won_cents : Math.max(0, s.balance_cents - s.value_cents)) / 100, paid: s.paid_cents / 100, expiresAt: s.expires_at, createdAt: s.created_at,
   endedAt: s.ended_at, reason: s.cancel_reason, chosenGame: s.chosen_game || null, games: spinGames(s).map((id) => ({ id, name: gameName(id), bet: spinBet(s, id) / 100 })),
+  // ACTIVE / SUSPENDED / COMPLETED / EXPIRED / CANCELLED, and the winnings under a wagering rule.
+  state: spinsState(s), promotionId: s.promotion_id || null, conversion: conversionOf(s),
+  wager: s.wager_status ? { status: s.wager_status, pending: s.pending_cents / 100, required: (s.wager_required_cents || 0) / 100,
+    done: s.wager_done_cents / 100, until: s.wager_until, converted: s.converted_cents / 100 } : null,
 });
+/** The state a grant is shown with. */
+export const spinsState = (s) => (s.status === 'active' ? (s.suspended_at ? 'SUSPENDED' : 'ACTIVE')
+  : { closed: 'COMPLETED', expired: 'EXPIRED', cancelled: 'CANCELLED' }[s.status] || s.status.toUpperCase());
+
+// ---------- Free Spins winnings under a wagering rule ----------
+
+/** Pending winnings forfeited (the rule's time ran out, or the account's promotions were cancelled). */
+function forfeitPending(db, s, reason) {
+  const r = db.prepare("UPDATE casino_spins SET wager_status = 'forfeited', pending_cents = 0 WHERE id = ? AND wager_status = 'pending'").run(s.id);
+  if (!r.changes) return;
+  ledger(db, { userId: s.user_id, type: 'free_spin_forfeit', amount: -s.pending_cents, description: `Ganhos pendentes das Free Spins perdidos: ${reason}`, ref: `fsforfeit:${s.id}` });
+  fsAudit(db, { spinsId: s.id, userId: s.user_id, action: 'forfeited', cents: -s.pending_cents, detail: reason });
+}
+
+/** The rule met: the pending winnings become real money (once). */
+function convertPending(db, s) {
+  const r = db.prepare("UPDATE casino_spins SET wager_status = 'converted', converted_cents = pending_cents, pending_cents = 0, paid_cents = pending_cents WHERE id = ? AND wager_status = 'pending'").run(s.id);
+  if (!r.changes) return 0;
+  postTransaction(db, s.user_id, s.pending_cents, 'free_spin_win', 'Ganhos das Free Spins: requisito de aposta cumprido', `fsconv:${s.id}`);
+  ledger(db, { userId: s.user_id, type: 'free_spin_convert', amount: s.pending_cents, description: 'Requisito cumprido: ganhos das Free Spins em saldo real', ref: `fsconv:${s.id}` });
+  fsAudit(db, { spinsId: s.id, userId: s.user_id, action: 'converted', cents: s.pending_cents, detail: `apostado ${s.wager_done_cents} de ${s.wager_required_cents}` });
+  return s.pending_cents;
+}
+
+/** A game counts for a grant's wagering rule: any game, or the grant's eligible games. */
+const wagerGameOk = (s, rule, gameId) => rule.games !== 'eligible' || spinGames(s).includes(Number(gameId));
+
+/**
+ * A real-money casino bet (accepted and debited): counted once (by its transaction) towards every
+ * pending wagering rule of the player it is eligible for, up to the rule's counted maximum per bet;
+ * a rule met converts its winnings. Returns the cents converted.
+ */
+export function countCasinoWager(db, userId, { txId, round = null, gameId = null, stakeCents }) {
+  if (!(stakeCents > 0) || !txId) return 0;
+  let paid = 0;
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND wager_status = 'pending' AND wager_until > ? ORDER BY id").all(userId, nowIso())) {
+    const rule = conversionOf(s);
+    if (!wagerGameOk(s, rule, gameId)) continue;
+    const counted = rule.maxCountCents ? Math.min(stakeCents, rule.maxCountCents) : stakeCents;
+    if (!fsAudit(db, { spinsId: s.id, userId, action: 'wager', txId: `${txId}#${s.id}`, round, cents: counted, detail: `jogo ${gameId}` })) continue;
+    db.prepare('UPDATE casino_spins SET wager_done_cents = wager_done_cents + ? WHERE id = ?').run(counted, s.id);
+    const now = db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(s.id);
+    if (now.wager_done_cents >= now.wager_required_cents) paid += convertPending(db, now);
+  }
+  return paid;
+}
+
+/** A real-money bet the provider cancelled (rollback / refund): what it counted is taken back, once. */
+export function undoCasinoWager(db, userId, { txId, round }) {
+  if (!round) return;
+  for (const w of db.prepare("SELECT * FROM fs_audit WHERE user_id = ? AND action = 'wager' AND round_id = ?").all(userId, round)) {
+    if (!fsAudit(db, { spinsId: w.spins_id, userId, action: 'wager_undo', txId: `${txId}#${w.spins_id}`, round, cents: -w.cents, detail: 'aposta anulada pelo fornecedor' })) continue;
+    db.prepare("UPDATE casino_spins SET wager_done_cents = MAX(0, wager_done_cents - ?) WHERE id = ? AND wager_status = 'pending'").run(w.cents, w.spins_id);
+  }
+}
 
 // ---------- bonus money ----------
 
@@ -641,8 +766,11 @@ export function cancelUserPromos(db, userId, reason) {
   for (const s of db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active'").all(userId)) {
     db.prepare("UPDATE casino_spins SET status = 'cancelled', balance_cents = 0, ended_at = ?, cancel_reason = ? WHERE id = ?").run(nowIso(), reason, s.id);
     ledger(db, { userId, type: 'bonus_cancel', amount: -s.balance_cents, balanceAfter: 0, description: `Free Spins canceladas: ${reason}`, ref: `fscancel:${s.id}` });
+    fsAudit(db, { spinsId: s.id, userId, action: 'cancelled', cents: -s.balance_cents, spinsLeft: s.spins_left, detail: reason });
     log(db, userId, 'casinoFs', s.ref, 'cancelled', reason);
   }
+  // Winnings still waiting on a wagering rule: forfeited with the account's promotions.
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND wager_status = 'pending'").all(userId)) forfeitPending(db, s, reason);
   for (const f of db.prepare("SELECT * FROM freebets WHERE user_id = ? AND status = 'active'").all(userId)) {
     db.prepare("UPDATE freebets SET status = 'cancelled' WHERE id = ?").run(f.id);
     ledger(db, { userId, freebetId: f.id, type: 'bonus_cancel', amount: -f.amount_cents, description: `Free bet cancelada: ${reason}`, ref: `fbcancel:${f.id}` });
@@ -655,6 +783,8 @@ export function expireDue(db, now = nowIso()) {
   for (const b of db.prepare("SELECT * FROM bonuses WHERE status = 'active' AND expires_at <= ?").all(now)) { endBonus(db, b, 'expired', 'prazo terminado'); n += 1; }
   // (Free spins on the Palace casino are ended by the casino side, which takes their money back first.)
   for (const s of db.prepare("SELECT * FROM casino_spins WHERE status = 'active' AND expires_at <= ? AND palace_cents IS NULL").all(now)) { closeSpins(db, s, 'expired', 'prazo terminado'); n += 1; }
+  // Free Spins winnings whose wagering time ran out without the rule met: forfeited, as its terms say.
+  for (const s of db.prepare("SELECT * FROM casino_spins WHERE wager_status = 'pending' AND wager_until <= ?").all(now)) { forfeitPending(db, s, 'prazo do requisito de aposta terminado'); n += 1; }
   for (const f of db.prepare("SELECT * FROM freebets WHERE status = 'active' AND expires_at <= ?").all(now)) {
     db.prepare("UPDATE freebets SET status = 'expired' WHERE id = ?").run(f.id);
     ledger(db, { userId: f.user_id, freebetId: f.id, type: 'freebet_expiry', amount: -f.amount_cents, description: 'Free bet expirada', ref: `fbexpiry:${f.id}` });

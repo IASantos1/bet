@@ -108,8 +108,8 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
   assert.equal(bb.walletUser(fs).body.balance, '1.00');
   // A game outside the list, or a bet above the game's spin: refused.
   assert.equal(bb.walletChange(move(fs, -0.2, 'f0', { game_id: 9001 })).body.error, 'game not eligible for free spins');
-  assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /each spin is €0.20/);
-  assert.match(bb.walletChange(move(fs, -0.2, 'f0c', { game_id: 4822 })).body.error, /each spin is €0.10/);
+  assert.match(bb.walletChange(move(fs, -1, 'f0b')).body.error, /aposta fixa de 0,20 €/);
+  assert.match(bb.walletChange(move(fs, -0.2, 'f0c', { game_id: 4822 })).body.error, /aposta fixa de 0,10 €/);
   assert.ok(db.prepare('SELECT bet_warn_at FROM casino_spins WHERE id = ?').get(s.id).bet_warn_at); // the game page warns the player
   // A spin at €0.20 that wins €1.50, then one at €0.10 in the other game: 3 spins left, €1.50 won.
   bb.walletChange(move(fs, -0.2, 'f1'));

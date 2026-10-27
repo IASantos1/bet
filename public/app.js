@@ -1690,8 +1690,8 @@ function casinoPlayPage() {
   // player raises it in the game (BigBang refuses the spin; at Palace it uses several Free Spins).
   const bet = money(g.fsBet || 0.2);
   const fsNote = !g.fs || g.fsEnded ? ''
-    : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ Nas Free Spins cada rodada é de <b>${bet}</b>. ${g.fsPalace
-      ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'Uma aposta maior não é aceite.'} Baixe a aposta no jogo para <b>${bet}</b>.</div>`
+    : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ Esta promoção utiliza uma aposta fixa de <b>${bet}</b> por rodada. ${g.fsPalace
+      ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'A rodada não foi aceite e nenhuma Free Spin foi usada.'} Ajusta o valor da aposta para <b>${bet}</b> para continuar.</div>`
       : `<div class="fs-bet-note">Jogue com a aposta de <b>${bet}</b> por rodada: cada rodada usa 1 Free Spin.</div>`;
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}${fsNote}
@@ -1757,11 +1757,32 @@ function bonusCard(b) {
 
 /** Active casino free spins: their balance, the games they work in, and ending them (winnings paid). */
 function spinsCard(f) {
+  const wagering = f.conversion?.type === 'wagering';
   return `<div class="bonus-card">
     <div class="bonus-head"><strong>🎰 Casino · ${fsCount(f.spins)}</strong><span class="pf-badge verified">Ativas</span></div>
-    <div class="bonus-nums"><div><small>Free Spins por jogar</small><b>${f.spinsLeft} de ${f.spins}</b></div><div><small>Ganhos (saldo real)</small><b class="green">${money(f.winnings)}</b></div></div>
-    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · os ganhos passam a saldo real quando terminarem</small>
-    <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar e receber ganhos (${money(f.winnings)})</button></div>
+    <div class="bonus-nums"><div><small>Free Spins por jogar</small><b>${f.spinsLeft} de ${f.spins}</b></div><div><small>Aposta por rodada</small><b>${money(f.spinValue)}</b></div><div><small>Ganhos ${wagering ? '(pendentes)' : '(saldo real)'}</small><b class="green">${money(f.winnings)}</b></div></div>
+    ${f.state === 'SUSPENDED' ? '<p class="fs-bet-note warn">Promoção suspensa temporariamente: as rodadas ficam guardadas.</p>' : ''}
+    <small class="muted">Jogos: ${f.games.map((g) => `<a href="#/casino/jogo/${g.id}">${esc(g.name || `#${g.id}`)}</a>`).join(', ')} · expiram a ${esc(dateShort(f.expiresAt))} · ${wagering
+      ? `os ganhos ficam pendentes até apostar ${f.conversion.multiplier}× o seu valor com saldo real em ${f.conversion.days} dias`
+      : 'os ganhos passam a saldo real quando terminarem'}</small>
+    <div class="pf-actions"><button class="outline-btn" data-action="fs-claim" data-id="${f.id}">Terminar${wagering ? '' : ` e receber ganhos (${money(f.winnings)})`}</button></div>
+  </div>`;
+}
+
+/** The player's money by kind, never mixed: real, promotional, promotional winnings pending, withdrawable. */
+function walletKinds(w) {
+  return `<div class="pf-stats wallet-kinds"><div><small>Saldo real</small><strong>${money(w.real)}</strong></div><div><small>Saldo promocional</small><strong>${money(w.promotional)}</strong></div>
+    <div><small>Ganhos promocionais pendentes</small><strong>${money(w.pendingPromo)}</strong></div><div><small>Saldo levantável</small><strong class="green">${money(w.withdrawable)}</strong></div></div>`;
+}
+/** Free Spins winnings waiting on an approved wagering rule: what is left to bet and until when. */
+function wagerCard(f) {
+  const w = f.wager;
+  const pctDone = w.required ? Math.min(100, Math.round((w.done / w.required) * 100)) : 0;
+  return `<div class="bonus-card">
+    <div class="bonus-head"><strong>🎰 Ganhos das Free Spins · ${money(w.pending)}</strong><span class="pf-badge">Pendentes</span></div>
+    <div class="bonus-nums"><div><small>Apostado</small><b>${money(w.done)} / ${money(w.required)}</b></div><div><small>Falta</small><b>${money(Math.max(0, w.required - w.done))}</b></div><div><small>Até</small><b>${esc(dateShort(w.until))}</b></div></div>
+    <div class="stat-bar bonus-bar"><i class="w${Math.floor(pctDone / 5) * 5}"></i></div>
+    <small class="muted">Contam as apostas com saldo real ${f.conversion?.games === 'all' ? 'em qualquer jogo de casino' : 'nos jogos da promoção'}${f.conversion?.maxCountCents ? `, até ${money(f.conversion.maxCountCents / 100)} por aposta` : ''}; apostas anuladas não contam. Cumprido o requisito, os ganhos passam a saldo real; se o prazo terminar, perdem-se.</small>
   </div>`;
 }
 
@@ -1773,7 +1794,9 @@ function myPromosView() {
   const past = m.bonuses.filter((b) => b.status !== 'active');
   return `<div class="pf-stats"><div><small>Saldo de bónus</small><strong>${money(m.bonusBalance)}</strong></div><div><small>Free bets</small><strong>${money(m.freebetBalance)}</strong></div>
       <div><small>Primeira aposta protegida</small><strong>${m.firstBetUsed ? 'Utilizada' : 'Disponível'}</strong></div></div>
+    ${m.wallets ? walletKinds(m.wallets) : ''}
     ${m.activeSpins ? spinsCard(m.activeSpins) : ''}
+    ${(m.spins || []).filter((s) => s.wager?.status === 'pending').map(wagerCard).join('')}
     ${m.active.length ? m.active.map(bonusCard).join('') : m.activeSpins ? '' : '<p class="muted">Sem bónus ativos. Veja as campanhas em <a href="#/promocoes">Promoções</a>.</p>'}
     ${free.length ? `<h4>Free bets</h4><div class="pf-list">${free.map((f) => `<div class="pf-row"><div><b>${money(f.amount)}</b><small>Válida até ${esc(fmtDateTime(f.expiresAt))}${f.minOdds > 1 ? ` · odd mínima ${fmtOdds(f.minOdds)}` : ''} · escolha-a no boletim</small></div><span class="pf-badge verified">Disponível</span></div>`).join('')}</div>` : ''}
     ${past.length ? `<h4>Histórico</h4><div class="pf-list">${past.map((b) => `<div class="pf-row"><div><b>${esc(b.name)} · ${money(b.amount)}</b><small>${esc(dateShort(b.createdAt))}${b.cancelReason ? ` · ${esc(b.cancelReason)}` : ''}</small></div><span class="pf-badge">${BONUS_STATUS[b.status]}</span></div>`).join('')}</div>` : ''}

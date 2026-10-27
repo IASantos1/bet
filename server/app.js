@@ -27,6 +27,7 @@ import {
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
   casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
+import { createPromo, updatePromo, setPromoStatus, grantPromo, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
@@ -1359,7 +1360,7 @@ export function createApp(db, {
   // The campaigns (public) and the player's own: bonuses with their rollover, free bets, ledger.
   const gameName = (id) => bigbang?.enabled ? bigbang.gameNameSync(id) : null;
   app.get('/api/promotions', (req, res) => {
-    res.json({ campaigns: publicCampaigns(db), mine: req.user ? playerPromos(db, req.user.id, { gameName }) : null });
+    res.json({ campaigns: publicCampaigns(db), mine: req.user ? { ...playerPromos(db, req.user.id, { gameName }), wallets: walletBreakdown(db, req.user.id) } : null });
   });
   // What a deposit of this amount would earn now (the deposit form shows it; the server decides again on payment).
   app.get('/api/promotions/offer', requireUser, (req, res) => {
@@ -1654,6 +1655,8 @@ export function createApp(db, {
           // the player's own balance stays here; only the picked game opens.
           let fs = spinsRow(db, Number(req.body.freeSpins), req.user.id);
           if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
+          // Free Spins of a promotion need a fixed bet the casino can refuse: not this casino's games.
+          if (fs.promotion_id && fs.palace_cents === null) throw new HttpError(400, 'Este jogo não é compatível com estas Free Spins (aposta fixa). Escolha um dos jogos elegíveis.');
           fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
           const fund = fs.palace_cents === null ? fs.value_cents : 0;
           if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
@@ -2133,6 +2136,56 @@ export function createApp(db, {
     db.prepare("UPDATE freebets SET status = 'cancelled' WHERE id = ?").run(f.id);
     res.json({ ok: true });
   });
+
+  // ---------- Free Spins promotions (fspromos.js) ----------
+  // Only games where a bet other than the fixed one is refused before it is taken (the seamless
+  // casino): Palace slots (Transfer mode) cannot refuse it, so they are not offered.
+  const fsCompatible = async (ids) => {
+    const out = [];
+    for (const id of [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))]) {
+      const g = bb ? await bb.game(id).catch(() => null) : null;
+      if (bb && !g) throw new HttpError(400, `Jogo ${id} não encontrado no catálogo.`);
+      if (g?.source === 'palace') throw new HttpError(400, `${g.name}: incompatível com Free Spins de aposta fixa (o fornecedor não permite recusar a aposta antes de a debitar).`);
+      out.push(id);
+    }
+    return out;
+  };
+  const promoView = async (p) => ({ ...p, gameList: await Promise.all(p.games.map(async (id) => {
+    const g = bb ? await bb.game(id).catch(() => null) : null;
+    return { id, name: g?.name || `Jogo ${id}`, provider: g?.provider || '', compatible: !!g && g.source !== 'palace' };
+  })) });
+  admin.get('/fs-promotions', wrap(async (_req, res) => {
+    res.json({ promotions: await Promise.all(promoList(db).map(promoView)) });
+  }));
+  admin.post('/fs-promotions', wrap(async (req, res) => {
+    const games = await fsCompatible(req.body?.games);
+    res.status(201).json({ promotion: fromPromoRow(tx(db, () => createPromo(db, { ...req.body, games }, req.user.id))) });
+  }));
+  admin.put('/fs-promotions/:id', wrap(async (req, res) => {
+    const input = { ...req.body };
+    if (input.games !== undefined) input.games = await fsCompatible(input.games);
+    res.json({ promotion: fromPromoRow(tx(db, () => updatePromo(db, req.params.id, input, req.user.id))) });
+  }));
+  admin.post('/fs-promotions/:id/status', (req, res) => {
+    res.json({ promotion: fromPromoRow(tx(db, () => setPromoStatus(db, req.params.id, str(req.body?.status, 20), req.user.id, req.body?.reason ? str(req.body.reason, 200) : null))) });
+  });
+  admin.get('/fs-promotions/:id/history', (req, res) => res.json({ history: promoHistory(db, req.params.id) }));
+  // Gives the promotion to players (ids or e-mails): each one checked on its own.
+  admin.post('/fs-promotions/:id/grant', (req, res) => {
+    const who = (Array.isArray(req.body?.players) ? req.body.players : String(req.body?.players || '').split(/[\s,;]+/)).map((x) => String(x).trim()).filter(Boolean).slice(0, 500);
+    if (!who.length) throw new HttpError(400, 'Indique os jogadores (id ou e-mail).');
+    const results = who.map((w) => {
+      const u = /^\d+$/.test(w) ? db.prepare('SELECT id FROM users WHERE id = ?').get(Number(w)) : db.prepare('SELECT id FROM users WHERE email = ?').get(w.toLowerCase());
+      if (!u) return { player: w, ok: false, reason: 'jogador não encontrado' };
+      try {
+        const s = tx(db, () => grantPromo(db, req.params.id, u.id, { adminId: req.user.id, ref: `fsp:${req.params.id}:${u.id}:${req.user.id}:${Date.now()}` }));
+        return { player: w, ok: true, spinsId: s.id };
+      } catch (err) { return { player: w, ok: false, reason: err.message }; }
+    });
+    res.json({ results });
+  });
+  // A grant's technical history (spins, refusals, wins, rollbacks, conversion).
+  admin.get('/free-spins/:id/audit', (req, res) => res.json({ audit: spinsAudit(db, req.params.id) }));
 
   // ---------- cash out (rules and what was paid) ----------
   admin.get('/cashout', (_req, res) => {
