@@ -15,7 +15,7 @@ import { getSetting, setSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
-import { spinsMove, spinsRow, spinsBalance } from './promotions.js';
+import { spinsMove, spinsRow, spinsBalance, countCasinoWager, undoCasinoWager } from './promotions.js';
 
 // The player's id at BigBang, also sent as its username (the callbacks name the player by username).
 // "bet62_…" players were created with the display name as username: still understood, no longer made.
@@ -515,6 +515,11 @@ export function createBigBang(db, {
         }
         after = cents === 0 ? u.balance_cents
           : postTransaction(db, u.id, cents, cents < 0 ? 'casino_bet' : 'casino_win', `Casino · ${move.game}${cents < 0 ? ' (aposta)' : ' (ganho)'}`, `casino:${txId}`);
+        // Real-money bets count towards the player's Free Spins wagering rules (once per transaction);
+        // a bet the provider cancels is taken back from them. A conversion pays real money here too.
+        if (cents < 0) countCasinoWager(db, u.id, { txId, round: move.round, gameId: move.gameId, stakeCents: -cents });
+        else if (/rollback|refund|cancel/i.test(move.type || '')) undoCasinoWager(db, u.id, { txId, round: move.round });
+        after = userRow(u.id).balance_cents;
       }
       db.prepare(`INSERT INTO casino_moves (transaction_id, user_id, spins_id, amount_cents, balance_after_cents, round_id, type, round_end, game, game_id, provider, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(txId, u.id, t.spinsId, cents, after, move.round, move.type, move.roundEnd, move.game, move.gameId, move.provider, nowIso());

@@ -285,10 +285,66 @@ function adminPromos(d) {
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>
     <div class="panel"><h3>Free bets</h3>${freebets}</div>
     <div class="panel"><h3>Free Spins casino</h3>${d.spins?.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Rodadas</th><th class="num">Valor</th><th class="num">Ganhos</th><th class="num">Ganhos pagos</th><th>Expira</th><th>Estado</th></tr></thead><tbody>
-      ${d.spins.map((x) => `<tr><td>${x.id}</td><td>${esc(x.user)}</td><td>${x.spinsLeft} de ${x.spins}</td><td class="num">${money(x.value)}</td><td class="num">${money(x.winnings)}</td><td class="num">${money(x.paid)}</td>
-        <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.status === 'active' ? 'open' : 'void'}">${({ active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' })[x.status]}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}</td></tr>`).join('')}
+      ${d.spins.map((x) => `<tr><td>${x.id}</td><td>${esc(x.user)}</td><td>${x.spinsLeft} de ${x.spins}</td><td class="num">${money(x.value)}</td><td class="num">${money(x.winnings)}</td><td class="num">${money(x.paid)}${x.wager?.status === 'pending' ? `<br><small class="muted">pendente ${money(x.wager.pending)} · ${money(x.wager.done)} / ${money(x.wager.required)}</small>` : ''}</td>
+        <td>${esc(fmtDateTime(x.expiresAt))}</td><td><span class="pill ${x.state === 'ACTIVE' ? 'open' : x.state === 'SUSPENDED' ? 'pending' : 'void'}">${({ ACTIVE: 'Ativa', SUSPENDED: 'Suspensa', COMPLETED: 'Concluída', EXPIRED: 'Expirada', CANCELLED: 'Cancelada' })[x.state] || x.state}</span>${x.reason ? `<br><small class="muted">${esc(x.reason)}</small>` : ''}
+        <br><button class="ghost-btn btn-sm" data-action="fs-audit" data-id="${x.id}">Histórico técnico</button><pre class="raw-odds hidden" id="fsAudit${x.id}"></pre></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Sem Free Spins atribuídas.</p>'}</div>
     <div class="panel"><h3>Decisões (atribuídas / recusadas)</h3>${log}</div>`;
+}
+
+// ---------- Free Spins promotions ----------
+
+const FSP_STATUS = { draft: ['Rascunho', 'void'], available: ['Disponível', 'won'], suspended: ['Suspensa', 'pending'], cancelled: ['Cancelada', 'lost'], ended: ['Terminada', 'void'] };
+let fspEdit = null; // the promotion being edited (null: a new one)
+/** Free Spins promotions: the list with their use, the form (new / edit), state buttons, grants and history. */
+function fsPromosPanel(list) {
+  const p = fspEdit || { name: '', description: '', terms: '', spins: 50, spinValue: 0.2, games: [], validityDays: 7, maxUses: null, maxPerUser: 1, eligibility: {}, conversion: { type: 'none' } };
+  const conv = p.conversion || { type: 'none' };
+  const rows = list.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Promoção</th><th>Rodadas</th><th class="num">Orçamento nominal</th><th>Ganhos</th><th>Uso</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${list.map((x) => `<tr><td>${x.id}</td><td><b>${esc(x.name)}</b><br><small class="muted">${x.gameList.map((g) => `${esc(g.name)}${g.compatible ? '' : ' ⚠ incompatível'}`).join(', ') || 'sem jogos'}</small></td>
+      <td>${x.spins} × ${money(x.spinValue)}<br><small class="muted">${x.validityDays} dias após atribuição</small></td><td class="num">${money(x.budget)}</td>
+      <td>${x.conversion.type === 'wagering' ? `Requisito ${x.conversion.multiplier}× em ${x.conversion.days} dias (aprovado)` : 'Pagos em saldo real no fim'}</td>
+      <td>${x.use.grants} atribuídas${x.maxUses ? ` de ${x.maxUses}` : ''} · ${x.use.active} ativas<br><small class="muted">${x.use.spinsPlayed} rodadas · pagos ${money(x.use.paid)} · pendentes ${money(x.use.pending)}</small></td>
+      <td><span class="pill ${FSP_STATUS[x.status][1]}">${FSP_STATUS[x.status][0]}</span></td>
+      <td class="fsp-actions">${['cancelled', 'ended'].includes(x.status) ? '' : `<button class="ghost-btn btn-sm" data-action="fsp-edit" data-id="${x.id}">Editar</button>`}
+        ${x.status === 'draft' || x.status === 'suspended' ? `<button class="primary-btn btn-sm" data-action="fsp-status" data-status="available" data-id="${x.id}">${x.status === 'draft' ? 'Disponibilizar' : 'Retomar'}</button>` : ''}
+        ${x.status === 'available' ? `<button class="primary-btn btn-sm" data-action="fsp-grant" data-id="${x.id}">Atribuir</button><button class="ghost-btn btn-sm" data-action="fsp-status" data-status="suspended" data-id="${x.id}">Suspender</button>` : ''}
+        ${['available', 'suspended'].includes(x.status) ? `<button class="ghost-btn btn-sm" data-action="fsp-status" data-status="ended" data-id="${x.id}">Terminar</button>` : ''}
+        ${!['cancelled', 'ended'].includes(x.status) ? `<button class="danger-btn btn-sm" data-action="fsp-status" data-status="cancelled" data-id="${x.id}">Cancelar</button>` : ''}
+        <button class="ghost-btn btn-sm" data-action="fsp-history" data-id="${x.id}">Histórico</button><pre class="raw-odds hidden" id="fspHist${x.id}"></pre></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda não há promoções de Free Spins.</p>';
+  const v = (k) => esc(p[k] ?? '');
+  return `<div class="panel"><h3>Promoções de Free Spins</h3>
+    <p class="muted">1 ponto = 1 rodada à aposta fixa. Os ganhos nunca devolvem rodadas. Uma aposta de outro valor é recusada antes de ser debitada (só em jogos que o permitem: os do casino Palace não são aceites). Cada atribuição guarda as condições com que foi dada: alterar a promoção só vale para novas atribuições.</p>
+    ${rows}
+    <form data-form="fs-promo" class="fsp-form"><h4>${fspEdit ? `Editar #${fspEdit.id}` : 'Nova promoção (fica em rascunho)'}</h4>
+      <div class="adm-grid">
+        <label class="field">Nome<input name="name" value="${v('name')}" required maxlength="80" placeholder="BET62 Free Spins 50"></label>
+        <label class="field">Número de Free Spins<input name="spins" type="number" min="1" max="500" value="${v('spins')}" required></label>
+        <label class="field">Valor fixo por rodada<select name="spinValue">${[0.1, 0.2].map((x) => `<option value="${x}"${Math.round(Number(p.spinValue) * 100) === x * 100 ? ' selected' : ''}>€${x.toFixed(2).replace('.', ',')}</option>`).join('')}</select></label>
+        <label class="field">Validade após atribuição (dias)<input name="validityDays" type="number" min="1" max="365" value="${v('validityDays')}" required></label>
+        <label class="field">Início (opcional)<input name="startsAt" type="datetime-local" value="${localDT(p.startsAt)}"></label>
+        <label class="field">Fim (opcional)<input name="endsAt" type="datetime-local" value="${localDT(p.endsAt)}"></label>
+        <label class="field">Utilizações máximas (total)<input name="maxUses" type="number" min="1" value="${v('maxUses')}" placeholder="sem limite"></label>
+        <label class="field">Utilizações por jogador<input name="maxPerUser" type="number" min="1" max="100" value="${v('maxPerUser')}"></label>
+        <label class="field wide">Jogos elegíveis (IDs separados por vírgula)<input name="games" value="${esc((p.games || []).join(', '))}" placeholder="ex.: 4821, 4822"></label>
+        <label class="field wide">Descrição<input name="description" value="${v('description')}" maxlength="500"></label>
+        <label class="field wide">Termos<textarea name="terms" rows="3" maxlength="4000">${v('terms')}</textarea></label>
+      </div>
+      <h4>Elegibilidade</h4>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="elig.kyc"${p.eligibility?.kyc ? ' checked' : ''}> Identidade verificada (KYC)</label>
+        <label class="adm-switch"><input type="checkbox" name="elig.newOnly"${p.eligibility?.newOnly ? ' checked' : ''}> Só quem nunca recebeu Free Spins</label>
+        <label class="field">Depósitos mínimos feitos<input name="elig.minDeposits" type="number" min="0" value="${esc(p.eligibility?.minDeposits ?? 0)}"></label></div>
+      <h4>Ganhos</h4>
+      <div class="form-actions"><label class="adm-switch"><input type="radio" name="conv.type" value="none"${conv.type !== 'wagering' ? ' checked' : ''}> Pagos em saldo real quando as rodadas terminam (sem requisito)</label>
+        <label class="adm-switch"><input type="radio" name="conv.type" value="wagering"${conv.type === 'wagering' ? ' checked' : ''}> Requisito de aposta aprovado</label></div>
+      <div class="adm-grid"><label class="field">Multiplicador (× ganhos)<input name="conv.multiplier" type="number" min="1" max="50" value="${esc(conv.multiplier ?? 5)}"></label>
+        <label class="field">Prazo (dias)<input name="conv.days" type="number" min="1" max="60" value="${esc(conv.days ?? 7)}"></label>
+        <label class="field">Apostas que contam<select name="conv.games"><option value="eligible"${conv.games !== 'all' ? ' selected' : ''}>Só nos jogos da promoção</option><option value="all"${conv.games === 'all' ? ' selected' : ''}>Qualquer jogo de casino</option></select></label>
+        <label class="field">Máximo contado por aposta (€)<input name="conv.maxCount" type="number" step="0.01" min="0" value="${conv.maxCountCents ? conv.maxCountCents / 100 : ''}" placeholder="sem limite"></label></div>
+      <label class="adm-switch"><input type="checkbox" name="conv.approved"${conv.approved ? ' checked' : ''}> Requisito aprovado (revisão jurídica feita). Nunca obriga a um novo depósito; se o prazo terminar, os ganhos pendentes perdem-se, como dizem os termos.</label>
+      <div class="form-actions"><button class="primary-btn">${fspEdit ? 'Guardar alterações' : 'Criar rascunho'}</button>${fspEdit ? '<button type="button" class="ghost-btn" data-action="fsp-new">Nova</button>' : ''}</div>
+    </form></div>`;
 }
 
 // ---------- affiliates ----------
@@ -772,7 +828,10 @@ async function loadTab() {
       main.innerHTML = marketCatalog(cat);
     }
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
-    else if (tab === 'promocoes') main.innerHTML = adminPromos(await api('/api/admin/promotions'));
+    else if (tab === 'promocoes') {
+      const [pr, fsp] = await Promise.all([api('/api/admin/promotions'), api('/api/admin/fs-promotions')]);
+      main.innerHTML = fsPromosPanel(fsp.promotions) + adminPromos(pr);
+    }
     else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
     else if (tab === 'campanhas') { main.innerHTML = adminCampaigns(await api('/api/admin/campaigns')); campaignCount(); }
     else if (tab === 'afiliados') {
@@ -1263,6 +1322,24 @@ function adminNewEvent() {
 // ---------- forms ----------
 
 const handlers = {
+  async 'fs-promo'(form) {
+    const d = formData(form);
+    const iso = (v) => (v ? new Date(v).toISOString() : null);
+    const body = {
+      name: d.name, description: d.description, terms: d.terms, spins: Number(d.spins), spinValue: Number(d.spinValue), validityDays: Number(d.validityDays),
+      startsAt: iso(d.startsAt), endsAt: iso(d.endsAt), maxUses: d.maxUses === '' ? null : Number(d.maxUses), maxPerUser: Number(d.maxPerUser) || 1,
+      games: String(d.games || '').split(/[\s,;]+/).map(Number).filter(Boolean),
+      eligibility: { kyc: form['elig.kyc'].checked, newOnly: form['elig.newOnly'].checked, minDeposits: Number(d['elig.minDeposits']) || 0 },
+      conversion: form.querySelector('[name="conv.type"]:checked')?.value === 'wagering'
+        ? { type: 'wagering', multiplier: Number(d['conv.multiplier']), days: Number(d['conv.days']), games: d['conv.games'], maxCount: d['conv.maxCount'] === '' ? null : Number(d['conv.maxCount']), approved: form['conv.approved'].checked }
+        : { type: 'none' },
+    };
+    if (fspEdit) await api(`/api/admin/fs-promotions/${fspEdit.id}`, { method: 'PUT', body });
+    else await api('/api/admin/fs-promotions', { method: 'POST', body });
+    toast('Guardado', fspEdit ? 'Promoção alterada (só para novas atribuições).' : 'Promoção criada como rascunho.');
+    fspEdit = null;
+    loadTab();
+  },
   async 'cashout-config'(form) {
     const d = formData(form);
     const body = { enabled: form.enabled.checked, prematch: form.prematch.checked, live: form.live.checked };
@@ -1429,6 +1506,46 @@ const handlers = {
     loadTab();
   },
 };
+
+async function fspAction(action, el) {
+  const id = el.dataset.id;
+  try {
+    if (action === 'fsp-new') { fspEdit = null; loadTab(); return; }
+    if (action === 'fsp-edit') {
+      const { promotions } = await api('/api/admin/fs-promotions');
+      fspEdit = promotions.find((p) => String(p.id) === String(id)) || null;
+      loadTab();
+      return;
+    }
+    if (action === 'fsp-status') {
+      const st = el.dataset.status;
+      const label = { available: 'disponibilizar', suspended: 'suspender', ended: 'terminar', cancelled: 'cancelar' }[st];
+      const reason = st === 'available' ? '' : prompt(`Motivo para ${label} (fica no histórico):`);
+      if (reason === null) return;
+      if (st === 'cancelled' && !confirm('Cancelar a promoção termina as atribuições ativas (os ganhos seguem a regra de cada uma). Continuar?')) return;
+      await api(`/api/admin/fs-promotions/${id}/status`, { method: 'POST', body: { status: st, reason } });
+      toast('Feito', `Promoção: ${label}.`);
+      loadTab();
+      return;
+    }
+    if (action === 'fsp-grant') {
+      const players = prompt('Jogadores (ID ou e-mail, separados por vírgula):');
+      if (!players) return;
+      const { results } = await api(`/api/admin/fs-promotions/${id}/grant`, { method: 'POST', body: { players } });
+      const ok = results.filter((r) => r.ok).length;
+      const bad = results.filter((r) => !r.ok).map((r) => `${r.player}: ${r.reason}`);
+      toast(ok ? 'Atribuída' : 'Não atribuída', `${ok} jogador(es).${bad.length ? ` ${bad.join(' · ')}` : ''}`, bad.length && !ok ? 'error' : undefined);
+      loadTab();
+      return;
+    }
+    if (action === 'fsp-history') {
+      const pre = document.getElementById(`fspHist${id}`);
+      if (pre.classList.toggle('hidden')) return;
+      const { history } = await api(`/api/admin/fs-promotions/${id}/history`);
+      pre.textContent = history.map((h) => `${fmtDateTime(h.at)}  ${h.action}  ${h.admin || ''}${h.changes ? `\n    ${JSON.stringify(h.changes)}` : ''}`).join('\n') || 'Sem alterações.';
+    }
+  } catch (err) { toast('Erro', err.message, 'error'); }
+}
 
 document.addEventListener('submit', async (e) => {
   const form = e.target.closest('form[data-form]');
@@ -1600,6 +1717,15 @@ document.addEventListener('click', async (e) => {
     const id = actionEl.dataset.id;
     fsWrite(fsTokens().filter(([x]) => x !== id));
     actionEl.closest('.fs-chip')?.remove();
+    return;
+  }
+  if (action.startsWith('fsp-')) { fspAction(action, actionEl); return; }
+  if (action === 'fs-audit') {
+    const pre = document.getElementById(`fsAudit${actionEl.dataset.id}`);
+    if (!pre.classList.toggle('hidden')) {
+      const { audit } = await api(`/api/admin/free-spins/${actionEl.dataset.id}/audit`);
+      pre.textContent = audit.map((a) => `${fmtDateTime(a.at)}  ${a.action.padEnd(10)} ${a.amount ? money(a.amount).padStart(9) : ''.padStart(9)}  rodadas ${a.spinsLeft ?? '-'}  ${a.txId || ''} ${a.detail || ''}`).join('\n') || 'Sem registos.';
+    }
     return;
   }
   if (action === 'bonus-cancel') {

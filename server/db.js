@@ -539,6 +539,35 @@ function migrate(db) {
   if (!fsCols.has('palace_at')) db.exec('ALTER TABLE casino_spins ADD COLUMN palace_at TEXT');
   // When the player last bet above the free spins' fixed bet (the game page warns them).
   if (!fsCols.has('bet_warn_at')) db.exec('ALTER TABLE casino_spins ADD COLUMN bet_warn_at TEXT');
+  // Free Spins promotions (fspromos.js): the promotion a grant came from and a copy of its terms when
+  // granted (later edits never change a grant), a suspension, and the winnings waiting on an approved
+  // conversion rule (pending → converted to real money, or forfeited when its time runs out).
+  for (const [c, type] of [['promotion_id', 'INTEGER'], ['conversion', 'TEXT'], ['suspended_at', 'TEXT'], ['pending_cents', 'INTEGER NOT NULL DEFAULT 0'],
+    ['wager_required_cents', 'INTEGER'], ['wager_done_cents', 'INTEGER NOT NULL DEFAULT 0'], ['wager_until', 'TEXT'], ['wager_status', 'TEXT'], ['converted_cents', 'INTEGER NOT NULL DEFAULT 0']]) {
+    if (!fsCols.has(c)) db.exec(`ALTER TABLE casino_spins ADD COLUMN ${c} ${type}`);
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS fs_promotions (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT, terms TEXT,
+    spins INTEGER NOT NULL CHECK (spins > 0), spin_value_cents INTEGER NOT NULL CHECK (spin_value_cents > 0), games TEXT NOT NULL,
+    starts_at TEXT, ends_at TEXT, validity_days INTEGER NOT NULL DEFAULT 7, max_uses INTEGER, max_per_user INTEGER NOT NULL DEFAULT 1,
+    eligibility TEXT NOT NULL DEFAULT '{}', conversion TEXT NOT NULL DEFAULT '{"type":"none"}',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'available', 'suspended', 'cancelled', 'ended')),
+    created_by INTEGER, created_at TEXT NOT NULL, updated_by INTEGER, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS fs_promotion_history (
+    id INTEGER PRIMARY KEY, promotion_id INTEGER NOT NULL REFERENCES fs_promotions(id), admin_id INTEGER, action TEXT NOT NULL, changes TEXT, created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_fs_promo_history ON fs_promotion_history(promotion_id, id);
+  -- Free Spins technical history (append-only): every grant, spin, refused bet, win, rollback,
+  -- conversion step and end. A provider transaction is recorded once per action (no double debit,
+  -- credit or wagering count).
+  CREATE TABLE IF NOT EXISTS fs_audit (
+    id INTEGER PRIMARY KEY, spins_id INTEGER, user_id INTEGER NOT NULL, action TEXT NOT NULL, tx_id TEXT, round_id TEXT,
+    cents INTEGER NOT NULL DEFAULT 0, spins_left INTEGER, detail TEXT, created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_fs_audit_tx ON fs_audit(action, tx_id) WHERE tx_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_fs_audit_spins ON fs_audit(spins_id, id);
+  CREATE INDEX IF NOT EXISTS idx_fs_audit_user ON fs_audit(user_id, id);`);
 
   // A ticket settled by hand in the admin (its legs decided one by one): who, when and why.
   const manualCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));

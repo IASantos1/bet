@@ -1954,3 +1954,5 @@ html.light .combo-legs li::after { background: #22b14c; }
 .h2h-bar .l { background: var(--down, #e5484d); }
 @media (max-width: 640px) { .venue-grid { grid-template-columns: 1fr; } }
 .stand-tabs { margin: 0 0 10px; }
+.wallet-kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .wallet-kinds { grid-template-columns: 1fr 1fr; } }
