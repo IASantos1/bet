@@ -9,7 +9,7 @@ import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
 import { COUNTRY_SPORTS, leagueCountry } from './countryleagues.js';
 import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
-import { LEAGUE_TREES, leagueKey, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
@@ -2765,6 +2765,9 @@ export function createApp(db, {
 
   // WinHouse: every market one game page offers (to map new ones).
   // WinHouse: the routes its own iframe uses (pages + scripts), to find the live game page.
+  // The competitions WinHouse sent that were left out, and why (the name to add when one is missing).
+  admin.get('/winhouse/skipped', (req, res) => res.json({ leagues: skippedLeagues(str(req.query.q, 60)) }));
+
   admin.post('/winhouse/discover', async (req, res, next) => {
     try {
       if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
