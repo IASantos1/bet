@@ -27,6 +27,7 @@ import {
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
   casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
+import { riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
 import { createPromo, updatePromo, setPromoStatus, grantPromo, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
@@ -1457,7 +1458,13 @@ export function createApp(db, {
     if (picks.some((p) => { const r = selOf.get(Number(p.selectionId)); return r && isHidden(hidden, r.sport, r); })) {
       throw new HttpError(409, 'Este mercado já não está disponível. Retire-o do boletim.');
     }
-    const betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId, pick }));
+    let betIds;
+    try {
+      betIds = tx(db, () => placeBets(db, req.user, { mode: req.body.mode, stakeCents, picks, freebetId, pick }));
+    } catch (err) {
+      logRefusal(db, req.user.id, err); // a bet refused by a risk limit is kept for the alerts
+      throw err;
+    }
     // A ready-made bet keeps where it came from (its ticket shows it): a winning accumulator or a featured builder.
     const origin = { multiple: 'acca', builder: 'combo' }[req.body.mode] === req.body.origin ? req.body.origin : null;
     if (origin && !pick) for (const id of betIds) db.prepare('UPDATE bets SET origin = ? WHERE id = ?').run(origin, id);
@@ -2179,6 +2186,25 @@ export function createApp(db, {
   admin.post('/fs-promotions/:id/status', (req, res) => {
     res.json({ promotion: fromPromoRow(tx(db, () => setPromoStatus(db, req.params.id, str(req.body?.status, 20), req.user.id, req.body?.reason ? str(req.body.reason, 200) : null))) });
   });
+  // ---------- risk (profiles per player, liability ceilings, alerts) ----------
+  admin.get('/risk', (_req, res) => {
+    const cfg = riskConfig(db);
+    res.json({
+      config: { ...cfg, selectionLiability: cfg.selectionLiabilityCents / 100, eventLiability: cfg.eventLiabilityCents / 100, alertProfit: cfg.alertProfitCents / 100 },
+      profiles: Object.entries(RISK_PROFILES).map(([id, p]) => ({ id, ...p })),
+      maxStake: config.limits.maxStakeCents / 100,
+      alerts: riskAlerts(db), exposure: exposure(db), ...riskOverview(db),
+    });
+  });
+  admin.put('/risk/config', (req, res) => res.json({ config: saveRiskConfig(db, req.body || {}) }));
+  // A player's profile, by id or e-mail.
+  admin.post('/risk/users', (req, res) => {
+    const who = String(req.body?.user || '').trim();
+    const u = /^\d+$/.test(who) ? db.prepare('SELECT id FROM users WHERE id = ?').get(Number(who)) : db.prepare('SELECT id FROM users WHERE lower(email) = lower(?)').get(who);
+    if (!u) throw new HttpError(404, 'Jogador não encontrado (id ou e-mail).');
+    res.json(tx(db, () => setRiskProfile(db, u.id, str(req.body?.profile, 20), { note: req.body?.note ? str(req.body.note, 300) : null, adminId: req.user.id })));
+  });
+
   admin.get('/fs-promotions/:id/history', (req, res) => res.json({ history: promoHistory(db, req.params.id) }));
   // Gives the promotion to players (ids or e-mails): each one checked on its own.
   admin.post('/fs-promotions/:id/grant', (req, res) => {
