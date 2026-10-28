@@ -1261,3 +1261,14 @@ test('a game left out is noted with its league and why (admin → Ligas recusada
   assert.deepEqual([row.sport, row.reason, row.games, row.example], ['futebol', 'liga fora da lista', 1, 'Boca - River']);
   assert.equal(skippedLeagues('paraguay').some((x) => x.league === ev.league), false);
 });
+
+test('clubs called "Juniors" or "Academia" are not youth teams; youth competitions and U20 teams still are', async () => {
+  const { blockReason, footballLeagues } = await import('../server/winhouse.js');
+  const why = (league, home, away) => blockReason({ sport_id: 1, league, name: `${home} - ${away}`, home_team: home, away_team: away }, { leagues: footballLeagues('') });
+  assert.equal(why('Argentina. Primera Division', 'Atletico Tucuman', 'Argentinos Juniors'), null);
+  assert.equal(why('Copa Argentina', 'Club Atletico Banfield', 'Boca Juniors'), null);
+  assert.equal(why('Argentina. Primera B Nacional', 'Chacarita Juniors', 'Nueva Chicago'), null);
+  assert.equal(why('Colombia. Categoria Primera A', 'Junior', 'Millonarios'), null);
+  assert.equal(why('Argentina. Primera Division', 'Boca Juniors U20', 'River Plate U20'), 'formação');
+  assert.equal(blockReason({ sport_id: 1, league: 'Argentina. Juniors League', name: 'A - B', home_team: 'A', away_team: 'B' }), 'formação');
+});

@@ -523,7 +523,10 @@ export const namedWinnerMarket = (sport, { name, code = null }) => NAMED_WINNER_
 
 // Women's, youth and minor competitions can be left out (WINHOUSE_BLOCK_WOMEN / _YOUTH / _MINOR).
 const WOMEN = /\b(women|woman|womens|feminino|feminina|femenino|femenina|féminin|feminine|femmes?|damen|frauen|ladies|mulheres|wta)\b|\((w|f)\)/i;
-const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|junior|juniors|júnior|juniores|juvenil|juvenis|youth|jugend|primavera|academy|academia)\b/i;
+const YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|juvenil|juvenis|youth|jugend|primavera|academy)\b/i;
+// Words that are youth only in a competition's name: clubs are called them too (Boca Juniors,
+// Argentinos Juniors, Junior de Barranquilla, Academia Puerto Cabello).
+const YOUTH_LEAGUE = /\b(junior|juniors|júnior|juniores|academia)\b/i;
 // Virtual / e-football (FIFA 4x4, 5x5, subsoccer, cyber…), the small table tennis circuits
 // (ATT, Setka Cup, TT Cup…) and UTR tennis: played around the clock, of little interest.
 const MINOR = new RegExp([
@@ -684,7 +687,7 @@ export function blockReason(ev, { women = true, youth = true, minor = true, extr
   const listed = allow && (typeof allow.listed !== 'function' || allow.listed(k));
   const womenText = listed ? [ev?.name, ev?.home_team, ev?.away_team].filter(Boolean).join(' · ') : text;
   if (women && WOMEN.test(womenText)) return 'feminino';
-  if (youth && YOUTH.test(text)) return 'formação';
+  if (youth && (YOUTH.test(text) || YOUTH_LEAGUE.test(String(ev?.league || '')))) return 'formação';
   if (minor && (MINOR.test(text) || (sport === 'tenismesa' && MINOR_TT.test(text)))) return 'virtual / menor';
   if (extra && extra.test(text)) return 'termo bloqueado';
   return null;
