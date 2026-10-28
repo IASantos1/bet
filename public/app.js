@@ -582,8 +582,8 @@ const SPORT_ORDER = ['futebol', 'basquetebol', 'tenis', 'futamericano', 'hoquei'
   'basebol', 'criquete', 'tenismesa', 'badminton'];
 const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
 
-/** Live: the operator's featured, the big clubs' games, then by league (big 1, medium 2, small 3, the rest), then the earliest. */
-const liveRank = (a, b) => (b.featured - a.featured) || (!!b.bigTeam - !!a.bigTeam) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
+/** Live: the operator's featured, then by league (big 1, medium 2, small 3, the rest), then the earliest. */
+const liveRank = (a, b) => (b.featured - a.featured) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
 /** Featured by the operator first, then big leagues (tier), then the earliest. */
 const byPriority = (a, b) => (b.featured - a.featured) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
 
@@ -986,8 +986,7 @@ function livePage() {
       <button class="sport-tile${!state.liveSport ? ' active' : ''}" data-live-sport="">${sportIcon('popular')}<span>Todos</span><i class="tile-n">${withTv.length}</i></button>
       ${present.map((sp) => `<button class="sport-tile${state.liveSport === sp ? ' active' : ''}" data-live-sport="${esc(sp)}">${sportIcon(sp)}<span>${esc(SPORT_META[sp]?.name || sp)}</span><i class="tile-n">${withTv.filter((e) => e.sport === sp).length}</i></button>`).join('')}
     </div>`;
-  // Football first, then the other sports; in each, the big clubs' games (Real Madrid, Manchester
-  // City, Benfica…) on top, then by league: big, medium, small, the rest.
+  // Football first, then the other sports; in each, by league: big, medium, small, the rest.
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const blocks = sports.map((sp) => {
     const list = live.filter((e) => e.sport === sp).sort(liveRank);
