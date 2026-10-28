@@ -50,6 +50,7 @@ const TABS = [
   { id: 'levantamentos', label: 'Levantamentos', icon: 'wallet', section: 'Operações' },
   { id: 'utilizadores', label: 'Utilizadores', icon: 'users', section: 'Operações' },
   { id: 'promocoes', label: 'Promoções', icon: 'gift', section: 'Operações' },
+  { id: 'risco', label: 'Risco', icon: 'warning', section: 'Operações' },
   { id: 'campanhas', label: 'Campanhas', icon: 'megaphone', section: 'Operações' },
   { id: 'afiliados', label: 'Afiliados', icon: 'affiliate', section: 'Operações' },
   { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Operações' },
@@ -832,6 +833,7 @@ async function loadTab() {
       const [pr, fsp] = await Promise.all([api('/api/admin/promotions'), api('/api/admin/fs-promotions')]);
       main.innerHTML = fsPromosPanel(fsp.promotions) + adminPromos(pr);
     }
+    else if (tab === 'risco') main.innerHTML = adminRisk(await api('/api/admin/risk'));
     else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
     else if (tab === 'campanhas') { main.innerHTML = adminCampaigns(await api('/api/admin/campaigns')); campaignCount(); }
     else if (tab === 'afiliados') {
@@ -1321,9 +1323,71 @@ function adminNewEvent() {
 }
 
 
+// ---------- risk ----------
+
+const RISK_KIND = { profile: 'Perfil alterado', max_stake: 'Acima da aposta máxima', liability: 'Limite do jogo / seleção', refused: 'Conta bloqueada' };
+
+/** Admin → Risco: the ceilings, the players to look at, the games with the most at stake, the profiles set. */
+function adminRisk(r) {
+  const c = r.config;
+  const label = (id) => r.profiles.find((p) => p.id === id)?.label || 'Normal';
+  const profileSelect = (name, cur = 'normal') => `<select name="${name}">${r.profiles.map((p) => `<option value="${p.id}"${p.id === cur ? ' selected' : ''}>${esc(p.label)} — aposta máx. ${money(r.maxStake * p.factor)}</option>`).join('')}</select>`;
+  const setBtn = (u) => `<button class="ghost-btn btn-sm" data-action="risk-pick" data-user="${u.userId}">Alterar perfil</button>`;
+  return `<div class="panel"><h3>Limites da casa</h3>
+    <p class="muted">Responsabilidade = o que as apostas em aberto custariam se ganhassem (pagamento − aposta). Uma aposta que passe o teto é recusada e o jogador vê a aposta máxima que ainda é aceite. O perfil de cada jogador multiplica a aposta máxima (${money(r.maxStake)}).</p>
+    <form data-form="risk-config" class="form-grid">
+      <label class="field"><span>Ligado</span><select name="enabled"><option value="1"${c.enabled ? ' selected' : ''}>Sim</option><option value="0"${c.enabled ? '' : ' selected'}>Não</option></select></label>
+      <label class="field"><span>Máx. a perder por seleção (€)</span><input name="selectionLiability" type="number" min="50" step="50" value="${c.selectionLiability}"></label>
+      <label class="field"><span>Máx. a perder por jogo (€)</span><input name="eventLiability" type="number" min="50" step="50" value="${c.eventLiability}"></label>
+      <label class="field"><span>Alerta: lucro 30 dias (€)</span><input name="alertProfit" type="number" min="10" step="10" value="${c.alertProfit}"></label>
+      <label class="field"><span>Alerta: retorno mínimo (%)</span><input name="alertRoiPct" type="number" min="1" value="${c.alertRoiPct}"></label>
+      <label class="field"><span>Alerta: apostas mínimas</span><input name="alertMinBets" type="number" min="1" value="${c.alertMinBets}"></label>
+      <label class="field"><span>Alerta: apostado &lt; % dos depósitos</span><input name="alertTurnoverPct" type="number" min="1" value="${c.alertTurnoverPct}"></label>
+      <label class="field"><span>Alerta: recusas em 7 dias</span><input name="alertRefusals" type="number" min="1" value="${c.alertRefusals}"></label>
+      <div class="form-actions"><button class="primary-btn btn-sm">Guardar limites</button></div>
+    </form></div>
+  <div class="panel"><h3>Perfil de um jogador</h3>
+    <form data-form="risk-user" class="form-grid">
+      <label class="field"><span>Jogador (id ou e-mail)</span><input name="user" id="riskUser" required maxlength="120"></label>
+      <label class="field"><span>Perfil</span>${profileSelect('profile')}</label>
+      <label class="field"><span>Nota (porquê)</span><input name="note" maxlength="300"></label>
+      <div class="form-actions"><button class="primary-btn btn-sm">Aplicar</button></div>
+    </form></div>
+  <div class="panel"><h3>Alertas <small class="muted">· ${r.alerts.length}</small></h3>
+    ${r.alerts.length ? `<div class="table-wrap"><table><thead><tr><th>Jogador</th><th>Perfil</th><th>Motivos</th><th class="num">Saldo</th><th></th></tr></thead><tbody>
+      ${r.alerts.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">#${a.userId} · ${esc(a.email)}</small></td><td>${esc(label(a.profile))}${a.note ? `<br><small class="muted">${esc(a.note)}</small>` : ''}</td>
+        <td>${a.reasons.map((x) => `<div>• ${esc(x)}</div>`).join('')}</td><td class="num">${money(a.balance)}</td><td>${setBtn(a)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Nenhum jogador a pedir atenção.</p>'}</div>
+  <div class="panel"><h3>Jogos com mais em jogo</h3>
+    ${r.exposure.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Início</th><th class="num">Apostas</th><th class="num">Apostado</th><th class="num">A perder</th><th class="num">Do teto</th></tr></thead><tbody>
+      ${r.exposure.map((e) => `<tr><td>${esc(e.match)}<br><small class="muted">${esc(e.competition)}</small></td><td>${esc(fmtDateTime(e.startTime))}</td><td class="num">${e.bets}</td><td class="num">${money(e.stake)}</td>
+        <td class="num">${money(e.liability)}</td><td class="num"><span class="pill ${e.pct >= 80 ? 'lost' : e.pct >= 50 ? 'open' : 'won'}">${e.pct} %</span></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sem apostas em aberto.</p>'}</div>
+  <div class="panel"><h3>Jogadores com perfil</h3>
+    ${r.profiled.length ? `<div class="table-wrap"><table><thead><tr><th>Jogador</th><th>Perfil</th><th>Nota</th><th></th></tr></thead><tbody>
+      ${r.profiled.map((u) => `<tr><td>${esc(u.name)}<br><small class="muted">#${u.userId} · ${esc(u.email)}</small></td><td>${esc(label(u.profile))}</td><td>${esc(u.note || '')}</td><td>${setBtn(u)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Todos os jogadores no perfil Normal.</p>'}</div>
+  <div class="panel"><h3>Registo</h3>
+    ${r.events.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>O quê</th><th>Detalhe</th></tr></thead><tbody>
+      ${r.events.map((e) => `<tr><td>${esc(fmtDateTime(e.at))}</td><td>${esc(e.name)} <small class="muted">#${e.userId}</small></td><td>${esc(RISK_KIND[e.kind] || e.kind)}</td><td>${esc(e.detail)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda sem registos.</p>'}</div>`;
+}
+
 // ---------- forms ----------
 
 const handlers = {
+  async 'risk-config'(form) {
+    const d = formData(form);
+    await api('/api/admin/risk/config', { method: 'PUT', body: { ...d, enabled: d.enabled === '1' } });
+    toast('Guardado', 'Limites de risco atualizados.');
+    loadTab();
+  },
+  async 'risk-user'(form) {
+    const d = formData(form);
+    await api('/api/admin/risk/users', { method: 'POST', body: d });
+    toast('Guardado', 'Perfil do jogador atualizado.');
+    loadTab();
+  },
   async 'fs-promo'(form) {
     const d = formData(form);
     const iso = (v) => (v ? new Date(v).toISOString() : null);
@@ -1863,6 +1927,10 @@ document.addEventListener('click', async (e) => {
       toast(actionEl.dataset.now === '1' && f?.at ? `Jogos futuros: ${f.games} jogos até ${r.futureDays} dias` : `Guardado: ${r.futureDays} dias`);
       render();
     } catch (err) { toast('Erro', err.message, 'error'); } finally { actionEl.disabled = false; }
+  } else if (action === 'risk-pick') {
+    // "Alterar perfil" on a row: fills the player's id in the form above.
+    const input = $('#riskUser');
+    if (input) { input.value = actionEl.dataset.user; input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
   } else if (action === 'winhouse-skipped') {
     // The competitions WinHouse sent that the site left out, with the reason and a game of each.
     const box = $('#whOut');

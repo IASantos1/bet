@@ -610,6 +610,13 @@ function migrate(db) {
 
   // Casino (aggregator Agent API): the player's code there.
   const userCols = new Set(db.prepare('PRAGMA table_info(users)').all().map((c) => c.name));
+  // Risk management (risk.js): the player's profile (null = normal) and the operator's note.
+  if (!userCols.has('risk_profile')) db.exec('ALTER TABLE users ADD COLUMN risk_profile TEXT');
+  if (!userCols.has('risk_note')) db.exec('ALTER TABLE users ADD COLUMN risk_note TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS risk_events (
+    id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL, detail TEXT NOT NULL,
+    event_id INTEGER, admin_id INTEGER, created_at TEXT NOT NULL)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_risk_events_user ON risk_events (user_id, created_at)');
   if (!userCols.has('casino_user_code')) db.exec('ALTER TABLE users ADD COLUMN casino_user_code INTEGER');
   // When the player last answered "receive promotions?" (a "not now" is asked again 30 days later).
   if (!userCols.has('promo_asked_at')) db.exec('ALTER TABLE users ADD COLUMN promo_asked_at TEXT');

@@ -6,6 +6,7 @@ import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
 import { postTransaction } from './wallet.js';
 import { checkBet } from './limits.js';
+import { checkRisk, stakeCeiling } from './risk.js';
 
 export { resultCode };
 
@@ -37,7 +38,8 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
   }
   if (picks.length > limits.maxSelections) throw new HttpError(400, `Máximo de ${limits.maxSelections} seleções.`);
   if (stakeCents < limits.minStakeCents) throw new HttpError(400, `Aposta mínima: €${(limits.minStakeCents / 100).toFixed(2)}.`);
-  if (stakeCents > limits.maxStakeCents) throw new HttpError(400, `Aposta máxima: €${(limits.maxStakeCents / 100).toFixed(2)}.`);
+  // The house maximum times the player's risk profile (VIP above it); the exact refusal is checkRisk's.
+  if (stakeCents > Math.max(limits.maxStakeCents, stakeCeiling(db, user))) throw new HttpError(400, `Aposta máxima: €${(limits.maxStakeCents / 100).toFixed(2)}.`);
   if (user.excluded_until && user.excluded_until > nowIso()) {
     throw new HttpError(403, 'A sua conta está em autoexclusão. Não é possível apostar.');
   }
@@ -105,6 +107,8 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
     // A builder leg another leg makes certain (double chance covering the result) counts as 1.00.
     const prices = slipLegs.map((l) => (mode === 'builder' && impliedLeg(l, slipLegs) ? 100 : l.odds_x100));
     const { totalOdds, payoutCents } = payoutFor(stakeCents, prices, factor);
+    // The house's own limits: the player's risk profile and what each selection / game can still cost.
+    checkRisk(db, user, { stakeCents, payoutCents, legs: slipLegs });
     // The player's own limits (stake, weekly loss), on the real money this bet would spend.
     if (!freebetId) {
       const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(user.id).balance_cents;
