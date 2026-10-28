@@ -26,6 +26,7 @@ import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
 import { createBackups } from './backups.js';
+import { createSanctions } from './sanctions.js';
 
 const db = openDb(config.dbPath);
 startLoopDelay();
@@ -183,7 +184,10 @@ const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] $
 if (brevo.configured) console.log(`Brevo: emails de ${config.brevo.senderEmail}${brevo.smsConfigured ? ', SMS ligado' : ''}`);
 const goalApi = createGoalApi(db, { ...config.goalApi, log: (m) => console.warn(`[goal-api] ${m}`) });
 if (goalApi.enabled) console.log(`[goal-api] estatísticas ativas (até ${config.goalApi.daily} pedidos por dia)`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, boardCacheMs: 2000 });
+// Sanctions lists (EU, UN; UK optional): downloaded once a day, every player compared with them.
+const sanctions = createSanctions(db, { urls: config.sanctions, log: (msg) => console.log(`[sanções] ${msg}`) });
+const stopSanctions = sanctions.start();
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
@@ -195,6 +199,7 @@ const server = app.listen(config.port, () => {
 const shutdown = () => {
   stopFeed();
   stopBackups();
+  stopSanctions();
   stopTennis();
   stopSports.forEach((stop) => stop());
   tennisLive?.stop();

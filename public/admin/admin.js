@@ -1327,6 +1327,25 @@ function adminNewEvent() {
 
 const RISK_KIND = { profile: 'Perfil alterado', max_stake: 'Acima da aposta máxima', liability: 'Limite do jogo / seleção', refused: 'Conta bloqueada' };
 
+/** The sanctions lists (state of each) and the matches waiting for a decision. */
+function sanctionsPanel(x) {
+  if (!x) return '';
+  return `<div class="panel"><h3>Sanções (UE / ONU${x.sources.some((s) => s.id === 'uk' && s.updatedAt) ? ' / Reino Unido' : ''}) ${x.hits.length ? `<span class="pill lost">${x.hits.length} por decidir</span>` : ''}</h3>
+    <p class="muted">As listas oficiais são descarregadas uma vez por dia e cada jogador é comparado no registo, ao enviar documentos e depois de cada atualização. Uma correspondência bloqueia os levantamentos até decidir: “Falso positivo” liberta; “Confirmar” bloqueia a conta.</p>
+    <div class="table-wrap"><table><thead><tr><th>Lista</th><th class="num">Pessoas</th><th class="num">Nomes</th><th>Atualizada</th><th>Estado</th></tr></thead><tbody>
+      ${x.sources.map((s) => `<tr><td>${esc(s.label)}</td><td class="num">${s.people}</td><td class="num">${s.names}</td><td>${s.updatedAt ? esc(fmtDateTime(s.updatedAt)) : '—'}</td>
+        <td>${s.error ? `<span class="pill lost">Erro</span> <small class="muted">${esc(s.error)}</small>` : s.updatedAt ? '<span class="pill won">OK</span>' : s.id === 'uk' ? '<small class="muted">Desligada (SANCTIONS_UK_URL)</small>' : '<small class="muted">A aguardar a 1.ª atualização</small>'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="sanctions-refresh">Atualizar listas agora</button></div>
+    ${x.hits.length ? `<div class="table-wrap"><table><thead><tr><th>Jogador</th><th>Na lista</th><th>Força</th><th></th></tr></thead><tbody>
+      ${x.hits.map((h) => `<tr><td>${esc(h.name)}<br><small class="muted">#${h.userId} · ${esc(h.email)} · nasc. ${esc(h.birthdate || '—')}</small></td>
+        <td>${esc(h.listedName)}<br><small class="muted">${esc(h.source)} · ${esc(h.ref)} · nasc. ${esc(h.listedBirths || '—')}</small></td>
+        <td><span class="pill ${h.strength === 'strong' ? 'lost' : 'open'}">${h.strength === 'strong' ? 'Nome e data de nascimento' : 'Só o nome'}</span></td>
+        <td><div class="form-actions"><button class="ghost-btn btn-sm" data-action="sanctions-decide" data-id="${h.id}" data-decision="cleared">Falso positivo</button>
+          <button class="danger-btn btn-sm" data-action="sanctions-decide" data-id="${h.id}" data-decision="confirmed">Confirmar</button></div></td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Nenhuma correspondência por decidir.</p>'}</div>`;
+}
+
 /** Admin → Risco: the ceilings, the players to look at, the games with the most at stake, the profiles set. */
 function adminRisk(r) {
   const c = r.config;
@@ -1357,6 +1376,7 @@ function adminRisk(r) {
       <label class="field"><span>Nota (porquê)</span><input name="note" maxlength="300"></label>
       <div class="form-actions"><button class="primary-btn btn-sm">Aplicar</button></div>
     </form></div>
+  ${sanctionsPanel(r.sanctions)}
   <div class="panel"><h3>Alertas <small class="muted">· ${r.alerts.length}</small></h3>
     ${r.alerts.length ? `<div class="table-wrap"><table><thead><tr><th>Jogador</th><th>Perfil</th><th>Motivos</th><th class="num">Saldo</th><th></th></tr></thead><tbody>
       ${r.alerts.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">#${a.userId} · ${esc(a.email)}</small></td><td>${esc(label(a.profile))}${a.note ? `<br><small class="muted">${esc(a.note)}</small>` : ''}</td>
@@ -1931,6 +1951,22 @@ document.addEventListener('click', async (e) => {
       toast(actionEl.dataset.now === '1' && f?.at ? `Jogos futuros: ${f.games} jogos até ${r.futureDays} dias` : `Guardado: ${r.futureDays} dias`);
       render();
     } catch (err) { toast('Erro', err.message, 'error'); } finally { actionEl.disabled = false; }
+  } else if (action === 'sanctions-refresh') {
+    actionEl.disabled = true;
+    actionEl.textContent = 'A atualizar…';
+    try {
+      const r = await api('/api/admin/risk/sanctions/refresh', { method: 'POST' });
+      toast('Listas atualizadas', `${r.found} nova(s) correspondência(s).`);
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); actionEl.disabled = false; actionEl.textContent = 'Atualizar listas agora'; }
+  } else if (action === 'sanctions-decide') {
+    const confirmed = actionEl.dataset.decision === 'confirmed';
+    if (confirmed && !confirm('Confirmar a correspondência? A conta fica bloqueada (perfil Bloqueado).')) return;
+    try {
+      await api(`/api/admin/risk/sanctions/${actionEl.dataset.id}`, { method: 'POST', body: { decision: actionEl.dataset.decision } });
+      toast('Guardado', confirmed ? 'Conta bloqueada.' : 'Marcado como falso positivo.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
   } else if (action === 'risk-pick') {
     // "Alterar perfil" on a row: fills the player's id in the form above.
     const input = $('#riskUser');

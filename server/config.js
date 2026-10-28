@@ -302,6 +302,13 @@ export const config = {
     key: unquote(env.GOAL_API_KEY), baseUrl: unquote(env.GOAL_API_BASE_URL) || 'https://api.goal-api.com/v1',
     daily: Math.max(0, Number(env.GOAL_API_DAILY) || 900),
   },
+  // Sanctions lists (sanctions.js): the EU and UN ones by default; SANCTIONS_EU_URL / _UN_URL replace
+  // their addresses ("off" turns one off), SANCTIONS_UK_URL adds the UK's (OFSI consolidated CSV).
+  sanctions: {
+    eu: env.SANCTIONS_EU_URL === 'off' ? '' : unquote(env.SANCTIONS_EU_URL) || undefined,
+    un: env.SANCTIONS_UN_URL === 'off' ? '' : unquote(env.SANCTIONS_UN_URL) || undefined,
+    uk: unquote(env.SANCTIONS_UK_URL) || '',
+  },
   // The site's public address (https://bet62.plus) for referral links; else the request's host.
   publicUrl: unquote(env.PUBLIC_URL),
   // Contacts shown in the profile's support section (empty: not shown).

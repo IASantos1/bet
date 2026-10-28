@@ -22,12 +22,14 @@ test('big leagues come first in every sport', () => {
 test('football leagues with the same name elsewhere do not jump the queue', () => {
   assert.equal(leagueTier('futebol', 'England. Premier League'), 1);
   assert.equal(leagueTier('futebol', 'Inglaterra. Premier League'), 1);
-  assert.equal(leagueTier('futebol', 'Egypt. Premier League'), 9);
+  assert.equal(leagueTier('futebol', 'Egypt. Premier League'), 3); // a smaller league, never with the big ones
   assert.equal(leagueTier('futebol', 'Brazil. Serie A'), 1);
-  assert.equal(leagueTier('futebol', 'Ecuador. Serie A'), 9);
-  assert.equal(leagueTier('futebol', 'Austria. Bundesliga'), 9);
+  assert.equal(leagueTier('futebol', 'Ecuador. Serie A'), 3); // a smaller league, never with the big ones
+  assert.equal(leagueTier('futebol', 'Austria. Bundesliga'), 3); // a smaller league, never with the big ones
   assert.equal(leagueTier('futebol', 'França. Ligue 1'), 1);
   assert.equal(leagueTier('futebol', 'AFC Champions League'), 9);
+  assert.equal(leagueTier('futebol', 'Paraguay. Cup'), 3);
+  assert.equal(leagueTier('futebol', 'England. League Two'), 9);
   assert.equal(leagueTier('futebol', 'UEFA Champions League'), 1);
   // Every UEFA competition is top, qualifiers included.
   for (const n of ['UEFA Nations League', 'UEFA Conference League', 'UEFA Super Cup', 'UEFA Europa League. Qualification', 'International. UEFA Nations League', 'Europe. Conference League'])
