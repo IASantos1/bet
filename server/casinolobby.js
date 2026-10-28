@@ -204,11 +204,19 @@ export function dropCrossDuplicates(games) {
     if (!!a.fit !== !!b.fit) return !a.fit; // portrait artwork over a landscape picture
     return a.id < b.id;
   };
+  const owners = new Map(); // key → every provider that has a copy
   for (const g of games) {
     const k = keyOf(g);
     if (!k) continue;
     const cur = best.get(k);
     if (!cur || better(g, cur)) best.set(k, g);
+    if (!owners.has(k)) owners.set(k, new Set());
+    owners.get(k).add(g.providerId);
+  }
+  // The copy kept still belongs to the other providers too (their filter shows it): `also`.
+  for (const [k, g] of best) {
+    const others = [...owners.get(k)].filter((id) => id !== g.providerId);
+    if (others.length) g.also = others;
   }
   return games.filter((g) => { const k = keyOf(g); return !k || best.get(k) === g; });
 }

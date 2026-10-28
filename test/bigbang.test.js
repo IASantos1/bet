@@ -250,7 +250,7 @@ test('lobby: featured block first, then providers in the house order; tabs with 
   const fresh = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
   lobby = await fresh.lobby({ n: 10 });
   assert.equal(row('destaques').games[0].id, 4822);
-  assert.deepEqual((await fresh.gamesPage({ category: 'novos' })).games.map((g) => g.id), [9001, 4822, 4821]);
+  assert.deepEqual((await fresh.gamesPage({ category: 'novos' })).games.map((g) => g.id), [4822, 4821]); // new games, not the live tables
   assert.deepEqual((await fresh.gamesPage({ category: 'populares' })).total, 3);
   assert.deepEqual((await fresh.gamesPage({ category: 'slots' })).games.map((g) => g.id), [4822, 4821]);
   assert.deepEqual((await fresh.gamesPage({ category: 'roleta' })).games.map((g) => g.id), [9001]);
@@ -290,8 +290,9 @@ test('lobby: the featured titles in their order (exact title, named provider), l
   // Big Bass Splash once (Pragmatic Play comes before Reel Kingdom in the house order).
   assert.equal(lobby.rows[0].games.find((x) => x.name === 'Big Bass Splash').id, 12);
   assert.equal((await bb.games()).games.filter((x) => x.name === 'Big Bass Splash').length, 1);
-  // Providers: Pragmatic Play, Evolution, Games Global (Microgaming), Play'n GO, NetEnt, Spribe, then PG Soft.
-  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft'].map((p) => `Jogos da ${p}`));
+  // Providers: Pragmatic Play, Evolution, Games Global (Microgaming), Play'n GO, NetEnt, Spribe, PG Soft, then Reel
+  // Kingdom (its Big Bass shown once, under Pragmatic Play, still in its own row and filter).
+  assert.deepEqual(lobby.rows.filter((r) => r.key === 'provider').map((r) => r.title), ['Pragmatic Play', 'Evolution', 'Games Global', "Play'n GO", 'NetEnt', 'Spribe', 'PG Soft', 'Reel Kingdom'].map((p) => `Jogos da ${p}`));
   // "Acabados de chegar" (newest first, no live tables), the Top 10 of the week (while nothing was played
   // here, the market's hits, no live tables) and the jackpots.
   assert.deepEqual(lobby.rows.slice(1, 4).map((r) => [r.key, r.title]), [['novos', 'Acabados de chegar'], ['top10', 'Top 10 em Portugal esta semana'], ['jackpots', 'Jogos com Jackpot']]);
@@ -622,4 +623,11 @@ test('variety: one game of a family per row; "Porque jogaste" brings the family,
   assert.deepEqual(rel.slice(0, 2).every((n) => n.startsWith('Big Bass')), true);
   assert.ok(rel.indexOf('Fruity Halloween') < rel.indexOf('Sweet Bonanza'), 'the Halloween theme before the provider');
   assert.equal(rel.slice(0, 8).filter((n) => n.startsWith('Gates of Olympus')).length, 1, 'one Gates of Olympus while there are other families');
+});
+
+test('a game shown once for two providers is in both providers\' filter', async () => {
+  const { dropCrossDuplicates } = await import('../server/casinolobby.js');
+  const g = (id, provider) => ({ id, name: 'Big Bass Splash', provider, providerId: provider.toLowerCase().replace(/\s/g, ''), type: 'slot', image: `https://x/${id}.png` });
+  const [kept] = dropCrossDuplicates([g(1, 'Pragmatic Play'), g(2, 'Reel Kingdom')]);
+  assert.deepEqual([kept.id, kept.also], [1, ['reelkingdom']]);
 });
