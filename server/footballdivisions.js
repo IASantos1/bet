@@ -199,12 +199,36 @@ export const DIVISION_COUNTRIES = rules.map((r) => r.country);
 const CUP = /(cup|cupen|pokal)$|^(super)?(copa|taca|coppa|coupe|beker|kupa|kupok|puchar|pokal)/;
 const NOT_CUP = /women|woman|female|femenin|feminin|reina|youth|junior|reserve|amateur|regional|u\d{2}/;
 
+// Cups named by the country's adjective, with no country before ("Turkish Cup", "Greek Cup",
+// "Scottish Cup", "Emperor's Cup" aside): the adjective → the country as the sidebar shows it.
+const ADJECTIVES = {
+  turkish: 'Turkey', greek: 'Greece', scottish: 'Scotland', english: 'England', welsh: 'Wales', irish: 'Ireland',
+  northernirish: 'Northern Ireland', german: 'Germany', french: 'France', spanish: 'Spain', italian: 'Italy',
+  portuguese: 'Portugal', dutch: 'Netherlands', belgian: 'Belgium', swiss: 'Switzerland', austrian: 'Austria',
+  danish: 'Denmark', swedish: 'Sweden', norwegian: 'Norway', finnish: 'Finland', icelandic: 'Iceland', polish: 'Poland',
+  czech: 'Czech Republic', slovak: 'Slovakia', slovenian: 'Slovenia', croatian: 'Croatia', serbian: 'Serbia',
+  bosnian: 'Bosnia and Herzegovina', montenegrin: 'Montenegro', macedonian: 'North Macedonia', albanian: 'Albania',
+  hungarian: 'Hungary', romanian: 'Romania', bulgarian: 'Bulgaria', ukrainian: 'Ukraine', russian: 'Russia',
+  belarusian: 'Belarus', georgian: 'Georgia', armenian: 'Armenia', azerbaijani: 'Azerbaijan', kazakh: 'Kazakhstan',
+  cypriot: 'Cyprus', israeli: 'Israel', maltese: 'Malta', estonian: 'Estonia', latvian: 'Latvia', lithuanian: 'Lithuania',
+  moldovan: 'Moldova', faroese: 'Faroe Islands', luxembourgish: 'Luxembourg', brazilian: 'Brazil', argentine: 'Argentina',
+  argentinian: 'Argentina', chilean: 'Chile', colombian: 'Colombia', peruvian: 'Peru', uruguayan: 'Uruguay',
+  paraguayan: 'Paraguay', bolivian: 'Bolivia', ecuadorian: 'Ecuador', venezuelan: 'Venezuela', mexican: 'Mexico',
+  american: 'United States', canadian: 'Canada', japanese: 'Japan', korean: 'South Korea', chinese: 'China',
+  australian: 'Australia', saudi: 'Saudi Arabia', qatari: 'Qatar', egyptian: 'Egypt', moroccan: 'Morocco',
+  algerian: 'Algeria', tunisian: 'Tunisia', southafrican: 'South Africa', iranian: 'Iran', indian: 'India', thai: 'Thailand',
+  vietnamese: 'Vietnam', indonesian: 'Indonesia', malaysian: 'Malaysia',
+};
+const ADJ_CUP = new RegExp(`^(${Object.keys(ADJECTIVES).sort((a, b) => b.length - a.length).join('|')})(fa|football|league|super)?(cup|cupen|pokal|kupa|kupasi)$`);
+
 /**
  * The country and division of a league, from its name ("England. Championship" → England, 2):
  * 1 and 2 the first and second division, 3 the country's cups; null when it is none of them.
  */
 export function divisionOf(name) {
   const k = key(name);
+  const adj = ADJ_CUP.exec(k.replace(STAGE_END, ''));
+  if (adj && !NOT_CUP.test(k)) return { country: ADJECTIVES[adj[1]], division: 3 };
   for (const r of rules) {
     for (const a of r.aliases) {
       if (k.startsWith(a)) {
