@@ -30,6 +30,10 @@ const DEFAULTS = {
   alertMinBets: 20, // …on 20 settled bets or more
   alertTurnoverPct: 100, // a withdrawal with bets under 100 % of what was deposited (30 days)
   alertRefusals: 3, // limits hit 3 times or more in 7 days
+  // Anti money laundering, whatever the identity provider:
+  kycDepositCents: 200_000, // deposits over €2 000 in all need the identity verified first (0 = off)
+  alertBigDepositCents: 200_000, // one deposit of €2 000 or more (30 days)
+  alertDeposits24h: 5, // 5 deposits or more in 24 h
 };
 
 export function riskConfig(db) {
@@ -57,6 +61,9 @@ export function saveRiskConfig(db, input = {}) {
     alertMinBets: input.alertMinBets === undefined ? cur.alertMinBets : int(input.alertMinBets, 1, 10_000),
     alertTurnoverPct: input.alertTurnoverPct === undefined ? cur.alertTurnoverPct : int(input.alertTurnoverPct, 1, 1000),
     alertRefusals: input.alertRefusals === undefined ? cur.alertRefusals : int(input.alertRefusals, 1, 1000),
+    kycDepositCents: input.kycDeposit === undefined ? cur.kycDepositCents : (Number(input.kycDeposit) === 0 ? 0 : euros(input.kycDeposit, 10, 1_000_000)),
+    alertBigDepositCents: input.alertBigDeposit === undefined ? cur.alertBigDepositCents : euros(input.alertBigDeposit, 10, 1_000_000),
+    alertDeposits24h: input.alertDeposits24h === undefined ? cur.alertDeposits24h : int(input.alertDeposits24h, 2, 1000),
   };
   setSetting(db, 'risk.config', next);
   return next;
@@ -148,6 +155,25 @@ export function checkRisk(db, user, { stakeCents, payoutCents, legs }) {
   }
 }
 
+/**
+ * Before a deposit: over `kycDepositCents` deposited in all, the identity must be verified first
+ * (anti money laundering). Throws 403 with what to do; the KYC itself stays the admin's (or a
+ * provider's, once one is connected).
+ */
+export function checkKycDeposit(db, user, amountCents) {
+  const cfg = riskConfig(db);
+  if (!cfg.kycDepositCents) return;
+  const u = db.prepare('SELECT kyc_status FROM users WHERE id = ?').get(user.id);
+  if (u?.kyc_status === 'approved') return;
+  const done = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = 'deposit'").get(user.id).s;
+  if (done + amountCents > cfg.kycDepositCents) {
+    const left = Math.max(0, cfg.kycDepositCents - done);
+    throw new HttpError(403, u?.kyc_status === 'pending'
+      ? `Os seus documentos estão em análise. Depois da aprovação pode continuar a depositar${left ? ` (até lá, no máximo ${eur(left)})` : ''}.`
+      : `Depósitos acima de ${eur(cfg.kycDepositCents)} exigem a verificação da identidade: envie os documentos em Perfil → Verificação${left ? ` (até lá, no máximo ${eur(left)})` : ''}.`, { kycRequired: true });
+  }
+}
+
 /** The games with the most at stake (open bets), with each one's share of its ceiling. */
 export function exposure(db, limit = 20) {
   const cfg = riskConfig(db);
@@ -188,6 +214,27 @@ export function riskAlerts(db, now = Date.now()) {
     if (r.dep > 0 && r.played * 100 < r.dep * cfg.alertTurnoverPct) {
       add(r.user_id, `Levantamento de ${eur(r.asked)} com apostas de ${eur(r.played)} para depósitos de ${eur(r.dep)} (30 dias)`);
     }
+  }
+  // Big deposits, and many in a short time.
+  for (const r of db.prepare(`SELECT user_id, MAX(amount_cents) AS top, COUNT(*) AS n FROM transactions
+      WHERE type = 'deposit' AND created_at >= ? AND amount_cents >= ? GROUP BY user_id`).all(since30, cfg.alertBigDepositCents)) {
+    add(r.user_id, `${r.n} depósito(s) de ${eur(cfg.alertBigDepositCents)} ou mais (maior ${eur(r.top)}) nos últimos 30 dias`);
+  }
+  const since1 = new Date(now - 86_400_000).toISOString();
+  for (const r of db.prepare(`SELECT user_id, COUNT(*) AS n, SUM(amount_cents) AS s FROM transactions
+      WHERE type = 'deposit' AND created_at >= ? GROUP BY user_id HAVING COUNT(*) >= ?`).all(since1, cfg.alertDeposits24h)) {
+    add(r.user_id, `${r.n} depósitos em 24 h (${eur(r.s)})`);
+  }
+  // One IBAN withdrawn to by more than one account.
+  const ibans = new Map();
+  for (const w of db.prepare('SELECT DISTINCT user_id, iban FROM withdrawals').all()) {
+    const k = String(w.iban).replace(/\s+/g, '').toUpperCase();
+    if (!ibans.has(k)) ibans.set(k, new Set());
+    ibans.get(k).add(w.user_id);
+  }
+  for (const [iban, users] of ibans) {
+    if (users.size < 2) continue;
+    for (const id of users) add(id, `IBAN ${iban.slice(0, 4)}…${iban.slice(-4)} usado por ${users.size} contas (#${[...users].join(', #')})`);
   }
   // Often at the limits.
   for (const r of db.prepare(`SELECT user_id, COUNT(*) AS n FROM risk_events WHERE kind IN ('max_stake', 'liability') AND created_at >= ? GROUP BY user_id`).all(since7)) {

@@ -1334,6 +1334,7 @@ function adminRisk(r) {
   const profileSelect = (name, cur = 'normal') => `<select name="${name}">${r.profiles.map((p) => `<option value="${p.id}"${p.id === cur ? ' selected' : ''}>${esc(p.label)} — aposta máx. ${money(r.maxStake * p.factor)}</option>`).join('')}</select>`;
   const setBtn = (u) => `<button class="ghost-btn btn-sm" data-action="risk-pick" data-user="${u.userId}">Alterar perfil</button>`;
   return `<div class="panel"><h3>Limites da casa</h3>
+    <p class="muted">Prevenção de branqueamento: acima do total depositado indicado, o jogador tem de verificar a identidade antes de depositar mais; os alertas assinalam depósitos grandes, muitos depósitos seguidos, levantamentos sem jogar e o mesmo IBAN em várias contas.</p>
     <p class="muted">Responsabilidade = o que as apostas em aberto custariam se ganhassem (pagamento − aposta). Uma aposta que passe o teto é recusada e o jogador vê a aposta máxima que ainda é aceite. O perfil de cada jogador multiplica a aposta máxima (${money(r.maxStake)}).</p>
     <form data-form="risk-config" class="form-grid">
       <label class="field"><span>Ligado</span><select name="enabled"><option value="1"${c.enabled ? ' selected' : ''}>Sim</option><option value="0"${c.enabled ? '' : ' selected'}>Não</option></select></label>
@@ -1344,6 +1345,9 @@ function adminRisk(r) {
       <label class="field"><span>Alerta: apostas mínimas</span><input name="alertMinBets" type="number" min="1" value="${c.alertMinBets}"></label>
       <label class="field"><span>Alerta: apostado &lt; % dos depósitos</span><input name="alertTurnoverPct" type="number" min="1" value="${c.alertTurnoverPct}"></label>
       <label class="field"><span>Alerta: recusas em 7 dias</span><input name="alertRefusals" type="number" min="1" value="${c.alertRefusals}"></label>
+      <label class="field"><span>KYC obrigatório acima de (€ depositados no total, 0 = desligado)</span><input name="kycDeposit" type="number" min="0" step="10" value="${c.kycDeposit}"></label>
+      <label class="field"><span>Alerta: depósito grande (€)</span><input name="alertBigDeposit" type="number" min="10" step="10" value="${c.alertBigDeposit}"></label>
+      <label class="field"><span>Alerta: depósitos em 24 h</span><input name="alertDeposits24h" type="number" min="2" value="${c.alertDeposits24h}"></label>
       <div class="form-actions"><button class="primary-btn btn-sm">Guardar limites</button></div>
     </form></div>
   <div class="panel"><h3>Perfil de um jogador</h3>

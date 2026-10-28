@@ -27,7 +27,7 @@ import {
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
   casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
-import { riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
+import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
 import { createPromo, updatePromo, setPromoStatus, grantPromo, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
@@ -1245,6 +1245,8 @@ export function createApp(db, {
       }
       // The player's own deposit limits (responsible gaming).
       checkDeposit(db, req.user, amount);
+      // Anti money laundering: over a total deposited, the identity verified first.
+      checkKycDeposit(db, req.user, amount);
       // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
       // whether it is given, and how much, is decided here.
       const promo = ['sport', 'casino', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
@@ -2190,7 +2192,8 @@ export function createApp(db, {
   admin.get('/risk', (_req, res) => {
     const cfg = riskConfig(db);
     res.json({
-      config: { ...cfg, selectionLiability: cfg.selectionLiabilityCents / 100, eventLiability: cfg.eventLiabilityCents / 100, alertProfit: cfg.alertProfitCents / 100 },
+      config: { ...cfg, selectionLiability: cfg.selectionLiabilityCents / 100, eventLiability: cfg.eventLiabilityCents / 100, alertProfit: cfg.alertProfitCents / 100,
+        kycDeposit: cfg.kycDepositCents / 100, alertBigDeposit: cfg.alertBigDepositCents / 100 },
       profiles: Object.entries(RISK_PROFILES).map(([id, p]) => ({ id, ...p })),
       maxStake: config.limits.maxStakeCents / 100,
       alerts: riskAlerts(db), exposure: exposure(db), ...riskOverview(db),
