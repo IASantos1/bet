@@ -17,7 +17,7 @@ import { createBanners, BannerError } from './banners.js';
 import { createCollections, CollectionError } from './collections.js';
 import { createSeasonal } from './seasonal.js';
 import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlights.js';
-import { createFeatured } from './featured.js';
+import { createFeatured, isBigTeam } from './featured.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
 } from './security.js';
@@ -647,6 +647,8 @@ export function createApp(db, {
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
+        // A big club plays (Real Madrid, Manchester City, Benfica…): first on the live page.
+        bigTeam: isBigTeam(e.home) || isBigTeam(e.away),
         tennis: e.sport === 'tenis' && e.status === 'live' ? parseJson(e.live_detail) : null,
         // Red cards of each side in play (none: null).
         redCards: e.status === 'live' && (e.red_home || e.red_away) ? { home: e.red_home || 0, away: e.red_away || 0 } : null,

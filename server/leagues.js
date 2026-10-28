@@ -1,4 +1,5 @@
-// Competition priority per sport: 1 = top (big leagues, majors), 2 = strong, 9 = the rest.
+// Competition priority per sport: 1 = top (big leagues, majors), 2 = strong, 3 = the smaller
+// leagues (football: other countries' first divisions and cups), 9 = the rest.
 // Drives the order of the live page and which events make the home page carousels: big
 // leagues first in every sport, and football first of all.
 
@@ -6,6 +7,8 @@
 // Austria's "Bundesliga"): when the name carries a country ("England. Premier League"), the
 // league only counts for the countries listed with it. Names without a country are taken as is.
 // Names are compared without accents and in lower case.
+import { divisionOf } from './footballdivisions.js';
+
 const C = {
   eng: /^(england|inglaterra)$/, esp: /^(spain|espanha|espana)$/, ita: /^(italy|italia)$/,
   ger: /^(germany|alemanha)$/, fra: /^(france|franca)$/, por: /^portugal$/, bra: /^(brazil|brasil)$/,
@@ -57,7 +60,9 @@ function footballTier(competition) {
     if (countries && country && !countries.some((c) => c.test(country))) continue;
     return tier;
   }
-  return 9;
+  // The smaller leagues: every other covered country's first division and cups.
+  const d = divisionOf(competition);
+  return d && d.division !== 2 ? 3 : 9;
 }
 
 const TIERS = {
