@@ -244,6 +244,7 @@ function openAuth(mode) {
         </div>
         <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
         <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
+        <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
         <button class="primary-btn btn-block">CRIAR CONTA</button>
       </form>
       <div class="modal-switch">Já tem conta? <button data-action="login">Entrar</button></div>`);
@@ -3251,7 +3252,7 @@ const formHandlers = {
     const d = formData(form);
     const { user } = await api('/api/auth/register', {
       method: 'POST',
-      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, ref: referralCode() || undefined },
+      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, pep: form.pep.checked, ref: referralCode() || undefined },
     });
     state.user = user;
     closeModal();

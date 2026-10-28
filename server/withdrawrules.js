@@ -17,6 +17,10 @@ export function withdrawEligibility(db, user) {
   if (open) {
     return { eligible: false, code: 'WITHDRAWAL_ALREADY_OPEN', message: 'Já tem um levantamento em análise. Aguarde a decisão antes de pedir outro.' };
   }
+  // A match on a sanctions list (sanctions.js) waits for the operator's decision.
+  if (user.sanctions_status === 'hit' || user.sanctions_status === 'confirmed') {
+    return { eligible: false, code: 'ACCOUNT_REVIEW', message: 'A sua conta está em verificação. Contacte o apoio ao cliente.' };
+  }
   const kyc = user.kyc_status || 'not_submitted';
   if (kyc !== 'approved') return { eligible: false, code: 'KYC_REQUIRED', message: KYC_MESSAGE[kyc] || KYC_MESSAGE.not_submitted };
   const lastDeposit = db.prepare("SELECT MAX(created_at) AS at FROM transactions WHERE user_id = ? AND type = 'deposit'").get(user.id).at;

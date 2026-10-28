@@ -613,6 +613,16 @@ function migrate(db) {
   // Risk management (risk.js): the player's profile (null = normal) and the operator's note.
   if (!userCols.has('risk_profile')) db.exec('ALTER TABLE users ADD COLUMN risk_profile TEXT');
   if (!userCols.has('risk_note')) db.exec('ALTER TABLE users ADD COLUMN risk_note TEXT');
+  // Sanctions screening (sanctions.js): 'clear' / 'hit' (a match waiting for the operator) /
+  // 'confirmed'; and the player's own declaration of being a politically exposed person.
+  if (!userCols.has('sanctions_status')) db.exec('ALTER TABLE users ADD COLUMN sanctions_status TEXT');
+  if (!userCols.has('pep_declared')) db.exec('ALTER TABLE users ADD COLUMN pep_declared INTEGER');
+  db.exec(`CREATE TABLE IF NOT EXISTS sanctions_list (id INTEGER PRIMARY KEY, source TEXT NOT NULL, ref TEXT NOT NULL, name TEXT NOT NULL, words TEXT NOT NULL, births TEXT)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sanctions_list_source ON sanctions_list (source)');
+  db.exec(`CREATE TABLE IF NOT EXISTS sanctions_sources (source TEXT PRIMARY KEY, people INTEGER NOT NULL, names INTEGER NOT NULL, updated_at TEXT, error TEXT)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS sanctions_hits (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), source TEXT NOT NULL, ref TEXT NOT NULL,
+    listed_name TEXT NOT NULL, listed_births TEXT, strength TEXT NOT NULL, status TEXT NOT NULL, decided_by INTEGER, decided_at TEXT, created_at TEXT NOT NULL)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sanctions_hits_user ON sanctions_hits (user_id, status)');
   db.exec(`CREATE TABLE IF NOT EXISTS risk_events (
     id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL, detail TEXT NOT NULL,
     event_id INTEGER, admin_id INTEGER, created_at TEXT NOT NULL)`);

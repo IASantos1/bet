@@ -236,6 +236,8 @@ export function riskAlerts(db, now = Date.now()) {
     if (users.size < 2) continue;
     for (const id of users) add(id, `IBAN ${iban.slice(0, 4)}…${iban.slice(-4)} usado por ${users.size} contas (#${[...users].join(', #')})`);
   }
+  // Politically exposed persons (declared at sign-up): enhanced due diligence.
+  for (const r of db.prepare('SELECT id FROM users WHERE pep_declared = 1').all()) add(r.id, 'Declarou ser pessoa politicamente exposta (PEP): diligência reforçada');
   // Often at the limits.
   for (const r of db.prepare(`SELECT user_id, COUNT(*) AS n FROM risk_events WHERE kind IN ('max_stake', 'liability') AND created_at >= ? GROUP BY user_id`).all(since7)) {
     if (r.n >= cfg.alertRefusals) add(r.user_id, `${r.n} apostas recusadas por limite nos últimos 7 dias`);

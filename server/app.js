@@ -27,6 +27,7 @@ import {
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
   casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
+import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
 import { createPromo, updatePromo, setPromoStatus, grantPromo, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
 import { playerToken } from './bigbang.js';
@@ -159,7 +160,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -292,6 +293,7 @@ export function createApp(db, {
           .run(user.id, KYC_KINDS[kind], fileName, mime, data.length, data, nowIso());
         if (user.kyc_status !== 'approved') db.prepare("UPDATE users SET kyc_status = 'pending' WHERE id = ?").run(user.id);
       });
+      try { screenSanctions(db, user.id); } catch (err) { console.warn(`[sanções] KYC: ${err.message}`); }
       res.status(201).json({ ok: true });
     } catch (err) { next(err); }
   });
@@ -1057,8 +1059,10 @@ export function createApp(db, {
     // The same box covers SMS when a phone number was given.
     const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)]);
+      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0);
+    // Compared with the sanctions lists at once (a failure never stops the registration).
+    try { screenSanctions(db, Number(lastInsertRowid)); } catch (err) { console.warn(`[sanções] registo: ${err.message}`); }
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
     // once, on the server; a bad or unknown code never stops the registration.
     const refCode = str(req.body.ref, 12) || parseCookies(req.headers.cookie)[REF_COOKIE] || '';
@@ -2196,8 +2200,17 @@ export function createApp(db, {
         kycDeposit: cfg.kycDepositCents / 100, alertBigDeposit: cfg.alertBigDepositCents / 100 },
       profiles: Object.entries(RISK_PROFILES).map(([id, p]) => ({ id, ...p })),
       maxStake: config.limits.maxStakeCents / 100,
-      alerts: riskAlerts(db), exposure: exposure(db), ...riskOverview(db),
+      alerts: riskAlerts(db), exposure: exposure(db), ...riskOverview(db), sanctions: sanctionsView(db),
     });
+  });
+  // The sanctions lists downloaded again now (and every player compared), and a match decided.
+  admin.post('/risk/sanctions/refresh', wrap(async (_req, res) => {
+    if (!sanctions) throw new HttpError(503, 'Verificação de sanções desligada.');
+    res.json({ found: await sanctions.refresh(), sanctions: sanctionsView(db) });
+  }));
+  admin.post('/risk/sanctions/:id', (req, res) => {
+    try { res.json(tx(db, () => decideHit(db, req.params.id, str(req.body?.decision, 20), req.user.id))); }
+    catch (err) { throw err.status ? new HttpError(err.status, err.message) : err; }
   });
   admin.put('/risk/config', (req, res) => res.json({ config: saveRiskConfig(db, req.body || {}) }));
   // A player's profile, by id or e-mail.
