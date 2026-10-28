@@ -87,3 +87,26 @@ test('alerts: a player winning a lot, a withdrawal barely played, limits hit oft
   for (let i = 0; i < 2; i += 1) assert.throws(() => t.bet(busy, s3, 10_000), /Aposta máxima aceite: €50,00/);
   assert.match(riskAlerts(t.db).find((x) => x.userId === busy).reasons.at(-1), /2 apostas recusadas por limite/);
 });
+
+test('anti money laundering: deposits over the total need the identity verified; deposit and IBAN alerts', async () => {
+  const { checkKycDeposit } = await import('../server/risk.js');
+  const t = setup();
+  tx(t.db, () => saveRiskConfig(t.db, { kycDeposit: 6000, alertBigDeposit: 4000, alertDeposits24h: 3 }));
+  const a = t.user('a@x'); // €5 000 deposited
+  checkKycDeposit(t.db, { id: a }, 100_000);
+  assert.throws(() => checkKycDeposit(t.db, { id: a }, 100_100), /exigem a verificação da identidade.*no máximo €1000,00/);
+  t.db.prepare("UPDATE users SET kyc_status = 'pending' WHERE id = ?").run(a);
+  assert.throws(() => checkKycDeposit(t.db, { id: a }, 200_000), /em análise/);
+  t.db.prepare("UPDATE users SET kyc_status = 'approved' WHERE id = ?").run(a);
+  checkKycDeposit(t.db, { id: a }, 900_000);
+  tx(t.db, () => saveRiskConfig(t.db, { kycDeposit: 0 }));
+  const b = t.user('b@x');
+  checkKycDeposit(t.db, { id: b }, 900_000); // off
+  // Many deposits in a day, one big one, the same IBAN on two accounts.
+  for (let i = 0; i < 2; i += 1) tx(t.db, () => postTransaction(t.db, b, 1000, 'deposit', `x${i}`));
+  for (const u of [a, b]) t.db.prepare("INSERT INTO withdrawals (user_id, amount_cents, iban, status, created_at) VALUES (?, 1000, 'PT50 0002 0123', 'approved', ?)").run(u, nowIso());
+  const why = (u) => riskAlerts(t.db).find((x) => x.userId === u).reasons.join(' | ');
+  assert.match(why(b), /3 depósitos em 24 h/);
+  assert.match(why(b), /depósito\(s\) de €4000,00 ou mais \(maior €5000,00\)/);
+  assert.match(why(a), new RegExp(`IBAN PT50…0123 usado por 2 contas \\(#${a}, #${b}\\)`));
+});
