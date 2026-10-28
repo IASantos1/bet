@@ -204,7 +204,7 @@ export function createBigBang(db, {
     // Then one copy of a slot across providers too (a studio's games listed under its parent as well).
     const unique = dropCrossDuplicates(games.filter((g) => best.get(titleKey(g)) === g));
     // Every copy stays reachable by id (a free-spins game, an old link); the lists show one.
-    const shown = new Set(unique.map((g) => g.providerId));
+    const shown = new Set(unique.flatMap((g) => [g.providerId, ...(g.also || [])]));
     catalog = { at: Date.now(), games: unique, byId: new Map([...hidden, ...games].map((g) => [g.id, g])), providers: providers.filter((p) => shown.has(p.id)) };
     return catalog;
   }
@@ -333,7 +333,8 @@ export function createBigBang(db, {
     // the house exclusives, the themes (Pesca, Grécia Antiga…) and one row per provider.
     const c = ctx();
     // Every row shows one game of a family (Gates of Olympus once, not its 1000, Dice, Super Scatter…).
-    const rows = featured.length ? [{ key: 'destaques', more: 'populares', title: 'Escolhas da semana', total: featured.length, games: diversify(featured) }] : [];
+    // "Ver todos": the week's picks themselves (the row's games), not the whole casino.
+    const rows = featured.length ? [{ key: 'destaques', title: 'Escolhas da semana', total: featured.length, games: diversify(featured) }] : [];
     const fresh = byNewest(all.games.filter((g) => g.type !== 'live'));
     if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: diversify(fresh, n) });
     const top = topWeek(all.games);
@@ -346,7 +347,7 @@ export function createBigBang(db, {
       .filter((t) => t.list.length >= 6);
     const provRows = [];
     for (const p of all.providers) {
-      const list = popular.filter((g) => g.providerId === p.id);
+      const list = popular.filter((g) => g.providerId === p.id || (g.also || []).includes(p.id));
       if (list.length) provRows.push({ key: 'provider', provider: p.id, title: `Jogos da ${p.name}`, total: list.length, games: diversify(list, n) });
     }
     // A theme after every two providers, so the long list of providers has some variety.
@@ -361,9 +362,14 @@ export function createBigBang(db, {
     const term = String(q || '').trim().toLowerCase();
     // "populares" / "novos" are orders over every game; the other tabs filter.
     const order = sort || (category === 'novos' ? 'new' : 'popular');
-    let list = inCategory(all.games.filter((g) => (!provider || g.providerId === String(provider))
+    // A provider: its games, and those shown once under another provider that it has too (`also`).
+    const ofProvider = (g) => g.providerId === String(provider) || (g.also || []).includes(String(provider));
+    let list = inCategory(all.games.filter((g) => (!provider || ofProvider(g))
       && (!term || g.name.toLowerCase().includes(term) || g.provider.toLowerCase().includes(term))), category);
     list = order === 'new' ? byNewest(list) : category === 'populares' ? mixedPopular(list) : byPopularity(list);
+    // "Populares" and "Novos" are a selection, not the whole casino: the 100 most played, the 60 newest.
+    if (category === 'populares') list = list.slice(0, 100);
+    if (category === 'novos') list = list.filter((g) => g.type !== 'live').slice(0, 60);
     const start = Math.max(0, Number(offset) || 0);
     const size = Math.min(60, Math.max(1, Number(limit) || 24));
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: list.length, offset: start, games: list.slice(start, start + size) };
