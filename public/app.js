@@ -308,16 +308,24 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
 // A team without a badge: its real kit picture, else a shirt in its real kit colours (both found
 // with the badge, teamlogos.js);
-// a plain neutral shirt while they are not known (colours are never made up).
+// the house's colours for the clubs set in server/kits.js; a plain neutral shirt while none is known.
 const SAFE_HEX = /^#[0-9a-f]{6}$/i;
 function kitOf(name, kit) {
   const [a, b] = Array.isArray(kit) ? kit.filter((c) => SAFE_HEX.test(c)) : [];
   if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
   return ['#9aa4b1', '#d7dce3'];
 }
+const SHIRT = 'M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z';
+let jerseyN = 0;
 function jerseySvg(name, kit) {
   const [a, b] = kitOf(name, kit);
-  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z" fill="${a}" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
+  // A house kit (server/kits.js) may add stripes or sleeves of another colour: "stripes:#hex" / "sleeves:#hex".
+  const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
+  const id = `kc${++jerseyN}`;
+  const pattern = !SAFE_HEX.test(extra || '') ? ''
+    : kind === 'stripes' ? `<clipPath id="${id}"><path d="${SHIRT}"/></clipPath><g clip-path="url(#${id})" fill="${extra}"><rect x="9.6" y="0" width="3.2" height="32"/><rect x="15.4" y="0" width="3.2" height="32"/><rect x="21.2" y="0" width="3.2" height="32"/></g>`
+      : kind === 'sleeves' ? `<path d="M5 7l-3 7 4.2 2 2.3-3.2V8.2zM27 7l3 7-4.2 2-2.3-3.2V8.2z" fill="${extra}"/>` : '';
+  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="${SHIRT}" fill="${a}"/>${pattern}<path d="${SHIRT}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
     + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
 }
 // Pictures that failed to load: the next refresh draws their replacement straight away (no blink).

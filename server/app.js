@@ -18,6 +18,7 @@ import { createCollections, CollectionError } from './collections.js';
 import { createSeasonal } from './seasonal.js';
 import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlights.js';
 import { createFeatured, isBigTeam } from './featured.js';
+import { houseKit } from './kits.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
 } from './security.js';
@@ -642,7 +643,9 @@ export function createApp(db, {
         // The badge found here, to show should the feed's not load.
         homeLogoAlt: teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
         awayLogoAlt: teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
-        homeKit: teamLogos?.get(e.sport, e.home)?.colors || null, awayKit: teamLogos?.get(e.sport, e.away)?.colors || null,
+        // The house's kit first (server/kits.js: stripes, sleeves), else the badge provider's colours.
+        homeKit: houseKit(e.sport, e.home) || teamLogos?.get(e.sport, e.home)?.colors || null,
+        awayKit: houseKit(e.sport, e.away) || teamLogos?.get(e.sport, e.away)?.colors || null,
         homeKitImg: teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: teamLogos?.get(e.sport, e.away)?.kit || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
