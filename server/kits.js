@@ -3,6 +3,8 @@
 // official kits: their colours, drawn as the site's plain shirt (public/app.js jerseySvg).
 // Names are compared without accents, in lower case and without "FC" / "AFC" around them.
 
+import { shortTeam } from './shortnames.js';
+
 const K = (body, trim, { stripes = null, sleeves = null } = {}) => [body, trim, stripes ? `stripes:${stripes}` : sleeves ? `sleeves:${sleeves}` : null].filter(Boolean);
 
 export const KITS = {
@@ -127,5 +129,5 @@ export const KITS = {
 const plain = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/^(fc|afc)\s+|\s+(fc|afc)$/g, '').replace(/\s+/g, ' ').trim();
 
-/** The house's kit for a team (football), or null. */
-export const houseKit = (sport, name) => (sport === 'futebol' ? KITS[plain(name)] || null : null);
+/** The house's kit for a team (football), or null; a long name also by its short one ("Sporting Clube de Portugal"). */
+export const houseKit = (sport, name) => (sport === 'futebol' ? KITS[plain(name)] || KITS[plain(shortTeam(name))] || null : null);
