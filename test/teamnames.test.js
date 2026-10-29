@@ -22,3 +22,15 @@ test('the feed stores those names in Latin letters', () => {
   const ev = normalizeItem({ id: 1, sport_id: 2, league: 'China. CBA', name: '广东宏远 - 辽宁本钢', home_team: '广东宏远', away_team: '辽宁本钢', game_date: '2026-10-27', game_time: '12:00:00' });
   assert.deepEqual([ev.home, ev.away], ['Guangdong Southern Tigers', 'Liaoning Flying Leopards']);
 });
+
+test('long team names are shown short; the full name stays in the data', async () => {
+  const { shortTeam } = await import('../server/shortnames.js');
+  assert.equal(shortTeam('Sporting Clube de Portugal'), 'Sporting CP');
+  assert.equal(shortTeam('Paris Saint-Germain'), 'Paris SG');
+  assert.equal(shortTeam('Manchester United'), 'Man United');
+  assert.equal(shortTeam('FC Bayern München'), 'Bayern');
+  assert.equal(shortTeam('Club Atlético Lanús'), 'Lanús');
+  assert.equal(shortTeam('Esporte Clube Bahia'), 'Bahia');
+  assert.equal(shortTeam('Arsenal'), null);
+  assert.equal(shortTeam('Sporting CP'), null);
+});

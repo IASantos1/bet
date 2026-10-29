@@ -299,7 +299,7 @@ function oddsButtons(e, { labels = 'code' } = {}) {
     const prev = state.previousOdds.get(s.id);
     const move = prev && prev !== s.odds ? (s.odds > prev ? ' up' : ' down') : '';
     const locked = !s.active || !isOpen(e);
-    const label = labels === 'name' ? (s.code === '1' ? e.home : s.code === '2' ? e.away : 'Empate') : s.code;
+    const label = labels === 'name' ? (s.code === '1' ? tname(e, 'home') : s.code === '2' ? tname(e, 'away') : 'Empate') : s.code;
     return `<button class="odd-btn${inSlip(s.id) ? ' selected' : ''}${move}${locked ? ' locked' : ''}" data-sel="${s.id}" ${locked ? 'disabled' : ''}>
       <small>${esc(label)}</small>${locked ? '🔒' : fmtOdds(s.odds)}</button>`;
   }).join('')}</div>`;
@@ -446,9 +446,9 @@ function matchCard(e, extraClass = '') {
   return `<article class="match-card clickable${modifier}" data-open="${e.id}">
     <div class="match-top"><span>${esc(e.competition)}</span><span>${e.status === 'live' ? liveClock(e) : esc(fmtWhen(e.startTime))}</span></div>
     <div class="teams">
-      <div class="team">${sideBadge(e, 'home')}${esc(e.home)}${redCard(e, 'home')}</div>
+      <div class="team">${sideBadge(e, 'home')}${esc(tname(e, 'home'))}${redCard(e, 'home')}</div>
       <div class="vs">${e.status !== 'live' ? 'VS' : e.sport === 'tenis' ? `<b>${esc((tennisPoints(e.tennis?.point) || ['', '']).join(' - ')) || '·'}</b>` : `<b>${e.homeScore ?? 0}-${e.awayScore ?? 0}</b>`}</div>
-      <div class="team">${sideBadge(e, 'away')}${esc(e.away)}${redCard(e, 'away')}</div>
+      <div class="team">${sideBadge(e, 'away')}${esc(tname(e, 'away'))}${redCard(e, 'away')}</div>
     </div>
     ${oddsButtons(e)}
   </article>`;
@@ -458,6 +458,8 @@ function matchCard(e, extraClass = '') {
 
 // A team's three letters on its shirt's badge ("SL Benfica" → BEN, "Gil Vicente FC" → GIL): not the club's crest.
 const ABBR_SKIP = /^(fc|cf|ac|afc|sc|sl|cd|ud|ca|rc|ss|ssc|as|us|sv|vfb|vfl|tsg|fk|nk|sk|ks|bk|if|ik|aik|real|sporting|club|clube|cd|1\.?)$/i;
+/** The team's name to show: the short one when it is long (server/shortnames.js). */
+const tname = (e, side) => e?.[`${side}Short`] || e?.[side] || '';
 function teamAbbr(name) {
   const words = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/).filter(Boolean);
   const main = words.find((w) => !ABBR_SKIP.test(w) && /[a-z]/i.test(w)) || words[0] || '?';
@@ -507,8 +509,8 @@ function matchBanner(e) {
     : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
   return `<div class="mb-card"><article class="mb-banner">
     <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
-    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
-    <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
+    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(tname(e, 'home'), e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(tname(e, 'away'), e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
+    <a class="mb-teams" href="#/jogo/${e.id}"><b title="${esc(e.home)}">${esc(tname(e, 'home'))}</b><span class="mb-when">${when}</span><b title="${esc(e.away)}">${esc(tname(e, 'away'))}</b></a>
   </article>
   <div class="mb-odds">${sels.map((x, i) => {
       const locked = !x.active || !isOpen(e);
@@ -591,13 +593,13 @@ function liveCard(e) {
   if (e.sport === 'tenis') {
     return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
-    <div class="live-teams tn-board">${tennisCardHead(e)}<div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>${tennisCardPoint(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}</span>${tennisCardPoint(e, 'away')}</div></div>
+    <div class="live-teams tn-board">${tennisCardHead(e)}<div><span>${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>${tennisCardPoint(e, 'home')}</div><div><span>${sideBadge(e, 'away', 'mini')}${esc(tname(e, 'away'))}</span>${tennisCardPoint(e, 'away')}</div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
   }
   return `<article class="live-card clickable" data-open="${e.id}">
     <div class="match-top">${liveClock(e)}<span>${esc(e.competition)}</span></div>
-    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}${redCard(e, 'home')}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}${redCard(e, 'away')}</span><b>${e.awayScore ?? 0}</b></div></div>
+    <div class="live-teams"><div><span>${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}${redCard(e, 'home')}</span><b>${e.homeScore ?? 0}</b></div><div><span>${sideBadge(e, 'away', 'mini')}${esc(tname(e, 'away'))}${redCard(e, 'away')}</span><b>${e.awayScore ?? 0}</b></div></div>
     ${oddsButtons(e, { labels: 'name' })}
   </article>`;
 }
@@ -612,8 +614,8 @@ function eventRow(e) {
   return `<div class="event-row clickable" data-open="${e.id}">
     <div class="event-time">${when}</div>
     <div class="event-teams">
-      <div><span>${sideBadge(e, 'home', 'mini')}${esc(e.home)}${redCard(e, 'home')}</span>${score('h')}</div>
-      <div><span>${sideBadge(e, 'away', 'mini')}${esc(e.away)}${redCard(e, 'away')}</span>${score('a')}</div>
+      <div><span>${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}${redCard(e, 'home')}</span>${score('h')}</div>
+      <div><span>${sideBadge(e, 'away', 'mini')}${esc(tname(e, 'away'))}${redCard(e, 'away')}</span>${score('a')}</div>
     </div>
     ${oddsButtons(e)}
   </div>`;
@@ -1044,7 +1046,7 @@ function resultsPage() {
       box.innerHTML = events.length
         ? `<div class="comp-block">${events.map((e) => `<div class="event-row">
             <div class="event-time">${esc(fmtWhen(e.startTime)).replace(' ', '<br>')}</div>
-            <div class="event-teams"><div><span>${esc(e.home)}</span><b>${e.homeScore}</b></div><div><span>${esc(e.away)}</span><b>${e.awayScore}</b></div></div>
+            <div class="event-teams"><div><span>${esc(tname(e, 'home'))}</span><b>${e.homeScore}</b></div><div><span>${esc(tname(e, 'away'))}</span><b>${e.awayScore}</b></div></div>
             <div><span class="result-pill">${esc(e.competition)}</span></div></div>`).join('')}</div>`
         : '<div class="panel empty">Ainda não há resultados.</div>';
     } catch (err) { toast('Erro', err.message, 'error'); }
@@ -2737,7 +2739,7 @@ function toggleSelection(selId) {
     state.slip = state.slip.filter((s) => s.eventId !== ev.id);
     state.slip.push({
       selectionId: sel.id, eventId: ev.id, market: sel.market || '1x2', marketName: sel.marketName, code: sel.code,
-      label: sel.label, odds: sel.odds, match: `${ev.home} vs ${ev.away}`, competition: ev.competition,
+      label: sel.label, odds: sel.odds, match: `${tname(ev, 'home')} vs ${tname(ev, 'away')}`, competition: ev.competition,
     });
   }
   autoMode();
@@ -4030,7 +4032,7 @@ function addPick(i) {
   if (!e || !p) return;
   if (state.slip.length || state.builder) toast('Boletim', 'A melhor escolha substituiu as seleções anteriores.');
   state.slip = [];
-  state.builder = { eventId: e.id, match: `${e.home} × ${e.away}`, competition: e.competition, startTime: e.startTime, legs: p.legs.map((l) => ({ ...l })), boost: { key: p.key, pct: p.pct } };
+  state.builder = { eventId: e.id, match: `${tname(e, 'home')} × ${tname(e, 'away')}`, competition: e.competition, startTime: e.startTime, legs: p.legs.map((l) => ({ ...l })), boost: { key: p.key, pct: p.pct } };
   saveSlip(); syncSelectedButtons(); renderSlip(); setSlipOpen(true);
 }
 
@@ -4183,9 +4185,9 @@ function matchPage(sub) {
     <section class="match-hero">
       <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
-        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(e.home)}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
+        <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(tname(e, 'home'))}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
-        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(e.away)}${redCard(e, 'away')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
+        <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(tname(e, 'away'))}${redCard(e, 'away')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
       <div id="trackerInline" class="tracker-inline"></div>
     </section>
@@ -4662,7 +4664,7 @@ function marketBlocks(e, markets) {
         const two = mk.selections.find((s) => bare(s) === `2${opposite}`);
         return `<div class="odds two handicap-odds">${one ? btn(one, handicapLabel(line)) : '<span></span>'}${two ? btn(two, handicapLabel(opposite)) : '<span></span>'}</div>`;
       }).join('');
-      grid = `<div class="handicap-teams"><span>${esc(e.home)}</span><span>${esc(e.away)}</span></div>${homeRows}`;
+      grid = `<div class="handicap-teams"><span>${esc(tname(e, 'home'))}</span><span>${esc(tname(e, 'away'))}</span></div>${homeRows}`;
     } else {
       // The same option twice (same name and price) shows once.
       const seen = new Set();
@@ -4745,7 +4747,7 @@ function marketBlocks(e, markets) {
     const [home, away] = b.k.side === 'home' ? [b, tagged[j]] : [tagged[j], b];
     const title = b.k.key.replace(/\s·\s\{T\}/, '').replace(/^\{T\}\s/, 'Equipa ').replace('{T}', 'Equipa').replace(/\s+/g, ' ').trim();
     return `<div class="market-block"><div class="market-head">${esc(title)}</div>
-      <div class="market-team">${esc(e.home)}</div>${home.grid}<div class="market-team">${esc(e.away)}</div>${away.grid}</div>`;
+      <div class="market-team">${esc(tname(e, 'home'))}</div>${home.grid}<div class="market-team">${esc(tname(e, 'away'))}</div>${away.grid}</div>`;
   }).join('');
 }
 
@@ -4774,7 +4776,7 @@ function h2hView(e, ins) {
   const h = ins.h2h;
   const pct = (n) => (h.total ? Math.round((n / h.total) * 100) : 0);
   const direct = h ? `<div class="panel"><h3>Confronto direto · ${h.total} jogo${h.total === 1 ? '' : 's'}</h3>
-    <div class="h2h-sum"><div><b>${h.homeWins}</b><span>${esc(e.home)}</span></div><div><b>${h.draws}</b><span>Empates</span></div><div><b>${h.awayWins}</b><span>${esc(e.away)}</span></div></div>
+    <div class="h2h-sum"><div><b>${h.homeWins}</b><span>${esc(tname(e, 'home'))}</span></div><div><b>${h.draws}</b><span>Empates</span></div><div><b>${h.awayWins}</b><span>${esc(tname(e, 'away'))}</span></div></div>
     <div class="h2h-bar"><i class="h" data-w="${pct(h.homeWins)}"></i><i class="d" data-w="${pct(h.draws)}"></i><i class="a" data-w="${pct(h.awayWins)}"></i></div>
     <p class="muted h2h-goals">Golos: ${h.homeGoals} - ${h.awayGoals} · média ${h.avgGoals} por jogo</p>
     ${h.recent.map((r) => `<div class="h2h-game"><span class="muted">${esc(shortDate(r.date))}</span><span class="h2h-teams">${esc(r.home)} <b>${r.homeScore} - ${r.awayScore}</b> ${esc(r.away)}</span></div>`).join('')}
@@ -4782,7 +4784,7 @@ function h2hView(e, ins) {
   const form = (side) => {
     const f = ins.form?.[side];
     if (!f) return '';
-    return `<div class="panel"><h3>${esc(side === 'home' ? e.home : e.away)} · últimos ${f.games.length} jogos</h3>
+    return `<div class="panel"><h3>${esc(tname(e, side))} · últimos ${f.games.length} jogos</h3>
       <div class="form-sum"><span class="fr W">${f.won} V</span><span class="fr D">${f.drawn} E</span><span class="fr L">${f.lost} D</span></div>
       ${f.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
     </div>`;
@@ -4803,7 +4805,7 @@ function venueView(e, v) {
       ${s.games.map((g) => `<div class="h2h-game"><span class="fr ${g.result}">${RESULT_LABEL[g.result]}</span><span class="h2h-teams">${g.home ? 'vs' : 'em'} ${esc(g.opponent)} <b>${esc(g.score)}</b></span><span class="muted">${esc(shortDate(g.date))}</span></div>`).join('')}
     </div>`;
   };
-  return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, e.home, 'em casa')}${side(v.away, e.away, 'fora')}</div></div>`;
+  return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, tname(e, 'home'), 'em casa')}${side(v.away, tname(e, 'away'), 'fora')}</div></div>`;
 }
 
 function standingsView(e, t) {
@@ -4838,7 +4840,7 @@ function liveStatsView(e) {
       <div class="stat-bar"><i class="w${Math.round(hp / 5) * 5}"></i></div></div>`;
   }).join('');
   const inc = (x.incidents || []).map((i) => `<div class="incident ${i.side || ''}"><span class="inc-min">${esc(i.minuteLabel || (i.minute !== null && i.minute !== undefined ? `${i.minute}'` : ''))}</span>
-    <span class="inc-icon">${INCIDENT_ICON[i.type] || '•'}</span><span>${esc(i.player || '')}${i.side ? ` <small class="muted">(${esc(i.side === 'home' ? e.home : e.away)})</small>` : ''}</span></div>`).join('');
+    <span class="inc-icon">${INCIDENT_ICON[i.type] || '•'}</span><span>${esc(i.player || '')}${i.side ? ` <small class="muted">(${esc(tname(e, i.side))})</small>` : ''}</span></div>`).join('');
   return `<div class="grid match-stats-grid">
     <div class="panel"><h3>Estatísticas</h3>${bars || '<p class="muted">Sem estatísticas para este jogo.</p>'}</div>
     <div class="panel"><h3>Cronologia</h3>${inc || '<p class="muted">Sem golos nem cartões até agora.</p>'}</div>
@@ -4875,7 +4877,7 @@ function sportStatsView(e) {
   }
   const sideName = (k) => (k === 'home' ? e.home : k === 'away' ? e.away : '');
   const tables = (x.tables || []).map((t) => `<div class="panel"><h3>${esc(t.title || sideName(t.side))}</h3><div class="table-wrap"><table>
-    <thead><tr>${t.columns.map(([, l], i) => `<th${i ? ' class="num"' : ''}>${esc(l === 'Casa' ? e.home : l === 'Fora' ? e.away : l)}</th>`).join('')}</tr></thead>
+    <thead><tr>${t.columns.map(([, l], i) => `<th${i ? ' class="num"' : ''}>${esc(l === 'Casa' ? tname(e, 'home') : l === 'Fora' ? tname(e, 'away') : l)}</th>`).join('')}</tr></thead>
     <tbody>${t.rows.map((r) => `<tr>${t.columns.map(([k], i) => `<td${i ? ' class="num"' : ''}>${esc(r[k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`).join('');
   const detail = x.setsDetail || e.clock;
   const title = e.sport === 'tenis' ? 'Parciais' : 'Resultado';
@@ -4902,9 +4904,9 @@ const BALL_SVG = `<svg viewBox="0 0 64 64" class="trk-ball-svg" aria-hidden="tru
 function footballWidget(e) {
   const flags = ['tl', 'tr', 'bl', 'br'].map((c) => `<i class="trk-corner c-${c}"></i><i class="trk-flag f-${c}"></i>`).join('');
   return `<div class="trk" data-kind="football">
-    <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(e.home)}</span>
+    <div class="trk-head"><span class="trk-team"><i class="trk-dot home"></i>${esc(tname(e, 'home'))}</span>
       <span class="trk-score"><b id="trkHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="trkAwayScore">${e.awayScore ?? 0}</b><small id="trkClock">${esc(e.clock || '')}</small></span>
-      <span class="trk-team away">${esc(e.away)}<i class="trk-dot away"></i></span></div>
+      <span class="trk-team away">${esc(tname(e, 'away'))}<i class="trk-dot away"></i></span></div>
     <div class="trk-turf"><div class="trk-pitch" id="trkPitch">
       <div class="trk-mark" aria-hidden="true">BET<span>62</span></div>
       <div class="trk-arrow" id="trkArrow"></div>
@@ -4927,9 +4929,9 @@ function footballWidget(e) {
 
 function tennisWidget(e) {
   return `<div class="trk" data-kind="tennis">${expandBtn()}
-    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(e.home)}</span>
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
       <span class="trk-score"><b id="trkSetLabel">S1</b><small id="trkPoint">—</small></span>
-      <span class="trk-team away">${esc(e.away)}${sideBadge(e, 'away', 'mini')}</span></div>
+      <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
     <div class="court-wrap"><div class="court" id="trkCourt">
       <i class="court-alley top"></i><i class="court-alley bottom"></i><i class="court-service l"></i><i class="court-service r"></i>
       <i class="court-center l"></i><i class="court-center r"></i><i class="court-net"></i>
@@ -5072,7 +5074,7 @@ function updateTracker({ instant = false } = {}) {
     badge.classList.toggle('on', !!ko);
     badge.classList.toggle('away', ko === 'away');
     badge.classList.remove('hot');
-    $('#trkBadgeTeam', w).textContent = ko === 'away' ? e.away : ko === 'home' ? e.home : '';
+    $('#trkBadgeTeam', w).textContent = ko === 'away' ? tname(e, 'away') : ko === 'home' ? tname(e, 'home') : '';
     $('#trkBadgeText', w).textContent = 'Pontapé de saída';
     badge.style.left = '50%';
     badge.style.top = '30%';
@@ -5118,7 +5120,7 @@ function updateTracker({ instant = false } = {}) {
   badge.classList.add('on');
   badge.classList.toggle('away', side === 'away');
   badge.classList.toggle('hot', danger);
-  $('#trkBadgeTeam', w).textContent = side === 'away' ? e.away : e.home;
+  $('#trkBadgeTeam', w).textContent = tname(e, side === 'away' ? 'away' : 'home');
   $('#trkBadgeText', w).textContent = SITUATION_LABEL[b.situation] || (b.situation ? String(b.situation).replaceAll('_', ' ') : 'Em jogo');
   badge.style.left = `${Math.min(78, Math.max(22, b.x))}%`;
   badge.style.top = `${b.y > 55 ? Math.max(14, b.y - 22) : Math.min(86, b.y + 22)}%`;
