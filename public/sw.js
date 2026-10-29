@@ -53,3 +53,26 @@ self.addEventListener('fetch', (e) => {
     })));
   }
 });
+
+// A notification from the site (server/push.js): shown in the phone's own style, with the Bet62 icon,
+// the big picture where the phone shows one (Android) and a vibration where it allows one.
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Bet62', body: e.data?.text() || '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'Bet62', {
+    body: m.body || '', icon: '/icon-192.png?v=2', badge: '/icon-192.png?v=2', image: m.image || undefined,
+    tag: m.tag || undefined, renotify: !!m.tag, vibrate: [120, 60, 120, 60, 320],
+    data: { url: m.url || '/' }, actions: m.kind === 'win' ? [{ action: 'open', title: 'Ver aposta' }] : [],
+  }));
+});
+
+// A tap on it: the app open already comes to the front on that page, else it opens there.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/', self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+    if (open) return open.focus().then((c) => c?.navigate?.(url)).catch(() => self.clients.openWindow(url));
+    return self.clients.openWindow(url);
+  }));
+});

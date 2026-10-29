@@ -3,6 +3,7 @@
 import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, marketsReopened, createClipGate, createCornerWatch } from './trkclips.js';
 import { qualityTier, zoneTier, DANGER } from './trk3dmath.js';
 import { colourSportIcon } from './sporticons.js';
+import { celebrate } from './winfx.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' },
@@ -3271,12 +3272,80 @@ async function refreshMe() {
   try {
     const { user } = await api('/api/me');
     state.user = user;
-    if (user) { loadPromos(); loadBets({ quiet: true }); } else state.promos = null;
+    if (user) { loadPromos(); loadBets({ quiet: true }); checkWins(); pushCheck(); } else state.promos = null;
   } catch (err) {
     // Only a real sign-out clears the account; a dropped connection keeps the last balance shown.
     if (err.status === 401) state.user = null;
   }
   updateHeader();
+}
+
+// ---------- won bets: the full-screen "Ganhou!" (winfx.js) and the notifications on the phone ----------
+
+let winsBusy = false;
+async function checkWins() {
+  if (!state.user || winsBusy || playingCasino() || document.hidden || $('.win-fx')) return;
+  winsBusy = true;
+  try {
+    const { wins } = await api('/api/me/wins');
+    if (wins?.length) {
+      celebrate(wins, {
+        money, esc,
+        onClose: (ids) => { api('/api/me/wins/seen', { method: 'POST', body: { ids } }).catch(() => {}); refreshMe(); },
+      });
+    }
+  } catch { /* the next poll tries again */ } finally { winsBusy = false; }
+}
+
+// Web Push (server/push.js): asked once after signing in, again 30 days after a "not now".
+const PUSH_ASKED = 'bet62_push_asked';
+let pushChecked = false;
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const urlB64 = (b64) => {
+  const raw = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+async function pushKey() {
+  if (state.pushKey === undefined) state.pushKey = (await api('/api/push/key').catch(() => ({}))).key || null;
+  return state.pushKey;
+}
+async function pushSubscribe() {
+  const key = await pushKey();
+  if (!key) return false;
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  // Made under other keys (the site's changed): replaced.
+  const same = sub?.options?.applicationServerKey && btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === key;
+  if (sub && !same) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(key) });
+  await api('/api/me/push', { method: 'POST', body: { subscription: sub.toJSON() } });
+  return true;
+}
+async function pushCheck() {
+  if (pushChecked || !state.user || !pushSupported()) return;
+  pushChecked = true;
+  if (!(await pushKey())) return;
+  if (Notification.permission === 'granted') { pushSubscribe().catch(() => {}); return; }
+  if (Notification.permission !== 'default') return;
+  let asked = 0;
+  try { asked = Number(localStorage.getItem(PUSH_ASKED) || 0); } catch { /* ignore */ }
+  if (Date.now() - asked < 30 * 86_400_000) return;
+  setTimeout(() => {
+    if (!state.user || !$('#modalBackdrop').classList.contains('hidden') || $('.win-fx') || playingCasino()) { pushChecked = false; return; }
+    openModal('Avisos da Bet62', `<div class="promo-ask"><div class="promo-ask-icon" aria-hidden="true">🔔</div>
+      <p><b>Saiba logo quando a sua aposta ganhar.</b></p>
+      <p class="muted">Avisamos no telemóvel quando um bilhete é ganho, mesmo com a app fechada. Pode desligar quando quiser.</p>
+      <div class="promo-ask-acts"><button class="primary-btn" data-action="push-yes">Ativar avisos</button><button class="outline-btn" data-action="push-no">Agora não</button></div></div>`);
+  }, 6000);
+}
+async function pushYes() {
+  try { localStorage.setItem(PUSH_ASKED, String(Date.now())); } catch { /* ignore */ }
+  closeModal();
+  try {
+    if ((await Notification.requestPermission()) !== 'granted') { toast('Avisos desligados', 'Pode ativá-los nas definições do navegador.', 'error'); return; }
+    await pushSubscribe();
+    toast('Avisos ativados', 'Vai saber logo quando a sua aposta ganhar.');
+  } catch (err) { toast('Erro', err.message || 'Não foi possível ativar os avisos.', 'error'); }
 }
 
 /**
@@ -3651,6 +3720,8 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
+  else if (action === 'push-yes') pushYes();
+  else if (action === 'push-no') { try { localStorage.setItem(PUSH_ASKED, String(Date.now())); } catch { /* ignore */ } closeModal(); }
   else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
   else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
   else if (action === 'cg-fav') {
