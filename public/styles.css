@@ -1956,3 +1956,46 @@ html.light .combo-legs li::after { background: #22b14c; }
 .stand-tabs { margin: 0 0 10px; }
 .wallet-kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 640px) { .wallet-kinds { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- match banners (home): stadium photo, both shirts, time and the 1X2 ---------- */
+.mb-section .car-track { grid-auto-columns: minmax(300px, 560px); }
+.mb-banner { position: relative; overflow: hidden; border-radius: 22px; padding: 14px 16px 16px; color: #fff; background: #0b1530 url('/img/banner-stadium.jpg') center 30% / cover no-repeat;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35); isolation: isolate; }
+.mb-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(8, 14, 40, .15) 0%, rgba(8, 14, 40, .35) 45%, rgba(10, 16, 36, .92) 78%); }
+.mb-banner a { color: inherit; text-decoration: none; }
+.mb-head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.mb-head .side-flag { width: 22px; height: 22px; }
+.mb-shirts { position: relative; display: flex; justify-content: center; height: 170px; margin: 4px 0 2px; }
+.mb-kit { position: absolute; top: 4px; width: 150px; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .5)); }
+.mb-kit.home { left: calc(50% - 132px); transform: rotate(-7deg); z-index: 1; }
+.mb-kit.away { left: calc(50% - 18px); transform: rotate(7deg); z-index: 2; }
+.mb-shirt { display: block; width: 100%; height: auto; }
+.mb-teams { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; margin: 2px 0 14px; }
+.mb-teams b { font-size: 18px; font-weight: 800; line-height: 1.15; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); overflow-wrap: break-word; hyphens: auto; }
+.mb-teams b:first-child { text-align: right; }
+.mb-when { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mb-day { font-size: 12px; font-weight: 700; opacity: .85; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.mb-time, .mb-score { font-size: 20px; font-weight: 800; white-space: nowrap; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
+.mb-odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.mb-pick { display: flex; flex-direction: column; gap: 8px; }
+.mb-odd.odd-btn { width: 100%; height: auto; min-height: 54px; border-radius: 10px; background: rgba(16, 22, 28, .72); color: #fff;
+  border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; font-size: 19px; font-weight: 800; }
+.mb-odd.odd-btn small { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, .7); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-odd.odd-btn:hover { border-color: var(--viva); }
+.mb-odd.odd-btn.selected { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); box-shadow: 0 0 16px var(--viva-glow); }
+.mb-odd.odd-btn.selected small { color: var(--viva-ink); }
+.mb-bar { display: block; width: 100%; height: 4px; }
+.mb-bar rect { fill: rgba(255, 255, 255, .16); }
+.mb-bar rect.mb-fill { fill: rgba(255, 255, 255, .55); }
+.mb-bar.fav rect.mb-fill { fill: var(--viva); }
+.mb-banner .mb-brand { margin-left: auto; font-size: 14px; letter-spacing: .02em; color: #fff; }
+.mb-banner .mb-brand span { color: var(--viva); }
+@media (max-width: 480px) {
+  .mb-shirts { height: 140px; }
+  .mb-kit { width: 122px; }
+  .mb-kit.home { left: calc(50% - 108px); }
+  .mb-kit.away { left: calc(50% - 14px); }
+  .mb-teams b { font-size: 16px; }
+  .mb-odd.odd-btn { font-size: 17px; min-height: 50px; }
+}

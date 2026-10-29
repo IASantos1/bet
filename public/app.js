@@ -454,6 +454,79 @@ function matchCard(e, extraClass = '') {
   </article>`;
 }
 
+// ---------- match banners (home): the stadium photo, both teams' shirts, the time and the 1X2 ----------
+
+// A team's three letters on its shirt's badge ("SL Benfica" → BEN, "Gil Vicente FC" → GIL): not the club's crest.
+const ABBR_SKIP = /^(fc|cf|ac|afc|sc|sl|cd|ud|ca|rc|ss|ssc|as|us|sv|vfb|vfl|tsg|fk|nk|sk|ks|bk|if|ik|aik|real|sporting|club|clube|cd|1\.?)$/i;
+function teamAbbr(name) {
+  const words = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/).filter(Boolean);
+  const main = words.find((w) => !ABBR_SKIP.test(w) && /[a-z]/i.test(w)) || words[0] || '?';
+  return main.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase();
+}
+let bigShirtN = 0;
+/** A big shirt for the banners: the team's kit colours (stripes / sleeves too) and a round badge with its letters. */
+function bannerShirt(name, kit) {
+  const [a, b] = kitOf(name, kit);
+  const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
+  const id = `bs${++bigShirtN}`;
+  const body = 'M62 18 30 31 6 82l31 15 13-25v124h100V72l13 25 31-15-24-51-32-13c-6 16-21 25-38 25S68 34 62 18z';
+  const pattern = !SAFE_HEX.test(extra || '') ? ''
+    : kind === 'stripes' ? `<g clip-path="url(#${id}c)" fill="${extra}">${[62, 86, 110, 134].map((x) => `<rect x="${x}" y="0" width="12" height="210"/>`).join('')}</g>`
+      : kind === 'sleeves' ? `<g clip-path="url(#${id}c)" fill="${extra}"><path d="M0 0h50v210H0zM150 0h50v210h-50z"/></g>` : '';
+  const letters = teamAbbr(name);
+  return `<svg class="mb-shirt" viewBox="0 0 200 206" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${body}"/></clipPath>
+      <linearGradient id="${id}g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient></defs>
+    <path d="${body}" fill="${a}"/>${pattern}<path d="${body}" fill="url(#${id}g)"/>
+    <path d="M62 18c6 16 21 25 38 25s32-9 38-25" fill="none" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M8 78l28 13M192 78l-28 13" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="128" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="128" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>
+    <path d="${body}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+/** The competition's country, for its flag on the banner: "England. Premier League" → England, else the sidebar tree's. */
+function compCountry(e) {
+  const lead = /^([^.]+)\.\s/.exec(e.competition)?.[1];
+  if (lead && COUNTRY_FLAG[lead.toLowerCase().trim()]) return lead;
+  for (const c of state.leagueTree?.[e.sport] || []) if (c.leagues.some((l) => l.name === e.competition)) return c.country;
+  return null;
+}
+function matchBanner(e) {
+  const sels = e.selections || [];
+  const country = compCountry(e);
+  // Each outcome's chance from the prices (the margin taken out), as a bar under its button.
+  const inv = sels.map((x) => (x.odds > 1 ? 1 / x.odds : 0));
+  const sum = inv.reduce((t, v) => t + v, 0) || 1;
+  const fav = inv.indexOf(Math.max(...inv));
+  // "Amanhã 20:45": the day small on top, the hour under it.
+  const w = String(fmtWhen(e.startTime));
+  const cut = w.lastIndexOf(' ');
+  const when = e.status === 'live' ? `<span class="mb-score">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</span>${liveClock(e)}`
+    : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
+  return `<article class="mb-banner">
+    <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
+    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit)}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit)}</span></a>
+    <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
+    <div class="mb-odds">${sels.map((x, i) => {
+      const locked = !x.active || !isOpen(e);
+      const label = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
+      return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" ${locked ? 'disabled' : ''}><small>${esc(label)}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
+        <svg class="mb-bar${i === fav ? ' fav' : ''}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3"/><rect class="mb-fill" width="${Math.max(3, Math.round((inv[i] / sum) * 100))}" height="6" rx="3"/></svg></div>`;
+    }).join('')}</div>
+  </article>`;
+}
+/** The banners' games: football with the full 1X2, live or in the next 3 days, the big ones first. */
+function bannerEvents(limit = 6) {
+  const until = Date.now() + 3 * 86_400_000;
+  const ok = state.events.filter((e) => e.sport === 'futebol' && (e.selections || []).length === 3 && (e.selections || []).every((x) => x.code === '1' || x.code === 'X' || x.code === '2')
+    && (e.status === 'live' || (e.status === 'scheduled' && new Date(e.startTime).getTime() < until)));
+  const rank = (a, b) => (b.featured - a.featured) || (!!b.bigTeam - !!a.bigTeam) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
+  const top = ok.filter((e) => e.featured || e.bigTeam || (e.tier ?? 9) <= 2).sort(rank);
+  return (top.length ? top : ok.sort(rank)).slice(0, limit);
+}
+function bannerSection() {
+  const list = bannerEvents();
+  return list.length ? `<section class="section mb-section">${carousel('carBanner', list.map(matchBanner))}</section>` : '';
+}
+
 function homeSpotlight(event) {
   return `<div class="home-feature" data-ball="${esc(event.sport)}">
     <div class="home-feature-label">JOGO EM DESTAQUE</div>
@@ -755,7 +828,7 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  return `${casinoBubbles()}${leagueRow()}${state.user ? memberSpotlight : hero}
+  return `${casinoBubbles()}${leagueRow()}${bannerSection()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
