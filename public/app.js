@@ -465,7 +465,9 @@ function teamAbbr(name) {
 }
 let bigShirtN = 0;
 /** A big shirt for the banners: the team's kit colours (stripes / sleeves too) and a round badge with its letters. */
-function bannerShirt(name, kit) {
+function bannerShirt(name, kit, side = 'away') {
+  // The badge on the side of the chest that stays in view (the home shirt sits under the away one).
+  const bx = side === 'home' ? 72 : 128;
   const [a, b] = kitOf(name, kit);
   const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
   const id = `bs${++bigShirtN}`;
@@ -479,7 +481,7 @@ function bannerShirt(name, kit) {
     <path d="${body}" fill="${a}"/>${pattern}<path d="${body}" fill="url(#${id}g)"/>
     <path d="M62 18c6 16 21 25 38 25s32-9 38-25" fill="none" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
     <path d="M8 78l28 13M192 78l-28 13" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
-    <circle cx="128" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="128" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>
+    <circle cx="${bx}" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="${bx}" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>
     <path d="${body}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2" stroke-linejoin="round"/></svg>`;
 }
 /** The competition's country, for its flag on the banner: "England. Premier League" → England, else the sidebar tree's. */
@@ -503,7 +505,7 @@ function matchBanner(e) {
     : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
   return `<article class="mb-banner">
     <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
-    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit)}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit)}</span></a>
+    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit, 'home')}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit)}</span></a>
     <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
     <div class="mb-odds">${sels.map((x, i) => {
       const locked = !x.active || !isOpen(e);
