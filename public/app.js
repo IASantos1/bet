@@ -308,16 +308,24 @@ function oddsButtons(e, { labels = 'code' } = {}) {
 /** Club badge from the data provider, falling back to initials (see the image error listener). */
 // A team without a badge: its real kit picture, else a shirt in its real kit colours (both found
 // with the badge, teamlogos.js);
-// a plain neutral shirt while they are not known (colours are never made up).
+// the house's colours for the clubs set in server/kits.js; a plain neutral shirt while none is known.
 const SAFE_HEX = /^#[0-9a-f]{6}$/i;
 function kitOf(name, kit) {
   const [a, b] = Array.isArray(kit) ? kit.filter((c) => SAFE_HEX.test(c)) : [];
   if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
   return ['#9aa4b1', '#d7dce3'];
 }
+const SHIRT = 'M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z';
+let jerseyN = 0;
 function jerseySvg(name, kit) {
   const [a, b] = kitOf(name, kit);
-  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z" fill="${a}" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
+  // A house kit (server/kits.js) may add stripes or sleeves of another colour: "stripes:#hex" / "sleeves:#hex".
+  const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
+  const id = `kc${++jerseyN}`;
+  const pattern = !SAFE_HEX.test(extra || '') ? ''
+    : kind === 'stripes' ? `<clipPath id="${id}"><path d="${SHIRT}"/></clipPath><g clip-path="url(#${id})" fill="${extra}"><rect x="9.6" y="0" width="3.2" height="32"/><rect x="15.4" y="0" width="3.2" height="32"/><rect x="21.2" y="0" width="3.2" height="32"/></g>`
+      : kind === 'sleeves' ? `<path d="M5 7l-3 7 4.2 2 2.3-3.2V8.2zM27 7l3 7-4.2 2-2.3-3.2V8.2z" fill="${extra}"/>` : '';
+  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="${SHIRT}" fill="${a}"/>${pattern}<path d="${SHIRT}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
     + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
 }
 // Pictures that failed to load: the next refresh draws their replacement straight away (no blink).
@@ -444,6 +452,84 @@ function matchCard(e, extraClass = '') {
     </div>
     ${oddsButtons(e)}
   </article>`;
+}
+
+// ---------- match banners (home): the stadium photo, both teams' shirts, the time and the 1X2 ----------
+
+// A team's three letters on its shirt's badge ("SL Benfica" → BEN, "Gil Vicente FC" → GIL): not the club's crest.
+const ABBR_SKIP = /^(fc|cf|ac|afc|sc|sl|cd|ud|ca|rc|ss|ssc|as|us|sv|vfb|vfl|tsg|fk|nk|sk|ks|bk|if|ik|aik|real|sporting|club|clube|cd|1\.?)$/i;
+function teamAbbr(name) {
+  const words = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').split(/\s+/).filter(Boolean);
+  const main = words.find((w) => !ABBR_SKIP.test(w) && /[a-z]/i.test(w)) || words[0] || '?';
+  return main.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase();
+}
+let bigShirtN = 0;
+/** A big shirt for the banners: the team's kit colours (stripes / sleeves too) and its badge on the chest (its letters without one). */
+function bannerShirt(name, kit, side = 'away', logo = null) {
+  // The badge where a shirt has it: the wearer's left chest (the right of the picture); the home shirt
+  // lies over the away one so both stay in view.
+  const bx = 128;
+  const [a, b] = kitOf(name, kit);
+  const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
+  const id = `bs${++bigShirtN}`;
+  const body = 'M62 18 30 31 6 82l31 15 13-25v124h100V72l13 25 31-15-24-51-32-13c-6 16-21 25-38 25S68 34 62 18z';
+  const pattern = !SAFE_HEX.test(extra || '') ? ''
+    : kind === 'stripes' ? `<g clip-path="url(#${id}c)" fill="${extra}">${[62, 86, 110, 134].map((x) => `<rect x="${x}" y="0" width="12" height="210"/>`).join('')}</g>`
+      : kind === 'sleeves' ? `<g clip-path="url(#${id}c)" fill="${extra}"><path d="M0 0h50v210H0zM150 0h50v210h-50z"/></g>` : '';
+  const letters = teamAbbr(name);
+  return `<svg class="mb-shirt" viewBox="0 0 200 206" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${body}"/></clipPath>
+      <linearGradient id="${id}g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient></defs>
+    <path d="${body}" fill="${a}"/>${pattern}<path d="${body}" fill="url(#${id}g)"/>
+    <path d="M62 18c6 16 21 25 38 25s32-9 38-25" fill="none" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M8 78l28 13M192 78l-28 13" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
+    ${logo ? `<circle cx="${bx}" cy="80" r="21" fill="#fff" fill-opacity=".92"/><image href="${esc(logo)}" x="${bx - 17}" y="63" width="34" height="34" preserveAspectRatio="xMidYMid meet"/>`
+      : `<circle cx="${bx}" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="${bx}" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>`}
+    <path d="${body}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+/** The competition's country, for its flag on the banner: "England. Premier League" → England, else the sidebar tree's. */
+function compCountry(e) {
+  const lead = /^([^.]+)\.\s/.exec(e.competition)?.[1];
+  if (lead && COUNTRY_FLAG[lead.toLowerCase().trim()]) return lead;
+  for (const c of state.leagueTree?.[e.sport] || []) if (c.leagues.some((l) => l.name === e.competition)) return c.country;
+  return null;
+}
+function matchBanner(e) {
+  const sels = e.selections || [];
+  const country = compCountry(e);
+  // Each outcome's chance from the prices (the margin taken out), as a bar under its button.
+  const inv = sels.map((x) => (x.odds > 1 ? 1 / x.odds : 0));
+  const sum = inv.reduce((t, v) => t + v, 0) || 1;
+  const fav = inv.indexOf(Math.max(...inv));
+  // "Amanhã 20:45": the day small on top, the hour under it.
+  const w = String(fmtWhen(e.startTime));
+  const cut = w.lastIndexOf(' ');
+  const when = e.status === 'live' ? `<span class="mb-score">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</span>${liveClock(e)}`
+    : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
+  return `<article class="mb-banner">
+    <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
+    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
+    <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
+    <div class="mb-odds">${sels.map((x, i) => {
+      const locked = !x.active || !isOpen(e);
+      const label = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
+      return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" ${locked ? 'disabled' : ''}><small>${esc(label)}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
+        <svg class="mb-bar${i === fav ? ' fav' : ''}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3"/><rect class="mb-fill" width="${Math.max(3, Math.round((inv[i] / sum) * 100))}" height="6" rx="3"/></svg></div>`;
+    }).join('')}</div>
+  </article>`;
+}
+/** The banners' games: football with the full 1X2, live or in the next 3 days, the big ones first. */
+function bannerEvents(limit = 6) {
+  const until = Date.now() + 3 * 86_400_000;
+  const ok = state.events.filter((e) => e.sport === 'futebol' && (e.selections || []).length === 3 && (e.selections || []).every((x) => x.code === '1' || x.code === 'X' || x.code === '2')
+    && (e.status === 'live' || (e.status === 'scheduled' && new Date(e.startTime).getTime() < until)));
+  const rank = (a, b) => (b.featured - a.featured) || (!!b.bigTeam - !!a.bigTeam) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
+  // Big and medium leagues only (the operator's featured games too), and both shirts in their own colours.
+  const coloured = (kit) => Array.isArray(kit) && SAFE_HEX.test(kit[0] || '');
+  return ok.filter((e) => (e.featured || (e.tier ?? 9) <= 2) && coloured(e.homeKit) && coloured(e.awayKit)).sort(rank).slice(0, limit);
+}
+function bannerSection() {
+  const list = bannerEvents();
+  return list.length ? `<section class="section mb-section">${carousel('carBanner', list.map(matchBanner))}</section>` : '';
 }
 
 function homeSpotlight(event) {
@@ -747,7 +833,7 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  return `${casinoBubbles()}${leagueRow()}${state.user ? memberSpotlight : hero}
+  return `${casinoBubbles()}${leagueRow()}${bannerSection()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
@@ -791,8 +877,10 @@ function sportsPage(sub, rest = '') {
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
-  return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    ${leagueRow(state.sport || '')}
+  // The big games' banners under the title (football; all sports or football chosen).
+  const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
+  return `<div class="page-title"><h1>Desporto</h1>${banners ? '' : '<p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p>'}</div>
+    ${banners}${leagueRow(state.sport || '')}
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
       ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
