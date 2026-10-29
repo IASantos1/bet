@@ -130,4 +130,4 @@ const plain = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').to
   .replace(/^(fc|afc)\s+|\s+(fc|afc)$/g, '').replace(/\s+/g, ' ').trim();
 
 /** The house's kit for a team (football), or null; a long name also by its short one ("Sporting Clube de Portugal"). */
-export const houseKit = (sport, name) => (sport === 'futebol' ? KITS[plain(name)] || KITS[plain(shortTeam(name))] || null : null);
+export const houseKit = (sport, name) => (sport === 'futebol' ? KITS[plain(name)] || KITS[plain(shortTeam(name, sport))] || null : null);

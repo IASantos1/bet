@@ -632,7 +632,7 @@ export function createApp(db, {
       const out = {
         id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
         // The names shown on screen when long ("Sporting Clube de Portugal" → "Sporting CP"): null, the full one.
-        homeShort: shortTeam(e.home), awayShort: shortTeam(e.away),
+        homeShort: shortTeam(e.home, e.sport), awayShort: shortTeam(e.away, e.sport),
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         // A watched WinHouse match: the tracker knows the period ("Intervalo", "45+2'"), the live list does not.
         clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
