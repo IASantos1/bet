@@ -523,8 +523,9 @@ function bannerEvents(limit = 6) {
   const ok = state.events.filter((e) => e.sport === 'futebol' && (e.selections || []).length === 3 && (e.selections || []).every((x) => x.code === '1' || x.code === 'X' || x.code === '2')
     && (e.status === 'live' || (e.status === 'scheduled' && new Date(e.startTime).getTime() < until)));
   const rank = (a, b) => (b.featured - a.featured) || (!!b.bigTeam - !!a.bigTeam) || ((a.tier ?? 9) - (b.tier ?? 9)) || a.startTime.localeCompare(b.startTime);
-  const top = ok.filter((e) => e.featured || e.bigTeam || (e.tier ?? 9) <= 2).sort(rank);
-  return (top.length ? top : ok.sort(rank)).slice(0, limit);
+  // Big and medium leagues only (the operator's featured games too), and both shirts in their own colours.
+  const coloured = (kit) => Array.isArray(kit) && SAFE_HEX.test(kit[0] || '');
+  return ok.filter((e) => (e.featured || (e.tier ?? 9) <= 2) && coloured(e.homeKit) && coloured(e.awayKit)).sort(rank).slice(0, limit);
 }
 function bannerSection() {
   const list = bannerEvents();
@@ -876,8 +877,10 @@ function sportsPage(sub, rest = '') {
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
-  return `<div class="page-title"><h1>Desporto</h1><p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p></div>
-    ${leagueRow(state.sport || '')}
+  // The big games' banners under the title (football; all sports or football chosen).
+  const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
+  return `<div class="page-title"><h1>Desporto</h1>${banners ? '' : '<p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p>'}</div>
+    ${banners}${leagueRow(state.sport || '')}
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
       ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
