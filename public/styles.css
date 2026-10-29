@@ -1958,7 +1958,7 @@ html.light .combo-legs li::after { background: #22b14c; }
 @media (max-width: 640px) { .wallet-kinds { grid-template-columns: 1fr 1fr; } }
 
 /* ---------- match banners (home): stadium photo, both shirts, time and the 1X2 ---------- */
-.mb-section .car-track { grid-auto-columns: minmax(300px, 560px); }
+.mb-section .car-track { grid-auto-columns: minmax(320px, 600px); }
 .mb-banner { position: relative; overflow: hidden; border-radius: 22px; padding: 14px 16px 16px; color: #fff; background: #0b1530 url('/img/banner-stadium.jpg') center 30% / cover no-repeat;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35); isolation: isolate; }
 .mb-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(8, 14, 40, .15) 0%, rgba(8, 14, 40, .35) 45%, rgba(10, 16, 36, .92) 78%); }
@@ -1976,12 +1976,13 @@ html.light .combo-legs li::after { background: #22b14c; }
 .mb-when { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .mb-day { font-size: 12px; font-weight: 700; opacity: .85; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .mb-time, .mb-score { font-size: 20px; font-weight: 800; white-space: nowrap; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
-.mb-odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.mb-odds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mb-pick { min-width: 0; }
 .mb-pick { display: flex; flex-direction: column; gap: 8px; }
-.mb-odd.odd-btn { width: 100%; height: auto; min-height: 54px; border-radius: 10px; background: rgba(16, 22, 28, .72); color: #fff;
+.mb-odd.odd-btn { width: 100%; min-width: 0; height: auto; min-height: 54px; border-radius: 10px; background: rgba(16, 22, 28, .72); color: #fff;
   border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 2px; font-size: 19px; font-weight: 800; }
-.mb-odd.odd-btn small { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, .7); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-odd.odd-btn small { font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, .7); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mb-odd.odd-btn:hover { border-color: var(--viva); }
 .mb-odd.odd-btn.selected { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); box-shadow: 0 0 16px var(--viva-glow); }
 .mb-odd.odd-btn.selected small { color: var(--viva-ink); }

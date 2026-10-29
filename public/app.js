@@ -482,7 +482,7 @@ function bannerShirt(name, kit, side = 'away', logo = null) {
     <path d="${body}" fill="${a}"/>${pattern}<path d="${body}" fill="url(#${id}g)"/>
     <path d="M62 18c6 16 21 25 38 25s32-9 38-25" fill="none" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
     <path d="M8 78l28 13M192 78l-28 13" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
-    ${logo ? `<circle cx="${bx}" cy="80" r="21" fill="#fff" fill-opacity=".92"/><image href="${esc(logo)}" x="${bx - 17}" y="63" width="34" height="34" preserveAspectRatio="xMidYMid meet"/>`
+    ${logo ? `<image href="${esc(logo)}" x="${bx - 20}" y="60" width="40" height="40" preserveAspectRatio="xMidYMid meet"/>`
       : `<circle cx="${bx}" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="${bx}" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>`}
     <path d="${body}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2" stroke-linejoin="round"/></svg>`;
 }
@@ -511,8 +511,8 @@ function matchBanner(e) {
     <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
     <div class="mb-odds">${sels.map((x, i) => {
       const locked = !x.active || !isOpen(e);
-      const label = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
-      return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" ${locked ? 'disabled' : ''}><small>${esc(label)}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
+      const title = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
+      return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" title="${esc(title)}" ${locked ? 'disabled' : ''}><small>${x.code === '1' || x.code === '2' ? x.code : 'X'}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
         <svg class="mb-bar${i === fav ? ' fav' : ''}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3"/><rect class="mb-fill" width="${Math.max(3, Math.round((inv[i] / sum) * 100))}" height="6" rx="3"/></svg></div>`;
     }).join('')}</div>
   </article>`;
@@ -833,7 +833,7 @@ function homePage() {
   const upcomingSection = upcoming.length || (!spotlight && !upcomingPool.length)
     ? `<section class="section"><div class="section-head"><h2>Eventos em destaque</h2><a href="#/desporto">Todos os eventos ›</a></div>${upcoming.length ? carousel('carPre', upcoming.map(matchCard)) : emptyEvents()}</section>`
     : '';
-  return `${casinoBubbles()}${leagueRow()}${bannerSection()}${state.user ? memberSpotlight : hero}
+  return `${casinoBubbles()}${leagueRow()}${state.user ? memberSpotlight : hero}
     ${live.length ? `<section class="section"><div class="section-head"><h2><span class="live-dot"></span>Ao Vivo agora</h2><a href="#/ao-vivo">Ver todos ›</a></div>${carousel('carLive', live.map(liveCard))}</section>` : ''}
     ${builderSection()}
     ${upcomingSection}
