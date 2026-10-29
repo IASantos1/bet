@@ -466,8 +466,9 @@ function teamAbbr(name) {
 let bigShirtN = 0;
 /** A big shirt for the banners: the team's kit colours (stripes / sleeves too) and its badge on the chest (its letters without one). */
 function bannerShirt(name, kit, side = 'away', logo = null) {
-  // The badge on the side of the chest that stays in view (the home shirt sits under the away one).
-  const bx = side === 'home' ? 72 : 128;
+  // The badge where a shirt has it: the wearer's left chest (the right of the picture); the home shirt
+  // lies over the away one so both stay in view.
+  const bx = 128;
   const [a, b] = kitOf(name, kit);
   const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
   const id = `bs${++bigShirtN}`;
