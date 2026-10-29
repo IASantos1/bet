@@ -505,17 +505,17 @@ function matchBanner(e) {
   const cut = w.lastIndexOf(' ');
   const when = e.status === 'live' ? `<span class="mb-score">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</span>${liveClock(e)}`
     : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
-  return `<article class="mb-banner">
+  return `<div class="mb-card"><article class="mb-banner">
     <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
     <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(e.home, e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(e.away, e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
     <a class="mb-teams" href="#/jogo/${e.id}"><b>${esc(e.home)}</b><span class="mb-when">${when}</span><b>${esc(e.away)}</b></a>
-    <div class="mb-odds">${sels.map((x, i) => {
+  </article>
+  <div class="mb-odds">${sels.map((x, i) => {
       const locked = !x.active || !isOpen(e);
       const title = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
       return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" title="${esc(title)}" ${locked ? 'disabled' : ''}><small>${x.code === '1' || x.code === '2' ? x.code : 'X'}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
         <svg class="mb-bar${i === fav ? ' fav' : ''}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3"/><rect class="mb-fill" width="${Math.max(3, Math.round((inv[i] / sum) * 100))}" height="6" rx="3"/></svg></div>`;
-    }).join('')}</div>
-  </article>`;
+    }).join('')}</div></div>`;
 }
 /** The banners' games: football with the full 1X2, live or in the next 3 days, the big ones first. */
 function bannerEvents(limit = 6) {
@@ -877,15 +877,15 @@ function sportsPage(sub, rest = '') {
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
-  // The big games' banners under the title (football; all sports or football chosen).
+  // The big games' banners under the sports strip (football; all sports or football chosen).
   const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
   return `<div class="page-title"><h1>Desporto</h1>${banners ? '' : '<p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p>'}</div>
-    ${banners}${leagueRow(state.sport || '')}
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
       ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
       <a class="sport-tile" href="#/desporto/resultados">${sportIcon('resultados')}<span>Resultados</span></a>
     </div>
+    ${banners}${leagueRow(state.sport || '')}
     ${builderSection()}
     <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
     ${footer()}`;
