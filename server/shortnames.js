@@ -28,22 +28,88 @@ const SHORT = {
   // Brazil, Argentina
   'clube de regatas do flamengo': 'Flamengo', 'sociedade esportiva palmeiras': 'Palmeiras', 'sport club corinthians paulista': 'Corinthians',
   'sao paulo futebol clube': 'São Paulo', 'club atletico river plate': 'River Plate', 'club atletico boca juniors': 'Boca Juniors',
+  'gremio foot-ball porto alegrense': 'Grêmio', 'clube de regatas vasco da gama': 'Vasco da Gama', 'clube atletico mineiro': 'Atlético-MG',
+  'sport club internacional': 'Internacional', 'fluminense football club': 'Fluminense', 'cruzeiro esporte clube': 'Cruzeiro',
+  'botafogo de futebol e regatas': 'Botafogo', 'santos futebol clube': 'Santos', 'esporte clube bahia': 'Bahia',
+  'club atletico independiente': 'Independiente', 'racing club de avellaneda': 'Racing Club',
 };
 
 const plain = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/^(fc|afc)\s+|\s+(fc|afc)$/g, '').replace(/\s+/g, ' ').trim();
 
-// A long name not listed: the club-type words around it go ("Club Atlético Lanús" → "Lanús").
-const LONG = 18;
-const AFFIX = [/^(club atl[eé]tico|club deportivo|clube atl[eé]tico|sport club|esporte clube|associa[cç][aã]o desportiva)\s+/i,
-  /\s+(football club|f[uú]tbol club|futebol clube)$/i];
+// Any other long name is shortened step by step, stopping as soon as it fits (LONG letters):
+// years go ("TSG 1899 Hoffenheim"), the club-type words become their letters ("Esporte Clube Bahia" →
+// "EC Bahia", "Club Atlético Lanús" → "CA Lanús"), common words their short form ("United" → "Utd",
+// "Universidad" → "U."), and last "de / do / da" in the middle. What is still long wraps on screen.
+// An age or women's mark at the end ("U21", "(F)", "II") always stays.
+const LONG = 16;
 
-/** The name to show for a team when shorter than the full one, else null. */
-export function shortTeam(name) {
+// Club-type phrases (accents and case ignored) → their letters; a "de / do…" after them goes too.
+const PHRASES = [
+  ['club social y deportivo', 'CSD'], ['turn und sportverein', 'TSV'], ['verein fur bewegungsspiele', 'VfB'],
+  ['clube de regatas', 'CR'], ['real club deportivo', 'RCD'], ['sport lisboa e', 'SL'],
+  ['football club', 'FC'], ['futebol clube', 'FC'], ['futbol club', 'FC'], ['fussball club', 'FC'], ['fussballclub', 'FC'],
+  ['club de futbol', 'CF'], ['clube de futebol', 'CF'], ['sport club', 'SC'], ['sporting club', 'SC'], ['sporting clube', 'SC'],
+  ['sport clube', 'SC'], ['esporte clube', 'EC'], ['esporte club', 'EC'], ['sociedade esportiva', 'SE'], ['sociedade desportiva', 'SD'],
+  ['club atletico', 'CA'], ['clube atletico', 'CA'], ['club deportivo', 'CD'], ['clube desportivo', 'CD'], ['club sportivo', 'CS'],
+  ['associacao desportiva', 'AD'], ['associacao atletica', 'AA'], ['associacao academica', 'AA'], ['associacao esportiva', 'AE'],
+  ['associazione calcio', 'AC'], ['associazione sportiva', 'AS'], ['societa sportiva', 'SS'], ['unione sportiva', 'US'],
+  ['athletic club', 'AC'], ['real club', 'RC'], ['sportverein', 'SV'], ['sportclub', 'SC'], ['grupo desportivo', 'GD'],
+  ['gremio foot-ball', 'Grêmio'], ['clube atletico', 'CA'], ['club atletico', 'CA'], ['futbol kulubu', 'FK'], ['futbolny klub', 'FK'],
+].map(([words, abbr]) => [words.split(' '), abbr]).sort((a, b) => b[0].length - a[0].length);
+const WORDS = {
+  united: 'Utd', saint: 'St', sankt: 'St', athletic: 'Ath.', atletico: 'Atl.', deportivo: 'Dep.', deportes: 'Dep.',
+  desportivo: 'Desp.', borussia: 'B.', olympique: 'O.', universidad: 'U.', universitario: 'Univ.',
+  universitatea: 'U.', university: 'Univ.', internacional: 'Inter', independiente: 'Indep.', academy: 'Acad.', academia: 'Acad.',
+  calcio: '', club: '', clube: '', futebol: '', football: '', futbol: '',
+};
+const LINK = new Set(['de', 'do', 'da', 'dos', 'das', 'del']);
+const MARK = /^(u-?\d{2}|ii|iii|iv|b|w|women|res\.?|reserves|\([a-z]{1,2}\))$/i;
+const key = (w) => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[.,]/g, '').replace(/ß/g, 'ss');
+const fits = (t) => t.join(' ').length <= LONG;
+
+function shorten(full) {
+  let t = full.split(/\s+/).filter(Boolean);
+  const marks = [];
+  while (t.length > 1 && MARK.test(t[t.length - 1])) marks.unshift(t.pop());
+  const steps = [
+    (w) => w.filter((x, i) => !(i && /^\d{2,4}$/.test(x))),
+    (w) => {
+      const out = [];
+      for (let i = 0; i < w.length;) {
+        const hit = PHRASES.find(([p]) => p.every((x, j) => key(w[i + j] || '') === x));
+        if (!hit) { out.push(w[i]); i += 1; continue; }
+        out.push(hit[1]);
+        i += hit[0].length;
+        if (i < w.length - 1 && LINK.has(key(w[i]))) i += 1;
+      }
+      return out;
+    },
+    (w) => { const out = w.map((x) => (key(x) in WORDS ? WORDS[key(x)] : x)).filter(Boolean); return out.length ? out : w; },
+    (w) => (w.length > 2 ? w.filter((x, i) => !i || i === w.length - 1 || !LINK.has(key(x))) : w),
+  ];
+  for (const step of steps) {
+    if (fits([...t, ...marks])) break;
+    t = step(t);
+  }
+  return [...t, ...marks].join(' ');
+}
+
+/** The name to show for a team when shorter than the full one, else null. Tennis: the first name's initial. */
+export function shortTeam(name, sport = '') {
   const full = String(name || '').trim();
-  const listed = SHORT[plain(full)];
-  if (listed) return listed === full ? null : listed;
+  if (!full) return null;
+  if (sport === 'tenis') {
+    const m = full.length > LONG && !full.includes('/') && full.match(/^(\S)\S*\s+(.+)$/);
+    return m ? `${m[1].toUpperCase()}. ${m[2]}` : null;
+  }
+  // The listed clubs also with a mark after them ("Borussia Mönchengladbach II" → "M'gladbach II").
+  const words = full.split(/\s+/);
+  const marks = [];
+  while (words.length > 1 && MARK.test(words[words.length - 1])) marks.unshift(words.pop());
+  const listed = SHORT[plain(words.join(' '))];
+  if (listed) return [listed, ...marks].join(' ') === full ? null : [listed, ...marks].join(' ');
   if (full.length <= LONG) return null;
-  const cut = AFFIX.reduce((s, re) => s.replace(re, ''), full).trim();
+  const cut = shorten(full);
   return cut && cut !== full ? cut : null;
 }

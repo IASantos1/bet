@@ -29,8 +29,23 @@ test('long team names are shown short; the full name stays in the data', async (
   assert.equal(shortTeam('Paris Saint-Germain'), 'Paris SG');
   assert.equal(shortTeam('Manchester United'), 'Man United');
   assert.equal(shortTeam('FC Bayern München'), 'Bayern');
-  assert.equal(shortTeam('Club Atlético Lanús'), 'Lanús');
-  assert.equal(shortTeam('Esporte Clube Bahia'), 'Bahia');
+  // Any other long name: the club-type words to letters, common words short, the marks kept.
+  assert.equal(shortTeam('Club Atlético Lanús'), 'CA Lanús');
+  assert.equal(shortTeam('Esporte Clube Vitória'), 'EC Vitória');
+  assert.equal(shortTeam('Borussia Mönchengladbach II'), "M'gladbach II");
+  assert.equal(shortTeam('Clube de Regatas Vasco da Gama'), 'Vasco da Gama');
+  assert.equal(shortTeam('Juventude Esporte Clube'), 'Juventude EC');
+  assert.equal(shortTeam('Associazione Calcio Fiorentina'), 'AC Fiorentina');
+  assert.equal(shortTeam('Real Club Deportivo de La Coruña'), 'RCD La Coruña');
+  assert.equal(shortTeam('Universidad Católica'), 'U. Católica');
+  assert.equal(shortTeam('TSG 1899 Hoffenheim'), 'Hoffenheim');
+  assert.equal(shortTeam('Peterborough United'), 'Peterborough Utd');
+  assert.equal(shortTeam('Club Atlético Tigre U20'), 'CA Tigre U20');
+  assert.equal(shortTeam('Sociedade Esportiva Palmeiras (F)'), 'Palmeiras (F)');
+  assert.equal(shortTeam('Sociedade Esportiva Matsubara (F)'), 'SE Matsubara (F)');
+  assert.equal(shortTeam('Golden State Warriors', 'basquetebol'), null);
+  assert.equal(shortTeam('Alejandro Davidovich Fokina', 'tenis'), 'A. Davidovich Fokina');
+  assert.equal(shortTeam('Carlos Alcaraz', 'tenis'), null);
   assert.equal(shortTeam('Arsenal'), null);
   assert.equal(shortTeam('Sporting CP'), null);
 });
