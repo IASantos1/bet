@@ -20,6 +20,7 @@ import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlig
 import { createFeatured, isBigTeam } from './featured.js';
 import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
+import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
 } from './security.js';
@@ -63,7 +64,7 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 // files stamped (app.js?v=…), so a browser can never keep running an old script after a deploy,
 // and the footer shows it so the running version can be checked.
 const readPublic = (f) => fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
-export const APP_VERSION = ['app.js', 'styles.css', 'splash.js', 'install.js', 'trkclips.js', 'trk3dmath.js', 'sporticons.js', 'trk3d.js', 'admin/admin.js', 'admin/admin.css']
+export const APP_VERSION = ['app.js', 'styles.css', 'splash.js', 'install.js', 'winfx.js', 'trkclips.js', 'trk3dmath.js', 'sporticons.js', 'trk3d.js', 'admin/admin.js', 'admin/admin.css']
   .reduce((h, f) => h.update(readPublic(f)), createHash('sha256')).digest('hex').slice(0, 8);
 // The scripts' own imports are versioned too (assets.js), and the app's modules are announced in the
 // page (modulepreload) so they download alongside app.js instead of after it.
@@ -163,7 +164,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -1115,6 +1116,26 @@ export function createApp(db, {
 
   app.get('/api/me', (req, res) => res.json({ user: req.user ? userOut(req.user) : null }));
 
+  // Notifications on the phone (push.js): the site's public key, and the player's phones signing up / out.
+  ensurePushTables(db);
+  app.get('/api/push/key', (_req, res) => res.json({ key: push?.publicKey || null }));
+  app.post('/api/me/push', requireUser, (req, res) => {
+    if (!push) throw new HttpError(503, 'Notificações indisponíveis.');
+    if (!push.subscribe(req.user.id, req.body?.subscription, req.get('user-agent'))) throw new HttpError(400, 'Subscrição inválida.');
+    res.json({ ok: true });
+  });
+  app.delete('/api/me/push', requireUser, (req, res) => {
+    push?.unsubscribe(req.user.id, req.body?.endpoint);
+    res.json({ ok: true });
+  });
+  // Won bets not celebrated yet (the full-screen "Ganhou!" when the player comes in), and seen.
+  app.get('/api/me/wins', requireUser, (req, res) => res.json({ wins: withLegs(unseenWins(db, req.user.id)) }));
+  app.post('/api/me/wins/seen', requireUser, (req, res) => {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger).slice(0, 20);
+    markWinsSeen(db, req.user.id, ids);
+    res.json({ ok: true });
+  });
+
   // Profile: only the fields sent are changed (personal data, bank details, preferences).
   app.patch('/api/me', requireUser, (req, res) => {
     const b = req.body || {};
@@ -1550,9 +1571,9 @@ export function createApp(db, {
       origin: b.pick_key ? 'pick' : b.origin || null,
       pickPct: b.pick_pct || 0,
       legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
-        id: l.id, match: `${l.home} vs ${l.away}`, competition: l.competition, market: l.market,
+        id: l.id, match: `${shortTeam(l.home, l.sport) || l.home} vs ${shortTeam(l.away, l.sport) || l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
-        code: l.code, label: selectionLabel(l.market, l.code, l.home, l.away), odds: l.odds_x100 / 100,
+        code: l.code, label: selectionLabel(l.market, l.code, shortTeam(l.home, l.sport) || l.home, shortTeam(l.away, l.sport) || l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
         eventId: l.event_id, sport: l.sport, startTime: l.start_time,
         // In play: the clock as the match pages show it (the WinHouse tracker knows "Intervalo", "45+2'").

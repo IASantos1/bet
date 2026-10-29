@@ -314,6 +314,12 @@ export const config = {
   // Contacts shown in the profile's support section (empty: not shown).
   supportEmail: String(env.SUPPORT_EMAIL || '').trim(),
   supportPhone: String(env.SUPPORT_PHONE || '').trim(),
+  // Notifications on the phone (push.js): VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (optional: without them a
+  // pair is made once and kept in the database) and VAPID_SUBJECT, the contact sent with each message.
+  push: {
+    publicKey: unquote(env.VAPID_PUBLIC_KEY), privateKey: unquote(env.VAPID_PRIVATE_KEY),
+    subject: unquote(env.VAPID_SUBJECT) || (env.SUPPORT_EMAIL ? `mailto:${String(env.SUPPORT_EMAIL).trim()}` : ''),
+  },
 
   limits: {
     minStakeCents: int(env.MIN_STAKE_CENTS, 100), // €1
