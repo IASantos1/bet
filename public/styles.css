@@ -2001,3 +2001,18 @@ html.light .combo-legs li::after { background: #22b14c; }
   .mb-teams b { font-size: 16px; }
   .mb-odd.odd-btn { font-size: 17px; min-height: 50px; }
 }
+
+/* "Instale a app" (install.js): over the bottom menu on a phone, in the corner on a computer. */
+.install-bar { position: fixed; z-index: 80; left: 12px; right: 12px; bottom: calc(74px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px;
+  padding: 12px 12px 12px 14px; border-radius: 16px; background: var(--dim); border: 1px solid var(--line); color: var(--text); box-shadow: 0 12px 34px rgba(0, 0, 0, .45);
+  animation: install-in .3s ease-out; }
+.install-bar img { flex: none; border-radius: 11px; }
+.install-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.35; }
+.install-text b { font-size: 15px; }
+.install-text span { color: var(--text-3); }
+.install-text span b { font-size: inherit; color: var(--text); }
+.install-share { width: 16px; height: 16px; vertical-align: -3px; color: #0a84ff; }
+.install-go { flex: none; border: 0; border-radius: 10px; padding: 10px 16px; background: var(--viva); color: var(--viva-ink); font-weight: 800; font-size: 14px; cursor: pointer; }
+.install-close { flex: none; align-self: flex-start; border: 0; background: none; color: var(--text-3); font-size: 22px; line-height: 1; padding: 0 2px; cursor: pointer; }
+@keyframes install-in { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (min-width: 1001px) { .install-bar { left: auto; right: 20px; bottom: 20px; width: 400px; } }
