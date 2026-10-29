@@ -19,7 +19,7 @@ const STAGE_END = new RegExp(`${STAGE}$`);
 const D = [
   ['Germany', ['germany'], ['bundesliga'], ['2bundesliga', 'bundesliga2', 'secondbundesliga']],
   ['Angola', ['angola'], ['girabola', 'primeiradivisao', 'premierleague'], ['segundadivisao', 'segundadivisaoangola']],
-  ['Saudi Arabia', ['saudiarabia'], ['proleague', 'premierleague', 'roshnsaudileague', 'saudiproleague'], ['firstdivision', 'division1', '1stdivision', 'firstdivisionleague', 'yelloleague']],
+  ['Saudi Arabia', ['saudiarabia', 'saudi', 'ksa'], ['proleague', 'premierleague', 'roshnsaudileague', 'saudiproleague', 'professionalleague', 'saudiprofessionalleague', 'roshnleague', 'spl', 'league'], ['firstdivision', 'division1', '1stdivision', 'firstdivisionleague', 'yelloleague']],
   ['Argentina', ['argentina'], ['primeradivision', 'ligaprofesional', 'ligaprofesionaldefutbol'], ['primerabnacional', 'primeranacional']],
   ['Australia', ['australia'], ['aleague', 'aleaguemen'], ['australianchampionship', 'championship']],
   ['Austria', ['austria'], ['bundesliga', 'admiralbundesliga'], ['2liga', 'ersteliga', '2ndliga', 'secondliga']],
