@@ -139,7 +139,7 @@ function publicUser(u) {
 
 // Account preferences the player can change in the profile (unknown keys are dropped).
 // promoAsked: the player already answered the one-time "receive promotions?" question (sign-up or site).
-const PREF_DEFAULTS = { notifyResults: true, notifyPromos: false, notifySms: false, notifyPush: true, cookiesAnalytics: true, cookiesMarketing: false, shareData: false, promoAsked: false };
+const PREF_DEFAULTS = { notifyResults: true, notifyPromos: false, notifySms: false, notifyPush: true, notifyPushPromos: false, cookiesAnalytics: true, cookiesMarketing: false, shareData: false, promoAsked: false };
 function parsePrefs(raw) {
   let v = {};
   try { v = JSON.parse(raw || '{}') || {}; } catch { /* keep defaults */ }
@@ -362,6 +362,16 @@ export function createApp(db, {
   });
 
   const requireUser = (req, _res, next) => (req.user ? next() : next(new HttpError(401, 'Inicie sessão para continuar.')));
+  // A notice on the player's phones (push.js), unless they turned them off in their notifications.
+  const euros = (c) => `€${(c / 100).toFixed(2).replace('.', ',')}`;
+  function notifyPhone(userId, message) {
+    if (!push) return;
+    const row = db.prepare('SELECT prefs FROM users WHERE id = ?').get(userId);
+    let prefs = {};
+    try { prefs = JSON.parse(row?.prefs || '{}') || {}; } catch { /* defaults */ }
+    if (prefs.notifyPush === false) return;
+    push.sendTo(userId, message).catch((err) => console.warn(`[push] ${err.message}`));
+  }
   const requireAdmin = (req, _res, next) => {
     if (!req.user) return next(new HttpError(401, 'Inicie sessão para continuar.'));
     if (req.user.role !== 'admin') return next(new HttpError(403, 'Acesso reservado a administradores.'));
@@ -401,6 +411,7 @@ export function createApp(db, {
     if (!state || w.payout_status === state || w.payout_status === 'paid') return;
     if (state === 'paid') {
       db.prepare("UPDATE withdrawals SET payout_status = 'paid', payout_error = NULL, paid_at = ? WHERE id = ?").run(nowIso(), w.id);
+      notifyPhone(w.user_id, { kind: 'withdrawal', title: '💳 Levantamento pago', body: `${euros(w.amount_cents)} enviados para a sua conta bancária.`, url: '/#/perfil/carteira', tag: `wd-${w.id}` });
     } else if (state === 'failed') {
       db.prepare("UPDATE withdrawals SET payout_status = 'failed', payout_error = ?, status = 'pending', decided_at = NULL WHERE id = ?").run(note, w.id);
     } else {
@@ -2108,6 +2119,12 @@ export function createApp(db, {
         postTransaction(db, w.user_id, w.amount_cents, 'withdrawal_refund', 'Levantamento rejeitado — valor devolvido', `withdrawal:${w.id}`);
       }
     });
+    if (decision !== 'pay') {
+      const w = db.prepare('SELECT user_id, amount_cents FROM withdrawals WHERE id = ?').get(id);
+      notifyPhone(w.user_id, decision === 'approve'
+        ? { kind: 'withdrawal', title: '💳 Levantamento aprovado', body: `${euros(w.amount_cents)} a caminho da sua conta bancária.`, url: '/#/perfil/carteira', tag: `wd-${id}` }
+        : { kind: 'withdrawal', title: 'Levantamento não aprovado', body: `${euros(w.amount_cents)} devolvidos ao seu saldo. Veja os detalhes na carteira.`, url: '/#/perfil/carteira', tag: `wd-${id}` });
+    }
     if (!viaRevolut) return res.json({ ok: true });
     const w = await payWithdrawal(id);
     if (w.payout_status === 'failed') throw new HttpError(502, `Pagamento Revolut falhou: ${w.payout_error}. O levantamento voltou a pendente.`);
@@ -2458,7 +2475,7 @@ export function createApp(db, {
 
   // ---------- Promotional campaigns (email / SMS through Brevo) ----------
 
-  const campaigns = createCampaigns(db, { brevo, log: (m) => console.warn(`[campanhas] ${m}`) });
+  const campaigns = createCampaigns(db, { brevo, push, log: (m) => console.warn(`[campanhas] ${m}`) });
   const campaignError = (err) => (err instanceof HttpError ? err : new HttpError([400, 409].includes(err.status) ? err.status : 502, err.message));
   const campaignOut = (c) => ({
     id: c.id, channel: c.channel, segment: c.segment, days: c.days, subject: c.subject, body: c.body, ctaText: c.cta_text, ctaUrl: c.cta_url,
@@ -2485,7 +2502,7 @@ export function createApp(db, {
   admin.get('/campaigns', (_req, res) => {
     const optedIn = (channel) => campaigns.audience({ channel, segment: 'all' }).length;
     const registered = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'user' AND banned_at IS NULL").get().n;
-    res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms'), registered }, campaigns: campaigns.list().map(campaignOut) });
+    res.json({ status: campaigns.status(), segments: SEGMENTS, optedIn: { email: optedIn('email'), sms: optedIn('sms'), push: optedIn('push'), registered }, campaigns: campaigns.list().map(campaignOut) });
   });
   admin.post('/campaigns/check', async (_req, res, next) => {
     try { res.json({ steps: brevo ? await brevo.diagnose() : [{ name: 'Brevo', ok: false, detail: 'não configurado' }] }); }
@@ -2497,7 +2514,7 @@ export function createApp(db, {
   });
   admin.post('/campaigns/test', async (req, res, next) => {
     try {
-      await campaigns.test(req.body || {}, { email: req.user.email, phone: str(req.body?.testPhone, 30) || req.user.phone, name: req.user.name }, siteUrl(req));
+      await campaigns.test(req.body || {}, { userId: req.user.id, email: req.user.email, phone: str(req.body?.testPhone, 30) || req.user.phone, name: req.user.name }, siteUrl(req));
       res.json({ ok: true });
     } catch (err) { next(campaignError(err)); }
   });

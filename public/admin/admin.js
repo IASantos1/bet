@@ -538,18 +538,19 @@ const CP_STATUS = { sending: ['open', 'A enviar'], sent: ['won', 'Enviada'], fai
 function adminCampaigns({ status: st, segments, optedIn, campaigns = [] }) {
   const site = location.origin;
   const off = !st.email && !st.sms;
-  return `<div class="panel"><h3>Campanhas por email e SMS</h3>
+  return `<div class="panel"><h3>Campanhas por email, SMS e telemóvel</h3>
     ${off ? `<p class="muted">⚠️ Brevo não configurado. No Railway, defina <b>BREVO_API_KEY</b> (Brevo → SMTP &amp; API → API Keys) e <b>BREVO_SENDER_EMAIL</b>
       (um remetente verificado no Brevo, por exemplo promocoes@o-seu-dominio). Para SMS, também <b>BREVO_SMS_SENDER</b> (nome até 11 letras, ex.: BET62).</p>`
       : `<p class="muted">Email: ${st.email ? `ligado (${esc(st.sender)})` : 'desligado'} · SMS: ${st.sms ? 'ligado' : 'desligado (defina BREVO_SMS_SENDER)'}</p>`}
-    <p class="muted">Recebem todos os registados que aceitaram promoções, tenham ou não depositado (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b> de <b>${optedIn.registered ?? '—'}</b> registados).
+    <p class="muted">Recebem todos os registados que aceitaram promoções, tenham ou não depositado (email: <b>${optedIn.email}</b> · SMS: <b>${optedIn.sms}</b> · telemóvel: <b>${optedIn.push ?? 0}</b> de <b>${optedIn.registered ?? '—'}</b> registados).
+      As notificações no telemóvel vão para quem ativou os avisos e aceitou promoções no telemóvel (Perfil → Notificações), sem custos, também só entre as 09:00 e as 21:00.
       O site pergunta a cada jogador se quer receber promoções por email e SMS (quem responde "Agora não" volta a ser perguntado 30 dias depois). Contas em autoexclusão ou banidas nunca recebem.
       Cada email leva o aviso 18+ e um link para deixar de receber. O plano grátis do Brevo envia até 300 emails por dia; os SMS são pagos com créditos Brevo e só saem entre as 09:00 e as 21:00.
       Use <b>{nome}</b> no texto para o primeiro nome do jogador.</p>
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="cp-check">Verificar configuração do Brevo</button></div><div id="cpCheck"></div></div>
   <form class="panel" data-form="campaign" id="cpForm"><h3>Nova campanha</h3>
     <div class="form-grid three">
-      <div class="field"><label>Canal</label><select name="channel" data-cp="1"><option value="email">Email</option><option value="sms"${st.sms ? '' : ' disabled'}>SMS${st.sms ? '' : ' (não configurado)'}</option></select></div>
+      <div class="field"><label>Canal</label><select name="channel" data-cp="1"><option value="email">Email</option><option value="sms"${st.sms ? '' : ' disabled'}>SMS${st.sms ? '' : ' (não configurado)'}</option><option value="push"${st.push ? '' : ' disabled'}>Notificação no telemóvel</option></select></div>
       <div class="field"><label>Público</label><select name="segment" data-cp="1">${Object.entries(segments).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
       <div class="field"><label>X dias (sem apostas / registados)</label><input name="days" type="number" min="1" max="365" value="7" data-cp="1"></div>
     </div>
@@ -557,15 +558,15 @@ function adminCampaigns({ status: st, segments, optedIn, campaigns = [] }) {
     <div class="form-grid">
       <div class="field"><label>Modelo (opcional)</label><select name="template" data-cp="tpl"><option value="">— Escrever do zero —</option>
         <option value="freebet">FreeBet</option><option value="freespins">Free Spins casino</option><option value="deposito">Bónus de depósito</option><option value="boost">Boost de múltiplas</option><option value="volta">Jogadores inativos</option></select></div>
-      <div class="field cp-email"><label>Assunto</label><input name="subject" maxlength="150"></div>
+      <div class="field cp-email cp-push"><label id="cpSubjectLabel">Assunto</label><input name="subject" maxlength="150"></div>
       <div class="field wide"><label>Mensagem</label><textarea name="body" rows="7" maxlength="5000" required></textarea><small class="muted" id="cpChars"></small></div>
       <div class="field cp-email"><label>Botão (opcional)</label><input name="ctaText" maxlength="60" placeholder="VER PROMOÇÃO"></div>
-      <div class="field cp-email"><label>Link do botão</label><input name="ctaUrl" type="url" value="${esc(site)}/#/promocoes"></div>
+      <div class="field cp-email cp-push"><label id="cpLinkLabel">Link do botão</label><input name="ctaUrl" value="${esc(site)}/#/promocoes"></div>
       <div class="field cp-sms" hidden><label>Telefone para o teste</label><input name="testPhone" placeholder="+351 9…"></div>
     </div>
     <div class="form-actions"><button type="button" class="ghost-btn" data-action="cp-test">Enviar teste para mim</button><button class="primary-btn">Enviar campanha</button></div></form>
   <div class="panel"><h3>Campanhas enviadas</h3>${campaigns.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Canal</th><th>Mensagem</th><th>Público</th><th>Enviados</th><th>Estado</th></tr></thead><tbody>
-    ${campaigns.map((c) => `<tr><td>${fmtDateTime(c.createdAt)}<br><small class="muted">${esc(c.createdBy || '')}</small></td><td>${c.channel === 'sms' ? 'SMS' : 'Email'}</td>
+    ${campaigns.map((c) => `<tr><td>${fmtDateTime(c.createdAt)}<br><small class="muted">${esc(c.createdBy || '')}</small></td><td>${c.channel === 'sms' ? 'SMS' : c.channel === 'push' ? 'Telemóvel' : 'Email'}</td>
       <td>${esc(c.subject || c.body.slice(0, 60))}</td><td>${esc(segments[c.segment] || c.segment)}${['inactive', 'new'].includes(c.segment) ? ` <small class="muted">(${c.days} dias)</small>` : ''}</td>
       <td class="num">${c.sent} / ${c.total}${c.failed ? `<br><small class="muted">${c.failed} falharam</small>` : ''}</td>
       <td><span class="pill ${(CP_STATUS[c.status] || ['void'])[0]}">${(CP_STATUS[c.status] || [0, c.status])[1]}</span>${c.error ? `<br><small class="muted">${esc(c.error)}</small>` : ''}</td></tr>`).join('')}
@@ -579,11 +580,15 @@ let cpTimer = null;
 function campaignCount() {
   const form = $('#cpForm');
   if (!form) return;
-  const sms = form.channel.value === 'sms';
-  $$('.cp-email', form).forEach((el) => { el.hidden = sms; });
-  $$('.cp-sms', form).forEach((el) => { el.hidden = !sms; });
+  const ch = form.channel.value, sms = ch === 'sms', push = ch === 'push';
+  // each field shows on the channels its classes name (cp-email, cp-sms, cp-push)
+  $$('.cp-email, .cp-sms, .cp-push', form).forEach((el) => { el.hidden = !el.classList.contains(`cp-${ch}`); });
+  $('#cpSubjectLabel').textContent = push ? 'Título da notificação (até 65)' : 'Assunto';
+  $('#cpLinkLabel').textContent = push ? 'Abre em (ao tocar)' : 'Link do botão';
+  form.subject.maxLength = push ? 65 : 150;
+  form.body.maxLength = push ? 180 : sms ? 300 : 5000;
   form.days.closest('.field').hidden = !['inactive', 'new'].includes(form.segment.value);
-  $('#cpChars').textContent = sms ? `${form.body.value.length} caracteres (até 160 = 1 SMS; acentos contam mais)` : '';
+  $('#cpChars').textContent = sms ? `${form.body.value.length} caracteres (até 160 = 1 SMS; acentos contam mais)` : push ? `${form.body.value.length} / 180 caracteres` : '';
   clearTimeout(cpTimer);
   cpTimer = setTimeout(async () => {
     try {
@@ -1716,7 +1721,7 @@ document.addEventListener('click', async (e) => {
     try {
       const form = actionEl.closest('form');
       await api('/api/admin/campaigns/test', { method: 'POST', body: campaignBody(form) });
-      toast('Teste enviado', form.channel.value === 'sms' ? 'Veja o SMS no telemóvel.' : `Veja a caixa de ${state.user.email}.`);
+      toast('Teste enviado', form.channel.value === 'email' ? `Veja a caixa de ${state.user.email}.` : form.channel.value === 'sms' ? 'Veja o SMS no telemóvel.' : 'Veja a notificação nos seus telemóveis com avisos ativos.');
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     return;

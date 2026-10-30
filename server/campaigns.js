@@ -1,8 +1,10 @@
-// Promotional campaigns by email or SMS (sent through Brevo, brevo.js).
+// Promotional campaigns by email or SMS (sent through Brevo, brevo.js), or as a notification on the
+// phone (push.js).
 //
-// Only players who said yes receive them (notifyPromos for email, notifySms for SMS, both off by
-// default; every registered player is asked on the site, deposit or not, a "not now" again after 30 days); never a self-excluded or banned account. Every email
-// carries a one-click link to stop receiving them. SMS only between 09:00 and 21:00 (Lisbon).
+// Only players who said yes receive them (notifyPromos for email, notifySms for SMS, notifyPushPromos
+// for the phone, all off by default; every registered player is asked on the site, deposit or not, a
+// "not now" again after 30 days); never a self-excluded or banned account. Every email carries a
+// one-click link to stop receiving them. SMS and phone notifications only between 09:00 and 21:00 (Lisbon).
 
 import crypto from 'node:crypto';
 import { nowIso, getSetting, setSetting } from './db.js';
@@ -25,7 +27,9 @@ export function audience(db, { channel = 'email', segment = 'all', days = 0 } = 
   if (!SEGMENTS[segment]) throw Object.assign(new Error('Público inválido.'), { status: 400 });
   const where = [
     "u.role = 'user'", 'u.banned_at IS NULL', '(u.excluded_until IS NULL OR u.excluded_until <= ?)',
-    channel === 'sms' ? "json_extract(u.prefs, '$.notifySms') = 1 AND u.phone IS NOT NULL AND u.phone != ''" : "json_extract(u.prefs, '$.notifyPromos') = 1",
+    channel === 'sms' ? "json_extract(u.prefs, '$.notifySms') = 1 AND u.phone IS NOT NULL AND u.phone != ''"
+      : channel === 'push' ? "json_extract(u.prefs, '$.notifyPushPromos') = 1 AND EXISTS (SELECT 1 FROM push_subs s WHERE s.user_id = u.id)"
+        : "json_extract(u.prefs, '$.notifyPromos') = 1",
   ];
   const args = [nowIso()];
   const deposited = "EXISTS (SELECT 1 FROM transactions t WHERE t.user_id = u.id AND t.type = 'deposit')";
@@ -89,23 +93,34 @@ Recebe este email porque aceitou receber promoções da BET62. <a href="${esc(un
 /** The SMS text for one player (with the 18+ notice). */
 export const renderSms = ({ body }, user) => `${personal(body, user)}\n18+ BET62. Nao receber: Perfil>Preferencias`;
 
-/** Lisbon time allows SMS (09:00–20:59). */
+/** The notification of a promotional campaign on the phone. */
+export const renderPush = (c, user) => ({ kind: 'promo', title: personal(c.subject, user), body: personal(c.body, user), url: c.ctaUrl || '/#/promocoes', tag: `promo-${c.id || 0}` });
+
+/** Lisbon time allows SMS and phone notifications (09:00–20:59). */
 export function smsHours(date = new Date()) {
   const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Lisbon', hour: '2-digit', hour12: false }).format(date));
   return h >= 9 && h < 21;
 }
 
-export function createCampaigns(db, { brevo = null, concurrency = 4, log = () => {} } = {}) {
+export function createCampaigns(db, { brevo = null, push = null, concurrency = 4, log = () => {} } = {}) {
   // A campaign left "sending" by a restart: closed with what it managed.
   db.prepare("UPDATE campaigns SET status = 'failed', error = 'Interrompida (o servidor reiniciou).', finished_at = ? WHERE status = 'sending'").run(nowIso());
 
   function check(channel) {
+    if (channel === 'push') {
+      if (!push) throw Object.assign(new Error('Notificações no telemóvel indisponíveis.'), { status: 409 });
+      return;
+    }
     if (channel === 'sms' ? !brevo?.smsConfigured : !brevo?.configured) {
       throw Object.assign(new Error(channel === 'sms' ? 'SMS não configurado: defina BREVO_SMS_SENDER no Railway.' : 'Email não configurado: defina BREVO_API_KEY e BREVO_SENDER_EMAIL no Railway.'), { status: 409 });
     }
   }
 
-  function sendOne(c, user, baseUrl) {
+  async function sendOne(c, user, baseUrl) {
+    if (c.channel === 'push') {
+      if (!(await push.sendTo(user.id, renderPush(c, user)))) throw new Error('nenhum telemóvel ativo');
+      return;
+    }
     if (c.channel === 'sms') return brevo.sendSms({ to: user.phone, content: renderSms(c, user) });
     const unsubscribeUrl = `${baseUrl}/api/unsubscribe?u=${user.id}&t=${unsubscribeToken(db, user.id)}`;
     const m = renderEmail(c, user, { baseUrl, unsubscribeUrl });
@@ -113,15 +128,17 @@ export function createCampaigns(db, { brevo = null, concurrency = 4, log = () =>
   }
 
   function validate(c) {
-    const channel = c.channel === 'sms' ? 'sms' : 'email';
+    const channel = ['sms', 'push'].includes(c.channel) ? c.channel : 'email';
     const body = String(c.body || '').trim();
     const subject = String(c.subject || '').trim();
     if (channel === 'email' && (subject.length < 3 || subject.length > 150)) throw Object.assign(new Error('Indique o assunto do email.'), { status: 400 });
+    if (channel === 'push' && (subject.length < 3 || subject.length > 65)) throw Object.assign(new Error('Indique o título da notificação (até 65 caracteres).'), { status: 400 });
+    if (channel === 'push' && body.length > 180) throw Object.assign(new Error('Notificação demasiado longa (máx. 180 caracteres).'), { status: 400 });
     if (body.length < 3) throw Object.assign(new Error('Escreva a mensagem.'), { status: 400 });
     if (channel === 'sms' && body.length > 300) throw Object.assign(new Error('SMS demasiado longo (máx. 300 caracteres).'), { status: 400 });
     if (body.length > 5000) throw Object.assign(new Error('Mensagem demasiado longa.'), { status: 400 });
     const ctaUrl = String(c.ctaUrl || '').trim();
-    if (ctaUrl && !/^https?:\/\//i.test(ctaUrl)) throw Object.assign(new Error('O link do botão tem de começar por https://'), { status: 400 });
+    if (ctaUrl && !/^https?:\/\//i.test(ctaUrl) && !(channel === 'push' && /^\/#\/[\w/-]*$/.test(ctaUrl))) throw Object.assign(new Error('O link do botão tem de começar por https://'), { status: 400 });
     return {
       channel, subject, body, segment: SEGMENTS[c.segment] ? c.segment : 'all', days: Math.max(1, Math.min(365, Math.round(Number(c.days) || 7))),
       ctaText: String(c.ctaText || '').trim().slice(0, 60), ctaUrl,
@@ -129,9 +146,13 @@ export function createCampaigns(db, { brevo = null, concurrency = 4, log = () =>
   }
 
   /** A test send to one address or number (the administrator's), whatever the preferences. */
-  async function test(input, { email, phone, name }, baseUrl) {
+  async function test(input, { userId, email, phone, name }, baseUrl) {
     const c = validate(input);
     check(c.channel);
+    if (c.channel === 'push') {
+      if (!(await push.sendTo(userId, renderPush(c, { name })))) throw Object.assign(new Error('Nenhum telemóvel seu com avisos ativos: entre no site com esta conta no telemóvel e ative os avisos.'), { status: 409 });
+      return;
+    }
     if (c.channel === 'sms' && !phone) throw Object.assign(new Error('Indique o número para o teste.'), { status: 400 });
     await sendOne(c, { id: 0, email, phone, name }, baseUrl);
   }
@@ -140,12 +161,12 @@ export function createCampaigns(db, { brevo = null, concurrency = 4, log = () =>
   function start(input, { by, baseUrl }) {
     const c = validate(input);
     check(c.channel);
-    if (c.channel === 'sms' && !smsHours()) throw Object.assign(new Error('Os SMS só podem ser enviados entre as 09:00 e as 21:00.'), { status: 409 });
+    if (c.channel !== 'email' && !smsHours()) throw Object.assign(new Error(`${c.channel === 'sms' ? 'Os SMS' : 'As notificações'} só podem ser enviados entre as 09:00 e as 21:00.`), { status: 409 });
     const users = audience(db, c);
     if (!users.length) throw Object.assign(new Error('Nenhum jogador neste público aceita receber promoções por este canal.'), { status: 409 });
     const id = Number(db.prepare(`INSERT INTO campaigns (channel, segment, days, subject, body, cta_text, cta_url, total, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(c.channel, c.segment, c.days, c.subject || null, c.body, c.ctaText || null, c.ctaUrl || null, users.length, by || null, nowIso()).lastInsertRowid);
-    const done = run(id, c, users, baseUrl);
+    const done = run(id, { ...c, id }, users, baseUrl);
     return { id, total: users.length, done };
   }
 
@@ -166,7 +187,7 @@ export function createCampaigns(db, { brevo = null, concurrency = 4, log = () =>
   }
 
   const list = () => db.prepare('SELECT * FROM campaigns ORDER BY id DESC LIMIT 50').all();
-  const status = () => ({ email: !!brevo?.configured, sms: !!brevo?.smsConfigured, sender: brevo?.senderEmail || null, smsHours: smsHours() });
+  const status = () => ({ email: !!brevo?.configured, sms: !!brevo?.smsConfigured, push: !!push, sender: brevo?.senderEmail || null, smsHours: smsHours() });
 
   return { audience: (q) => audience(db, q), test, start, list, status };
 }

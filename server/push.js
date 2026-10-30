@@ -88,7 +88,8 @@ export function createPush(db, { publicKey = '', privateKey = '', subject = '', 
     if (busy) return 0;
     busy = true;
     try {
-      const bets = db.prepare(`SELECT b.* FROM bets b LEFT JOIN win_notices n ON n.bet_id = b.id
+      const bets = db.prepare(`SELECT b.*, json_extract(u.prefs, '$.notifyPush') AS wants FROM bets b JOIN users u ON u.id = b.user_id
+        LEFT JOIN win_notices n ON n.bet_id = b.id
         WHERE b.status = 'won' AND b.payout_cents > 0 AND b.settled_at > ? AND n.pushed_at IS NULL AND n.seen_at IS NULL
         ORDER BY b.settled_at LIMIT 200`).all(new Date(Date.now() - 6 * 3_600_000).toISOString());
       const legsOf = db.prepare('SELECT e.sport, e.home, e.away FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id = ? ORDER BY l.id');
@@ -97,6 +98,8 @@ export function createPush(db, { publicKey = '', privateKey = '', subject = '', 
       let n = 0;
       for (const b of bets) {
         mark.run(b.id, b.user_id, nowIso());
+        // Turned off in the player's notifications: marked as announced, nothing sent.
+        if (b.wants === 0) continue;
         n += await sendTo(b.user_id, winMessage(b, legsOf.all(b.id)));
       }
       return n;

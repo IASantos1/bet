@@ -364,7 +364,7 @@ CREATE INDEX IF NOT EXISTS idx_aff_comm_status ON affiliate_commissions(status, 
 -- Promotional campaigns (campaigns.js): one email or SMS sent to the players who asked for promotions.
 CREATE TABLE IF NOT EXISTS campaigns (
   id            INTEGER PRIMARY KEY,
-  channel       TEXT    NOT NULL CHECK (channel IN ('email', 'sms')),
+  channel       TEXT    NOT NULL CHECK (channel IN ('email', 'sms', 'push')),
   segment       TEXT    NOT NULL,
   days          INTEGER,
   subject       TEXT,
@@ -691,6 +691,9 @@ function migrate(db) {
   // Bet builder bets and cashed-out bets ('cashout'): the bets table is rebuilt with every column it has.
   const betsSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'bets'").get()?.sql || '';
   if (betsSql && (!betsSql.includes("'builder'") || !betsSql.includes("'cashout'"))) rebuildKeeping(db, 'bets');
+  // Campaigns sent as notifications on the phone (push.js) too.
+  const campSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'campaigns'").get()?.sql || '';
+  if (campSql && !campSql.includes("'push'")) rebuildKeeping(db, 'campaigns');
   const txSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'").get()?.sql || '';
   if (!txSql.includes("'affiliate_commission'")) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
