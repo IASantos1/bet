@@ -982,11 +982,11 @@ async function shareLink(url, text) {
 }
 
 /** A placed ticket (open, in play or settled: only once it is placed): its own link, with the picks, the odds and the result. */
-async function shareBet(id) {
+async function shareBet(id, text = null) {
   try {
     const { url } = await api(`/api/bets/${id}/share`, { method: 'POST', body: {} });
     const b = (state.myBets || []).find((x) => x.id === id);
-    shareLink(url, b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62');
+    shareLink(url, text || (b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62'));
   } catch (err) { toast('Partilhar', err.message, 'error'); }
 }
 
@@ -3306,6 +3306,7 @@ async function checkWins() {
     if (wins?.length) {
       celebrate(wins, {
         money, esc, sportIcon: (k) => sportBadge(k, 18),
+        onShare: (b) => shareBet(b.id, `Bilhete premiado na Bet62 🏆 ${money((Number(b.payout) || 0) + (Number(b.boost) || 0))} com odd ${fmtOdds(b.totalOdds)}`),
         onClose: (ids) => { api('/api/me/wins/seen', { method: 'POST', body: { ids } }).catch(() => {}); refreshMe(); },
       });
     }
