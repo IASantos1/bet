@@ -1420,11 +1420,13 @@ export function createApp(db, {
     const method = str(req.query.method, 20) || null;
     if (req.query.promo === 'freebet') {
       const o = freebetOffer(db, req.user.id, value, { method });
-      return res.json({ campaign: o.campaign, name: o.name, freebet: o.freebetCents ? cents(o.freebetCents) : 0, minOdds: o.minOdds, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+      return res.json({ campaign: o.campaign, name: o.name, freebet: o.freebetCents ? cents(o.freebetCents) : 0, minOdds: o.minOdds, reason: o.reason || null, minDeposit: o.minDeposit ?? null,
+        tiers: promoConfig(db).depositFb.tiers });
     }
     if (req.query.promo === 'casino') {
       const o = casinoOffer(db, req.user.id, value, { method });
-      return res.json({ campaign: o.campaign, name: o.name, spins: o.spins || 0, spinValue: o.spinValue, bonus: o.valueCents ? cents(o.valueCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+      return res.json({ campaign: o.campaign, name: o.name, spins: o.spins || 0, spinValue: o.spinValue, bonus: o.valueCents ? cents(o.valueCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null,
+        tiers: promoConfig(db).casinoFs.tiers });
     }
     const o = depositOffer(db, req.user.id, value, { method });
     res.json({ campaign: o.campaign, name: o.name, bonus: o.bonusCents ? cents(o.bonusCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
