@@ -2244,7 +2244,10 @@ function pushDeviceBox() {
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   let text, btn = '';
-  if (!pushSupported()) text = ios && !installed ? 'No iPhone, os avisos funcionam com a app instalada: no Safari, toque em Partilhar → Adicionar ao ecrã principal e abra a Bet62 a partir do ícone.' : 'Este navegador não recebe avisos.';
+  if (!pushSupported()) {
+    text = ios && !installed ? 'No iPhone, os avisos funcionam com a app instalada: no Safari, toque em Partilhar → Adicionar ao ecrã principal e abra a Bet62 a partir do ícone.' : 'Este navegador não recebe avisos.';
+    if (ios && !installed && window.bet62InstallGuide) btn = '<button class="primary-btn btn-sm" data-action="install-guide">Como instalar</button>';
+  }
   else if (Notification.permission === 'granted') text = '✅ Este dispositivo recebe os avisos.';
   else if (Notification.permission === 'denied') text = 'Os avisos estão bloqueados neste navegador: permita-os nas definições do site (cadeado ao lado do endereço).';
   else { text = 'Este dispositivo ainda não recebe os avisos.'; btn = '<button class="primary-btn btn-sm" data-action="push-yes">Ativar neste dispositivo</button>'; }
@@ -3736,6 +3739,7 @@ document.addEventListener('click', async (e) => {
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
   else if (action === 'push-yes') pushYes();
+  else if (action === 'install-guide') window.bet62InstallGuide?.();
   else if (action === 'push-no') { try { localStorage.setItem(PUSH_ASKED, String(Date.now())); } catch { /* ignore */ } closeModal(); }
   else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
   else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
