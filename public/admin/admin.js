@@ -139,7 +139,7 @@ const TX_LABEL = {
 // ---------- promotions ----------
 
 const PROMO_STATUS = { active: 'Ativo', completed: 'Cumprido', expired: 'Expirado', cancelled: 'Cancelado', used: 'Usada', granted: 'Atribuído', refused: 'Recusado' };
-const CAMPAIGN = { accaBoost: 'Boost de múltiplas', casinoFs: 'Free Spins casino (CASINO_FREE_SPINS)', welcome: 'Boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', general: 'Geral', all: 'Todas' };
+const CAMPAIGN = { accaBoost: 'Boost de múltiplas', casinoFs: 'Free Spins casino (CASINO_FREE_SPINS)', depositFb: 'Free Bet de depósito', welcome: 'Boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', general: 'Geral', all: 'Todas' };
 // Fields of each campaign in the admin form: [key, label, type].
 const PROMO_FIELDS = {
   welcome: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
@@ -147,7 +147,9 @@ const PROMO_FIELDS = {
   reload: [['percent', 'Bónus (%)'], ['minDeposit', 'Depósito mínimo (€)'], ['maxBonus', 'Bónus máximo (€)'], ['rolloverMult', 'Rollover (×)'], ['rolloverBase', 'Base do rollover', 'base'],
     ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)'], ['maxCountStake', 'Aposta máx. contabilizável (€)', 'opt'], ['maxCountPct', '… ou % do bónus (o menor)', 'opt']],
   casinoFs: [['tiers', 'Escalões (depósito € : rodadas)', 'tiers'], ['spinValue', 'Valor por rodada padrão', 'spin'], ['validityDays', 'Validade (dias)'], ['maxDeposit', 'Depósito máximo promocional (€)'],
-    ['maxClaims', 'Máximo de utilizações por jogador', 'opt'], ['games', 'Jogos elegíveis e valor por rodada (ID:€, separados por vírgula)', 'games']],
+    ['maxClaims', 'Máximo de utilizações por jogador', 'opt'], ['firstDepositOnly', 'Só no 1.º depósito', 'bool'], ['games', 'Jogos elegíveis e valor por rodada (ID:€, separados por vírgula)', 'games']],
+  depositFb: [['tiers', 'Escalões (depósito € : Free Bet €, ex.: 10:5, 20:10, 50:25, 100:50)', 'tiers'], ['minOdds', 'Odd mínima da Free Bet'], ['validityDays', 'Validade da Free Bet (dias)'],
+    ['maxDeposit', 'Depósito máximo promocional (€)'], ['firstDepositOnly', 'Só no 1.º depósito', 'bool']],
   accaBoost: [['tiers', 'Escalões (seleções : % de boost, ex.: 4:5, 8:10, 12:15, 17:20)', 'tiers'], ['minOdds', 'Odd mínima por seleção'], ['maxBoost', 'Boost máximo por aposta (€)']],
   firstBet: [['minStake', 'Aposta mínima (€)'], ['minOdds', 'Odd mínima'], ['maxRefund', 'Reembolso máximo em free bet (€)'], ['validityDays', 'Validade da free bet (dias)']],
   cashback: [['percent', 'Cashback (%)'], ['minLoss', 'Perda líquida mínima (€)'], ['max', 'Cashback máximo (€/semana)'], ['rolloverMult', 'Rollover (×)'], ['minOdds', 'Odd mínima'], ['validityDays', 'Validade (dias)']],
@@ -248,6 +250,7 @@ function adminPromos(d) {
         <label class="field">${esc(label)}<input name="${camp}.${k}" id="fsGamesInput" value="${esc(v.map((id) => (bets[id] ? `${id}:${bets[id]}` : String(id))).join(', '))}" placeholder="ex.: 4821:0.20, 4822:0.10"></label>
         <small class="muted">⚠ As rodadas valem €0,10 ou €0,20: escolha só jogos que aceitam essa aposta (há jogos com aposta mínima maior — confirme no próprio jogo). Cada rodada é jogada ao valor indicado (ID:€, com €0,10 ou €0,20; sem valor: o padrão).</small></div>`;
     }
+    if (type === 'bool') return `<label class="adm-switch field"><input type="checkbox" name="${camp}.${k}"${v ? ' checked' : ''}> ${esc(label)}</label>`;
     if (type === 'spin') return `<label class="field">${esc(label)}<select name="${camp}.${k}">${[0.1, 0.2].map((x) => `<option value="${x}"${Math.round(Number(v) * 100) === x * 100 ? ' selected' : ''}>€${x.toFixed(2).replace('.', ',')}</option>`).join('')}</select></label>`;
     if (type === 'base') return `<label class="field">${esc(label)}<select name="${camp}.${k}"><option value="deposit_bonus"${v !== 'bonus' ? ' selected' : ''}>Depósito + bónus</option><option value="bonus"${v === 'bonus' ? ' selected' : ''}>Só o bónus</option></select></label>`;
     return `<label class="field">${esc(label)}<input name="${camp}.${k}" type="number" step="0.01" value="${v ?? ''}"${type === 'opt' ? ' placeholder="sem limite"' : ' required'}></label>`;
@@ -280,7 +283,7 @@ function adminPromos(d) {
         <p class="muted">Métodos de pagamento elegíveis:</p>
         <div class="form-actions">${methods.map(([k, l]) => `<label class="adm-switch"><input type="checkbox" name="general.methods" value="${k}"${c.general.methods.includes(k) ? ' checked' : ''}> ${l}</label>`).join('')}</div>
         <p class="muted">Sempre aplicado: uma promoção de depósito ativa por jogador, sem autoexclusão nem conta suspensa, sem contas duplicadas (telemóvel / NIF / IBAN), depósito confirmado e não revertido. Os valores e o rollover são sempre calculados pelo servidor.</p></div>
-      ${['welcome', 'firstBet', 'reload', 'cashback', 'accaBoost', 'casinoFs'].map(campaign).join('')}
+      ${['welcome', 'firstBet', 'reload', 'cashback', 'accaBoost', 'casinoFs', 'depositFb'].map(campaign).join('')}
       <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div>
     </form>
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>

@@ -1855,8 +1855,10 @@ function campaignCard(c) {
       [`Rollover ${c.rolloverMult}×`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, 'Free bets, bónus e apostas anuladas não contam']],
     accaBoost: ['MÚLTIPLAS', `Boost até +${Math.max(0, ...(c.tiers || []).map(([, p]) => p))}% nos ganhos`, `Quanto mais seleções na múltipla, maior o boost: ${(c.tiers || []).map(([n, p]) => `${n} seleções → +${p}%`).join(' · ')}.`,
       [`Cada seleção com odd ≥ ${fmtOdds(c.minOdds)}`, 'O boost é sobre os ganhos (retorno menos a aposta) e é pago em saldo real', `Até ${money(c.maxBoost)} por aposta`, 'Só apostas com saldo real (não free bets nem bónus)', 'Uma seleção anulada deixa de contar para o boost']],
-    casinoFs: ['CASINO', 'Free Spins no depósito', `Escolha "Free Spins casino" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${n} rodadas`).join(' · ')}.`,
-      ['Cada rodada à aposta do jogo (ex.: €0,20 ou €0,10)', `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Tudo o que ganhar com as Free Spins passa a saldo real', 'Não acumula com o bónus de desporto no mesmo depósito']],
+    casinoFs: ['CASINO', `Free Spins no ${c.firstDepositOnly ? '1.º depósito' : 'depósito'}`, `Escolha "Free Spins casino" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${n} rodadas`).join(' · ')}.`,
+      [c.firstDepositOnly ? 'Só no primeiro depósito' : null, 'Cada rodada à aposta do jogo (ex.: €0,20 ou €0,10)', `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Tudo o que ganhar com as Free Spins passa a saldo real', 'Não acumula com outra promoção no mesmo depósito']],
+    depositFb: ['DESPORTO', `Free Bet no ${c.firstDepositOnly ? '1.º depósito' : 'depósito'}`, `Escolha "Free Bet desporto" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${money(n)}`).join(' · ')}.`,
+      [c.firstDepositOnly ? 'Só no primeiro depósito' : null, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válida ${c.validityDays} dias`, 'Aposta-se o valor inteiro da Free Bet de uma vez', 'O lucro é pago em saldo real (o valor da Free Bet não)', 'Não acumula com outra promoção no mesmo depósito']],
   }[c.id];
   if (!info) return '';
   const [eyebrow, title, text, terms] = info;
@@ -2375,6 +2377,7 @@ function depositFormHtml() {
       <div class="promo-pick"><span>Promoção deste depósito</span>
         <label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>
         <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
+        <label><input type="radio" name="promo" value="freebet"> Free Bet desporto</label>
         <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
@@ -3914,7 +3917,9 @@ function depositOffer() {
     if (promo === 'none') { box.innerHTML = '<small class="muted">Sem promoção neste depósito.</small>'; return; }
     try {
       const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}&promo=${promo}`);
-      box.innerHTML = o.spins > 0
+      box.innerHTML = o.freebet > 0
+        ? `<div class="offer ok">🎟️ ${esc(o.name)}: <b>${money(o.freebet)} em Free Bet</b> após a confirmação do pagamento (odd mínima ${Number(o.minOdds).toFixed(2)}). O lucro é pago em saldo real.</div>`
+        : o.spins > 0
         ? `<div class="offer ok">🎰 ${esc(o.name)}: <b>${o.spins} rodadas grátis</b> após a confirmação do pagamento. Os ganhos passam a saldo real.</div>`
         : o.bonus > 0
           ? `<div class="offer ok">🎁 ${esc(o.name)}: <b>+${money(o.bonus)}</b> em saldo de bónus após a confirmação do pagamento.</div>`

@@ -54,8 +54,8 @@ export function ptPhone(raw) {
 }
 
 // The promotion the player chose for a deposit (stripe_payments.promo_opt).
-const PROMO_CODE = { none: 0, sport: 1, casino: 2 };
-const PROMO_CHOICE = { 0: 'none', 1: 'sport', 2: 'casino' };
+const PROMO_CODE = { none: 0, sport: 1, casino: 2, freebet: 3 };
+const PROMO_CHOICE = { 0: 'none', 1: 'sport', 2: 'casino', 3: 'freebet' };
 
 const FINAL = ['paid', 'failed', 'expired', 'mismatch', 'reversed'];
 

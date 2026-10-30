@@ -4,8 +4,8 @@ import { postTransaction } from './wallet.js';
 import { onDeposit } from './promotions.js';
 import { onReferredDeposit } from './affiliates.js';
 
-const PROMO_CODE = { none: 0, sport: 1, casino: 2 };
-const PROMO_CHOICE = { 0: 'none', 1: 'sport', 2: 'casino' };
+const PROMO_CODE = { none: 0, sport: 1, casino: 2, freebet: 3 };
+const PROMO_CHOICE = { 0: 'none', 1: 'sport', 2: 'casino', 3: 'freebet' };
 const FINAL = new Set(['paid', 'failed', 'expired', 'mismatch', 'reversed']);
 
 const centsFrom = (value) => {

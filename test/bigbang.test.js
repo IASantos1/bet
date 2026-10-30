@@ -631,3 +631,26 @@ test('a game shown once for two providers is in both providers\' filter', async 
   const [kept] = dropCrossDuplicates([g(1, 'Pragmatic Play'), g(2, 'Reel Kingdom')]);
   assert.deepEqual([kept.id, kept.also], [1, ['reelkingdom']]);
 });
+
+test('free spins and the deposit free bet: only on the first deposit, €20 → 10 spins / a €10 free bet', () => {
+  const db = openDb(':memory:');
+  savePromoConfig(db, { casinoFs: { games: [4821] } });
+  const a = player(db);
+  tx(db, () => postTransaction(db, a, 2000, 'deposit', 'd1'));
+  assert.equal(tx(db, () => onDeposit(db, { userId: a, amountCents: 2000, ref: 'a1', choice: 'casino' })).spins, 10);
+  // a second deposit: no free spins (only the first)
+  db.prepare("UPDATE casino_spins SET status = 'closed' WHERE user_id = ?").run(a);
+  tx(db, () => postTransaction(db, a, 2000, 'deposit', 'd2'));
+  assert.equal(tx(db, () => onDeposit(db, { userId: a, amountCents: 2000, ref: 'a2', choice: 'casino' })), null);
+  assert.equal(tx(db, () => onDeposit(db, { userId: a, amountCents: 2000, ref: 'a3', choice: 'freebet' })), null);
+  // the free bet on a first deposit
+  const b = player(db);
+  tx(db, () => postTransaction(db, b, 2000, 'deposit', 'd3'));
+  const fb = tx(db, () => onDeposit(db, { userId: b, amountCents: 2000, ref: 'b1', choice: 'freebet' }));
+  assert.equal(fb.kind, 'depositFb');
+  assert.equal(fb.amount_cents, 1000);
+  assert.equal(fb.min_odds_x100, 150);
+  // the operator can open them to every deposit again
+  savePromoConfig(db, { casinoFs: { firstDepositOnly: false } });
+  assert.equal(tx(db, () => onDeposit(db, { userId: a, amountCents: 2000, ref: 'a4', choice: 'casino' })).spins, 10);
+});
