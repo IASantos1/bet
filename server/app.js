@@ -28,7 +28,7 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
-  casinoOffer, freebetOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
+  casinoOffer, freebetOffer, firstDeposit, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
 import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
@@ -391,7 +391,7 @@ export function createApp(db, {
 
   const userById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   // The player as the pages see it, with the promotional balances (bonus, free bets) worked out here.
-  const userOut = (u) => ({ ...publicUser(u), freebet: cents(freebetCents(db, u.id)), bonus: cents(bonusBalanceCents(db, u.id)) });
+  const userOut = (u) => ({ ...publicUser(u), freebet: cents(freebetCents(db, u.id)), bonus: cents(bonusBalanceCents(db, u.id)), firstDeposit: firstDeposit(db, u.id) });
 
   // Single wallet: anything that uses the balance first brings back money left in the casino.
   const reclaimCasino = async (req, _res, next) => {
@@ -726,6 +726,8 @@ export function createApp(db, {
       liveOddsMaxAge: config.liveOddsMaxAgeSeconds, builderFactor: config.builderFactor,
       // The multiple boost the slip shows (null while the campaign is off).
       accaBoost: (() => { const c = promoConfig(db).accaBoost; return campaignOpen(c) ? { tiers: c.tiers, minOdds: c.minOdds, maxBoost: c.maxBoost } : null; })(),
+      // The 100% welcome bonus on the 1st deposit (off: the deposit form offers the free bet there instead).
+      welcomeBonus: campaignOpen(promoConfig(db).welcome),
       supportEmail: config.supportEmail || undefined, supportPhone: config.supportPhone || undefined,
       sports: SPORTS, version: APP_VERSION,
       // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.

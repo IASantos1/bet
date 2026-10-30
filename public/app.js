@@ -1929,7 +1929,7 @@ function myPromosView() {
 
 function promosPage() {
   if (!state.campaigns) loadPromos();
-  const cards = (state.campaigns || []).map(campaignCard).join('');
+  const cards = (state.campaigns || []).filter((c) => c.id !== 'welcome' || c.open).map(campaignCard).join('');
   return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da Bet62.</p></div>
     ${state.user ? `<section class="section"><div class="section-head"><h2>As minhas promoções</h2></div><div class="panel pf-panel">${myPromosView()}</div></section>` : ''}
     <section class="section"><div class="section-head"><h2>Campanhas</h2></div>
@@ -2355,6 +2355,8 @@ const DEPOSIT_PRESETS = [10, 20, 50, 100, 200];
 function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
+  // 1st deposit without the 100% welcome bonus: the sports offer is the free bet (€20 → €10).
+  const sportBonus = !(state.user?.firstDeposit && !c.welcomeBonus);
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
     ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha um método de pagamento.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
@@ -2375,9 +2377,9 @@ function depositFormHtml() {
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
       </div>
       <div class="promo-pick"><span>Promoção deste depósito</span>
-        <label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>
+        ${sportBonus ? '<label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>' : ''}
         <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
-        <label><input type="radio" name="promo" value="freebet"> Free Bet desporto</label>
+        <label><input type="radio" name="promo" value="freebet"${sportBonus ? '' : ' checked'}> Free Bet desporto</label>
         <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
