@@ -2002,12 +2002,13 @@ function profileSection(id) {
     case 'limites': return responsibleView();
     case 'atividade': setTimeout(loadStats); return '<div id="statsBox"><div class="loading">A carregar…</div></div>';
     case 'pagamento': return bankView();
-    case 'notificacoes': return prefToggles([
+    case 'notificacoes': return `${prefToggles([
       ['notifyResults', 'Resultados das apostas por email', 'Aviso quando uma aposta é resolvida'],
       ['notifyPromos', 'Promoções por email', 'Ofertas e campanhas'],
       ['notifySms', 'Promoções por SMS', 'Ofertas e campanhas (precisa de telefone na conta)'],
-      ['notifyPush', 'Notificações no dispositivo', 'Golos e resultados dos jogos em que apostou'],
-    ]);
+      ['notifyPush', 'Avisos no telemóvel', 'Quando uma aposta ganha e quando um levantamento é aprovado ou pago'],
+      ['notifyPushPromos', 'Promoções no telemóvel', 'Ofertas e campanhas, só entre as 09:00 e as 21:00'],
+    ])}${pushDeviceBox()}`;
     case 'sessoes': setTimeout(loadSessions); return '<div id="sessionsBox"><div class="loading">A carregar…</div></div>';
     case 'suporte': return supportView();
     case 'privacidade': return `${prefToggles([
@@ -2236,6 +2237,18 @@ function bankView() {
       <div class="field"><label>NIF</label><input name="nif" value="${esc(u.nif || '')}" inputmode="numeric" maxlength="9" placeholder="123456789"></div>
     </div><div class="form-actions"><button class="primary-btn">Guardar dados bancários</button></div></form>
     <div class="pf-note">🔒 Os levantamentos são pagos apenas para contas em nome do titular da conta Bet62.</div>`;
+}
+
+/** This phone's notifications: on, off in the browser, to turn on, or (iPhone) the app to install first. */
+function pushDeviceBox() {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let text, btn = '';
+  if (!pushSupported()) text = ios && !installed ? 'No iPhone, os avisos funcionam com a app instalada: no Safari, toque em Partilhar → Adicionar ao ecrã principal e abra a Bet62 a partir do ícone.' : 'Este navegador não recebe avisos.';
+  else if (Notification.permission === 'granted') text = '✅ Este dispositivo recebe os avisos.';
+  else if (Notification.permission === 'denied') text = 'Os avisos estão bloqueados neste navegador: permita-os nas definições do site (cadeado ao lado do endereço).';
+  else { text = 'Este dispositivo ainda não recebe os avisos.'; btn = '<button class="primary-btn btn-sm" data-action="push-yes">Ativar neste dispositivo</button>'; }
+  return `<div class="pf-note push-device"><span>${text}</span>${btn}</div>`;
 }
 
 function prefToggles(items) {
@@ -3290,7 +3303,7 @@ async function checkWins() {
     const { wins } = await api('/api/me/wins');
     if (wins?.length) {
       celebrate(wins, {
-        money, esc,
+        money, esc, sportIcon: (k) => sportBadge(k, 18),
         onClose: (ids) => { api('/api/me/wins/seen', { method: 'POST', body: { ids } }).catch(() => {}); refreshMe(); },
       });
     }
@@ -3345,6 +3358,7 @@ async function pushYes() {
     if ((await Notification.requestPermission()) !== 'granted') { toast('Avisos desligados', 'Pode ativá-los nas definições do navegador.', 'error'); return; }
     await pushSubscribe();
     toast('Avisos ativados', 'Vai saber logo quando a sua aposta ganhar.');
+    if (currentRoute().sub === 'notificacoes') render({ keepScroll: true });
   } catch (err) { toast('Erro', err.message || 'Não foi possível ativar os avisos.', 'error'); }
 }
 
@@ -3695,6 +3709,7 @@ document.addEventListener('click', async (e) => {
     try {
       const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: { [k]: on } } });
       state.user = user;
+      if (on && (k === 'notifyPush' || k === 'notifyPushPromos') && pushSupported() && Notification.permission === 'default') pushYes();
     } catch (err) {
       pref.classList.toggle('on', !on);
       pref.setAttribute('aria-checked', String(!on));

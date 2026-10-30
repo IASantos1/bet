@@ -52,3 +52,26 @@ test('keys made once and kept; a subscription is checked; each win announced onc
   // Still celebrated in the app.
   assert.equal(unseenWins(db, uid).length, 1);
 });
+
+test('push campaigns: only to players who accepted promotions on the phone and have one signed up', async () => {
+  const { createCampaigns } = await import('../server/campaigns.js');
+  const { db, uid } = setup();
+  const sent = [];
+  const push = { sendTo: async (id, m) => { sent.push([id, m]); return 1; } };
+  const camp = createCampaigns(db, { push });
+  assert.equal(camp.audience({ channel: 'push' }).length, 0);
+  db.prepare("UPDATE users SET prefs = ? WHERE id = ?").run(JSON.stringify({ notifyPushPromos: true }), uid);
+  assert.equal(camp.audience({ channel: 'push' }).length, 0); // no phone signed up yet
+  db.prepare("INSERT INTO push_subs (user_id, endpoint, p256dh, auth, vapid, created_at) VALUES (?, 'https://p/1', 'k', 'a', 'v', ?)").run(uid, nowIso());
+  assert.equal(camp.audience({ channel: 'push' }).length, 1);
+  assert.throws(() => camp.start({ channel: 'push', subject: 'x', body: 'Olá' }, {}), /título/);
+  assert.throws(() => camp.start({ channel: 'push', subject: 'Free Spins', body: 'x'.repeat(181) }, {}), /longa/);
+  const realHours = (await import('../server/campaigns.js')).smsHours();
+  if (!realHours) return; // outside 09:00–21:00 Lisbon the start is refused, as it should
+  const r = camp.start({ channel: 'push', subject: '🎰 {nome}, Free Spins', body: 'Tem 50 Free Spins à espera.', ctaUrl: '/#/casino' }, { by: 'admin' });
+  await r.done;
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][1].title, '🎰 A, Free Spins');
+  assert.equal(sent[0][1].url, '/#/casino');
+  assert.equal(db.prepare('SELECT channel, sent FROM campaigns').get().channel, 'push');
+});
