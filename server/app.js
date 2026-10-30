@@ -28,7 +28,7 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
-  casinoOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
+  casinoOffer, freebetOffer, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
 } from './promotions.js';
 import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
@@ -1294,7 +1294,7 @@ export function createApp(db, {
       checkKycDeposit(db, req.user, amount);
       // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
       // whether it is given, and how much, is decided here.
-      const promo = ['sport', 'casino', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
+      const promo = ['sport', 'casino', 'freebet', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
 
       // Stripe is used only when explicitly selected. In Eupago mode, card, MB WAY and
       // Multibanco all go through Eupago; its credit-card API returns Eupago's own secure form URL.
@@ -1357,7 +1357,8 @@ export function createApp(db, {
       return bonus;
     });
     const u = userById(req.user.id);
-    const bonus = !granted ? null : granted.kind === 'casinoFs' ? { name: CAMPAIGN_NAMES.casinoFs, amount: granted.value_cents / 100, spins: granted.spins } : bonusView(granted);
+    const bonus = !granted ? null : granted.kind === 'casinoFs' ? { name: CAMPAIGN_NAMES.casinoFs, amount: granted.value_cents / 100, spins: granted.spins }
+      : granted.kind === 'depositFb' ? { name: CAMPAIGN_NAMES.depositFb, amount: granted.amount_cents / 100, freebet: true } : bonusView(granted);
     res.status(201).json({ balance: cents(u.balance_cents), bonus, user: userOut(u) });
   }
 
@@ -1415,6 +1416,10 @@ export function createApp(db, {
     const amount = Math.round(Number(String(req.query.amount || '0').replace(',', '.')) * 100);
     const value = Number.isFinite(amount) ? amount : 0;
     const method = str(req.query.method, 20) || null;
+    if (req.query.promo === 'freebet') {
+      const o = freebetOffer(db, req.user.id, value, { method });
+      return res.json({ campaign: o.campaign, name: o.name, freebet: o.freebetCents ? cents(o.freebetCents) : 0, minOdds: o.minOdds, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
+    }
     if (req.query.promo === 'casino') {
       const o = casinoOffer(db, req.user.id, value, { method });
       return res.json({ campaign: o.campaign, name: o.name, spins: o.spins || 0, spinValue: o.spinValue, bonus: o.valueCents ? cents(o.valueCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });

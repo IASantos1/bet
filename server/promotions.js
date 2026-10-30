@@ -34,11 +34,17 @@ export const PROMO_DEFAULTS = {
   accaBoost: { active: true, startAt: null, endAt: null, tiers: [[4, 5], [8, 10], [12, 15], [17, 20]], minOdds: 1.2, maxBoost: 500 },
   casinoFs: {
     active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], spinValue: 0.2,
-    validityDays: 7, maxDeposit: 100, maxClaims: null, games: [], gameBets: {},
+    validityDays: 7, maxDeposit: 100, maxClaims: null, games: [], gameBets: {}, firstDepositOnly: true,
+  },
+  // A free bet on a deposit: [deposit from €, free bet €] (€20 → a €10 free bet), the same tiers as the
+  // free spins; one free bet of that amount, priced at least minOdds, valid validityDays.
+  depositFb: {
+    active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], minOdds: 1.5,
+    validityDays: 7, maxDeposit: 100, firstDepositOnly: true,
   },
 };
 
-export const CAMPAIGN_NAMES = { accaBoost: 'Boost de múltiplas', welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', casinoFs: 'Free Spins casino' };
+export const CAMPAIGN_NAMES = { accaBoost: 'Boost de múltiplas', welcome: 'Bónus de boas-vindas', reload: 'Reload semanal', cashback: 'Cashback semanal', firstBet: 'Primeira aposta protegida', casinoFs: 'Free Spins casino', depositFb: 'Free Bet de depósito' };
 const DEPOSIT_KINDS = ['welcome', 'reload'];
 const DAY = 86_400_000;
 const c100 = (euros) => Math.round(Number(euros) * 100);
@@ -67,7 +73,7 @@ function parseTiers(v) {
   const pairs = Array.isArray(v) ? v : String(v || '').split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).map((x) => x.split(/[:=→>-]+/).map((n) => n.trim()));
   const out = pairs.map(([d, n]) => [Number(d), Math.round(Number(n))]);
   if (!out.length || out.some(([d, n]) => !Number.isFinite(d) || d <= 0 || !Number.isInteger(n) || n <= 0 || n > 1000)) {
-    throw new HttpError(400, 'Free Spins: escalões inválidos (depósito € : rodadas, ex.: 10:5, 20:10, 50:25, 100:50).');
+    throw new HttpError(400, 'Promoções: escalões inválidos (depósito € : valor, ex.: 10:5, 20:10, 50:25, 100:50).');
   }
   return out.sort((a, b) => a[0] - b[0]);
 }
@@ -162,7 +168,7 @@ export function savePromoConfig(db, input) {
     for (const f of Object.keys(def)) {
       if (src[f] === undefined) continue;
       const v = src[f];
-      if (f === 'active' || f === 'requireKyc') c[f] = !!v;
+      if (f === 'active' || f === 'requireKyc' || f === 'firstDepositOnly') c[f] = !!v;
       else if (f === 'startAt' || f === 'endAt') c[f] = isoOrNull(v);
       else if (f === 'rolloverBase') c[f] = v === 'bonus' ? 'bonus' : 'deposit_bonus';
       else if (f === 'methods') c[f] = (Array.isArray(v) ? v : []).filter((m) => ['mbway', 'multibanco', 'cartao', 'demo'].includes(m));
@@ -343,10 +349,12 @@ function grantBonus(db, user, { kind, ref, depositCents = 0, bonusCents, c, peri
 export function onDeposit(db, { userId, amountCents, ref, method = null, optIn = true, choice = null, now = nowIso() }) {
   const bonusRef = `deposit:${ref}`;
   // One promotion per deposit, ever: the player picks the sports bonus or the casino free spins.
-  if (db.prepare('SELECT 1 FROM bonuses WHERE ref = ?').get(bonusRef) || db.prepare('SELECT 1 FROM casino_spins WHERE ref = ?').get(bonusRef)) return null;
-  if (db.prepare("SELECT 1 FROM promo_log WHERE ref = ? AND campaign IN ('welcome', 'reload', 'casinoFs')").get(bonusRef)) return null;
+  if (db.prepare('SELECT 1 FROM bonuses WHERE ref = ?').get(bonusRef) || db.prepare('SELECT 1 FROM casino_spins WHERE ref = ?').get(bonusRef)
+    || db.prepare('SELECT 1 FROM freebets WHERE ref = ?').get(bonusRef)) return null;
+  if (db.prepare("SELECT 1 FROM promo_log WHERE ref = ? AND campaign IN ('welcome', 'reload', 'casinoFs', 'depositFb')").get(bonusRef)) return null;
   const pick = choice || (optIn ? 'sport' : 'none');
   if (pick === 'casino') return grantSpinsFor(db, { userId, amountCents, ref: bonusRef, method, now });
+  if (pick === 'freebet') return grantDepositFreebet(db, { userId, amountCents, ref: bonusRef, method, now });
   const offer = depositOffer(db, userId, amountCents, { now, method, credited: true });
   if (pick === 'none') { log(db, userId, offer.campaign, bonusRef, 'refused', 'recusado pelo jogador'); return null; }
   if (!offer.bonusCents) { log(db, userId, offer.campaign, bonusRef, 'refused', offer.reason); return null; }
@@ -356,16 +364,48 @@ export function onDeposit(db, { userId, amountCents, ref, method = null, optIn =
   });
 }
 
+/** Deposits the player made before this one (`credited`: this deposit is already in the ledger). */
+const depositsBefore = (db, userId, credited) =>
+  db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE user_id = ? AND type = 'deposit'").get(userId).n - (credited ? 1 : 0);
+
+// ---------- free bet on a deposit ----------
+
+/** The free bet a deposit of `amountCents` would get now (the highest tier it reaches, up to maxDeposit). */
+export function freebetOffer(db, userId, amountCents, { now = nowIso(), method = null, credited = false } = {}) {
+  const c = promoConfig(db).depositFb;
+  const out = { campaign: 'depositFb', name: CAMPAIGN_NAMES.depositFb, minOdds: c.minOdds };
+  if (!campaignOpen(c, now)) return { ...out, reason: 'campanha inativa' };
+  if (c.firstDepositOnly && depositsBefore(db, userId, credited)) return { ...out, reason: 'só no 1.º depósito' };
+  const why = ineligible(db, userRow(db, userId), { method });
+  if (why) return { ...out, reason: why };
+  const counted = Math.min(amountCents, c100(c.maxDeposit));
+  const tier = [...c.tiers].reverse().find(([min]) => counted >= c100(min));
+  if (!tier) return { ...out, reason: `depósito mínimo €${c.tiers[0][0]}`, minDeposit: c.tiers[0][0] };
+  return { ...out, freebetCents: c100(tier[1]), minDeposit: c.tiers[0][0] };
+}
+
+function grantDepositFreebet(db, { userId, amountCents, ref, method, now }) {
+  const offer = freebetOffer(db, userId, amountCents, { now, method, credited: true });
+  if (!offer.freebetCents) { log(db, userId, 'depositFb', ref, 'refused', offer.reason); return null; }
+  const c = promoConfig(db).depositFb;
+  const f = grantFreebet(db, userId, { amountCents: offer.freebetCents, source: 'deposit', ref, validityDays: c.validityDays, minOdds: c.minOdds, now,
+    description: `Free Bet de depósito (€${(offer.freebetCents / 100).toFixed(2)})` });
+  if (!f) return null;
+  log(db, userId, 'depositFb', ref, 'granted');
+  return { kind: 'depositFb', ...f };
+}
+
 // ---------- casino free spins ----------
 
 export const spinsRow = (db, id, userId) => db.prepare('SELECT * FROM casino_spins WHERE id = ? AND user_id = ?').get(id, userId);
 export const activeSpins = (db, userId) => db.prepare("SELECT * FROM casino_spins WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
 
 /** The free spins a deposit of `amountCents` would get now (the highest tier it reaches, up to maxDeposit). */
-export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = null } = {}) {
+export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = null, credited = false } = {}) {
   const c = promoConfig(db).casinoFs;
   const out = { campaign: 'casinoFs', name: CAMPAIGN_NAMES.casinoFs, spinValue: c.spinValue };
   if (!campaignOpen(c, now)) return { ...out, reason: 'campanha inativa' };
+  if (c.firstDepositOnly && depositsBefore(db, userId, credited)) return { ...out, reason: 'só no 1.º depósito' };
   if (!c.games.length) return { ...out, reason: 'sem jogos elegíveis configurados' };
   if (activeSpins(db, userId)) return { ...out, reason: 'já tem uma campanha de casino ativa' };
   if (c.maxClaims && db.prepare('SELECT COUNT(*) AS n FROM casino_spins WHERE user_id = ?').get(userId).n >= c.maxClaims) return { ...out, reason: 'limite de utilizações atingido' };
@@ -379,7 +419,7 @@ export function casinoOffer(db, userId, amountCents, { now = nowIso(), method = 
 }
 
 function grantSpinsFor(db, { userId, amountCents, ref, method, now }) {
-  const offer = casinoOffer(db, userId, amountCents, { now, method });
+  const offer = casinoOffer(db, userId, amountCents, { now, method, credited: true });
   if (!offer.spins) { log(db, userId, 'casinoFs', ref, 'refused', offer.reason); return null; }
   const c = promoConfig(db).casinoFs;
   const bets = Object.fromEntries(c.games.map((g) => [g, c100(c.gameBets?.[g] ?? c.spinValue)]));
@@ -993,7 +1033,10 @@ export function publicCampaigns(db, now = nowIso()) {
     { id: 'accaBoost', name: CAMPAIGN_NAMES.accaBoost, open: campaignOpen(cfg.accaBoost, now), tiers: cfg.accaBoost.tiers, minOdds: cfg.accaBoost.minOdds,
       maxBoost: cfg.accaBoost.maxBoost, endAt: cfg.accaBoost.endAt },
     { id: 'casinoFs', name: CAMPAIGN_NAMES.casinoFs, open: campaignOpen(cfg.casinoFs, now) && cfg.casinoFs.games.length > 0, tiers: cfg.casinoFs.tiers,
-      spinValue: cfg.casinoFs.spinValue, validityDays: cfg.casinoFs.validityDays, maxDeposit: cfg.casinoFs.maxDeposit, games: cfg.casinoFs.games.length, endAt: cfg.casinoFs.endAt },
+      spinValue: cfg.casinoFs.spinValue, validityDays: cfg.casinoFs.validityDays, maxDeposit: cfg.casinoFs.maxDeposit, games: cfg.casinoFs.games.length, endAt: cfg.casinoFs.endAt,
+      firstDepositOnly: !!cfg.casinoFs.firstDepositOnly },
+    { id: 'depositFb', name: CAMPAIGN_NAMES.depositFb, open: campaignOpen(cfg.depositFb, now), tiers: cfg.depositFb.tiers, minOdds: cfg.depositFb.minOdds,
+      validityDays: cfg.depositFb.validityDays, maxDeposit: cfg.depositFb.maxDeposit, firstDepositOnly: !!cfg.depositFb.firstDepositOnly, endAt: cfg.depositFb.endAt },
   ];
 }
 

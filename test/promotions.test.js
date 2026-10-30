@@ -273,7 +273,7 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     assert.equal(d.body.user.balance, 40);
     const mine = await call('GET', '/api/promotions');
     assert.equal(mine.body.mine.active[0].rolloverTarget, 400);
-    assert.equal(mine.body.campaigns.length, 6);
+    assert.equal(mine.body.campaigns.length, 7);
     // Withdrawal: asked first (409), then the bonus is cancelled and the real money withdrawn.
     // (Identity verified and a bet won since the deposit: the withdrawal rules are met.)
     const rui = db.prepare("SELECT id FROM users WHERE email = 'rui@example.com'").get().id;
