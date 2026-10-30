@@ -6,6 +6,7 @@ import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { config } from '../server/config.js';
 import { createStripe, verifyWebhook, formEncode, ptPhone } from '../server/stripe.js';
+import { savePromoConfig } from '../server/promotions.js';
 
 const WHSEC = 'whsec_test123';
 const sign = (body, t = Math.floor(Date.now() / 1000), secret = WHSEC) =>
@@ -139,6 +140,7 @@ test('Stripe deposits inside the site: MB WAY, Multibanco, card; credited once b
 test('Stripe: a paid deposit gets its bonus once; a chargeback takes the money back and cancels it', () => {
   const db = openDb(':memory:');
   seed(db);
+  savePromoConfig(db, { welcome: { active: true } });
   const uid = Number(db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('cb@ex.com', 'Cb', '1990-01-01', 'x', ?)").run(new Date().toISOString()).lastInsertRowid);
   db.prepare("INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, created_at) VALUES ('pi_cb', ?, 3000, 'eur', 'pending', 'mbway', ?)").run(uid, new Date().toISOString());
   const stripe = createStripe(db, { secretKey: 'sk_test_abc', fetchImpl: async () => { throw new Error('no network'); } });

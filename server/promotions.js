@@ -16,8 +16,9 @@ import { postTransaction } from './wallet.js';
 
 export const PROMO_DEFAULTS = {
   general: { requireKyc: false, methods: ['mbway', 'multibanco', 'cartao', 'demo'] },
+  // Off: on the 1st deposit the sports offer is the deposit free bet (€20 → €10), not 100% in bonus.
   welcome: {
-    active: true, startAt: null, endAt: null, percent: 100, minDeposit: 10, maxBonus: 100,
+    active: false, startAt: null, endAt: null, percent: 100, minDeposit: 10, maxBonus: 100,
     rolloverMult: 5, rolloverBase: 'deposit_bonus', minOdds: 1.5, validityDays: 30, maxCountStake: 5, maxCountPct: 10,
   },
   reload: {
@@ -341,6 +342,18 @@ function grantBonus(db, user, { kind, ref, depositCents = 0, bonusCents, c, peri
   log(db, user.id, kind, ref, 'granted');
   return db.prepare('SELECT * FROM bonuses WHERE id = ?').get(id);
 }
+
+/** Once: switches off the 100% welcome bonus a saved configuration still has on (the admin may turn it back on). */
+export function retireWelcome(db) {
+  if (getSetting(db, 'promo.welcomeRetired', null)) return false;
+  const saved = getSetting(db, 'promo.config', {}) || {};
+  if (saved.welcome) setSetting(db, 'promo.config', { ...saved, welcome: { ...saved.welcome, active: false } });
+  setSetting(db, 'promo.welcomeRetired', nowIso());
+  return true;
+}
+
+/** Whether the player has never deposited (for the deposit form's offers). */
+export const firstDeposit = (db, userId) => !db.prepare("SELECT 1 FROM transactions WHERE user_id = ? AND type = 'deposit' LIMIT 1").get(userId);
 
 /**
  * A confirmed deposit (already credited to the wallet): the welcome bonus on the first eligible

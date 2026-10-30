@@ -13,6 +13,8 @@ import { setLimits, currentLimits, checkBet } from '../server/limits.js';
 let seq = 0;
 function setup() {
   const db = openDb(':memory:');
+  // The 100% welcome bonus is off by default (the 1st deposit gets the free bet); these tests cover it switched on.
+  savePromoConfig(db, { welcome: { active: true } });
   return db;
 }
 function player(db, extra = {}) {
@@ -253,6 +255,7 @@ test('limits: stricter at once, looser after 24 h; stake and weekly loss enforce
 test('API: deposit offer, withdrawal with an active bonus asks first, self-exclusion cancels promotions, admin config', async () => {
   const db = openDb(':memory:');
   seed(db);
+  savePromoConfig(db, { welcome: { active: true } });
   const server = createApp(db, { loginAttempts: 1000, registrations: 1000 }).listen(0);
   await new Promise((r) => server.once('listening', r));
   let cookie = '';
@@ -369,4 +372,28 @@ test('free spins: the house games are found by name in the catalogue and added o
   assert.deepEqual(r.missing, []);
   assert.deepEqual(promoConfig(db).casinoFs.games, [11, 12, 15, 16, 17, 18]);
   assert.equal(seedFsGames(db, catalogue), null); // once only: the admin's later changes stay
+});
+
+test('1st deposit: no 100% welcome bonus by default (€20 → €10 free bet); a saved config has it switched off once', async () => {
+  const { retireWelcome, firstDeposit } = await import('../server/promotions.js');
+  const { getSetting, setSetting } = await import('../server/db.js');
+  const db = openDb(':memory:');
+  const a = player(db);
+  assert.equal(firstDeposit(db, a), true);
+  assert.equal(deposit(db, a, 20), null); // "Bónus de desporto": nothing on the 1st deposit
+  assert.equal(firstDeposit(db, a), false);
+  const b = player(db);
+  const fb = tx(db, () => {
+    postTransaction(db, b, 2000, 'deposit', 'Depósito');
+    return onDeposit(db, { userId: b, amountCents: 2000, ref: 'fb1', method: 'mbway', choice: 'freebet' });
+  });
+  assert.equal(fb.amount_cents, 1000);
+  assert.equal(bonus(db, b), undefined);
+  // A configuration saved with the welcome on (before this rule): switched off once, then left to the admin.
+  setSetting(db, 'promo.config', { welcome: { active: true, percent: 100 } });
+  assert.equal(retireWelcome(db), true);
+  assert.equal(getSetting(db, 'promo.config').welcome.active, false);
+  savePromoConfig(db, { welcome: { active: true } });
+  assert.equal(retireWelcome(db), false);
+  assert.equal(getSetting(db, 'promo.config').welcome.active, true);
 });

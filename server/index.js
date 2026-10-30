@@ -21,7 +21,7 @@ import { createRevolut } from './revolut.js';
 import { createBrevo } from './brevo.js';
 import { createTeamLogos } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
-import { expireDue, runCashback, seedFsGames } from './promotions.js';
+import { expireDue, runCashback, seedFsGames, retireWelcome } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
@@ -30,6 +30,7 @@ import { createSanctions } from './sanctions.js';
 import { createPush } from './push.js';
 
 const db = openDb(config.dbPath);
+if (retireWelcome(db)) console.log('[promoções] bónus de boas-vindas de 100% desligado (no 1.º depósito: Free Bet de depósito)');
 startLoopDelay();
 if (!config.dbPersistent) {
   console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `
