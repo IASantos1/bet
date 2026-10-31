@@ -2115,3 +2115,11 @@ html.light .mb-bar.fav rect.mb-fill { fill: var(--viva); }
 .at-top .install-arrow { right: 70px; top: 6px; animation: install-up 1s ease-in-out infinite; }
 @keyframes install-down { 50% { transform: translateY(10px); } }
 @keyframes install-up { 50% { transform: translateY(-10px); } }
+
+/* Promoções: "As minhas promoções" opens and closes */
+.promo-mine > summary { list-style: none; cursor: pointer; user-select: none; }
+.promo-mine > summary::-webkit-details-marker { display: none; }
+.promo-mine .promo-chev { margin-left: auto; font-size: 22px; line-height: 1; color: var(--text-3); transition: transform .2s; }
+.promo-mine[open] .promo-chev { transform: rotate(180deg); }
+.promo-mine:not([open]) > summary { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.sports-more { padding: 18px 0; }
