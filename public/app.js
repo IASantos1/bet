@@ -1408,7 +1408,9 @@ function casinoPage() {
   const lead = rows.slice(0, rows.findIndex((r) => r.key === 'destaques') + 1 || 0).filter((r) => r.key === 'collection');
   const rest = rows.filter((r) => !picks.includes(r) && !lead.includes(r));
   const because = m?.because || [];
-  const order = [
+  // A tab, a provider or a search shows its own grid: none of the lobby's rows (the player's own
+  // included, or they would take the grid's place).
+  const order = filtered ? [] : [
     ...picks,
     m?.recent.length && { key: 'recent', title: 'Jogaste recentemente', games: m.recent },
     ...lead,
