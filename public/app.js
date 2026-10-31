@@ -626,7 +626,7 @@ function eventRow(e) {
 }
 
 /** `insert` (html) goes right after the `after`-th event of the list (the block is split there). */
-function groupByCompetition(events, { after = 0, insert = '' } = {}) {
+function groupByCompetition(events, { after = 0, insert = '', limit = Infinity } = {}) {
   const groups = new Map();
   const ordered = [...events].sort((a, b) => (sportRank(a.sport) - sportRank(b.sport)) || byPriority(a, b));
   for (const e of ordered) {
@@ -636,7 +636,7 @@ function groupByCompetition(events, { after = 0, insert = '' } = {}) {
   }
   let seen = 0;
   let pending = !!insert && after > 0;
-  const html = [...groups.entries()].map(([key, list]) => {
+  const html = [...groups.entries()].slice(0, limit).map(([key, list]) => {
     const [sport, comp] = key.split('|');
     const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
     const icon = logo
@@ -882,6 +882,10 @@ function sportsPage(sub, rest = '') {
   if (sub === 'liga' && rest) return leaguePage(decodeURIComponent(rest));
   const sports = [...new Set(state.events.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
   const list = state.events.filter((e) => !state.sport || e.sport === state.sport);
+  // How many league blocks are shown (more load as the page is scrolled); back to the first ones on another sport.
+  if (state.sportsShown?.sport !== (state.sport || '')) state.sportsShown = { sport: state.sport || '', n: SPORTS_BLOCK };
+  const shown = state.sportsShown.n;
+  const blocks = new Set(list.map((e) => `${e.sport}|${e.competition}`)).size;
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   // The big games' banners under the sports strip (football; all sports or football chosen).
   const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
@@ -893,8 +897,25 @@ function sportsPage(sub, rest = '') {
     </div>
     ${banners}${leagueRow(state.sport || '')}
     ${builderSection()}
-    <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection() }) : emptyEvents()}</section>
-    ${footer()}`;
+    <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection(), limit: shown }) : emptyEvents()}
+      ${blocks > shown ? `<div class="sports-more" id="sportsMore"><div class="loading">A carregar mais jogos…</div></div>` : ''}</section>
+    ${blocks > shown ? '' : footer()}`;
+}
+
+// The sports page shows its leagues a few blocks at a time: the next ones as the page reaches the end.
+const SPORTS_BLOCK = 8;
+let sportsObserver = null;
+function watchSportsMore() {
+  sportsObserver?.disconnect();
+  const el = $('#sportsMore');
+  if (!el || !('IntersectionObserver' in window)) return;
+  sportsObserver = new IntersectionObserver((entries) => {
+    if (!entries.some((x) => x.isIntersecting)) return;
+    sportsObserver.disconnect();
+    state.sportsShown.n += SPORTS_BLOCK;
+    render({ keepScroll: true });
+  }, { rootMargin: '400px 0px' });
+  sportsObserver.observe(el);
 }
 
 // ---------- ready-made bets (sports page) ----------
@@ -1939,7 +1960,9 @@ function promosPage() {
   if (!state.campaigns) loadPromos();
   const cards = (state.campaigns || []).filter((c) => c.id !== 'welcome' || c.open).map(campaignCard).join('');
   return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da Bet62.</p></div>
-    ${state.user ? `<section class="section"><div class="section-head"><h2>As minhas promoções</h2></div><div class="panel pf-panel">${myPromosView()}</div></section>` : ''}
+    ${state.user ? `<section class="section"><details class="promo-mine"${state.promosOpen ? ' open' : ''} data-promos-toggle>
+      <summary class="section-head"><h2>As minhas promoções</h2><span class="promo-chev" aria-hidden="true">⌄</span></summary>
+      <div class="panel pf-panel">${myPromosView()}</div></details></section>` : ''}
     <section class="section"><div class="section-head"><h2>Campanhas</h2></div>
       ${cards ? `<div class="promo-grid grid">${cards}</div>` : '<div class="loading">A carregar…</div>'}</section>
     <section class="section notice">Só uma promoção de depósito ativa de cada vez. O saldo de bónus não pode ser levantado: passa a saldo real quando o rollover é cumprido; ao expirar ou ser cancelado, só o saldo de bónus é removido. Pedir um levantamento com um bónus de depósito ativo cancela esse bónus. Promoções sujeitas a verificação de elegibilidade (conta ativa, sem autoexclusão, sem contas duplicadas, depósito confirmado e não revertido).</section>
@@ -3197,6 +3220,7 @@ function render({ keepScroll = false } = {}) {
   if (page === 'jogo') afterMatchRender();
   if (immersive) placeSkins();
   watchCasinoMore();
+  watchSportsMore();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
   showMaintenance(page);
@@ -3881,6 +3905,11 @@ document.addEventListener('error', (e) => {
 document.addEventListener('load', (e) => {
   const img = e.target;
   if (img instanceof HTMLImageElement && (img.classList.contains('team-logo') || img.classList.contains('league-img')) && !img.naturalWidth) img.dispatchEvent(new Event('error'));
+}, true);
+
+// "As minhas promoções" opens and closes; remembered while the app is open.
+document.addEventListener('toggle', (e) => {
+  if (e.target.matches?.('[data-promos-toggle]')) state.promosOpen = e.target.open;
 }, true);
 
 let casinoSearchTimer = null;
