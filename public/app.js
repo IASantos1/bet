@@ -3038,7 +3038,10 @@ function updateHeader() {
     const fb = Number(u.freebet) || 0;
     $('#freebetPill').classList.toggle('hidden', !fb);
     $('#headerFreebet').textContent = `${fb.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} F`;
-    $('#profileBtn').textContent = initials(u.name);
+    // The player's emblem (the one on the profile page); the initials only if there is none.
+    const pb = $('#profileBtn');
+    pb.classList.toggle('emblem', !!u.avatar);
+    pb.innerHTML = u.avatar ? `<img src="/media/avatar-${esc(u.avatar)}.webp" alt="" width="38" height="38">` : esc(initials(u.name));
   }
 }
 

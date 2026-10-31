@@ -935,6 +935,8 @@ html.splash-on { overflow: hidden; }
 /* The player's emblem: the whole badge, on its own dark ground, a little larger than the initials. */
 .pf-avatar.emblem { width: 76px; height: 76px; border-radius: 18px; overflow: hidden; background: #0a0e20; box-shadow: 0 6px 18px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .08); }
 .pf-avatar.emblem img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-btn.emblem { padding: 0; overflow: hidden; background: #0a0e20; border-color: rgba(255, 255, 255, .12); }
+.avatar-btn.emblem img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pf-who { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pf-who strong { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-who span { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
