@@ -371,7 +371,8 @@ export function createBigBang(db, {
     if (category === 'populares') list = list.slice(0, 100);
     if (category === 'novos') list = list.filter((g) => g.type !== 'live').slice(0, 60);
     const start = Math.max(0, Number(offset) || 0);
-    const size = Math.min(60, Math.max(1, Number(limit) || 24));
+    // a provider, a tab or a search opens all its games at once (the app asks for up to 1000)
+    const size = Math.min(1000, Math.max(1, Number(limit) || 24));
     return { enabled: true, bigbang: true, error: all.error, providers: all.providers, total: list.length, offset: start, games: list.slice(start, start + size) };
   }
 

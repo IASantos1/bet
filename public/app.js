@@ -1104,6 +1104,8 @@ function casinoGameCard(g, i) {
 }
 
 const CASINO_PAGE = 48;
+// A provider, a tab or a search: all its games in one go (e.g. every Pragmatic game).
+const CASINO_ALL = 1000;
 
 /** A lobby card (BigBang): opens the game's page. */
 const isExclusive = (id) => !!state.casinoLobby?.exclusive?.includes(id);
@@ -1489,7 +1491,8 @@ async function loadCasino({ reset = false } = {}) {
   if (reset) c.games = [];
   if (currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
   try {
-    const qs = new URLSearchParams({ offset, limit: CASINO_PAGE, provider: f.provider || '', category: f.category || '', q: f.q || '' });
+    const all = f.provider || f.category || f.q;
+    const qs = new URLSearchParams({ offset, limit: all ? CASINO_ALL : CASINO_PAGE, provider: f.provider || '', category: f.category || '', q: f.q || '' });
     const data = await api(`/api/casino/games?${qs}`);
     if (mine !== casinoReq) return; // another filter was chosen meanwhile
     state.casino = { ...data, games: reset ? data.games : [...state.casino.games, ...data.games], loaded: true, loading: false };
