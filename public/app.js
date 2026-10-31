@@ -503,6 +503,9 @@ function matchBanner(e) {
   const inv = sels.map((x) => (x.odds > 1 ? 1 / x.odds : 0));
   const sum = inv.reduce((t, v) => t + v, 0) || 1;
   const fav = inv.indexOf(Math.max(...inv));
+  // In play with the 1X2 closed (or not worth it) and other markets open: "Aposte já", as in the list.
+  const open = sels.filter((x) => x.active);
+  const betNow = e.status === 'live' && e.marketCount > 0 && (!open.length || open.length < sels.length || open.some((x) => x.odds <= SHORT_FAVOURITE));
   // "Amanhã 20:45": the day small on top, the hour under it.
   const w = String(fmtWhen(e.startTime));
   const cut = w.lastIndexOf(' ');
@@ -513,12 +516,12 @@ function matchBanner(e) {
     <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(tname(e, 'home'), e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(tname(e, 'away'), e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
     <a class="mb-teams" href="#/jogo/${e.id}"><b title="${esc(e.home)}">${esc(tname(e, 'home'))}</b><span class="mb-when">${when}</span><b title="${esc(e.away)}">${esc(tname(e, 'away'))}</b></a>
   </article>
-  <div class="mb-odds">${sels.map((x, i) => {
+  ${betNow ? `<div class="mb-odds one"><a class="odds-state bet-now mb-betnow" href="#/jogo/${e.id}">Aposte já</a></div>` : `<div class="mb-odds">${sels.map((x, i) => {
       const locked = !x.active || !isOpen(e);
       const title = x.code === '1' ? e.home : x.code === '2' ? e.away : 'Empate';
       return `<div class="mb-pick"><button class="odd-btn mb-odd${inSlip(x.id) ? ' selected' : ''}${locked ? ' locked' : ''}" data-sel="${x.id}" title="${esc(title)}" ${locked ? 'disabled' : ''}><small>${x.code === '1' || x.code === '2' ? x.code : 'X'}</small>${locked ? '🔒' : fmtOdds(x.odds)}</button>
         <svg class="mb-bar${i === fav ? ' fav' : ''}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3"/><rect class="mb-fill" width="${Math.max(3, Math.round((inv[i] / sum) * 100))}" height="6" rx="3"/></svg></div>`;
-    }).join('')}</div></div>`;
+    }).join('')}</div>`}</div>`;
 }
 /** The banners' games: football with the full 1X2, live or in the next 3 days, the big ones first. */
 function bannerEvents(limit = 6) {

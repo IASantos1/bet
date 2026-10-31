@@ -1981,6 +1981,8 @@ html.light .combo-legs li::after { background: #22b14c; }
 .mb-time, .mb-score { font-size: 20px; font-weight: 800; white-space: nowrap; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
 .mb-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .mb-odds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mb-odds.one { grid-template-columns: 1fr; }
+.mb-betnow.odds-state { display: grid; place-items: center; min-height: 48px; margin-bottom: 12px; padding: 0; font-size: 14px; }
 .mb-pick { min-width: 0; }
 .mb-pick { display: flex; flex-direction: column; gap: 8px; }
 /* the same buttons as the games' list (both themes): only full width */
