@@ -1144,15 +1144,17 @@ img, video, iframe { max-width: 100%; }
 .bal-pill.fb { padding: 0 14px; cursor: default; background: linear-gradient(135deg, #1f6b46, #2f8f5c); box-shadow: none; }
 .bal-pill.hidden { display: none; }
 @media (max-width: 1000px) {
-  /* The phone has Perfil in the bottom bar: the account button stays on the computer only. */
-  #profileBtn { display: none !important; }
+  /* The account button sits right of the balance (the bottom bar has Promoções in its place). */
   .top-actions { gap: 6px; }
 }
 @media (max-width: 420px) {
   .bal-pill { height: 34px; font-size: 13.5px; gap: 6px; padding-right: 11px; }
   .bal-plus { width: 25px; height: 25px; font-size: 19px; }
   .bal-pill.fb { padding: 0 10px; }
+  .avatar-btn { width: 34px; height: 34px; border-radius: 50%; font-size: 13px; flex: none; }
 }
+/* Phones: room for the account button; the free bets are on Promoções and in the slip. */
+@media (max-width: 480px) { .bal-pill.fb { display: none !important; } }
 
 /* ---------- wallet window (Depósito / Levantamento) ---------- */
 .wallet-modal { width: min(480px, 100%); padding: 0; overflow: auto; }
