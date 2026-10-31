@@ -370,7 +370,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
   .mobile-nav { display: grid; position: fixed; bottom: 0; left: 0; right: 0; height: 62px; background: var(--dim); border-top: 1px solid var(--line); z-index: 60; grid-template-columns: repeat(5, 1fr); }
   .mobile-nav a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--text-3); font-size: 9px; font-weight: 800; }
   .mobile-nav a.active { color: var(--strong); }
-  .mobile-nav a span { font-size: 17px; }
+  /* the icons in black and white (the emoji's colours off); the tab open a little brighter */
+  .mobile-nav a span { font-size: 17px; filter: grayscale(1); opacity: .75; }
+  .mobile-nav a.active span { opacity: 1; filter: grayscale(1) brightness(1.15); }
   .content { padding-bottom: 85px; }
   .stat-grid.four { grid-template-columns: repeat(2, 1fr); }
   .hero { grid-template-columns: minmax(0, 1fr) minmax(270px, .95fr); gap: 18px; }
