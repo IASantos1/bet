@@ -903,16 +903,18 @@ function sportsPage(sub, rest = '') {
 }
 
 // The sports page shows its leagues a few blocks at a time: the next ones as the page reaches the end.
+// The live page does the same with its games, 12 at a time.
 const SPORTS_BLOCK = 8;
+const LIVE_BLOCK = 12;
 let sportsObserver = null;
 function watchSportsMore() {
   sportsObserver?.disconnect();
-  const el = $('#sportsMore');
+  const el = $('#sportsMore') || $('#liveMore');
   if (!el || !('IntersectionObserver' in window)) return;
   sportsObserver = new IntersectionObserver((entries) => {
     if (!entries.some((x) => x.isIntersecting)) return;
     sportsObserver.disconnect();
-    state.sportsShown.n += SPORTS_BLOCK;
+    if (el.id === 'liveMore') state.liveShown.n += LIVE_BLOCK; else state.sportsShown.n += SPORTS_BLOCK;
     render({ keepScroll: true });
   }, { rootMargin: '400px 0px' });
   sportsObserver.observe(el);
@@ -1103,8 +1105,15 @@ function livePage() {
     </div>`;
   // Football first, then the other sports; in each, by league: big, medium, small, the rest.
   const sports = [...new Set(live.map((e) => e.sport))].sort((a, b) => sportRank(a) - sportRank(b));
+  // A few games at a time (more as the page is scrolled); back to the first ones on another filter.
+  const key = `${state.liveSport || ''}|${state.liveTv ? 1 : 0}`;
+  if (state.liveShown?.key !== key) state.liveShown = { key, n: LIVE_BLOCK };
+  let left = state.liveShown.n;
+  const moreLive = live.length > left;
   const blocks = sports.map((sp) => {
-    const list = live.filter((e) => e.sport === sp).sort(liveRank);
+    const list = live.filter((e) => e.sport === sp).sort(liveRank).slice(0, Math.max(0, left));
+    left -= list.length;
+    if (!list.length) return '';
     return `<section class="section"><div class="section-head"><h2>${sportBadge(sp, 22)} ${esc(SPORT_META[sp]?.name || sp)} <small class="muted">${list.length}</small></h2></div>
       <div class="live-grid grid">${list.map(liveCard).join('')}</div></section>`;
   }).join('');
@@ -1117,7 +1126,7 @@ function livePage() {
     ${down}
     ${all.length ? strip : ''}
     ${live.length ? blocks : `<div class="panel empty">${state.eventsLoaded ? empty : 'A carregar…'}</div>`}
-    ${footer()}`;
+    ${moreLive ? '<div class="sports-more" id="liveMore"><div class="loading">A carregar mais jogos…</div></div>' : footer()}`;
 }
 
 
@@ -4018,6 +4027,15 @@ function bindChrome() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'casinoSearch') { e.target.blur(); setSideMenu(false); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
+  // The bottom bar (and the top menu): the tab lights up and the page changes as soon as it is touched,
+  // not when the finger lifts.
+  document.addEventListener('pointerdown', (e) => {
+    const a = e.target.closest?.('.mobile-nav a[href], .topnav a[href]');
+    if (!a || e.button > 0) return;
+    $$('[data-route]').forEach((x) => x.classList.toggle('active', x.dataset.route === a.dataset.route));
+    const hash = a.getAttribute('href');
+    if (hash.startsWith('#') && location.hash !== hash) requestAnimationFrame(() => { location.hash = hash; });
+  }, { passive: true });
   // A game touched (or hovered): its page starts loading before the tap ends.
   const ahead = (ev) => { const id = Number(ev.target.closest?.('[data-open]')?.dataset.open); if (id > 0 && state.match.id !== id) prefetchMatch(id); };
   document.addEventListener('pointerdown', ahead, { passive: true });
