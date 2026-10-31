@@ -1981,17 +1981,15 @@ html.light .combo-legs li::after { background: #22b14c; }
 .mb-odds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .mb-pick { min-width: 0; }
 .mb-pick { display: flex; flex-direction: column; gap: 8px; }
-.mb-odd.odd-btn { width: 100%; min-width: 0; height: auto; min-height: 50px; border-radius: 10px; background: var(--odd-cell); color: var(--odd-price);
-  border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px; font-size: 19px; font-weight: 800; }
-.mb-odd.odd-btn small { font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, .7); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-odd.odd-btn:hover { border-color: var(--viva); }
-.mb-odd.odd-btn.selected { background: var(--viva); border-color: var(--viva); color: var(--viva-ink); box-shadow: 0 0 16px var(--viva-glow); }
-.mb-odd.odd-btn.selected small { color: var(--viva-ink); }
+/* the same buttons as the games' list (both themes): only full width */
+.mb-odd.odd-btn { display: block; width: 100%; }
 .mb-bar { display: block; width: 100%; height: 4px; }
 .mb-bar rect { fill: rgba(255, 255, 255, .16); }
 .mb-bar rect.mb-fill { fill: rgba(255, 255, 255, .55); }
 .mb-bar.fav rect.mb-fill { fill: var(--viva); }
+html.light .mb-bar rect { fill: rgba(0, 0, 0, .08); }
+html.light .mb-bar rect.mb-fill { fill: rgba(0, 0, 0, .22); }
+html.light .mb-bar.fav rect.mb-fill { fill: var(--viva); }
 .mb-banner .mb-brand { margin-left: auto; font-size: 14px; letter-spacing: .02em; color: #fff; }
 .mb-banner .mb-brand span { color: var(--viva); }
 @media (max-width: 480px) {
@@ -2000,7 +1998,6 @@ html.light .combo-legs li::after { background: #22b14c; }
   .mb-kit.home { left: calc(50% - 78px); }
   .mb-kit.away { left: calc(50% - 16px); }
   .mb-teams b { font-size: 16px; }
-  .mb-odd.odd-btn { font-size: 17px; min-height: 50px; }
 }
 
 /* "Instale a app" (install.js): over the bottom menu on a phone, in the corner on a computer. */
