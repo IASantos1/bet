@@ -348,3 +348,21 @@ test('xG from widget-data plus.stats (SofaScore) wins over the tracker\'s own ze
   assert.deepEqual(by.shots_total, [3, 9]);
   assert.equal(s.stats.filter((x) => x.key === 'xg').length, 1);
 });
+
+test('the live dashboard history is kept in the database: a restart mid-match starts from it', async () => {
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
+    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 0, 0, '30''', 'winhouse', '960', ?, ?)`).run(ts, ts, ts).lastInsertRowid);
+  const heat = Array(96).fill(0); heat[5] = 7;
+  db.exec('CREATE TABLE IF NOT EXISTS winhouse_analytics (event_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL)');
+  db.prepare('INSERT INTO winhouse_analytics VALUES (?, ?, ?)').run(id, JSON.stringify({ heat: { home: heat, away: Array(96).fill(0) }, momentum: { 12: { home: 4, away: 1 } }, series: { 12: { dh: 9, da: 4, sh: 1, sa: 0, xh: 0.3, xa: 0.1 } } }), Date.now());
+  const client = { enabled: true, widget: async () => ({ ok: true, status: 200, body: null, text: '' }), widgetData: async () => ({ ok: false, status: 404 }) };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000, ws: false });
+  const stop = t.follow(id, '960');
+  const a = t.snapshot(id).analytics;
+  assert.equal(a.heat.home[5], 7);
+  assert.deepEqual(a.momentum, [{ m: 12, home: 4, away: 1 }]);
+  assert.equal(a.series[0].xh, 0.3);
+  stop();
+});
