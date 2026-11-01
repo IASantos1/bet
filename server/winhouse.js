@@ -906,8 +906,8 @@ export const sameTeam = (a, b) => !!teamKey(a) && teamKey(a) === teamKey(b);
 const TWIN_WINDOW_MS = 3 * 60 * 60_000;
 /** How long a match in review with no bets waits, gone from the live list, before it is closed. */
 const STALE_CLOSE_MS = 60 * 60_000;
-/** WinHouse lists some games in play minutes before kick-off: they go live at most this long before it. */
-const LIVE_EARLY_MS = 60_000;
+/** WinHouse lists some games in play minutes before kick-off: they go live at kick-off, not before (the time shown). */
+const LIVE_EARLY_MS = 0;
 /** A kick-off further ahead than this is a clock or time-zone slip, not an early listing: it goes live. */
 const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
@@ -1392,10 +1392,15 @@ export function createWinHouseFeed(db, {
         continue;
       }
       seen.add(ev.externalId);
-      // Not live before kick-off (a minute's grace): the pre-match game stays as it is until then.
+      // Not live before kick-off: the pre-match game stays as it is until then.
       try {
         const known = findEvent.get(SOURCE, ev.externalId);
-        const kickoff = new Date(ev.startTime).getTime(); // the live list's own kick-off time
+        // The later of the live list's kick-off and the one the site shows (its pre-match game's): a
+        // game listed at 15:58 that the site shows at 16:00 goes live at 16:00.
+        const at = new Date(ev.startTime).getTime();
+        const shown = (known ? [known] : twinOf.all(SOURCE, ev.sport, new Date(at - LIVE_EARLY_LIMIT_MS).toISOString(), new Date(at + LIVE_EARLY_LIMIT_MS).toISOString())
+          .filter((r) => sameTeam(r.home, ev.home) && sameTeam(r.away, ev.away))).map((r) => new Date(r.start_time).getTime()).filter(Number.isFinite);
+        const kickoff = Math.max(at, ...(shown.length === 1 || known ? shown : []));
         // Only sports with a set kick-off time (a tennis match's time is a "not before"), and only a game
         // not clearly under way: one with goals or its clock well on (an early listing shows a few
         // minutes at most) is in play whatever its listed kick-off says (a stale kick-off sent it

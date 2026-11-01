@@ -392,8 +392,30 @@ export function createWinHouseTracker(db, {
   const PRESS = { attack: 1, dangerous_attack: 2, corner: 2, shot: 3, freekick: 1, penalty: 4, goal: 4 };
   const HEAT_WEIGHT = { safe: 0.5, possession: 1, attack: 2, dangerous_attack: 3, corner: 2, shot: 3, freekick: 1.5, penalty: 3 };
   const minuteOf = (clock) => { const m = /^(\d+)(?:\+(\d+))?/.exec(String(clock || '')); return m ? Math.min(130, Number(m[1]) + (m[2] ? Number(m[2]) : 0)) : null; };
+  // Kept in the database too (every 30 s while it grows), so a restart or a deploy mid-match keeps
+  // the history from kick-off; two days later it is dropped.
+  db.exec('CREATE TABLE IF NOT EXISTS winhouse_analytics (event_id INTEGER PRIMARY KEY, data TEXT NOT NULL, updated_at INTEGER NOT NULL)');
+  db.prepare('DELETE FROM winhouse_analytics WHERE updated_at < ?').run(Date.now() - 2 * 86_400_000);
+  const saveAnalytics = db.prepare(`INSERT INTO winhouse_analytics (event_id, data, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(event_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`);
+  const loadAnalytics = db.prepare('SELECT data FROM winhouse_analytics WHERE event_id = ?');
+  const blankAnalytics = () => ({ heat: { home: Array(HEAT_W * HEAT_H).fill(0), away: Array(HEAT_W * HEAT_H).fill(0) }, momentum: {}, series: {} });
+  function restored(eventId) {
+    try {
+      const row = loadAnalytics.get(eventId);
+      const d = row ? JSON.parse(row.data) : null;
+      if (d?.heat?.home?.length === HEAT_W * HEAT_H && d.heat.away?.length === HEAT_W * HEAT_H) return { ...blankAnalytics(), ...d };
+    } catch { /* a bad row: start again */ }
+    return null;
+  }
+  function persist(eventId, w) {
+    const a = w.analytics;
+    if (!a || Date.now() - (a.savedAt || 0) < 30_000) return;
+    a.savedAt = Date.now();
+    try { saveAnalytics.run(eventId, JSON.stringify({ heat: a.heat, momentum: a.momentum, series: a.series, lastPress: a.lastPress }), Date.now()); } catch (err) { log(`tracker analytics ${eventId}: ${err.message}`); }
+  }
   function track(w, s, spot, side) {
-    const a = (w.analytics ||= { heat: { home: Array(HEAT_W * HEAT_H).fill(0), away: Array(HEAT_W * HEAT_H).fill(0) }, momentum: {}, series: {}, at: Date.now() - 4_000 });
+    const a = (w.analytics ||= { ...(restored(w.eventId) || blankAnalytics()), at: Date.now() - 4_000 });
     const min = minuteOf(s.clock);
     const sit = s.situation?.situation;
     if (spot?.x !== null && spot?.x !== undefined && HEAT_WEIGHT[sit] && (side === 'home' || side === 'away')) {
@@ -454,6 +476,7 @@ export function createWinHouseTracker(db, {
       w.analytics.at = Date.now();
       publish(eventId, 'analytics', analyticsOut(w));
     }
+    persist(eventId, w);
     for (const a of s.timeline) {
       const id = `${a.minute}|${a.type}|${a.team}|${a.label}`;
       if (w.seen.has(id)) continue;
@@ -538,6 +561,7 @@ export function createWinHouseTracker(db, {
     if (!w) return;
     if (!w.watchers && Date.now() - w.lastAt > idleMs) {
       clearInterval(w.timer);
+      if (w.analytics) { w.analytics.savedAt = 0; persist(eventId, w); }
       w.closed = true;
       try { w.ws?.close(); } catch { /* already closed */ }
       watched.delete(eventId);
@@ -564,7 +588,10 @@ export function createWinHouseTracker(db, {
   function follow(eventId, gameId) {
     let w = watched.get(eventId);
     if (!w) {
-      w = { gameId: String(gameId), watchers: 0, lastAt: Date.now(), seen: new Set(), actions: [], last: null, livedata: null, lastBall: null, raw: null, ws: null };
+      w = { eventId, gameId: String(gameId), watchers: 0, lastAt: Date.now(), seen: new Set(), actions: [], last: null, livedata: null, lastBall: null, raw: null, ws: null };
+      // The history kept from before a restart is shown at once.
+      const saved = restored(eventId);
+      if (saved) w.analytics = { ...saved, at: Date.now() - 4_000 };
       w.timer = setInterval(() => tick(eventId), pollMs);
       w.timer.unref?.();
       watched.set(eventId, w);

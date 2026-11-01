@@ -1008,7 +1008,7 @@ test('tennis in play: every game\'s point and sets read from its tracker, for th
   assert.equal(JSON.parse(t.row(60).live_detail).point, '40-40');
 });
 
-test('a football game listed in play before kick-off stays pre-match until a minute before it, and shows once', async () => {
+test('a football game listed in play before kick-off stays pre-match until kick-off, and shows once', async () => {
   // Pre-match under one id, kick-off in 10 minutes; WinHouse already lists it in play under another id.
   const pre = { ...football(20, 0, '', ODD), id: 20, ...when(-10 * 60_000), current_minute: '' };
   const early = { ...football(21, 3, '0-0', ODD), id: 21, ...when(-10 * 60_000) };
@@ -1020,8 +1020,12 @@ test('a football game listed in play before kick-off stays pre-match until a min
   assert.equal(t.row(21), undefined); // not taken live, no copy
   await t.feed.syncPrematch();
   assert.equal(t.db.prepare("SELECT COUNT(*) AS n FROM events WHERE home = 'Cordoba'").get().n, 1);
-  // At kick-off it goes live on the pre-match row; the pre-match list makes no second copy.
+  // The live list's kick-off reached, but the site shows 10 minutes later: still pre-match.
   lists.live = [{ ...football(21, 1, '0-0', ODD), id: 21 }];
+  await t.feed.syncLive();
+  assert.equal(t.row(20).status, 'scheduled');
+  // At the kick-off the site shows it goes live on the pre-match row; the pre-match list makes no second copy.
+  t.db.prepare('UPDATE events SET start_time = ? WHERE id = ?').run(new Date(Date.now() - 1000).toISOString(), t.row(20).id);
   await t.feed.syncLive();
   const live = t.db.prepare("SELECT * FROM events WHERE home = 'Cordoba' AND status = 'live'").all();
   assert.equal(live.length, 1);
