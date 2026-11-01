@@ -369,6 +369,46 @@ export function createWinHouseTracker(db, {
     return true;
   }
 
+  /**
+   * The live dashboard's history, built while the match is followed: where the ball is played (a 12×8
+   * grid per side in possession, home attacking left→right), who presses minute by minute (attacks,
+   * dangerous attacks, shots, corners, goals as they happen) and the dangerous attacks / shots on
+   * target over time. Sent to the page every few seconds as 'analytics'.
+   */
+  const HEAT_W = 12;
+  const HEAT_H = 8;
+  const PRESS = { attack: 1, dangerous_attack: 2, corner: 2, shot: 3, freekick: 1, penalty: 4, goal: 4 };
+  const HEAT_WEIGHT = { safe: 0.5, possession: 1, attack: 2, dangerous_attack: 3, corner: 2, shot: 3, freekick: 1.5, penalty: 3 };
+  const minuteOf = (clock) => { const m = /^(\d+)(?:\+(\d+))?/.exec(String(clock || '')); return m ? Math.min(130, Number(m[1]) + (m[2] ? Number(m[2]) : 0)) : null; };
+  function track(w, s, spot, side) {
+    const a = (w.analytics ||= { heat: { home: Array(HEAT_W * HEAT_H).fill(0), away: Array(HEAT_W * HEAT_H).fill(0) }, momentum: {}, series: {}, at: Date.now() });
+    const min = minuteOf(s.clock);
+    const sit = s.situation?.situation;
+    if (spot?.x !== null && spot?.x !== undefined && HEAT_WEIGHT[sit] && (side === 'home' || side === 'away')) {
+      const cx = Math.min(HEAT_W - 1, Math.floor((spot.x / 100) * HEAT_W));
+      const cy = Math.min(HEAT_H - 1, Math.floor((spot.y / 100) * HEAT_H));
+      a.heat[side][cy * HEAT_W + cx] += HEAT_WEIGHT[sit];
+    }
+    if (min !== null) {
+      const key = `${sit}|${side}`;
+      if (PRESS[sit] && key !== a.lastPress && (side === 'home' || side === 'away')) {
+        const m = (a.momentum[min] ||= { home: 0, away: 0 });
+        m[side] += PRESS[sit];
+      }
+      a.lastPress = key;
+      const stat = (k) => s.stats.find((x) => x.key === k);
+      const da = stat('dangerous_attacks');
+      const on = stat('shots_on_target');
+      if (da || on) a.series[min] = { dh: da?.home ?? null, da: da?.away ?? null, sh: on?.home ?? null, sa: on?.away ?? null };
+    }
+  }
+  const analyticsOut = (w) => {
+    const a = w.analytics;
+    if (!a) return null;
+    const rows = (o) => Object.entries(o).map(([m, v]) => ({ m: Number(m), ...v })).sort((x, y) => x.m - y.m);
+    return { heat: a.heat, w: HEAT_W, h: HEAT_H, momentum: rows(a.momentum), series: rows(a.series) };
+  };
+
   /** Publishes what changed in a watched match's tracker state (merged widget-data + ws frames). */
   function process(eventId, w) {
     const s = normalizeWidgetData(w.raw);
@@ -393,7 +433,13 @@ export function createWinHouseTracker(db, {
         const d = { ...spot, side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
         w.livedata = d;
         publish(eventId, 'livedata', d);
+        track(w, s, spot, side);
       }
+    }
+    // The dashboard's history, at most every 5 s.
+    if (Date.now() - (w.analytics?.at ?? 0) > 5_000 && w.analytics) {
+      w.analytics.at = Date.now();
+      publish(eventId, 'analytics', analyticsOut(w));
     }
     for (const a of s.timeline) {
       const id = `${a.minute}|${a.type}|${a.team}|${a.label}`;
@@ -517,7 +563,7 @@ export function createWinHouseTracker(db, {
 
   const snapshot = (eventId) => {
     const w = watched.get(eventId);
-    return { event: w?.eventData || null, livedata: w?.livedata ? [w.livedata] : [], actions: w?.actions || [] };
+    return { event: w?.eventData || null, livedata: w?.livedata ? [w.livedata] : [], actions: w?.actions || [], analytics: w ? analyticsOut(w) : null };
   };
 
   /** Statistics and timeline for the match page (same shape as the other providers). */

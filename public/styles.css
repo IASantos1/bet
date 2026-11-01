@@ -2124,3 +2124,53 @@ html.light .mb-bar.fav rect.mb-fill { fill: var(--viva); }
 .promo-mine[open] .promo-chev { transform: rotate(180deg); }
 .promo-mine:not([open]) > summary { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .sports-more { padding: 18px 0; }
+
+/* ---------- live dashboard (match page → Estatísticas → Ao vivo) ---------- */
+.ld-grid { --ld-home: #f2fff4; --ld-away: var(--viva); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+html.light .ld-grid { --ld-home: #3b4652; --ld-away: #22b14c; }
+.ld-card { position: relative; min-width: 0; padding: 14px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--viva) 6%, var(--panel)), var(--panel));
+  border: 1px solid color-mix(in srgb, var(--viva) 35%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--viva) 12%, transparent); }
+.ld-wide { grid-column: 1 / -1; }
+.ld-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ld-head h4 { margin: 0; font-size: 14px; font-weight: 800; }
+.ld-ic { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; font-size: 14px; background: color-mix(in srgb, var(--viva) 14%, transparent); filter: grayscale(.2); }
+.ld-legend { margin-left: auto; display: flex; gap: 10px; font-size: 11px; font-weight: 700; color: var(--text-3); }
+.ld-head .ld-legend { margin-left: auto; }
+.ld-card > .ld-legend { justify-content: space-between; margin-top: 6px; }
+.ld-legend span::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.ld-legend .ld-h::before { background: var(--ld-home); }
+.ld-legend .ld-a::before { background: var(--ld-away); }
+.ld-split { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ld-split > b, .ld-side b { font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.ld-side { text-align: center; min-width: 0; }
+.ld-side small, .ld-count small { display: block; max-width: 90px; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
+.ld-donut { width: 42%; max-width: 120px; flex: none; }
+.ld-arc { transition: stroke-dasharray .8s ease; }
+.ld-home-stroke { stroke: var(--ld-home); } .ld-away-stroke { stroke: var(--ld-away); }
+.ld-home-fill { fill: var(--ld-home); } .ld-away-fill { fill: var(--ld-away); }
+.ld-off { opacity: .5; }
+.ld-count { display: flex; justify-content: space-between; align-items: flex-end; }
+.ld-count b { display: block; font-size: 34px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+.ld-a-side { text-align: right; } .ld-a-side small { margin-left: auto; }
+.ld-bar { display: block; width: 100%; height: 6px; margin-top: 10px; }
+.ld-pulse { animation: ld-pulse 1.2s ease-out; }
+@keyframes ld-pulse { 0% { transform: scale(1); text-shadow: none; } 30% { transform: scale(1.18); text-shadow: 0 0 14px var(--ld-away); } 100% { transform: scale(1); text-shadow: none; } }
+.ld-chart { display: block; width: 100%; height: auto; }
+.ld-line { stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+.ld-axis { stroke: var(--line); stroke-width: 1; } .ld-grid line, .ld-grid-line { }
+.ld-chart .ld-grid { stroke: var(--line); stroke-width: .6; stroke-dasharray: 2 3; }
+.ld-tick { fill: var(--text-3); font-size: 10px; text-anchor: middle; font-weight: 700; }
+.ld-pitches { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ld-pitches figure { margin: 0; text-align: center; }
+.ld-pitches figcaption { margin-top: 4px; font-size: 12px; font-weight: 700; }
+.ld-pitch { display: block; width: 100%; height: auto; border-radius: 8px; }
+.ld-grass { fill: #11481d; }
+.ld-heat { mix-blend-mode: screen; }
+.ld-lines { stroke: rgba(255, 255, 255, .55); stroke-width: .8; }
+.ld-goal { width: 52%; max-width: 170px; flex: none; }
+.ld-post { stroke: var(--text-2); stroke-width: 2.4; }
+.ld-net line { stroke: var(--line); stroke-width: .6; }
+.ld-note { margin: 8px 0 0; font-size: 11px; color: var(--text-3); }
+@media (max-width: 520px) { .ld-grid { grid-template-columns: 1fr; } .ld-donut { width: 36%; } }
+@media (prefers-reduced-motion: reduce) { .ld-pulse { animation: none; } .ld-arc { transition: none; } }
