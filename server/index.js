@@ -96,6 +96,7 @@ const winhouseOdds = winhouseFeed && config.winhouse.oddsPush
 winhouseFeed?.setOddsPush(winhouseOdds);
 // Tennis cards: the point (15 / 30 / 40 / AD) read the way the match page reads it.
 if (winhouseTracker?.enabled) winhouseFeed?.setTrackerState(winhouseTracker.state);
+const stopTrackLive = winhouseTracker?.enabled ? winhouseTracker.followLive({ max: config.winhouse.trackLive }) : () => {};
 const stopWinhouseOdds = winhouseOdds ? winhouseOdds.start() : () => {};
 const stopWinhouse = () => { stopWinhouseFeed(); stopWinhouseOdds(); };
 
@@ -206,6 +207,7 @@ const shutdown = () => {
   stopBackups();
   stopSanctions();
   stopPush();
+  stopTrackLive();
   stopTennis();
   stopSports.forEach((stop) => stop());
   tennisLive?.stop();

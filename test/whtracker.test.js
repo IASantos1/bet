@@ -324,3 +324,18 @@ test('live dashboard history: ball grid per side in possession, pressure per min
   assert.deepEqual(a.series.at(-1), { m: 11, dh: 3, da: 1, sh: 1, sa: 0 });
   stop();
 });
+
+test('the server follows the live football matches itself (up to the limit) and lets go of finished ones', async () => {
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const add = (ext, status = 'live', sport = 'futebol') => Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, external_id, created_at, updated_at)
+    VALUES (?, 'L', 'A', 'B', ?, ?, 'winhouse', ?, ?, ?)`).run(sport, ts, status, ext, ts, ts).lastInsertRowid);
+  const a = add('1'); const b = add('2'); add('3', 'scheduled'); add('4', 'live', 'tenis');
+  const client = { enabled: true, widget: async () => ({ ok: true, status: 200, body: null, text: '' }), widgetData: async () => ({ ok: false, status: 404 }) };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000, ws: false });
+  const stop = t.followLive({ max: 5, everyMs: 60_000 });
+  assert.equal(t.isFollowing(a), true);
+  assert.equal(t.isFollowing(b), true);
+  assert.equal(t.isFollowing(3), false);
+  stop();
+});

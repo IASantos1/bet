@@ -2174,3 +2174,9 @@ b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
 .ld-note { margin: 8px 0 0; font-size: 11px; color: var(--text-3); }
 @media (max-width: 520px) { .ld-grid { grid-template-columns: 1fr; } .ld-donut { width: 36%; } }
 @media (prefers-reduced-motion: reduce) { .ld-pulse { animation: none; } .ld-arc { transition: none; } }
+.ld-wait .ld-skel { display: grid; place-items: center; gap: 8px; min-height: 92px; text-align: center; }
+.ld-wait.ld-wide .ld-skel { min-height: 120px; }
+.ld-skel span { width: 60%; height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--line), color-mix(in srgb, var(--viva) 30%, var(--line)), var(--line)); background-size: 200% 100%; animation: ld-shimmer 1.4s linear infinite; }
+.ld-skel p { margin: 0; font-size: 12px; color: var(--text-3); }
+@keyframes ld-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ld-skel span { animation: none; } }

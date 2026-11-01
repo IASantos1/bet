@@ -381,7 +381,7 @@ export function createWinHouseTracker(db, {
   const HEAT_WEIGHT = { safe: 0.5, possession: 1, attack: 2, dangerous_attack: 3, corner: 2, shot: 3, freekick: 1.5, penalty: 3 };
   const minuteOf = (clock) => { const m = /^(\d+)(?:\+(\d+))?/.exec(String(clock || '')); return m ? Math.min(130, Number(m[1]) + (m[2] ? Number(m[2]) : 0)) : null; };
   function track(w, s, spot, side) {
-    const a = (w.analytics ||= { heat: { home: Array(HEAT_W * HEAT_H).fill(0), away: Array(HEAT_W * HEAT_H).fill(0) }, momentum: {}, series: {}, at: Date.now() });
+    const a = (w.analytics ||= { heat: { home: Array(HEAT_W * HEAT_H).fill(0), away: Array(HEAT_W * HEAT_H).fill(0) }, momentum: {}, series: {}, at: Date.now() - 4_000 });
     const min = minuteOf(s.clock);
     const sit = s.situation?.situation;
     if (spot?.x !== null && spot?.x !== undefined && HEAT_WEIGHT[sit] && (side === 'home' || side === 'away')) {
@@ -640,5 +640,29 @@ export function createWinHouseTracker(db, {
     return w?.last?.clock && !w.last.tennis && Date.now() - (w.lastStateAt || 0) < 120_000 ? w.last.clock : null;
   };
 
-  return { enabled, bus, follow, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect, clockOf };
+  /**
+   * The server follows the live football matches itself (the most important first, up to `max`), so
+   * the live statistics' history (heat map, momentum, series) starts at kick-off, not when the first
+   * visitor opens the match. Checked every minute; a match that is no longer live is let go.
+   */
+  function followLive({ max = 15, everyMs = 60_000 } = {}) {
+    if (!enabled || !max) return () => {};
+    const held = new Map(); // eventId → stop
+    const pick = db.prepare(`SELECT id, external_id FROM events WHERE status = 'live' AND source = 'winhouse' AND sport = 'futebol' AND external_id IS NOT NULL
+      ORDER BY featured DESC, start_time ASC LIMIT ?`);
+    const run = () => {
+      try {
+        const live = pick.all(max);
+        const ids = new Set(live.map((r) => r.id));
+        for (const [id, stop] of held) if (!ids.has(id)) { stop(); held.delete(id); }
+        for (const r of live) if (!held.has(r.id)) held.set(r.id, follow(r.id, r.external_id));
+      } catch (err) { log(`tracker follow live: ${err.message}`); }
+    };
+    run();
+    const t = setInterval(run, everyMs);
+    t.unref?.();
+    return () => { clearInterval(t); for (const stop of held.values()) stop(); held.clear(); };
+  }
+
+  return { enabled, bus, follow, followLive, snapshot, isFollowing: (eventId) => watched.has(eventId), state, matchExtras, inspect, clockOf };
 }

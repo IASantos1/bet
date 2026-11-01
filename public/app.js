@@ -5024,9 +5024,13 @@ function ldPitch(cells, w, h, side) {
     <rect x="1" y="20" width="16" height="38"/><rect x="103" y="20" width="16" height="38"/><rect x="1" y="30" width="6" height="18"/><rect x="113" y="30" width="6" height="18"/></g></svg>`;
 }
 
+// A card whose data has not come in yet: kept in place (the panel does not jump), with a note.
+const ldWaiting = (icon, title, { wide = false, text = 'A recolher dados do jogo…' } = {}) => `<div class="ld-card${wide ? ' ld-wide' : ''} ld-wait"><div class="ld-head"><span class="ld-ic">${icon}</span><h4>${title}</h4></div>
+  <div class="ld-skel"><span></span><p>${text}</p></div></div>`;
+
 function ldSeries(a, e) {
   const rows = (a?.series || []).filter((r) => r.dh !== null && r.da !== null);
-  if (rows.length < 2) return '';
+  if (rows.length < 2) return ldWaiting('📈', 'Ataques perigosos ao longo do jogo', { wide: true });
   const end = Math.max(90, rows.at(-1).m);
   const top = Math.max(4, ...rows.map((r) => Math.max(r.dh, r.da)));
   const X = (m) => 30 + (m / end) * 360;
@@ -5042,7 +5046,7 @@ function ldSeries(a, e) {
 
 function ldMomentum(a, e) {
   const rows = a?.momentum || [];
-  if (!rows.length) return '';
+  if (!rows.length) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
   const end = Math.max(90, rows.at(-1).m);
   const by = new Map(rows.map((r) => [r.m, r.home - r.away]));
   const top = Math.max(3, ...rows.map((r) => Math.abs(r.home - r.away)));
@@ -5081,7 +5085,8 @@ function liveDashboard(e) {
   const da = ldStat('dangerous_attacks');
   const on = ldStat('shots_on_target');
   const off = ldStat('shots_off_target');
-  if (!pos && !da && !on && !a?.momentum?.length) return '';
+  // WinHouse football: the whole panel at once, each card filling in as its data arrives.
+  if (!pos && !da && !on && !a && e.source !== 'winhouse') return '';
   // A new dangerous attack: its counter pulses once.
   const prev = m.ldPrev || {};
   const pulse = (k, v) => (prev[k] !== undefined && v > prev[k] ? ' ld-pulse' : '');
@@ -5090,20 +5095,20 @@ function liveDashboard(e) {
     const t = pos[0] + pos[1] || 100;
     cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">◔</span><h4>Posse de bola</h4></div>
       <div class="ld-split"><b class="ld-h">${Math.round((pos[0] / t) * 100)}%</b>${ldDonut(pos[0] / t)}<b class="ld-a">${Math.round((pos[1] / t) * 100)}%</b></div>${ldLegend(e)}</div>`);
-  }
+  } else cards.push(ldWaiting('◔', 'Posse de bola'));
   if (da) {
     const t = da[0] + da[1] || 1;
     cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">⚡</span><h4>Ataques perigosos</h4></div>
       <div class="ld-count"><div><b class="ld-h${pulse('dh', da[0])}">${da[0]}</b><small>${ldTeam(e, 'home')}</small></div><div class="ld-a-side"><b class="ld-a${pulse('da', da[1])}">${da[1]}</b><small>${ldTeam(e, 'away')}</small></div></div>
       <svg class="ld-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3" class="ld-away-fill"/><rect width="${((da[0] / t) * 100).toFixed(1)}" height="6" rx="3" class="ld-home-fill"/></svg></div>`);
-  }
+  } else cards.push(ldWaiting('⚡', 'Ataques perigosos'));
   const series = ldSeries(a, e);
   if (a?.heat && (a.heat.home.some(Boolean) || a.heat.away.some(Boolean))) {
     cards.push(`<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">🔥</span><h4>Pressão ofensiva</h4></div>
       <div class="ld-pitches"><figure>${ldPitch(a.heat.home, a.w, a.h, 'home')}<figcaption>${ldTeam(e, 'home')} <small>→</small></figcaption></figure>
       <figure>${ldPitch(a.heat.away, a.w, a.h, 'away')}<figcaption><small>←</small> ${ldTeam(e, 'away')}</figcaption></figure></div>
       <p class="ld-note">Onde cada equipa joga quando tem a bola (${ldTeam(e, 'home')} ataca para a direita).</p></div>`);
-  }
+  } else cards.push(ldWaiting('🔥', 'Pressão ofensiva', { wide: true, text: 'O mapa enche-se à medida que a bola circula…' }));
   if (on || off) {
     const [oh, oa] = on || [0, 0];
     const [fh, fa] = off || [0, 0];
@@ -5114,16 +5119,17 @@ function liveDashboard(e) {
       const t = oh + oa;
       cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">🧤</span><h4>Remates à baliza</h4></div>
         <div class="ld-split"><div class="ld-side"><b class="ld-h">${oh}</b><small>${ldTeam(e, 'home')}</small></div>${ldDonut(t ? oh / t : 0.5, { size: 100, stroke: 12 })}<div class="ld-side"><b class="ld-a">${oa}</b><small>${ldTeam(e, 'away')}</small></div></div></div>`);
-    }
-  }
+    } else cards.push(ldWaiting('🧤', 'Remates à baliza'));
+  } else cards.push(ldWaiting('🎯', 'Remates'), ldWaiting('🧤', 'Remates à baliza'));
   m.ldPrev = { dh: da?.[0], da: da?.[1] };
   return `<div class="ld-grid">${cards.slice(0, 2).join('')}${series}${cards.slice(2).join('')}${ldMomentum(a, e)}</div>`;
 }
 
 function liveStatsView(e) {
   const x = state.match.extras;
-  if (!x) return '<div class="loading">A carregar estatísticas…</div>';
   const dash = e.sport === 'futebol' ? liveDashboard(e) : '';
+  // The panel does not wait for the statistics answer (it fills in from the live stream too).
+  if (!x) return dash || '<div class="loading">A carregar estatísticas…</div>';
   // With the dashboard on top, the list below keeps only what it does not show (corners, cards…).
   const shown = dash ? new Set(['ball_possession', 'dangerous_attacks', 'shots_on_target', 'shots_off_target']) : new Set();
   const stats = (x.stats?.length ? x.stats : liveStatsFallback()).filter((s) => !shown.has(s.key));
