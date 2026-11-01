@@ -321,7 +321,7 @@ test('live dashboard history: ball grid per side in possession, pressure per min
   assert.equal(a.heat.home.reduce((s, v) => s + v, 0), 5);
   assert.equal(a.heat.away.reduce((s, v) => s + v, 0), 3);
   assert.deepEqual(a.momentum.map((m) => [m.m, m.home, m.away]), [[10, 3, 0], [11, 0, 3]]);
-  assert.deepEqual(a.series.at(-1), { m: 11, dh: 3, da: 1, sh: 1, sa: 0 });
+  assert.deepEqual(a.series.at(-1), { m: 11, dh: 3, da: 1, sh: 1, sa: 0, xh: null, xa: null });
   stop();
 });
 
@@ -338,4 +338,13 @@ test('the server follows the live football matches itself (up to the limit) and 
   assert.equal(t.isFollowing(b), true);
   assert.equal(t.isFollowing(3), false);
   stop();
+});
+
+test('xG from widget-data plus.stats (SofaScore) wins over the tracker\'s own zero; fouls and total shots too', () => {
+  const s = normalizeWidgetData({ stats: { 'On Target': [2, 4], xG: [0, 0] }, plus: { stats: { xg: { h: '0.22', a: '0.53' }, fouls: { h: '14', a: '13' }, shots: { h: '3', a: '9' }, possession: { h: '48%', a: '52%' } } } });
+  const by = Object.fromEntries(s.stats.map((x) => [x.key, [x.home, x.away]]));
+  assert.deepEqual(by.xg, [0.22, 0.53]);
+  assert.deepEqual(by.fouls, [14, 13]);
+  assert.deepEqual(by.shots_total, [3, 9]);
+  assert.equal(s.stats.filter((x) => x.key === 'xg').length, 1);
 });

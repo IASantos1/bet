@@ -214,6 +214,18 @@ export function normalizeWidgetData(body) {
     const [h, a] = pair(d[k]);
     if (h !== null && a !== null && !stats.some((x) => x.key === key)) stats.push({ key, label, unit, home: h, away: a });
   }
+  // plus.stats (SofaScore, in widget-data): the real xG ({"xg": {"h": "0.22", "a": "0.53"}}; the
+  // tracker's own "xG" stays [0, 0]), fouls and total shots. It wins over the tracker's own figure.
+  const plus = d.plus?.stats && typeof d.plus.stats === 'object' ? d.plus.stats : null;
+  if (plus) {
+    for (const [k, key, label] of [['xg', 'xg', 'Golos esperados (xG)'], ['fouls', 'fouls', 'Faltas'], ['shots', 'shots_total', 'Remates']]) {
+      const [h, a] = pair(plus[k]);
+      if (h === null || a === null) continue;
+      const at = stats.findIndex((x) => x.key === key);
+      const row = { key, label, unit: '', home: h, away: a };
+      if (at >= 0) stats[at] = row; else stats.push(row);
+    }
+  }
   const xy = Array.isArray(d.xy) ? d.xy : d.xy && typeof d.xy === 'object' ? [d.xy.x, d.xy.y] : null;
   let ball = null;
   // xy is the real position, corners included: [1, 1] is the bottom-right corner flag (home corner).
@@ -399,7 +411,8 @@ export function createWinHouseTracker(db, {
       const stat = (k) => s.stats.find((x) => x.key === k);
       const da = stat('dangerous_attacks');
       const on = stat('shots_on_target');
-      if (da || on) a.series[min] = { dh: da?.home ?? null, da: da?.away ?? null, sh: on?.home ?? null, sa: on?.away ?? null };
+      const xg = stat('xg');
+      if (da || on || xg) a.series[min] = { dh: da?.home ?? null, da: da?.away ?? null, sh: on?.home ?? null, sa: on?.away ?? null, xh: xg?.home ?? null, xa: xg?.away ?? null };
     }
   }
   const analyticsOut = (w) => {

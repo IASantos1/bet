@@ -5028,17 +5028,25 @@ function ldPitch(cells, w, h, side) {
 const ldWaiting = (icon, title, { wide = false, text = 'A recolher dados do jogo…' } = {}) => `<div class="ld-card${wide ? ' ld-wide' : ''} ld-wait"><div class="ld-head"><span class="ld-ic">${icon}</span><h4>${title}</h4></div>
   <div class="ld-skel"><span></span><p>${text}</p></div></div>`;
 
-function ldSeries(a, e) {
-  const rows = (a?.series || []).filter((r) => r.dh !== null && r.da !== null);
-  if (rows.length < 2) return ldWaiting('📈', 'Ataques perigosos ao longo do jogo', { wide: true });
+/** A line per team over the match: the dangerous attacks, or (`xg`) the expected goals with the current value large. */
+function ldSeries(a, e, { xg = null } = {}) {
+  const [kh, ka] = xg ? ['xh', 'xa'] : ['dh', 'da'];
+  const title = xg ? 'xG (golos esperados)' : 'Ataques perigosos ao longo do jogo';
+  const icon = xg ? '📈' : '⚡';
+  const rows = (a?.series || []).filter((r) => r[kh] !== null && r[ka] !== null && r[kh] !== undefined).map((r) => ({ m: r.m, dh: r[kh], da: r[ka] }));
+  const now = xg ? `<div class="ld-xg"><div><b class="ld-h">${xg[0].toFixed(2)}</b><small>${ldTeam(e, 'home')}</small></div><div class="ld-a-side"><b class="ld-a">${xg[1].toFixed(2)}</b><small>${ldTeam(e, 'away')}</small></div></div>` : '';
+  if (rows.length < 2) {
+    return xg ? `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">${icon}</span><h4>${title}</h4></div>${now}<p class="ld-note">O gráfico ao longo do jogo enche-se à medida que o jogo avança.</p></div>`
+      : ldWaiting(icon, title, { wide: true });
+  }
   const end = Math.max(90, rows.at(-1).m);
-  const top = Math.max(4, ...rows.map((r) => Math.max(r.dh, r.da)));
+  const top = Math.max(xg ? 1 : 4, ...rows.map((r) => Math.max(r.dh, r.da)));
   const X = (m) => 30 + (m / end) * 360;
   const Y = (v) => 120 - (v / top) * 105;
   const line = (k) => [`${X(0)},${Y(0)}`, ...rows.map((r) => `${X(r.m).toFixed(1)},${Y(r[k]).toFixed(1)}`)].join(' ');
   const last = rows.at(-1);
   const ticks = [0, 15, 30, 45, 60, 75, 90].map((m) => `<text x="${X(m)}" y="136" class="ld-tick">${m}'</text><line x1="${X(m)}" y1="15" x2="${X(m)}" y2="120" class="ld-grid"/>`).join('');
-  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">📈</span><h4>Ataques perigosos ao longo do jogo</h4>${ldLegend(e)}</div>
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">${icon}</span><h4>${title}</h4>${ldLegend(e)}</div>${now}
     <svg class="ld-chart" viewBox="0 0 400 142" aria-hidden="true">${ticks}<line x1="30" y1="120" x2="390" y2="120" class="ld-axis"/>
       <polyline points="${line('da')}" class="ld-away-stroke ld-line" fill="none"/><polyline points="${line('dh')}" class="ld-home-stroke ld-line" fill="none"/>
       <circle cx="${X(last.m)}" cy="${Y(last.da)}" r="4" class="ld-away-fill"/><circle cx="${X(last.m)}" cy="${Y(last.dh)}" r="4" class="ld-home-fill"/></svg></div>`;
@@ -5102,7 +5110,10 @@ function liveDashboard(e) {
       <div class="ld-count"><div><b class="ld-h${pulse('dh', da[0])}">${da[0]}</b><small>${ldTeam(e, 'home')}</small></div><div class="ld-a-side"><b class="ld-a${pulse('da', da[1])}">${da[1]}</b><small>${ldTeam(e, 'away')}</small></div></div>
       <svg class="ld-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3" class="ld-away-fill"/><rect width="${((da[0] / t) * 100).toFixed(1)}" height="6" rx="3" class="ld-home-fill"/></svg></div>`);
   } else cards.push(ldWaiting('⚡', 'Ataques perigosos'));
-  const series = ldSeries(a, e);
+  // xG: the real figure WinHouse passes on (SofaScore); without it, the dangerous attacks chart alone.
+  const xg = ldStat('xg');
+  const hasXg = xg && (xg[0] > 0 || xg[1] > 0 || (a?.series || []).some((r) => r.xh > 0 || r.xa > 0));
+  const series = (hasXg ? ldSeries(a, e, { xg }) : '') + ldSeries(a, e);
   if (a?.heat && (a.heat.home.some(Boolean) || a.heat.away.some(Boolean))) {
     cards.push(`<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">🔥</span><h4>Pressão ofensiva</h4></div>
       <div class="ld-pitches"><figure>${ldPitch(a.heat.home, a.w, a.h, 'home')}<figcaption>${ldTeam(e, 'home')} <small>→</small></figcaption></figure>
@@ -5131,7 +5142,7 @@ function liveStatsView(e) {
   // The panel does not wait for the statistics answer (it fills in from the live stream too).
   if (!x) return dash || '<div class="loading">A carregar estatísticas…</div>';
   // With the dashboard on top, the list below keeps only what it does not show (corners, cards…).
-  const shown = dash ? new Set(['ball_possession', 'dangerous_attacks', 'shots_on_target', 'shots_off_target']) : new Set();
+  const shown = dash ? new Set(['ball_possession', 'dangerous_attacks', 'shots_on_target', 'shots_off_target', 'xg']) : new Set();
   const stats = (x.stats?.length ? x.stats : liveStatsFallback()).filter((s) => !shown.has(s.key));
   const bars = stats.map((s) => {
     const total = (s.home || 0) + (s.away || 0);
