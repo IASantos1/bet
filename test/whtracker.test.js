@@ -295,3 +295,32 @@ test('VAR watch: a tracker answer mentioning VAR is kept (once per sample), othe
   const seen = getSetting(db, 'winhouse.varSeen', []);
   assert.deepEqual(seen.map((x) => x.gameId), ['2', '3', '4']);
 });
+
+test('live dashboard history: ball grid per side in possession, pressure per minute, dangerous attacks over time', async () => {
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const { lastInsertRowid } = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
+    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 0, 0, '10''', 'winhouse', '950', ?, ?)`).run(ts, ts, ts);
+  const id = Number(lastInsertRowid);
+  const sockets = [];
+  class FakeWS { constructor() { sockets.push(this); } send() {} close() {} frame(o) { this.onmessage?.({ data: JSON.stringify(o) }); } }
+  const client = {
+    enabled: true, origin: 'https://iframe.example',
+    widget: async () => ({ ok: true, status: 200, body: null, text: 'ws-widget?api_key=AK&event_id=E9' }),
+    widgetData: async () => ({ ok: true, status: 200, body: { status: 'live', period: 'First Half', timer: 600, stats: { 'Dangerous Attacks': [3, 1], 'On Target': [1, 0] }, situation: 'Home Attack', xy: [0.6, 0.5], timeline: [] } }),
+    wsUrl: () => 'wss://iframe.example/ws',
+  };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000, WebSocketImpl: FakeWS });
+  const stop = t.follow(id, '950');
+  await new Promise((r) => setTimeout(r, 20));
+  sockets[0].frame({ type: 'tracker', ts: 10, timer: 610, situation: 'Home Dangerous Attack', xy: [0.9, 0.5] });
+  sockets[0].frame({ type: 'tracker', ts: 11, timer: 660, situation: 'Away Shot', xy: [0.1, 0.5] });
+  const a = t.snapshot(id).analytics;
+  assert.equal(a.w * a.h, a.heat.home.length);
+  // home attacked twice (attack 2 + dangerous 3 on the grid); the away shot is mirrored onto the home half.
+  assert.equal(a.heat.home.reduce((s, v) => s + v, 0), 5);
+  assert.equal(a.heat.away.reduce((s, v) => s + v, 0), 3);
+  assert.deepEqual(a.momentum.map((m) => [m.m, m.home, m.away]), [[10, 3, 0], [11, 0, 3]]);
+  assert.deepEqual(a.series.at(-1), { m: 11, dh: 3, da: 1, sh: 1, sa: 0 });
+  stop();
+});

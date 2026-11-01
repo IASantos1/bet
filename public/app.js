@@ -4214,10 +4214,12 @@ function startMatchStream(id) {
     if (m.ball?.situation === 'corner') m.cornerWatch.frame(m.ball);
     m.prevBall = null;
     m.actions = (s.actions || []).slice(-15);
+    if (s.analytics) m.analytics = s.analytics;
     updateTracker();
     updateActionsList();
   });
-  on('event', (e) => applyLiveEvent(e));
+  on('event', (e) => { applyLiveEvent(e); refreshDashboard(); });
+  on('analytics', (a) => { m.analytics = a; refreshDashboard(); });
   on('livedata', (d) => {
     const before = m.ball;
     pushBall(d);
@@ -4240,6 +4242,16 @@ function startMatchStream(id) {
   on('odds', () => loadMatch(id, { quiet: true }));
   // No stream (match not covered by the live socket): the page keeps polling instead.
   es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.es = null; };
+}
+
+/** The live dashboard follows the match while it is open (at most once a second). */
+let dashAt = 0;
+function refreshDashboard() {
+  const m = state.match;
+  if (currentRoute().page !== 'jogo' || m.tab !== 'estatisticas' || m.statTab !== 'aovivo') return;
+  if (Date.now() - dashAt < 1000) return;
+  dashAt = Date.now();
+  render({ keepScroll: true });
 }
 
 function applyLiveEvent(e, { quiet = false } = {}) {
@@ -4980,10 +4992,141 @@ function standingsView(e, t) {
   </table></div></div>`;
 }
 
+// ---------- live dashboard (football): possession, pressure, dangerous attacks, heat map, shots, momentum ----------
+// From the WinHouse tracker: the stats as they come in, and the history the server builds while the
+// match is followed (server/whtracker.js `analytics`). Home in white, away in green.
+
+const LD_KEYS = { possession: 'ball_possession' };
+/** [home, away] of one statistic: the live stream first, then the stats answer. */
+function ldStat(key) {
+  const l = state.match.live;
+  if (l?.home && l?.away && l.home[key] !== undefined && l.away[key] !== undefined) return [Number(l.home[key]) || 0, Number(l.away[key]) || 0];
+  const st = (state.match.extras?.stats || []).find((x) => x.key === (LD_KEYS[key] || key));
+  return st ? [Number(st.home) || 0, Number(st.away) || 0] : null;
+}
+const ldDonut = (share, { size = 120, stroke = 14 } = {}) => {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const h = Math.max(0, Math.min(1, share)) * c;
+  return `<svg class="ld-donut" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ld-away-stroke" stroke-width="${stroke}" fill="none"/>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" class="ld-home-stroke ld-arc" stroke-width="${stroke}" fill="none" stroke-dasharray="${h.toFixed(1)} ${(c - h).toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})" stroke-linecap="round"/></svg>`;
+};
+const ldTeam = (e, side) => esc(tname(e, side));
+const ldLegend = (e) => `<div class="ld-legend"><span class="ld-h">${ldTeam(e, 'home')}</span><span class="ld-a">${ldTeam(e, 'away')}</span></div>`;
+
+function ldPitch(cells, w, h, side) {
+  const max = Math.max(1, ...cells);
+  const cw = 120 / w;
+  const ch = 78 / h;
+  const rects = cells.map((v, i) => (v ? `<rect x="${((i % w) * cw).toFixed(2)}" y="${(Math.floor(i / w) * ch).toFixed(2)}" width="${cw.toFixed(2)}" height="${ch.toFixed(2)}" class="ld-heat" fill-opacity="${(0.15 + 0.75 * (v / max)).toFixed(2)}" fill="${v / max > 0.66 ? '#ffd23d' : v / max > 0.33 ? '#b6f23a' : '#4fe049'}"/>` : '')).join('');
+  return `<svg class="ld-pitch ${side}" viewBox="0 0 120 78" aria-hidden="true"><rect width="120" height="78" class="ld-grass"/>${rects}
+    <g class="ld-lines" fill="none"><rect x="1" y="1" width="118" height="76"/><line x1="60" y1="1" x2="60" y2="77"/><circle cx="60" cy="39" r="9"/>
+    <rect x="1" y="20" width="16" height="38"/><rect x="103" y="20" width="16" height="38"/><rect x="1" y="30" width="6" height="18"/><rect x="113" y="30" width="6" height="18"/></g></svg>`;
+}
+
+function ldSeries(a, e) {
+  const rows = (a?.series || []).filter((r) => r.dh !== null && r.da !== null);
+  if (rows.length < 2) return '';
+  const end = Math.max(90, rows.at(-1).m);
+  const top = Math.max(4, ...rows.map((r) => Math.max(r.dh, r.da)));
+  const X = (m) => 30 + (m / end) * 360;
+  const Y = (v) => 120 - (v / top) * 105;
+  const line = (k) => [`${X(0)},${Y(0)}`, ...rows.map((r) => `${X(r.m).toFixed(1)},${Y(r[k]).toFixed(1)}`)].join(' ');
+  const last = rows.at(-1);
+  const ticks = [0, 15, 30, 45, 60, 75, 90].map((m) => `<text x="${X(m)}" y="136" class="ld-tick">${m}'</text><line x1="${X(m)}" y1="15" x2="${X(m)}" y2="120" class="ld-grid"/>`).join('');
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">📈</span><h4>Ataques perigosos ao longo do jogo</h4>${ldLegend(e)}</div>
+    <svg class="ld-chart" viewBox="0 0 400 142" aria-hidden="true">${ticks}<line x1="30" y1="120" x2="390" y2="120" class="ld-axis"/>
+      <polyline points="${line('da')}" class="ld-away-stroke ld-line" fill="none"/><polyline points="${line('dh')}" class="ld-home-stroke ld-line" fill="none"/>
+      <circle cx="${X(last.m)}" cy="${Y(last.da)}" r="4" class="ld-away-fill"/><circle cx="${X(last.m)}" cy="${Y(last.dh)}" r="4" class="ld-home-fill"/></svg></div>`;
+}
+
+function ldMomentum(a, e) {
+  const rows = a?.momentum || [];
+  if (!rows.length) return '';
+  const end = Math.max(90, rows.at(-1).m);
+  const by = new Map(rows.map((r) => [r.m, r.home - r.away]));
+  const top = Math.max(3, ...rows.map((r) => Math.abs(r.home - r.away)));
+  const bw = 360 / (end + 1);
+  const bars = [...Array(end + 1).keys()].map((m) => {
+    const v = by.get(m) || 0;
+    if (!v) return '';
+    const hgt = (Math.abs(v) / top) * 34;
+    return `<rect x="${(30 + m * bw).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : 40}" width="${Math.max(1.5, bw - 1).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
+  }).join('');
+  const X = (m) => 30 + m * bw;
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
+    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>${bars}
+      ${[0, 45, 90].map((m) => `<text x="${X(m)}" y="88" class="ld-tick">${m}'</text>`).join('')}</svg>
+    <p class="ld-note">Quem está a pressionar, minuto a minuto (ataques, ataques perigosos, remates e cantos).</p></div>`;
+}
+
+// The shots on a goal frame: on target inside, off target around it (a picture of the count, not where they were taken).
+function ldGoal(onH, offH, onA, offA) {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const dots = (n, inside, cls) => Array.from({ length: Math.min(n, 25) }, () => {
+    const x = inside ? 22 + rnd() * 116 : (rnd() < 0.5 ? 4 + rnd() * 14 : 142 + rnd() * 14);
+    const y = inside ? 14 + rnd() * 44 : 6 + rnd() * 52;
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" class="${cls}"/>`;
+  }).join('');
+  return `<svg class="ld-goal" viewBox="0 0 160 66" aria-hidden="true"><path d="M18 62V10h124v52" class="ld-post" fill="none"/>
+    <g class="ld-net">${[...Array(12).keys()].map((i) => `<line x1="${22 + i * 10}" y1="10" x2="${22 + i * 10}" y2="62"/>`).join('')}${[...Array(5).keys()].map((i) => `<line x1="18" y1="${18 + i * 10}" x2="142" y2="${18 + i * 10}"/>`).join('')}</g>
+    ${dots(onH, true, 'ld-home-fill')}${dots(onA, true, 'ld-away-fill')}${dots(offH, false, 'ld-home-fill ld-off')}${dots(offA, false, 'ld-away-fill ld-off')}</svg>`;
+}
+
+function liveDashboard(e) {
+  const m = state.match;
+  const a = m.analytics;
+  const pos = ldStat('possession');
+  const da = ldStat('dangerous_attacks');
+  const on = ldStat('shots_on_target');
+  const off = ldStat('shots_off_target');
+  if (!pos && !da && !on && !a?.momentum?.length) return '';
+  // A new dangerous attack: its counter pulses once.
+  const prev = m.ldPrev || {};
+  const pulse = (k, v) => (prev[k] !== undefined && v > prev[k] ? ' ld-pulse' : '');
+  const cards = [];
+  if (pos) {
+    const t = pos[0] + pos[1] || 100;
+    cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">◔</span><h4>Posse de bola</h4></div>
+      <div class="ld-split"><b class="ld-h">${Math.round((pos[0] / t) * 100)}%</b>${ldDonut(pos[0] / t)}<b class="ld-a">${Math.round((pos[1] / t) * 100)}%</b></div>${ldLegend(e)}</div>`);
+  }
+  if (da) {
+    const t = da[0] + da[1] || 1;
+    cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">⚡</span><h4>Ataques perigosos</h4></div>
+      <div class="ld-count"><div><b class="ld-h${pulse('dh', da[0])}">${da[0]}</b><small>${ldTeam(e, 'home')}</small></div><div class="ld-a-side"><b class="ld-a${pulse('da', da[1])}">${da[1]}</b><small>${ldTeam(e, 'away')}</small></div></div>
+      <svg class="ld-bar" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="6" rx="3" class="ld-away-fill"/><rect width="${((da[0] / t) * 100).toFixed(1)}" height="6" rx="3" class="ld-home-fill"/></svg></div>`);
+  }
+  const series = ldSeries(a, e);
+  if (a?.heat && (a.heat.home.some(Boolean) || a.heat.away.some(Boolean))) {
+    cards.push(`<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">🔥</span><h4>Pressão ofensiva</h4></div>
+      <div class="ld-pitches"><figure>${ldPitch(a.heat.home, a.w, a.h, 'home')}<figcaption>${ldTeam(e, 'home')} <small>→</small></figcaption></figure>
+      <figure>${ldPitch(a.heat.away, a.w, a.h, 'away')}<figcaption><small>←</small> ${ldTeam(e, 'away')}</figcaption></figure></div>
+      <p class="ld-note">Onde cada equipa joga quando tem a bola (${ldTeam(e, 'home')} ataca para a direita).</p></div>`);
+  }
+  if (on || off) {
+    const [oh, oa] = on || [0, 0];
+    const [fh, fa] = off || [0, 0];
+    cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">🎯</span><h4>Remates</h4></div>
+      <div class="ld-split"><div class="ld-side"><b class="ld-h">${oh + fh}</b><small>${ldTeam(e, 'home')}</small></div>${ldGoal(oh, fh, oa, fa)}<div class="ld-side"><b class="ld-a">${oa + fa}</b><small>${ldTeam(e, 'away')}</small></div></div>
+      <p class="ld-note">Dentro da baliza: à baliza · fora: ao lado.</p></div>`);
+    if (on) {
+      const t = oh + oa;
+      cards.push(`<div class="ld-card"><div class="ld-head"><span class="ld-ic">🧤</span><h4>Remates à baliza</h4></div>
+        <div class="ld-split"><div class="ld-side"><b class="ld-h">${oh}</b><small>${ldTeam(e, 'home')}</small></div>${ldDonut(t ? oh / t : 0.5, { size: 100, stroke: 12 })}<div class="ld-side"><b class="ld-a">${oa}</b><small>${ldTeam(e, 'away')}</small></div></div></div>`);
+    }
+  }
+  m.ldPrev = { dh: da?.[0], da: da?.[1] };
+  return `<div class="ld-grid">${cards.slice(0, 2).join('')}${series}${cards.slice(2).join('')}${ldMomentum(a, e)}</div>`;
+}
+
 function liveStatsView(e) {
   const x = state.match.extras;
   if (!x) return '<div class="loading">A carregar estatísticas…</div>';
-  const stats = x.stats?.length ? x.stats : liveStatsFallback();
+  const dash = e.sport === 'futebol' ? liveDashboard(e) : '';
+  // With the dashboard on top, the list below keeps only what it does not show (corners, cards…).
+  const shown = dash ? new Set(['ball_possession', 'dangerous_attacks', 'shots_on_target', 'shots_off_target']) : new Set();
+  const stats = (x.stats?.length ? x.stats : liveStatsFallback()).filter((s) => !shown.has(s.key));
   const bars = stats.map((s) => {
     const total = (s.home || 0) + (s.away || 0);
     const hp = total ? Math.round(((s.home || 0) / total) * 100) : 50;
@@ -4993,8 +5136,8 @@ function liveStatsView(e) {
   }).join('');
   const inc = (x.incidents || []).map((i) => `<div class="incident ${i.side || ''}"><span class="inc-min">${esc(i.minuteLabel || (i.minute !== null && i.minute !== undefined ? `${i.minute}'` : ''))}</span>
     <span class="inc-icon">${INCIDENT_ICON[i.type] || '•'}</span><span>${esc(i.player || '')}${i.side ? ` <small class="muted">(${esc(tname(e, i.side))})</small>` : ''}</span></div>`).join('');
-  return `<div class="grid match-stats-grid">
-    <div class="panel"><h3>Estatísticas</h3>${bars || '<p class="muted">Sem estatísticas para este jogo.</p>'}</div>
+  return `${dash}<div class="grid match-stats-grid">
+    <div class="panel"><h3>${dash ? 'Outras estatísticas' : 'Estatísticas'}</h3>${bars || '<p class="muted">Sem estatísticas para este jogo.</p>'}</div>
     <div class="panel"><h3>Cronologia</h3>${inc || '<p class="muted">Sem golos nem cartões até agora.</p>'}</div>
   </div>`;
 }
