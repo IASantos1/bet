@@ -3912,9 +3912,32 @@ document.addEventListener('error', (e) => {
   // The match page's faint league emblem: without one, nothing behind the teams.
   if (img instanceof HTMLImageElement && img.classList.contains('match-hero-bg')) img.remove();
 }, true);
+const heroBgModes = new Map(); // emblem src → mode, so a re-render (morph) keeps it
+// How the match page draws the league emblem behind the teams, from its corners: a logo on a transparent
+// background as a plain silhouette ('sil'); one printed on a light or a dark square in grey, blended so
+// the square itself disappears ('lt' / 'dk'), instead of showing as a grey block.
+function heroBgMode(img) {
+  try {
+    const n = 24, c = document.createElement('canvas'); c.width = n; c.height = n;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, n, n);
+    const d = g.getImageData(0, 0, n, n).data;
+    let solid = 0, lum = 0;
+    for (const [x, y] of [[0, 0], [n - 1, 0], [0, n - 1], [n - 1, n - 1], [n >> 1, 0], [0, n >> 1], [n - 1, n >> 1], [n >> 1, n - 1]]) {
+      const i = (y * n + x) * 4;
+      if (d[i + 3] > 200) { solid += 1; lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; }
+    }
+    if (solid < 5) return 'sil';
+    return lum / solid > 128 ? 'lt' : 'dk';
+  } catch { return 'sil'; } // another site's image without CORS: logos from there come on a transparent background
+}
 // A 204 response is a "successful" empty image: treat zero-size loads the same way.
 document.addEventListener('load', (e) => {
   const img = e.target;
+  if (img instanceof HTMLImageElement && img.classList.contains('match-hero-bg') && img.naturalWidth) {
+    const src = img.getAttribute('src');
+    if (!heroBgModes.has(src)) heroBgModes.set(src, heroBgMode(img));
+    img.dataset.bg = heroBgModes.get(src);
+  }
   if (img instanceof HTMLImageElement && (img.classList.contains('team-logo') || img.classList.contains('league-img')) && !img.naturalWidth) img.dispatchEvent(new Event('error'));
 }, true);
 
@@ -4354,7 +4377,7 @@ function matchPage(sub) {
     : e.sport === 'futebol' || LOGO_SPORTS.has(e.sport) ? `/league-logo/0?s=${encodeURIComponent(e.sport)}&n=${encodeURIComponent(e.competition)}&c=${encodeURIComponent(compCountry(e) || '')}` : '');
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero${heroLogo ? ' has-bg' : ''}">
-      ${heroLogo ? `<img class="match-hero-bg" src="${esc(heroLogo)}" alt="" aria-hidden="true" decoding="async">` : ''}
+      ${heroLogo ? `<img class="match-hero-bg" src="${esc(heroLogo)}"${heroBgModes.has(heroLogo) ? ` data-bg="${heroBgModes.get(heroLogo)}"` : ''} alt="" aria-hidden="true" decoding="async">` : ''}
       <div class="match-comp">${heroLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(heroLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
         <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(tname(e, 'home'))}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
