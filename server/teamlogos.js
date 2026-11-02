@@ -393,7 +393,8 @@ export function createTeamLogos(db, {
   ];
   async function sportLeagueLogo(sport, name, country = '') {
     const short = String(name || '').replace(/^[^.]+\.\s+(?=\S)/, '').trim().slice(0, 80);
-    if (sport === 'futebol' || !API_SPORTS[sport] || PEOPLE_SPORTS.has(sport) || loose(short).length < 2) return null;
+    // Football too: a league outside the official-logo list (LEAGUE_LOGO_IDS) is found by name with API-Football.
+    if (!API_SPORTS[sport] || PEOPLE_SPORTS.has(sport) || loose(short).length < 2) return null;
     const known = KNOWN_LEAGUES.find(([sp, re]) => sp === sport && re.test(String(name).trim()));
     if (known) {
       const path = await keepFile(known[2]);

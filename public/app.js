@@ -3909,6 +3909,8 @@ document.addEventListener('error', (e) => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (img instanceof HTMLImageElement && img.classList.contains('league-img')) img.parentElement.innerHTML = sportBadge(img.parentElement.dataset.sportIcon);
+  // The match page's faint league emblem: without one, nothing behind the teams.
+  if (img instanceof HTMLImageElement && img.classList.contains('match-hero-bg')) img.remove();
 }, true);
 // A 204 response is a "successful" empty image: treat zero-size loads the same way.
 document.addEventListener('load', (e) => {
@@ -4347,7 +4349,9 @@ function matchPage(sub) {
 
   // The league's emblem, large and faint behind the match (its own logo, else the official one by name).
   const leagueId = !e.leagueLogo ? leagueLogoId({ sport: e.sport, name: e.competition, country: compCountry(e) }) : null;
-  const heroLogo = e.leagueLogo || (leagueId ? `/league-logo/${leagueId}` : '');
+  // Any other league (every sport with league logos): looked up by name on the server, kept there.
+  const heroLogo = e.leagueLogo || (leagueId ? `/league-logo/${leagueId}`
+    : e.sport === 'futebol' || LOGO_SPORTS.has(e.sport) ? `/league-logo/0?s=${encodeURIComponent(e.sport)}&n=${encodeURIComponent(e.competition)}&c=${encodeURIComponent(compCountry(e) || '')}` : '');
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero${heroLogo ? ' has-bg' : ''}">
       ${heroLogo ? `<img class="match-hero-bg" src="${esc(heroLogo)}" alt="" aria-hidden="true" decoding="async">` : ''}
