@@ -324,7 +324,6 @@ test('other sports: the league logo found once by name with that sport\'s API, k
     return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ errors: [], response }) };
   };
   const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k' });
-  assert.equal(await logos.sportLeagueLogo('futebol', 'Premier League', 'England'), null);
   const f = await logos.sportLeagueLogo('basquetebol', 'Germany. BBL', 'Germany');
   assert.deepEqual(Buffer.from(f.body), png);
   assert.ok(asked[0].startsWith('https://v1.basketball.api-sports.io/leagues?search=BBL'));
@@ -395,4 +394,24 @@ test('MMA: the fighters of a day\'s fights (one request) give their photos; a mi
   const n = asked.filter((u) => u.includes('fights?date=')).length;
   await logos.run();
   assert.equal(asked.filter((u) => u.includes('fights?date=')).length, n);
+});
+
+test('football: a league outside the official list is found by name with API-Football, kept', async () => {
+  const db = openDb(':memory:');
+  const asked = [];
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 7]);
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.includes('media.api-sports.io')) return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => png };
+    const q = decodeURIComponent(new URL(url).searchParams.get('search') || '');
+    const response = q.includes('Liga Revela') || q.includes('Revelacao') ? [{ league: { id: 1001, name: 'Liga Revelacao U23', logo: 'https://media.api-sports.io/football/leagues/1001.png' }, country: { name: 'Portugal' } }] : [];
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ errors: [], response }) };
+  };
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k' });
+  const f = await logos.sportLeagueLogo('futebol', 'Portugal. Liga Revelacao U23', 'Portugal');
+  assert.deepEqual(Buffer.from(f.body), png);
+  assert.ok(asked[0].startsWith('https://v3.football.api-sports.io/leagues?search='));
+  const n = asked.length;
+  await logos.sportLeagueLogo('futebol', 'Portugal. Liga Revelacao U23', 'Portugal');
+  assert.equal(asked.length, n); // kept
 });

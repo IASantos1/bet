@@ -2183,3 +2183,10 @@ b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
 .ld-xg { display: flex; justify-content: space-between; align-items: flex-end; margin: 2px 0 6px; }
 .ld-xg b { display: block; font-size: 32px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
 .ld-xg small { display: block; font-size: 11px; color: var(--text-3); }
+
+/* Match page: the league's emblem large and faint behind the teams */
+.match-hero.has-bg { position: relative; overflow: hidden; isolation: isolate; }
+.match-hero-bg { position: absolute; z-index: -1; left: 50%; top: 10px; width: auto; height: 180px; max-width: 70%; object-fit: contain;
+  transform: translateX(-50%); opacity: .14; pointer-events: none; }
+html.light .match-hero-bg { opacity: .1; }
+@media (max-width: 520px) { .match-hero-bg { height: 150px; } }
