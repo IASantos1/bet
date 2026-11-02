@@ -2186,14 +2186,15 @@ b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
 
 /* Match page: the league's emblem large and faint behind the teams */
 .match-hero.has-bg { position: relative; overflow: hidden; isolation: isolate; }
-.match-hero-bg { position: absolute; z-index: -1; left: 50%; top: 10px; width: auto; height: 180px; max-width: 70%; object-fit: contain;
-  transform: translateX(-50%); opacity: .22; pointer-events: none;
-  /* dark theme: the emblem as a white silhouette, so a dark logo (the Champions League's navy) still shows */
-  filter: brightness(0) invert(1) drop-shadow(0 0 18px rgba(124, 255, 107, .35)); }
-html.light .match-hero-bg { opacity: .2; filter: none; }
-/* the names and the time stay easy to read over the emblem */
+.match-hero-bg { position: absolute; z-index: -1; left: 50%; top: 8px; height: calc(100% - 16px); max-height: 180px; width: auto; max-width: 70%; object-fit: contain;
+  transform: translateX(-50%); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.match-hero-bg[data-bg="sil"] { opacity: .22; filter: brightness(0) invert(1) drop-shadow(0 0 18px rgba(124, 255, 107, .35)); }
+.match-hero-bg[data-bg="lt"] { opacity: .3; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: screen; }
+.match-hero-bg[data-bg="dk"] { opacity: .3; filter: grayscale(1) contrast(1.3); mix-blend-mode: screen; }
+html.light .match-hero-bg[data-bg="sil"] { opacity: .2; filter: none; }
+html.light .match-hero-bg[data-bg="lt"] { opacity: .25; filter: grayscale(1) contrast(1.3); mix-blend-mode: multiply; }
+html.light .match-hero-bg[data-bg="dk"] { opacity: .25; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: multiply; }
 .match-hero.has-bg .match-teams strong, .match-hero.has-bg .match-center, .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
 html.light .match-hero.has-bg .match-teams strong, html.light .match-hero.has-bg .match-center, html.light .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(255, 255, 255, .8); }
-@media (max-width: 520px) { .match-hero-bg { height: 150px; } }
 /* the small emblem by the league's name: on a light chip, so a dark logo shows on the dark page */
 .match-comp .league-logo:has(.league-img) { background: #f2f5f8; border-radius: 6px; padding: 2px; }
