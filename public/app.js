@@ -4345,9 +4345,13 @@ function matchPage(sub) {
   if (!tabs.some(([k]) => k === m.tab)) m.tab = 'mercados';
   const body = m.tab === 'estatisticas' ? (football ? matchStatsView(e) : sportStatsView(e)) : marketsView(e);
 
+  // The league's emblem, large and faint behind the match (its own logo, else the official one by name).
+  const leagueId = !e.leagueLogo ? leagueLogoId({ sport: e.sport, name: e.competition, country: compCountry(e) }) : null;
+  const heroLogo = e.leagueLogo || (leagueId ? `/league-logo/${leagueId}` : '');
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
-    <section class="match-hero">
-      <div class="match-comp">${e.leagueLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(e.leagueLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
+    <section class="match-hero${heroLogo ? ' has-bg' : ''}">
+      ${heroLogo ? `<img class="match-hero-bg" src="${esc(heroLogo)}" alt="" aria-hidden="true" decoding="async">` : ''}
+      <div class="match-comp">${heroLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(heroLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
         <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(tname(e, 'home'))}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
