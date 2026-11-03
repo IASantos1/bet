@@ -1,5 +1,5 @@
-// The football mini-pitch in 3D: the Bet62 stadium (a render, seen from the open near side so the
-// whole pitch and the four corner flags are in view), with the ball the live tracker moves: it glides between fixes (in the air for long balls and shots) with a
+// The football mini-pitch in 3D: the Bet62 stadium (a render, seen from the front as on TV), with
+// the ball the live tracker moves: it glides between fixes (in the air for long balls and shots) with a
 // white→red trail, and the attacking side's zone lights up to it, as the 2D arrow does.
 // Loaded only when a live football tracker is shown; draws only while something moves, and not at
 // all when the tab is hidden or the pitch is off screen. createPitch3D returns null when the device
@@ -16,13 +16,11 @@ const BR = 1.35;        // the ball, drawn bigger than life so it reads in a sma
 
 
 /**
- * The stadium is a picture: the Bet62 stadium render (public/img/trk-estadio62.jpg), drawn with the
- * same scene the banner's came from, framed so all four lines and the corner flags are in view. The
- * page shows it behind a see-through canvas where only the ball, its trail and the attacking zone
- * are drawn, with the render's own camera, so they sit on its grass.
+ * The stadium is a picture: the Bet62 stadium render (public/img/trk-estadio62.jpg, the banner's),
+ * seen from the front as on TV. The page shows it behind a see-through canvas where only the ball,
+ * its trail and the attacking zone are drawn, with the render's own camera, so they sit on its grass.
  */
-export const STADIUM_IMG = '/img/trk-estadio62.jpg';
-export const STADIUM_CAM = { fov: 46, aspect: 1550 / 1000, pos: [0, 50, 104], look: [0, 2, -11] };
+export const STADIUM_CAM = { fov: 52, aspect: 1600 / 1000, pos: [0, 26, 66], look: [0, 9, -18] };
 
 /**
  * Builds the 3D pitch in `host` (an element sized by the page). Returns
