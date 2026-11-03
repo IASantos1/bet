@@ -13,6 +13,7 @@ const { L, W } = PITCH;
 const HL = L / 2, HW = W / 2;
 const MOVE_MS = 900;    // a fix's glide (the 2D ball's transition)
 const TRAIL_MS = 1400;  // how long a trail stays after the ball arrives
+const CAM_FOV = 48;     // the TV camera's view (16:9), wide enough for the four lines and the corner flags
 const BR = 1.35;        // the ball, drawn bigger than life so it reads in a small box
 
 function seeded(seed) { let x = seed; return () => { x = (x * 1664525 + 1013904223) % 4294967296; return x / 4294967296; }; }
@@ -162,7 +163,7 @@ function buildStadium(scene, q, maxAniso = 4) {
     }
     for (let i = 0; i <= 4; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(1.2, ROOF_H, 1.2), roofMat); c.position.copy(at(front + depth, ROOF_H / 2, (i / 4 - 0.5) * len)); scene.add(c); }
   }
-  { const coneMat = new THREE.MeshBasicMaterial({ color: 0x9fbcff, transparent: true, opacity: 0.035, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  { const coneMat = new THREE.MeshBasicMaterial({ color: 0x9fbcff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const geo = new THREE.ConeGeometry(14 * ROOF_H / 38, ROOF_H * 44 / 38, 24, 1, true);
     for (let i = 0; i < 9; i++) { const c = new THREE.Mesh(geo, coneMat); c.position.set((i / 8 - 0.5) * 150, ROOF_H / 2, -(W / 2 + 2)); c.rotation.x = -0.45; scene.add(c); } }
 }
@@ -196,9 +197,10 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
   const scene = new THREE.Scene();
   buildStadium(scene, q, renderer.capabilities.getMaxAnisotropy());
   const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.5, 600);
-  // TV camera above the open side, steep enough that the pitch fills the box with the stands behind it.
-  camera.position.set(0, 64, HW + 72);
-  camera.lookAt(0, 3, -11);
+  // TV camera from the open side, at the banner render's angle (the far stand and its floodlights in
+  // front), high and far enough back that all four lines and the corner flags are in view.
+  camera.position.set(0, 40, HW + 62);
+  camera.lookAt(0, 2, -12);
 
   // the ball, its shadow, the trail and the attacking zone
   const ballTex = (() => {
@@ -305,7 +307,7 @@ export function createPitch3D(host, { quality = 'high', onFrame = () => {} } = {
     if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    camera.fov = fovFor(camera.aspect);
+    camera.fov = fovFor(camera.aspect, CAM_FOV);
     camera.updateProjectionMatrix();
     schedule();
   }
