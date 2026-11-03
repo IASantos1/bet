@@ -1970,7 +1970,7 @@ html.light .combo-legs li::after { background: #22b14c; }
 
 /* ---------- match banners (home): stadium photo, both shirts, time and the 1X2 ---------- */
 .mb-section .car-track { grid-auto-columns: minmax(320px, 600px); }
-.mb-banner { position: relative; overflow: hidden; border-radius: 22px; padding: 12px 14px 12px; color: #fff; background: #0b1530 url('/img/banner-stadium.jpg') center 30% / cover no-repeat;
+.mb-banner { position: relative; overflow: hidden; border-radius: 22px; padding: 12px 14px 12px; color: #fff; background: #0b1530 url('/img/banner-estadio62.jpg') center 35% / cover no-repeat;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35); isolation: isolate; }
 .mb-banner::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(8, 14, 40, .15) 0%, rgba(8, 14, 40, .35) 45%, rgba(10, 16, 36, .92) 78%); }
 .mb-banner a { color: inherit; text-decoration: none; }
