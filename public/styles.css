@@ -208,7 +208,7 @@ h1, h2, h3 { margin-top: 0; }
 .odd-btn.down { box-shadow: inset 0 -2px 0 var(--down); }
 .odd-btn.locked { color: var(--text-4); }
 .live-grid { grid-template-columns: repeat(2, 1fr); }
-.live-card { border-left: 3px solid var(--live); background: var(--dim); border-radius: var(--radius); padding: 14px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.live-card { border-left: 3px solid var(--live); background: var(--panel); border-radius: var(--radius); padding: 14px; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .live-teams { font-size: 12px; color: var(--text-2); margin-top: 9px; display: grid; gap: 4px; }
 .live-teams div { display: flex; justify-content: space-between; }
 .live-teams b { color: var(--strong); font-size: 18px; }
