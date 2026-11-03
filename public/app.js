@@ -316,18 +316,36 @@ function kitOf(name, kit) {
   if (a) return [a, b || (a.toLowerCase() === '#ffffff' ? '#111827' : '#ffffff')];
   return ['#9aa4b1', '#d7dce3'];
 }
-const SHIRT = 'M11.5 4 5 7l-3 7 4.2 2 2.3-3.2V28h15V12.8l2.3 3.2 4.2-2-3-7-6.5-3c-.9 1.8-2.6 2.9-4.5 2.9S12.4 5.8 11.5 4z';
+// The shirt as if worn (200×206): shoulders that slope, sleeves angled down with a cuff, a fuller chest
+// and a curved hem, lit like cloth over a body (light in the middle, shade at the sides and the hem,
+// the inside of the collar). The banner one adds the folds and the badge; the small ones keep it simple.
+const SHIRT_BODY = 'M70 15C57 19 42 23 31 30L7 76Q20 87 37 90L47 72C50 104 46 152 50 190Q100 203 150 190C154 152 150 104 153 72L163 90Q180 87 193 76L169 30C158 23 143 19 130 15C124 29 113 37 100 37S76 29 70 15Z';
+const SHIRT_SLEEVES = 'M31 30L7 76Q20 87 37 90L47 72C47 58 43 44 31 30ZM169 30L193 76Q180 87 163 90L153 72C153 58 157 44 169 30Z';
+const SHIRT_CUFFS = 'M7 76Q20 87 37 90L39 84Q22 81 10 70ZM193 76Q180 87 163 90L161 84Q178 81 190 70Z';
 let jerseyN = 0;
-function jerseySvg(name, kit) {
-  const [a, b] = kitOf(name, kit);
-  // A house kit (server/kits.js) may add stripes or sleeves of another colour: "stripes:#hex" / "sleeves:#hex".
+function wornShirt(cls, [a, b], kit, { big = false, badge = '' } = {}) {
   const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
-  const id = `kc${++jerseyN}`;
+  const id = `ks${++jerseyN}`;
   const pattern = !SAFE_HEX.test(extra || '') ? ''
-    : kind === 'stripes' ? `<clipPath id="${id}"><path d="${SHIRT}"/></clipPath><g clip-path="url(#${id})" fill="${extra}"><rect x="9.6" y="0" width="3.2" height="32"/><rect x="15.4" y="0" width="3.2" height="32"/><rect x="21.2" y="0" width="3.2" height="32"/></g>`
-      : kind === 'sleeves' ? `<path d="M5 7l-3 7 4.2 2 2.3-3.2V8.2zM27 7l3 7-4.2 2-2.3-3.2V8.2z" fill="${extra}"/>` : '';
-  return `<svg class="team-kit" viewBox="0 0 32 32" aria-hidden="true"><path d="${SHIRT}" fill="${a}"/>${pattern}<path d="${SHIRT}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width=".8" stroke-linejoin="round"/>`
-    + `<path d="M11.5 4c.9 1.8 2.6 2.9 4.5 2.9s3.6-1.1 4.5-2.9" fill="none" stroke="${b}" stroke-width="1.6"/><path d="M2.6 12.6l3.9 1.9M29.4 12.6l-3.9 1.9" stroke="${b}" stroke-width="1.6"/></svg>`;
+    : kind === 'stripes' ? `<g clip-path="url(#${id}c)" fill="${extra}">${[58, 84, 110, 136].map((x) => `<rect x="${x}" y="0" width="13" height="210"/>`).join('')}</g>`
+      : kind === 'sleeves' ? `<path d="${SHIRT_SLEEVES}" fill="${extra}"/>` : '';
+  const folds = big ? '<g fill="none" stroke-linecap="round"><g stroke="#000" stroke-opacity=".16" stroke-width="2.2"><path d="M56 96C66 108 70 124 68 140"/><path d="M146 100C136 114 134 128 136 146"/><path d="M80 168C92 174 108 174 122 168"/></g>'
+    + '<g stroke="#fff" stroke-opacity=".14" stroke-width="1.8"><path d="M60 92C70 104 74 120 72 136"/><path d="M84 172C96 177 108 177 118 173"/></g></g>' : '';
+  const trim = big ? 7 : 11;
+  return `<svg class="${cls}" viewBox="0 0 200 206" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${SHIRT_BODY}"/></clipPath>
+      <linearGradient id="${id}x" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".45"/><stop offset=".26" stop-color="#000" stop-opacity="0"/><stop offset=".46" stop-color="#fff" stop-opacity=".22"/><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".53"/></linearGradient>
+      <radialGradient id="${id}r" cx=".38" cy=".3" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <linearGradient id="${id}y" x1="0" x2="0" y1="0" y2="1"><stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".28"/></linearGradient></defs>
+    <path d="${SHIRT_BODY}" fill="${a}"/>${pattern}
+    <g clip-path="url(#${id}c)"><path d="${SHIRT_SLEEVES}" fill="#000" opacity=".12"/><path d="${SHIRT_CUFFS}" fill="${b}"/>
+      <rect width="200" height="210" fill="url(#${id}x)"/><rect width="200" height="210" fill="url(#${id}r)"/><rect width="200" height="210" fill="url(#${id}y)"/>
+      <path d="M47 72C50 104 46 152 50 190M153 72C150 104 154 152 150 190" stroke="#000" stroke-opacity=".22" stroke-width="3" fill="none"/></g>
+    ${folds}<path d="M76 16C82 26 90 30 100 30S118 26 124 16C118 22 110 25 100 25S82 22 76 16Z" fill="rgba(0,0,0,.5)"/>
+    <path d="M70 15C76 29 87 37 100 37S124 29 130 15" fill="none" stroke="${b}" stroke-width="${trim}" stroke-linecap="round"/>${badge}
+    <path d="${SHIRT_BODY}" fill="none" stroke="rgba(0,0,0,.4)" stroke-width="${big ? 2 : 5}" stroke-linejoin="round"/></svg>`;
+}
+function jerseySvg(name, kit) {
+  return wornShirt('team-kit', kitOf(name, kit), kit);
 }
 // Pictures that failed to load: the next refresh draws their replacement straight away (no blink).
 const BROKEN_IMG = new Set();
@@ -466,28 +484,14 @@ function teamAbbr(name) {
   const main = words.find((w) => !ABBR_SKIP.test(w) && /[a-z]/i.test(w)) || words[0] || '?';
   return main.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase();
 }
-let bigShirtN = 0;
-/** A big shirt for the banners: the team's kit colours (stripes / sleeves too) and its badge on the chest (its letters without one). */
 function bannerShirt(name, kit, side = 'away', logo = null) {
   // The badge where a shirt has it: the wearer's left chest (the right of the picture); the home shirt
   // lies over the away one so both stay in view.
   const bx = 128;
   const [a, b] = kitOf(name, kit);
-  const [kind, extra] = String((Array.isArray(kit) && kit[2]) || '').split(':');
-  const id = `bs${++bigShirtN}`;
-  const body = 'M62 18 30 31 6 82l31 15 13-25v124h100V72l13 25 31-15-24-51-32-13c-6 16-21 25-38 25S68 34 62 18z';
-  const pattern = !SAFE_HEX.test(extra || '') ? ''
-    : kind === 'stripes' ? `<g clip-path="url(#${id}c)" fill="${extra}">${[62, 86, 110, 134].map((x) => `<rect x="${x}" y="0" width="12" height="210"/>`).join('')}</g>`
-      : kind === 'sleeves' ? `<g clip-path="url(#${id}c)" fill="${extra}"><path d="M0 0h50v210H0zM150 0h50v210h-50z"/></g>` : '';
-  const letters = teamAbbr(name);
-  return `<svg class="mb-shirt" viewBox="0 0 200 206" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${body}"/></clipPath>
-      <linearGradient id="${id}g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".38"/></linearGradient></defs>
-    <path d="${body}" fill="${a}"/>${pattern}<path d="${body}" fill="url(#${id}g)"/>
-    <path d="M62 18c6 16 21 25 38 25s32-9 38-25" fill="none" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
-    <path d="M8 78l28 13M192 78l-28 13" stroke="${b}" stroke-width="7" stroke-linecap="round"/>
-    ${logo ? `<image href="${esc(logo)}" x="${bx - 20}" y="60" width="40" height="40" preserveAspectRatio="xMidYMid meet"/>`
-      : `<circle cx="${bx}" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="${bx}" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(letters)}</text>`}
-    <path d="${body}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  const badge = logo ? `<image href="${esc(logo)}" x="${bx - 20}" y="58" width="40" height="40" preserveAspectRatio="xMidYMid meet"/>`
+    : `<circle cx="${bx}" cy="78" r="15" fill="${b}" stroke="${a}" stroke-width="2.5"/><text x="${bx}" y="81.5" text-anchor="middle" font-size="10" font-weight="800" fill="${a}" font-family="system-ui,sans-serif">${esc(teamAbbr(name))}</text>`;
+  return wornShirt('mb-shirt', [a, b], kit, { big: true, badge });
 }
 /** The competition's country, for its flag on the banner: "England. Premier League" → England, else the sidebar tree's. */
 function compCountry(e) {
