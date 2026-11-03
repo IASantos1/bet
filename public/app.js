@@ -3357,7 +3357,7 @@ async function checkWins() {
   } catch { /* the next poll tries again */ } finally { winsBusy = false; }
 }
 
-// Web Push (server/push.js): asked once after signing in, again 30 days after a "not now".
+// Web Push (server/push.js): asked after signing in (pushCheck), again 30 days after a "not now".
 const PUSH_ASKED = 'bet62_push_asked';
 let pushChecked = false;
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -3381,30 +3381,67 @@ async function pushSubscribe() {
   await api('/api/me/push', { method: 'POST', body: { subscription: sub.toJSON() } });
   return true;
 }
-async function pushCheck() {
-  if (pushChecked || !state.user || !pushSupported()) return;
-  pushChecked = true;
-  if (!(await pushKey())) return;
-  if (Notification.permission === 'granted') { pushSubscribe().catch(() => {}); return; }
-  if (Notification.permission !== 'default') return;
-  let asked = 0;
-  try { asked = Number(localStorage.getItem(PUSH_ASKED) || 0); } catch { /* ignore */ }
-  if (Date.now() - asked < 30 * 86_400_000) return;
+// Every signed-in player, old accounts included, is asked here (6 s after the page opens) until they
+// answer; a "not now" waits 30 days:
+// - notifications not allowed yet: allow them, for won bets and (their own choice) promotions too;
+// - allowed already but promotions off: whether to get the promotions on the phone as well;
+// - iPhone in Safari, where push needs the app on the home screen: how to install it.
+const PUSH_PROMO_ASKED = 'bet62_push_promo_asked';
+const PUSH_ASK_AGAIN_MS = 30 * 86_400_000;
+const askedRecently = (k) => { try { return Date.now() - Number(localStorage.getItem(k) || 0) < PUSH_ASK_AGAIN_MS; } catch { return false; } };
+const markAsked = (k) => { try { localStorage.setItem(k, String(Date.now())); } catch { /* ignore */ } };
+const iosNotInstalled = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !(matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
+function pushModal(html) {
   setTimeout(() => {
+    // Something else on screen: asked on a later visit (or the next sign-in check).
     if (!state.user || !$('#modalBackdrop').classList.contains('hidden') || $('.win-fx') || playingCasino()) { pushChecked = false; return; }
-    openModal('Avisos da Bet62', `<div class="promo-ask"><div class="promo-ask-icon" aria-hidden="true">🔔</div>
-      <p><b>Saiba logo quando a sua aposta ganhar.</b></p>
-      <p class="muted">Avisamos no telemóvel quando um bilhete é ganho, mesmo com a app fechada. Pode desligar quando quiser.</p>
-      <div class="promo-ask-acts"><button class="primary-btn" data-action="push-yes">Ativar avisos</button><button class="outline-btn" data-action="push-no">Agora não</button></div></div>`);
+    openModal('Avisos da Bet62', `<div class="promo-ask"><div class="promo-ask-icon" aria-hidden="true">🔔</div>${html}</div>`);
   }, 6000);
 }
-async function pushYes() {
-  try { localStorage.setItem(PUSH_ASKED, String(Date.now())); } catch { /* ignore */ }
+async function pushCheck() {
+  const u = state.user;
+  if (pushChecked || !u || u.role !== 'user') return;
+  if (u.excludedUntil && new Date(u.excludedUntil) > new Date()) return;
+  pushChecked = true;
+  if (!pushSupported()) {
+    if (iosNotInstalled() && window.bet62InstallGuide && !askedRecently(PUSH_ASKED)) {
+      pushModal(`<p><b>Receba os avisos e as promoções no iPhone.</b></p>
+        <p class="muted">No iPhone, os avisos só chegam com a Bet62 no ecrã principal: no Safari, toque em Partilhar → Adicionar ao ecrã principal e abra a app pelo ícone.</p>
+        <div class="promo-ask-acts"><button class="primary-btn" data-action="push-install">Como instalar</button><button class="outline-btn" data-action="push-no">Agora não</button></div>`);
+    }
+    return;
+  }
+  if (!(await pushKey())) return;
+  if (Notification.permission === 'granted') {
+    pushSubscribe().catch(() => {});
+    if (!u.prefs?.notifyPushPromos && !askedRecently(PUSH_PROMO_ASKED)) {
+      pushModal(`<p><b>Quer receber também as promoções no telemóvel?</b></p>
+        <p class="muted">FreeBets, Free Spins, bónus e odds aumentadas, só entre as 09:00 e as 21:00. Pode desligar quando quiser em Perfil → Notificações.</p>
+        <div class="promo-ask-acts"><button class="primary-btn" data-action="push-promos-yes">Sim, quero receber</button><button class="outline-btn" data-action="push-promos-no">Agora não</button></div>`);
+    }
+    return;
+  }
+  if (Notification.permission !== 'default' || askedRecently(PUSH_ASKED)) return;
+  pushModal(`<p><b>Saiba logo quando a sua aposta ganhar.</b></p>
+    <p class="muted">Avisamos no telemóvel quando um bilhete é ganho, mesmo com a app fechada, e, se quiser, quando houver promoções. Pode desligar quando quiser.</p>
+    <div class="promo-ask-acts"><button class="primary-btn" data-action="push-yes" data-promos="1">Ativar avisos e promoções</button><button class="outline-btn" data-action="push-yes">Só as apostas</button><button class="outline-btn" data-action="push-no">Agora não</button></div>`);
+}
+async function pushPromos(on) {
+  markAsked(PUSH_PROMO_ASKED);
+  try {
+    const { user } = await api('/api/me', { method: 'PATCH', body: { prefs: on ? { notifyPush: true, notifyPushPromos: true } : { notifyPushPromos: false } } });
+    state.user = user;
+    if (currentRoute().sub === 'notificacoes') render({ keepScroll: true });
+  } catch { /* asked again on a later visit */ }
+}
+async function pushYes(promos = false) {
+  markAsked(PUSH_ASKED);
   closeModal();
   try {
     if ((await Notification.requestPermission()) !== 'granted') { toast('Avisos desligados', 'Pode ativá-los nas definições do navegador.', 'error'); return; }
     await pushSubscribe();
-    toast('Avisos ativados', 'Vai saber logo quando a sua aposta ganhar.');
+    if (promos) await pushPromos(true);
+    toast('Avisos ativados', promos ? 'Vai saber logo quando a sua aposta ganhar e quando houver promoções.' : 'Vai saber logo quando a sua aposta ganhar.');
     if (currentRoute().sub === 'notificacoes') render({ keepScroll: true });
   } catch (err) { toast('Erro', err.message || 'Não foi possível ativar os avisos.', 'error'); }
 }
@@ -3782,9 +3819,12 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
-  else if (action === 'push-yes') pushYes();
+  else if (action === 'push-yes') pushYes(actionEl.dataset.promos === '1');
   else if (action === 'install-guide') window.bet62InstallGuide?.();
-  else if (action === 'push-no') { try { localStorage.setItem(PUSH_ASKED, String(Date.now())); } catch { /* ignore */ } closeModal(); }
+  else if (action === 'push-install') { markAsked(PUSH_ASKED); closeModal(); window.bet62InstallGuide?.(); }
+  else if (action === 'push-no') { markAsked(PUSH_ASKED); closeModal(); }
+  else if (action === 'push-promos-yes') { closeModal(); pushPromos(true).then(() => toast('Obrigado!', 'Vai receber as promoções no telemóvel.')); }
+  else if (action === 'push-promos-no') { closeModal(); pushPromos(false); }
   else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
   else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
   else if (action === 'cg-fav') {

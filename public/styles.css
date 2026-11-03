@@ -1575,6 +1575,7 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 .promo-ask p { margin: 0 0 10px; line-height: 1.5; }
 .promo-ask-acts { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
 .promo-ask-acts button { flex: 1; min-width: 140px; }
+.promo-ask-acts .primary-btn:first-child:nth-last-child(3) { flex-basis: 100%; }
 .promo-ask-acts .primary-btn { background: var(--register); border-color: var(--register); }
 
 /* Home: casino games as round icons at the top (scrolls sideways) */
