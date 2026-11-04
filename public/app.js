@@ -2396,6 +2396,16 @@ function supportView() {
 const walletEl = (sel) => $(`#modal ${sel}`) || $(sel);
 
 const DEPOSIT_PRESETS = [10, 20, 50, 100, 200];
+// The deposit methods' logos; which ones are offered comes from the server (config.payMethods):
+// MB WAY and Multibanco, then card, Apple Pay and Google Pay (Revolut) when it is set.
+const PAY_LOGO = {
+  mbway: { name: 'MB WAY', src: 'https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/mbway_Logo.svg' },
+  multibanco: { name: 'Multibanco', src: 'https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/multibanco_Logo.svg' },
+  cartao: { name: 'Cartão Visa / Mastercard', src: 'https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/cartao_credito_Logo.svg' },
+  applepay: { name: 'Apple Pay', src: '/img/pay/apple-pay.svg' },
+  googlepay: { name: 'Google Pay', src: '/img/pay/google-pay.svg' },
+};
+const payMethods = () => ((state.config || {}).payMethods || ['mbway', 'multibanco', 'cartao']).filter((m) => PAY_LOGO[m]);
 function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
@@ -2404,11 +2414,7 @@ function depositFormHtml() {
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
     ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha um método de pagamento.</div><br>' : ''}
     <form data-form="deposit" class="deposit-form">
-      <div class="methods payment-methods">
-        <label class="method payment-method-logo"><input type="radio" name="method" value="mbway" checked><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/mbway_Logo.svg" alt="MB WAY" title="MB WAY"></label>
-        <label class="method payment-method-logo"><input type="radio" name="method" value="multibanco"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/multibanco_Logo.svg" alt="Multibanco" title="Multibanco"></label>
-        <label class="method payment-method-logo"><input type="radio" name="method" value="cartao"><img src="https://sandbox.eupago.pt/backoffice/files/assets/images/servicos/cartao_credito_Logo.svg" alt="Cartão de Crédito" title="Cartão de Crédito"></label>
-      </div>
+      <div class="methods payment-methods" role="radiogroup" aria-label="Método de pagamento">${payMethods().map((m, i) => `<label class="method payment-method-logo"><input type="radio" name="method" value="${m}"${i ? '' : ' checked'}><img src="${PAY_LOGO[m].src}" alt="${PAY_LOGO[m].name}" title="${PAY_LOGO[m].name}"></label>`).join('')}</div>
       <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
@@ -2463,7 +2469,7 @@ function openWalletModal(tab = 'deposit') {
   const dep = tab === 'deposit';
   modal.innerHTML = `<div class="wm-head">
       <span class="wm-icon ${dep ? 'dep' : 'wd'}">${dep ? '+' : '↑'}</span>
-      <div><strong>${dep ? 'Depósito' : 'Levantamento'}</strong><small>${dep ? 'MB WAY · Multibanco · Cartão' : 'Transferência bancária · IBAN'}</small></div>
+      <div><strong>${dep ? 'Depósito' : 'Levantamento'}</strong><small>${dep ? payMethods().map((m) => ({ cartao: 'Cartão' })[m] || PAY_LOGO[m].name).join(' · ') : 'Transferência bancária · IBAN'}</small></div>
       <div class="wm-bal"><small>Saldo atual</small><b>${money(state.user.balance)}</b></div>
       <button class="modal-close" data-action="close-modal" aria-label="Fechar">×</button></div>
     <div class="wm-tabs"><button class="${dep ? 'active dep' : ''}" data-wallet-tab="deposit">+ DEPOSITAR</button><button class="${dep ? '' : 'active wd'}" data-wallet-tab="withdraw">↑ LEVANTAR</button></div>
@@ -3572,9 +3578,14 @@ const formHandlers = {
       const p = res.payment;
       state.depositWatch = null;
       if (p.status === 'paid') return depositDone({ ...p, balance: res.balance });
-      if (p.method === 'cartao') {
+      if (['cartao', 'applepay', 'googlepay'].includes(p.method)) {
         if (p.redirectUrl && /^https:\/\//i.test(p.redirectUrl)) {
           const providerUrl = new URL(p.redirectUrl);
+          // Revolut's checkout page (card, Apple Pay, Google Pay): back to the wallet when paid.
+          if (providerUrl.hostname === 'revolut.com' || providerUrl.hostname.endsWith('.revolut.com')) {
+            location.assign(providerUrl.href);
+            return;
+          }
           if (providerUrl.hostname === 'eupago.pt' || providerUrl.hostname.endsWith('.eupago.pt')) {
             location.assign(providerUrl.href);
             return;

@@ -42,6 +42,7 @@ import { createAssets } from './assets.js';
 import { importNovo, connectNovo } from './importnovo.js';
 import { withdrawEligibility, instantWithdrawal } from './withdrawrules.js';
 import { payoutState } from './revolut.js';
+import { REVOLUT_METHODS, isRevolutDeposit } from './revolutpay.js';
 import { MARKETS, MARKET_ORDER, selectionLabel, codeRank, PERIOD_MARKETS, splitPeriod, splitSpecial, TENNIS_AUTO } from './markets.js';
 import { createSettlementEngine } from './settlement.js';
 import { createCampaigns, unsubscribe, SEGMENTS } from './campaigns.js';
@@ -164,7 +165,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -228,6 +229,21 @@ export function createApp(db, {
   };
   app.get('/api/eupago/webhook', eupagoWebhook);
   app.post('/api/eupago/webhook', express.json({ limit: '32kb' }), eupagoWebhook);
+
+  // Revolut Merchant: a card / Apple Pay / Google Pay deposit changed (signed, raw body). The order
+  // is read again from Revolut before anything is credited.
+  app.post('/api/revolut/merchant/webhook', express.raw({ type: '*/*', limit: '256kb' }), async (req, res) => {
+    if (!revolutPay) return res.status(404).json({ error: 'Revolut Merchant não configurada.' });
+    try {
+      const r = await revolutPay.handleWebhook(req.body, req.get('revolut-signature'), req.get('revolut-request-timestamp'));
+      if (!r.accepted) return res.status(401).json({ error: 'Assinatura inválida.' });
+      res.json({ received: true });
+    } catch (err) {
+      // 500 → Revolut retries later.
+      console.warn(`revolut merchant webhook: ${err.message}`);
+      res.status(500).json({ error: 'Erro ao processar.' });
+    }
+  });
 
   // Revolut: how each withdrawal payout ended (signed, raw body). Also at Bet62Novo's path, so the
   // webhook configured there works here as it is.
@@ -721,6 +737,9 @@ export function createApp(db, {
     const m = maintenance();
     res.json({
       paymentsMode: config.paymentsMode,
+      // The deposit methods offered, in order: MB WAY and Multibanco (Stripe / Eupago / demo), then
+      // card, Apple Pay and Google Pay (Revolut's checkout page when it is set, else the card as before).
+      payMethods: [...(config.paymentsMode === 'disabled' ? [] : ['mbway', 'multibanco']), ...(revolutPay ? ['cartao', 'applepay', 'googlepay'] : config.paymentsMode === 'disabled' ? [] : ['cartao'])],
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents), instantWithdraw: cents(limits.instantWithdrawCents),
@@ -1282,7 +1301,10 @@ export function createApp(db, {
       const stripeMode = config.paymentsMode === 'stripe';
       const eupagoMode = config.paymentsMode === 'eupago';
       const method = String(req.body.method || '');
-      if (config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
+      // Card, Apple Pay and Google Pay: Revolut's checkout page, whatever provider MB WAY / Multibanco use.
+      const viaRevolut = !!revolutPay && !!REVOLUT_METHODS[method];
+      if (!viaRevolut && ['applepay', 'googlepay'].includes(method)) throw new HttpError(503, 'Apple Pay e Google Pay ainda não estão disponíveis.');
+      if (!viaRevolut && config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
       if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
@@ -1299,6 +1321,15 @@ export function createApp(db, {
       // whether it is given, and how much, is decided here.
       const promo = ['sport', 'casino', 'freebet', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
 
+      if (viaRevolut) {
+        let r;
+        try {
+          r = await revolutPay.createDeposit(req.user, amount, { method, promo, returnBase: config.publicUrl || `${req.protocol}://${req.get('host')}` });
+        } catch (err) {
+          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
+        }
+        return res.status(201).json({ payment: depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
+      }
       // Stripe is used only when explicitly selected. In Eupago mode, card, MB WAY and
       // Multibanco all go through Eupago; its credit-card API returns Eupago's own secure form URL.
       if (stripeMode) {
@@ -1331,7 +1362,9 @@ export function createApp(db, {
       // Stripe PaymentIntent IDs begin with pi_; Eupago's internal identifiers begin with B62-.
       // The provider is chosen per transaction so inline card payments remain refreshable in hybrid mode.
       const sessionId = String(req.params.sessionId || '');
-      const r = sessionId.startsWith('pi_')
+      const r = isRevolutDeposit(sessionId)
+        ? revolutPay?.refresh(sessionId, req.user.id)
+        : sessionId.startsWith('pi_')
         ? stripe?.refresh(sessionId, req.user.id)
         : config.paymentsMode === 'eupago'
           ? eupago?.refresh(sessionId, req.user.id)
