@@ -10,6 +10,7 @@
 
 import { EventEmitter } from 'node:events';
 import { getSetting, setSetting, nowIso } from './db.js';
+import { cappedClock } from './winhouse.js';
 
 const first = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
 const num = (v) => { const n = Number(String(v ?? '').replace('%', '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
@@ -449,10 +450,10 @@ export function createWinHouseTracker(db, {
     const s = normalizeWidgetData(w.raw);
     w.last = s;
     w.lastStateAt = Date.now();
-    const row = db.prepare('SELECT home_score, away_score, clock, status FROM events WHERE id = ?').get(eventId);
+    const row = db.prepare('SELECT home_score, away_score, clock, status, sport, start_time FROM events WHERE id = ?').get(eventId);
     if (s.tennis) { processTennis(eventId, w, s, row); return; }
     const live = Object.fromEntries(['home', 'away'].map((side) => [side, Object.fromEntries(s.stats.map((x) => [x.key === 'ball_possession' ? 'possession' : x.key, x[side]]))]));
-    const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: s.clock || row?.clock || null, stats: live };
+    const ev = { homeScore: row?.home_score ?? s.homeScore, awayScore: row?.away_score ?? s.awayScore, clock: cappedClock(row?.sport, s.clock || row?.clock || null, row?.start_time) || null, stats: live };
     const evKey = JSON.stringify(ev);
     if (evKey !== w.lastEvent) { w.lastEvent = evKey; publish(eventId, 'event', ev); }
     // A watched match keeps its red cards on the event at once (the lists show them).

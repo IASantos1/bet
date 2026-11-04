@@ -89,7 +89,7 @@ test('the tracker WebSocket moves the ball every frame; widget-data keeps the re
   const db = openDb(':memory:');
   const ts = nowIso();
   const { lastInsertRowid } = db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
-    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 0, 0, '10''', 'winhouse', '901', ?, ?)`).run(ts, ts, ts);
+    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 0, 0, '10''', 'winhouse', '901', ?, ?)`).run(new Date(Date.now() - 70 * 60_000).toISOString(), ts, ts); // kicked off 70 min ago
   const id = Number(lastInsertRowid);
   const sockets = [];
   class FakeWS {

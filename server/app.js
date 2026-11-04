@@ -9,7 +9,7 @@ import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
 import { COUNTRY_SPORTS, leagueCountry } from './countryleagues.js';
 import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
-import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank, cappedClock } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
@@ -648,7 +648,8 @@ export function createApp(db, {
         homeShort: shortTeam(e.home, e.sport), awayShort: shortTeam(e.away, e.sport),
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         // A watched WinHouse match: the tracker knows the period ("Intervalo", "45+2'"), the live list does not.
-        clock: (e.status === 'live' && e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, result: e.result, featured: !!e.featured, source: e.source,
+        // Never ahead of the time since the kick-off shown (WinHouse can start counting early).
+        clock: e.status === 'live' ? cappedClock(e.sport, (e.source === 'winhouse' && winhouseTracker?.clockOf?.(e.id)) || e.clock, e.start_time) : e.clock, result: e.result, featured: !!e.featured, source: e.source,
         selections: rows.some((s) => s.market === main)
           ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
           : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
@@ -1597,7 +1598,7 @@ export function createApp(db, {
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
         eventId: l.event_id, sport: l.sport, startTime: l.start_time,
         // In play: the clock as the match pages show it (the WinHouse tracker knows "Intervalo", "45+2'").
-        clock: l.event_status === 'live' ? (l.source === 'winhouse' && winhouseTracker?.clockOf?.(l.event_id)) || l.clock || null : null,
+        clock: l.event_status === 'live' ? cappedClock(l.sport, (l.source === 'winhouse' && winhouseTracker?.clockOf?.(l.event_id)) || l.clock || null, l.start_time) : null,
       })),
     }));
   }
