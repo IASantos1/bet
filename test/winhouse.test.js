@@ -1278,3 +1278,22 @@ test('clubs called "Juniors" or "Academia" are not youth teams; youth competitio
   assert.equal(why('Argentina. Primera Division', 'Boca Juniors U20', 'River Plate U20'), 'formação');
   assert.equal(blockReason({ sport_id: 1, league: 'Argentina. Juniors League', name: 'A - B', home_team: 'A', away_team: 'B' }), 'formação');
 });
+
+test('the live clock is never ahead of the time since the kick-off shown', async () => {
+  const { cappedMinutes, cappedClock, minutesSince } = await import('../server/winhouse.js');
+  const start = '2026-11-04T17:45:00.000Z', at = Date.parse('2026-11-04T17:49:30.000Z');
+  assert.equal(Math.round(minutesSince(start, at) * 10) / 10, 4.5);
+  // WinHouse counted from 17:33: 16' at 17:49 → 4' (the game started at 17:45)
+  assert.equal(Math.floor(cappedMinutes('futebol', 16.2, start, at)), 4);
+  assert.equal(cappedClock('futebol', "16'", start, at), "4'");
+  // a clock behind the time since kick-off (half time, a late kick-off) stays
+  assert.equal(cappedMinutes('futebol', 3, start, at), 3);
+  assert.equal(cappedClock('futebol', "3'", start, at), "3'");
+  assert.equal(cappedClock('futebol', "45+2'", start, Date.parse('2026-11-04T18:35:00Z')), "45+2'");
+  assert.equal(cappedClock('futebol', 'Intervalo', start, at), 'Intervalo');
+  // not before kick-off (a listed time that slipped), sports without a running clock, no kick-off
+  assert.equal(cappedMinutes('futebol', 16, start, Date.parse('2026-11-04T17:40:00Z')), 16);
+  assert.equal(cappedClock('tenis', '1.º set', start, at), '1.º set');
+  assert.equal(cappedMinutes('basquetebol', 16, start, at), 16);
+  assert.equal(cappedClock('futebol', "16'", null, at), "16'");
+});

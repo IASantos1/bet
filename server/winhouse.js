@@ -913,6 +913,27 @@ const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
 const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
 /** A clock this far on (or a goal) means the game is under way, whatever kick-off the live list gives. */
 const LIVE_STARTED_MIN = 20;
+/** Minutes since the kick-off shown on the site (null without one). */
+export const minutesSince = (startIso, now = Date.now()) => { const t = Date.parse(startIso || ''); return Number.isFinite(t) ? (now - t) / 60_000 : null; };
+/**
+ * The minutes played, never ahead of the time since the kick-off the site shows: WinHouse (and its
+ * tracker) can start counting before the real kick-off (a 17:45 game read 16' at 17:49), so a game
+ * at 17:45 shows at most 4' at 17:49. Sports with a running clock only; a kick-off still ahead
+ * (a listed time that slipped) leaves the clock as it is.
+ */
+export function cappedMinutes(sport, minutes, startIso, now = Date.now()) {
+  if (minutes === null || minutes === undefined || !CLOCK_SPORTS.has(sport)) return minutes;
+  const since = minutesSince(startIso, now);
+  return since === null || since < 0 ? minutes : Math.min(minutes, since);
+}
+/** The same for a clock as shown ("16'", "45+2'"; football, futsal, handball): ahead of the time since kick-off → that minute. */
+export function cappedClock(sport, clock, startIso, now = Date.now()) {
+  if (!['futebol', 'futsal', 'andebol'].includes(sport)) return clock;
+  const m = /^(\d+)(?:\+(\d+))?'$/.exec(String(clock || '').trim());
+  const since = minutesSince(startIso, now);
+  if (!m || since === null || since < 0) return clock;
+  return Number(m[1]) + Number(m[2] || 0) > since + 1 ? `${Math.floor(since)}'` : clock;
+}
 // Games WinHouse still lists after they ended: a clock stopped past full time (a stopped-clock sport
 // only when it stays stopped longer than its breaks), a clock past what a game can last, or live for
 // longer than a game lasts (counted from when we first saw it live: the listed kick-off can be wrong).
@@ -1427,7 +1448,7 @@ export function createWinHouseFeed(db, {
           db.prepare(`UPDATE events SET status = 'live', home_score = ?, away_score = ?, clock = ?, wh_minute = COALESCE(?, wh_minute),
               wh_seen_at = ?, wh_missing_since = NULL, review_reason = NULL, postponed_at = NULL, updated_at = ? WHERE id = ?`)
             // Tennis has no clock: the sets the tracker wrote (when someone watches the match) stay.
-            .run(home, away, row.sport === 'tenis' ? row.clock : clockText(row.sport, minutes, ev.clockRaw, row.competition), minutes, nowIso(), nowIso(), row.id);
+            .run(home, away, row.sport === 'tenis' ? row.clock : clockText(row.sport, cappedMinutes(row.sport, minutes, row.start_time), ev.clockRaw, row.competition), minutes, nowIso(), nowIso(), row.id);
           if (overtime) {
             const tie = Math.min(home, away);
             db.prepare('UPDATE events SET wh_overtime = 1, reg_home_score = ?, reg_away_score = ? WHERE id = ?').run(tie, tie, row.id);
