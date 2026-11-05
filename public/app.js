@@ -2495,9 +2495,19 @@ function openWalletModal(tab = 'deposit') {
 
 // ---------- deposits through Stripe, inside the page ----------
 
+/**
+ * The payment step, in place of the form: once the player has chosen the method, the amount and the
+ * promotion and tapped Depositar, only the payment shows (one pay button), with a way back.
+ */
 function depositPanel(html) {
   const box = walletEl('#depositPanel');
-  if (box) box.innerHTML = html;
+  if (!box) return box;
+  const form = box.parentElement?.querySelector('form.deposit-form');
+  form?.classList.toggle('hidden', !!html);
+  const back = /pay-box ok/.test(html) ? 'Fazer outro depósito' : /pay-box error/.test(html) ? 'Tentar de novo' : 'Alterar valor ou método';
+  box.innerHTML = html ? `<button type="button" class="link-btn dp-back">← ${back}</button>${html}` : '';
+  box.querySelector('.dp-back')?.addEventListener('click', () => { state.depositWatch = null; depositPanel(''); });
+  if (html) (box.closest('.modal-body') || box).scrollTop = 0;
   return box;
 }
 
@@ -3791,6 +3801,8 @@ document.addEventListener('submit', async (e) => {
   try {
     await handler(form, e.submitter);
   } catch (err) {
+    // A payment that could not start: back to the form, with the reason.
+    if (form.dataset.form === 'deposit' && form.classList.contains('hidden')) depositPanel('');
     showFormError(form, err.message);
   } finally {
     buttons.forEach((b) => { b.disabled = false; });

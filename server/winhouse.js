@@ -902,6 +902,18 @@ export function estimateOffset(items, now = Date.now()) {
 /** Team names compared loosely: case, accents, punctuation and spacing aside. */
 export const teamKey = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 export const sameTeam = (a, b) => !!teamKey(a) && teamKey(a) === teamKey(b);
+/**
+ * Two listings of one game: both teams the same, or one the same and the other written longer in one
+ * of them ("Zalgiris" / "Zalgiris Kaunas", "CSKA Sofia" / "CSKA 1948 Sofia"). Callers still require a
+ * single such game around the same kick-off.
+ */
+const bareKey = (name) => teamKey(name).replace(/[0-9]+/g, '');
+const closeTeam = (a, b) => {
+  if (sameTeam(a, b)) return true;
+  const [x, y] = [bareKey(a), bareKey(b)].sort((m, n) => m.length - n.length);
+  return x.length >= 4 && (x === y || y.startsWith(x) || y.endsWith(x));
+};
+export const sameGame = (a, b) => (sameTeam(a.home, b.home) && closeTeam(a.away, b.away)) || (closeTeam(a.home, b.home) && sameTeam(a.away, b.away));
 /** How far apart the live and pre-match kick-off of one game may be. */
 const TWIN_WINDOW_MS = 3 * 60 * 60_000;
 /** How long a match in review with no bets waits, gone from the live list, before it is closed. */
@@ -1310,7 +1322,7 @@ export function createWinHouseFeed(db, {
   function adoptTwin(ev) {
     const at = new Date(ev.startTime).getTime();
     const near = twinOf.all(SOURCE, ev.sport, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
-      .filter((r) => sameTeam(r.home, ev.home) && sameTeam(r.away, ev.away));
+      .filter((r) => sameGame(r, ev));
     if (near.length !== 1) return null;
     db.prepare('UPDATE events SET external_id = ?, updated_at = ? WHERE id = ?').run(ev.externalId, nowIso(), near[0].id);
     log(`WinHouse: ${ev.home} - ${ev.away} ao vivo com outro id (${near[0].external_id} → ${ev.externalId})`);
@@ -1331,7 +1343,7 @@ export function createWinHouseFeed(db, {
     for (const row of overdueWithBets.all(SOURCE, new Date(now - 72 * 3_600_000).toISOString(), new Date(now - 10 * 60_000).toISOString())) {
       const at = new Date(row.start_time).getTime();
       const twins = copiesOf.all(SOURCE, row.sport, row.id, new Date(at - TWIN_WINDOW_MS).toISOString(), new Date(at + TWIN_WINDOW_MS).toISOString())
-        .filter((t) => sameTeam(t.home, row.home) && sameTeam(t.away, row.away));
+        .filter((t) => sameGame(t, row));
       if (twins.length !== 1) continue;
       const t = twins[0];
       try {

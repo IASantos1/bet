@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOdd, parseOdds, marketKey, parseLiveEvent, createWinHouseClient, bestLiveGame } from '../server/winhouse.js';
+import { parseOdd, parseOdds, marketKey, parseLiveEvent, createWinHouseClient, bestLiveGame, sameGame } from '../server/winhouse.js';
 
 test('odds strings parse into id, price, selection and market; known markets map to ours', () => {
   assert.deepEqual(parseOdd('1223894688|1.28|1|1001|1x2 [1x2]'), { oddId: 1223894688, price: 1.28, selection: '1', marketId: 1001, marketName: '1x2', marketCode: '1x2' });
@@ -1296,4 +1296,13 @@ test('the live clock is never ahead of the time since the kick-off shown', async
   assert.equal(cappedClock('tenis', '1.º set', start, at), '1.º set');
   assert.equal(cappedMinutes('basquetebol', 16, start, at), 16);
   assert.equal(cappedClock('futebol', "16'", null, at), "16'");
+});
+
+test('one game listed twice: a team name written longer in one listing still matches', () => {
+  assert.ok(sameGame({ home: 'Lugano', away: 'Zalgiris' }, { home: 'Lugano', away: 'Zalgiris Kaunas' }));
+  assert.ok(sameGame({ home: 'Panathinaikos', away: 'CSKA Sofia' }, { home: 'Panathinaikós', away: 'CSKA 1948 Sofia' }));
+  assert.ok(sameGame({ home: 'Riga', away: 'Jablonec' }, { home: 'Riga FC', away: 'Jablonec' }));
+  assert.ok(!sameGame({ home: 'Riga FC', away: 'Jablonec' }, { home: 'Riga FC', away: 'Pafos' }));
+  assert.ok(!sameGame({ home: 'Lugano', away: 'Zalgiris' }, { home: 'Lugano B', away: 'Zalgiris Kaunas' })); // one team must be the same
+  assert.ok(!sameGame({ home: 'Twente', away: 'FC' }, { home: 'Twente', away: 'FC Pafos' })); // too short to say
 });
