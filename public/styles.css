@@ -857,6 +857,8 @@ body.no-scroll { overflow: hidden; }
 .deposit-form .mbway-only { display: none; }
 .deposit-form:has(input[value="mbway"]:checked) .mbway-only { display: block; }
 .pay-box { display: grid; gap: 8px; margin: 12px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+.dp-back { font-size: 13px; }
+#depositPanel > .pay-box:first-of-type { margin-top: 6px; }
 .pay-box > span { color: var(--text-2); font-size: 13px; }
 .pay-box.ok { border-color: var(--green); }
 .pay-box.error { border-color: var(--suspended, #c0392b); }
