@@ -182,8 +182,8 @@ export function createApp(db, {
         // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
         // Revolut's card form, Apple Pay and Google Pay (inside our page) load from merchant.revolut.com
         // (Google Pay from pay.google.com) and put their bank check (3-D Secure) over the page.
-        `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com' : ''}; `
-        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://pay.google.com https://google.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
+        `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com https://www.gstatic.com' : ''}; `
+        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://*.google.com https://google.com https://*.gstatic.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
         // Live video (HLS) plays from the stream's own host.
         "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.

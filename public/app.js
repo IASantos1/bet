@@ -2405,7 +2405,15 @@ const PAY_LOGO = {
   applepay: { name: 'Apple Pay', src: '/img/pay/apple-pay.svg' },
   googlepay: { name: 'Google Pay', src: '/img/pay/google-pay.svg' },
 };
-const payMethods = () => ((state.config || {}).payMethods || ['mbway', 'multibanco', 'cartao']).filter((m) => PAY_LOGO[m]);
+// Each device shows only the wallet it can use: Apple Pay where Safari has it (iPhone, iPad, Mac),
+// Google Pay everywhere else (Android, Chrome) — never Google Pay on an iPhone, where Google does not offer it.
+const isApple = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const walletOk = (m) => {
+  if (m === 'applepay') { try { return !!window.ApplePaySession?.canMakePayments?.(); } catch { return false; } }
+  if (m === 'googlepay') return !isApple() && !(window.ApplePaySession && /safari/i.test(navigator.userAgent) && !/chrome|crios|android/i.test(navigator.userAgent));
+  return true;
+};
+const payMethods = () => ((state.config || {}).payMethods || ['mbway', 'multibanco', 'cartao']).filter((m) => PAY_LOGO[m] && walletOk(m));
 function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
