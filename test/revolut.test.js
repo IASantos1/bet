@@ -123,3 +123,25 @@ test('revolut auth: issuer pasted as a URL still signs as the domain; a 401 says
     fetchImpl: async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ error: 'invalid_grant' }) }) });
   await assert.rejects(expired.checkAuth(), /REVOLUT_REFRESH_TOKEN/);
 });
+
+test('revolut "Testar ligação" works before the payout account is set and lists the accounts; paying still needs it', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, init });
+    const json = (body) => ({ ok: true, status: 200, text: async () => JSON.stringify(body) });
+    if (url.endsWith('/auth/token')) return json({ access_token: 'at', expires_in: 2400 });
+    if (url.endsWith('/1.0/accounts')) return json([{ id: 'acc-eur', name: 'Main', currency: 'EUR', balance: 10, state: 'active' }, { id: 'acc-old', currency: 'GBP', state: 'inactive' }]);
+    if (url.endsWith('/2.0/webhooks')) return json({ id: 'wh1', url: JSON.parse(init.body).url, signing_secret: 'wsk_x' });
+    return { ok: false, status: 404, text: async () => '{}' };
+  };
+  const rv = createRevolut({ environment: 'production', clientId: 'cid', issuer: 'bet62.plus', privateKey: pem, refreshToken: 'rt', fetchImpl });
+  assert.equal(rv.configured, false);
+  assert.deepEqual(await rv.checkAuth(), [{ id: 'acc-eur', name: 'Main', currency: 'EUR', balance: 10, selected: false }]);
+  assert.match(calls.find((c) => c.url.endsWith('/accounts')).url, /^https:\/\/b2b\.revolut\.com\/api\/1\.0\//);
+  await assert.rejects(rv.payOut({ iban: 'PT50000201231234567890154', holderName: 'R', amountCents: 2000, reference: 'x', requestId: 'w1' }), /REVOLUT_PAYOUT_ACCOUNT_ID/);
+  const wh = await rv.registerWebhook('https://bet62.plus/api/revolut/webhook');
+  assert.deepEqual(wh, { id: 'wh1', url: 'https://bet62.plus/api/revolut/webhook', signingSecret: 'wsk_x' });
+  assert.deepEqual(JSON.parse(calls.find((c) => c.url.endsWith('/webhooks')).init.body).events, ['TransactionCreated', 'TransactionStateChanged']);
+});
