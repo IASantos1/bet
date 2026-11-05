@@ -2182,6 +2182,14 @@ document.addEventListener('click', async (e) => {
         : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}${r.diagnostics?.lastAuthError?.body ? `<br><small>Resposta da Revolut: <code>${esc(r.diagnostics.lastAuthError.body)}</code> · iss enviado: <b>${esc(r.diagnostics.lastAuthError.sentAs?.iss || '')}</b></small>` : ''}`;
     }
     actionEl.disabled = false;
+  } else if (action === 'rm-applepay') {
+    actionEl.disabled = true;
+    const box = document.getElementById('rmCheck');
+    try {
+      const r = await api('/api/admin/revolut-merchant/apple-pay', { method: 'POST', body: {} });
+      if (box) box.innerHTML = `<span class="pill won">Apple Pay ativado</span> Domínio ${esc(r.domain)} registado na Revolut.`;
+    } catch (err) { if (box) box.innerHTML = `<span class="pill lost">Falhou</span> ${esc(err.message)}`; }
+    actionEl.disabled = false;
   } else if (action === 'rm-check' || action === 'rm-webhook') {
     if (action === 'rm-webhook' && !confirm('Registar o webhook dos pagamentos (cartão / Apple Pay / Google Pay) na Revolut? O segredo aparece uma só vez: copie-o logo para o Railway.')) return;
     actionEl.disabled = true;
@@ -3255,7 +3263,9 @@ function rvMerchantPanel(rm) {
       <li>${rm.configured ? '✅' : '❌'} REVOLUT_MERCHANT_SECRET_KEY (a chave secreta "sk_…" da Merchant API)</li>
       <li>${rm.environment === 'production' ? '✅' : '⚠️'} REVOLUT_MERCHANT_ENVIRONMENT: <b>${esc(rm.environment || 'sandbox')}</b> (production com a chave de produção)</li>
       <li>${rm.webhook ? '✅' : '❌'} REVOLUT_MERCHANT_WEBHOOK_SECRET</li>
+      <li>${rm.publicKey ? '✅' : '❌'} REVOLUT_MERCHANT_PUBLIC_KEY (a chave pública "pk_…": cartão, Apple Pay e Google Pay dentro do site; sem ela abre a página da Revolut)</li>
+      <li>ℹ️ Indisponíveis no depósito: <b>${esc((rm.off || []).join(', ') || 'nenhum')}</b> (PAY_METHODS_OFF; vazio volta a ligar MB WAY e Multibanco)</li>
     </ul>
-    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rm-check">Testar chave</button>${rm.configured && !rm.webhook ? '<button class="ghost-btn btn-sm" data-action="rm-webhook">Registar webhook</button>' : ''}</div>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rm-check">Testar chave</button>${rm.configured && !rm.webhook ? '<button class="ghost-btn btn-sm" data-action="rm-webhook">Registar webhook</button>' : ''}${rm.configured ? '<button class="ghost-btn btn-sm" data-action="rm-applepay">Ativar Apple Pay no domínio</button>' : ''}</div>
     <div id="rmCheck"></div></div>`;
 }

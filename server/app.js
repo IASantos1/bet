@@ -180,7 +180,10 @@ export function createApp(db, {
     res.set({
       'Content-Security-Policy':
         // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
-        `default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self' https://js.stripe.com; connect-src 'self' https://api.stripe.com${rapidStream?.enabled ? ' https:' : ''}; ` +
+        // Revolut's card form, Apple Pay and Google Pay (inside our page) load from merchant.revolut.com
+        // (Google Pay from pay.google.com) and put their bank check (3-D Secure) over the page.
+        `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com' : ''}; `
+        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://pay.google.com https://google.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
         // Live video (HLS) plays from the stream's own host.
         "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.
@@ -192,6 +195,21 @@ export function createApp(db, {
     });
     if (config.isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
+  });
+
+  // Apple Pay inside our page: Apple checks this file on our domain (it is Revolut's, the same for
+  // every merchant), so it is fetched once from Revolut and served from here.
+  let applePayFile = null;
+  app.get('/.well-known/apple-developer-merchantid-domain-association', async (_req, res) => {
+    if (!revolutPay) return res.status(404).end();
+    try {
+      if (!applePayFile) {
+        const r = await fetch(config.revolutPay.applePayFileUrl, { signal: AbortSignal.timeout(15_000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        applePayFile = Buffer.from(await r.arrayBuffer());
+      }
+      res.set({ 'Content-Type': 'text/plain', 'Cache-Control': 'public, max-age=86400' }).send(applePayFile);
+    } catch (err) { console.warn(`apple pay ficheiro: ${err.message}`); res.status(502).end(); }
   });
 
   // Stripe webhook: the raw body is what the signature covers, so it comes before the JSON parser
@@ -740,6 +758,10 @@ export function createApp(db, {
       // The deposit methods offered, in order: MB WAY and Multibanco (Stripe / Eupago / demo), then
       // card, Apple Pay and Google Pay (Revolut's checkout page when it is set, else the card as before).
       payMethods: [...(config.paymentsMode === 'disabled' ? [] : ['mbway', 'multibanco']), ...(revolutPay ? ['cartao', 'applepay', 'googlepay'] : config.paymentsMode === 'disabled' ? [] : ['cartao'])],
+      // Shown as "Indisponível" and not clickable (PAY_METHODS_OFF).
+      payMethodsOff: config.payMethodsOff,
+      // Card, Apple Pay and Google Pay paid inside our page (Revolut's widget), with the public key.
+      revolut: revolutPay?.publicKey ? { mode: revolutPay.widgetMode, publicKey: revolutPay.publicKey } : null,
       minStake: cents(limits.minStakeCents), maxStake: cents(limits.maxStakeCents),
       maxPayout: cents(limits.maxPayoutCents), minDeposit: cents(limits.minDepositCents),
       maxDeposit: cents(limits.maxDepositCents), minWithdraw: cents(limits.minWithdrawCents), instantWithdraw: cents(limits.instantWithdrawCents),
@@ -1307,6 +1329,7 @@ export function createApp(db, {
       if (!viaRevolut && config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
+      if (config.payMethodsOff.includes(method)) throw new HttpError(503, 'Este método de pagamento está temporariamente indisponível.');
       if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
       const amount = parseEuros(req.body.amount, 'Valor do depósito');
       const { minDepositCents, maxDepositCents } = config.limits;
@@ -1328,7 +1351,7 @@ export function createApp(db, {
         } catch (err) {
           throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
         }
-        return res.status(201).json({ payment: depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
+        return res.status(201).json({ payment: depositOut(r), revolut: r.token ? { token: r.token } : null, balance: cents(userById(req.user.id).balance_cents) });
       }
       // Stripe is used only when explicitly selected. In Eupago mode, card, MB WAY and
       // Multibanco all go through Eupago; its credit-card API returns Eupago's own secure form URL.
@@ -1373,6 +1396,26 @@ export function createApp(db, {
       if (!refreshed) throw new HttpError(404, 'Depósito não encontrado.');
       res.json({ ...depositOut(refreshed), balance: cents(userById(req.user.id).balance_cents) });
     } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(502, err.message) : err); }
+  });
+
+  // Cards the player saved at Revolut (paid again without typing them), paying with one, forgetting one.
+  app.get('/api/wallet/cards', requireUser, async (req, res) => {
+    if (!revolutPay) return res.json({ cards: [] });
+    try { res.json({ cards: await revolutPay.savedCards(req.user) }); } catch (err) { console.warn(`revolut cartões ${req.user.id}: ${err.message}`); res.json({ cards: [] }); }
+  });
+  app.post('/api/wallet/deposit/:sessionId/saved-card', requireUser, async (req, res, next) => {
+    try {
+      if (!revolutPay) throw new HttpError(503, 'Pagamentos por cartão indisponíveis.');
+      const r = await revolutPay.payWithSavedCard(req.user, String(req.params.sessionId), String(req.body.cardId || ''));
+      res.json({ ...depositOut(r), fallback: r.fallback, balance: cents(userById(req.user.id).balance_cents) });
+    } catch (err) { next(err.ours ? new HttpError(err.status || 400, err.message) : new HttpError(502, `Revolut: ${err.message}`)); }
+  });
+  app.delete('/api/wallet/cards/:id', requireUser, async (req, res, next) => {
+    try {
+      if (!revolutPay) throw new HttpError(404, 'Sem cartões guardados.');
+      await revolutPay.forgetCard(req.user, String(req.params.id));
+      res.json({ ok: true });
+    } catch (err) { next(new HttpError(502, `Revolut: ${err.message}`)); }
   });
 
   const depositOut = (r) => ({
@@ -2144,9 +2187,17 @@ export function createApp(db, {
     catch (err) { res.json({ ok: false, error: err.message, diagnostics: revolut.diagnostics() }); }
   });
   // "Registar webhook": our payout webhook at Revolut; its signing secret is shown once, for Railway.
+  admin.post('/revolut-merchant/apple-pay', async (req, res, next) => {
+    try {
+      if (!revolutPay) throw new HttpError(503, 'Falta REVOLUT_MERCHANT_SECRET_KEY no Railway.');
+      const domain = new URL(config.publicUrl || `${req.protocol}://${req.get('host')}`).hostname;
+      await revolutPay.registerApplePayDomain(domain);
+      res.json({ ok: true, domain });
+    } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(err.status >= 500 ? 502 : 400, `Revolut: ${err.message}`) : err); }
+  });
   // Revolut Merchant (card / Apple Pay / Google Pay deposits): its state, a key test and its webhook.
   admin.get('/revolut-merchant', (_req, res) => {
-    res.json({ configured: !!revolutPay, environment: revolutPay?.environment || null, webhook: !!revolutPay?.hasWebhook });
+    res.json({ configured: !!revolutPay, environment: revolutPay?.environment || null, webhook: !!revolutPay?.hasWebhook, publicKey: !!revolutPay?.publicKey, off: config.payMethodsOff });
   });
   admin.post('/revolut-merchant/check', async (_req, res) => {
     if (!revolutPay) return res.json({ ok: false, error: 'Falta REVOLUT_MERCHANT_SECRET_KEY no Railway.' });
