@@ -137,7 +137,7 @@ export function createRevolutPay(db, {
   }
 
   /** A deposit: our pending row, then Revolut's order (paid in our page with its token, or on its checkout page). */
-  async function createDeposit(user, amountCents, { method = 'cartao', promo = 'sport', returnBase = '' } = {}) {
+  async function createDeposit(user, amountCents, { method = 'cartao', promo = 'sport', draft = false, returnBase = '' } = {}) {
     if (!REVOLUT_METHODS[method]) throw Object.assign(new Error('Método de pagamento inválido.'), { status: 400, ours: true });
     const id = `rv_${randomUUID()}`;
     const home = publicUrl || returnBase;
@@ -154,8 +154,8 @@ export function createRevolutPay(db, {
     if (!order?.id || !order?.checkout_url) throw new Error('a Revolut não devolveu a página de pagamento');
     db.prepare(
       `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, reference, created_at, promo_opt)
-       VALUES (?, ?, ?, 'eur', 'pending', ?, ?, ?, ?)`
-    ).run(id, user.id, amountCents, method, String(order.id), nowIso(), PROMO_CODE[promo] ?? 1);
+       VALUES (?, ?, ?, 'eur', ?, ?, ?, ?, ?)`
+    ).run(id, user.id, amountCents, draft ? 'draft' : 'pending', method, String(order.id), nowIso(), PROMO_CODE[promo] ?? 1);
     return { ...view(rowOf(id)), redirectUrl: String(order.checkout_url), token: order.token ? String(order.token) : null };
   }
 
@@ -243,12 +243,29 @@ export function createRevolutPay(db, {
     return { id: r?.id, url: r?.url || url, signingSecret: r?.signing_secret || null };
   }
 
+  /**
+   * The card form opens with the order already made (Revolut's card field needs one); the amount and
+   * promotion the player settles on are written to it just before paying. Only a pending order of
+   * this player changes, at Revolut first, so what it charges is what the deposit credits.
+   */
+  async function updateDeposit(user, depositId, amountCents, promo) {
+    const row = db.prepare('SELECT * FROM stripe_payments WHERE session_id = ? AND user_id = ?').get(String(depositId), user.id);
+    if (!row || !isRevolutDeposit(row.session_id) || !row.reference) throw Object.assign(new Error('Depósito não encontrado.'), { status: 404, ours: true });
+    // 'draft': the card form is open but nothing was paid yet (not counted as a deposit waiting).
+    if (row.status !== 'draft' && row.status !== 'pending') throw Object.assign(new Error('Este pagamento já não pode ser alterado.'), { status: 409, ours: true });
+    if (row.amount_cents !== amountCents) {
+      await call('PATCH', `/orders/${encodeURIComponent(row.reference)}`, { amount: amountCents, currency: 'EUR', description: `Depósito BET62 — €${(amountCents / 100).toFixed(2)}` });
+    }
+    db.prepare("UPDATE stripe_payments SET amount_cents = ?, promo_opt = ?, status = 'pending', updated_at = ? WHERE id = ?").run(amountCents, PROMO_CODE[promo] ?? 1, nowIso(), row.id);
+    return view(rowOf(row.session_id));
+  }
+
   /** Apple Pay on our own page: Revolut registers the domain with Apple (the file it checks is served at /.well-known). */
   const registerApplePayDomain = (domain) => call('POST', '/apple-pay/domains/register', { domain });
 
   return {
     enabled, live, environment, publicKey, widgetMode: live ? 'prod' : 'sandbox', hasWebhook: !!webhookSecret,
-    createDeposit, applyOrder, handleWebhook, refresh, sweep, check, registerWebhook, registerApplePayDomain,
+    createDeposit, updateDeposit, applyOrder, handleWebhook, refresh, sweep, check, registerWebhook, registerApplePayDomain,
     savedCards, forgetCard, payWithSavedCard,
   };
 }

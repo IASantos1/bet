@@ -31,6 +31,7 @@ function setup() {
       return { ok: true, status: 201, json: async () => o };
     }
     const id = decodeURIComponent(url.split('/api/orders/')[1] || '');
+    if (init.method === 'PATCH' && orders.has(id)) { Object.assign(orders.get(id), { amount: body.amount }); return { ok: true, status: 200, json: async () => orders.get(id) }; }
     if (init.method === 'GET' && orders.has(id)) return { ok: true, status: 200, json: async () => orders.get(id) };
     return { ok: false, status: 404, json: async () => ({ message: 'not found' }) };
   };
@@ -143,4 +144,25 @@ test('a saved card pays the next deposit without typing it; a bank check (3-D Se
   t.setThreeDs(true);
   const c = await t.rp.payWithSavedCard(t.user, b.id, 'pm-1');
   assert.deepEqual([c.status, c.fallback, t.balance()], ['pending', true, 2000]);
+});
+
+test('card in one step: a draft order opens the card form; paying sets it to the amount and promotion chosen', async () => {
+  const t = setup();
+  const r = await t.rp.createDeposit(t.user, 2000, { method: 'cartao', promo: 'freebet', draft: true });
+  assert.equal(r.status, 'draft');
+  // Not a deposit waiting (limits) nor swept until the player pays.
+  assert.equal((await t.rp.sweep()).checked, 0);
+  const u = await t.rp.updateDeposit(t.user, r.id, 5000, 'none');
+  assert.equal(u.status, 'pending');
+  assert.equal(t.orders.get('ord-1').amount, 5000);
+  const patch = t.calls.find((c) => c.init.method === 'PATCH');
+  assert.equal(JSON.parse(patch.init.body).amount, 5000);
+  // The same amount again: nothing sent to Revolut.
+  await t.rp.updateDeposit(t.user, r.id, 5000, 'none');
+  assert.equal(t.calls.filter((c) => c.init.method === 'PATCH').length, 1);
+  t.orders.get('ord-1').state = 'completed';
+  assert.equal((await t.rp.refresh(r.id, t.userId)).status, 'paid');
+  assert.equal(t.balance(), 5000);
+  await assert.rejects(t.rp.updateDeposit(t.user, r.id, 1000, 'none'), /já não pode ser alterado/);
+  await assert.rejects(t.rp.updateDeposit({ ...t.user, id: t.userId + 1 }, r.id, 1000, 'none'), /não encontrado/);
 });

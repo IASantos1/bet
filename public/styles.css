@@ -1534,11 +1534,12 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 .rv-save { margin: 6px 0 10px; }
 .rv-saved { display: grid; gap: 8px; margin: 10px 0; }
 .rv-card-row { display: flex; align-items: center; gap: 8px; }
-.rv-card-row .rv-use { flex: 1; justify-content: flex-start; text-align: left; font-weight: 800; }
-.rv-card-row .rv-use small { color: var(--text-3); font-weight: 600; margin-left: 6px; }
+.card-slot .pay-box { margin: 4px 0 12px; }
+.rv-pick { flex: 1; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); font-weight: 800; cursor: pointer; }
+.rv-pick:has(input:checked) { border-color: var(--viva, #7cff6b); }
+.rv-pick small { color: var(--text-3); font-weight: 600; }
 .rv-brand { text-transform: uppercase; letter-spacing: .03em; }
 .rv-card-row .rv-forget { color: var(--text-3); font-size: 12px; background: none; border: 0; text-decoration: underline; cursor: pointer; }
-.rv-other { width: 100%; margin-bottom: 8px; }
 .rv-wallet { min-height: 48px; margin: 12px 0; }
 @media (max-width: 480px) {
   .payment-method-logo { min-width: 112px; padding: 9px; }
