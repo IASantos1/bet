@@ -98,3 +98,22 @@ test('the webhook signature: right secret, recent timestamp, v1 HMAC of v1.times
   assert.equal(verifyMerchantWebhook(raw, old.sig, old.ts, 'wsk_test_secret'), false);
   assert.deepEqual(['completed', 'authorised', 'cancelled', 'failed', 'pending'].map(orderState), ['completed', 'processing', 'failed', 'failed', 'pending']);
 });
+
+test('the admin can test the Merchant key and register the deposits webhook (its secret shown once)', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/api/1.0/orders?limit=1')) return { ok: true, status: 200, json: async () => [] };
+    if (url.endsWith('/api/1.0/webhooks')) return { ok: true, status: 201, json: async () => ({ id: 'wh', url: JSON.parse(init.body).url, signing_secret: 'wsk_1' }) };
+    return { ok: false, status: 401, json: async () => ({ message: 'Unauthorized' }) };
+  };
+  const db = openDb(':memory:');
+  const rp = createRevolutPay(db, { secretKey: 'sk_x', environment: 'production', fetchImpl });
+  assert.equal(await rp.check(), true);
+  assert.match(calls[0].url, /^https:\/\/merchant\.revolut\.com\/api\/1\.0\/orders/);
+  const wh = await rp.registerWebhook('https://bet62.plus/api/revolut/merchant/webhook');
+  assert.deepEqual(wh, { id: 'wh', url: 'https://bet62.plus/api/revolut/merchant/webhook', signingSecret: 'wsk_1' });
+  assert.ok(JSON.parse(calls[1].init.body).events.includes('ORDER_COMPLETED'));
+  const bad = createRevolutPay(db, { secretKey: 'sk_wrong', fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ message: 'Unauthorized' }) }) });
+  await assert.rejects(bad.check(), /Unauthorized/);
+});

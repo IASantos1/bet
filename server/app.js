@@ -2144,6 +2144,23 @@ export function createApp(db, {
     catch (err) { res.json({ ok: false, error: err.message, diagnostics: revolut.diagnostics() }); }
   });
   // "Registar webhook": our payout webhook at Revolut; its signing secret is shown once, for Railway.
+  // Revolut Merchant (card / Apple Pay / Google Pay deposits): its state, a key test and its webhook.
+  admin.get('/revolut-merchant', (_req, res) => {
+    res.json({ configured: !!revolutPay, environment: revolutPay?.environment || null, webhook: !!revolutPay?.hasWebhook });
+  });
+  admin.post('/revolut-merchant/check', async (_req, res) => {
+    if (!revolutPay) return res.json({ ok: false, error: 'Falta REVOLUT_MERCHANT_SECRET_KEY no Railway.' });
+    try { await revolutPay.check(); res.json({ ok: true }); } catch (err) { res.json({ ok: false, error: `Revolut: ${err.message}` }); }
+  });
+  admin.post('/revolut-merchant/webhook', async (req, res, next) => {
+    try {
+      if (!revolutPay) throw new HttpError(503, 'Falta REVOLUT_MERCHANT_SECRET_KEY no Railway.');
+      const home = (config.publicUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+      const r = await revolutPay.registerWebhook(`${home}/api/revolut/merchant/webhook`);
+      console.warn(`Revolut Merchant: webhook registado (${r.url}) — coloque o signing secret em REVOLUT_MERCHANT_WEBHOOK_SECRET`);
+      res.json(r);
+    } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(err.status >= 500 ? 502 : 400, `Revolut: ${err.message}`) : err); }
+  });
   admin.post('/revolut/webhook', async (req, res, next) => {
     try {
       if (!revolut) throw new HttpError(503, 'Revolut não configurada.');

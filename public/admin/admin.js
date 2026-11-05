@@ -849,7 +849,7 @@ async function loadTab() {
       main.innerHTML = adminAffiliates(a, c, l);
     }
     else if (tab === 'levantamentos') {
-      const { withdrawals, revolut: rv } = await api('/api/admin/withdrawals');
+      const [{ withdrawals, revolut: rv }, rm] = await Promise.all([api('/api/admin/withdrawals'), api('/api/admin/revolut-merchant').catch(() => null)]);
       state.revolutOn = !!rv?.configured;
       const rvPanel = `<div class="panel rv-panel"><h3>Revolut Business ${rv?.configured ? `<span class="pill won">LIGADA · ${rv.environment === 'production' ? 'produção' : 'sandbox'}</span>` : '<span class="pill void">NÃO CONFIGURADA</span>'}</h3>
         <p class="muted">${rv?.configured
@@ -860,7 +860,7 @@ async function loadTab() {
         : w.payout === 'failed' ? `<span class="pill lost">Revolut falhou</span><br><small class="muted">${esc(w.payoutError || '')}</small>` : '');
       const acts = (w) => (w.status === 'pending' ? `<div class="form-actions">${state.revolutOn ? `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar e pagar</button><button class="ghost-btn btn-sm" data-action="wd-manual" data-id="${w.id}">Pago à mão</button>` : `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button>`}<button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>`
         : w.status === 'approved' && state.revolutOn && !w.payout ? `<button class="ghost-btn btn-sm" data-action="wd-pay" data-id="${w.id}">Pagar pela Revolut</button>` : esc(fmtDateTime(w.decidedAt)));
-      main.innerHTML = rvPanel + (withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
+      main.innerHTML = rvPanel + rvMerchantPanel(rm) + (withdrawals.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>IBAN</th><th class="num">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
         ${withdrawals.map((w) => `<tr><td>${esc(fmtDateTime(w.createdAt))}</td><td>${esc(w.user)}<br><small class="muted">${esc(w.email)}</small></td><td>${esc(w.iban)}</td><td class="num">${money(w.amount)}</td>
           <td><span class="pill ${w.status}">${STATUS_LABEL[w.status]}</span> ${payout(w)}</td>
           <td>${acts(w)}</td></tr>`).join('')}
@@ -2182,6 +2182,20 @@ document.addEventListener('click', async (e) => {
         : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}${r.diagnostics?.lastAuthError?.body ? `<br><small>Resposta da Revolut: <code>${esc(r.diagnostics.lastAuthError.body)}</code> · iss enviado: <b>${esc(r.diagnostics.lastAuthError.sentAs?.iss || '')}</b></small>` : ''}`;
     }
     actionEl.disabled = false;
+  } else if (action === 'rm-check' || action === 'rm-webhook') {
+    if (action === 'rm-webhook' && !confirm('Registar o webhook dos pagamentos (cartão / Apple Pay / Google Pay) na Revolut? O segredo aparece uma só vez: copie-o logo para o Railway.')) return;
+    actionEl.disabled = true;
+    const box = document.getElementById('rmCheck');
+    try {
+      if (action === 'rm-check') {
+        const r = await api('/api/admin/revolut-merchant/check', { method: 'POST', body: {} });
+        if (box) box.innerHTML = r.ok ? '<span class="pill won">Chave OK</span> A Revolut aceitou a chave secreta.' : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}`;
+      } else {
+        const r = await api('/api/admin/revolut-merchant/webhook', { method: 'POST', body: {} });
+        if (box) box.innerHTML = `<span class="pill won">Webhook registado</span> ${esc(r.url)}<br>${r.signingSecret ? `<small>Copie agora para <b>REVOLUT_MERCHANT_WEBHOOK_SECRET</b> no Railway (não volta a aparecer):</small><br><code>${esc(r.signingSecret)}</code>` : 'A Revolut não devolveu o segredo: veja-o no painel Merchant da Revolut.'}`;
+      }
+    } catch (err) { if (box) box.innerHTML = `<span class="pill lost">Falhou</span> ${esc(err.message)}`; }
+    actionEl.disabled = false;
   } else if (action === 'rv-webhook') {
     if (!confirm('Registar o webhook dos levantamentos na Revolut? O segredo aparece uma só vez: copie-o logo para o Railway.')) return;
     actionEl.disabled = true;
@@ -3231,4 +3245,17 @@ function rvDiagnostics(d) {
       <br>${esc(err.hint || '')}</div>` : ''}
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rv-check">Testar ligação</button>${d.webhook ? '' : '<button class="ghost-btn btn-sm" data-action="rv-webhook">Registar webhook</button>'}</div>
     <div id="rvCheck"></div>`;
+}
+
+/** Revolut Merchant (card, Apple Pay, Google Pay deposits): state, key test and webhook registration. */
+function rvMerchantPanel(rm) {
+  if (!rm) return '';
+  return `<div class="panel rv-panel"><h3>Revolut Merchant — cartão, Apple Pay, Google Pay ${rm.configured ? `<span class="pill won">LIGADA · ${rm.environment === 'production' ? 'produção' : 'sandbox'}</span>` : '<span class="pill void">NÃO CONFIGURADA</span>'}</h3>
+    <ul class="rv-diag">
+      <li>${rm.configured ? '✅' : '❌'} REVOLUT_MERCHANT_SECRET_KEY (a chave secreta "sk_…" da Merchant API)</li>
+      <li>${rm.environment === 'production' ? '✅' : '⚠️'} REVOLUT_MERCHANT_ENVIRONMENT: <b>${esc(rm.environment || 'sandbox')}</b> (production com a chave de produção)</li>
+      <li>${rm.webhook ? '✅' : '❌'} REVOLUT_MERCHANT_WEBHOOK_SECRET</li>
+    </ul>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rm-check">Testar chave</button>${rm.configured && !rm.webhook ? '<button class="ghost-btn btn-sm" data-action="rm-webhook">Registar webhook</button>' : ''}</div>
+    <div id="rmCheck"></div></div>`;
 }
