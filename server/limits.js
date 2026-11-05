@@ -58,12 +58,12 @@ const since = (days) => new Date(Date.now() - days * DAY).toISOString();
 const fmt = (c) => `€${(c / 100).toFixed(2)}`;
 
 /** Throws when a deposit of `amountCents` would go over a deposit limit (pending card / MB payments count). */
-export function checkDeposit(db, user, amountCents) {
+export function checkDeposit(db, user, amountCents, { except = null } = {}) {
   const l = currentLimits(db, user);
   for (const [k, days] of [['depositDay', 1], ['depositWeek', 7], ['depositMonth', 30]]) {
     if (l[k] === null || l[k] === undefined) continue;
     const done = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = 'deposit' AND created_at >= ?").get(user.id, since(days)).s;
-    const waiting = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM stripe_payments WHERE user_id = ? AND status IN ('pending', 'processing') AND created_at >= ?").get(user.id, since(days)).s;
+    const waiting = db.prepare("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM stripe_payments WHERE user_id = ? AND status IN ('pending', 'processing') AND created_at >= ? AND session_id IS NOT ?").get(user.id, since(days), except).s;
     if (done + waiting + amountCents > l[k]) {
       throw new HttpError(403, `Ultrapassa o seu limite de ${LIMIT_LABELS[k]} (${fmt(l[k])}). Disponível: ${fmt(Math.max(0, l[k] - done - waiting))}.`);
     }

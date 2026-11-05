@@ -1320,6 +1320,24 @@ export function createApp(db, {
     res.json({ balance: cents(req.user.balance_cents), bonus: cents(bonusBalanceCents(db, req.user.id)), freebet: cents(freebetCents(db, req.user.id)), transactions, withdrawals });
   });
 
+  /** The amount and promotion of a deposit, with every check a deposit of that amount must pass. */
+  function depositAsked(req, { except = null } = {}) {
+    if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
+    const amount = parseEuros(req.body.amount, 'Valor do depósito');
+    const { minDepositCents, maxDepositCents } = config.limits;
+    if (amount < minDepositCents || amount > maxDepositCents) {
+      throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
+    }
+    // The player's own deposit limits (responsible gaming).
+    checkDeposit(db, req.user, amount, { except });
+    // Anti money laundering: over a total deposited, the identity verified first.
+    checkKycDeposit(db, req.user, amount);
+    // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
+    // whether it is given, and how much, is decided here.
+    const promo = ['sport', 'casino', 'freebet', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
+    return { amount, promo };
+  }
+
   app.post('/api/wallet/deposit', requireUser, async (req, res, next) => {
     try {
       const stripeMode = config.paymentsMode === 'stripe';
@@ -1332,24 +1350,12 @@ export function createApp(db, {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
       if (config.payMethodsOff.includes(method)) throw new HttpError(503, 'Este método de pagamento está temporariamente indisponível.');
-      if (req.user.excluded_until && req.user.excluded_until > nowIso()) throw new HttpError(403, 'Conta em autoexclusão: depósitos bloqueados.');
-      const amount = parseEuros(req.body.amount, 'Valor do depósito');
-      const { minDepositCents, maxDepositCents } = config.limits;
-      if (amount < minDepositCents || amount > maxDepositCents) {
-        throw new HttpError(400, `O depósito deve estar entre €${cents(minDepositCents)} e €${cents(maxDepositCents)}.`);
-      }
-      // The player's own deposit limits (responsible gaming).
-      checkDeposit(db, req.user, amount);
-      // Anti money laundering: over a total deposited, the identity verified first.
-      checkKycDeposit(db, req.user, amount);
-      // The player picks one promotion for the deposit (sports bonus, casino free spins or none);
-      // whether it is given, and how much, is decided here.
-      const promo = ['sport', 'casino', 'freebet', 'none'].includes(req.body.promo) ? req.body.promo : req.body.bonus === false ? 'none' : 'sport';
+      const { amount, promo } = depositAsked(req);
 
       if (viaRevolut) {
         let r;
         try {
-          r = await revolutPay.createDeposit(req.user, amount, { method, promo, returnBase: config.publicUrl || `${req.protocol}://${req.get('host')}` });
+          r = await revolutPay.createDeposit(req.user, amount, { method, promo, draft: method === 'cartao' && req.body.prepare === true, returnBase: config.publicUrl || `${req.protocol}://${req.get('host')}` });
         } catch (err) {
           throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento: ${err.message}`);
         }
@@ -1404,6 +1410,15 @@ export function createApp(db, {
   app.get('/api/wallet/cards', requireUser, async (req, res) => {
     if (!revolutPay) return res.json({ cards: [] });
     try { res.json({ cards: await revolutPay.savedCards(req.user) }); } catch (err) { console.warn(`revolut cartões ${req.user.id}: ${err.message}`); res.json({ cards: [] }); }
+  });
+  // The card form's order, set to the amount and promotion chosen when the player taps Depositar.
+  app.post('/api/wallet/deposit/:sessionId/amount', requireUser, async (req, res, next) => {
+    try {
+      if (!revolutPay) throw new HttpError(503, 'Pagamentos por cartão indisponíveis.');
+      const { amount, promo } = depositAsked(req, { except: String(req.params.sessionId) });
+      const r = await revolutPay.updateDeposit(req.user, String(req.params.sessionId), amount, promo);
+      res.json({ payment: depositOut(r) });
+    } catch (err) { next(err instanceof HttpError ? err : err.ours ? new HttpError(err.status || 400, err.message) : new HttpError(502, `Revolut: ${err.message}`)); }
   });
   app.post('/api/wallet/deposit/:sessionId/saved-card', requireUser, async (req, res, next) => {
     try {

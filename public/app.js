@@ -2435,13 +2435,14 @@ function depositFormHtml() {
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
       </div>
+      <div class="card-slot hidden" id="cardSlot"></div>
+      <div class="form-actions"><button class="primary-btn">Depositar</button></div>
       <div class="promo-pick"><span>Promoção deste depósito</span>
         ${sportBonus ? '<label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>' : ''}
         <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
         <label><input type="radio" name="promo" value="freebet"${sportBonus ? '' : ' checked'}> Free Bet desporto</label>
         <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
-      <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>
     <div id="depositPanel"></div>`;
 }
@@ -2506,7 +2507,7 @@ function depositPanel(html) {
   form?.classList.toggle('hidden', !!html);
   const back = /pay-box ok/.test(html) ? 'Fazer outro depósito' : /pay-box error/.test(html) ? 'Tentar de novo' : 'Alterar valor ou método';
   box.innerHTML = html ? `<button type="button" class="link-btn dp-back">← ${back}</button>${html}` : '';
-  box.querySelector('.dp-back')?.addEventListener('click', () => { state.depositWatch = null; depositPanel(''); });
+  box.querySelector('.dp-back')?.addEventListener('click', () => { state.depositWatch = null; depositPanel(''); cardSlotSync(form); });
   if (html) (box.closest('.modal-body') || box).scrollTop = 0;
   return box;
 }
@@ -2573,79 +2574,109 @@ const depositBody = (d, method) => ({ amount: d.amount, method, phone: d.phone, 
 const rvError = (e) => ({ 'error.declined': 'O cartão foi recusado.', 'error.insufficient-funds': 'Saldo insuficiente no cartão.', 'error.expired-card': 'O cartão expirou.',
   'error.incorrect-cvv-code': 'Código CVV errado.', 'error.3ds-failed': 'A confirmação do banco falhou.', 'error.do-not-honour': 'O banco recusou o pagamento.' })[e?.type] || e?.message || 'O pagamento não foi concluído.';
 
-/** Card: the player's saved cards first (one tap), else Revolut's card field inside our panel. */
-async function revolutCardDeposit(d) {
-  depositPanel('<div class="pay-box"><strong>A preparar o pagamento seguro…</strong></div>');
-  const res = await api('/api/wallet/deposit', { method: 'POST', body: depositBody(d, 'cartao') });
-  const p = res.payment;
-  if (!res.revolut?.token) {
-    if (p.redirectUrl && /^https:\/\/([\w-]+\.)*revolut\.com\//i.test(p.redirectUrl)) { location.assign(p.redirectUrl); return; }
-    throw new Error('Não foi possível iniciar o pagamento por cartão.');
+/**
+ * Card in one step: choosing Cartão opens the card form right under the amount (Revolut's card
+ * field needs an order, so one is made then, as a draft); the form's own Depositar button sets the
+ * order to the amount and promotion chosen and pays with the saved card picked or the card typed.
+ */
+function cardSlotSync(form) {
+  const slot = form?.querySelector('#cardSlot');
+  if (!slot) return;
+  const on = !!state.config?.revolut && form.method?.value === 'cartao';
+  slot.classList.toggle('hidden', !on);
+  if (!on) return;
+  if (!form._card) return cardSlotOpen(form);
+  // A new amount before the card is typed: a new order for it (after the card, the order is changed on paying).
+  const c = form._card;
+  const amount = Number(form.amount?.value);
+  if (c.ready && !c.complete && c.amount !== amount && amount >= (state.config.minDeposit ?? 5) && amount <= (state.config.maxDeposit ?? 5000)) {
+    clearTimeout(c.redo);
+    c.redo = setTimeout(() => { if (form._card === c && !c.complete) cardSlotOpen(form); }, 700);
   }
-  const { cards = [] } = await api('/api/wallet/cards').catch(() => ({ cards: [] }));
-  if (cards.length) return revolutSavedCards(p, res.revolut.token, cards);
-  return revolutCardField(p, res.revolut.token);
 }
 
-function revolutSavedCards(p, token, cards) {
-  const box = depositPanel(`<div class="pay-box card">
-    <div class="pay-head"><strong>Pagar com cartão guardado</strong><b>${money(p.amount)}</b></div>
-    <div class="rv-saved">${cards.map((c) => `<div class="rv-card-row"><button type="button" class="outline-btn rv-use" data-card="${esc(c.id)}"><span class="rv-brand">${esc(c.brand)}</span> •••• ${esc(c.last4)}${c.expiry ? ` <small>${esc(c.expiry)}</small>` : ''}</button>
-      <button type="button" class="link-btn rv-forget" data-card="${esc(c.id)}" aria-label="Esquecer este cartão">Esquecer</button></div>`).join('')}</div>
-    <small class="pay-err" id="rvErr" role="alert"></small>
-    <button type="button" class="ghost-btn rv-other">Usar outro cartão</button>
-    <small class="muted pay-safe">🔒 Pagamento seguro processado pela Revolut.</small></div>`);
-  if (!box) return;
-  box.querySelector('.rv-other').addEventListener('click', () => revolutCardField(p, token));
-  box.querySelectorAll('.rv-forget').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Esquecer este cartão? Terá de o introduzir de novo no próximo depósito.')) return;
-    await api(`/api/wallet/cards/${encodeURIComponent(b.dataset.card)}`, { method: 'DELETE' }).catch(() => {});
-    b.closest('.rv-card-row').remove();
-    if (!box.querySelector('.rv-card-row')) revolutCardField(p, token);
-  }));
-  box.querySelectorAll('.rv-use').forEach((b) => b.addEventListener('click', async () => {
-    box.querySelectorAll('button').forEach((x) => { x.disabled = true; });
-    b.textContent = 'A pagar…';
-    try {
-      const r = await api(`/api/wallet/deposit/${encodeURIComponent(p.id)}/saved-card`, { method: 'POST', body: { cardId: b.dataset.card } });
-      if (r.status === 'paid') return depositDone(r);
-      if (r.fallback) return revolutCardField(p, token, 'O banco pediu para confirmar este pagamento: introduza o cartão.');
-      watchDeposit(p.id, { every: 2000, forMs: 3 * 60_000 });
-    } catch (err) {
-      box.querySelectorAll('button').forEach((x) => { x.disabled = false; });
-      box.querySelector('#rvErr').textContent = err.message;
-    }
-  }));
-}
-
-async function revolutCardField(p, token, note = '') {
-  const rv = state.config.revolut;
-  const box = depositPanel(`<div class="pay-box card">
-    <div class="pay-head"><strong>Pagamento por cartão</strong><b>${money(p.amount)}</b></div>
-    ${note ? `<div class="notice">${esc(note)}</div>` : ''}
-    <div class="rv-card-field" id="rvCard"></div>
-    <label class="check rv-save"><input type="checkbox" id="rvSave" checked> Guardar este cartão para os próximos depósitos</label>
-    <small class="pay-err" id="rvErr" role="alert"></small>
-    <button type="button" class="primary-btn pay-btn" id="rvPay" disabled>Depositar ${money(p.amount)}</button>
-    <small class="muted pay-safe">🔒 Visa · Mastercard — pagamento seguro processado pela Revolut.</small></div>`);
-  if (!box) return;
-  const err = (t) => { const e = box.querySelector('#rvErr'); if (e) e.textContent = t || ''; };
-  const btn = box.querySelector('#rvPay');
-  let card;
+async function cardSlotOpen(form, note = '') {
+  const slot = form.querySelector('#cardSlot');
+  try { form._card?.field?.destroy?.(); } catch { /* already gone */ }
+  const c = (form._card = { ready: false, complete: false });
+  slot.innerHTML = '<div class="pay-box card"><small class="muted">A abrir o formulário seguro do cartão…</small></div>';
+  const err = (t) => { const e = slot.querySelector('#rvErr'); if (e) e.textContent = t || ''; };
   try {
-    const RC = await loadRevolutJs(rv.mode);
-    const inst = await RC(token, rv.mode);
-    card = inst.createCardField({
-      target: box.querySelector('#rvCard'), locale: 'pt', theme: document.documentElement.classList.contains('light') ? 'light' : 'dark',
-      onStatusChange: (st) => { if (!btn.dataset.busy) btn.disabled = !st.completed; },
+    const d = formData(form);
+    const [res, saved, RC] = await Promise.all([
+      api('/api/wallet/deposit', { method: 'POST', body: { ...depositBody(d, 'cartao'), prepare: true } }),
+      api('/api/wallet/cards').catch(() => ({ cards: [] })),
+      loadRevolutJs(state.config.revolut.mode),
+    ]);
+    if (form._card !== c) return;
+    if (!res.revolut?.token) throw new Error('Não foi possível abrir o pagamento por cartão.');
+    Object.assign(c, { id: res.payment.id, token: res.revolut.token, cards: saved.cards || [], amount: Number(d.amount) });
+    slot.innerHTML = `<div class="pay-box card">
+      ${note ? `<div class="notice">${esc(note)}</div>` : ''}
+      ${c.cards.length ? `<div class="rv-saved" role="radiogroup" aria-label="Cartão">${c.cards.map((k, i) => `<div class="rv-card-row">
+          <label class="rv-pick"><input type="radio" name="rvCardPick" value="${esc(k.id)}"${i === 0 && !note ? ' checked' : ''}><span class="rv-brand">${esc(k.brand)}</span> •••• ${esc(k.last4)}${k.expiry ? ` <small>${esc(k.expiry)}</small>` : ''}</label>
+          <button type="button" class="link-btn rv-forget" data-card="${esc(k.id)}" aria-label="Esquecer este cartão">Esquecer</button></div>`).join('')}
+        <label class="rv-pick"><input type="radio" name="rvCardPick" value="new"${note ? ' checked' : ''}> Outro cartão</label></div>` : ''}
+      <div class="rv-new">
+        <div class="rv-card-field" id="rvCard"></div>
+        <label class="check rv-save"><input type="checkbox" id="rvSave" checked> Guardar este cartão para os próximos depósitos</label>
+      </div>
+      <small class="pay-err" id="rvErr" role="alert"></small>
+      <small class="muted pay-safe">🔒 Visa · Mastercard — pagamento seguro processado pela Revolut.</small></div>`;
+    const pickNew = () => slot.querySelector('.rv-new').classList.toggle('hidden', !!c.cards.length && slot.querySelector('input[name="rvCardPick"]:checked')?.value !== 'new');
+    slot.querySelectorAll('input[name="rvCardPick"]').forEach((r) => r.addEventListener('change', pickNew));
+    pickNew();
+    slot.querySelectorAll('.rv-forget').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Esquecer este cartão? Terá de o introduzir de novo no próximo depósito.')) return;
+      await api(`/api/wallet/cards/${encodeURIComponent(b.dataset.card)}`, { method: 'DELETE' }).catch(() => {});
+      c.cards = c.cards.filter((k) => k.id !== b.dataset.card);
+      const row = b.closest('.rv-card-row');
+      const wasPicked = row.querySelector('input:checked');
+      row.remove();
+      if (!c.cards.length) slot.querySelector('.rv-saved')?.remove();
+      else if (wasPicked) slot.querySelector('input[name="rvCardPick"]').checked = true;
+      pickNew();
+    }));
+    const inst = await RC(c.token, state.config.revolut.mode);
+    c.field = inst.createCardField({
+      target: slot.querySelector('#rvCard'), locale: 'pt', theme: document.documentElement.classList.contains('light') ? 'light' : 'dark',
+      onStatusChange: (st) => { c.complete = !!st.completed; },
       onValidation: (errors) => err(errors?.[0]?.message || ''),
-      onSuccess: () => { depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>'); watchDeposit(p.id, { every: 1500, forMs: 5 * 60_000 }); },
-      onError: (e) => { btn.dataset.busy = ''; btn.disabled = false; btn.textContent = `Depositar ${money(p.amount)}`; err(rvError(e)); },
+      onSuccess: () => { c.settle?.(true); form._card = null; depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>'); watchDeposit(c.id, { every: 1500, forMs: 5 * 60_000 }); },
+      onError: (e) => { c.settle?.(false); err(rvError(e)); },
     });
-  } catch (e) { err(e.message); return; }
-  btn.addEventListener('click', () => {
-    btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = 'A processar…'; err('');
-    card.submit({ name: state.user.name, email: state.user.email, ...(box.querySelector('#rvSave').checked ? { savePaymentMethodFor: 'customer' } : {}) });
+    c.ready = true;
+  } catch (e) {
+    if (form._card !== c) return;
+    form._card = null;
+    slot.innerHTML = `<div class="pay-box card"><small class="pay-err" role="alert">${esc(e.message)}</small><button type="button" class="ghost-btn rv-retry">Tentar de novo</button></div>`;
+    slot.querySelector('.rv-retry').addEventListener('click', () => cardSlotOpen(form));
+  }
+}
+
+async function cardSlotPay(form, d) {
+  const c = form._card;
+  if (!c?.ready) throw new Error('O formulário do cartão ainda está a abrir. Aguarde um momento.');
+  const slot = form.querySelector('#cardSlot');
+  const err = (t) => { const e = slot.querySelector('#rvErr'); if (e) e.textContent = t || ''; };
+  const pick = c.cards.length ? slot.querySelector('input[name="rvCardPick"]:checked')?.value : 'new';
+  if (!pick) throw new Error('Escolha o cartão.');
+  if (pick === 'new' && !c.complete) throw new Error('Preencha os dados do cartão.');
+  err('');
+  // The order takes the amount and promotion chosen now (checked against the limits again).
+  await api(`/api/wallet/deposit/${encodeURIComponent(c.id)}/amount`, { method: 'POST', body: depositBody(d, 'cartao') });
+  if (pick !== 'new') {
+    const r = await api(`/api/wallet/deposit/${encodeURIComponent(c.id)}/saved-card`, { method: 'POST', body: { cardId: pick } });
+    if (r.status === 'paid') { form._card = null; return depositDone(r); }
+    if (r.fallback) { form._card = null; return cardSlotOpen(form, 'O banco pediu para confirmar este pagamento: introduza o cartão.'); }
+    form._card = null;
+    depositPanel('<div class="pay-box"><strong>A confirmar o pagamento…</strong></div>');
+    return watchDeposit(c.id, { every: 2000, forMs: 3 * 60_000 });
+  }
+  // Waits for Revolut's answer (3-D Secure included), so the button stays busy meanwhile.
+  await new Promise((done) => {
+    c.settle = (ok) => { c.settle = null; done(ok); };
+    c.field.submit({ name: state.user.name, email: state.user.email, ...(slot.querySelector('#rvSave')?.checked ? { savePaymentMethodFor: 'customer' } : {}) });
   });
 }
 
@@ -3724,7 +3755,7 @@ const formHandlers = {
     const d = formData(form);
     // Card, Apple Pay and Google Pay inside our page (Revolut's widget), when its public key is set.
     if (state.config?.revolut && ['applepay', 'googlepay'].includes(d.method)) return revolutWallet(d);
-    if (state.config?.revolut && d.method === 'cartao') return revolutCardDeposit(d);
+    if (state.config?.revolut && d.method === 'cartao') return cardSlotPay(form, d);
     const res = await api('/api/wallet/deposit', { method: 'POST', body: { amount: d.amount, method: d.method, phone: d.phone, promo: d.promo || 'none' } });
     if (res.payment) {
       const p = res.payment;
@@ -4188,6 +4219,7 @@ async function withdrawGate() {
 }
 
 function depositOffer() {
+  cardSlotSync(walletEl('form[data-form="deposit"]'));
   clearTimeout(offerTimer);
   offerTimer = setTimeout(async () => {
     const form = walletEl('form[data-form="deposit"]');
