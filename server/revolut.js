@@ -61,7 +61,13 @@ export function createRevolut({
     try { data = JSON.parse(text); } catch { /* not JSON */ }
     if (!res.ok || !data?.access_token) {
       log(`revolut auth HTTP ${res.status}: ${text.slice(0, 300)}`);
-      lastAuthError = { at: new Date().toISOString(), status: res.status, error: data?.error || null, description: data?.error_description || null, hint: authHint(res.status, data?.error) };
+      lastAuthError = {
+        at: new Date().toISOString(), status: res.status, error: data?.error || null, description: data?.error_description || null,
+        // What Revolut answered word for word (no secrets in it), and what we signed with (no secret either).
+        body: text.slice(0, 300) || '(resposta vazia)', host: new URL(base).host,
+        sentAs: { iss, clientId: clientId ? `…${String(clientId).slice(-6)}` : null, aud: 'https://revolut.com', grant: params.grant_type },
+        hint: authHint(res.status, data?.error),
+      };
       throw fail(502, `Revolut: autenticação falhou (${data?.error_description || data?.error || res.status}). ${lastAuthError.hint}`);
     }
     lastAuthError = null;
@@ -73,7 +79,9 @@ export function createRevolut({
     if (error === 'invalid_grant') return 'O REVOLUT_REFRESH_TOKEN já não é válido: volte a autorizar em Revolut Business → APIs (Enable access) e coloque o novo no Railway.';
     if (status === 401 || error === 'invalid_client') {
       return `Confirme: REVOLUT_ENVIRONMENT=${environment === 'production' ? 'production' : 'sandbox'} é o ambiente do certificado; REVOLUT_CLIENT_ID é o do certificado; `
-        + `REVOLUT_JWT_ISSUER é o domínio do redirect URI registado (agora "${iss}"); a chave privada é a do certificado carregado; e, se a Revolut tem lista de IPs autorizados, que inclui o do servidor.`;
+        + `REVOLUT_JWT_ISSUER é o domínio do OAuth redirect URI desse certificado em Revolut Business → APIs (agora "${iss}"; se o certificado é o do Bet62Novo, é o domínio do Bet62Novo); `
+        + 'a chave privada é a do certificado carregado; o refresh token foi gerado com esse mesmo certificado (um certificado novo pede nova autorização em "Enable access"); '
+        + 'e, se a Revolut tem lista de IPs autorizados, que inclui o do servidor.';
     }
     return '';
   }

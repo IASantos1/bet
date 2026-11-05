@@ -2179,7 +2179,7 @@ document.addEventListener('click', async (e) => {
     if (box) {
       box.innerHTML = r.ok
         ? `<span class="pill won">Ligação OK</span> A Revolut aceitou as credenciais.${r.accounts?.length ? `<br><small class="muted">Contas (copie o ID da conta EUR de onde saem os levantamentos para REVOLUT_PAYOUT_ACCOUNT_ID):</small><ul class="rv-diag">${r.accounts.map((a) => `<li>${a.selected ? '✅ ' : ''}<b>${esc(a.currency)}</b> ${esc(a.name)} ${a.balance !== undefined ? `· saldo ${esc(String(a.balance))}` : ''}<br><code>${esc(a.id)}</code></li>`).join('')}</ul>` : ''}`
-        : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}`;
+        : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}${r.diagnostics?.lastAuthError?.body ? `<br><small>Resposta da Revolut: <code>${esc(r.diagnostics.lastAuthError.body)}</code> · iss enviado: <b>${esc(r.diagnostics.lastAuthError.sentAs?.iss || '')}</b></small>` : ''}`;
     }
     actionEl.disabled = false;
   } else if (action === 'rv-webhook') {
@@ -3225,7 +3225,10 @@ function rvDiagnostics(d) {
       ${row(d.accountId, 'REVOLUT_PAYOUT_ACCOUNT_ID')}
       ${row(d.webhook, 'REVOLUT_WEBHOOK_SIGNING_SECRET')}
     </ul>
-    ${err ? `<div class="notice">Última recusa da Revolut (${esc(fmtDateTime(err.at))}): HTTP ${esc(String(err.status))} ${esc(err.error || '')} ${esc(err.description || '')}<br>${esc(err.hint || '')}</div>` : ''}
+    ${err ? `<div class="notice">Última recusa da Revolut (${esc(fmtDateTime(err.at))}): HTTP ${esc(String(err.status))} ${esc(err.error || '')} ${esc(err.description || '')}
+      ${err.body ? `<br><small>Resposta da Revolut (${esc(err.host || '')}): <code>${esc(err.body)}</code></small>` : ''}
+      ${err.sentAs ? `<br><small>Enviado: iss <b>${esc(err.sentAs.iss)}</b> · client id <b>${esc(err.sentAs.clientId || '—')}</b> · ${esc(err.sentAs.grant)}</small>` : ''}
+      <br>${esc(err.hint || '')}</div>` : ''}
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rv-check">Testar ligação</button>${d.webhook ? '' : '<button class="ghost-btn btn-sm" data-action="rv-webhook">Registar webhook</button>'}</div>
     <div id="rvCheck"></div>`;
 }
