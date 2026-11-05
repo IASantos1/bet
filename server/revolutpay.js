@@ -175,5 +175,21 @@ export function createRevolutPay(db, {
     return { checked: rows.length, credited };
   }
 
-  return { enabled, live, environment, hasWebhook: !!webhookSecret, createDeposit, applyOrder, handleWebhook, refresh, sweep };
+  /** "Testar": the secret key accepted by Revolut (lists at most one order). */
+  async function check() {
+    if (!enabled) throw Object.assign(new Error('Falta REVOLUT_MERCHANT_SECRET_KEY.'), { status: 503 });
+    await call('GET', '/1.0/orders?limit=1');
+    return true;
+  }
+
+  /**
+   * Registers our deposits webhook at Revolut (POST /1.0/webhooks) and returns its signing secret,
+   * which goes in REVOLUT_MERCHANT_WEBHOOK_SECRET (shown once to the admin).
+   */
+  async function registerWebhook(url) {
+    const r = await call('POST', '/1.0/webhooks', { url, events: ['ORDER_COMPLETED', 'ORDER_AUTHORISED', 'ORDER_CANCELLED', 'ORDER_PAYMENT_DECLINED', 'ORDER_PAYMENT_FAILED'] });
+    return { id: r?.id, url: r?.url || url, signingSecret: r?.signing_secret || null };
+  }
+
+  return { enabled, live, environment, hasWebhook: !!webhookSecret, createDeposit, applyOrder, handleWebhook, refresh, sweep, check, registerWebhook };
 }
