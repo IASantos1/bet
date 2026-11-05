@@ -2435,14 +2435,14 @@ function depositFormHtml() {
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
         <div class="field mbway-only"><label>Telemóvel MB WAY</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="912 345 678" value="${esc(state.user.phone || '')}"></div>
       </div>
+      <div class="card-slot hidden" id="cardSlot"></div>
+      <div class="form-actions"><button class="primary-btn">Depositar</button></div>
       <div class="promo-pick"><span>Promoção deste depósito</span>
         ${sportBonus ? '<label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>' : ''}
         <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
         <label><input type="radio" name="promo" value="freebet"${sportBonus ? '' : ' checked'}> Free Bet desporto</label>
         <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
-      <div class="card-slot hidden" id="cardSlot"></div>
-      <div class="form-actions"><button class="primary-btn">Depositar</button></div>
     </form>
     <div id="depositPanel"></div>`;
 }
