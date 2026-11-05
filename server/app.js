@@ -2134,8 +2134,14 @@ export function createApp(db, {
         createdAt: w.created_at, decidedAt: w.decided_at,
         payout: w.payout_status || null, payoutRef: w.payout_ref || null, payoutError: w.payout_error || null, paidAt: w.paid_at || null,
       })),
-      revolut: revolut ? { configured: revolut.configured, environment: revolut.environment, autoMin: cents(revolut.autoMinCents), autoMax: cents(revolut.autoMaxCents), webhook: revolut.webhookSet } : null,
+      revolut: revolut ? { configured: revolut.configured, environment: revolut.environment, autoMin: cents(revolut.autoMinCents), autoMax: cents(revolut.autoMaxCents), webhook: revolut.webhookSet, diagnostics: revolut.diagnostics?.() } : null,
     });
+  });
+  // "Testar ligação": asks Revolut for a token now; the answer (and what to check) for the admin.
+  admin.post('/revolut/check', async (_req, res) => {
+    if (!revolut) return res.json({ ok: false, error: 'Revolut não configurada: defina REVOLUT_CLIENT_ID no Railway.' });
+    try { await revolut.checkAuth(); res.json({ ok: true, diagnostics: revolut.diagnostics() }); }
+    catch (err) { res.json({ ok: false, error: err.message, diagnostics: revolut.diagnostics() }); }
   });
 
   // approve: approved (and, with Revolut on, paid to the IBAN; body.manual → paid by hand);

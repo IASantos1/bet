@@ -191,7 +191,11 @@ if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, p
 
 // Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
 const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
-if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
+if (revolut) {
+  const d = revolut.diagnostics();
+  const missing = [['REVOLUT_JWT_ISSUER', d.issuer], ['REVOLUT_PRIVATE_KEY', d.privateKey], ['REVOLUT_REFRESH_TOKEN', d.refreshToken], ['REVOLUT_PAYOUT_ACCOUNT_ID', d.accountId]].filter(([, ok]) => !ok).map(([k]) => k);
+  console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}, issuer ${d.issuer}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : `incompleta (em falta ou inválida: ${missing.join(', ')})`}`);
+}
 const teamLogos = createTeamLogos(db, { ...config.teamLogos, persistent: config.dbPersistent, log: (m) => console.warn(`[emblemas] ${m}`) });
 const stopTeamLogos = teamLogos.start();
 if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[emblemas] API-Football ativo (até ${config.teamLogos.apiFootballDaily} pesquisas por dia e desporto)`);
