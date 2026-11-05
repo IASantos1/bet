@@ -53,7 +53,7 @@ export function orderState(state) {
 }
 
 export function createRevolutPay(db, {
-  secretKey = '', webhookSecret = '', environment = 'sandbox', apiVersion = '2024-09-01', publicUrl = '',
+  secretKey = '', publicKey = '', webhookSecret = '', environment = 'sandbox', apiVersion = '2024-09-01', publicUrl = '',
   fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const enabled = !!secretKey;
@@ -84,7 +84,59 @@ export function createRevolutPay(db, {
   const rowOfOrder = (orderId) => db.prepare("SELECT * FROM stripe_payments WHERE reference = ? AND session_id LIKE 'rv\\_%' ESCAPE '\\'").get(String(orderId || ''));
   const view = (row) => ({ id: row.session_id, method: row.method, status: row.status, amountCents: row.amount_cents });
 
-  /** A deposit: our pending row, then Revolut's order; the player is sent to its checkout page. */
+  /**
+   * The player's customer at Revolut (created once, kept on the user): the order is theirs, so a card
+   * they save is theirs too and comes back on their next deposit. null when Revolut refuses (the
+   * deposit still goes ahead, only without saving).
+   */
+  async function customerFor(user) {
+    const have = db.prepare('SELECT revolut_customer_id FROM users WHERE id = ?').get(user.id)?.revolut_customer_id;
+    if (have) return have;
+    try {
+      const c = await call('POST', '/1.0/customers', { email: user.email, full_name: String(user.name || '').slice(0, 100) || undefined });
+      if (!c?.id) return null;
+      db.prepare('UPDATE users SET revolut_customer_id = ? WHERE id = ?').run(String(c.id), user.id);
+      return String(c.id);
+    } catch (err) { log(`revolut cliente ${user.id}: ${err.message}`); return null; }
+  }
+
+  /** The player's saved cards (brand, last 4 digits, expiry); [] without any. */
+  async function savedCards(user) {
+    const cid = db.prepare('SELECT revolut_customer_id FROM users WHERE id = ?').get(user.id)?.revolut_customer_id;
+    if (!cid) return [];
+    const list = await call('GET', `/1.0/customers/${encodeURIComponent(cid)}/payment-methods`);
+    return (Array.isArray(list) ? list : []).filter((m) => String(m.type || '').toLowerCase() === 'card').map((m) => {
+      const d = m.method_details || {};
+      return { id: String(m.id), brand: String(d.brand || d.card_brand || 'Cartão'), last4: String(d.last4 || d.card_last_four || '').slice(-4), expiry: d.expiry_month && d.expiry_year ? `${String(d.expiry_month).padStart(2, '0')}/${String(d.expiry_year).slice(-2)}` : '' };
+    });
+  }
+
+  async function forgetCard(user, cardId) {
+    const cid = db.prepare('SELECT revolut_customer_id FROM users WHERE id = ?').get(user.id)?.revolut_customer_id;
+    if (!cid) return false;
+    await call('DELETE', `/1.0/customers/${encodeURIComponent(cid)}/payment-methods/${encodeURIComponent(cardId)}`);
+    return true;
+  }
+
+  /**
+   * Pays a pending deposit with a saved card (customer-initiated). Returns the deposit; when the bank
+   * asks for a check (3-D Secure) or the card is refused, `fallback: true` (the page shows the card form).
+   */
+  async function payWithSavedCard(user, depositId, cardId) {
+    const row = db.prepare('SELECT * FROM stripe_payments WHERE session_id = ? AND user_id = ?').get(String(depositId), user.id);
+    if (!row || !isRevolutDeposit(row.session_id) || !row.reference) throw Object.assign(new Error('Depósito não encontrado.'), { status: 404, ours: true });
+    if (!(await savedCards(user)).some((c) => c.id === String(cardId))) throw Object.assign(new Error('Cartão não encontrado.'), { status: 404, ours: true });
+    let fallback = false;
+    try {
+      const pay = await call('POST', `/orders/${encodeURIComponent(row.reference)}/payments`, { saved_payment_method: { type: 'card', id: String(cardId), initiator: 'customer' } });
+      const st = String(pay?.state || '').toLowerCase();
+      if (pay?.authentication_challenge || st === 'authentication_challenge' || st === 'declined' || st === 'failed') fallback = true;
+    } catch (err) { log(`revolut cartão guardado ${row.session_id}: ${err.message}`); fallback = true; }
+    applyOrder(await fetchOrder(row.reference));
+    return { ...view(rowOf(row.session_id)), fallback };
+  }
+
+  /** A deposit: our pending row, then Revolut's order (paid in our page with its token, or on its checkout page). */
   async function createDeposit(user, amountCents, { method = 'cartao', promo = 'sport', returnBase = '' } = {}) {
     if (!REVOLUT_METHODS[method]) throw Object.assign(new Error('Método de pagamento inválido.'), { status: 400, ours: true });
     const id = `rv_${randomUUID()}`;
@@ -95,7 +147,7 @@ export function createRevolutPay(db, {
       currency: 'EUR',
       description: `Depósito BET62 — €${(amountCents / 100).toFixed(2)}`,
       capture_mode: 'automatic',
-      customer: user.email ? { email: user.email } : undefined,
+      customer: await (async () => { const id = await customerFor(user); return id ? { id } : user.email ? { email: user.email } : undefined; })(),
       merchant_order_data: { reference: id },
       ...(back ? { redirect_url: back } : {}),
     });
@@ -104,7 +156,7 @@ export function createRevolutPay(db, {
       `INSERT INTO stripe_payments (session_id, user_id, amount_cents, currency, status, method, reference, created_at, promo_opt)
        VALUES (?, ?, ?, 'eur', 'pending', ?, ?, ?, ?)`
     ).run(id, user.id, amountCents, method, String(order.id), nowIso(), PROMO_CODE[promo] ?? 1);
-    return { ...view(rowOf(id)), redirectUrl: String(order.checkout_url) };
+    return { ...view(rowOf(id)), redirectUrl: String(order.checkout_url), token: order.token ? String(order.token) : null };
   }
 
   /**
@@ -191,5 +243,12 @@ export function createRevolutPay(db, {
     return { id: r?.id, url: r?.url || url, signingSecret: r?.signing_secret || null };
   }
 
-  return { enabled, live, environment, hasWebhook: !!webhookSecret, createDeposit, applyOrder, handleWebhook, refresh, sweep, check, registerWebhook };
+  /** Apple Pay on our own page: Revolut registers the domain with Apple (the file it checks is served at /.well-known). */
+  const registerApplePayDomain = (domain) => call('POST', '/apple-pay/domains/register', { domain });
+
+  return {
+    enabled, live, environment, publicKey, widgetMode: live ? 'prod' : 'sandbox', hasWebhook: !!webhookSecret,
+    createDeposit, applyOrder, handleWebhook, refresh, sweep, check, registerWebhook, registerApplePayDomain,
+    savedCards, forgetCard, payWithSavedCard,
+  };
 }

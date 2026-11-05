@@ -13,9 +13,18 @@ function setup() {
   const orders = new Map();
   const calls = [];
   let n = 0;
+  let t3ds = false;
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
     const body = init.body ? JSON.parse(init.body) : null;
+    if (init.method === 'POST' && url.endsWith('/api/1.0/customers')) return { ok: true, status: 201, json: async () => ({ id: 'cus-1', email: body.email }) };
+    if (init.method === 'GET' && url.endsWith('/api/1.0/customers/cus-1/payment-methods')) return { ok: true, status: 200, json: async () => [{ id: 'pm-1', type: 'CARD', method_details: { brand: 'VISA', last4: '4242', expiry_month: 4, expiry_year: 2029 } }] };
+    const pay = /\/api\/orders\/([^/]+)\/payments$/.exec(url);
+    if (init.method === 'POST' && pay && orders.has(pay[1])) {
+      const o = orders.get(pay[1]);
+      if (body.saved_payment_method?.id === 'pm-1') o.state = t3ds ? 'pending' : 'completed';
+      return { ok: true, status: 200, json: async () => (t3ds ? { state: 'authentication_challenge', authentication_challenge: { type: 'three_ds' } } : { state: 'completed' }) };
+    }
     if (init.method === 'POST' && url.endsWith('/api/orders')) {
       const o = { id: `ord-${++n}`, token: `tok-${n}`, state: 'pending', amount: body.amount, currency: body.currency, checkout_url: `https://sandbox-checkout.revolut.com/payment-link/tok-${n}`, ...body };
       orders.set(o.id, o);
@@ -30,7 +39,7 @@ function setup() {
   const balance = () => db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(userId).balance_cents;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   const sign = (raw, ts = Date.now()) => ({ sig: `v1=${createHmac('sha256', secret).update(`v1.${ts}.${raw}`).digest('hex')}`, ts: String(ts) });
-  return { db, rp, orders, calls, user, userId, balance, sign };
+  return { db, rp, orders, calls, user, userId, balance, sign, setThreeDs: (v) => { t3ds = v; } };
 }
 
 test('a Revolut deposit: an order, the player sent to Revolut\'s page and back to the wallet', async () => {
@@ -39,9 +48,13 @@ test('a Revolut deposit: an order, the player sent to Revolut\'s page and back t
   assert.ok(isRevolutDeposit(r.id));
   assert.equal(r.status, 'pending');
   assert.match(r.redirectUrl, /^https:\/\/sandbox-checkout\.revolut\.com\//);
-  const sent = JSON.parse(t.calls[0].init.body);
-  assert.equal(t.calls[0].url, 'https://sandbox-merchant.revolut.com/api/orders');
-  assert.equal(t.calls[0].init.headers.Authorization, 'Bearer sk_test');
+  const orderCall = t.calls.find((c) => c.url.endsWith('/api/orders'));
+  const sent = JSON.parse(orderCall.init.body);
+  assert.equal(orderCall.init.headers.Authorization, 'Bearer sk_test');
+  // The order belongs to the player's Revolut customer (kept on the user), so a saved card is theirs.
+  assert.deepEqual(sent.customer, { id: 'cus-1' });
+  assert.equal(t.db.prepare('SELECT revolut_customer_id FROM users WHERE id = ?').get(t.userId).revolut_customer_id, 'cus-1');
+  assert.equal(r.token, 'tok-1');
   assert.equal(sent.amount, 2000);
   assert.equal(sent.currency, 'EUR');
   assert.equal(sent.redirect_url, `https://bet62.pt/#/perfil/carteira?deposito=${r.id}`);
@@ -116,4 +129,18 @@ test('the admin can test the Merchant key and register the deposits webhook (its
   assert.ok(JSON.parse(calls[1].init.body).events.includes('ORDER_COMPLETED'));
   const bad = createRevolutPay(db, { secretKey: 'sk_wrong', fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({ message: 'Unauthorized' }) }) });
   await assert.rejects(bad.check(), /Unauthorized/);
+});
+
+test('a saved card pays the next deposit without typing it; a bank check (3-D Secure) falls back to the card form', async () => {
+  const t = setup();
+  const a = await t.rp.createDeposit(t.user, 2000, { method: 'cartao', promo: 'none' });
+  assert.deepEqual(await t.rp.savedCards(t.user), [{ id: 'pm-1', brand: 'VISA', last4: '4242', expiry: '04/29' }]);
+  const paid = await t.rp.payWithSavedCard(t.user, a.id, 'pm-1');
+  assert.deepEqual([paid.status, paid.fallback, t.balance()], ['paid', false, 2000]);
+  // Only a card of the player's own.
+  const b = await t.rp.createDeposit(t.user, 1000, { method: 'cartao', promo: 'none' });
+  await assert.rejects(t.rp.payWithSavedCard(t.user, b.id, 'pm-other'), /Cartão não encontrado/);
+  t.setThreeDs(true);
+  const c = await t.rp.payWithSavedCard(t.user, b.id, 'pm-1');
+  assert.deepEqual([c.status, c.fallback, t.balance()], ['pending', true, 2000]);
 });

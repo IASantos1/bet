@@ -657,6 +657,8 @@ function migrate(db) {
   // them), and whether they had won a bet after their last deposit there (the withdrawal rule).
   if (!userCols.has('novo_id')) db.exec('ALTER TABLE users ADD COLUMN novo_id INTEGER');
   if (!userCols.has('novo_can_withdraw')) db.exec('ALTER TABLE users ADD COLUMN novo_can_withdraw INTEGER NOT NULL DEFAULT 0');
+  // The player's customer at Revolut Merchant (their saved cards live there).
+  if (!userCols.has('revolut_customer_id')) db.exec('ALTER TABLE users ADD COLUMN revolut_customer_id TEXT');
   // How each bet was paid for (real / bonus / free bet) and what of its payout was real money.
   const betCols = new Set(db.prepare('PRAGMA table_info(bets)').all().map((c) => c.name));
   // The link a player shares a ticket by (#/b/<token>): made the first time it is shared.

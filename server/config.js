@@ -73,8 +73,15 @@ export const config = {
   // REVOLUT_PAYOUT_ACCOUNT_ID are all set. From AUTO_MIN to AUTO_MAX (€) a withdrawal is paid at once.
   // Revolut Merchant (card, Apple Pay, Google Pay deposits on Revolut's checkout page). Off without
   // the secret key; "production" only once the merchant account is approved and tested in sandbox.
+  // Deposit methods shown as "Indisponível" (temporarily off), comma separated: "mbway,multibanco".
+  // With Revolut Merchant on and nothing set, MB WAY and Multibanco are off (PAY_METHODS_OFF="" turns them back on).
+  payMethodsOff: (env.PAY_METHODS_OFF ?? (unquote(env.REVOLUT_MERCHANT_SECRET_KEY) ? 'mbway,multibanco' : '')).split(',').map((m) => m.trim().toLowerCase()).filter(Boolean),
   revolutPay: {
     secretKey: unquote(env.REVOLUT_MERCHANT_SECRET_KEY),
+    // The public key ("pk_…"): the card form, Apple Pay and Google Pay inside our page need it.
+    publicKey: unquote(env.REVOLUT_MERCHANT_PUBLIC_KEY),
+    // Revolut's Apple Pay domain file (served at /.well-known/apple-developer-merchantid-domain-association).
+    applePayFileUrl: unquote(env.REVOLUT_APPLE_PAY_FILE_URL) || 'https://assets.revolut.com/api-docs/merchant-api/files/apple-developer-merchantid-domain-association',
     webhookSecret: unquote(env.REVOLUT_MERCHANT_WEBHOOK_SECRET),
     environment: (env.REVOLUT_MERCHANT_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
     apiVersion: (env.REVOLUT_MERCHANT_API_VERSION || '2024-09-01').trim(),
