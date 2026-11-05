@@ -674,3 +674,17 @@ test('a winning accumulator keeps where it came from; an origin that does not fi
   assert.equal(bets.get(acca.body.betIds[0]).origin, 'acca');
   assert.equal(bets.get(single.body.betIds[0]).origin, null);
 });
+
+test('a pick on a game the feed plays as a second listing shows that copy live on the ticket', async () => {
+  const adm = await adminClient();
+  const ev = (await adm('POST', '/api/admin/events', { sport: 'futebol', competition: 'Teste', home: 'Lugano', away: 'Zalgiris',
+    startTime: new Date(Date.now() + 3600_000).toISOString(), odds: { 1: 2, X: 3, 2: 4 } })).body.event;
+  const p = await newPlayer(50);
+  await p('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: sel(ev, '1').id, odds: 2 }] });
+  const kick = new Date(Date.now() - 40 * 60_000).toISOString();
+  db.prepare('UPDATE events SET start_time = ? WHERE id = ?').run(kick, ev.id);
+  const copy = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, created_at, updated_at)
+    VALUES ('futebol', 'Teste', 'Lugano', 'Zalgiris Kaunas', ?, 'live', 1, 0, '38''', ?, ?)`).run(kick, kick, kick).lastInsertRowid);
+  const leg = (await p('GET', '/api/bets')).body.bets[0].legs[0];
+  assert.deepEqual([leg.eventStatus, leg.score, leg.eventId, leg.clock], ['live', '1 - 0', copy, "38'"]);
+});

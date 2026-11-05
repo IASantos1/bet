@@ -9,7 +9,7 @@ import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
 import { COUNTRY_SPORTS, leagueCountry } from './countryleagues.js';
 import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
-import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank, cappedClock } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank, cappedClock, sameGame } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
@@ -1652,6 +1652,8 @@ export function createApp(db, {
     } catch (err) { next(err); } finally { cashoutPending.delete(id); }
   });
 
+  const playedCopy = db.prepare(`SELECT id, home, away, status, home_score, away_score, clock, source FROM events
+    WHERE sport = ? AND id <> ? AND status IN ('live', 'finished') AND start_time BETWEEN ? AND ?`);
   function withLegs(bets) {
     if (!bets.length) return [];
     const ids = bets.map((b) => b.id);
@@ -1660,6 +1662,17 @@ export function createApp(db, {
               e.status AS event_status, e.start_time, e.clock, e.source
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
+    // A pick whose game the feed is playing as a second listing (another id, its own row): the ticket
+    // shows that copy's clock and score, and links to it, until the two are joined or it is settled.
+    for (const l of legs) {
+      if (l.event_status !== 'scheduled' || !(Date.parse(l.start_time) <= Date.now())) continue;
+      const at = Date.parse(l.start_time);
+      const copies = playedCopy.all(l.sport, l.event_id, new Date(at - 3 * 3_600_000).toISOString(), new Date(at + 3 * 3_600_000).toISOString())
+        .filter((c) => sameGame(c, l));
+      if (copies.length !== 1) continue;
+      const c = copies[0];
+      Object.assign(l, { event_status: c.status, home_score: c.home_score, away_score: c.away_score, clock: c.clock, source: c.source, shown_id: c.id });
+    }
     return bets.map((b) => ({
       id: b.id, type: b.type, stake: cents(b.stake_cents), totalOdds: b.total_odds, potential: cents(b.potential_cents),
       status: b.status, payout: cents(b.payout_cents), createdAt: b.created_at, settledAt: b.settled_at,
@@ -1674,9 +1687,9 @@ export function createApp(db, {
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, shortTeam(l.home, l.sport) || l.home, shortTeam(l.away, l.sport) || l.away), odds: l.odds_x100 / 100,
         status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
-        eventId: l.event_id, sport: l.sport, startTime: l.start_time,
+        eventId: l.shown_id || l.event_id, sport: l.sport, startTime: l.start_time,
         // In play: the clock as the match pages show it (the WinHouse tracker knows "Intervalo", "45+2'").
-        clock: l.event_status === 'live' ? cappedClock(l.sport, (l.source === 'winhouse' && winhouseTracker?.clockOf?.(l.event_id)) || l.clock || null, l.start_time) : null,
+        clock: l.event_status === 'live' ? cappedClock(l.sport, (l.source === 'winhouse' && winhouseTracker?.clockOf?.(l.shown_id || l.event_id)) || l.clock || null, l.start_time) : null,
       })),
     }));
   }
