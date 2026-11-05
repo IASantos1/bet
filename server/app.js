@@ -182,8 +182,8 @@ export function createApp(db, {
         // Stripe.js (card form) must load from js.stripe.com and talk to api.stripe.com.
         // Revolut's card form, Apple Pay and Google Pay (inside our page) load from merchant.revolut.com
         // (Google Pay from pay.google.com) and put their bank check (3-D Secure) over the page.
-        `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com' : ''}; `
-        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://pay.google.com https://google.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
+        `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com https://www.gstatic.com' : ''}; `
+        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://*.google.com https://google.com https://*.gstatic.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
         // Live video (HLS) plays from the stream's own host.
         "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.
@@ -203,6 +203,8 @@ export function createApp(db, {
   app.get('/.well-known/apple-developer-merchantid-domain-association', async (_req, res) => {
     if (!revolutPay) return res.status(404).end();
     try {
+      // The file pasted in REVOLUT_APPLE_PAY_FILE (downloaded from Revolut's Apple Pay settings) wins.
+      if (!applePayFile && config.revolutPay.applePayFile) applePayFile = Buffer.from(config.revolutPay.applePayFile);
       if (!applePayFile) {
         const r = await fetch(config.revolutPay.applePayFileUrl, { signal: AbortSignal.timeout(15_000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -2190,9 +2192,15 @@ export function createApp(db, {
   admin.post('/revolut-merchant/apple-pay', async (req, res, next) => {
     try {
       if (!revolutPay) throw new HttpError(503, 'Falta REVOLUT_MERCHANT_SECRET_KEY no Railway.');
-      const domain = new URL(config.publicUrl || `${req.protocol}://${req.get('host')}`).hostname;
+      const home = (config.publicUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+      const domain = new URL(home).hostname;
+      // Apple reads this file on our domain before it allows Apple Pay: checked first, so a missing
+      // file says so instead of a refusal from Revolut.
+      const fileUrl = `${home}/.well-known/apple-developer-merchantid-domain-association`;
+      const f = await fetch(fileUrl, { signal: AbortSignal.timeout(15_000) }).catch((err) => ({ ok: false, status: err.message }));
+      if (!f.ok) throw new HttpError(502, `O ficheiro de verificação da Apple não abre em ${fileUrl} (${f.status}). Na Revolut (Merchant → Apple Pay) descarregue o ficheiro "apple-developer-merchantid-domain-association", copie o conteúdo para REVOLUT_APPLE_PAY_FILE no Railway e tente de novo.`);
       await revolutPay.registerApplePayDomain(domain);
-      res.json({ ok: true, domain });
+      res.json({ ok: true, domain, file: fileUrl });
     } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(err.status >= 500 ? 502 : 400, `Revolut: ${err.message}`) : err); }
   });
   // Revolut Merchant (card / Apple Pay / Google Pay deposits): its state, a key test and its webhook.

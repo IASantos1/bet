@@ -81,6 +81,7 @@ export const config = {
     // The public key ("pk_…"): the card form, Apple Pay and Google Pay inside our page need it.
     publicKey: unquote(env.REVOLUT_MERCHANT_PUBLIC_KEY),
     // Revolut's Apple Pay domain file (served at /.well-known/apple-developer-merchantid-domain-association).
+    applePayFile: String(env.REVOLUT_APPLE_PAY_FILE || '').trim(),
     applePayFileUrl: unquote(env.REVOLUT_APPLE_PAY_FILE_URL) || 'https://assets.revolut.com/api-docs/merchant-api/files/apple-developer-merchantid-domain-association',
     webhookSecret: unquote(env.REVOLUT_MERCHANT_WEBHOOK_SECRET),
     environment: (env.REVOLUT_MERCHANT_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
