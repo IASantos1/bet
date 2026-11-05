@@ -71,6 +71,14 @@ export const config = {
   // Revolut Business: withdrawals paid to the player's IBAN (the same variables as Bet62Novo).
   // Off until REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER, REVOLUT_PRIVATE_KEY, REVOLUT_REFRESH_TOKEN and
   // REVOLUT_PAYOUT_ACCOUNT_ID are all set. From AUTO_MIN to AUTO_MAX (€) a withdrawal is paid at once.
+  // Revolut Merchant (card, Apple Pay, Google Pay deposits on Revolut's checkout page). Off without
+  // the secret key; "production" only once the merchant account is approved and tested in sandbox.
+  revolutPay: {
+    secretKey: unquote(env.REVOLUT_MERCHANT_SECRET_KEY),
+    webhookSecret: unquote(env.REVOLUT_MERCHANT_WEBHOOK_SECRET),
+    environment: (env.REVOLUT_MERCHANT_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
+    apiVersion: (env.REVOLUT_MERCHANT_API_VERSION || '2024-09-01').trim(),
+  },
   revolut: {
     environment: (env.REVOLUT_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
     clientId: unquote(env.REVOLUT_CLIENT_ID),

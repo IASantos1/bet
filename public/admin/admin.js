@@ -854,7 +854,8 @@ async function loadTab() {
       const rvPanel = `<div class="panel rv-panel"><h3>Revolut Business ${rv?.configured ? `<span class="pill won">LIGADA · ${rv.environment === 'production' ? 'produção' : 'sandbox'}</span>` : '<span class="pill void">NÃO CONFIGURADA</span>'}</h3>
         <p class="muted">${rv?.configured
           ? `Levantamentos de ${money(rv.autoMin)} a ${money(rv.autoMax)} são pagos automaticamente para o IBAN do jogador. Os restantes ficam aqui: “Aprovar e pagar” envia pela Revolut. ${rv.webhook ? 'Webhook configurado.' : '⚠ Falta REVOLUT_WEBHOOK_SIGNING_SECRET: o estado “Pago” só chega pelo webhook.'}`
-          : 'Defina no Railway → Variables: REVOLUT_ENVIRONMENT, REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER, REVOLUT_PRIVATE_KEY, REVOLUT_REFRESH_TOKEN, REVOLUT_PAYOUT_ACCOUNT_ID e REVOLUT_WEBHOOK_SIGNING_SECRET (as mesmas do Bet62Novo). Enquanto não estiver ligada, aprove só depois de fazer a transferência à mão.'}</p></div>`;
+          : 'Defina no Railway → Variables: REVOLUT_ENVIRONMENT, REVOLUT_CLIENT_ID, REVOLUT_JWT_ISSUER, REVOLUT_PRIVATE_KEY, REVOLUT_REFRESH_TOKEN, REVOLUT_PAYOUT_ACCOUNT_ID e REVOLUT_WEBHOOK_SIGNING_SECRET (as mesmas do Bet62Novo). Enquanto não estiver ligada, aprove só depois de fazer a transferência à mão.'}</p>
+        ${rv ? rvDiagnostics(rv.diagnostics) : ''}</div>`;
       const payout = (w) => (w.payout === 'paid' ? '<span class="pill won">Pago (Revolut)</span>' : w.payout === 'processing' ? '<span class="pill open">A pagar (Revolut)</span>'
         : w.payout === 'failed' ? `<span class="pill lost">Revolut falhou</span><br><small class="muted">${esc(w.payoutError || '')}</small>` : '');
       const acts = (w) => (w.status === 'pending' ? `<div class="form-actions">${state.revolutOn ? `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar e pagar</button><button class="ghost-btn btn-sm" data-action="wd-manual" data-id="${w.id}">Pago à mão</button>` : `<button class="primary-btn btn-sm" data-action="wd-approve" data-id="${w.id}">Aprovar</button>`}<button class="danger-btn btn-sm" data-action="wd-reject" data-id="${w.id}">Rejeitar</button></div>`
@@ -2171,6 +2172,12 @@ document.addEventListener('click', async (e) => {
     const legs = Object.fromEntries([...card.querySelectorAll('.leg-pick')].map((s) => [s.dataset.leg, r]));
     const what = { won: 'GANHO (todas as seleções em aberto ganhas, o prémio é pago)', lost: 'PERDIDO', void: 'ANULADO (a aposta é devolvida)' }[r];
     await settleTicket(actionEl.dataset.id, legs, `Marcar o bilhete #${actionEl.dataset.id} como ${what}?`);
+  } else if (action === 'rv-check') {
+    actionEl.disabled = true;
+    const r = await api('/api/admin/revolut/check', { method: 'POST', body: {} }).catch((err) => ({ ok: false, error: err.message }));
+    const box = document.getElementById('rvCheck');
+    if (box) box.innerHTML = r.ok ? '<span class="pill won">Ligação OK</span> A Revolut aceitou as credenciais.' : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}`;
+    actionEl.disabled = false;
   } else if (['wd-approve', 'wd-reject', 'wd-manual', 'wd-pay'].includes(action)) {
     const verb = { 'wd-approve': 'approve', 'wd-manual': 'approve', 'wd-reject': 'reject', 'wd-pay': 'pay' }[action];
     const ask = {
@@ -3189,4 +3196,22 @@ async function spotAction(action, el) {
       toast('Destaque guardado'); spotEd = null; loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); el.disabled = false; }
   }
+}
+
+/** The Revolut Business connection: what is set (never the values), the last refusal and a test button. */
+function rvDiagnostics(d) {
+  if (!d) return '';
+  const row = (ok, label) => `<li>${ok ? '✅' : '❌'} ${label}</li>`;
+  const err = d.lastAuthError;
+  return `<ul class="rv-diag">
+      ${row(true, `REVOLUT_ENVIRONMENT: <b>${esc(d.environment)}</b> (tem de ser o ambiente do certificado: production ou sandbox)`)}
+      ${row(d.clientId, 'REVOLUT_CLIENT_ID')}
+      ${row(!!d.issuer, `REVOLUT_JWT_ISSUER: <b>${esc(d.issuer || '—')}</b> (o domínio do redirect URI registado na Revolut, sem https://)`)}
+      ${row(d.privateKey, 'REVOLUT_PRIVATE_KEY (chave privada PEM válida)')}
+      ${row(d.refreshToken, 'REVOLUT_REFRESH_TOKEN')}
+      ${row(d.accountId, 'REVOLUT_PAYOUT_ACCOUNT_ID')}
+      ${row(d.webhook, 'REVOLUT_WEBHOOK_SIGNING_SECRET')}
+    </ul>
+    ${err ? `<div class="notice">Última recusa da Revolut (${esc(fmtDateTime(err.at))}): HTTP ${esc(String(err.status))} ${esc(err.error || '')} ${esc(err.description || '')}<br>${esc(err.hint || '')}</div>` : ''}
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rv-check">Testar ligação</button><span id="rvCheck"></span></div>`;
 }

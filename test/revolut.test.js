@@ -98,3 +98,28 @@ test('withdrawals through Revolut: auto-paid in range, webhook marks paid, a fai
     assert.deepEqual([list.revolut.configured, list.withdrawals.find((w) => w.id === 1).payout], [true, 'paid']);
   } finally { server.close(); }
 });
+
+test('revolut auth: issuer pasted as a URL still signs as the domain; a 401 says what to check and is kept for the admin', async () => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  let iss = null;
+  const fetchImpl = async (url, init = {}) => {
+    const p = new URLSearchParams(init.body);
+    iss = JSON.parse(Buffer.from(p.get('client_assertion').split('.')[1], 'base64').toString()).iss;
+    return { ok: false, status: 401, text: async () => JSON.stringify({ error: 'invalid_client', error_description: 'Client authentication failed' }) };
+  };
+  const rv = createRevolut({ environment: 'production', clientId: 'cid', issuer: 'https://bet62.plus/', privateKey: pem, refreshToken: 'rt', accountId: 'acc', fetchImpl });
+  assert.equal(rv.diagnostics().issuer, 'bet62.plus');
+  await assert.rejects(rv.checkAuth(), (err) => err.status === 502 && /invalid_client|Client authentication failed/.test(err.message) && /REVOLUT_ENVIRONMENT=production/.test(err.message));
+  assert.equal(iss, 'bet62.plus');
+  const d = rv.diagnostics();
+  assert.deepEqual([d.lastAuthError.status, d.lastAuthError.error, d.privateKey, d.clientId], [401, 'invalid_client', true, true]);
+  assert.ok(!JSON.stringify(d).includes('rt') || !JSON.stringify(d).includes('"rt"'), 'no secret values');
+  // A key that does not parse: not configured, said in the diagnostics.
+  const bad = createRevolut({ clientId: 'cid', issuer: 'bet62.plus', privateKey: 'not a key', refreshToken: 'rt', accountId: 'acc', fetchImpl });
+  assert.deepEqual([bad.configured, bad.diagnostics().privateKey], [false, false]);
+  // invalid_grant: the refresh token to renew.
+  const expired = createRevolut({ clientId: 'cid', issuer: 'bet62.plus', privateKey: pem, refreshToken: 'rt', accountId: 'acc',
+    fetchImpl: async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ error: 'invalid_grant' }) }) });
+  await assert.rejects(expired.checkAuth(), /REVOLUT_REFRESH_TOKEN/);
+});

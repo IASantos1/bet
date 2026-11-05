@@ -34,11 +34,18 @@ export function createRevolut({
   webhookSecret = '', autoMinCents = 2_000, autoMaxCents = 20_000, fetchImpl = globalThis.fetch, log = () => {},
 } = {}) {
   const base = environment === 'production' ? 'https://b2b.revolut.com/api/1.0' : 'https://sandbox-b2b.revolut.com/api/1.0';
-  const key = String(privateKey || '').replace(/\\n/g, '\n');
-  const configured = !!(clientId && issuer && key && refreshToken && accountId);
+  const key = String(privateKey || '').replace(/\\n/g, '\n').trim();
+  // The JWT issuer is the redirect URI's domain as registered in Revolut ("bet62.pt"): an
+  // "https://bet62.pt/" pasted from the browser makes every token request fail with 401.
+  const iss = String(issuer || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  // A private key that does not parse (lost line breaks, a certificate pasted instead) also ends in 401.
+  let keyOk = false;
+  if (key) { try { crypto.createPrivateKey(key); keyOk = true; } catch { log('revolut: REVOLUT_PRIVATE_KEY não é uma chave privada PEM válida (-----BEGIN PRIVATE KEY----- …).'); } }
+  const configured = !!(clientId && iss && keyOk && refreshToken && accountId);
+  let lastAuthError = null; // what Revolut said on the last failed token request (no secrets)
   let token = null; // { value, until }
 
-  const assertion = () => signJwt({ iss: issuer, sub: clientId, aud: 'https://revolut.com' }, key);
+  const assertion = () => signJwt({ iss, sub: clientId, aud: 'https://revolut.com' }, key);
   const fail = (status, message) => Object.assign(new Error(message), { status });
 
   async function tokenCall(params) {
@@ -52,9 +59,21 @@ export function createRevolut({
     try { data = JSON.parse(text); } catch { /* not JSON */ }
     if (!res.ok || !data?.access_token) {
       log(`revolut auth HTTP ${res.status}: ${text.slice(0, 300)}`);
-      throw fail(502, `Revolut: autenticação falhou (${data?.error_description || data?.error || res.status}).`);
+      lastAuthError = { at: new Date().toISOString(), status: res.status, error: data?.error || null, description: data?.error_description || null, hint: authHint(res.status, data?.error) };
+      throw fail(502, `Revolut: autenticação falhou (${data?.error_description || data?.error || res.status}). ${lastAuthError.hint}`);
     }
+    lastAuthError = null;
     return data;
+  }
+
+  /** What to check for a refused token request (shown to the admin; it names variables, never their values). */
+  function authHint(status, error) {
+    if (error === 'invalid_grant') return 'O REVOLUT_REFRESH_TOKEN já não é válido: volte a autorizar em Revolut Business → APIs (Enable access) e coloque o novo no Railway.';
+    if (status === 401 || error === 'invalid_client') {
+      return `Confirme: REVOLUT_ENVIRONMENT=${environment === 'production' ? 'production' : 'sandbox'} é o ambiente do certificado; REVOLUT_CLIENT_ID é o do certificado; `
+        + `REVOLUT_JWT_ISSUER é o domínio do redirect URI registado (agora "${iss}"); a chave privada é a do certificado carregado; e, se a Revolut tem lista de IPs autorizados, que inclui o do servidor.`;
+    }
+    return '';
   }
 
   async function accessToken() {
@@ -134,6 +153,9 @@ export function createRevolut({
 
   return {
     configured, environment, autoMinCents, autoMaxCents, webhookSet: !!webhookSecret,
+    // For the admin's Revolut status: what is set (never the values) and the last refusal.
+    diagnostics: () => ({ environment, issuer: iss, clientId: !!clientId, privateKey: keyOk, refreshToken: !!refreshToken, accountId: !!accountId, webhook: !!webhookSecret, lastAuthError }),
+    checkAuth: async () => { token = null; await accessToken(); return true; },
     payOut, transaction, exchangeCode, verifyWebhook, autoPays,
   };
 }

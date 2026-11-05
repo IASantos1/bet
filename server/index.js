@@ -18,6 +18,7 @@ import { createRapidStream } from './rapidstream.js';
 import { createStripe } from './stripe.js';
 import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
+import { createRevolutPay } from './revolutpay.js';
 import { createBrevo } from './brevo.js';
 import { createTeamLogos } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
@@ -132,6 +133,17 @@ if (stripe) {
   setInterval(sweep, 60_000).unref();
 }
 
+// Revolut Merchant: card, Apple Pay and Google Pay deposits (MB WAY / Multibanco stay with Stripe).
+const revolutPay = config.revolutPay.secretKey && config.paymentsMode !== 'disabled'
+  ? createRevolutPay(db, { ...config.revolutPay, publicUrl: config.publicUrl, log: (m) => console.warn(m) })
+  : null;
+if (revolutPay) {
+  console.log(`Revolut Merchant: ${revolutPay.environment}, webhook ${revolutPay.hasWebhook ? 'configurado' : 'em falta (REVOLUT_MERCHANT_WEBHOOK_SECRET)'}`);
+  const sweep = () => revolutPay.sweep().then((r) => { if (r.credited) console.log(`Revolut: ${r.credited} depósito(s) creditado(s) pela verificação`); }).catch((err) => console.warn(`revolut sweep: ${err.message}`));
+  setTimeout(sweep, 15_000).unref();
+  setInterval(sweep, 60_000).unref();
+}
+
 const eupago = config.paymentsMode === 'eupago' && config.eupago.apiKey
   ? createEupago(db, { ...config.eupago, log: (m) => console.warn(`[eupago] ${m}`) })
   : null;
@@ -179,7 +191,11 @@ if (telegram.enabled) console.log(`Telegram: canal ${config.telegram.channel}, p
 
 // Revolut Business: withdrawals paid to the player's IBAN (off until its variables are set).
 const revolut = config.revolut.clientId ? createRevolut({ ...config.revolut, log: (m) => console.warn(m) }) : null;
-if (revolut) console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : 'incompleta (faltam variáveis)'}`);
+if (revolut) {
+  const d = revolut.diagnostics();
+  const missing = [['REVOLUT_JWT_ISSUER', d.issuer], ['REVOLUT_PRIVATE_KEY', d.privateKey], ['REVOLUT_REFRESH_TOKEN', d.refreshToken], ['REVOLUT_PAYOUT_ACCOUNT_ID', d.accountId]].filter(([, ok]) => !ok).map(([k]) => k);
+  console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}, issuer ${d.issuer}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : `incompleta (em falta ou inválida: ${missing.join(', ')})`}`);
+}
 const teamLogos = createTeamLogos(db, { ...config.teamLogos, persistent: config.dbPersistent, log: (m) => console.warn(`[emblemas] ${m}`) });
 const stopTeamLogos = teamLogos.start();
 if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[emblemas] API-Football ativo (até ${config.teamLogos.apiFootballDaily} pesquisas por dia e desporto)`);
@@ -193,7 +209,7 @@ const stopSanctions = sanctions.start();
 // Notifications on the phone: a won bet announced within ~20 s of being settled.
 const push = createPush(db, { ...config.push, log: (m) => console.warn(`[push] ${m}`) });
 const stopPush = push.start();
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, boardCacheMs: 2000 });
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
