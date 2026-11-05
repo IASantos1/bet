@@ -2140,8 +2140,18 @@ export function createApp(db, {
   // "Testar ligação": asks Revolut for a token now; the answer (and what to check) for the admin.
   admin.post('/revolut/check', async (_req, res) => {
     if (!revolut) return res.json({ ok: false, error: 'Revolut não configurada: defina REVOLUT_CLIENT_ID no Railway.' });
-    try { await revolut.checkAuth(); res.json({ ok: true, diagnostics: revolut.diagnostics() }); }
+    try { res.json({ ok: true, accounts: await revolut.checkAuth(), diagnostics: revolut.diagnostics() }); }
     catch (err) { res.json({ ok: false, error: err.message, diagnostics: revolut.diagnostics() }); }
+  });
+  // "Registar webhook": our payout webhook at Revolut; its signing secret is shown once, for Railway.
+  admin.post('/revolut/webhook', async (req, res, next) => {
+    try {
+      if (!revolut) throw new HttpError(503, 'Revolut não configurada.');
+      const home = (config.publicUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+      const r = await revolut.registerWebhook(`${home}/api/revolut/webhook`);
+      console.warn(`Revolut: webhook registado (${r.url}) — coloque o signing secret em REVOLUT_WEBHOOK_SIGNING_SECRET`);
+      res.json(r);
+    } catch (err) { next(err.status && !(err instanceof HttpError) ? new HttpError(err.status, err.message) : err); }
   });
 
   // approve: approved (and, with Revolut on, paid to the IBAN; body.manual → paid by hand);

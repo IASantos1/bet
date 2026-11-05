@@ -41,7 +41,9 @@ export function createRevolut({
   // A private key that does not parse (lost line breaks, a certificate pasted instead) also ends in 401.
   let keyOk = false;
   if (key) { try { crypto.createPrivateKey(key); keyOk = true; } catch { log('revolut: REVOLUT_PRIVATE_KEY não é uma chave privada PEM válida (-----BEGIN PRIVATE KEY----- …).'); } }
-  const configured = !!(clientId && iss && keyOk && refreshToken && accountId);
+  // Signing in needs the first four; paying also needs the account the money leaves from.
+  const authReady = !!(clientId && iss && keyOk && refreshToken);
+  const configured = authReady && !!accountId;
   let lastAuthError = null; // what Revolut said on the last failed token request (no secrets)
   let token = null; // { value, until }
 
@@ -77,7 +79,10 @@ export function createRevolut({
   }
 
   async function accessToken() {
-    if (!configured) throw fail(503, 'Revolut não configurada.');
+    if (!authReady) {
+      const missing = [['REVOLUT_CLIENT_ID', clientId], ['REVOLUT_JWT_ISSUER', iss], ['REVOLUT_PRIVATE_KEY', keyOk], ['REVOLUT_REFRESH_TOKEN', refreshToken]].filter(([, v]) => !v).map(([k]) => k);
+      throw fail(503, `Revolut não configurada: falta ${missing.join(', ')}.`);
+    }
     if (token && token.until - 30_000 > Date.now()) return token.value;
     const d = await tokenCall({ grant_type: 'refresh_token', refresh_token: refreshToken });
     token = { value: d.access_token, until: Date.now() + (d.expires_in ?? 2400) * 1000 };
@@ -119,6 +124,7 @@ export function createRevolut({
    * same withdrawal never pays twice, even if asked again.
    */
   async function payOut({ iban, holderName, amountCents, reference, requestId }) {
+    if (!accountId) throw fail(503, 'Revolut: falta REVOLUT_PAYOUT_ACCOUNT_ID (a conta de onde saem os levantamentos).');
     const counterpartyId = await counterparty({ iban, holderName });
     return call('/pay', {
       method: 'POST',
@@ -155,7 +161,30 @@ export function createRevolut({
     configured, environment, autoMinCents, autoMaxCents, webhookSet: !!webhookSecret,
     // For the admin's Revolut status: what is set (never the values) and the last refusal.
     diagnostics: () => ({ environment, issuer: iss, clientId: !!clientId, privateKey: keyOk, refreshToken: !!refreshToken, accountId: !!accountId, webhook: !!webhookSecret, lastAuthError }),
-    checkAuth: async () => { token = null; await accessToken(); return true; },
+    // "Testar ligação": a fresh token, then the business's accounts (their ids are what
+    // REVOLUT_PAYOUT_ACCOUNT_ID takes; not secret).
+    checkAuth: async () => {
+      token = null;
+      await accessToken();
+      const list = await call('/accounts');
+      return (Array.isArray(list) ? list : []).filter((a) => a.state !== 'inactive').map((a) => ({ id: a.id, name: a.name || '', currency: a.currency, balance: a.balance, selected: a.id === accountId }));
+    },
+    /**
+     * Registers our webhook for payouts (Business API v2: POST /webhooks) and returns its signing
+     * secret, which goes in REVOLUT_WEBHOOK_SIGNING_SECRET (shown once to the admin).
+     */
+    registerWebhook: async (url) => {
+      const res = await fetchImpl(`${base.replace(/\/1\.0$/, '/2.0')}/webhooks`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, events: ['TransactionCreated', 'TransactionStateChanged'] }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await res.text();
+      let data; try { data = JSON.parse(text); } catch { data = undefined; }
+      if (!res.ok) throw fail(res.status >= 500 ? 502 : 400, `Revolut: ${data?.message || `HTTP ${res.status}`}`);
+      return { id: data?.id, url: data?.url || url, signingSecret: data?.signing_secret || null };
+    },
     payOut, transaction, exchangeCode, verifyWebhook, autoPays,
   };
 }

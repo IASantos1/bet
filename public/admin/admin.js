@@ -2176,7 +2176,20 @@ document.addEventListener('click', async (e) => {
     actionEl.disabled = true;
     const r = await api('/api/admin/revolut/check', { method: 'POST', body: {} }).catch((err) => ({ ok: false, error: err.message }));
     const box = document.getElementById('rvCheck');
-    if (box) box.innerHTML = r.ok ? '<span class="pill won">Ligação OK</span> A Revolut aceitou as credenciais.' : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}`;
+    if (box) {
+      box.innerHTML = r.ok
+        ? `<span class="pill won">Ligação OK</span> A Revolut aceitou as credenciais.${r.accounts?.length ? `<br><small class="muted">Contas (copie o ID da conta EUR de onde saem os levantamentos para REVOLUT_PAYOUT_ACCOUNT_ID):</small><ul class="rv-diag">${r.accounts.map((a) => `<li>${a.selected ? '✅ ' : ''}<b>${esc(a.currency)}</b> ${esc(a.name)} ${a.balance !== undefined ? `· saldo ${esc(String(a.balance))}` : ''}<br><code>${esc(a.id)}</code></li>`).join('')}</ul>` : ''}`
+        : `<span class="pill lost">Recusada</span> ${esc(r.error || '')}`;
+    }
+    actionEl.disabled = false;
+  } else if (action === 'rv-webhook') {
+    if (!confirm('Registar o webhook dos levantamentos na Revolut? O segredo aparece uma só vez: copie-o logo para o Railway.')) return;
+    actionEl.disabled = true;
+    const box = document.getElementById('rvCheck');
+    try {
+      const r = await api('/api/admin/revolut/webhook', { method: 'POST', body: {} });
+      if (box) box.innerHTML = `<span class="pill won">Webhook registado</span> ${esc(r.url)}<br>${r.signingSecret ? `<small>Copie agora para <b>REVOLUT_WEBHOOK_SIGNING_SECRET</b> no Railway (não volta a aparecer):</small><br><code>${esc(r.signingSecret)}</code>` : 'A Revolut não devolveu o segredo: veja-o em Revolut Business → APIs → Webhooks.'}`;
+    } catch (err) { if (box) box.innerHTML = `<span class="pill lost">Falhou</span> ${esc(err.message)}`; }
     actionEl.disabled = false;
   } else if (['wd-approve', 'wd-reject', 'wd-manual', 'wd-pay'].includes(action)) {
     const verb = { 'wd-approve': 'approve', 'wd-manual': 'approve', 'wd-reject': 'reject', 'wd-pay': 'pay' }[action];
@@ -3213,5 +3226,6 @@ function rvDiagnostics(d) {
       ${row(d.webhook, 'REVOLUT_WEBHOOK_SIGNING_SECRET')}
     </ul>
     ${err ? `<div class="notice">Última recusa da Revolut (${esc(fmtDateTime(err.at))}): HTTP ${esc(String(err.status))} ${esc(err.error || '')} ${esc(err.description || '')}<br>${esc(err.hint || '')}</div>` : ''}
-    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rv-check">Testar ligação</button><span id="rvCheck"></span></div>`;
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="rv-check">Testar ligação</button>${d.webhook ? '' : '<button class="ghost-btn btn-sm" data-action="rv-webhook">Registar webhook</button>'}</div>
+    <div id="rvCheck"></div>`;
 }
