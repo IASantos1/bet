@@ -191,6 +191,8 @@ h1, h2, h3 { margin-top: 0; }
 .comp-name { display: inline-flex; align-items: center; gap: 8px; }
 .league-logo { display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 13px; }
 .league-logo img { width: 20px; height: 20px; object-fit: contain; }
+/* The official logo without its sponsor's band (the bottom quarter), kept centred. */
+img.cut-sponsor { clip-path: inset(0 0 26% 0); transform: translateY(13%) scale(1.15); }
 .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .odds.two { grid-template-columns: repeat(2, 1fr); }
 .odds-off { color: var(--text-4); font-size: 11px; padding: 10px 0; text-align: center; border: 1px dashed var(--border); border-radius: 5px; }
@@ -2213,6 +2215,7 @@ b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
 .match-hero-bg[data-bg="lt"] { opacity: .3; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: screen; }
 .match-hero-bg[data-bg="dk"] { opacity: .3; filter: grayscale(1) contrast(1.3); mix-blend-mode: screen; }
 html.light .match-hero-bg[data-bg="sil"] { opacity: .2; filter: none; }
+.match-hero-bg.cut-sponsor { transform: translateX(-50%); }
 html.light .match-hero-bg[data-bg="lt"] { opacity: .25; filter: grayscale(1) contrast(1.3); mix-blend-mode: multiply; }
 html.light .match-hero-bg[data-bg="dk"] { opacity: .25; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: multiply; }
 .match-hero.has-bg .match-teams strong, .match-hero.has-bg .match-center, .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
