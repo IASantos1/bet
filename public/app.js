@@ -644,7 +644,7 @@ function groupByCompetition(events, { after = 0, insert = '', limit = Infinity }
     const [sport, comp] = key.split('|');
     const logo = list.find((e) => e.leagueLogo)?.leagueLogo;
     const icon = logo
-      ? `<span class="league-logo" data-sport-icon="${esc(sport)}"><img class="league-img" src="${esc(logo)}" alt="" loading="lazy"></span>`
+      ? `<span class="league-logo" data-sport-icon="${esc(sport)}"><img class="league-img${sport === 'futebol' ? sponsorCut(comp) : ''}" src="${esc(logo)}" alt="" loading="lazy"></span>`
       : `<span class="league-logo">${sportBadge(sport)}</span>`;
     const head = (n) => `<div class="comp-head"><span class="comp-name">${icon}${esc(comp)}</span><span>${n}</span></div>`;
     if (pending && seen + list.length >= after) {
@@ -780,6 +780,8 @@ const LEAGUE_LOGOS = [
   [/^s[eé]rie a$|brasileir/i, 'brazil', 71], [/^s[eé]rie b$/i, 'brazil', 72], [/liga profesional|primera divisi[oó]n/i, 'argentina', 128],
   [/^(mls|major league soccer)$/i, 'usa', 253], [/liga mx/i, 'mexico', 262], [/(pro league|saudi)/i, 'saudi arabia', 307], [/j1 league/i, 'japan', 98],
 ];
+// Liga Portugal's official logo ends in its sponsor's band (a bookmaker): it is shown cut above it.
+const sponsorCut = (name) => (/(primeira liga|liga portugal|liga betclic)/i.test(String(name || '')) && !/(\b2\b|segunda|ta[cç]a)/i.test(String(name || '')) ? ' cut-sponsor' : '');
 const leagueLogoId = (l) => (l.sport !== 'futebol' ? null : LEAGUE_LOGOS.find(([re, country]) => re.test(leagueShort(l.name))
   && (!country || String(l.country || '').toLowerCase().trim() === country))?.[2] || null);
 const ICON_LEAGUE_SPORTS = new Set(['mma', 'boxe', 'criquete', 'dardos']);
@@ -793,7 +795,7 @@ function leagueBadge(l) {
   // Other sports: looked up by name on the server (API-Sports of that sport).
   const src = logo ? `/league-logo/${logo}` : LOGO_SPORTS.has(l.sport)
     ? `/league-logo/0?s=${l.sport}&n=${encodeURIComponent(l.name)}&c=${encodeURIComponent(l.country || '')}` : '';
-  if (src) return `<span class="lg-badge logo"><img class="lg-logo" src="${esc(src)}" data-flag="${esc(flag)}" data-icon="${REGION_ICON[k] || '🌍'}" alt="" loading="lazy" decoding="async"></span>`;
+  if (src) return `<span class="lg-badge logo"><img class="lg-logo${l.sport === 'futebol' ? sponsorCut(l.name) : ''}" src="${esc(src)}" data-flag="${esc(flag)}" data-icon="${REGION_ICON[k] || '🌍'}" alt="" loading="lazy" decoding="async"></span>`;
   // Fights, cricket and darts have no league logos (API-Sports has none): the sport's own icon.
   if (ICON_LEAGUE_SPORTS.has(l.sport)) return `<span class="lg-badge sport">${sportIcon(l.sport)}</span>`;
   const pic = flag ? `<img src="${flag}" alt="" loading="lazy" decoding="async">` : `<i>${REGION_ICON[k] || (l.sport === 'tenis' ? '🎾' : '🌍')}</i>`;
@@ -4618,8 +4620,8 @@ function matchPage(sub) {
     : e.sport === 'futebol' || LOGO_SPORTS.has(e.sport) ? `/league-logo/0?s=${encodeURIComponent(e.sport)}&n=${encodeURIComponent(e.competition)}&c=${encodeURIComponent(compCountry(e) || '')}` : '');
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
     <section class="match-hero${heroLogo ? ' has-bg' : ''}">
-      ${heroLogo ? `<img class="match-hero-bg" src="${esc(heroLogo)}"${heroBgModes.has(heroLogo) ? ` data-bg="${heroBgModes.get(heroLogo)}"` : ''} alt="" aria-hidden="true" decoding="async">` : ''}
-      <div class="match-comp">${heroLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img" src="${esc(heroLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
+      ${heroLogo ? `<img class="match-hero-bg${e.sport === 'futebol' ? sponsorCut(e.competition) : ''}" src="${esc(heroLogo)}"${heroBgModes.has(heroLogo) ? ` data-bg="${heroBgModes.get(heroLogo)}"` : ''} alt="" aria-hidden="true" decoding="async">` : ''}
+      <div class="match-comp">${heroLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img${e.sport === 'futebol' ? sponsorCut(e.competition) : ''}" src="${esc(heroLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
         <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(tname(e, 'home'))}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
         <div class="match-center">${center}</div>
