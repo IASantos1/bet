@@ -1,3 +1,6 @@
+/* Fredoka (SIL Open Font License, public/fonts/fredoka-LICENSE.txt): the rounded "bubble" face of the promotions. */
+@font-face { font-family: 'Fredoka'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/fredoka-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Fredoka'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/fredoka-latin-700-normal.woff2') format('woff2'); }
 :root {
   /* Palette (WinHouse theme). Marca */
   --brand: #67788c; --on-brand: #ffffff; --logo: #67788c; --register: #42946b; --login: #67788c;
@@ -2247,3 +2250,27 @@ html.light .match-hero.has-bg .match-teams strong, html.light .match-hero.has-bg
 .tk-share-pic { width: min(300px, 70vw); aspect-ratio: 9 / 16; border-radius: 16px; border: 1px solid var(--line); background: #14191e; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); object-fit: cover; }
 .tk-share-acts { display: grid; gap: 8px; width: 100%; }
 .tk-share-acts .primary-btn { height: 46px; background: var(--viva); border-color: var(--viva); color: var(--viva-ink); }
+
+/* ---------- Promotions: a colour and an icon per kind, the rounded face, conditions on a tap ---------- */
+.promo-card { --pc: #7cff6b; position: relative; overflow: hidden; gap: 10px; border-radius: 20px; padding: 20px 20px 16px;
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--pc) 22%, transparent), transparent 60%), linear-gradient(160deg, #22282e, #171b20);
+  border: 1px solid color-mix(in srgb, var(--pc) 30%, var(--line)); }
+.promo-card.t-welcome { --pc: #ffc83d; } .promo-card.t-firstBet { --pc: #5fb4ff; } .promo-card.t-reload { --pc: #7cff6b; }
+.promo-card.t-cashback { --pc: #3fe0c5; } .promo-card.t-accaBoost { --pc: #ff8a3d; } .promo-card.t-casinoFs { --pc: #c084fc; } .promo-card.t-depositFb { --pc: #a3ff5c; }
+.pc-top { display: flex; align-items: center; gap: 10px; width: 100%; }
+.pc-bubble { width: 46px; height: 46px; flex: 0 0 46px; display: grid; place-items: center; border-radius: 50%; color: var(--pc);
+  background: color-mix(in srgb, var(--pc) 16%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--pc) 45%, transparent), 0 6px 18px color-mix(in srgb, var(--pc) 25%, transparent); }
+.pc-bubble svg { width: 24px; height: 24px; }
+.pc-eyebrow { flex: 1; color: var(--pc); font-family: 'Fredoka', Inter, sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .08em; }
+.pc-state { padding: 5px 11px; border-radius: 999px; font-family: 'Fredoka', Inter, sans-serif; font-weight: 600; font-size: 12px; color: #0b1a0a; background: var(--pc); }
+.promo-card.off .pc-state { color: var(--text-2); background: var(--dim); }
+.promo-card .pc-title { margin: 4px 0 0; font-family: 'Fredoka', Inter, sans-serif; font-weight: 700; font-size: 27px; line-height: 1.15; color: var(--strong); letter-spacing: .005em; }
+.promo-card p { margin: 0; color: var(--text-2); font-size: 13.5px; line-height: 1.55; flex: 0; }
+.pc-terms { width: 100%; margin-top: 4px; border-top: 1px solid color-mix(in srgb, var(--pc) 20%, var(--line)); padding-top: 10px; }
+.pc-terms summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--pc); font-family: 'Fredoka', Inter, sans-serif; font-weight: 600; font-size: 14px; }
+.pc-terms summary::-webkit-details-marker { display: none; }
+.pc-terms summary::after { content: '⌄'; transition: transform .2s; }
+.pc-terms[open] summary::after { transform: rotate(180deg); }
+.pc-terms .promo-terms { margin: 10px 0 2px; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.page-title h1 { font-family: inherit; }
+body.on-promos .page-title h1 { font-family: 'Fredoka', Inter, sans-serif; font-weight: 700; font-size: 34px; }
