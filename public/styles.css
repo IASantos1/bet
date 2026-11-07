@@ -964,8 +964,17 @@ html.splash-on { overflow: hidden; }
 .pf-nav a:hover, .pf-link:hover { color: var(--strong); background: var(--card); }
 .pf-nav a.active { color: #fff; background: linear-gradient(135deg, var(--brand), #8597ab); }
 .pf-nav a i { font-style: normal; font-size: 17px; line-height: 1; }
-.pf-ico { width: 20px; text-align: center; flex-shrink: 0; filter: grayscale(.35); }
-.pf-nav a.active .pf-ico { filter: none; }
+.pf-ico { width: 20px; text-align: center; flex-shrink: 0; }
+.pf-ico svg { display: block; width: 20px; height: 20px; color: var(--text-3); transition: color .15s; }
+.pf-nav a.active .pf-ico svg, .pf-nav a.active .pf-ico { color: #fff; }
+.pf-acc-item.open .pf-ico svg, .pf-acc-head:hover .pf-ico svg, .pf-nav a:hover .pf-ico svg { color: var(--viva-text); }
+.pf-link .pf-ico svg { color: inherit; }
+/* The groups: a small heading over each set of sections. */
+.pf-group { display: flex; flex-direction: column; gap: 8px; }
+.pf-acc .pf-group + .pf-group { margin-top: 10px; }
+.pf-nav .pf-group { gap: 3px; }
+.pf-nav .pf-group + .pf-group { margin-top: 8px; }
+.pf-group-title { margin: 6px 4px 0; color: var(--text-4); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .pf-ico.big { font-size: 18px; }
 .pf-sep { height: 1px; background: var(--line); margin: 8px 4px; }
 .pf-main { min-width: 0; }
@@ -1020,7 +1029,6 @@ html.splash-on { overflow: hidden; }
 .pf-acc-head span:nth-child(2) { flex: 1; }
 .pf-acc-head i { font-style: normal; color: var(--text-4); transition: transform .2s; }
 .pf-acc-item.open .pf-acc-head { color: var(--strong); }
-.pf-acc-item.open .pf-acc-head .pf-ico { filter: none; }
 .pf-acc-item.open .pf-acc-head i { transform: rotate(180deg); }
 .pf-acc-body { border-top: 1px solid var(--line); animation: pf-in .2s ease-out; }
 .pf-acc-body .pf-card { background: transparent; border: 0; border-radius: 0; padding: 14px; }
