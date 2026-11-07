@@ -2070,10 +2070,25 @@ function campaignCard(c) {
   }[c.id];
   if (!info) return '';
   const [eyebrow, title, text, terms] = info;
-  return `<div class="promo-card${c.open ? '' : ' off'}"><div class="eyebrow">${eyebrow}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>
-    <ul class="promo-terms">${terms.filter(Boolean).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
-    <span class="tag">${c.open ? 'ATIVA' : 'INDISPONÍVEL'}</span></div>`;
+  // Each kind its own colour and icon in a bubble; the title in the rounded face; the conditions open on a tap.
+  return `<div class="promo-card t-${esc(c.id)}${c.open ? '' : ' off'}">
+    <div class="pc-top"><span class="pc-bubble" aria-hidden="true">${PROMO_ICON[c.id] || ''}</span><span class="pc-eyebrow">${eyebrow}</span>
+      <span class="pc-state">${c.open ? 'Ativa' : 'Indisponível'}</span></div>
+    <h3 class="pc-title">${esc(title)}</h3><p>${esc(text)}</p>
+    <details class="pc-terms"><summary>Ver condições</summary>
+      <ul class="promo-terms">${terms.filter(Boolean).map((t) => `<li>${esc(t)}</li>`).join('')}</ul></details></div>`;
 }
+const promoSvg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+// The campaigns' icons: line drawings like the rest of the site.
+const PROMO_ICON = {
+  welcome: promoSvg('<path d="M12 3l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.8z"/>'),
+  firstBet: promoSvg('<path d="M12 3l8 3v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
+  reload: promoSvg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  cashback: promoSvg('<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.5-.9-1.6-1.4-2.8-1.4-1.7 0-2.8.9-2.8 2.1 0 2.9 5.8 1.4 5.8 4.3 0 1.2-1.2 2.1-3 2.1-1.3 0-2.4-.5-2.9-1.4M12 6v1.8M12 16.2V18"/>'),
+  accaBoost: promoSvg('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  casinoFs: promoSvg('<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="16" cy="8" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="8" cy="16" r="1.4" fill="currentColor"/><circle cx="16" cy="16" r="1.4" fill="currentColor"/>'),
+  depositFb: promoSvg('<path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2 2 0 0 0 0-4z"/><path d="M10 6v2M10 11v2M10 16v2"/>'),
+};
 
 /** A running bonus: balance, rollover progress (as the server counts it), expiry. */
 function bonusCard(b) {
@@ -3602,6 +3617,7 @@ function render({ keepScroll = false } = {}) {
   document.body.classList.toggle('immersive', immersive);
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
+  document.body.classList.toggle('on-promos', page === 'promocoes');
   if (page === 'casino' && !immersive) renderCasinoSide();
   // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
   // scores): only the person scrolling moves them, never the refresh.
