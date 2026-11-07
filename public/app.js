@@ -1013,13 +1013,149 @@ async function shareLink(url, text) {
   catch { window.prompt('Copie o link do bilhete:', url); }
 }
 
-/** A placed ticket (open, in play or settled: only once it is placed): its own link, with the picks, the odds and the result. */
-async function shareBet(id, text = null) {
-  try {
-    const { url } = await api(`/api/bets/${id}/share`, { method: 'POST', body: {} });
-    const b = (state.myBets || []).find((x) => x.id === id);
-    shareLink(url, text || (b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62'));
-  } catch (err) { toast('Partilhar', err.message, 'error'); }
+/**
+ * A placed ticket shared on its own: "Partilhar" opens just the ticket, drawn as a picture in the
+ * stories format (1080×1920), with its link; the phone's share sheet sends the picture (Instagram,
+ * WhatsApp…), or it is saved, or the link is copied. The amounts can be left out of the picture.
+ */
+async function shareBet(id, text = null, bet = null) {
+  const b = (state.myBets || []).find((x) => x.id === id) || bet;
+  let url;
+  try { ({ url } = await api(`/api/bets/${id}/share`, { method: 'POST', body: {} })); } catch (err) { toast('Partilhar', err.message, 'error'); return; }
+  const msg = text || (b?.status === 'won' ? `Bilhete vencedor na Bet62 🏆 (odd ${fmtOdds(b.totalOdds)})` : 'Vê o meu bilhete na Bet62');
+  if (!b) return shareLink(url, msg);
+  openModal('Partilhar bilhete', `<div class="tk-share-box">
+      <img class="tk-share-pic" id="tkSharePic" alt="O bilhete, como vai ser partilhado">
+      <label class="check"><input type="checkbox" id="tkShareMoney" checked> Mostrar os valores (aposta e retorno)</label>
+      <div class="tk-share-acts">
+        <button type="button" class="primary-btn" id="tkShareGo">↗ Partilhar</button>
+        <button type="button" class="outline-btn" id="tkShareSave">⬇ Guardar imagem</button>
+        <button type="button" class="ghost-btn" id="tkShareLink">🔗 Copiar link</button>
+      </div></div>`);
+  const pic = $('#tkSharePic');
+  let blob = null;
+  const draw = async () => {
+    blob = await ticketPicture(b, url, { money: $('#tkShareMoney')?.checked });
+    // As a data: URL (the page's security rules allow those for pictures, not blob: ones).
+    if (pic && blob) pic.src = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(blob); });
+  };
+  await draw();
+  $('#tkShareMoney')?.addEventListener('change', draw);
+  const file = () => new File([blob], `bilhete-bet62-${b.ref || b.id}.png`, { type: 'image/png' });
+  $('#tkShareGo')?.addEventListener('click', async () => {
+    const f = blob && file();
+    if (f && navigator.canShare?.({ files: [f] })) {
+      try { await navigator.share({ files: [f], title: 'Bet62', text: `${msg} ${url}` }); return; } catch (err) { if (err?.name === 'AbortError') return; }
+    }
+    shareLink(url, msg);
+  });
+  $('#tkShareSave')?.addEventListener('click', () => {
+    if (!blob) return;
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: file().name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('Imagem guardada', 'Publique-a nos stories ou envie-a a quem quiser.');
+  });
+  $('#tkShareLink')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); toast('Link copiado', 'Abre só este bilhete na Bet62.'); } catch { window.prompt('Copie o link do bilhete:', url); }
+  });
+}
+
+/** Where a pick stands, in words (for the picture): kick-off, minute and score, or the result. */
+function legStateText(l, open) {
+  if (open && l.eventStatus === 'live') return `● ${l.clock || 'Ao vivo'}${l.score ? ` · ${l.score}` : ''}`;
+  if (l.eventStatus === 'finished') return `Terminado${l.score ? ` · ${l.score}` : ''}`;
+  if (l.eventStatus === 'cancelled') return 'Jogo cancelado';
+  if (l.eventStatus === 'live') return `Ao vivo${l.score ? ` · ${l.score}` : ''}`;
+  return fmtWhen(l.startTime);
+}
+
+/** The ticket drawn on a 1080×1920 canvas (the stories format): a PNG Blob. */
+async function ticketPicture(b, url, { money: showMoney = true } = {}) {
+  const W = 1080, H = 1920, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  try { await document.fonts?.ready; } catch { /* system font */ }
+  const F = (w, px) => `${w} ${px}px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
+  const LIME = '#7cff6b', TEXT = '#e8eaed', SUB = '#9aa3ad', CARD = '#20262c', LINE = '#343b43';
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
+  const fit = (t, max) => { let s = String(t || ''); if (g.measureText(s).width <= max) return s; while (s.length > 1 && g.measureText(`${s}…`).width > max) s = s.slice(0, -1); return `${s}…`; };
+  // Background: dark, a lime glow at the top.
+  const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0d1a12'); bg.addColorStop(0.45, '#14191e'); bg.addColorStop(1, '#0f1317');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(W / 2, 120, 20, W / 2, 120, 700); glow.addColorStop(0, 'rgba(124,255,107,.28)'); glow.addColorStop(1, 'rgba(124,255,107,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, 900);
+  // The brand.
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.font = F(900, 110); const bw = g.measureText('BET').width, nw = g.measureText('62').width;
+  const bx = W / 2 - (bw + nw) / 2;
+  g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.fillText('BET', bx, 230);
+  g.fillStyle = LIME; g.shadowColor = 'rgba(124,255,107,.6)'; g.shadowBlur = 30; g.fillText('62', bx + bw, 230); g.shadowBlur = 0;
+  // The ticket card.
+  const [badge] = TICKET_BADGE[b.status] || TICKET_BADGE.open;
+  const [kind] = TICKET_KIND[b.origin] || TICKET_KIND[b.type] || TICKET_KIND.single;
+  const open = b.status === 'open';
+  const legs = b.legs || [];
+  const x = 70, w = W - 140, top = 320;
+  const rowH = legs.length > 8 ? 112 : legs.length > 5 ? 136 : 160;
+  const shown = legs.slice(0, Math.floor(1000 / rowH));
+  const headH = 190, footH = 230;
+  const h = headH + shown.length * rowH + (legs.length > shown.length ? 60 : 0) + footH;
+  g.fillStyle = CARD; rr(x, top, w, h, 40); g.fill();
+  g.strokeStyle = LINE; g.lineWidth = 3; rr(x, top, w, h, 40); g.stroke();
+  g.fillStyle = LIME; rr(x, top, w, 10, [40, 40, 0, 0]); g.fill();
+  // Head: what it is, how many picks, its status.
+  g.textAlign = 'left'; g.fillStyle = TEXT; g.font = F(900, 58);
+  g.fillText(fit(kind, w - 420), x + 50, top + 105);
+  g.fillStyle = SUB; g.font = F(600, 36);
+  g.fillText(`${legs.length} ${legs.length === 1 ? 'seleção' : 'seleções'}${b.boostPct ? ` · Boost +${b.boostPct}%` : ''}`, x + 50, top + 158);
+  const st = { open: ['#3a3210', '#f5c542'], won: ['#103a1d', LIME], lost: ['#3a1218', '#ff6b81'], void: ['#2a2f35', SUB], cashout: ['#10303a', '#5fd4ff'] }[b.status] || ['#2a2f35', SUB];
+  g.font = F(800, 34); const tw = g.measureText(badge).width + 64;
+  g.fillStyle = st[0]; rr(x + w - 50 - tw, top + 70, tw, 66, 33); g.fill();
+  g.fillStyle = st[1]; g.textAlign = 'center'; g.fillText(badge, x + w - 50 - tw / 2, top + 115);
+  // The picks.
+  let y = top + headH;
+  for (const l of shown) {
+    g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(x + 40, y); g.lineTo(x + w - 40, y); g.stroke();
+    const mark = { won: ['✓', LIME], lost: ['✕', '#ff6b81'], void: ['—', SUB] }[l.status];
+    g.textAlign = 'left';
+    g.beginPath(); g.arc(x + 80, y + rowH / 2, 24, 0, Math.PI * 2);
+    g.strokeStyle = mark ? mark[1] : (open && l.eventStatus === 'live' ? '#ff6b81' : '#5b636c'); g.lineWidth = 4; g.stroke();
+    if (mark) { g.fillStyle = mark[1]; g.font = F(900, 30); g.textAlign = 'center'; g.fillText(mark[0], x + 80, y + rowH / 2 + 11); g.textAlign = 'left'; }
+    const big = rowH >= 136 ? 44 : 38, small = rowH >= 136 ? 32 : 28;
+    g.fillStyle = TEXT; g.font = F(800, big);
+    g.fillText(fit(l.label || l.code, w - 340), x + 135, y + rowH / 2 - (rowH >= 136 ? 18 : 12));
+    g.fillStyle = SUB; g.font = F(500, small);
+    g.fillText(fit(`${l.marketName && l.market !== '1x2' ? l.marketName : 'Resultado final'} · ${l.match}`, w - 340), x + 135, y + rowH / 2 + (rowH >= 136 ? 26 : 22));
+    const state = legStateText(l, open);
+    g.fillStyle = open && l.eventStatus === 'live' ? '#ff6b81' : '#7d868f'; g.font = F(700, small - 2);
+    if (rowH >= 136) g.fillText(fit(state, w - 340), x + 135, y + rowH / 2 + 64);
+    g.textAlign = 'right'; g.fillStyle = TEXT; g.font = F(900, big + 4);
+    g.fillText(fmtOdds(l.odds), x + w - 50, y + rowH / 2 + 14);
+    y += rowH;
+  }
+  if (legs.length > shown.length) { g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(700, 32); g.fillText(`+ ${legs.length - shown.length} seleções`, W / 2, y + 42); y += 60; }
+  // The money (or just the odds).
+  const by = y + 30, bh = 170;
+  g.fillStyle = '#171c21'; rr(x + 40, by, w - 80, bh, 28); g.fill();
+  const done = b.status === 'won' || b.status === 'cashout';
+  const ret = done ? (Number(b.payout) || 0) + (Number(b.boost) || 0) : Number(b.potential) || 0;
+  const cells = showMoney
+    ? [['Aposta', money(b.stake)], ['Odd total', fmtOdds(b.totalOdds)], [done ? 'Ganho' : b.status === 'open' ? 'Retorno potencial' : 'Retorno', money(ret)]]
+    : [['Odd total', fmtOdds(b.totalOdds)]];
+  const cw = (w - 80) / cells.length;
+  cells.forEach(([k, v], i) => {
+    const cx = x + 40 + cw * i + cw / 2;
+    g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(600, 32); g.fillText(k, cx, by + 62);
+    g.fillStyle = i === cells.length - 1 && (done || showMoney) ? LIME : TEXT; g.font = F(900, i === cells.length - 1 ? 58 : 52);
+    g.fillText(v, cx, by + 132);
+  });
+  // Footer: where to find it.
+  g.textAlign = 'center'; g.fillStyle = TEXT; g.font = F(800, 40);
+  g.fillText(b.status === 'open' ? 'Faça a mesma aposta na Bet62' : 'Aposte na Bet62', W / 2, H - 230);
+  g.fillStyle = LIME; g.font = F(900, 46); g.fillText(new URL(url).host, W / 2, H - 165);
+  g.fillStyle = '#6f7780'; g.font = F(600, 28); g.fillText(`${b.ref || ''}  ·  18+  ·  Jogue com responsabilidade`, W / 2, H - 90);
+  return new Promise((ok) => c.toBlob(ok, 'image/png'));
 }
 
 /** #/b/<token>: a ticket someone shared; its picks still open can be copied into the slip. */
@@ -3542,7 +3678,7 @@ async function checkWins() {
     if (wins?.length) {
       celebrate(wins, {
         money, esc, sportIcon: (k) => sportBadge(k, 18),
-        onShare: (b) => shareBet(b.id, `Bilhete premiado na Bet62 🏆 ${money((Number(b.payout) || 0) + (Number(b.boost) || 0))} com odd ${fmtOdds(b.totalOdds)}`),
+        onShare: (b) => shareBet(b.id, `Bilhete premiado na Bet62 🏆 ${money((Number(b.payout) || 0) + (Number(b.boost) || 0))} com odd ${fmtOdds(b.totalOdds)}`, b),
         onClose: (ids) => { api('/api/me/wins/seen', { method: 'POST', body: { ids } }).catch(() => {}); refreshMe(); },
       });
     }

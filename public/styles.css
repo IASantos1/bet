@@ -2228,3 +2228,9 @@ html.light .match-hero-bg[data-bg="dk"] { opacity: .25; filter: grayscale(1) inv
 html.light .match-hero.has-bg .match-teams strong, html.light .match-hero.has-bg .match-center, html.light .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(255, 255, 255, .8); }
 /* the small emblem by the league's name: on a light chip, so a dark logo shows on the dark page */
 .match-comp .league-logo:has(.league-img) { background: #f2f5f8; border-radius: 6px; padding: 2px; }
+
+/* ---------- Sharing a ticket: just the ticket, as a stories picture ---------- */
+.tk-share-box { display: grid; gap: 14px; justify-items: center; }
+.tk-share-pic { width: min(300px, 70vw); aspect-ratio: 9 / 16; border-radius: 16px; border: 1px solid var(--line); background: #14191e; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); object-fit: cover; }
+.tk-share-acts { display: grid; gap: 8px; width: 100%; }
+.tk-share-acts .primary-btn { height: 46px; background: var(--viva); border-color: var(--viva); color: var(--viva-ink); }
