@@ -111,6 +111,12 @@ function fmtWhen(iso) {
   const tomorrow = new Date(Date.now() + 86_400_000);
   if (d.toDateString() === today.toDateString()) return `Hoje ${time}`;
   if (d.toDateString() === tomorrow.toDateString()) return `Amanhã ${time}`;
+  // Within the coming week: the weekday ("Dom 01:45"), one word like "Hoje" / "Amanhã"; later, the date.
+  const days = (d - today) / 86_400_000;
+  if (days > 0 && days < 6) {
+    const wd = d.toLocaleDateString('pt-PT', { weekday: 'short' }).replace('.', '');
+    return `${wd.charAt(0).toUpperCase()}${wd.slice(1, 3)} ${time}`;
+  }
   return `${d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })} ${time}`;
 }
 const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -813,7 +819,8 @@ function leagueCardName(l) {
 function leagueRow(sport = '') {
   const leagues = popularLeagues(16, sport);
   if (!leagues.length) return '';
-  return `<section class="lg-row" data-hscroll="leagueRow" aria-label="Ligas">
+  // Two rows that scroll sideways when there are many; one row when only a few.
+  return `<section class="lg-row${leagues.length <= 6 ? ' one' : ''}" data-hscroll="leagueRow" aria-label="Ligas">
     ${leagues.map((l) => `<a class="lg-card" href="#/desporto/liga/${encodeURIComponent(l.name)}">${leagueBadge(l)}<b>${esc(l.label || leagueCardName(l))}</b></a>`).join('')}
   </section>`;
 }
