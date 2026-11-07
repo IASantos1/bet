@@ -2150,23 +2150,53 @@ function promosPage() {
 
 // ---------- account ----------
 
+// The profile's icons: line drawings in the bottom bar's style (24 px grid, 1.8 stroke, current colour).
+const PF_ICON_PATHS = {
+  pessoais: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>',
+  carteira: '<rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="15" r="1.2" fill="currentColor"/><path d="M7 6V4.5h10V6"/>',
+  apostas: '<path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2 2 0 0 0 0-4z"/><path d="M10 6v2M10 11v2M10 16v2"/>',
+  promocoes: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13"/><path d="M12 8c-1.5-3.5-5.5-4-5.5-1.5S9.5 8 12 8c2.5 0 5.5 0 5.5-1.5S13.5 4.5 12 8"/>',
+  afiliados: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14.5c3 0 5 1.6 5 4.5"/>',
+  verificacao: '<path d="M12 3l8 3v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  seguranca: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><circle cx="12" cy="16" r="1.3" fill="currentColor"/>',
+  preferencias: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  limites: '<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
+  atividade: '<path d="M3 20h18"/><path d="M6.5 16v-4M11 16V7M15.5 16v-6M20 16V4"/>',
+  pagamento: '<path d="M3 10 12 4l9 6"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3 20h18"/>',
+  notificacoes: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  sessoes: '<rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M11 18h2"/>',
+  suporte: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.7.3-1 .8-1 1.5v.6"/><circle cx="12" cy="16.9" r=".9" fill="currentColor"/>',
+  privacidade: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  admin: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5l3 3 5.8-5.8a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/>',
+  sair: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="m10 16-4-4 4-4M6 12h10"/>',
+};
+const pfIcon = (id) => `<span class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PF_ICON_PATHS[id] || ''}</svg></span>`;
+// The sections grouped as a player looks for them.
+const PROFILE_GROUPS = [
+  ['conta', 'Conta'], ['dinheiro', 'Dinheiro e apostas'], ['seguranca', 'Segurança'], ['jogo', 'Jogo responsável'], ['ajuda', 'Ajuda'],
+];
+const PROFILE_GROUP_OF = {
+  pessoais: 'conta', verificacao: 'conta', preferencias: 'conta', notificacoes: 'conta', privacidade: 'conta',
+  carteira: 'dinheiro', apostas: 'dinheiro', promocoes: 'dinheiro', pagamento: 'dinheiro', afiliados: 'dinheiro', atividade: 'dinheiro',
+  seguranca: 'seguranca', sessoes: 'seguranca', limites: 'jogo', suporte: 'ajuda',
+};
 // The profile, as in Bet62Novo: a header card, then sections (side menu on a computer, accordion on a phone).
 const PROFILE_SECTIONS = [
-  { id: 'pessoais', icon: '👤', label: 'Informações pessoais', title: 'Informações Pessoais', text: 'Gestão e atualização dos seus dados pessoais, garantindo a exatidão e conformidade com os requisitos legais aplicáveis.' },
-  { id: 'carteira', icon: '💶', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
-  { id: 'apostas', icon: '🎟️', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
-  { id: 'promocoes', icon: '🎁', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
-  { id: 'afiliados', icon: '🤝', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
-  { id: 'verificacao', icon: '🛡️', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
-  { id: 'seguranca', icon: '🔑', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
-  { id: 'preferencias', icon: '⚙️', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
-  { id: 'limites', icon: '⚠️', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Limites de depósito, aposta e perda, pausas e autoexclusão para uma experiência de jogo responsável.' },
-  { id: 'atividade', icon: '📊', label: 'Histórico de atividade', title: 'Histórico de Atividade', text: 'Resumo da sua atividade na plataforma: apostas realizadas e resultados obtidos.' },
-  { id: 'pagamento', icon: '🏦', label: 'Dados bancários', title: 'Dados Bancários para Levantamento', text: 'Guarde os seus dados bancários para facilitar os pedidos de levantamento.' },
-  { id: 'notificacoes', icon: '🔔', label: 'Notificações', title: 'Notificações', text: 'Preferências de comunicação e alertas da sua conta.' },
-  { id: 'sessoes', icon: '📱', label: 'Sessões ativas', title: 'Sessões Ativas', text: 'Dispositivos com sessão iniciada na sua conta.' },
-  { id: 'suporte', icon: '❓', label: 'Suporte e assistência', title: 'Suporte e Assistência', text: 'Canais de contacto para esclarecimento de dúvidas relacionadas com a conta.' },
-  { id: 'privacidade', icon: '👁️', label: 'Privacidade', title: 'Configurações de Privacidade', text: 'Preferências relativas ao tratamento e proteção dos seus dados pessoais.' },
+  { id: 'pessoais', label: 'Informações pessoais', title: 'Informações Pessoais', text: 'Gestão e atualização dos seus dados pessoais, garantindo a exatidão e conformidade com os requisitos legais aplicáveis.' },
+  { id: 'carteira', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
+  { id: 'apostas', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
+  { id: 'promocoes', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
+  { id: 'afiliados', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
+  { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
+  { id: 'seguranca', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
+  { id: 'preferencias', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
+  { id: 'limites', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Limites de depósito, aposta e perda, pausas e autoexclusão para uma experiência de jogo responsável.' },
+  { id: 'atividade', label: 'Histórico de atividade', title: 'Histórico de Atividade', text: 'Resumo da sua atividade na plataforma: apostas realizadas e resultados obtidos.' },
+  { id: 'pagamento', label: 'Dados bancários', title: 'Dados Bancários para Levantamento', text: 'Guarde os seus dados bancários para facilitar os pedidos de levantamento.' },
+  { id: 'notificacoes', label: 'Notificações', title: 'Notificações', text: 'Preferências de comunicação e alertas da sua conta.' },
+  { id: 'sessoes', label: 'Sessões ativas', title: 'Sessões Ativas', text: 'Dispositivos com sessão iniciada na sua conta.' },
+  { id: 'suporte', label: 'Suporte e assistência', title: 'Suporte e Assistência', text: 'Canais de contacto para esclarecimento de dúvidas relacionadas com a conta.' },
+  { id: 'privacidade', label: 'Privacidade', title: 'Configurações de Privacidade', text: 'Preferências relativas ao tratamento e proteção dos seus dados pessoais.' },
 ];
 const PROFILE_ALIAS = { '': 'pessoais', 'jogo-responsavel': 'limites' };
 const phoneLayout = () => matchMedia('(max-width: 760px)').matches;
@@ -2185,17 +2215,22 @@ function accountPage(sub) {
     <div class="pf-balance"><small>Saldo disponível</small><strong>${money(u.balance)}</strong>
       ${excluded ? `<em>Autoexcluído até ${esc(new Date(u.excludedUntil).toLocaleDateString('pt-PT'))}</em>` : ''}</div>
   </div>`;
-  const extra = `${u.role === 'admin' ? '<a class="pf-link" href="/admin">🧰 Administração</a>' : ''}<button class="pf-link" data-action="logout">↩ Terminar sessão</button>`;
+  const extra = `${u.role === 'admin' ? `<a class="pf-link" href="/admin">${pfIcon('admin')}<span>Administração</span></a>` : ''}<button class="pf-link" data-action="logout">${pfIcon('sair')}<span>Terminar sessão</span></button>`;
+  // The sections in their groups, each group under its heading.
+  const grouped = (row) => PROFILE_GROUPS.map(([g, title]) => {
+    const list = PROFILE_SECTIONS.filter((s) => PROFILE_GROUP_OF[s.id] === g);
+    return list.length ? `<div class="pf-group"><h4 class="pf-group-title">${title}</h4>${list.map(row).join('')}</div>` : '';
+  }).join('');
   const card = (s) => `<div class="pf-card"><div class="pf-card-head"><h3>${s.title}</h3><p>${s.text}</p></div>${profileSection(s.id)}</div>`;
   let body;
   if (phoneLayout()) {
     const open = state.profileCollapsed ? null : active;
-    body = `<div class="pf-acc">${PROFILE_SECTIONS.map((s) => `<div class="pf-acc-item${s.id === open ? ' open' : ''}" id="pf-${s.id}">
-        <a class="pf-acc-head" href="#/perfil/${s.id}" data-pf-acc="${s.id}"><span class="pf-ico">${s.icon}</span><span>${s.label}</span><i>▾</i></a>
-        ${s.id === open ? `<div class="pf-acc-body">${card(s)}</div>` : ''}</div>`).join('')}
+    body = `<div class="pf-acc">${grouped((s) => `<div class="pf-acc-item${s.id === open ? ' open' : ''}" id="pf-${s.id}">
+        <a class="pf-acc-head" href="#/perfil/${s.id}" data-pf-acc="${s.id}">${pfIcon(s.id)}<span>${s.label}</span><i>▾</i></a>
+        ${s.id === open ? `<div class="pf-acc-body">${card(s)}</div>` : ''}</div>`)}
       <div class="pf-acc-extra">${extra}</div></div>`;
   } else {
-    body = `<div class="pf-grid"><nav class="pf-nav">${PROFILE_SECTIONS.map((s) => `<a href="#/perfil/${s.id}" class="${s.id === active ? 'active' : ''}"><span class="pf-ico">${s.icon}</span><span>${s.label}</span>${s.id === active ? '<i>›</i>' : ''}</a>`).join('')}
+    body = `<div class="pf-grid"><nav class="pf-nav">${grouped((s) => `<a href="#/perfil/${s.id}" class="${s.id === active ? 'active' : ''}">${pfIcon(s.id)}<span>${s.label}</span>${s.id === active ? '<i>›</i>' : ''}</a>`)}
         <div class="pf-sep"></div>${extra}</nav>
       <div class="pf-main" id="accountMain">${card(PROFILE_SECTIONS.find((s) => s.id === active))}</div></div>`;
   }
