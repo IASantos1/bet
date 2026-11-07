@@ -2048,11 +2048,11 @@ function loadPromos() {
 const pct = (a, b) => (b > 0 ? Math.min(100, Math.round((a / b) * 100)) : 0);
 const dateShort = (iso) => new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-/** One campaign's card: what it gives and its conditions, as configured in the admin. */
-function campaignCard(c) {
+/** One campaign's [eyebrow, title, text, terms], as configured in the admin. */
+function campaignInfo(c) {
   const base = c.rolloverBase === 'bonus' ? 'bónus' : 'depósito + bónus';
   const cap = [c.maxCountStake !== null && c.maxCountStake !== undefined ? money(c.maxCountStake) : null, c.maxCountPct ? `${c.maxCountPct}% do bónus` : null].filter(Boolean);
-  const info = {
+  return {
     welcome: ['BOAS-VINDAS', `${c.percent}% até ${money(c.maxBonus)}`, `No primeiro depósito elegível, a partir de ${money(c.minDeposit)}.`,
       [`Rollover ${c.rolloverMult}× (${base})`, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válido ${c.validityDays} dias`, cap.length ? `Conta até ${cap.join(' ou ')} por aposta (o menor)` : null, 'Pré-jogo e ao vivo', 'Free bets e apostas anuladas não contam']],
     firstBet: ['PRIMEIRA APOSTA', `Protegida até ${money(c.maxRefund)}`, `Se a primeira aposta (mín. ${money(c.minStake)}, odd ≥ ${fmtOdds(c.minOdds)}) perder, recebe o valor em free bet.`,
@@ -2067,7 +2067,12 @@ function campaignCard(c) {
       [c.firstDepositOnly ? 'Só no primeiro depósito' : null, 'Cada rodada à aposta do jogo (ex.: €0,20 ou €0,10)', `Válidas ${c.validityDays} dias`, `Em ${c.games} jogo(s) selecionado(s)`, 'Tudo o que ganhar com as Free Spins passa a saldo real', 'Não acumula com outra promoção no mesmo depósito']],
     depositFb: ['DESPORTO', `Free Bet no ${c.firstDepositOnly ? '1.º depósito' : 'depósito'}`, `Escolha "Free Bet desporto" ao depositar: ${(c.tiers || []).map(([d, n]) => `${money(d)} → ${money(n)}`).join(' · ')}.`,
       [c.firstDepositOnly ? 'Só no primeiro depósito' : null, `Odd mínima ${fmtOdds(c.minOdds)}`, `Válida ${c.validityDays} dias`, 'Aposta-se o valor inteiro da Free Bet de uma vez', 'O lucro é pago em saldo real (o valor da Free Bet não)', 'Não acumula com outra promoção no mesmo depósito']],
-  }[c.id];
+  }[c.id] || null;
+}
+
+/** One campaign's card: what it gives and its conditions. */
+function campaignCard(c) {
+  const info = campaignInfo(c);
   if (!info) return '';
   const [eyebrow, title, text, terms] = info;
   // Each kind its own colour and icon in a bubble; the title in the rounded face; the conditions open on a tap.
@@ -3337,6 +3342,19 @@ function renderBoost(t) {
   $('.boost-line i', el).style.width = `${Math.max(fill, b.count ? 0.03 : 0) * 100}%`;
 }
 
+/** The empty slip's space put to use: the campaigns running now (up to three), each a link to Promoções. */
+let slipPromosAsked = false;
+function slipPromos() {
+  if (!state.campaigns) { if (!slipPromosAsked) { slipPromosAsked = true; loadPromos(); } return ''; }
+  const open = state.campaigns.filter((c) => c.open && campaignInfo(c)).slice(0, 3);
+  if (!open.length) return '';
+  return `<div class="slip-promos"><div class="slip-promos-head">Promoções ativas</div>${open.map((c) => {
+    const [eyebrow, title] = campaignInfo(c);
+    return `<a class="slip-promo promo-card t-${esc(c.id)}" href="#/promocoes"><span class="pc-bubble" aria-hidden="true">${PROMO_ICON[c.id] || ''}</span>
+      <span class="sp-text"><small class="pc-eyebrow">${eyebrow}</small><b>${esc(title)}</b></span><i aria-hidden="true">›</i></a>`;
+  }).join('')}<a class="slip-promos-all" href="#/promocoes">Ver todas as promoções</a></div>`;
+}
+
 function renderBuilderSlip() {
   $('#slipBoost').classList.add('hidden');
   const b = state.builder;
@@ -3381,7 +3399,7 @@ function renderSlip() {
         <strong>${esc(s.match)}</strong><div class="selection">${esc(s.label || CODE_LABEL[s.code])}${s.marketName && s.market !== '1x2' ? ` <small class="muted">· ${esc(s.marketName)}</small>` : ''}</div>
         ${s.closed ? '<div class="note red">Mercado fechado — remova esta seleção.</div>' : s.newOdds ? `<div class="note">Odd alterada: ${fmtOdds(s.odds)} → ${fmtOdds(s.newOdds)}</div>` : ''}
       </div>`).join('')
-    : '<div class="empty-bet"><div>🎟️</div><strong>O seu boletim está vazio</strong><span>Selecione uma odd para começar a sua aposta.</span></div>';
+    : `<div class="empty-bet"><div>🎟️</div><strong>O seu boletim está vazio</strong><span>Selecione uma odd para começar a sua aposta.</span></div>${slipPromos()}`;
   $('#betFooter').classList.toggle('hidden', n === 0);
   if (!n) return;
 
