@@ -3,8 +3,8 @@
 // only without a network) and its versioned scripts and styles (?v=…, never changing). Odds, the
 // account, the casino and everything under /api always go to the server, untouched.
 
-const CACHE = 'bet62-shell-v1';
-const SHELL = ['/', '/manifest.json', '/icon-192.png?v=2', '/icon-512.png?v=2'];
+const CACHE = 'bet62-shell-v2';
+const SHELL = ['/', '/manifest.json', '/icon-192.png?v=3', '/icon-512.png?v=3'];
 const SKIP = /^\/(api|ws|admin|administrador|casino|media|r)(\/|$)/;
 
 self.addEventListener('install', (e) => {
@@ -60,7 +60,7 @@ self.addEventListener('push', (e) => {
   let m = {};
   try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Bet62', body: e.data?.text() || '' }; }
   e.waitUntil(self.registration.showNotification(m.title || 'Bet62', {
-    body: m.body || '', icon: '/icon-192.png?v=2', badge: '/icon-192.png?v=2', image: m.image || undefined,
+    body: m.body || '', icon: '/icon-192.png?v=3', badge: '/icon-192.png?v=3', image: m.image || undefined,
     tag: m.tag || undefined, renotify: !!m.tag, vibrate: [120, 60, 120, 60, 320],
     data: { url: m.url || '/' }, actions: m.kind === 'win' ? [{ action: 'open', title: 'Ver aposta' }] : [],
   }));

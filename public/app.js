@@ -3650,6 +3650,39 @@ let lastResume = 0;
  */
 const playingCasino = () => { const r = currentRoute(); return r.page === 'casino' && r.sub === 'jogar' && !!state.casinoSession; };
 
+/**
+ * A new version was deployed: a screen asks the player to update (the page loads again, with the
+ * new scripts and icon). Not over a casino game or a payment being confirmed; "Mais tarde" asks
+ * again on the next check (every 5 minutes, or on coming back to the app).
+ */
+let updateSnooze = 0;
+function updateReady(version) {
+  state.updateTo = version;
+  if ($('#updateAsk') || Date.now() < updateSnooze || state.casinoSession || playingCasino() || state.depositWatch) return;
+  const el = document.createElement('div');
+  el.id = 'updateAsk';
+  el.className = 'update-ask';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'updateAskTitle');
+  el.innerHTML = `<div class="update-card">
+    <img src="/icon-192.png?v=3" alt="" width="72" height="72">
+    <h3 id="updateAskTitle">Nova versão disponível</h3>
+    <p>A Bet62 tem uma atualização com melhorias. Atualize para continuar com a versão mais recente.</p>
+    <button type="button" class="primary-btn" data-update="now">Atualizar agora</button>
+    <button type="button" class="link-btn" data-update="later">Mais tarde</button></div>`;
+  el.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-update]');
+    if (!b) return;
+    if (b.dataset.update === 'later') { updateSnooze = Date.now() + 10 * 60_000; el.remove(); return; }
+    b.disabled = true; b.textContent = 'A atualizar…';
+    try { await (await navigator.serviceWorker?.getRegistration())?.update(); } catch { /* the page reloads anyway */ }
+    window.location.reload();
+  });
+  document.body.append(el);
+  el.querySelector('[data-update="now"]').focus();
+}
+
 async function resume() {
   if (document.hidden || Date.now() - lastResume < 2000) return;
   // Back from the game's frame (a click outside it focuses the page): only the balance.
@@ -3658,7 +3691,7 @@ async function resume() {
   try {
     const c = await api('/api/config');
     // A deploy happened while away: load the new version.
-    if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) { window.location.reload(); return; }
+    if (state.config?.version && c.version && c.version !== state.config.version) updateReady(c.version);
   } catch { /* offline: the polls retry */ }
   await Promise.all([refreshMe(), refreshEvents({ full: true }), loadLeagues()]);
   const { page, sub } = currentRoute();
@@ -5934,7 +5967,7 @@ async function init() {
   setInterval(async () => {
     try {
       const c = await api('/api/config');
-      if (state.config?.version && c.version && c.version !== state.config.version && !state.casinoSession) window.location.reload();
+      if (state.config?.version && c.version && c.version !== state.config.version) updateReady(c.version);
     } catch { /* offline for a moment */ }
   }, 5 * 60_000);
   // Maintenance switched on or off in the admin: the screen comes and goes within a minute.
