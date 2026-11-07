@@ -23,7 +23,7 @@
     bar.className = 'install-bar';
     bar.setAttribute('role', 'dialog');
     bar.setAttribute('aria-label', 'Instalar a app Bet62');
-    bar.innerHTML = `<img src="/icon-192.png?v=2" alt="" width="44" height="44"><div class="install-text"><b>Instale a app Bet62</b><span>${body}</span></div>`
+    bar.innerHTML = `<img src="/icon-192.png?v=3" alt="" width="44" height="44"><div class="install-text"><b>Instale a app Bet62</b><span>${body}</span></div>`
       + `${button === 'guide' ? '<button type="button" class="install-go" data-install="guide">Como instalar</button>' : button ? '<button type="button" class="install-go" data-install="go">Instalar</button>' : ''}<button type="button" class="install-close" data-install="close" aria-label="Fechar">×</button>`;
     bar.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-install]') || (button === 'guide' && !e.target.closest('.install-close') ? { dataset: { install: 'guide' } } : null);
@@ -62,7 +62,7 @@
     g.className = `install-guide at-${where}`;
     g.setAttribute('role', 'dialog');
     g.setAttribute('aria-label', 'Como instalar a app Bet62');
-    g.innerHTML = `<div class="install-card"><img src="/icon-192.png?v=2" alt="" width="56" height="56"><b>Instalar a Bet62 no iPhone</b>
+    g.innerHTML = `<div class="install-card"><img src="/icon-192.png?v=3" alt="" width="56" height="56"><b>Instalar a Bet62 no iPhone</b>
       <ol><li><i>1</i><span>${first}.</span></li>
         <li><i>2</i><span>Deslize o menu e toque em <b>Adicionar ao ecrã principal</b> <span class="install-plus" aria-hidden="true">＋</span>.</span></li>
         <li><i>3</i><span>Toque em <b>Adicionar</b>. A Bet62 fica no ecrã, como uma app.</span></li></ol>
