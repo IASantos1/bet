@@ -1070,91 +1070,113 @@ function legStateText(l, open) {
   return fmtWhen(l.startTime);
 }
 
-/** The ticket drawn on a 1080×1920 canvas (the stories format): a PNG Blob. */
+/**
+ * The ticket drawn on a 1080×1920 canvas (the stories format): a PNG Blob. Fixed zones, so it never
+ * overlaps: the brand on top, the footer at the bottom, and the ticket in between, its rows sized to
+ * fit however many picks it has (the rest counted as "+ N seleções"); the BET62 mark faint behind it.
+ */
 async function ticketPicture(b, url, { money: showMoney = true } = {}) {
   const W = 1080, H = 1920, c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
   try { await document.fonts?.ready; } catch { /* system font */ }
   const F = (w, px) => `${w} ${px}px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
-  const LIME = '#7cff6b', TEXT = '#e8eaed', SUB = '#9aa3ad', CARD = '#20262c', LINE = '#343b43';
+  const LIME = '#7cff6b', TEXT = '#e8eaed', SUB = '#9aa3ad', CARD = '#20262c', LINE = '#343b43', RED = '#ff6b81';
   const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
   const fit = (t, max) => { let s = String(t || ''); if (g.measureText(s).width <= max) return s; while (s.length > 1 && g.measureText(`${s}…`).width > max) s = s.slice(0, -1); return `${s}…`; };
+  const brand = (cx, y, px, alpha = 1) => {
+    g.save(); g.globalAlpha = alpha; g.font = F(900, px); g.textAlign = 'left';
+    const bw = g.measureText('BET').width, nw = g.measureText('62').width, bx = cx - (bw + nw) / 2;
+    g.fillStyle = '#ffffff'; g.fillText('BET', bx, y);
+    g.fillStyle = LIME; if (alpha === 1) { g.shadowColor = 'rgba(124,255,107,.6)'; g.shadowBlur = 30; }
+    g.fillText('62', bx + bw, y); g.restore();
+  };
   // Background: dark, a lime glow at the top.
   const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#0d1a12'); bg.addColorStop(0.45, '#14191e'); bg.addColorStop(1, '#0f1317');
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  const glow = g.createRadialGradient(W / 2, 120, 20, W / 2, 120, 700); glow.addColorStop(0, 'rgba(124,255,107,.28)'); glow.addColorStop(1, 'rgba(124,255,107,0)');
+  const glow = g.createRadialGradient(W / 2, 110, 20, W / 2, 110, 700); glow.addColorStop(0, 'rgba(124,255,107,.28)'); glow.addColorStop(1, 'rgba(124,255,107,0)');
   g.fillStyle = glow; g.fillRect(0, 0, W, 900);
-  // The brand.
-  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-  g.font = F(900, 110); const bw = g.measureText('BET').width, nw = g.measureText('62').width;
-  const bx = W / 2 - (bw + nw) / 2;
-  g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.fillText('BET', bx, 230);
-  g.fillStyle = LIME; g.shadowColor = 'rgba(124,255,107,.6)'; g.shadowBlur = 30; g.fillText('62', bx + bw, 230); g.shadowBlur = 0;
-  // The ticket card.
+  brand(W / 2, 190, 104);
+  // Zones: the ticket between y 250 and 1680; the footer below.
   const [badge] = TICKET_BADGE[b.status] || TICKET_BADGE.open;
   const [kind] = TICKET_KIND[b.origin] || TICKET_KIND[b.type] || TICKET_KIND.single;
   const open = b.status === 'open';
   const legs = b.legs || [];
-  const x = 70, w = W - 140, top = 320;
-  const rowH = legs.length > 8 ? 112 : legs.length > 5 ? 136 : 160;
-  const shown = legs.slice(0, Math.floor(1000 / rowH));
-  const headH = 190, footH = 230;
-  const h = headH + shown.length * rowH + (legs.length > shown.length ? 60 : 0) + footH;
+  const x = 60, w = W - 120, zoneTop = 250, maxH = 1680 - zoneTop;
+  const headH = 170, moneyH = 170, padB = 40;
+  const room = maxH - headH - moneyH - 30 - padB;
+  const MIN = 112, MAX = 170;
+  let shown = legs, rowH = Math.min(MAX, Math.floor(room / Math.max(1, legs.length)));
+  if (rowH < MIN) { const n = Math.max(1, Math.floor((room - 56) / MIN)); shown = legs.slice(0, n); rowH = Math.min(MAX, Math.floor((room - 56) / n)); }
+  const more = legs.length - shown.length;
+  const h = headH + shown.length * rowH + (more ? 56 : 0) + 30 + moneyH + padB;
+  // A short ticket sits in the middle of its zone (no empty band under it).
+  const top = zoneTop + Math.max(0, Math.round((maxH - h) / 2));
   g.fillStyle = CARD; rr(x, top, w, h, 40); g.fill();
+  // The BET62 mark, faint and tilted, behind the picks.
+  g.save(); rr(x, top, w, h, 40); g.clip();
+  g.translate(W / 2, top + h / 2); g.rotate(-0.32); brand(0, 90, 300, 0.05); g.restore();
   g.strokeStyle = LINE; g.lineWidth = 3; rr(x, top, w, h, 40); g.stroke();
   g.fillStyle = LIME; rr(x, top, w, 10, [40, 40, 0, 0]); g.fill();
   // Head: what it is, how many picks, its status.
-  g.textAlign = 'left'; g.fillStyle = TEXT; g.font = F(900, 58);
-  g.fillText(fit(kind, w - 420), x + 50, top + 105);
-  g.fillStyle = SUB; g.font = F(600, 36);
-  g.fillText(`${legs.length} ${legs.length === 1 ? 'seleção' : 'seleções'}${b.boostPct ? ` · Boost +${b.boostPct}%` : ''}`, x + 50, top + 158);
-  const st = { open: ['#3a3210', '#f5c542'], won: ['#103a1d', LIME], lost: ['#3a1218', '#ff6b81'], void: ['#2a2f35', SUB], cashout: ['#10303a', '#5fd4ff'] }[b.status] || ['#2a2f35', SUB];
+  g.textAlign = 'left'; g.fillStyle = TEXT; g.font = F(900, 56);
+  g.fillText(fit(kind, w - 420), x + 50, top + 98);
+  g.fillStyle = SUB; g.font = F(600, 34);
+  g.fillText(`${legs.length} ${legs.length === 1 ? 'seleção' : 'seleções'}${b.boostPct ? ` · Boost +${b.boostPct}%` : ''}`, x + 50, top + 146);
+  const st = { open: ['#3a3210', '#f5c542'], won: ['#103a1d', LIME], lost: ['#3a1218', RED], void: ['#2a2f35', SUB], cashout: ['#10303a', '#5fd4ff'] }[b.status] || ['#2a2f35', SUB];
   g.font = F(800, 34); const tw = g.measureText(badge).width + 64;
-  g.fillStyle = st[0]; rr(x + w - 50 - tw, top + 70, tw, 66, 33); g.fill();
-  g.fillStyle = st[1]; g.textAlign = 'center'; g.fillText(badge, x + w - 50 - tw / 2, top + 115);
-  // The picks.
+  g.fillStyle = st[0]; rr(x + w - 50 - tw, top + 62, tw, 66, 33); g.fill();
+  g.fillStyle = st[1]; g.textAlign = 'center'; g.fillText(badge, x + w - 50 - tw / 2, top + 107);
+  // The picks: three lines when there is room (pick, market · match, when), else the "when" under the odd.
+  const full = rowH >= 140;
+  const big = full ? 42 : rowH >= 124 ? 38 : 34, small = full ? 30 : rowH >= 124 ? 27 : 25;
   let y = top + headH;
   for (const l of shown) {
     g.strokeStyle = LINE; g.lineWidth = 2; g.beginPath(); g.moveTo(x + 40, y); g.lineTo(x + w - 40, y); g.stroke();
-    const mark = { won: ['✓', LIME], lost: ['✕', '#ff6b81'], void: ['—', SUB] }[l.status];
+    const live = open && l.eventStatus === 'live';
+    const mark = { won: ['✓', LIME], lost: ['✕', RED], void: ['—', SUB] }[l.status];
+    const mid = y + rowH / 2;
+    g.beginPath(); g.arc(x + 80, mid, 22, 0, Math.PI * 2);
+    g.strokeStyle = mark ? mark[1] : live ? RED : '#5b636c'; g.lineWidth = 4; g.stroke();
+    if (mark) { g.fillStyle = mark[1]; g.font = F(900, 28); g.textAlign = 'center'; g.fillText(mark[0], x + 80, mid + 10); }
+    const textW = w - 330, oddX = x + w - 50;
+    const when = legStateText(l, open);
     g.textAlign = 'left';
-    g.beginPath(); g.arc(x + 80, y + rowH / 2, 24, 0, Math.PI * 2);
-    g.strokeStyle = mark ? mark[1] : (open && l.eventStatus === 'live' ? '#ff6b81' : '#5b636c'); g.lineWidth = 4; g.stroke();
-    if (mark) { g.fillStyle = mark[1]; g.font = F(900, 30); g.textAlign = 'center'; g.fillText(mark[0], x + 80, y + rowH / 2 + 11); g.textAlign = 'left'; }
-    const big = rowH >= 136 ? 44 : 38, small = rowH >= 136 ? 32 : 28;
-    g.fillStyle = TEXT; g.font = F(800, big);
-    g.fillText(fit(l.label || l.code, w - 340), x + 135, y + rowH / 2 - (rowH >= 136 ? 18 : 12));
-    g.fillStyle = SUB; g.font = F(500, small);
-    g.fillText(fit(`${l.marketName && l.market !== '1x2' ? l.marketName : 'Resultado final'} · ${l.match}`, w - 340), x + 135, y + rowH / 2 + (rowH >= 136 ? 26 : 22));
-    const state = legStateText(l, open);
-    g.fillStyle = open && l.eventStatus === 'live' ? '#ff6b81' : '#7d868f'; g.font = F(700, small - 2);
-    if (rowH >= 136) g.fillText(fit(state, w - 340), x + 135, y + rowH / 2 + 64);
-    g.textAlign = 'right'; g.fillStyle = TEXT; g.font = F(900, big + 4);
-    g.fillText(fmtOdds(l.odds), x + w - 50, y + rowH / 2 + 14);
+    if (full) {
+      g.fillStyle = TEXT; g.font = F(800, big); g.fillText(fit(l.label || l.code, textW), x + 130, mid - 22);
+      g.fillStyle = SUB; g.font = F(500, small); g.fillText(fit(`${l.marketName && l.market !== '1x2' ? l.marketName : 'Resultado final'} · ${l.match}`, textW), x + 130, mid + 18);
+      g.fillStyle = live ? RED : '#7d868f'; g.font = F(700, small - 2); g.fillText(fit(when, textW), x + 130, mid + 56);
+      g.textAlign = 'right'; g.fillStyle = TEXT; g.font = F(900, big + 6); g.fillText(fmtOdds(l.odds), oddX, mid + 16);
+    } else {
+      g.fillStyle = TEXT; g.font = F(800, big); g.fillText(fit(l.label || l.code, textW), x + 130, mid - 8);
+      g.fillStyle = SUB; g.font = F(500, small); g.fillText(fit(`${l.marketName && l.market !== '1x2' ? l.marketName : 'Resultado final'} · ${l.match}`, textW), x + 130, mid + 30);
+      g.textAlign = 'right'; g.fillStyle = TEXT; g.font = F(900, big + 4); g.fillText(fmtOdds(l.odds), oddX, mid - 4);
+      g.fillStyle = live ? RED : '#7d868f'; g.font = F(700, small - 3); g.fillText(fit(when, 230), oddX, mid + 30);
+    }
     y += rowH;
   }
-  if (legs.length > shown.length) { g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(700, 32); g.fillText(`+ ${legs.length - shown.length} seleções`, W / 2, y + 42); y += 60; }
-  // The money (or just the odds).
-  const by = y + 30, bh = 170;
-  g.fillStyle = '#171c21'; rr(x + 40, by, w - 80, bh, 28); g.fill();
+  if (more) { g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(700, 32); g.fillText(`+ ${more} ${more === 1 ? 'seleção' : 'seleções'}`, W / 2, y + 40); y += 56; }
+  // The money (or just the odds), each value fitted to its column.
+  const by = y + 30;
+  g.fillStyle = 'rgba(15,19,23,.85)'; rr(x + 36, by, w - 72, moneyH, 28); g.fill();
   const done = b.status === 'won' || b.status === 'cashout';
   const ret = done ? (Number(b.payout) || 0) + (Number(b.boost) || 0) : Number(b.potential) || 0;
   const cells = showMoney
-    ? [['Aposta', money(b.stake)], ['Odd total', fmtOdds(b.totalOdds)], [done ? 'Ganho' : b.status === 'open' ? 'Retorno potencial' : 'Retorno', money(ret)]]
+    ? [['Aposta', money(b.stake)], ['Odd total', fmtOdds(b.totalOdds)], [done ? 'Ganho' : open ? 'Retorno potencial' : 'Retorno', money(ret)]]
     : [['Odd total', fmtOdds(b.totalOdds)]];
-  const cw = (w - 80) / cells.length;
+  const cw = (w - 72) / cells.length;
   cells.forEach(([k, v], i) => {
-    const cx = x + 40 + cw * i + cw / 2;
-    g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(600, 32); g.fillText(k, cx, by + 62);
-    g.fillStyle = i === cells.length - 1 && (done || showMoney) ? LIME : TEXT; g.font = F(900, i === cells.length - 1 ? 58 : 52);
-    g.fillText(v, cx, by + 132);
+    const cx = x + 36 + cw * i + cw / 2, last = i === cells.length - 1;
+    g.textAlign = 'center'; g.fillStyle = SUB; g.font = F(600, 30); g.fillText(fit(k, cw - 24), cx, by + 60);
+    let px = last ? 56 : 50; g.font = F(900, px);
+    while (px > 30 && g.measureText(v).width > cw - 30) { px -= 2; g.font = F(900, px); }
+    g.fillStyle = last && (done || showMoney) ? LIME : TEXT; g.fillText(v, cx, by + 130);
   });
-  // Footer: where to find it.
-  g.textAlign = 'center'; g.fillStyle = TEXT; g.font = F(800, 40);
-  g.fillText(b.status === 'open' ? 'Faça a mesma aposta na Bet62' : 'Aposte na Bet62', W / 2, H - 230);
-  g.fillStyle = LIME; g.font = F(900, 46); g.fillText(new URL(url).host, W / 2, H - 165);
-  g.fillStyle = '#6f7780'; g.font = F(600, 28); g.fillText(`${b.ref || ''}  ·  18+  ·  Jogue com responsabilidade`, W / 2, H - 90);
+  // Footer, in its own zone under the ticket.
+  g.textAlign = 'center'; g.fillStyle = TEXT; g.font = F(800, 38);
+  g.fillText(open ? 'Faça a mesma aposta na Bet62' : 'Aposte na Bet62', W / 2, 1755);
+  g.fillStyle = LIME; g.font = F(900, 46); g.fillText(new URL(url).host, W / 2, 1815);
+  g.fillStyle = '#6f7780'; g.font = F(600, 26); g.fillText(`${b.ref || ''}  ·  18+  ·  Jogue com responsabilidade`, W / 2, 1875);
   return new Promise((ok) => c.toBlob(ok, 'image/png'));
 }
 
