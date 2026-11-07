@@ -1072,8 +1072,8 @@ function legStateText(l, open) {
 
 /**
  * The ticket drawn on a 1080×1920 canvas (the stories format): a PNG Blob. Fixed zones, so it never
- * overlaps: the brand on top, the footer at the bottom, and the ticket in between, its rows sized to
- * fit however many picks it has (the rest counted as "+ N seleções"); the BET62 mark faint behind it.
+ * overlaps: the ticket on top, the footer at the bottom, its rows sized to
+ * fit however many picks it has (the rest counted as "+ N seleções"); the BET62 mark large and faint behind the picks.
  */
 async function ticketPicture(b, url, { money: showMoney = true } = {}) {
   const W = 1080, H = 1920, c = document.createElement('canvas');
@@ -1096,13 +1096,12 @@ async function ticketPicture(b, url, { money: showMoney = true } = {}) {
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
   const glow = g.createRadialGradient(W / 2, 110, 20, W / 2, 110, 700); glow.addColorStop(0, 'rgba(124,255,107,.28)'); glow.addColorStop(1, 'rgba(124,255,107,0)');
   g.fillStyle = glow; g.fillRect(0, 0, W, 900);
-  brand(W / 2, 190, 104);
-  // Zones: the ticket between y 250 and 1680; the footer below.
+  // Zones: the ticket between y 90 and 1680 (the BET62 mark is in its background); the footer below.
   const [badge] = TICKET_BADGE[b.status] || TICKET_BADGE.open;
   const [kind] = TICKET_KIND[b.origin] || TICKET_KIND[b.type] || TICKET_KIND.single;
   const open = b.status === 'open';
   const legs = b.legs || [];
-  const x = 60, w = W - 120, zoneTop = 250, maxH = 1680 - zoneTop;
+  const x = 60, w = W - 120, zoneTop = 90, maxH = 1680 - zoneTop;
   const headH = 170, moneyH = 170, padB = 40;
   const room = maxH - headH - moneyH - 30 - padB;
   const MIN = 112, MAX = 170;
@@ -1115,7 +1114,7 @@ async function ticketPicture(b, url, { money: showMoney = true } = {}) {
   g.fillStyle = CARD; rr(x, top, w, h, 40); g.fill();
   // The BET62 mark, faint and tilted, behind the picks.
   g.save(); rr(x, top, w, h, 40); g.clip();
-  g.translate(W / 2, top + h / 2); g.rotate(-0.32); brand(0, 90, 300, 0.05); g.restore();
+  g.translate(W / 2, top + h / 2); g.rotate(-0.32); brand(0, 100, Math.min(320, h * 0.42), 0.08); g.restore();
   g.strokeStyle = LINE; g.lineWidth = 3; rr(x, top, w, h, 40); g.stroke();
   g.fillStyle = LIME; rr(x, top, w, 10, [40, 40, 0, 0]); g.fill();
   // Head: what it is, how many picks, its status.
