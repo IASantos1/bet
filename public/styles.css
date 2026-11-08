@@ -1690,9 +1690,10 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 /* Light theme (07:00–21:00, set by the page's clock, splash.js / app.js): the same layout on light surfaces. */
 html.light {
   color-scheme: light;
-  --page: #ffffff; --card: #ffffff; --panels: #ffffff; --dim: #f5f7fa; --row-hover: #e8ecf1;
-  --border: #e3e7ed; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
-  --odd-cell: #f0f3f7; --odd-price: #111827; --odd-hover: #e3e8ef; --odd-selected: #67788c; --odd-selected-price: #ffffff;
+  /* A soft grey page under white cards: less glare than all white, and the cards stand out. */
+  --page: #eef1f5; --card: #ffffff; --panels: #ffffff; --dim: #e9edf2; --row-hover: #e3e8ef;
+  --border: #dde2e9; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
+  --odd-cell: #eef2f7; --odd-price: #111827; --odd-hover: #e2e8f0; --odd-selected: #67788c; --odd-selected-price: #ffffff;
   --nav: #ffffff; --nav-sep: #e4e8ee; --nav-label: #111827; --nav-sub: #6b7280;
   --text: #111827; --text-2: #374151; --text-3: #6b7280; --text-4: #9aa3ae;
   --strong: #111827;
