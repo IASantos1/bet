@@ -2311,14 +2311,22 @@ html.light .promo-card p, html.light .pc-terms .promo-terms { color: var(--text-
 html.light .promo-card.off { opacity: .6; }
 
 /* ---------- Light theme: green gradient from the top, side menu and slip over it ---------- */
-/* The whole page in a green gradient from the top down (every page); the bar, the side menu and the
-   slip let it show through, the cards stay white. */
-html.light body { background: linear-gradient(180deg, #bfe9b8 0%, #d6f1d1 220px, #e6f4e3 520px, #eef3ee 900px, #eff2f4 100%) fixed; }
+/* A solid green top bar, and under it a band of that green fading to the light page in the first few
+   hundred pixels (it scrolls away with the page); further down the page stays light. */
+html.light body { background: #eef1f5 linear-gradient(180deg, #23a240 0, #5cc56f 120px, #a8e2ad 260px, #dcf1dc 420px, #eef1f5 620px) no-repeat; }
 html.light .content { background: transparent; }
-html.light .topbar { background: rgba(255, 255, 255, .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom-color: rgba(31, 157, 58, .18); }
-html.light .mobile-nav { background: rgba(255, 255, 255, .85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-html.light .left-sidebar, html.light .betslip { background: rgba(255, 255, 255, .35); border-color: rgba(31, 157, 58, .18); }
-@media (max-width: 1000px) { html.light .left-sidebar { background: linear-gradient(180deg, #e3f5df, #f4faf3); } }
+html.light .topbar { background: linear-gradient(90deg, #178a33, #23a240 55%, #2fb34a); border-bottom-color: transparent; }
+html.light .topbar .brand-word { color: #fff; }
+html.light .topbar .brand-word span { color: #d4ff9e; text-shadow: none; }
+html.light .topbar .topnav a { color: rgba(255, 255, 255, .82); }
+html.light .topbar .topnav a:hover, html.light .topbar .topnav a.active { color: #fff; border-bottom-color: #d4ff9e; }
+html.light .topbar .icon-btn, html.light .topbar .tickets-btn { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+html.light .topbar .search-btn { background: rgba(255, 255, 255, .92); border-color: transparent; color: #4b5563; }
+html.light .topbar #loginBtn { background: transparent; border-color: rgba(255, 255, 255, .85); color: #fff; }
+html.light .topbar #registerBtn { background: #fff; border-color: #fff; color: #14702a; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
+html.light .mobile-nav { background: #fff; }
+html.light .left-sidebar, html.light .betslip { background: #fff; }
+html.light .page-title p { color: #2f4a35; }
 html.light .left-sidebar .sidebar-head, html.light .betslip .sidebar-head, html.light .slip-promos-head { color: #3f8a4c; }
 html.light .left-sidebar .side-link { color: #34513a; }
 html.light .left-sidebar .side-link:hover { background: rgba(31, 157, 58, .10); color: #0f3d1a; }
