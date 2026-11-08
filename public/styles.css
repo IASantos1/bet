@@ -109,7 +109,7 @@ h1, h2, h3 { margin-top: 0; }
 .bet-tabs button.active { background: var(--row-hover); color: var(--strong); }
 .empty-bet { display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--muted); padding: 60px 20px 40px; gap: 8px; }
 .empty-bet div { font-size: 34px; opacity: .65; }
-.empty-bet strong { color: #dce1e7; font-size: 13px; }
+.empty-bet strong { color: var(--strong); font-size: 13px; }
 .empty-bet span { font-size: 11px; line-height: 1.5; }
 .bet-items { flex: 1 0 auto; }
 .bet-item { border: 1px solid var(--line); background: var(--dim); border-radius: var(--radius); padding: 11px; margin-bottom: 8px; }
@@ -1690,9 +1690,10 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 /* Light theme (07:00–21:00, set by the page's clock, splash.js / app.js): the same layout on light surfaces. */
 html.light {
   color-scheme: light;
-  --page: #ffffff; --card: #ffffff; --panels: #ffffff; --dim: #f5f7fa; --row-hover: #e8ecf1;
-  --border: #e3e7ed; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
-  --odd-cell: #f0f3f7; --odd-price: #111827; --odd-hover: #e3e8ef; --odd-selected: #67788c; --odd-selected-price: #ffffff;
+  /* A soft grey page under white cards: less glare than all white, and the cards stand out. */
+  --page: #eef1f5; --card: #ffffff; --panels: #ffffff; --dim: #e9edf2; --row-hover: #e3e8ef;
+  --border: #dde2e9; --scrollbar: #e6e9ee; --disabled: #e5e7eb;
+  --odd-cell: #eef2f7; --odd-price: #111827; --odd-hover: #e2e8f0; --odd-selected: #67788c; --odd-selected-price: #ffffff;
   --nav: #ffffff; --nav-sep: #e4e8ee; --nav-label: #111827; --nav-sub: #6b7280;
   --text: #111827; --text-2: #374151; --text-3: #6b7280; --text-4: #9aa3ae;
   --strong: #111827;
@@ -2297,3 +2298,41 @@ body.on-promos .page-title h1 { font-family: 'Fredoka', Inter, sans-serif; font-
 .slip-promo i { font-style: normal; color: var(--pc); font-size: 18px; }
 .slip-promos-all { justify-self: center; margin-top: 2px; color: var(--text-3); font-size: 12px; font-weight: 700; }
 .slip-promos-all:hover { color: var(--text); }
+
+/* ---------- Light theme: the promotions and notices readable on white ---------- */
+html.light .notice { border-color: var(--border); color: var(--text-2); }
+html.light .promo-card { background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--pc) 16%, transparent), transparent 62%), linear-gradient(160deg, #ffffff, #f5f7fa);
+  border-color: color-mix(in srgb, var(--pc) 35%, var(--border)); box-shadow: 0 6px 20px rgba(17, 24, 39, .06); }
+/* The colours a shade deeper on white (the lime and gold of the dark theme are too pale there). */
+html.light .promo-card.t-welcome { --pc: #c98a00; } html.light .promo-card.t-firstBet { --pc: #1d74d8; } html.light .promo-card.t-reload { --pc: #1f9d3a; }
+html.light .promo-card.t-cashback { --pc: #0f9e8a; } html.light .promo-card.t-accaBoost { --pc: #e0661a; } html.light .promo-card.t-casinoFs { --pc: #8b4fd8; } html.light .promo-card.t-depositFb { --pc: #3f8f10; }
+html.light .pc-state { color: #fff; }
+html.light .promo-card p, html.light .pc-terms .promo-terms { color: var(--text-2); }
+html.light .promo-card.off { opacity: .6; }
+
+/* ---------- Light theme: green gradient from the top, side menu and slip over it ---------- */
+/* A solid green top bar, and under it a band of that green fading to the light page in the first few
+   hundred pixels (it scrolls away with the page); further down the page stays light. */
+html.light body { background: #eef1f5 linear-gradient(180deg, #23a240 0, #5cc56f 120px, #a8e2ad 260px, #dcf1dc 420px, #eef1f5 620px) no-repeat; }
+html.light .content { background: transparent; }
+html.light .topbar { background: linear-gradient(90deg, #178a33, #23a240 55%, #2fb34a); border-bottom-color: transparent; }
+html.light .topbar .brand-word { color: #fff; }
+html.light .topbar .brand-word span { color: #d4ff9e; text-shadow: none; }
+html.light .topbar .topnav a { color: rgba(255, 255, 255, .82); }
+html.light .topbar .topnav a:hover, html.light .topbar .topnav a.active { color: #fff; border-bottom-color: #d4ff9e; }
+html.light .topbar .icon-btn, html.light .topbar .tickets-btn { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+html.light .topbar .search-btn { background: rgba(255, 255, 255, .92); border-color: transparent; color: #4b5563; }
+html.light .topbar #loginBtn { background: transparent; border-color: rgba(255, 255, 255, .85); color: #fff; }
+html.light .topbar #registerBtn { background: #fff; border-color: #fff; color: #14702a; box-shadow: 0 4px 14px rgba(0, 0, 0, .15); }
+html.light .mobile-nav { background: #fff; }
+html.light .left-sidebar, html.light .betslip { background: #fff; }
+html.light .page-title p { color: #2f4a35; }
+html.light .left-sidebar .sidebar-head, html.light .betslip .sidebar-head, html.light .slip-promos-head { color: #3f8a4c; }
+html.light .left-sidebar .side-link { color: #34513a; }
+html.light .left-sidebar .side-link:hover { background: rgba(31, 157, 58, .10); color: #0f3d1a; }
+html.light .left-sidebar .side-link.active { background: linear-gradient(90deg, rgba(31, 157, 58, .18), rgba(31, 157, 58, .06)); color: #0f3d1a; }
+html.light .left-sidebar .side-link b { color: #5d8a64; }
+html.light .left-sidebar .side-divider { background: #cfe6cb; }
+html.light .betslip .bet-tabs { background: rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 1px #cfe6cb; }
+html.light .betslip .bet-tabs button.active { background: linear-gradient(135deg, #2fb34a, #1f9d3a); color: #fff; box-shadow: 0 3px 10px rgba(31, 157, 58, .25); }
+html.light .betslip .empty-bet div { opacity: .85; }
