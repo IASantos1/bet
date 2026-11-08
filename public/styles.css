@@ -2309,3 +2309,18 @@ html.light .promo-card.t-cashback { --pc: #0f9e8a; } html.light .promo-card.t-ac
 html.light .pc-state { color: #fff; }
 html.light .promo-card p, html.light .pc-terms .promo-terms { color: var(--text-2); }
 html.light .promo-card.off { opacity: .6; }
+
+/* ---------- Light theme: the side menu and the bet slip in a soft green gradient ---------- */
+html.light .left-sidebar, html.light .betslip {
+  background: linear-gradient(180deg, #f6fcf4 0%, #eaf7e7 55%, #dcf1d8 100%);
+  border-color: #cfe6cb;
+}
+html.light .left-sidebar .sidebar-head, html.light .betslip .sidebar-head, html.light .slip-promos-head { color: #3f8a4c; }
+html.light .left-sidebar .side-link { color: #34513a; }
+html.light .left-sidebar .side-link:hover { background: rgba(31, 157, 58, .10); color: #0f3d1a; }
+html.light .left-sidebar .side-link.active { background: linear-gradient(90deg, rgba(31, 157, 58, .18), rgba(31, 157, 58, .06)); color: #0f3d1a; }
+html.light .left-sidebar .side-link b { color: #5d8a64; }
+html.light .left-sidebar .side-divider { background: #cfe6cb; }
+html.light .betslip .bet-tabs { background: rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 1px #cfe6cb; }
+html.light .betslip .bet-tabs button.active { background: linear-gradient(135deg, #2fb34a, #1f9d3a); color: #fff; box-shadow: 0 3px 10px rgba(31, 157, 58, .25); }
+html.light .betslip .empty-bet div { opacity: .85; }
