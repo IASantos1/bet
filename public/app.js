@@ -4896,8 +4896,7 @@ function matchPage(sub) {
   const heroLogo = e.leagueLogo || (leagueId ? `/league-logo/${leagueId}`
     : e.sport === 'futebol' || LOGO_SPORTS.has(e.sport) ? `/league-logo/0?s=${encodeURIComponent(e.sport)}&n=${encodeURIComponent(e.competition)}&c=${encodeURIComponent(compCountry(e) || '')}` : '');
   return `<a class="back-link" href="#/${live ? 'ao-vivo' : 'desporto'}">‹ Voltar</a>
-    <section class="match-hero${heroLogo ? ' has-bg' : ''}">
-      ${heroLogo ? `<img class="match-hero-bg${e.sport === 'futebol' ? sponsorCut(e.competition) : ''}" src="${esc(heroLogo)}"${heroBgModes.has(heroLogo) ? ` data-bg="${heroBgModes.get(heroLogo)}"` : ''} alt="" aria-hidden="true" decoding="async">` : ''}
+    <section class="match-hero">
       <div class="match-comp">${heroLogo ? `<span class="league-logo" data-sport-icon="${esc(e.sport)}"><img class="league-img${e.sport === 'futebol' ? sponsorCut(e.competition) : ''}" src="${esc(heroLogo)}" alt=""></span>` : sportBadge(e.sport)} ${esc(e.competition)}</div>
       <div class="match-teams">
         <div class="match-team">${sideBadge(e, 'home', 'big')}<strong>${esc(tname(e, 'home'))}${redCard(e, 'home')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="home" title="Ao serviço"></i>' : ''}</strong></div>
