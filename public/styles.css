@@ -2310,11 +2310,15 @@ html.light .pc-state { color: #fff; }
 html.light .promo-card p, html.light .pc-terms .promo-terms { color: var(--text-2); }
 html.light .promo-card.off { opacity: .6; }
 
-/* ---------- Light theme: the side menu and the bet slip in a soft green gradient ---------- */
-html.light .left-sidebar, html.light .betslip {
-  background: linear-gradient(180deg, #f6fcf4 0%, #eaf7e7 55%, #dcf1d8 100%);
-  border-color: #cfe6cb;
-}
+/* ---------- Light theme: green gradient from the top, side menu and slip over it ---------- */
+/* The whole page in a green gradient from the top down (every page); the bar, the side menu and the
+   slip let it show through, the cards stay white. */
+html.light body { background: linear-gradient(180deg, #bfe9b8 0%, #d6f1d1 220px, #e6f4e3 520px, #eef3ee 900px, #eff2f4 100%) fixed; }
+html.light .content { background: transparent; }
+html.light .topbar { background: rgba(255, 255, 255, .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom-color: rgba(31, 157, 58, .18); }
+html.light .mobile-nav { background: rgba(255, 255, 255, .85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+html.light .left-sidebar, html.light .betslip { background: rgba(255, 255, 255, .35); border-color: rgba(31, 157, 58, .18); }
+@media (max-width: 1000px) { html.light .left-sidebar { background: linear-gradient(180deg, #e3f5df, #f4faf3); } }
 html.light .left-sidebar .sidebar-head, html.light .betslip .sidebar-head, html.light .slip-promos-head { color: #3f8a4c; }
 html.light .left-sidebar .side-link { color: #34513a; }
 html.light .left-sidebar .side-link:hover { background: rgba(31, 157, 58, .10); color: #0f3d1a; }
