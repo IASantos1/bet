@@ -2243,6 +2243,8 @@ html.light .match-hero-bg[data-bg="sil"] { opacity: .2; filter: none; }
 .match-hero-bg.cut-sponsor { transform: translateX(-50%); }
 html.light .match-hero-bg[data-bg="lt"] { opacity: .25; filter: grayscale(1) contrast(1.3); mix-blend-mode: multiply; }
 html.light .match-hero-bg[data-bg="dk"] { opacity: .25; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: multiply; }
+.match-hero-bg[data-bg="slt"] { opacity: .3; filter: grayscale(1) invert(1) contrast(1.3); mix-blend-mode: screen; }
+html.light .match-hero-bg[data-bg="slt"] { opacity: .25; filter: grayscale(1) contrast(1.3); mix-blend-mode: multiply; }
 .match-hero.has-bg .match-teams strong, .match-hero.has-bg .match-center, .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(0, 0, 0, .55); }
 html.light .match-hero.has-bg .match-teams strong, html.light .match-hero.has-bg .match-center, html.light .match-hero.has-bg .match-comp { text-shadow: 0 1px 6px rgba(255, 255, 255, .8); }
 /* the small emblem by the league's name: on a light chip, so a dark logo shows on the dark page */

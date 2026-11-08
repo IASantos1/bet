@@ -4423,7 +4423,8 @@ document.addEventListener('error', (e) => {
 const heroBgModes = new Map(); // emblem src → mode, so a re-render (morph) keeps it
 // How the match page draws the league emblem behind the teams, from its corners: a logo on a transparent
 // background as a plain silhouette ('sil'); one printed on a light or a dark square in grey, blended so
-// the square itself disappears ('lt' / 'dk'), instead of showing as a grey block.
+// the square itself disappears ('lt' / 'dk'); one on transparent corners that is itself a light panel
+// ('slt') blended like the light square, so only the emblem shows.
 function heroBgMode(img) {
   try {
     const n = 24, c = document.createElement('canvas'); c.width = n; c.height = n;
@@ -4434,7 +4435,17 @@ function heroBgMode(img) {
       const i = (y * n + x) * 4;
       if (d[i + 3] > 200) { solid += 1; lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; }
     }
-    if (solid < 5) return 'sil';
+    if (solid < 5) {
+      // Transparent corners, but the emblem may itself be a light panel (Serie A, Liga Portugal): its
+      // white must blend away too ('slt'), or it shows as a white block behind the score.
+      let shown = 0, light = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 128) continue;
+        shown += 1;
+        if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] > 215) light += 1;
+      }
+      return shown && light / shown > 0.35 ? 'slt' : 'sil';
+    }
     return lum / solid > 128 ? 'lt' : 'dk';
   } catch { return 'sil'; } // another site's image without CORS: logos from there come on a transparent background
 }
