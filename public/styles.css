@@ -109,7 +109,7 @@ h1, h2, h3 { margin-top: 0; }
 .bet-tabs button.active { background: var(--row-hover); color: var(--strong); }
 .empty-bet { display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--muted); padding: 60px 20px 40px; gap: 8px; }
 .empty-bet div { font-size: 34px; opacity: .65; }
-.empty-bet strong { color: #dce1e7; font-size: 13px; }
+.empty-bet strong { color: var(--strong); font-size: 13px; }
 .empty-bet span { font-size: 11px; line-height: 1.5; }
 .bet-items { flex: 1 0 auto; }
 .bet-item { border: 1px solid var(--line); background: var(--dim); border-radius: var(--radius); padding: 11px; margin-bottom: 8px; }
@@ -2297,3 +2297,14 @@ body.on-promos .page-title h1 { font-family: 'Fredoka', Inter, sans-serif; font-
 .slip-promo i { font-style: normal; color: var(--pc); font-size: 18px; }
 .slip-promos-all { justify-self: center; margin-top: 2px; color: var(--text-3); font-size: 12px; font-weight: 700; }
 .slip-promos-all:hover { color: var(--text); }
+
+/* ---------- Light theme: the promotions and notices readable on white ---------- */
+html.light .notice { border-color: var(--border); color: var(--text-2); }
+html.light .promo-card { background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--pc) 16%, transparent), transparent 62%), linear-gradient(160deg, #ffffff, #f5f7fa);
+  border-color: color-mix(in srgb, var(--pc) 35%, var(--border)); box-shadow: 0 6px 20px rgba(17, 24, 39, .06); }
+/* The colours a shade deeper on white (the lime and gold of the dark theme are too pale there). */
+html.light .promo-card.t-welcome { --pc: #c98a00; } html.light .promo-card.t-firstBet { --pc: #1d74d8; } html.light .promo-card.t-reload { --pc: #1f9d3a; }
+html.light .promo-card.t-cashback { --pc: #0f9e8a; } html.light .promo-card.t-accaBoost { --pc: #e0661a; } html.light .promo-card.t-casinoFs { --pc: #8b4fd8; } html.light .promo-card.t-depositFb { --pc: #3f8f10; }
+html.light .pc-state { color: #fff; }
+html.light .promo-card p, html.light .pc-terms .promo-terms { color: var(--text-2); }
+html.light .promo-card.off { opacity: .6; }
