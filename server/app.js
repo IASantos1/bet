@@ -20,6 +20,7 @@ import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlig
 import { createFeatured, isBigTeam } from './featured.js';
 import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
+import { nationalSides } from './nations.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -672,7 +673,10 @@ export function createApp(db, {
     for (const s of sels) byEvent.get(s.event_id).push(s);
     const hidden = hiddenMarkets();
     const plFresh = (e) => e.pl_live_at && Date.now() - new Date(e.pl_live_at).getTime() <= config.liveOddsMaxAgeSeconds * 1000;
-    return events.map((e) => {
+    return events.map((raw) => {
+      // National teams (Nations League, qualifiers…): their names shown in Portuguese, with the flag.
+      const nat = nationalSides(raw.home, raw.away);
+      const e = nat ? { ...raw, home: nat.home.pt, away: nat.away.pt } : raw;
       // In play a PropLine price shows only while its live confirmation is recent.
       const rows = byEvent.get(e.id).filter((s) => !isHidden(hidden, e.sport, s)).map((s) => (s.src === 'pl' && e.status === 'live' && !plFresh(e) ? { ...s, active: 0 } : s));
       // Main market on the cards: 1X2, or the match winner in sports without a draw.
@@ -681,7 +685,8 @@ export function createApp(db, {
       const out = {
         id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
         // The names shown on screen when long ("Sporting Clube de Portugal" → "Sporting CP"): null, the full one.
-        homeShort: shortTeam(e.home, e.sport), awayShort: shortTeam(e.away, e.sport),
+        homeShort: nat ? null : shortTeam(e.home, e.sport), awayShort: nat ? null : shortTeam(e.away, e.sport),
+        homeFlag: nat?.home.flag || null, awayFlag: nat?.away.flag || null,
         startTime: e.start_time, status: e.status, homeScore: e.home_score, awayScore: e.away_score,
         // A watched WinHouse match: the tracker knows the period ("Intervalo", "45+2'"), the live list does not.
         // Never ahead of the time since the kick-off shown (WinHouse can start counting early).
@@ -691,15 +696,15 @@ export function createApp(db, {
           : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
         // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
-        homeLogo: teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
-        awayLogo: teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
+        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
+        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
         // The badge found here, to show should the feed's not load.
-        homeLogoAlt: teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
-        awayLogoAlt: teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
+        homeLogoAlt: !nat && teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
+        awayLogoAlt: !nat && teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
         // The house's kit first (server/kits.js: stripes, sleeves), else the badge provider's colours.
-        homeKit: houseKit(e.sport, e.home) || teamLogos?.get(e.sport, e.home)?.colors || null,
-        awayKit: houseKit(e.sport, e.away) || teamLogos?.get(e.sport, e.away)?.colors || null,
-        homeKitImg: teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: teamLogos?.get(e.sport, e.away)?.kit || null,
+        homeKit: houseKit(e.sport, raw.home) || teamLogos?.get(e.sport, raw.home)?.colors || null,
+        awayKit: houseKit(e.sport, raw.away) || teamLogos?.get(e.sport, raw.away)?.colors || null,
+        homeKitImg: nat ? null : teamLogos?.get(e.sport, e.home)?.kit || null, awayKitImg: nat ? null : teamLogos?.get(e.sport, e.away)?.kit || null,
         leagueLogo: leagueLogo(e.source, e.league_ext),
         homeCountry: e.home_country || null, awayCountry: e.away_country || null,
         tier: leagueTier(e.sport, e.competition),
@@ -817,7 +822,7 @@ export function createApp(db, {
     const rows = ids.length ? db.prepare(`SELECT s.id, s.market, s.code, s.odds_x100, s.active, e.id AS event_id, e.competition, e.home, e.away, e.start_time, e.status
       FROM selections s JOIN events e ON e.id = s.event_id WHERE s.id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
     const open = rows.filter((r) => r.active && r.status === 'scheduled' && new Date(r.start_time).getTime() > Date.now());
-    res.json({ legs: open.map((r) => ({
+    res.json({ legs: open.map((raw) => { const nat = nationalSides(raw.home, raw.away); return nat ? { ...raw, home: nat.home.pt, away: nat.away.pt } : raw; }).map((r) => ({
       selectionId: r.id, eventId: r.event_id, market: r.market, code: r.code, odds: r.odds_x100 / 100, marketName: MARKETS[r.market]?.name || r.market,
       label: selectionLabel(r.market, r.code, r.home, r.away), home: r.home, away: r.away, competition: r.competition,
     })), missing: ids.length - open.length });
@@ -1697,7 +1702,7 @@ export function createApp(db, {
       // 'pick' (Melhores escolhas), 'acca' (Apostas vencedoras), 'combo' (Construa o seu ganho) or null.
       origin: b.pick_key ? 'pick' : b.origin || null,
       pickPct: b.pick_pct || 0,
-      legs: legs.filter((l) => l.bet_id === b.id).map((l) => ({
+      legs: legs.filter((l) => l.bet_id === b.id).map((raw) => { const nat = nationalSides(raw.home, raw.away); return nat ? { ...raw, home: nat.home.pt, away: nat.away.pt } : raw; }).map((l) => ({
         id: l.id, match: `${shortTeam(l.home, l.sport) || l.home} vs ${shortTeam(l.away, l.sport) || l.away}`, competition: l.competition, market: l.market,
         marketName: l.market === 'x' ? splitSpecial(l.code)?.group || MARKETS.x.name : MARKETS[l.market] ? marketName(l.sport, l.market) + (PERIOD_MARKETS.has(l.market) && splitPeriod(l.code) ? ` — ${periodLabel(l.sport, splitPeriod(l.code).period)}` : '') : l.market,
         code: l.code, label: selectionLabel(l.market, l.code, shortTeam(l.home, l.sport) || l.home, shortTeam(l.away, l.sport) || l.away), odds: l.odds_x100 / 100,
