@@ -3022,7 +3022,7 @@ export function createApp(db, {
   }));
 
   // TheSports live tracker (MQTT) — admin test only, nothing of this reaches the public site yet.
-  admin.get('/thesports', (_req, res) => res.json(thesportsLive ? { ...thesportsLive.status(), games: thesportsLive.snapshot() } : { enabled: false }));
+  admin.get('/thesports', (_req, res) => res.json(thesportsLive ? { ...thesportsLive.status(), games: thesportsLive.snapshot(), court: theSportsCourt.status() } : { enabled: false }));
   admin.post('/thesports/listen', (req, res) => {
     if (!thesportsLive) throw new HttpError(503, 'TheSports desligado: defina THESPORTS_MQTT_URL no Railway.');
     if (req.body?.on === false) thesportsLive.stopAll(); else thesportsLive.listenAll();
