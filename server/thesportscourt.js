@@ -66,8 +66,12 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
   function stop(eventId, s) {
     clearInterval(s.timer); s.timer = null;
     thesportsLive.release();
-    byEvent.delete(eventId);
+    // Keep the record for a while so the admin can open the match, come back here, and see what happened
+    // (on one device you cannot be on the match page and the admin at the same time).
+    s.endedAt = Date.now();
   }
+  const KEEP_MS = 10 * 60_000;
+  function prune() { const now = Date.now(); for (const [id, s] of byEvent) if (s.refs <= 0 && s.endedAt && now - s.endedAt > KEEP_MS) byEvent.delete(id); }
 
   return {
     get enabled() { return on(); },
@@ -81,21 +85,26 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     /** A viewer opened the match page; returns an unfollow fn (call on disconnect). */
     follow(eventId, ev) {
       if (!on() || !hasCourt(ev?.sport)) return () => {};
+      prune();
       let s = byEvent.get(eventId);
-      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, resolving: false, nextResolveAt: 0 }; byEvent.set(eventId, s); }
-      s.ev = ev; s.refs += 1;
+      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, resolving: false, nextResolveAt: 0, endedAt: null }; byEvent.set(eventId, s); }
+      s.ev = ev; s.refs += 1; s.endedAt = null;
       if (s.refs === 1) start(eventId, s);
       let done = false;
       return () => { if (done) return; done = true; const cur = byEvent.get(eventId); if (!cur) return; cur.refs -= 1; if (cur.refs <= 0) stop(eventId, cur); };
     },
-    status: () => ({
-      enabled: on(), watching: [...byEvent.values()].filter((s) => s.trackerId).length, viewers: [...byEvent.values()].reduce((n, s) => n + s.refs, 0),
-      matches: [...byEvent.entries()].map(([eventId, s]) => ({
-        eventId, home: s.ev?.home || null, away: s.ev?.away || null, sport: s.ev?.sport || null,
-        trackerId: s.trackerId || null, reason: s.reason, viewers: s.refs, msgs: s.msgs || 0, balls: s.balls || 0,
-        hasBall: !!s.last?.ball, lastBallAt: s.lastBallAt ? new Date(s.lastBallAt).toISOString() : null,
-      })),
-    }),
+    status: () => {
+      prune();
+      return {
+        enabled: on(), watching: [...byEvent.values()].filter((s) => s.refs > 0 && s.trackerId).length, viewers: [...byEvent.values()].reduce((n, s) => n + s.refs, 0),
+        matches: [...byEvent.entries()].sort((a, b) => b[1].refs - a[1].refs).map(([eventId, s]) => ({
+          eventId, home: s.ev?.home || null, away: s.ev?.away || null, sport: s.ev?.sport || null,
+          trackerId: s.trackerId || null, reason: s.reason, viewers: s.refs, active: s.refs > 0, msgs: s.msgs || 0, balls: s.balls || 0,
+          hasBall: !!s.last?.ball, lastBallAt: s.lastBallAt ? new Date(s.lastBallAt).toISOString() : null,
+          endedAt: s.endedAt ? new Date(s.endedAt).toISOString() : null,
+        })),
+      };
+    },
     close() { for (const [id, s] of [...byEvent]) stop(id, s); },
   };
 }
