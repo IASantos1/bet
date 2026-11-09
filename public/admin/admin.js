@@ -828,7 +828,8 @@ async function loadTab() {
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'casino') {
       const [c, cards] = await Promise.all([api('/api/admin/casino'), api('/api/admin/casino/cards').catch(() => null)]);
-      main.innerHTML = (cards ? cardSizePanel(cards) : '') + adminCasino(c);
+      const arts = (await api('/api/admin/casino/art').catch(() => ({ games: [] }))).games;
+      main.innerHTML = (cards ? cardSizePanel(cards, arts) : '') + adminCasino(c);
       if (cards) cardPreview();
     }
     else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
@@ -1020,7 +1021,7 @@ const CARD_SAMPLES = () => (cardSamples ||= [
   ['Jogo quadrado', sampleCover(120, 120, '#7f53ac', '#647dee', 'CANDY')],
   ['Jogo alto (3:4)', sampleCover(150, 200, '#11998e', '#38ef7d', 'BELLS')],
 ]);
-function cardSizePanel(c) {
+function cardSizePanel(c, arts = []) {
   return `<div class="panel card-size" id="cardSize">
     <div class="section-head"><h2>Tamanho dos jogos</h2></div>
     <p class="muted">Ajusta os cartões dos jogos no casino e na página inicial. A pré-visualização muda enquanto mexe; o site só muda depois de <b>Guardar</b> (quem já tem a página aberta vê ao recarregar).</p>
@@ -1046,7 +1047,40 @@ function cardSizePanel(c) {
     </div>
     <div class="form-actions"><button class="primary-btn" data-action="cards-save">Guardar</button>
       <button class="ghost-btn" data-action="cards-reset">Repor o padrão</button></div>
+    <h4>Ajustar um jogo</h4>
+    <p class="muted">Para a capa de um jogo que não encaixa (ex.: a imagem já vem com faixas desfocadas em cima e em baixo): procure o jogo, estique-o na altura e suba ou desça a imagem até ficar certa. A largura não muda.</p>
+    <label class="field">Procurar jogo <input id="csGameSearch" placeholder="ex.: Gates of Olympus 2500" maxlength="80" autocomplete="off"></label>
+    <div id="csGameResults" class="cs-results"></div>
+    <div id="csGameEd"></div>
+    <div id="csGameList">${artList(arts)}</div>
   </div>`;
+}
+const artList = (arts) => (arts.length ? `<h4>Jogos ajustados</h4><div class="table-wrap"><table><tbody>
+  ${arts.map((a) => `<tr><td>${esc(a.name || a.image)}</td><td>altura ${a.zy}% · posição ${a.oy > 0 ? '+' : ''}${a.oy}%</td>
+    <td><button class="ghost-btn btn-sm" data-action="cs-game-pick" data-image="${esc(a.image)}" data-name="${esc(a.name)}" data-zy="${a.zy}" data-oy="${a.oy}">Editar</button>
+    <button class="ghost-btn btn-sm" data-action="cs-game-remove" data-image="${esc(a.image)}">Repor</button></td></tr>`).join('')}
+  </tbody></table></div>` : '');
+let csGame = null;
+function artEditor() {
+  const g = csGame;
+  $('#csGameEd').innerHTML = g ? `<div class="cs-game-ed">
+      <div class="cs-card"><div class="cs-art"><img id="csGameImg" src="${esc(g.image)}" alt=""></div><strong>${esc(g.name)}</strong></div>
+      <div class="cs-game-ctl">
+        <label class="field">Esticar na altura: <b id="csZyOut">${g.zy}%</b><input type="range" id="csZy" min="100" max="300" step="1" value="${g.zy}"></label>
+        <label class="field">Subir / descer a imagem: <b id="csOyOut">${g.oy}%</b><input type="range" id="csOy" min="-40" max="40" step="1" value="${g.oy}"></label>
+        <div class="form-actions"><button class="primary-btn" data-action="cs-game-save">Guardar este jogo</button>
+          <button class="ghost-btn" data-action="cs-game-remove" data-image="${esc(g.image)}">Repor este jogo</button></div>
+      </div></div>` : '';
+  artPreview();
+}
+function artPreview() {
+  const img = $('#csGameImg');
+  if (!img || !csGame) return;
+  csGame.zy = Number($('#csZy').value); csGame.oy = Number($('#csOy').value);
+  $('#csZyOut').textContent = `${csGame.zy}%`; $('#csOyOut').textContent = `${csGame.oy}%`;
+  img.style.setProperty('transform', `translateY(${csGame.oy}%) scaleY(${csGame.zy / 100})`);
+  const c = cardForm();
+  img.closest('.cs-art').style.setProperty('--cs-h', String(c.height));
 }
 const cardForm = () => ({
   height: Number($('#csHeight').value), fit: $('#csFit').value, cols: Number($('#csCols').value),
@@ -1738,6 +1772,24 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
+  if (action === 'cs-game-pick') {
+    const d = actionEl.dataset;
+    csGame = { image: d.image, name: d.name, zy: Number(d.zy) || 100, oy: Number(d.oy) || 0 };
+    $('#csGameResults').innerHTML = '';
+    artEditor();
+    return;
+  }
+  if (action === 'cs-game-save' || action === 'cs-game-remove') {
+    const remove = action === 'cs-game-remove';
+    const body = remove ? { image: actionEl.dataset.image, remove: true } : { image: csGame.image, name: csGame.name, zy: csGame.zy, oy: csGame.oy };
+    try {
+      const r = await api('/api/admin/casino/art', { method: 'POST', body });
+      $('#csGameList').innerHTML = artList(r.games);
+      if (remove && csGame?.image === body.image) { csGame = null; artEditor(); }
+      toast(remove ? 'Jogo reposto' : 'Jogo ajustado', remove ? 'A capa volta ao normal.' : `${csGame.name}: altura ${csGame.zy}% · posição ${csGame.oy}%`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'cards-save' || action === 'cards-reset') {
     const body = action === 'cards-reset' ? CARD_DEFAULT : cardForm();
     if (action === 'cards-reset' && !confirm('Repor o padrão dos jogos (altura 133%, imagem esticada, jogos por linha automático, imagem original sem ajustes)?')) return;
@@ -2360,7 +2412,24 @@ document.addEventListener('change', async (e) => {
 });
 
 document.addEventListener('input', (e) => {
-  if (['csHeight', 'csBright', 'csContrast', 'csSat'].includes(e.target.id)) { cardPreview(); return; }
+  if (['csHeight', 'csBright', 'csContrast', 'csSat'].includes(e.target.id)) { cardPreview(); artPreview(); return; }
+  if (e.target.id === 'csZy' || e.target.id === 'csOy') { artPreview(); return; }
+  if (e.target.id === 'csGameSearch') {
+    clearTimeout(fsSearchTimer);
+    const q = e.target.value.trim();
+    fsSearchTimer = setTimeout(async () => {
+      const box = $('#csGameResults');
+      if (!box) return;
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      try {
+        const r = await api(`/api/casino/games?limit=8&q=${encodeURIComponent(q)}`);
+        const list = r.games.filter((g) => g.image);
+        box.innerHTML = list.length ? list.map((g) => `<button type="button" class="fs-result" data-action="cs-game-pick" data-image="${esc(g.image)}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)}</small></button>`).join('')
+          : '<small class="muted">Nenhum jogo com imagem encontrado.</small>';
+      } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
+    }, 250);
+    return;
+  }
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
   if (colEd && e.target.id === 'colSearch') { colSearch(e.target.value.trim()); return; }

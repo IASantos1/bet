@@ -845,3 +845,8 @@
 .cs-preview[data-fit="cover"] .cs-art img { object-fit: cover; }
 .cs-preview[data-fit="contain"] .cs-art img { object-fit: contain; }
 @media (max-width: 560px) { .cs-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.cs-results { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.cs-game-ed { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 18px; align-items: start; margin: 8px 0 14px; }
+.cs-game-ed .cs-art { overflow: hidden; }
+.cs-game-ctl { display: grid; gap: 12px; }
+@media (max-width: 560px) { .cs-game-ed { grid-template-columns: 1fr; } }

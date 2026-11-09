@@ -1843,7 +1843,21 @@ function applyCasinoCards(c) {
   root.style.setProperty('--card-s', String((c.sat ?? 100) / 100));
   if (c.sharp > 0) root.dataset.cardSharp = String(c.sharp); else delete root.dataset.cardSharp;
 }
-const gameArt = (src) => `<img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
+/**
+ * Covers the admin fixed one by one (stretched in height, moved up or down): a rule per picture in our
+ * own stylesheet (CSSOM, allowed by the CSP), matched by data-art on the <img>.
+ */
+const artFix = new Map();
+function applyCasinoArt(list) {
+  artFix.clear();
+  const sheet = [...document.styleSheets].find((x) => /\/styles\.css/.test(x.href || ''));
+  if (!sheet) return;
+  (list || []).forEach((a, i) => {
+    artFix.set(a.image, i);
+    try { sheet.insertRule(`.game-card .game-img[data-art="${i}"] { transform: translateY(${Number(a.oy) || 0}%) scaleY(${(Number(a.zy) || 100) / 100}); }`, sheet.cssRules.length); } catch { /* bad rule: the cover stays as it is */ }
+  });
+}
+const gameArt = (src) => `<img class="game-img" src="${esc(src)}"${artFix.has(src) ? ` data-art="${artFix.get(src)}"` : ''} alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
 function showSkin() {
   const g = state.casinoSession;
@@ -6242,6 +6256,7 @@ async function init() {
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
   applyCasinoCards(config?.casinoCards);
+  applyCasinoArt(config?.casinoArt);
   // A new deploy changes the version: reload once so nobody keeps an old page open for hours.
   setInterval(async () => {
     try {
