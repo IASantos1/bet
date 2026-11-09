@@ -4545,6 +4545,18 @@ function bindChrome() {
   $('#searchBtn').addEventListener('click', openSearch);
   $('#menuBtn').addEventListener('click', () => setSideMenu(!$('#leftSidebar').classList.contains('open')));
   $('#closeMenu').addEventListener('click', () => setSideMenu(false));
+  // Computer: the left menu sticks once its end is in view (see .side-sticky): its top is the top bar's
+  // bottom when it fits in the window, else as far up as needed for its last link to show.
+  const sticky = $('#sideSticky');
+  const placeSide = () => {
+    const topbar = $('.topbar')?.offsetHeight || 68;
+    const gap = 18;
+    const top = Math.min(topbar + gap, window.innerHeight - sticky.offsetHeight - gap);
+    document.documentElement.style.setProperty('--side-top', `${Math.round(top)}px`);
+  };
+  new ResizeObserver(placeSide).observe(sticky);
+  window.addEventListener('resize', placeSide);
+  placeSide();
   // A swipe to the left on the open menu closes it.
   const side = $('#leftSidebar');
   let touch = null;
