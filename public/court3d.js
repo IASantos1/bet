@@ -14,9 +14,11 @@ function shade(hex, amt) { let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = 
 
 // Per sport: court size (m, length × width), surface + line colours, the ball, camera framing.
 const COURTS = {
-  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.24, elev: 30, fov: 32 },
-  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.3, elev: 31, fov: 34 },
-  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.5, elev: 38, fov: 34, oval: true },
+  // bounce: how the ball moves vertically. arc = a hop per shot (height ∝ distance, capped) for tennis
+  // and cricket; dribble = a steady bounce off the floor (amp m, hz bounces/s) for basketball.
+  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.24, elev: 30, fov: 32, bounce: { arc: 0.17, max: 3.2 } },
+  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.3, elev: 31, fov: 34, bounce: { dribble: 0.85, hz: 2.4 } },
+  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.5, elev: 38, fov: 34, oval: true, bounce: { arc: 0.08, max: 1.6 } },
 };
 
 /** The court markings drawn on a landscape canvas: X is the length, Z the width. */
@@ -220,15 +222,21 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
     trail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from.clone(), pos.clone()]), 8, BR * 0.5, 6, false), trailMat); trailMat.opacity = 0.5; scene.add(trail);
   }
   function frame() {
-    raf = 0; const now = performance.now(); let busy = false;
-    if (target) { if (!cur) cur = target.clone(); else { const k = Math.min(1, (now - moveAt) / glideMs); cur.lerpVectors(from, target, easeInOut(k)); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
+    raf = 0; const now = performance.now(); let busy = false, k = 1;
+    if (target) { if (!cur) cur = target.clone(); else { k = Math.min(1, (now - moveAt) / glideMs); cur.lerpVectors(from, target, easeInOut(k)); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
+    // Vertical motion, per sport: tennis/cricket hop in an arc across a shot; basketball dribbles.
+    const b = C.bounce; let y = BR;
+    if (b?.dribble && !hidden) y = BR + Math.abs(Math.sin(now / 1000 * Math.PI * b.hz)) * b.dribble;
+    else if (b?.arc && from && target) { const d = Math.hypot(target.x - from.x, target.z - from.z); y = BR + Math.sin(Math.PI * k) * Math.min(b.max, d * b.arc); }
+    pos.y = y; const lift = y - BR;
     // Roll the ball as it travels: it spins about the axis across its motion, by distance / radius.
     const dx = pos.x - prevPos.x, dz = pos.z - prevPos.z, dist = Math.hypot(dx, dz);
     if (dist > 1e-4) { rollAxis.set(-dz, 0, dx).normalize(); ball.rotateOnWorldAxis(rollAxis, dist / BR); }
     prevPos.copy(pos);
     const pulse = 1 + 0.08 * Math.sin(now / 240);
     ball.visible = shadow.visible = !hidden; ball.position.copy(pos); ball.scale.setScalar(pulse);
-    shadow.position.set(pos.x, 0.04, pos.z); shadow.scale.setScalar(pulse);
+    // The shadow stays on the floor and fades / spreads as the ball rises.
+    shadow.position.set(pos.x, 0.04, pos.z); shadow.scale.setScalar(pulse * (1 + lift * 0.25)); shadow.material.opacity = 0.32 / (1 + lift * 0.7);
     drawTrail(); renderer.render(scene, camera);
     const p = pos.clone().add(new THREE.Vector3(0, BR + 0.6, 0)).project(camera);
     onFrame({ x: (p.x * 0.5 + 0.5) * 100, y: (-p.y * 0.5 + 0.5) * 100, visible: !hidden && p.z < 1 });
