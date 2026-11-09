@@ -720,6 +720,8 @@ export function createApp(db, {
         // Red cards of each side in play (none: null).
         redCards: e.status === 'live' && (e.red_home || e.red_away) ? { home: e.red_home || 0, away: e.red_away || 0 } : null,
         liveTracker: e.status === 'live' && (e.source === 'bzzoiro' || (e.source === 'winhouse' && e.sport === 'futebol' && !!winhouseTracker?.enabled)),
+        // A live 3D court (tennis / basketball / cricket) is available for this game (TheSports feed).
+        court: theSportsCourt.covers(e),
         // Live video on WinHouse for this game (the TV filter and the play button).
         stream: e.status === 'live' && e.source === 'winhouse' && !!winhouseFeed?.streamOf?.(e.external_id).has,
       };
