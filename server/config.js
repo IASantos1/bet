@@ -286,6 +286,14 @@ export const config = {
     src: unquote(env.SPORTSCORE_SRC) || 'bet62',
     cacheSeconds: Math.max(10, int(env.SPORTSCORE_CACHE_SECONDS, 30)),
   },
+  // TheSports live tracker feed (MQTT): the real-time source behind the 3D widgets. The address and, if
+  // the broker needs them, the username/password live only in the Railway Variables. THESPORTS=0 off.
+  thesports: {
+    enabled: env.THESPORTS !== '0',
+    mqttUrl: unquote(env.THESPORTS_MQTT_URL),
+    mqttUser: unquote(env.THESPORTS_MQTT_USER),
+    mqttPass: unquote(env.THESPORTS_MQTT_PASS),
+  },
   rapidStream: {
     apiKey: unquote(env.RAPIDAPI_KEY),
     host: unquote(env.RAPIDAPI_STREAM_HOST) || 'football-live-stream-api.p.rapidapi.com',

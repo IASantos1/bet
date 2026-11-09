@@ -57,6 +57,7 @@ const TABS = [
   { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
   { id: 'sportscore', label: 'SportScore', icon: 'radio', section: 'Avançado' },
+  { id: 'thesports', label: 'TheSports ao vivo', icon: 'radio', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
   { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
   { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
@@ -815,9 +816,11 @@ function backupsPanel(b) {
     ${rows ? `<div class="table-wrap"><table><thead><tr><th>Cópia</th><th>Feita</th><th class="num">Tamanho</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Ainda não há cópias.</p>'}</div>`;
 }
 
+let liveTimer = null;
 async function loadTab() {
   const main = $('#adminMain');
   if (!main) return;
+  clearInterval(liveTimer); liveTimer = null;
   try {
     const s = await api('/api/admin/stats');
     state.stats = s;
@@ -828,6 +831,14 @@ async function loadTab() {
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'sportscore') main.innerHTML = adminSportScore(await api('/api/admin/sportscore'));
+    else if (tab === 'thesports') {
+      main.innerHTML = adminTheSports(await api('/api/admin/thesports'));
+      // While the tab is open, refresh the live table every 2 s.
+      liveTimer = setInterval(async () => {
+        if (state.tab !== 'thesports') { clearInterval(liveTimer); return; }
+        try { const d = await api('/api/admin/thesports'); const box = $('#tsLive'); if (box) box.innerHTML = theSportsLive(d); } catch { /* keep last */ }
+      }, 2000);
+    }
     else if (tab === 'casino') {
       const [c, cards] = await Promise.all([api('/api/admin/casino'), api('/api/admin/casino/cards').catch(() => null)]);
       const arts = (await api('/api/admin/casino/art').catch(() => ({ games: [] }))).games;
@@ -1266,6 +1277,31 @@ function ssRaw(r, title) {
     ${r.ok ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar resposta</button></div><pre class="raw-odds">${esc(r.raw)}</pre>` : `<div class="form-error">${esc(r.error || 'Sem resposta.')}</div>`}
     ${r.nonJson ? `${r.links?.length ? `<h4>Endereços que a página carrega</h4><ul class="ss-links">${r.links.map((l) => `<li><code>${esc(l)}</code></li>`).join('')}</ul>` : ''}
       <div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar página</button></div><pre class="raw-odds">${esc(r.text)}</pre>` : ''}`;
+}
+
+// ---- TheSports live tracker (MQTT): admin test, watches the feed without touching the site ----
+function adminTheSports(d) {
+  if (!d.enabled) return '<div class="panel"><h2>TheSports ao vivo</h2><p class="muted">Desligado: defina <b>THESPORTS_MQTT_URL</b> nas Variables do Railway (e, se o servidor pedir, <b>THESPORTS_MQTT_USER</b> e <b>THESPORTS_MQTT_PASS</b>).</p></div>';
+  return `<div class="panel">
+    <div class="section-head"><h2>TheSports ao vivo</h2><span class="pill ${d.connected ? 'won' : 'lost'}">${d.connected ? 'Ligado' : 'Desligado'}</span></div>
+    <p class="muted">Teste da posição da bola ao vivo, sem mexer no site. Carregue em <b>Ligar e ouvir</b> para seguir todos os jogos ao vivo do feed; a tabela atualiza-se sozinha. Para ao fim de 15 minutos sozinho.</p>
+    <div class="form-actions">
+      <button class="primary-btn btn-sm" data-action="ts-listen">${d.listeningAll ? 'A ouvir…' : 'Ligar e ouvir'}</button>
+      <button class="ghost-btn btn-sm" data-action="ts-stop">Parar</button>
+      <button class="ghost-btn btn-sm" data-action="ts-clear">Limpar</button>
+      ${d.lastError ? `<span class="pill lost">${esc(d.lastError)}</span>` : ''}
+    </div>
+    <div id="tsLive">${theSportsLive(d)}</div>
+  </div>`;
+}
+function theSportsLive(d) {
+  const g = d.games || [];
+  return `<p class="muted">Mensagens recebidas: <b>${d.messages || 0}</b> · jogos vistos: <b>${d.matches || 0}</b></p>
+    ${g.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo (id)</th><th>Resultado</th><th>Bola X</th><th>Bola Y</th><th class="num">Stats</th><th class="num">Jog.</th><th>Atualizado</th></tr></thead><tbody>
+      ${g.map((m) => `<tr><td><code>${esc(m.id)}</code></td><td>${esc(m.score || '—')}</td>
+        <td>${m.ball ? m.ball.x.toFixed(2) : '—'}</td><td>${m.ball ? m.ball.y.toFixed(2) : '—'}</td>
+        <td class="num">${m.stats}</td><td class="num">${m.players}</td><td>${esc(fmtDateTime(m.lastAt))}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda sem jogos. Carregue em "Ligar e ouvir" (precisa de jogos ao vivo no feed).</p>'}`;
 }
 
 function adminFeed(f) {
@@ -1839,6 +1875,15 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
+  if (action === 'ts-listen' || action === 'ts-stop' || action === 'ts-clear') {
+    try {
+      if (action === 'ts-clear') { await api('/api/admin/thesports/clear', { method: 'POST', body: {} }); }
+      else { await api('/api/admin/thesports/listen', { method: 'POST', body: { on: action === 'ts-listen' } }); }
+      const d = await api('/api/admin/thesports');
+      $('#adminMain').innerHTML = adminTheSports(d);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'ss-matches') {
     const sport = actionEl.dataset.sport;
     $('#ssList').innerHTML = '<div class="loading">A pedir à SportScore…</div>';

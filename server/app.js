@@ -167,7 +167,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -2989,6 +2989,15 @@ export function createApp(db, {
     needSportScore();
     res.json(rawForAdmin(await sportscore.tracker(String(req.query.sport || ''), String(req.query.id || '').slice(0, 40))));
   }));
+
+  // TheSports live tracker (MQTT) — admin test only, nothing of this reaches the public site yet.
+  admin.get('/thesports', (_req, res) => res.json(thesportsLive ? { ...thesportsLive.status(), games: thesportsLive.snapshot() } : { enabled: false }));
+  admin.post('/thesports/listen', (req, res) => {
+    if (!thesportsLive) throw new HttpError(503, 'TheSports desligado: defina THESPORTS_MQTT_URL no Railway.');
+    if (req.body?.on === false) thesportsLive.stopAll(); else thesportsLive.listenAll();
+    res.json({ ...thesportsLive.status(), games: thesportsLive.snapshot() });
+  });
+  admin.post('/thesports/clear', (_req, res) => { thesportsLive?.clear(); res.json({ ok: true }); });
 
   admin.get('/feed', (_req, res) => {
     res.json({
