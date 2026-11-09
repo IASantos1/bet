@@ -1,19 +1,24 @@
 // Streams the live ball of a tennis / basketball / cricket match to the browser, to drive the 3D court
-// (public/court3d.js). It links the SITE match to its TheSports feed game WITHOUT SportScore: while a
-// court is open it holds the whole feed flowing (thesportslive.hold) and matches the fixture to a feed
-// game by the players' names (thesportsfeedlink.matchFeedGame) — for tennis these are the two players,
-// so the link is exact. It then publishes { ball, score } on a bus keyed by the SITE event id — the
-// same { snapshot, bus 'e:<id>', follow } shape the match-page SSE already speaks. The match is kept
-// only while at least one viewer is connected. Nothing here reaches the network directly.
+// (public/court3d.js). It links the SITE match to its TheSports feed game (its uuid), then publishes
+// { ball, score } on a bus keyed by the SITE event id — the same { snapshot, bus 'e:<id>', follow }
+// shape the match-page SSE already speaks.
+//
+// Finding the uuid: the live feed itself does NOT carry the players' names (only uuid + score + ball),
+// so we cannot match by names from the feed alone. We therefore (1) try the feed's own lineup names in
+// case they are present, then (2) ask SportScore, whose match list IS the names→uuid index the feed
+// lacks. Either way the BALL always comes from the feed (held open with thesportslive.hold while a court
+// is watched, which reliably delivers it). The match is kept only while a viewer is connected.
 
 import { EventEmitter } from 'node:events';
+import { resolveTracker } from './thesportslink.js';
 import { matchFeedGame } from './thesportsfeedlink.js';
 
 const samePos = (a, b) => (a?.x ?? null) === (b?.x ?? null) && (a?.y ?? null) === (b?.y ?? null);
+const RESOLVE_EVERY = 6000; // don't hammer SportScore while a match stays unlinked
 
-export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log = () => {} } = {}) {
+export function createTheSportsCourt({ thesportsLive = null, sportscore = null, pollMs = 400, log = () => {} } = {}) {
   const bus = new EventEmitter(); bus.setMaxListeners(0);
-  const byEvent = new Map(); // eventId -> { trackerId, refs, timer, last, ev, reason, balls, lastBallAt, msgs }
+  const byEvent = new Map();
   const on = () => !!(thesportsLive?.enabled);
 
   // Only the sports that have a 3D court (football keeps its own pitch).
@@ -25,13 +30,24 @@ export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log =
     bus.emit(`e:${eventId}`, { type: 'court', data: s.last });
   }
 
-  // Each tick: if not yet linked, try to match the fixture to a feed game by names; then stream its ball.
-  function tick(eventId, s) {
-    if (!s.trackerId) {
+  // Find the feed game (uuid) for this fixture: the feed's own names first (free), else SportScore.
+  async function resolve(s) {
+    if (s.resolving || Date.now() < s.nextResolveAt) return;
+    s.resolving = true;
+    try {
       const hit = matchFeedGame(thesportsLive.games(), s.ev.home, s.ev.away);
-      if (hit) { s.trackerId = hit.id; s.reason = 'ok'; log(`court: ${s.ev.home} vs ${s.ev.away} → feed ${hit.id}`); }
-      else { s.reason = 'à procura no feed (sem jogo com estes nomes)'; return; }
-    }
+      if (hit) { s.trackerId = hit.id; s.reason = 'ok (feed)'; log(`court: ${s.ev.home} vs ${s.ev.away} → feed ${hit.id}`); return; }
+      if (sportscore?.enabled) {
+        const r = await resolveTracker(sportscore, { sport: s.ev.sport, home: s.ev.home, away: s.ev.away });
+        if (r?.found) { s.trackerId = r.trackerId; s.reason = 'ok (sportscore)'; log(`court: ${s.ev.home} vs ${s.ev.away} → sportscore ${r.trackerId}`); return; }
+        s.reason = r?.reason || 'sem correspondência na SportScore';
+      } else { s.reason = 'à procura no feed (sem jogo com estes nomes)'; }
+    } catch (err) { s.reason = err.message; log(`court resolve: ${err.message}`); }
+    finally { s.resolving = false; s.nextResolveAt = Date.now() + RESOLVE_EVERY; }
+  }
+
+  function tick(eventId, s) {
+    if (!s.trackerId) { resolve(s).catch(() => {}); return; }
     const m = thesportsLive.get(s.trackerId);
     if (!m) return;
     s.msgs = m.msgs || 0;
@@ -40,7 +56,7 @@ export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log =
   }
 
   function start(eventId, s) {
-    thesportsLive.hold(); // keep the whole feed flowing so we can match by names
+    thesportsLive.hold(); // keep the whole feed flowing so the ball is delivered reliably
     clearInterval(s.timer);
     s.timer = setInterval(() => tick(eventId, s), pollMs);
     if (s.timer.unref) s.timer.unref();
@@ -57,7 +73,7 @@ export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log =
     get enabled() { return on(); },
     bus,
     hasCourt,
-    /** True when this match can show a live 3D court (enabled + a court sport). */
+    /** True when this match can show a live 3D court (feed enabled + a court sport). */
     covers: (ev) => on() && !!ev && ev.status === 'live' && hasCourt(ev.sport),
     /** What a browser joining should see first. */
     snapshot: (eventId) => byEvent.get(eventId)?.last || { ball: null, score: null },
@@ -66,7 +82,7 @@ export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log =
     follow(eventId, ev) {
       if (!on() || !hasCourt(ev?.sport)) return () => {};
       let s = byEvent.get(eventId);
-      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0 }; byEvent.set(eventId, s); }
+      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, resolving: false, nextResolveAt: 0 }; byEvent.set(eventId, s); }
       s.ev = ev; s.refs += 1;
       if (s.refs === 1) start(eventId, s);
       let done = false;
@@ -74,7 +90,6 @@ export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log =
     },
     status: () => ({
       enabled: on(), watching: [...byEvent.values()].filter((s) => s.trackerId).length, viewers: [...byEvent.values()].reduce((n, s) => n + s.refs, 0),
-      // Per followed match, for the admin: did we match a feed game, and are balls flowing?
       matches: [...byEvent.entries()].map(([eventId, s]) => ({
         eventId, home: s.ev?.home || null, away: s.ev?.away || null, sport: s.ev?.sport || null,
         trackerId: s.trackerId || null, reason: s.reason, viewers: s.refs, msgs: s.msgs || 0, balls: s.balls || 0,

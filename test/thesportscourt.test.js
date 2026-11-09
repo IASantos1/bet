@@ -74,6 +74,25 @@ test('court: no feed game with these names → not linked, reason set, no throw'
   unfollow();
 });
 
+test('court: when the feed has no names, it falls back to SportScore for the uuid', async () => {
+  const { thesportsLive } = fakes({ present: false }); // feed carries no matching names
+  const sportscore = {
+    enabled: true,
+    matches: async () => ({ ok: true, data: { matches: [{ url: '/tennis/match/ann-vs-bea/', home_team: { name: 'Ann' }, away_team: { name: 'Bea' }, status: 'live' }] } }),
+    match: async () => ({ ok: true, data: { tracker: { id: 'trk123abc', sport: 'tennis' } } }),
+  };
+  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+  const got = [];
+  court.bus.on('e:7', (m) => got.push(m));
+  const unfollow = court.follow(7, liveTennis);
+  await delay(80);
+  const row = court.status().matches.find((m) => m.eventId === 7);
+  assert.equal(row.trackerId, 'trk123abc', 'resolved the uuid via SportScore');
+  assert.match(row.reason, /sportscore/i);
+  assert.ok(got.length >= 1, 'streams the ball once linked');
+  unfollow();
+});
+
 test('court: follow on a non-court sport is a no-op', () => {
   const { thesportsLive } = fakes();
   const court = createTheSportsCourt({ thesportsLive });
