@@ -74,6 +74,30 @@ test('court: no tracker found → nothing watched, no throw', async () => {
   unfollow();
 });
 
+test('court: status() reports per-match tracker resolution and ball flow (admin diagnostic)', async () => {
+  const { thesportsLive, sportscore } = fakes({ ball: { x: 0.3, y: 0.7 } });
+  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+  court.follow(7, liveTennis);
+  await delay(50);
+  const st = court.status();
+  assert.equal(st.watching, 1);
+  assert.equal(st.viewers, 1);
+  const row = st.matches.find((m) => m.eventId === 7);
+  assert.equal(row.trackerId, 'trk123abc');
+  assert.equal(row.reason, 'ok');
+  assert.ok(row.balls >= 1 && row.hasBall);
+});
+
+test('court: status() shows the reason when no tracker was found', async () => {
+  const { thesportsLive, sportscore } = fakes({ resolve: false });
+  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+  court.follow(7, liveTennis);
+  await delay(40);
+  const row = court.status().matches.find((m) => m.eventId === 7);
+  assert.equal(row.trackerId, null);
+  assert.match(row.reason, /SportScore|encontr/i);
+});
+
 test('court: follow on a non-court sport is a no-op', () => {
   const { thesportsLive, sportscore } = fakes();
   const court = createTheSportsCourt({ thesportsLive, sportscore });

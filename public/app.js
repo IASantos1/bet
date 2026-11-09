@@ -4682,7 +4682,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D(); dropCourt3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtEs: null, court3d: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtEs: null, court3d: null, courtBall: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -5981,6 +5981,8 @@ function ensureCourt3D() {
       const court = createCourt3D($('#courtHost', w), { sport: SPORT3D[e.sport] || 'tennis', quality });
       if (!court) { court3dFailed = true; w.classList.add('no3d'); return; }
       m.court3d = court;
+      // A ball may have arrived before the engine finished loading: show the latest at once.
+      if (m.courtBall) { court.setBall(m.courtBall); const n = $('#courtNote', w); if (n) n.textContent = 'Posição da bola ao vivo.'; }
     }).catch(() => { m.court3dLoading = false; court3dFailed = true; court3dModule = null; w.classList.add('no3d'); });
   }
   startCourtStream(m.id);
@@ -5993,7 +5995,7 @@ function startCourtStream(id) {
   m.courtEs = es;
   const applyCourt = (d) => {
     if (m.widgetKind !== 'court') return;
-    if (d.ball) { m.court3d?.setBall(d.ball); const n = $('#courtNote', m.widget); if (n) n.textContent = 'Posição da bola ao vivo.'; }
+    if (d.ball) { m.courtBall = d.ball; m.court3d?.setBall(d.ball); const n = $('#courtNote', m.widget); if (n) n.textContent = 'Posição da bola ao vivo.'; }
   };
   es.addEventListener('snapshot', (ev) => { try { applyCourt(JSON.parse(ev.data)); } catch { /* bad frame */ } });
   es.addEventListener('court', (ev) => { try { applyCourt(JSON.parse(ev.data)); } catch { /* bad frame */ } });

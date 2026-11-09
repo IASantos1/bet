@@ -1328,13 +1328,27 @@ function adminTheSports(d) {
 }
 function theSportsLive(d) {
   const g = d.games || [];
-  return `<p class="muted">Mensagens recebidas: <b>${d.messages || 0}</b> · jogos vistos: <b>${d.matches || 0}</b></p>
+  return `${theSportsCourtDiag(d.court)}<p class="muted">Mensagens recebidas: <b>${d.messages || 0}</b> · jogos vistos: <b>${d.matches || 0}</b></p>
     ${g.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo (id)</th><th>Resultado</th><th>Bola X</th><th>Bola Y</th><th class="num">Stats</th><th class="num">Jog.</th><th>Atualizado</th><th></th></tr></thead><tbody>
       ${g.map((m) => `<tr><td><code>${esc(m.id)}</code></td><td>${esc(m.score || '—')}</td>
         <td>${m.ball ? m.ball.x.toFixed(2) : '—'}</td><td>${m.ball ? m.ball.y.toFixed(2) : '—'}</td>
         <td class="num">${m.stats}</td><td class="num">${m.players}</td><td>${esc(fmtDateTime(m.lastAt))}</td>
         <td>${m.ball ? `<button class="ghost-btn btn-sm" data-action="ts-court" data-id="${esc(m.id)}">Ver campo</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Ainda sem jogos. Carregue em "Ligar e ouvir" (precisa de jogos ao vivo no feed).</p>'}`;
+}
+// Diagnóstico do campo 3D na página do site: para cada jogo que alguém esteja a ver, mostra se o
+// tracker resolveu e se estão a chegar bolas. É aqui que se vê porque é que a bola não mexe no site.
+function theSportsCourtDiag(c) {
+  if (!c) return '';
+  const rows = c.matches || [];
+  return `<div class="panel"><div class="section-head"><h3>Campo 3D no site (ao vivo)</h3>
+      <span class="pill ${c.watching ? 'won' : ''}">${c.watching} a seguir · ${c.viewers} a ver</span></div>
+    ${rows.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Tracker</th><th>Estado</th><th class="num">Msgs</th><th class="num">Bolas</th><th>Última bola</th></tr></thead><tbody>
+      ${rows.map((m) => `<tr><td>${esc(m.home || '?')} vs ${esc(m.away || '?')} <small class="muted">#${esc(m.eventId)} · ${esc(m.sport || '')}</small></td>
+        <td>${m.trackerId ? `<code>${esc(m.trackerId)}</code>` : '<span class="pill lost">sem tracker</span>'}</td>
+        <td>${m.trackerId ? (m.balls ? '<span class="pill won">bola a chegar</span>' : m.msgs ? 'a ouvir, sem posição' : 'a ligar…') : `<span class="muted">${esc(m.reason || '—')}</span>`}</td>
+        <td class="num">${m.msgs}</td><td class="num">${m.balls}</td><td>${m.lastBallAt ? esc(fmtDateTime(m.lastBallAt)) : '—'}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ninguém a ver um campo ao vivo agora. Abra um jogo ao vivo de ténis/basquete/críquete no site, no separador Tracker, e aparece aqui.</p>'}</div>`;
 }
 
 function adminFeed(f) {
