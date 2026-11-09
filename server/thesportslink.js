@@ -43,23 +43,43 @@ export function trackerOf(detailData) {
   return { id: String(id), sport: (tr && tr.sport) || null, profile: (tr && tr.profile) || null };
 }
 
+/** A SportScore-style slug from a name: no accents, lower case, non-alphanumerics → single hyphens. */
+export const slugify = (name) => String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+/** The slug a "home vs away" match may have, in both orders (SportScore sometimes names it reversed). */
+export function slugCandidates(home, away) {
+  const h = slugify(home), a = slugify(away);
+  return h && a ? [`${h}-vs-${a}`, `${a}-vs-${h}`] : [];
+}
+
 /**
  * Resolve a site match to its TheSports tracker, making the needed SportScore reads.
  * `sportscore` is the client from createSportScore. Returns
- *   { trackerId, sport, ssSport, slug, live, teams } or { found:false, reason }.
+ *   { trackerId, sport, ssSport, slug, live, teams, via } or { found:false, reason }.
+ *
+ * It asks the match DETAIL directly by a guessed slug first — this works even when the match is not in
+ * SportScore's (limited) live list — and only falls back to scanning that list by names.
  */
 export async function resolveTracker(sportscore, { sport, home, away } = {}) {
   const ssSport = SS_SPORT[sport];
   if (!ssSport) return { found: false, reason: 'Desporto sem ligação à SportScore.' };
   if (!sportscore?.enabled) return { found: false, reason: 'SportScore desligado.' };
   if (!home || !away) return { found: false, reason: 'Indique as duas equipas.' };
+  // 1) the match detail, straight from a guessed slug (bypasses the 50-match list).
+  for (const slug of slugCandidates(home, away)) {
+    const det = await sportscore.match(ssSport, slug);
+    const tr = det?.ok ? trackerOf(det.data) : null;
+    if (tr) return { found: true, trackerId: tr.id, sport, ssSport, slug, live: null, teams: { home, away }, trackerSport: tr.sport, via: 'slug' };
+  }
+  // 2) fall back to the live list, matched by names.
   const list = await sportscore.matches(ssSport, 50);
   if (!list?.ok) return { found: false, reason: list?.error || 'A lista da SportScore não respondeu.' };
   const fx = pickFixture(list.data, home, away);
-  if (!fx?.slug) return { found: false, reason: 'Não encontrei este jogo na lista da SportScore.' };
+  if (!fx?.slug) return { found: false, reason: 'Não encontrei este jogo (nem pelo slug nem na lista da SportScore).' };
   const det = await sportscore.match(ssSport, fx.slug);
   if (!det?.ok) return { found: false, reason: det?.error || 'O detalhe do jogo não respondeu.', slug: fx.slug };
   const tr = trackerOf(det.data);
   if (!tr) return { found: false, reason: 'O jogo não traz tracker ao vivo (sem posição de bola).', slug: fx.slug, teams: fx.teams };
-  return { found: true, trackerId: tr.id, sport, ssSport, slug: fx.slug, live: fx.live, teams: fx.teams, trackerSport: tr.sport };
+  return { found: true, trackerId: tr.id, sport, ssSport, slug: fx.slug, live: fx.live, teams: fx.teams, trackerSport: tr.sport, via: 'list' };
 }

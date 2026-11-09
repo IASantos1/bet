@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SS_SPORT, sameFixture, pickFixture, trackerOf, resolveTracker } from '../server/thesportslink.js';
+import { SS_SPORT, sameFixture, pickFixture, trackerOf, resolveTracker, slugify, slugCandidates } from '../server/thesportslink.js';
 
 // A matches-list answer shaped like SportScore's (teams as objects, status, url with the slug).
 const cricketList = {
@@ -32,6 +32,15 @@ test('TheSports link: pickFixture finds the right slug and prefers the live game
   assert.equal(pickFixture(cricketList, 'Brazil', 'Argentina'), null);
 });
 
+test('TheSports link: slug building (accents, spaces, both orders)', () => {
+  assert.equal(slugify('Aryna Sabalenka'), 'aryna-sabalenka');
+  assert.equal(slugify('Tseng Chun-hsin'), 'tseng-chun-hsin');
+  assert.equal(slugify('S D Prajwal Dev'), 's-d-prajwal-dev');
+  assert.deepEqual(slugCandidates('Aryna Sabalenka', 'Karolina Muchova'),
+    ['aryna-sabalenka-vs-karolina-muchova', 'karolina-muchova-vs-aryna-sabalenka']);
+  assert.deepEqual(slugCandidates('', 'B'), []);
+});
+
 test('TheSports link: trackerOf reads tracker.id from the match detail', () => {
   assert.deepEqual(trackerOf({ tracker: { id: 'zp5rzpcdx6n4q82', profile: 'cricket', sport: 'cricket' } }),
     { id: 'zp5rzpcdx6n4q82', sport: 'cricket', profile: 'cricket' });
@@ -54,7 +63,21 @@ test('TheSports link: resolveTracker walks list → detail → tracker id', asyn
   assert.equal(r.trackerId, 'zp5rzpcdx6n4q82');
   assert.equal(r.ssSport, 'cricket');
   assert.equal(r.slug, 'pakistan-vs-sri-lanka');
-  assert.equal(r.live, true);
+  assert.equal(r.via, 'slug'); // found straight from the guessed slug, no need for the list
+});
+
+test('TheSports link: resolveTracker guesses the slug even for a match not in the list', async () => {
+  // The list has only other games; the detail answers by slug (either name order).
+  const sportscore = {
+    enabled: true,
+    matches: async () => ({ ok: true, data: { matches: [{ url: '/tennis/match/a-vs-b/', home_team: { name: 'A' }, away_team: { name: 'B' }, status: 'live' }] } }),
+    match: async (_s, slug) => (slug === 'karolina-muchova-vs-aryna-sabalenka'
+      ? { ok: true, data: { tracker: { id: 'trkwta123', sport: 'tennis' } } } : { ok: false }),
+  };
+  const r = await resolveTracker(sportscore, { sport: 'tenis', home: 'Aryna Sabalenka', away: 'Karolina Muchova' });
+  assert.equal(r.found, true);
+  assert.equal(r.trackerId, 'trkwta123'); // matched the reversed-order slug
+  assert.equal(r.via, 'slug');
 });
 
 test('TheSports link: resolveTracker reports why it found nothing', async () => {
