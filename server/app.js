@@ -23,6 +23,7 @@ import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
 import { rawForAdmin } from './sportscore.js';
 import { resolveTracker } from './thesportslink.js';
+import { createTheSportsCourt } from './thesportscourt.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -178,6 +179,9 @@ export function createApp(db, {
 
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: loginAttempts });
   const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: registrations });
+
+  // Live 3D court (tennis/basketball/cricket): streams the TheSports ball to the match page.
+  const theSportsCourt = createTheSportsCourt({ thesportsLive, sportscore, log: (msg) => console.warn(`[court] ${msg}`) });
 
   app.use((req, res, next) => {
     res.set({
@@ -1136,6 +1140,22 @@ export function createApp(db, {
       socket.bus.off(`e:${ev.id}`, onMessage);
       unfollow?.();
     });
+  });
+
+  // Live ball for the 3D court (tennis / basketball / cricket), from the TheSports feed via the tracker.
+  // Separate from /live (which carries the scoreboard) so a match can have both. 204 when there is no court.
+  app.get('/api/events/:id/court', (req, res) => {
+    const ev = eventRow(req.params.id);
+    if (!theSportsCourt.covers(ev)) return res.status(204).end();
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders();
+    const send = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    const unfollow = theSportsCourt.follow(ev.id, ev);
+    send('snapshot', theSportsCourt.snapshot(ev.id));
+    const onMessage = (m) => send(m.type, m.data);
+    theSportsCourt.bus.on(`e:${ev.id}`, onMessage);
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
+    req.on('close', () => { clearInterval(heartbeat); theSportsCourt.bus.off(`e:${ev.id}`, onMessage); unfollow(); });
   });
 
   app.get('/api/results', (_req, res) => {
