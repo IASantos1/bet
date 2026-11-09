@@ -56,6 +56,7 @@ const TABS = [
   { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Operações' },
   { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
   { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
+  { id: 'sportscore', label: 'SportScore', icon: 'radio', section: 'Avançado' },
   { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
   { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
   { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
@@ -826,6 +827,7 @@ async function loadTab() {
     if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null), await api('/api/admin/2fa').catch(() => null));
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
+    else if (tab === 'sportscore') main.innerHTML = adminSportScore(await api('/api/admin/sportscore'));
     else if (tab === 'casino') {
       const [c, cards] = await Promise.all([api('/api/admin/casino'), api('/api/admin/casino/cards').catch(() => null)]);
       const arts = (await api('/api/admin/casino/art').catch(() => ({ games: [] }))).games;
@@ -1199,6 +1201,53 @@ function sportsAddonPanels(f) {
   };
   for (const s of f.sports || []) panels.push(addonPanel(SPORT_META[s.sport]?.name || s.name, s, what[s.sport] || ''));
   return `<h3>Sports Addon</h3>${panels.map((p) => `<div class="addon-block">${p}</div>`).join('')}<br>`;
+}
+
+// ---- SportScore: what its routes really carry, raw (to build the 3D mini fields from it) ----
+const SS_SPORTS = [['football', 'Futebol'], ['basketball', 'Basquetebol'], ['tennis', 'Ténis'], ['cricket', 'Críquete']];
+let ssLast = null; // the last raw answer shown, for "Copiar"
+function adminSportScore(st) {
+  if (!st.enabled) return '<div class="panel"><h2>SportScore</h2><p class="muted">Desligado: retire <b>SPORTSCORE=0</b> das Variables do Railway.</p></div>';
+  return `<div class="panel">
+    <div class="section-head"><h2>SportScore</h2><span class="pill ${st.keySet ? 'won' : 'lost'}">${st.keySet ? 'Chave definida' : 'Sem chave'}</span></div>
+    <p class="muted">Dados de futebol, basquetebol, ténis e críquete (sem iframe: só os dados). A chave fica só no Railway, na variável <b>SPORTSCORE_API_KEY</b> — nunca aparece aqui.
+      ${st.keySet ? `Enviada por: <b>${esc(st.keyVia)}</b> (mude com <b>SPORTSCORE_KEY_HEADER</b>, ou <b>SPORTSCORE_KEY_PARAM</b> se for no endereço).` : ''}</p>
+    <p class="muted">Endereço: <code>${esc(st.baseUrl)}</code> · pedidos hoje: <b>${st.usedToday}</b> · respostas guardadas ${st.cacheSeconds} s.</p>
+    <h3>1. Jogos ao vivo e recentes</h3>
+    <div class="form-actions">${SS_SPORTS.map(([k, n]) => `<button class="ghost-btn btn-sm" data-action="ss-matches" data-sport="${k}">${n}</button>`).join('')}</div>
+    <div id="ssList"></div>
+    <h3>2. Um jogo</h3>
+    <p class="muted">Escolha um jogo na lista acima (Detalhe / Tracker) ou escreva aqui o slug ou o id.</p>
+    <div class="form-actions">
+      <label class="field adm-inline">Desporto <select id="ssSport">${SS_SPORTS.map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select></label>
+      <label class="field adm-inline">Slug <input id="ssSlug" placeholder="ex.: benfica-vs-porto" maxlength="200"></label>
+      <button class="ghost-btn btn-sm" data-action="ss-match">Detalhe</button>
+      <label class="field adm-inline">Id <input id="ssId" placeholder="ex.: 7420812" maxlength="40" size="10"></label>
+      <button class="ghost-btn btn-sm" data-action="ss-tracker">Tracker (posição / animação)</button>
+    </div>
+    <div id="ssOut"></div>
+    ${st.calls?.length ? `<h3>Últimos pedidos</h3><div class="table-wrap"><table><thead><tr><th>Hora</th><th>Rota</th><th>Parâmetros</th><th>Resultado</th><th>Tempo</th></tr></thead><tbody>
+      ${st.calls.map((c) => `<tr><td>${esc(fmtDateTime(c.at))}</td><td>${esc(c.route)}</td><td>${esc(Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(' '))}</td>
+        <td><span class="pill ${c.ok ? 'won' : 'lost'}">${c.ok ? 'OK' : `Erro ${c.status || ''}`}</span></td><td>${c.ms} ms</td></tr>`).join('')}</tbody></table></div>` : ''}
+  </div>`;
+}
+/** The matches of a list answer, whatever its shape: id, slug and a readable label of each. */
+function ssMatches(data) {
+  const list = Array.isArray(data) ? data : data?.matches || data?.data || data?.results || [];
+  const name = (t) => (typeof t === 'string' ? t : t?.name || t?.short_name || t?.title || '');
+  return (Array.isArray(list) ? list : []).map((m) => ({
+    id: m.id ?? m.match_id ?? m.event_id ?? '', slug: m.slug || m.match_slug || '',
+    label: m.name || m.title || [name(m.home_team || m.home || m.homeTeam), name(m.away_team || m.away || m.awayTeam)].filter(Boolean).join(' vs ') || '—',
+    status: m.status?.description || m.status?.type || m.status || m.state || '',
+    score: m.score ? (typeof m.score === 'string' ? m.score : JSON.stringify(m.score)) : [m.home_score ?? m.homeScore?.current, m.away_score ?? m.awayScore?.current].filter((x) => x != null).join(' - '),
+    league: name(m.competition || m.tournament || m.league),
+  }));
+}
+function ssRaw(r, title) {
+  ssLast = r.raw || null;
+  return `<h4>${esc(title)} ${r.ok ? `<span class="pill won">OK</span>` : `<span class="pill lost">Erro ${r.status || ''}</span>`}
+    <small class="muted">${r.ms ?? '?'} ms${r.cached ? ' · da memória' : ''}${r.size ? ` · ${Math.round(r.size / 1024)} KB` : ''}</small></h4>
+    ${r.ok ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar resposta</button></div><pre class="raw-odds">${esc(r.raw)}</pre>` : `<div class="form-error">${esc(r.error || 'Sem resposta.')}</div>`}`;
 }
 
 function adminFeed(f) {
@@ -1772,6 +1821,38 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
+  if (action === 'ss-matches') {
+    const sport = actionEl.dataset.sport;
+    $('#ssList').innerHTML = '<div class="loading">A pedir à SportScore…</div>';
+    try {
+      const r = await api(`/api/admin/sportscore/matches?sport=${sport}&limit=30`);
+      const ms = r.ok ? ssMatches(JSON.parse(r.raw)) : [];
+      $('#ssList').innerHTML = (ms.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Competição</th><th>Estado</th><th>Resultado</th><th>Id / slug</th><th></th></tr></thead><tbody>
+        ${ms.map((m) => `<tr><td>${esc(m.label)}</td><td>${esc(m.league)}</td><td>${esc(m.status)}</td><td>${esc(m.score)}</td><td><small>${esc(m.id)}<br>${esc(m.slug)}</small></td>
+          <td>${m.slug ? `<button class="ghost-btn btn-sm" data-action="ss-match" data-sport="${sport}" data-slug="${esc(m.slug)}">Detalhe</button>` : ''}
+            ${m.id !== '' ? `<button class="ghost-btn btn-sm" data-action="ss-tracker" data-sport="${sport}" data-id="${esc(m.id)}">Tracker</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '')
+        + ssRaw(r, `Resposta de matches (${sport})`);
+      $('#ssOut').innerHTML = '';
+    } catch (err) { $('#ssList').innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+    return;
+  }
+  if (action === 'ss-match' || action === 'ss-tracker') {
+    const sport = actionEl.dataset.sport || $('#ssSport').value;
+    const tracker = action === 'ss-tracker';
+    const ref = tracker ? (actionEl.dataset.id ?? $('#ssId').value.trim()) : (actionEl.dataset.slug ?? $('#ssSlug').value.trim());
+    if (!ref) { toast('SportScore', tracker ? 'Indique o id do jogo.' : 'Indique o slug do jogo.', 'error'); return; }
+    $('#ssOut').innerHTML = '<div class="loading">A pedir à SportScore…</div>';
+    try {
+      const r = await api(`/api/admin/sportscore/${tracker ? 'tracker' : 'match'}?sport=${sport}&${tracker ? 'id' : 'slug'}=${encodeURIComponent(ref)}`);
+      $('#ssOut').innerHTML = ssRaw(r, `${tracker ? 'Tracker' : 'Detalhe'} · ${sport} · ${ref}`);
+      $('#ssOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) { $('#ssOut').innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
+    return;
+  }
+  if (action === 'ss-copy') {
+    try { await navigator.clipboard.writeText(ssLast || ''); toast('Resposta copiada', 'Cole-a na conversa.'); } catch { toast('Não deu para copiar', 'Selecione o texto e copie à mão.', 'error'); }
+    return;
+  }
   if (action === 'cs-game-pick') {
     const d = actionEl.dataset;
     csGame = { image: d.image, name: d.name, zy: Number(d.zy) || 100, oy: Number(d.oy) || 0 };

@@ -21,6 +21,7 @@ import { createFeatured, isBigTeam } from './featured.js';
 import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
+import { rawForAdmin } from './sportscore.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -166,7 +167,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -2971,6 +2972,22 @@ export function createApp(db, {
       "SELECT type, COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE type IN ('casino_out', 'casino_in') GROUP BY type"
     ).all().reduce((acc, r) => ({ ...acc, [r.type]: cents(r.s) }), {});
     res.json({ enabled: true, agent, error, sentToCasino: -(moved.casino_out || 0), returnedFromCasino: moved.casino_in || 0 });
+  }));
+
+  // SportScore: what its routes carry (live list, one match, the live tracker), raw, for the admin.
+  const needSportScore = () => { if (!sportscore) throw new HttpError(503, 'SportScore desligado (SPORTSCORE=0 no Railway).'); };
+  admin.get('/sportscore', (_req, res) => res.json(sportscore ? { enabled: true, ...sportscore.status() } : { enabled: false }));
+  admin.get('/sportscore/matches', wrap(async (req, res) => {
+    needSportScore();
+    res.json(rawForAdmin(await sportscore.matches(String(req.query.sport || ''), Number(req.query.limit) || 20)));
+  }));
+  admin.get('/sportscore/match', wrap(async (req, res) => {
+    needSportScore();
+    res.json(rawForAdmin(await sportscore.match(String(req.query.sport || ''), String(req.query.slug || '').slice(0, 200))));
+  }));
+  admin.get('/sportscore/tracker', wrap(async (req, res) => {
+    needSportScore();
+    res.json(rawForAdmin(await sportscore.tracker(String(req.query.sport || ''), String(req.query.id || '').slice(0, 40))));
   }));
 
   admin.get('/feed', (_req, res) => {

@@ -272,6 +272,20 @@ export const config = {
   cashout: { enabled: env.CASHOUT !== '0', factor: Math.min(1, Math.max(0.5, Number(env.CASHOUT_FACTOR) || 0.95)) },
   // Trial second source of live football video: a RapidAPI streaming API (key only in Railway
   // Variables). Read when a player opens a live match, cached RAPIDAPI_STREAM_CACHE_SECONDS.
+  // SportScore (sportscore.com): data for football, basketball, cricket and tennis, read with our key
+  // (SPORTSCORE_API_KEY, only in the Variables). How the key goes: in a header (SPORTSCORE_KEY_HEADER,
+  // default X-API-Key; "Authorization" sends "Bearer <key>") or, with SPORTSCORE_KEY_PARAM, in the
+  // query (e.g. api_key). SPORTSCORE=0 turns it off.
+  sportscore: {
+    enabled: env.SPORTSCORE !== '0',
+    // The routes' base (matches/, match/, team/, standings/, topscorers/, player/, bracket/, tracker/).
+    baseUrl: unquote(env.SPORTSCORE_BASE_URL) || 'https://sportscore.com/api/widget',
+    apiKey: unquote(env.SPORTSCORE_API_KEY),
+    keyHeader: unquote(env.SPORTSCORE_KEY_HEADER) || 'X-API-Key',
+    keyParam: unquote(env.SPORTSCORE_KEY_PARAM),
+    src: unquote(env.SPORTSCORE_SRC) || 'bet62',
+    cacheSeconds: Math.max(10, int(env.SPORTSCORE_CACHE_SECONDS, 30)),
+  },
   rapidStream: {
     apiKey: unquote(env.RAPIDAPI_KEY),
     host: unquote(env.RAPIDAPI_STREAM_HOST) || 'football-live-stream-api.p.rapidapi.com',
