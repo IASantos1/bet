@@ -826,7 +826,11 @@ async function loadTab() {
     if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null), await api('/api/admin/2fa').catch(() => null));
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
-    else if (tab === 'casino') main.innerHTML = adminCasino(await api('/api/admin/casino'));
+    else if (tab === 'casino') {
+      const [c, cards] = await Promise.all([api('/api/admin/casino'), api('/api/admin/casino/cards').catch(() => null)]);
+      main.innerHTML = (cards ? cardSizePanel(cards) : '') + adminCasino(c);
+      if (cards) cardPreview();
+    }
     else if (tab === 'peliculas') { skinEd = null; main.innerHTML = adminSkins(await api('/api/admin/skins')); }
     else if (tab === 'banners') { banEd = null; main.innerHTML = adminBanners(await api('/api/admin/banners')); }
     else if (tab === 'colecoes') { colEd = null; main.innerHTML = adminCollections(await api('/api/admin/collections')); }
@@ -988,6 +992,60 @@ function liveSocketPanel(ws) {
       ${ws.oddsLog.map((o) => `<tr><td>${esc(fmtDateTime(o.at))}</td><td>${esc(o.match)}</td><td>${esc(o.score)} ${esc(o.clock || '')}</td><td>${esc(o.kind === 'odds_book' ? 'casa' : 'consenso')}</td><td>${esc(o.odds)}</td>
         <td><span class="pill ${o.decision === 'aberto' ? 'won' : 'lost'}">${esc(o.decision)}</span></td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Ainda não chegaram odds em jogo.</p>'}<br>`;
+}
+
+// ---- Casino card size: height, how the cover fits, games per row (the site reads it from /api/config).
+const CARD_DEFAULT = { height: 133, fit: 'fill', cols: 0 };
+const CARD_FIT_NAMES = [['fill', 'Esticar (largura inteira, esticada na altura)'], ['cover', 'Preencher (corta o que sobra)'], ['contain', 'Inteira (sem cortes, com fundo)']];
+/** A sample cover of the given shape, drawn here as a PNG (no game needed): its name spans its width. */
+const sampleCover = (w, h, a, b, label) => {
+  const cv = document.createElement('canvas');
+  cv.width = w * 2; cv.height = h * 2;
+  const x = cv.getContext('2d');
+  x.scale(2, 2);
+  const g = x.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, a); g.addColorStop(1, b);
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+  x.fillStyle = 'rgba(255,255,255,.25)';
+  x.beginPath(); x.arc(w / 2, h * 0.38, Math.min(w, h) * 0.2, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#fff'; x.textAlign = 'center'; x.font = `900 ${w * 0.13}px Arial, sans-serif`;
+  x.fillText(label, w / 2, h * 0.8, w * 0.96);
+  return cv.toDataURL('image/png');
+};
+let cardSamples = null;
+const CARD_SAMPLES = () => (cardSamples ||= [
+  ['Jogo largo (16:9)', sampleCover(160, 90, '#ff5f6d', '#ffc371', 'FLAMING FRUIT')],
+  ['Jogo quadrado', sampleCover(120, 120, '#7f53ac', '#647dee', 'CANDY')],
+  ['Jogo alto (3:4)', sampleCover(150, 200, '#11998e', '#38ef7d', 'BELLS')],
+]);
+function cardSizePanel(c) {
+  return `<div class="panel card-size" id="cardSize">
+    <div class="section-head"><h2>Tamanho dos jogos</h2></div>
+    <p class="muted">Ajusta os cartões dos jogos no casino e na página inicial. A pré-visualização muda enquanto mexe; o site só muda depois de <b>Guardar</b> (quem já tem a página aberta vê ao recarregar).</p>
+    <div class="cs-controls">
+      <label class="field">Altura do cartão: <b id="csHeightOut">${c.height}%</b> da largura
+        <input type="range" id="csHeight" min="100" max="200" step="1" value="${c.height}"></label>
+      <label class="field">Imagem do jogo <select id="csFit">
+        ${CARD_FIT_NAMES.map(([v, t]) => `<option value="${v}"${c.fit === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="field">Jogos por linha (computador) <select id="csCols">
+        <option value="0"${!c.cols ? ' selected' : ''}>Automático (5 ou 6, conforme o ecrã)</option>
+        ${[3, 4, 5, 6, 7, 8].map((n) => `<option value="${n}"${c.cols === n ? ' selected' : ''}>${n} por linha${n <= 4 ? ' (cartões mais largos)' : n >= 7 ? ' (cartões mais estreitos)' : ''}</option>`).join('')}</select></label>
+    </div>
+    <div class="cs-preview" id="csPreview">
+      ${CARD_SAMPLES().map(([name, src]) => `<div class="cs-card"><div class="cs-art"><img src="${src}" alt=""></div><strong>${esc(name)}</strong></div>`).join('')}
+    </div>
+    <div class="form-actions"><button class="primary-btn" data-action="cards-save">Guardar</button>
+      <button class="ghost-btn" data-action="cards-reset">Repor o padrão</button></div>
+  </div>`;
+}
+const cardForm = () => ({ height: Number($('#csHeight').value), fit: $('#csFit').value, cols: Number($('#csCols').value) });
+function cardPreview() {
+  const box = $('#csPreview');
+  if (!box) return;
+  const c = cardForm();
+  $('#csHeightOut').textContent = `${c.height}%`;
+  box.style.setProperty('--cs-h', String(c.height));
+  box.dataset.fit = c.fit;
 }
 
 function adminCasino(c) {
@@ -1665,6 +1723,17 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
+  if (action === 'cards-save' || action === 'cards-reset') {
+    const body = action === 'cards-reset' ? CARD_DEFAULT : cardForm();
+    if (action === 'cards-reset' && !confirm('Repor o tamanho padrão dos jogos (altura 133%, imagem esticada, jogos por linha automático)?')) return;
+    try {
+      const r = await api('/api/admin/casino/cards', { method: 'POST', body });
+      $('#csHeight').value = r.height; $('#csFit').value = r.fit; $('#csCols').value = String(r.cols);
+      cardPreview();
+      toast('Tamanho dos jogos guardado', `Altura ${r.height}% · ${CARD_FIT_NAMES.find(([v]) => v === r.fit)[1].split(' (')[0]} · ${r.cols ? `${r.cols} por linha` : 'jogos por linha automático'}`);
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'close-menu') { $('.adm')?.classList.remove('menu-open'); return; }
   if (action === 'refresh') { loadTab(); return; }
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
@@ -2237,6 +2306,7 @@ document.addEventListener('change', async (e) => {
   if (banEd && e.target.closest?.('.ban-ed')) { banChange(e.target); return; }
   if (colEd && e.target.id === 'colProv') { colProvider(e.target.value); return; }
   if (spotEd && e.target.closest?.('.spot-ed')) { spotChange(e.target); return; }
+  if (e.target.id === 'csFit' || e.target.id === 'csCols') { cardPreview(); return; }
   if (e.target.dataset?.action === 'casino-skins') {
     try {
       const r = await api('/api/admin/casino/skins', { method: 'POST', body: { mode: e.target.value } });
@@ -2274,6 +2344,7 @@ document.addEventListener('change', async (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'csHeight') { cardPreview(); return; }
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
   if (colEd && e.target.id === 'colSearch') { colSearch(e.target.value.trim()); return; }

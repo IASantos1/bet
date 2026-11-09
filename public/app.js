@@ -1827,6 +1827,15 @@ let skinTimer = null;
  * A game's cover filling its card edge to edge (object-fit: fill): its whole width always shows (the
  * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
  */
+/** The casino cards' size chosen in the admin: height (% of the width), cover fit, games per row. */
+function applyCasinoCards(c) {
+  const root = document.documentElement;
+  if (!c) return;
+  root.style.setProperty('--card-h', String(c.height || 133));
+  if (c.fit && c.fit !== 'fill') root.dataset.cardFit = c.fit; else delete root.dataset.cardFit;
+  root.classList.toggle('card-cols', c.cols > 0);
+  if (c.cols > 0) root.style.setProperty('--card-cols', String(c.cols));
+}
 const gameArt = (src) => `<img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
 function showSkin() {
@@ -6225,6 +6234,7 @@ async function init() {
   boardReq.catch(() => {});
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
+  applyCasinoCards(config?.casinoCards);
   // A new deploy changes the version: reload once so nobody keeps an old page open for hours.
   setInterval(async () => {
     try {

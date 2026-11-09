@@ -1302,9 +1302,16 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 /* ---------- casino cards as in the big apps: tall artwork filling the card, name underneath ---------- */
 .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px 12px; }
 .game-card { background: none !important; border: 0 !important; border-radius: 0; overflow: visible; display: flex; flex-direction: column; gap: 8px; }
-.game-card .game-art { aspect-ratio: 3 / 4; border-radius: 14px; background: linear-gradient(160deg, #2b3440, #171b22); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); transition: transform .15s, box-shadow .15s; }
-/* The cover whole (never cropped), over a blurred copy of itself that fills what it leaves. */
+.game-card .game-art { aspect-ratio: 100 / var(--card-h, 133); border-radius: 14px; background: linear-gradient(160deg, #2b3440, #171b22); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); transition: transform .15s, box-shadow .15s; }
+/* The cover's whole width, stretched to the card's height; the admin can choose another fit
+   (Casino tab: --card-h, data-card-fit, --card-cols, set from /api/config in app.js). */
 .game-card .game-img { object-fit: fill; z-index: 1; }
+html[data-card-fit="cover"] .game-card .game-img { object-fit: cover; }
+html[data-card-fit="contain"] .game-card .game-img { object-fit: contain; }
+@media (min-width: 1001px) {
+  html.card-cols .game-grid { grid-template-columns: repeat(var(--card-cols), minmax(0, 1fr)); }
+  html.card-cols .casino-row .car-track, html.card-cols #homeCasino .car-track { grid-auto-columns: calc((100% - (var(--card-cols) - 1) * 14px) / var(--card-cols)); }
+}
 .game-card:hover .game-art { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, .45), 0 0 0 2px var(--brand); }
 .game-card .game-info { padding: 0 2px; }
 .game-card .game-info strong { display: block; font-size: 14px; font-weight: 900; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

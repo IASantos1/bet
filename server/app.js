@@ -757,6 +757,19 @@ export function createApp(db, {
     next();
   };
 
+  /** Casino card size set in the admin: height (% of the width), how the cover fits, games per row. */
+  const CARD_FITS = ['fill', 'cover', 'contain'];
+  const casinoCards = () => {
+    const c = getSetting(db, 'casino.cards', null) || {};
+    const height = Math.round(Number(c.height));
+    const cols = Math.round(Number(c.cols));
+    return {
+      height: height >= 100 && height <= 200 ? height : 133,
+      fit: CARD_FITS.includes(c.fit) ? c.fit : 'fill',
+      cols: cols >= 3 && cols <= 8 ? cols : 0,
+    };
+  };
+
   app.get('/api/config', (_req, res) => {
     const { limits } = config;
     const m = maintenance();
@@ -788,6 +801,8 @@ export function createApp(db, {
       // Covers over some Pragmatic games (the "buy free spins" panel): off, admins only (trial) or everyone.
       casinoSkins: getSetting(db, 'casino.skins', 'off'),
       skins: getSetting(db, 'casino.skins', 'off') === 'off' ? [] : skins.live(),
+      // The size of the casino cards (admin, Casino tab).
+      casinoCards: casinoCards(),
     });
   });
 
@@ -2839,6 +2854,14 @@ export function createApp(db, {
   admin.post('/skins/:id/delete', (req, res) => {
     if (!skins.remove(req.params.id)) throw new HttpError(404, 'Película não encontrada.');
     res.json({ ok: true });
+  });
+
+  /** The casino cards' size: height (100–200 % of the width), cover fit, games per row (0: automatic). */
+  admin.get('/casino/cards', (_req, res) => res.json(casinoCards()));
+  admin.post('/casino/cards', (req, res) => {
+    const b = req.body || {};
+    setSetting(db, 'casino.cards', { height: Number(b.height), fit: b.fit, cols: Number(b.cols) });
+    res.json(casinoCards());
   });
 
   /** Covers over the "buy free spins" panel of some Pragmatic games: off | admin (trial) | all. */
