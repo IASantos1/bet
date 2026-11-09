@@ -775,6 +775,15 @@ export function createApp(db, {
     };
   };
 
+  /** Per-game picture fixes (admin): a cover's height stretch (100–300 %) and shift (−40…40 %), by image URL. */
+  const casinoArt = () => {
+    const list = getSetting(db, 'casino.artFix', []);
+    return (Array.isArray(list) ? list : []).filter((a) => a && typeof a.image === 'string' && /^https:\/\//.test(a.image)).map((a) => ({
+      image: a.image, name: String(a.name || '').slice(0, 120),
+      zy: Math.min(300, Math.max(100, Math.round(Number(a.zy)) || 100)), oy: Math.min(40, Math.max(-40, Math.round(Number(a.oy)) || 0)),
+    }));
+  };
+
   app.get('/api/config', (_req, res) => {
     const { limits } = config;
     const m = maintenance();
@@ -808,6 +817,8 @@ export function createApp(db, {
       skins: getSetting(db, 'casino.skins', 'off') === 'off' ? [] : skins.live(),
       // The size of the casino cards (admin, Casino tab).
       casinoCards: casinoCards(),
+      // Games whose cover the admin stretched or moved (Casino → Tamanho dos jogos → Ajustar um jogo).
+      casinoArt: casinoArt().map(({ image, zy, oy }) => ({ image, zy, oy })),
     });
   });
 
@@ -2870,6 +2881,19 @@ export function createApp(db, {
       bright: Number(b.bright), contrast: Number(b.contrast), sat: Number(b.sat), sharp: Number(b.sharp),
     });
     res.json(casinoCards());
+  });
+
+  /** One game's cover stretched in height / moved up or down (zy 100 and oy 0, or remove: back to normal). */
+  admin.get('/casino/art', (_req, res) => res.json({ games: casinoArt() }));
+  admin.post('/casino/art', (req, res) => {
+    const image = String(req.body?.image || '');
+    if (!/^https:\/\/\S+$/.test(image) || image.length > 1000) throw new HttpError(400, 'Imagem do jogo inválida.');
+    const rest = casinoArt().filter((a) => a.image !== image);
+    const zy = Math.round(Number(req.body?.zy)) || 100;
+    const oy = Math.round(Number(req.body?.oy)) || 0;
+    const keep = !req.body?.remove && (zy !== 100 || oy !== 0);
+    setSetting(db, 'casino.artFix', keep ? [...rest, { image, name: req.body?.name, zy, oy }].slice(-300) : rest);
+    res.json({ games: casinoArt() });
   });
 
   /** Covers over the "buy free spins" panel of some Pragmatic games: off | admin (trial) | all. */
