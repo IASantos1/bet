@@ -1824,10 +1824,10 @@ document.addEventListener('load', (e) => {
 // after the page loaded. A message from the game saying it is ready also shows it.
 let skinTimer = null;
 /**
- * A game's cover in its card, whole: never cropped (object-fit: contain), the space it leaves filled by
- * the same cover blurred behind it, so a wider or taller cover still fills the card.
+ * A game's cover filling its card edge to edge (object-fit: cover, centred): every card the same
+ * size and no border around the picture; a wider cover loses a little at its sides.
  */
-const gameArt = (src) => `<img class="game-img-fill" src="${esc(src)}" alt="" aria-hidden="true" loading="lazy" decoding="async"><img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
+const gameArt = (src) => `<img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
 function showSkin() {
   const g = state.casinoSession;
@@ -4375,7 +4375,6 @@ document.addEventListener('click', async (e) => {
 
 // A casino thumbnail that fails to load shows the generic art instead.
 document.addEventListener('error', (e) => {
-  if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img-fill')) { e.target.remove(); return; }
   if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img')) e.target.replaceWith('🎰');
 }, true);
 
