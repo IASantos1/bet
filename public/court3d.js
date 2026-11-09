@@ -8,14 +8,17 @@
 import * as THREE from './vendor/three-0.169.0.module.min.js';
 
 const seeded = (s) => () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2); // smooth start and stop
 const hex6 = (n) => `#${(n >>> 0).toString(16).padStart(6, '0').slice(-6)}`;
 function shade(hex, amt) { let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255; const f = (v) => Math.max(0, Math.min(255, Math.round(v + 255 * amt))); return (f(r) << 16) | (f(g) << 8) | f(b); }
 
 // Per sport: court size (m, length × width), surface + line colours, the ball, camera framing.
 const COURTS = {
-  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.24, elev: 30, fov: 32 },
-  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.3, elev: 31, fov: 34 },
-  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.5, elev: 38, fov: 34, oval: true },
+  // bounce: how the ball moves vertically. arc = a hop per shot (height ∝ distance, capped) for tennis
+  // and cricket; dribble = a steady bounce off the floor (amp m, hz bounces/s) for basketball.
+  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.24, elev: 30, fov: 32, bounce: { arc: 0.17, max: 3.2 } },
+  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.3, elev: 31, fov: 34, bounce: { dribble: 0.85, hz: 2.4 } },
+  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.5, elev: 38, fov: 34, oval: true, bounce: { arc: 0.08, max: 1.6 } },
 };
 
 /** The court markings drawn on a landscape canvas: X is the length, Z the width. */
@@ -207,7 +210,11 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
   const trailMat = new THREE.MeshBasicMaterial({ color: C.ballColor, transparent: true, depthWrite: false, toneMapped: false }); let trail = null;
 
   const courtPoint = (nx, ny) => ({ x: (Math.max(0, Math.min(1, nx)) - 0.5) * C.L, z: (Math.max(0, Math.min(1, ny)) - 0.5) * C.W });
-  const pos = new THREE.Vector3(0, BR, 0); let cur = null, target = null, from = null, moveAt = 0, hidden = true, raf = 0, onScreen = true;
+  const pos = new THREE.Vector3(0, BR, 0), prevPos = new THREE.Vector3(0, BR, 0), rollAxis = new THREE.Vector3();
+  let cur = null, target = null, from = null, moveAt = 0, hidden = true, raf = 0, onScreen = true;
+  // The ball glides over the time until the next position (so it is always moving, like the football
+  // ball), not a fixed burst; lastSetAt tracks the feed's cadence to size that glide.
+  let glideMs = 700, lastSetAt = 0;
 
   function drawTrail() {
     if (trail) { scene.remove(trail); trail.geometry.dispose(); trail = null; }
@@ -215,11 +222,21 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
     trail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from.clone(), pos.clone()]), 8, BR * 0.5, 6, false), trailMat); trailMat.opacity = 0.5; scene.add(trail);
   }
   function frame() {
-    raf = 0; const now = performance.now(); let busy = false;
-    if (target) { if (!cur) cur = target.clone(); else { const k = Math.min(1, (now - moveAt) / 650); cur.lerpVectors(from, target, k); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
-    const pulse = 1 + 0.12 * Math.sin(now / 200);
+    raf = 0; const now = performance.now(); let busy = false, k = 1;
+    if (target) { if (!cur) cur = target.clone(); else { k = Math.min(1, (now - moveAt) / glideMs); cur.lerpVectors(from, target, easeInOut(k)); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
+    // Vertical motion, per sport: tennis/cricket hop in an arc across a shot; basketball dribbles.
+    const b = C.bounce; let y = BR;
+    if (b?.dribble && !hidden) y = BR + Math.abs(Math.sin(now / 1000 * Math.PI * b.hz)) * b.dribble;
+    else if (b?.arc && from && target) { const d = Math.hypot(target.x - from.x, target.z - from.z); y = BR + Math.sin(Math.PI * k) * Math.min(b.max, d * b.arc); }
+    pos.y = y; const lift = y - BR;
+    // Roll the ball as it travels: it spins about the axis across its motion, by distance / radius.
+    const dx = pos.x - prevPos.x, dz = pos.z - prevPos.z, dist = Math.hypot(dx, dz);
+    if (dist > 1e-4) { rollAxis.set(-dz, 0, dx).normalize(); ball.rotateOnWorldAxis(rollAxis, dist / BR); }
+    prevPos.copy(pos);
+    const pulse = 1 + 0.08 * Math.sin(now / 240);
     ball.visible = shadow.visible = !hidden; ball.position.copy(pos); ball.scale.setScalar(pulse);
-    shadow.position.set(pos.x, 0.04, pos.z); shadow.scale.setScalar(pulse);
+    // The shadow stays on the floor and fades / spreads as the ball rises.
+    shadow.position.set(pos.x, 0.04, pos.z); shadow.scale.setScalar(pulse * (1 + lift * 0.25)); shadow.material.opacity = 0.32 / (1 + lift * 0.7);
     drawTrail(); renderer.render(scene, camera);
     const p = pos.clone().add(new THREE.Vector3(0, BR + 0.6, 0)).project(camera);
     onFrame({ x: (p.x * 0.5 + 0.5) * 100, y: (-p.y * 0.5 + 0.5) * 100, visible: !hidden && p.z < 1 });
@@ -235,8 +252,11 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
     setBall(b) {
       if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y)) { hidden = true; schedule(); return; }
       hidden = false; const p = courtPoint(b.x, b.y), to = new THREE.Vector3(p.x, BR, p.z);
-      if (target && to.distanceTo(target) < 0.15) { schedule(); return; }
-      from = (cur || to).clone(); target = to; moveAt = performance.now(); schedule();
+      if (target && to.distanceTo(target) < 0.08) { schedule(); return; }
+      const now = performance.now();
+      // Glide over the gap since the last position, so the ball keeps rolling instead of hopping.
+      glideMs = lastSetAt ? Math.max(260, Math.min(1600, now - lastSetAt)) : 700; lastSetAt = now;
+      from = (cur || to).clone(); target = to; moveAt = now; schedule();
     },
     destroy() {
       if (raf) cancelAnimationFrame(raf); raf = 0; onScreen = false; ro?.disconnect(); io?.disconnect(); document.removeEventListener('visibilitychange', onVis);
