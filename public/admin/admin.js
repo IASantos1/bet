@@ -1253,6 +1253,15 @@ function adminSportScore(st) {
       <button class="ghost-btn btn-sm" data-action="ss-tracker">Tracker (posição / animação)</button>
     </div>
     <div id="ssOut"></div>
+    <h3>3. Ligação automática (teste)</h3>
+    <p class="muted">Escreva o desporto e as duas equipas como estão no site; o servidor procura o jogo na SportScore e devolve o <b>id do tracker</b> ao vivo (o tópico do feed da bola). É o passo que vai ligar cada jogo do site ao campo 3D — aqui só para confirmar.</p>
+    <div class="form-actions">
+      <label class="field adm-inline">Desporto <select id="ssrSport">${SS_SPORTS.filter(([k]) => k !== 'football').map(([k, n]) => `<option value="${{ basketball: 'basquetebol', tennis: 'tenis', cricket: 'criquete' }[k]}">${n}</option>`).join('')}</select></label>
+      <label class="field adm-inline">Casa <input id="ssrHome" placeholder="ex.: Pakistan" maxlength="120"></label>
+      <label class="field adm-inline">Fora <input id="ssrAway" placeholder="ex.: Sri Lanka" maxlength="120"></label>
+      <button class="primary-btn btn-sm" data-action="ss-resolve">Encontrar tracker</button>
+    </div>
+    <div id="ssrOut"></div>
     ${st.calls?.length ? `<h3>Últimos pedidos</h3><div class="table-wrap"><table><thead><tr><th>Hora</th><th>Rota</th><th>Parâmetros</th><th>Resultado</th><th>Tempo</th></tr></thead><tbody>
       ${st.calls.map((c) => `<tr><td>${esc(fmtDateTime(c.at))}</td><td>${esc(c.route)}</td><td>${esc(Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(' '))}</td>
         <td><span class="pill ${c.ok ? 'won' : 'lost'}">${c.ok ? 'OK' : `Erro ${c.status || ''}`}</span></td><td>${c.ms} ms</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -1951,6 +1960,24 @@ document.addEventListener('click', async (e) => {
   }
   if (action === 'ss-copy') {
     try { await navigator.clipboard.writeText(ssLast || ''); toast('Resposta copiada', 'Cole-a na conversa.'); } catch { toast('Não deu para copiar', 'Selecione o texto e copie à mão.', 'error'); }
+    return;
+  }
+  if (action === 'ss-resolve') {
+    const sport = $('#ssrSport').value, home = $('#ssrHome').value.trim(), away = $('#ssrAway').value.trim();
+    if (!home || !away) { toast('Ligação', 'Escreva as duas equipas.', 'error'); return; }
+    $('#ssrOut').innerHTML = '<div class="loading">A procurar o jogo na SportScore…</div>';
+    try {
+      const r = await api(`/api/admin/sportscore/resolve?sport=${encodeURIComponent(sport)}&home=${encodeURIComponent(home)}&away=${encodeURIComponent(away)}`);
+      $('#ssrOut').innerHTML = r.found
+        ? `<div class="panel ok-text"><p><b>Encontrado ✓</b></p><table><tbody>
+            <tr><td>Tracker (id do feed)</td><td><code>${esc(r.trackerId)}</code></td></tr>
+            <tr><td>Jogo SportScore</td><td>${esc(r.teams?.home || '')} vs ${esc(r.teams?.away || '')} <span class="muted">(${esc(r.slug)})</span></td></tr>
+            <tr><td>Ao vivo</td><td>${r.live ? '🔴 sim' : 'não'}</td></tr>
+            <tr><td>Desporto</td><td>${esc(r.ssSport)}</td></tr></tbody></table>
+          <div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-tracker" data-sport="${esc(r.ssSport)}" data-id="${esc(r.trackerId)}">Ver tracker em bruto</button></div></div>`
+        : `<div class="form-error">Não encontrado: ${esc(r.reason || '—')}${r.slug ? ` <span class="muted">(${esc(r.slug)})</span>` : ''}</div>`;
+      $('#ssrOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) { $('#ssrOut').innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     return;
   }
   if (action === 'cs-game-pick') {
