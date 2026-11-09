@@ -72,6 +72,10 @@ h1, h2, h3 { margin-top: 0; }
 .layout { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--slip-w); max-width: 1600px; margin: auto; min-height: calc(100vh - 68px); }
 .sidebar { background: var(--nav); }
 .left-sidebar { border-right: 1px solid var(--line); padding: 18px 12px; }
+/* Computer: the menu scrolls with the page only until its end shows, then stays put while the centre
+   scrolls on (--side-top, set in app.js: the top bar's height, or less when the menu is taller than
+   the window). The phone keeps its drawer. */
+@media (min-width: 701px) { .side-sticky { position: sticky; top: var(--side-top, 86px); } }
 .sidebar-head { display: flex; justify-content: space-between; color: var(--text-4); font-size: 10px; font-weight: 900; letter-spacing: 1px; padding: 0 9px 10px; }
 .side-link { display: flex; align-items: center; gap: 11px; padding: 10px; border-radius: 6px; color: var(--nav-sub); font-weight: 650; margin: 2px 0; }
 .side-link > span:first-child { width: 22px; text-align: center; }
