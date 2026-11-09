@@ -1,0 +1,68 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { SS_SPORT, sameFixture, pickFixture, trackerOf, resolveTracker } from '../server/thesportslink.js';
+
+// A matches-list answer shaped like SportScore's (teams as objects, status, url with the slug).
+const cricketList = {
+  matches: [
+    { url: '/cricket/match/india-vs-england/', home_team: { name: 'India' }, away_team: { name: 'England' }, status: 'finished' },
+    { url: '/cricket/match/pakistan-vs-sri-lanka/', home_team: { name: 'Pakistan' }, away_team: { name: 'Sri Lanka' }, status: 'live' },
+  ],
+};
+
+test('TheSports link: site sport maps to SportScore sport', () => {
+  assert.equal(SS_SPORT.tenis, 'tennis');
+  assert.equal(SS_SPORT.basquetebol, 'basketball');
+  assert.equal(SS_SPORT.criquete, 'cricket');
+  assert.equal(SS_SPORT.futebol, 'football');
+});
+
+test('TheSports link: sameFixture matches both teams, either way round, loosely', () => {
+  const m = { home_team: { name: 'Pakistan' }, away_team: { name: 'Sri Lanka' } };
+  assert.ok(sameFixture(m, 'Pakistan', 'Sri Lanka'));
+  assert.ok(sameFixture(m, 'Sri Lanka', 'Pakistan')); // home/away swapped
+  assert.ok(!sameFixture(m, 'Pakistan', 'India'));
+  assert.ok(!sameFixture({ home_team: { name: 'Pakistan' } }, 'Pakistan', 'Sri Lanka')); // missing a team
+});
+
+test('TheSports link: pickFixture finds the right slug and prefers the live game', () => {
+  const fx = pickFixture(cricketList, 'Pakistan', 'Sri Lanka');
+  assert.equal(fx.slug, 'pakistan-vs-sri-lanka');
+  assert.equal(fx.live, true);
+  assert.equal(pickFixture(cricketList, 'Brazil', 'Argentina'), null);
+});
+
+test('TheSports link: trackerOf reads tracker.id from the match detail', () => {
+  assert.deepEqual(trackerOf({ tracker: { id: 'zp5rzpcdx6n4q82', profile: 'cricket', sport: 'cricket' } }),
+    { id: 'zp5rzpcdx6n4q82', sport: 'cricket', profile: 'cricket' });
+  assert.deepEqual(trackerOf({ match: { tracker: { id: 'y0or5ofw6p5vmwz' } } }),
+    { id: 'y0or5ofw6p5vmwz', sport: null, profile: null });
+  assert.equal(trackerOf({}), null); // no tracker
+  assert.equal(trackerOf({ tracker: { id: 'no spaces allowed!' } }), null); // invalid id
+});
+
+test('TheSports link: resolveTracker walks list → detail → tracker id', async () => {
+  const sportscore = {
+    enabled: true,
+    matches: async (sport) => (sport === 'cricket' ? { ok: true, data: cricketList } : { ok: false }),
+    match: async (_sport, slug) => (slug === 'pakistan-vs-sri-lanka'
+      ? { ok: true, data: { tracker: { id: 'zp5rzpcdx6n4q82', sport: 'cricket' } } }
+      : { ok: false, error: 'não encontrado' }),
+  };
+  const r = await resolveTracker(sportscore, { sport: 'criquete', home: 'Pakistan', away: 'Sri Lanka' });
+  assert.equal(r.found, true);
+  assert.equal(r.trackerId, 'zp5rzpcdx6n4q82');
+  assert.equal(r.ssSport, 'cricket');
+  assert.equal(r.slug, 'pakistan-vs-sri-lanka');
+  assert.equal(r.live, true);
+});
+
+test('TheSports link: resolveTracker reports why it found nothing', async () => {
+  const sportscore = { enabled: true, matches: async () => ({ ok: true, data: cricketList }), match: async () => ({ ok: true, data: {} }) };
+  assert.equal((await resolveTracker(sportscore, { sport: 'voleibol', home: 'A', away: 'B' })).found, false); // unmapped sport
+  assert.equal((await resolveTracker({ enabled: false }, { sport: 'criquete', home: 'A', away: 'B' })).found, false); // off
+  assert.equal((await resolveTracker(sportscore, { sport: 'criquete', home: 'Nobody', away: 'Nowhere' })).found, false); // not in list
+  const noTracker = await resolveTracker(sportscore, { sport: 'criquete', home: 'Pakistan', away: 'Sri Lanka' });
+  assert.equal(noTracker.found, false); // fixture found but detail has no tracker
+  assert.match(noTracker.reason, /tracker/i);
+});

@@ -22,6 +22,7 @@ import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
 import { rawForAdmin } from './sportscore.js';
+import { resolveTracker } from './thesportslink.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
@@ -2988,6 +2989,14 @@ export function createApp(db, {
   admin.get('/sportscore/tracker', wrap(async (req, res) => {
     needSportScore();
     res.json(rawForAdmin(await sportscore.tracker(String(req.query.sport || ''), String(req.query.id || '').slice(0, 40))));
+  }));
+  // Auto-link test: given a site sport and the two team names, find the SportScore fixture and its
+  // live tracker id (Etapa 1). Confirms the matcher works on a real game before it drives the site.
+  admin.get('/sportscore/resolve', wrap(async (req, res) => {
+    needSportScore();
+    res.json(await resolveTracker(sportscore, {
+      sport: String(req.query.sport || ''), home: String(req.query.home || '').slice(0, 120), away: String(req.query.away || '').slice(0, 120),
+    }));
   }));
 
   // TheSports live tracker (MQTT) — admin test only, nothing of this reaches the public site yet.
