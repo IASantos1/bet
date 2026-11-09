@@ -753,6 +753,11 @@ body.no-scroll { overflow: hidden; }
 .trk-3d-off { display: none; position: absolute; inset: 0; z-index: 2; margin: 0; place-items: center; text-align: center; padding: 12px; color: #cfd6dd; font-size: 12px; font-weight: 700; }
 .trk.no3d .trk-3d-off { display: grid; }
 .trk.no3d .trk-badge { display: none; }
+/* The live 3D court (tennis / basketball / cricket): one host, the engine draws the canvas inside it. */
+.court3d-turf { position: relative; aspect-ratio: 16 / 9; background: #0b1626; overflow: hidden; }
+.court3d-host { position: absolute; inset: 0; }
+.court3d-host .court3d-canvas { display: block; width: 100%; height: 100%; }
+.trk[data-kind="court"]:fullscreen .court3d-turf, .trk.expanded[data-kind="court"] .court3d-turf { width: min(100%, calc((100vh - 120px) * 1.6)); margin: 0 auto; aspect-ratio: 16 / 9; }
 .trk-clip { position: absolute; inset: 0; z-index: 8; background: #0d1114; opacity: 0; visibility: hidden; cursor: pointer; transition: opacity .25s, visibility 0s .25s; }
 .trk-clip.on { opacity: 1; visibility: visible; transition: opacity .25s; }
 .trk-clip video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }

@@ -64,6 +64,8 @@ function sportIcon(k) {
 const sportBadge = (k, size = 18) => colourSportIcon(k, size) || SPORT_META[k]?.icon || '🏆';
 // The tennis mini court (live tracker) is hidden for now; true shows it again (its code is kept).
 const TENNIS_COURT = false;
+// Site sport → the 3D court engine's sport name (public/court3d.js).
+const SPORT3D = { tenis: 'tennis', basquetebol: 'basketball', criquete: 'cricket' };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const TX_LABEL = {
   deposit: 'Depósito', withdrawal: 'Levantamento', withdrawal_refund: 'Levantamento devolvido',
@@ -4678,9 +4680,9 @@ function leaveMatch() {
   clearInterval(m.timer);
   stopRapid();
   clearTimeout(m.clipTimer);
-  drop3D();
+  drop3D(); dropCourt3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtEs: null, court3d: null, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -4956,7 +4958,7 @@ function matchPage(sub) {
     </section>
     <div class="match-views">
       ${live ? `<button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
-      ${(e.sport === 'tenis' ? TENNIS_COURT : e.liveTracker) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
+      ${(e.liveTracker || e.court || (e.sport === 'tenis' && TENNIS_COURT)) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
       <button class="${m.tab === 'estatisticas' ? 'active' : ''}" data-match-tab="${m.tab === 'estatisticas' ? 'mercados' : 'estatisticas'}" title="${m.tab === 'estatisticas' ? 'Voltar aos mercados' : 'Estatísticas do jogo'}">${ICON_STATS}<span>Estatísticas</span></button>
     </div>
     ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
@@ -5853,6 +5855,19 @@ function tennisWidget(e) {
   </div>`;
 }
 
+// The live 3D court (tennis / basketball / cricket), fed by /api/events/:id/court. One host div; the
+// court3d engine draws the canvas inside it, the ball follows the TheSports feed.
+function courtWidget(e) {
+  return `<div class="trk" data-kind="court">${expandBtn()}
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
+      <span class="trk-score"><b id="courtHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="courtAwayScore">${e.awayScore ?? 0}</b></span>
+      <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
+    <div class="court3d-turf"><div class="court3d-host" id="courtHost"></div>
+      <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p></div>
+    <p class="trk-note" id="courtNote">A aguardar a posição da bola ao vivo…</p>
+  </div>`;
+}
+
 /** Mounts / moves the widget for the current match into the right slot. */
 function mountLiveWidget() {
   const m = state.match;
@@ -5877,26 +5892,30 @@ function mountLiveWidget() {
   }
   // Leaving the video: the trial player stops (no stream left downloading in the background).
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
-  const kind = e?.status !== 'live' || (e.sport === 'tenis' && !TENNIS_COURT) ? null
-    : e.liveTracker ? 'football' : e.sport === 'tenis' ? 'tennis' : null;
+  const kind = e?.status !== 'live' ? null
+    : e.liveTracker ? 'football'
+      : e.court ? 'court'
+        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis' : null;
   if (!kind) {
-    drop3D();
+    drop3D(); dropCourt3D();
     m.widget?.remove();
     m.widget = null;
     if (m.streamEl?.parentElement) m.streamEl.remove();
     return;
   }
   if (!m.widget || m.widgetKind !== kind) {
-    drop3D();
+    drop3D(); dropCourt3D();
     m.widget?.remove();
     const holder = document.createElement('div');
-    holder.innerHTML = kind === 'football' ? footballWidget(e) : tennisWidget(e);
+    holder.innerHTML = kind === 'football' ? footballWidget(e) : kind === 'court' ? courtWidget(e) : tennisWidget(e);
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
     if (kind === 'football') warmClips();
   }
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
-  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); } else updateTennisCourt();
+  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); }
+  else if (kind === 'court') ensureCourt3D();
+  else updateTennisCourt();
 }
 
 // ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------
@@ -5938,6 +5957,55 @@ function drop3D() {
   const m = state.match;
   m.pitch3d?.destroy();
   m.pitch3d = null;
+}
+
+// ---------- the live 3D court for tennis / basketball / cricket (public/court3d.js) ----------
+let court3dModule = null;
+let court3dFailed = false;
+
+function ensureCourt3D() {
+  const m = state.match;
+  const w = m.widget;
+  const e = m.data;
+  if (!w || m.widgetKind !== 'court') return;
+  w.classList.toggle('no3d', court3dFailed);
+  if (!m.court3d && !m.court3dLoading && !court3dFailed) {
+    m.court3dLoading = true;
+    (court3dModule ||= import('./court3d.js')).then(({ createCourt3D }) => {
+      m.court3dLoading = false;
+      if (m.widget !== w || m.court3d) return;
+      const quality = qualityTier({
+        coarse: !!window.matchMedia?.('(pointer: coarse)').matches, width: window.innerWidth,
+        cores: navigator.hardwareConcurrency || 4, saveData: !!navigator.connection?.saveData, memory: navigator.deviceMemory || 4,
+      });
+      const court = createCourt3D($('#courtHost', w), { sport: SPORT3D[e.sport] || 'tennis', quality });
+      if (!court) { court3dFailed = true; w.classList.add('no3d'); return; }
+      m.court3d = court;
+    }).catch(() => { m.court3dLoading = false; court3dFailed = true; court3dModule = null; w.classList.add('no3d'); });
+  }
+  startCourtStream(m.id);
+}
+
+function startCourtStream(id) {
+  const m = state.match;
+  if (m.courtEs || typeof EventSource !== 'function') return;
+  const es = new EventSource(`/api/events/${id}/court`);
+  m.courtEs = es;
+  const applyCourt = (d) => {
+    if (m.widgetKind !== 'court') return;
+    if (d.ball) { m.court3d?.setBall(d.ball); const n = $('#courtNote', m.widget); if (n) n.textContent = 'Posição da bola ao vivo.'; }
+  };
+  es.addEventListener('snapshot', (ev) => { try { applyCourt(JSON.parse(ev.data)); } catch { /* bad frame */ } });
+  es.addEventListener('court', (ev) => { try { applyCourt(JSON.parse(ev.data)); } catch { /* bad frame */ } });
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.courtEs = null; };
+}
+
+function dropCourt3D() {
+  const m = state.match;
+  m.courtEs?.close();
+  m.courtEs = null;
+  m.court3d?.destroy();
+  m.court3d = null;
 }
 
 function afterMatchRender() {
