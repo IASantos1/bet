@@ -34,15 +34,25 @@ export function createSportScore({ baseUrl = 'https://sportscore.com/api/widget'
       const text = await res.text();
       let data = null;
       try { data = JSON.parse(text); } catch { /* not JSON */ }
+      // Not JSON (the tracker can answer with an HTML page holding an iframe): the page and the
+      // addresses it loads come back as they are, to see where the data really lives.
+      const type = res.headers.get('content-type') || '';
       value = res.ok && data !== null
         ? { ok: true, status: res.status, ms: Date.now() - t0, data }
-        : { ok: false, status: res.status, ms: Date.now() - t0, error: data?.error || data?.detail || text.slice(0, 300) || `HTTP ${res.status}` };
+        : res.ok && text
+          ? { ok: false, status: res.status, ms: Date.now() - t0, nonJson: true, type, text: text.slice(0, 60_000),
+            links: [...new Set([...text.matchAll(/(?:src|href|data-src)\s*=\s*["']([^"']+)["']|(https?:\/\/[^\s"'<>)]+)/g)].map((m) => m[1] || m[2]))].slice(0, 40),
+            error: `A resposta não é JSON (${type || 'sem tipo'}): veja abaixo a página e os endereços que ela carrega.` }
+          : { ok: false, status: res.status, ms: Date.now() - t0, error: data?.error || data?.detail || text.slice(0, 300) || `HTTP ${res.status}` };
     } catch (err) {
       value = { ok: false, status: 0, ms: Date.now() - t0, error: err.name === 'TimeoutError' ? 'Sem resposta (tempo esgotado).' : err.message };
     }
     // The key never leaves this module, not even inside an error the provider echoes back.
     if (!value.ok) {
-      value.error = apiKey ? String(value.error).split(apiKey).join('***') : String(value.error);
+      const hide = (x) => (apiKey ? String(x).split(apiKey).join('***') : String(x));
+      value.error = hide(value.error);
+      if (value.text) value.text = hide(value.text);
+      if (value.links) value.links = value.links.map(hide);
       log(`${route}: ${value.error}`);
     }
     calls.unshift({ at: new Date().toISOString(), route, params, ok: value.ok, status: value.status, ms: value.ms });

@@ -1260,10 +1260,12 @@ function ssMatches(data) {
   })).sort((a, b) => b.live - a.live); // the games in play first
 }
 function ssRaw(r, title) {
-  ssLast = r.raw || null;
+  ssLast = r.raw || (r.nonJson ? `${r.links?.join('\n') || ''}\n\n${r.text}` : null);
   return `<h4>${esc(title)} ${r.ok ? `<span class="pill won">OK</span>` : `<span class="pill lost">Erro ${r.status || ''}</span>`}
     <small class="muted">${r.ms ?? '?'} ms${r.cached ? ' · da memória' : ''}${r.size ? ` · ${Math.round(r.size / 1024)} KB` : ''}</small></h4>
-    ${r.ok ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar resposta</button></div><pre class="raw-odds">${esc(r.raw)}</pre>` : `<div class="form-error">${esc(r.error || 'Sem resposta.')}</div>`}`;
+    ${r.ok ? `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar resposta</button></div><pre class="raw-odds">${esc(r.raw)}</pre>` : `<div class="form-error">${esc(r.error || 'Sem resposta.')}</div>`}
+    ${r.nonJson ? `${r.links?.length ? `<h4>Endereços que a página carrega</h4><ul class="ss-links">${r.links.map((l) => `<li><code>${esc(l)}</code></li>`).join('')}</ul>` : ''}
+      <div class="form-actions"><button class="ghost-btn btn-sm" data-action="ss-copy">Copiar página</button></div><pre class="raw-odds">${esc(r.text)}</pre>` : ''}`;
 }
 
 function adminFeed(f) {

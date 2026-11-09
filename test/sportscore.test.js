@@ -32,3 +32,11 @@ test('SportScore: Authorization sends Bearer; a query parameter when asked; erro
   assert.ok(!r.error.includes('k-9'));
   assert.equal((await createSportScore().matches('golf')).ok, false);
 }, () => json({ error: 'bad key k-9' }, 401)));
+
+test('SportScore: an HTML answer comes back as text with the addresses it loads', () => withFetch(async () => {
+  const r = await createSportScore({ apiKey: 'k-7' }).tracker('tennis', 'abc');
+  assert.equal(r.ok, false);
+  assert.equal(r.nonJson, true);
+  assert.ok(r.links.includes('https://widgets.example.test/tracker?id=abc'));
+  assert.ok(!r.text.includes('k-7'));
+}, () => new Response('<!DOCTYPE html><html><body><iframe src="https://widgets.example.test/tracker?id=abc"></iframe><!-- k-7 --></body></html>', { status: 200, headers: { 'content-type': 'text/html' } })));
