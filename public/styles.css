@@ -1298,8 +1298,10 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
 /* ---------- casino cards as in the big apps: tall artwork filling the card, name underneath ---------- */
 .game-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px 12px; }
 .game-card { background: none !important; border: 0 !important; border-radius: 0; overflow: visible; display: flex; flex-direction: column; gap: 8px; }
-.game-card .game-art { aspect-ratio: 2 / 3; border-radius: 14px; background: linear-gradient(160deg, #2b3440, #171b22); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); transition: transform .15s, box-shadow .15s; }
-.game-card .game-img { object-fit: cover; }
+.game-card .game-art { aspect-ratio: 3 / 4; border-radius: 14px; background: linear-gradient(160deg, #2b3440, #171b22); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); transition: transform .15s, box-shadow .15s; }
+/* The cover whole (never cropped), over a blurred copy of itself that fills what it leaves. */
+.game-card .game-img { object-fit: contain; z-index: 1; }
+.game-img-fill { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(16px) saturate(1.15) brightness(.85); pointer-events: none; }
 .game-card:hover .game-art { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, .45), 0 0 0 2px var(--brand); }
 .game-card .game-info { padding: 0 2px; }
 .game-card .game-info strong { display: block; font-size: 14px; font-weight: 900; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2346,3 +2348,4 @@ html:not(.light) body { background: var(--page) linear-gradient(180deg, #23a240 
 html:not(.light) .content { background: transparent; }
 html:not(.light) .left-sidebar, html:not(.light) .betslip { background: var(--page); }
 html:not(.light) .page-title p { color: #c9d3cc; }
+.game-art .excl-badge, .game-art .play-badge { z-index: 2; }

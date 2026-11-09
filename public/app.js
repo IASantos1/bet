@@ -1302,7 +1302,7 @@ function livePage() {
 
 function casinoGameCard(g, i) {
   return `<button class="game-card" data-game="${i}">
-    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}</div>
+    <div class="game-art">${g.image ? gameArt(g.image) : '🎰'}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)} · ${esc(g.category)}</small></div></button>`;
 }
 
@@ -1313,7 +1313,7 @@ const CASINO_ALL = 1000;
 /** A lobby card (BigBang): opens the game's page. */
 const isExclusive = (id) => !!state.casinoLobby?.exclusive?.includes(id);
 const lobbyCard = (g) => `<button class="game-card" data-game-id="${g.id}" title="${esc(g.name)}">
-    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}${isExclusive(g.id) ? '<span class="excl-badge">Exclusivo</span>' : ''}</div>
+    <div class="game-art">${g.image ? gameArt(g.image) : '🎰'}${isExclusive(g.id) ? '<span class="excl-badge">Exclusivo</span>' : ''}</div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${esc(g.provider)}</small></div></button>`;
 
 // ---------- "Os meus jogos": played recently (open straight away, ▶) and favourites (♥) ----------
@@ -1334,7 +1334,7 @@ function ensureCasinoMine(force = false) {
 const isFavorite = (id) => !!state.casinoMine?.favorites.some((g) => g.id === id);
 /** A game played recently: one touch opens it again (the ▶ on the picture). */
 const recentCard = (g) => `<button class="game-card recent-card" data-play-id="${g.id}" title="Jogar outra vez">
-    <div class="game-art">${g.image ? `<img class="game-img" src="${esc(g.image)}" alt="" loading="lazy">` : '🎰'}<span class="play-badge" aria-hidden="true">▶</span></div>
+    <div class="game-art">${g.image ? gameArt(g.image) : '🎰'}<span class="play-badge" aria-hidden="true">▶</span></div>
     <div class="game-info"><strong>${esc(g.name)}</strong><small>${g.playedAt ? playedAgo(g.playedAt) : esc(g.provider)}</small></div></button>`;
 /** "há 5 minutos", "há 1 hora", "há 3 dias". */
 function playedAgo(iso) {
@@ -1821,6 +1821,11 @@ document.addEventListener('load', (e) => {
 // loaded), with \`delay\` s after loading as a fallback when nobody touches (0 = none); or \`delay\` s
 // after the page loaded. A message from the game saying it is ready also shows it.
 let skinTimer = null;
+/**
+ * A game's cover in its card, whole: never cropped (object-fit: contain), the space it leaves filled by
+ * the same cover blurred behind it, so a wider or taller cover still fills the card.
+ */
+const gameArt = (src) => `<img class="game-img-fill" src="${esc(src)}" alt="" aria-hidden="true" loading="lazy" decoding="async"><img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
 function showSkin() {
   const g = state.casinoSession;
@@ -4368,6 +4373,7 @@ document.addEventListener('click', async (e) => {
 
 // A casino thumbnail that fails to load shows the generic art instead.
 document.addEventListener('error', (e) => {
+  if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img-fill')) { e.target.remove(); return; }
   if (e.target instanceof HTMLImageElement && e.target.classList.contains('game-img')) e.target.replaceWith('🎰');
 }, true);
 
