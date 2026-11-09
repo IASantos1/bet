@@ -1824,8 +1824,8 @@ document.addEventListener('load', (e) => {
 // after the page loaded. A message from the game saying it is ready also shows it.
 let skinTimer = null;
 /**
- * A game's cover filling its card edge to edge (object-fit: cover, centred): every card the same
- * size and no border around the picture; a wider cover loses a little at its sides.
+ * A game's cover filling its card edge to edge (object-fit: fill): its whole width always shows (the
+ * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
  */
 const gameArt = (src) => `<img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);
