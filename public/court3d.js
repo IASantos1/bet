@@ -13,9 +13,9 @@ function shade(hex, amt) { let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = 
 
 // Per sport: court size (m, length × width), surface + line colours, the ball, camera framing.
 const COURTS = {
-  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.42, elev: 30, fov: 32 },
-  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.5, elev: 31, fov: 34 },
-  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.9, elev: 38, fov: 34, oval: true },
+  tennis: { L: 23.77, W: 10.97, apron: 4, surface: 0x2f6fb0, line: 0xffffff, ballColor: 0xc8ff32, ballR: 0.24, elev: 30, fov: 32 },
+  basketball: { L: 28, W: 15, apron: 3.5, surface: 0xb5703a, line: 0xf3e6d6, ballColor: 0xe8742a, ballR: 0.3, elev: 31, fov: 34 },
+  cricket: { L: 46, W: 46, apron: 2, surface: 0x2f8f57, line: 0xffffff, ballColor: 0xe02a2a, ballR: 0.5, elev: 38, fov: 34, oval: true },
 };
 
 /** The court markings drawn on a landscape canvas: X is the length, Z the width. */
@@ -42,8 +42,14 @@ function surfaceTexture(sport) {
     rect(-HL, -HW, HL, HW); line(0, -HW, 0, HW); arc(0, 0, 1.8);
     for (const s of [-1, 1]) { const x = s * HL; rect(x, -2.45, x - s * 5.8, 2.45); arc(x - s * 6.75, 0, 4.1); }
   } else if (sport === 'cricket') {
-    arc(0, 0, 0); g.beginPath(); g.ellipse(cw / 2, ch / 2, HL * PX, HW * PX, 0, 0, Math.PI * 2); g.stroke(); // boundary
-    g.fillStyle = hex6(shade(C.surface, 0.14)); g.fillRect(X(-10), Z(-1.5), 20 * PX, 3 * PX); g.strokeRect(X(-10), Z(-1.5), 20 * PX, 3 * PX); // pitch strip
+    // mown grass rings
+    g.strokeStyle = hex6(shade(C.surface, 0.06)); g.lineWidth = Math.max(6, 0.9 * PX);
+    for (let r = 4; r < HW; r += 3) { g.beginPath(); g.ellipse(cw / 2, ch / 2, r * (HL / HW) * PX, r * PX, 0, 0, Math.PI * 2); g.stroke(); }
+    g.strokeStyle = hex6(C.line); g.lineWidth = Math.max(2, 0.08 * PX);
+    g.beginPath(); g.ellipse(cw / 2, ch / 2, HL * PX, HW * PX, 0, 0, Math.PI * 2); g.stroke(); // boundary
+    g.save(); g.setLineDash([10, 10]); arc(0, 0, 13.7); g.restore(); // 30-yard circle
+    g.fillStyle = '#cdb07e'; g.fillRect(X(-10.5), Z(-1.5), 21 * PX, 3 * PX); g.strokeRect(X(-10.5), Z(-1.5), 21 * PX, 3 * PX); // pitch strip
+    for (const x of [-10, 10]) { line(x, -1.5, x, 1.5); line(x - Math.sign(x) * 1.2, -1.5, x - Math.sign(x) * 1.2, 1.5); } // creases
   }
   g.save(); g.globalAlpha = 0.16; g.font = `900 ${Math.round(1.8 * PX)}px system-ui, Arial, sans-serif`; g.textBaseline = 'middle';
   const wb = g.measureText('BET').width, w6 = g.measureText('62').width, x0 = cw / 2 - (wb + w6) / 2, y0 = ch / 2;
@@ -106,21 +112,61 @@ function buildArena(scene, C, q, aniso) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(4, 1.8, 0.5), new THREE.MeshBasicMaterial({ color: 0xfff6dc, toneMapped: false })); panel.position.set(x, 16, z); panel.lookAt(0, 0, 0); scene.add(panel); }
 }
 
+// A fine mesh drawn on a transparent canvas, so a plane reads as a real net (the gaps see through).
+function netTexture(rgba, cell = 10) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.clearRect(0, 0, 128, 128); g.strokeStyle = rgba; g.lineWidth = 1.4;
+  for (let x = 0; x <= 128; x += cell) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); }
+  for (let y = 0; y <= 128; y += cell) { g.beginPath(); g.moveTo(0, y); g.lineTo(128, y); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
+// The ball's own markings painted on a 2:1 sphere map: basketball seams (black), cricket seam (white
+// stitched band), tennis seam (the curved white line). The base colour is baked in so the ball reads
+// right even in shadow.
+function ballTexture(sport, C) {
+  const w = 256, h = 128, cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d');
+  g.fillStyle = hex6(C.ballColor); g.fillRect(0, 0, w, h); g.lineCap = 'round';
+  const wave = (amp, periods, phase, lw, col) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); for (let x = 0; x <= w; x += 3) { const y = h / 2 + amp * Math.sin(2 * Math.PI * periods * x / w + phase); x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); };
+  if (sport === 'basketball') {
+    g.strokeStyle = '#140c06'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke(); // equator
+    for (const u of [0.25, 0.75]) { g.beginPath(); g.moveTo(u * w, 0); g.lineTo(u * w, h); g.stroke(); } // verticals
+    wave(h * 0.3, 1, 0, 4, '#140c06'); wave(h * 0.3, 1, Math.PI, 4, '#140c06'); // the two curved seams
+  } else if (sport === 'cricket') {
+    g.strokeStyle = '#f2efe6'; g.lineWidth = 6; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke(); // seam
+    g.strokeStyle = '#cfcabd'; g.lineWidth = 2; for (let x = 5; x < w; x += 9) { g.beginPath(); g.moveTo(x, h / 2 - 7); g.lineTo(x, h / 2 + 7); g.stroke(); } // stitches
+  } else { wave(h * 0.3, 2, Math.PI / 2, 5, '#f4ffe0'); } // tennis curved seam
+  return cv;
+}
+
 function buildProps(scene, C, sport) {
   const white = new THREE.MeshLambertMaterial({ color: 0xffffff }), HL = C.L / 2, HW = C.W / 2;
   if (sport === 'tennis') {
-    const netMat = new THREE.MeshLambertMaterial({ color: 0xf2f2f2, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+    const netTex = netTexture('rgba(10,12,16,0.92)', 9); netTex.repeat.set((C.W + 1.4) / 0.9, 0.85);
+    const netMat = new THREE.MeshBasicMaterial({ map: netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false });
     const net = new THREE.Mesh(new THREE.PlaneGeometry(C.W + 1.4, 1.07), netMat); net.rotation.y = Math.PI / 2; net.position.set(0, 0.53, 0); scene.add(net);
-    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, C.W + 1.4), white); tape.position.set(0, 1.07, 0); scene.add(tape);
+    const tape = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, C.W + 1.4), white); tape.position.set(0, 1.04, 0); scene.add(tape);
     for (const s of [-1, 1]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.07, 8), white); post.position.set(0, 0.53, s * (HW + 0.7)); scene.add(post); }
   } else if (sport === 'basketball') {
     for (const s of [-1, 1]) { const g = new THREE.Group(); const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.05, 8), white); pole.position.y = 1.52; g.add(pole);
       const board = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.05), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide })); board.rotation.y = Math.PI / 2; board.position.set(-s * 0.4, 3.0, 0); g.add(board);
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.03, 8, 20), new THREE.MeshLambertMaterial({ color: 0xe8742a })); rim.rotation.x = -Math.PI / 2; rim.position.set(-s * 0.6, 2.75, 0); g.add(rim);
+      const rimR = 0.34, rimY = 2.75, rimX = -s * 0.65;
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(rimR, 0.035, 10, 24), new THREE.MeshLambertMaterial({ color: 0xe8742a })); rim.rotation.x = -Math.PI / 2; rim.position.set(rimX, rimY, 0); g.add(rim);
+      const netMat = new THREE.MeshBasicMaterial({ color: 0xf2f2f2, wireframe: true, transparent: true, opacity: 0.8, depthWrite: false });
+      const net = new THREE.Mesh(new THREE.CylinderGeometry(rimR * 0.95, rimR * 0.42, 0.5, 12, 4, true), netMat); net.position.set(rimX, rimY - 0.25, 0); g.add(net);
       g.position.x = s * HL; scene.add(g); }
   } else if (sport === 'cricket') {
-    for (const s of [-1, 1]) { const g = new THREE.Group(); for (const dz of [-0.1, 0, 0.1]) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.71, 6), white); st.position.set(0, 0.355, dz); g.add(st); } g.position.set(s * 10, 0, 0); scene.add(g); }
-    const rope = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 8, 72), new THREE.MeshLambertMaterial({ color: 0xffffff })); rope.rotation.x = -Math.PI / 2; rope.scale.set(HL, HW, 1); rope.position.y = 0.05; scene.add(rope);
+    // two wickets (three stumps + bails) at each end of the central pitch
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0xead9a0 });
+    for (const s of [-1, 1]) { const g = new THREE.Group();
+      for (const dz of [-0.11, 0, 0.11]) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.71, 8), woodMat); st.position.set(0, 0.355, dz); g.add(st); }
+      for (const dz of [-0.055, 0.055]) { const bail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 6), woodMat); bail.rotation.x = Math.PI / 2; bail.position.set(0, 0.73, dz); g.add(bail); }
+      g.position.set(s * 10, 0, 0); scene.add(g); }
+    // thin elliptical boundary rope, just inside the grass edge
+    const ec = new THREE.EllipseCurve(0, 0, HL * 0.97, HW * 0.97, 0, Math.PI * 2);
+    const path = new THREE.CatmullRomCurve3(ec.getPoints(120).map((p) => new THREE.Vector3(p.x, 0, p.y)), true);
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(path, 160, 0.16, 7, true), new THREE.MeshLambertMaterial({ color: 0xffffff })); rope.position.y = 0.08; scene.add(rope);
   }
 }
 
@@ -153,7 +199,9 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
   }
 
   const BR = C.ballR;
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 28, 20), new THREE.MeshStandardMaterial({ color: C.ballColor, emissive: C.ballColor, emissiveIntensity: 0.3, roughness: 0.5 }));
+  const ballTex = new THREE.CanvasTexture(ballTexture(sport, C)); ballTex.colorSpace = THREE.SRGBColorSpace; ballTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BR, 32, 24), new THREE.MeshStandardMaterial({ map: ballTex, emissive: C.ballColor, emissiveIntensity: 0.14, roughness: 0.55 }));
+  ball.rotation.y = -0.5; // turn the seam toward the camera
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(BR * 1.2, 20), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.32, depthWrite: false })); shadow.rotation.x = -Math.PI / 2;
   scene.add(ball, shadow);
   const trailMat = new THREE.MeshBasicMaterial({ color: C.ballColor, transparent: true, depthWrite: false, toneMapped: false }); let trail = null;
