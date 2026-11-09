@@ -1231,17 +1231,33 @@ function adminSportScore(st) {
         <td><span class="pill ${c.ok ? 'won' : 'lost'}">${c.ok ? 'OK' : `Erro ${c.status || ''}`}</span></td><td>${c.ms} ms</td></tr>`).join('')}</tbody></table></div>` : ''}
   </div>`;
 }
+/** Ids a match's detail may carry for the tracker (id, match_id, tracker_id… at any depth), first ones first. */
+function ssIds(data) {
+  const out = [];
+  const walk = (o, depth) => {
+    if (!o || typeof o !== 'object' || depth > 4 || out.length >= 6) return;
+    for (const [k, v] of Object.entries(o)) {
+      if (/^(id|match_id|matchId|event_id|eventId|tracker_id|trackerId|external_id|thesports_id)$/.test(k) && (typeof v === 'number' || (typeof v === 'string' && /^[\w-]{1,40}$/.test(v)))) {
+        if (!out.some((x) => x.id === String(v))) out.push({ key: k, id: String(v) });
+      } else if (typeof v === 'object') walk(v, depth + 1);
+    }
+  };
+  walk(data, 0);
+  return out;
+}
 /** The matches of a list answer, whatever its shape: id, slug and a readable label of each. */
 function ssMatches(data) {
   const list = Array.isArray(data) ? data : data?.matches || data?.data || data?.results || [];
   const name = (t) => (typeof t === 'string' ? t : t?.name || t?.short_name || t?.title || '');
   return (Array.isArray(list) ? list : []).map((m) => ({
-    id: m.id ?? m.match_id ?? m.event_id ?? '', slug: m.slug || m.match_slug || '',
+    // SportScore's list has no id nor slug: only url "/tennis/match/<slug>/" (the tracker id comes with the detail).
+    id: m.id ?? m.match_id ?? m.event_id ?? '', slug: m.slug || m.match_slug || /\/match\/([^/?#]+)/.exec(m.url || '')?.[1] || '',
     label: m.name || m.title || [name(m.home_team || m.home || m.homeTeam), name(m.away_team || m.away || m.awayTeam)].filter(Boolean).join(' vs ') || '—',
-    status: m.status?.description || m.status?.type || m.status || m.state || '',
+    status: [m.status === 'live' ? '🔴 ao vivo' : '', m.status_text || m.status?.description || m.status?.type || (m.status !== 'live' ? m.status : '') || m.state || ''].filter(Boolean).join(' · '),
+    live: m.status === 'live' || m.status?.type === 'inprogress',
     score: m.score ? (typeof m.score === 'string' ? m.score : JSON.stringify(m.score)) : [m.home_score ?? m.homeScore?.current, m.away_score ?? m.awayScore?.current].filter((x) => x != null).join(' - '),
     league: name(m.competition || m.tournament || m.league),
-  }));
+  })).sort((a, b) => b.live - a.live); // the games in play first
 }
 function ssRaw(r, title) {
   ssLast = r.raw || null;
@@ -1844,7 +1860,10 @@ document.addEventListener('click', async (e) => {
     $('#ssOut').innerHTML = '<div class="loading">A pedir à SportScore…</div>';
     try {
       const r = await api(`/api/admin/sportscore/${tracker ? 'tracker' : 'match'}?sport=${sport}&${tracker ? 'id' : 'slug'}=${encodeURIComponent(ref)}`);
-      $('#ssOut').innerHTML = ssRaw(r, `${tracker ? 'Tracker' : 'Detalhe'} · ${sport} · ${ref}`);
+      // The detail names the ids the tracker may want: one button each.
+      const ids = !tracker && r.ok ? ssIds(JSON.parse(r.raw)) : [];
+      $('#ssOut').innerHTML = (ids.length ? `<div class="form-actions"><span class="muted">Ids no detalhe:</span>${ids.map((x) => `<button class="ghost-btn btn-sm" data-action="ss-tracker" data-sport="${sport}" data-id="${esc(x.id)}">Tracker com ${esc(x.key)} = ${esc(x.id)}</button>`).join('')}</div>` : '')
+        + ssRaw(r, `${tracker ? 'Tracker' : 'Detalhe'} · ${sport} · ${ref}`);
       $('#ssOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) { $('#ssOut').innerHTML = `<div class="form-error">${esc(err.message)}</div>`; }
     return;
