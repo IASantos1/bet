@@ -1,4 +1,5 @@
 import { createPaint } from './skin-paint.js';
+import { createCourt } from './court3d.js';
 // Bet62 administration — a separate page at /admin with its own login. Talks to /api/admin/*.
 
 const SPORT_META = {
@@ -816,11 +817,12 @@ function backupsPanel(b) {
     ${rows ? `<div class="table-wrap"><table><thead><tr><th>Cópia</th><th>Feita</th><th class="num">Tamanho</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Ainda não há cópias.</p>'}</div>`;
 }
 
-let liveTimer = null;
+let liveTimer = null, tsCourt = null, tsCourtId = null;
 async function loadTab() {
   const main = $('#adminMain');
   if (!main) return;
   clearInterval(liveTimer); liveTimer = null;
+  if (tsCourt) { tsCourt.stop(); tsCourt = null; tsCourtId = null; }
   try {
     const s = await api('/api/admin/stats');
     state.stats = s;
@@ -836,7 +838,10 @@ async function loadTab() {
       // While the tab is open, refresh the live table every 2 s.
       liveTimer = setInterval(async () => {
         if (state.tab !== 'thesports') { clearInterval(liveTimer); return; }
-        try { const d = await api('/api/admin/thesports'); const box = $('#tsLive'); if (box) box.innerHTML = theSportsLive(d); } catch { /* keep last */ }
+        try {
+          const d = await api('/api/admin/thesports'); const box = $('#tsLive'); if (box) box.innerHTML = theSportsLive(d);
+          if (tsCourt && tsCourtId) { const m = (d.games || []).find((x) => x.id === tsCourtId); if (m) { if (m.ball) tsCourt.setBall(m.ball); tsCourt.setScore(m.score || ''); } }
+        } catch { /* keep last */ }
       }, 2000);
     }
     else if (tab === 'casino') {
@@ -1291,16 +1296,24 @@ function adminTheSports(d) {
       <button class="ghost-btn btn-sm" data-action="ts-clear">Limpar</button>
       ${d.lastError ? `<span class="pill lost">${esc(d.lastError)}</span>` : ''}
     </div>
+    <div id="tsCourtWrap" class="ts-court-wrap hidden">
+      <div class="ts-court-head"><span id="tsCourtName" class="muted"></span>
+        <label class="field adm-inline">Campo <select id="tsCourtSport">
+          <option value="tennis">Ténis</option><option value="basketball">Basquetebol</option><option value="cricket">Críquete</option></select></label>
+        <button class="ghost-btn btn-sm" data-action="ts-court-close">Fechar campo</button></div>
+      <canvas id="tsCourt" width="640" height="360" class="ts-court"></canvas>
+    </div>
     <div id="tsLive">${theSportsLive(d)}</div>
   </div>`;
 }
 function theSportsLive(d) {
   const g = d.games || [];
   return `<p class="muted">Mensagens recebidas: <b>${d.messages || 0}</b> · jogos vistos: <b>${d.matches || 0}</b></p>
-    ${g.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo (id)</th><th>Resultado</th><th>Bola X</th><th>Bola Y</th><th class="num">Stats</th><th class="num">Jog.</th><th>Atualizado</th></tr></thead><tbody>
+    ${g.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo (id)</th><th>Resultado</th><th>Bola X</th><th>Bola Y</th><th class="num">Stats</th><th class="num">Jog.</th><th>Atualizado</th><th></th></tr></thead><tbody>
       ${g.map((m) => `<tr><td><code>${esc(m.id)}</code></td><td>${esc(m.score || '—')}</td>
         <td>${m.ball ? m.ball.x.toFixed(2) : '—'}</td><td>${m.ball ? m.ball.y.toFixed(2) : '—'}</td>
-        <td class="num">${m.stats}</td><td class="num">${m.players}</td><td>${esc(fmtDateTime(m.lastAt))}</td></tr>`).join('')}
+        <td class="num">${m.stats}</td><td class="num">${m.players}</td><td>${esc(fmtDateTime(m.lastAt))}</td>
+        <td>${m.ball ? `<button class="ghost-btn btn-sm" data-action="ts-court" data-id="${esc(m.id)}">Ver campo</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Ainda sem jogos. Carregue em "Ligar e ouvir" (precisa de jogos ao vivo no feed).</p>'}`;
 }
 
@@ -1875,6 +1888,15 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
+  if (action === 'ts-court') {
+    tsCourtId = actionEl.dataset.id;
+    $('#tsCourtWrap')?.classList.remove('hidden');
+    $('#tsCourtName').textContent = `Jogo ${tsCourtId}`;
+    const cv = $('#tsCourt');
+    if (cv) { if (!tsCourt) tsCourt = createCourt(cv); tsCourt.setSport($('#tsCourtSport')?.value || 'tennis'); tsCourt.start(); cv.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    return;
+  }
+  if (action === 'ts-court-close') { tsCourt?.stop(); tsCourtId = null; $('#tsCourtWrap')?.classList.add('hidden'); return; }
   if (action === 'ts-listen' || action === 'ts-stop' || action === 'ts-clear') {
     try {
       if (action === 'ts-clear') { await api('/api/admin/thesports/clear', { method: 'POST', body: {} }); }
