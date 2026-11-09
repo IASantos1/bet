@@ -181,7 +181,7 @@ export function createApp(db, {
   const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: registrations });
 
   // Live 3D court (tennis/basketball/cricket): streams the TheSports ball to the match page.
-  const theSportsCourt = createTheSportsCourt({ thesportsLive, log: (msg) => console.warn(`[court] ${msg}`) });
+  const theSportsCourt = createTheSportsCourt({ thesportsLive, sportscore, log: (msg) => console.warn(`[court] ${msg}`) });
 
   app.use((req, res, next) => {
     res.set({
