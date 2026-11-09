@@ -454,6 +454,8 @@ function countryFlag(country) {
 
 /** Club badge or player photo; for players, the country flag when there is no photo. */
 function sideBadge(e, side, size = '') {
+  // A national team: its country's flag (from the server), never a club badge or a shirt.
+  if (e[`${side}Flag`]) return teamBadge(e[`${side}Flag`], e[side], `${size} flag`.trim());
   const flag = flagUrl(e[`${side}Country`]);
   const logo = e[`${side}Logo`];
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
@@ -523,7 +525,7 @@ function matchBanner(e) {
     : cut > 0 ? `<span class="mb-day">${esc(w.slice(0, cut))}</span><span class="mb-time">${esc(w.slice(cut + 1))}</span>` : `<span class="mb-time">${esc(w)}</span>`;
   return `<div class="mb-card"><article class="mb-banner">
     <a class="mb-head" href="#/jogo/${e.id}">${sportBadge(e.sport, 22)}${country ? countryFlag(country) : ''}<span>${esc(leagueShort(e.competition))}</span><strong class="brand-word small mb-brand">BET<span>62</span></strong></a>
-    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(tname(e, 'home'), e.homeKit, 'home', e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(tname(e, 'away'), e.awayKit, 'away', e.awayLogo || e.awayLogoAlt)}</span></a>
+    <a class="mb-shirts" href="#/jogo/${e.id}" aria-label="${esc(`${e.home} vs ${e.away}`)}"><span class="mb-kit home">${bannerShirt(tname(e, 'home'), e.homeKit, 'home', e.homeFlag || e.homeLogo || e.homeLogoAlt)}</span><span class="mb-kit away">${bannerShirt(tname(e, 'away'), e.awayKit, 'away', e.awayFlag || e.awayLogo || e.awayLogoAlt)}</span></a>
     <a class="mb-teams" href="#/jogo/${e.id}"><b title="${esc(e.home)}">${esc(tname(e, 'home'))}</b><span class="mb-when">${when}</span><b title="${esc(e.away)}">${esc(tname(e, 'away'))}</b></a>
   </article>
   ${betNow ? `<div class="mb-odds one"><a class="odds-state bet-now mb-betnow" href="#/jogo/${e.id}">Aposte já</a></div>` : `<div class="mb-odds">${sels.map((x, i) => {
