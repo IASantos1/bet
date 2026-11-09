@@ -763,10 +763,15 @@ export function createApp(db, {
     const c = getSetting(db, 'casino.cards', null) || {};
     const height = Math.round(Number(c.height));
     const cols = Math.round(Number(c.cols));
+    // Brightness, contrast and colour in % (100: the picture as it comes), sharpness 0–3 (0: off).
+    const pct = (v, lo, hi) => { const n = Math.round(Number(v)); return n >= lo && n <= hi ? n : 100; };
+    const sharp = Math.round(Number(c.sharp));
     return {
       height: height >= 100 && height <= 200 ? height : 133,
       fit: CARD_FITS.includes(c.fit) ? c.fit : 'fill',
       cols: cols >= 3 && cols <= 8 ? cols : 0,
+      bright: pct(c.bright, 50, 150), contrast: pct(c.contrast, 50, 150), sat: pct(c.sat, 50, 200),
+      sharp: sharp >= 0 && sharp <= 3 ? sharp : 0,
     };
   };
 
@@ -2860,7 +2865,10 @@ export function createApp(db, {
   admin.get('/casino/cards', (_req, res) => res.json(casinoCards()));
   admin.post('/casino/cards', (req, res) => {
     const b = req.body || {};
-    setSetting(db, 'casino.cards', { height: Number(b.height), fit: b.fit, cols: Number(b.cols) });
+    setSetting(db, 'casino.cards', {
+      height: Number(b.height), fit: b.fit, cols: Number(b.cols),
+      bright: Number(b.bright), contrast: Number(b.contrast), sat: Number(b.sat), sharp: Number(b.sharp),
+    });
     res.json(casinoCards());
   });
 

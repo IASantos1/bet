@@ -1827,7 +1827,7 @@ let skinTimer = null;
  * A game's cover filling its card edge to edge (object-fit: fill): its whole width always shows (the
  * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
  */
-/** The casino cards' size chosen in the admin: height (% of the width), cover fit, games per row. */
+/** The casino cards chosen in the admin: height (% of the width), cover fit, games per row, picture tuning. */
 function applyCasinoCards(c) {
   const root = document.documentElement;
   if (!c) return;
@@ -1835,6 +1835,13 @@ function applyCasinoCards(c) {
   if (c.fit && c.fit !== 'fill') root.dataset.cardFit = c.fit; else delete root.dataset.cardFit;
   root.classList.toggle('card-cols', c.cols > 0);
   if (c.cols > 0) root.style.setProperty('--card-cols', String(c.cols));
+  // Brightness, contrast, colour (100 = as it comes) and sharpness (0 = off): no filter at all when untouched.
+  const tuned = (c.bright ?? 100) !== 100 || (c.contrast ?? 100) !== 100 || (c.sat ?? 100) !== 100 || c.sharp > 0;
+  root.classList.toggle('card-tune', tuned);
+  root.style.setProperty('--card-b', String((c.bright ?? 100) / 100));
+  root.style.setProperty('--card-c', String((c.contrast ?? 100) / 100));
+  root.style.setProperty('--card-s', String((c.sat ?? 100) / 100));
+  if (c.sharp > 0) root.dataset.cardSharp = String(c.sharp); else delete root.dataset.cardSharp;
 }
 const gameArt = (src) => `<img class="game-img" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
 const skinSide = (s) => (matchMedia('(orientation: portrait)').matches ? s?.port : s?.land);

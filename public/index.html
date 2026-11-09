@@ -19,6 +19,12 @@
   <script type="module" src="app.js"></script>
 </head>
 <body>
+<svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <!-- Sharpness for the casino covers (admin, Casino tab → Tamanho dos jogos): light, medium, strong. -->
+  <filter id="gsharp1" color-interpolation-filters="sRGB"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -0.25 0 -0.25 2 -0.25 0 -0.25 0"/></filter>
+  <filter id="gsharp2" color-interpolation-filters="sRGB"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="0 -0.5 0 -0.5 3 -0.5 0 -0.5 0"/></filter>
+  <filter id="gsharp3" color-interpolation-filters="sRGB"><feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="-0.25 -0.5 -0.25 -0.5 4 -0.5 -0.25 -0.5 -0.25"/></filter>
+</defs></svg>
 <!-- Intro (1.4 s, once per visit; a tap or the button skips it) -->
 <div class="splash" id="splash" role="region" aria-label="Apresentação da Bet62">
   <div class="splash-brand" aria-hidden="true"><span class="splash-bet">BET</span><span class="splash-62">62</span></div>

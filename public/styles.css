@@ -1307,6 +1307,12 @@ html.light .bt-sum b.green, html.light .bt-profit.green { color: #16823a; } html
    (Casino tab: --card-h, data-card-fit, --card-cols, set from /api/config in app.js). */
 .game-card .game-img { object-fit: fill; z-index: 1; }
 html[data-card-fit="cover"] .game-card .game-img { object-fit: cover; }
+/* Brightness, contrast, colour and sharpness of the covers (admin; the #gsharpN filters are in index.html). */
+.svg-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+html.card-tune .game-card .game-img { filter: brightness(var(--card-b, 1)) contrast(var(--card-c, 1)) saturate(var(--card-s, 1)); }
+html.card-tune[data-card-sharp="1"] .game-card .game-img { filter: url(#gsharp1) brightness(var(--card-b, 1)) contrast(var(--card-c, 1)) saturate(var(--card-s, 1)); }
+html.card-tune[data-card-sharp="2"] .game-card .game-img { filter: url(#gsharp2) brightness(var(--card-b, 1)) contrast(var(--card-c, 1)) saturate(var(--card-s, 1)); }
+html.card-tune[data-card-sharp="3"] .game-card .game-img { filter: url(#gsharp3) brightness(var(--card-b, 1)) contrast(var(--card-c, 1)) saturate(var(--card-s, 1)); }
 html[data-card-fit="contain"] .game-card .game-img { object-fit: contain; }
 @media (min-width: 1001px) {
   html.card-cols .game-grid { grid-template-columns: repeat(var(--card-cols), minmax(0, 1fr)); }
