@@ -817,7 +817,7 @@ function backupsPanel(b) {
     ${rows ? `<div class="table-wrap"><table><thead><tr><th>Cópia</th><th>Feita</th><th class="num">Tamanho</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted">Ainda não há cópias.</p>'}</div>`;
 }
 
-let liveTimer = null, tsCourt = null, tsCourtId = null, tsCourtSport = 'tennis', lastTheSports = null;
+let liveTimer = null, tsCourt = null, tsCourtId = null, tsCourtSport = 'tennis', lastTheSports = null, tsCourtTimer = null;
 // (Re)build the 3D court for the chosen sport and seed it with the match's latest ball.
 function buildTsCourt() {
   const host = $('#tsCourt');
@@ -827,12 +827,26 @@ function buildTsCourt() {
   if (!tsCourt) { host.innerHTML = '<p class="muted ts-court-msg">O 3D precisa de WebGL (não disponível neste navegador).</p>'; return; }
   const m = (lastTheSports?.games || []).find((x) => x.id === tsCourtId);
   if (m?.ball) tsCourt.setBall(m.ball);
+  startTsCourtFeed();
 }
+// Feed the open court faster than the 2 s table refresh, so the ball glides like on the live site.
+function startTsCourtFeed() {
+  clearInterval(tsCourtTimer);
+  tsCourtTimer = setInterval(async () => {
+    if (!tsCourt || !tsCourtId) return;
+    try {
+      const d = await api('/api/admin/thesports'); lastTheSports = d;
+      const m = (d.games || []).find((x) => x.id === tsCourtId);
+      if (m?.ball) tsCourt.setBall(m.ball);
+    } catch { /* keep last */ }
+  }, 700);
+}
+function stopTsCourtFeed() { clearInterval(tsCourtTimer); tsCourtTimer = null; }
 async function loadTab() {
   const main = $('#adminMain');
   if (!main) return;
   clearInterval(liveTimer); liveTimer = null;
-  if (tsCourt) { tsCourt.destroy(); tsCourt = null; tsCourtId = null; }
+  if (tsCourt) { stopTsCourtFeed(); tsCourt.destroy(); tsCourt = null; tsCourtId = null; }
   try {
     const s = await api('/api/admin/stats');
     state.stats = s;
@@ -1931,7 +1945,7 @@ document.addEventListener('click', async (e) => {
     $('#tsCourtWrap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
-  if (action === 'ts-court-close') { tsCourt?.destroy(); tsCourt = null; tsCourtId = null; $('#tsCourtWrap')?.classList.add('hidden'); return; }
+  if (action === 'ts-court-close') { stopTsCourtFeed(); tsCourt?.destroy(); tsCourt = null; tsCourtId = null; $('#tsCourtWrap')?.classList.add('hidden'); return; }
   if (action === 'ts-listen' || action === 'ts-stop' || action === 'ts-clear') {
     try {
       if (action === 'ts-clear') { await api('/api/admin/thesports/clear', { method: 'POST', body: {} }); }

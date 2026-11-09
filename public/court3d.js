@@ -8,6 +8,7 @@
 import * as THREE from './vendor/three-0.169.0.module.min.js';
 
 const seeded = (s) => () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2); // smooth start and stop
 const hex6 = (n) => `#${(n >>> 0).toString(16).padStart(6, '0').slice(-6)}`;
 function shade(hex, amt) { let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255; const f = (v) => Math.max(0, Math.min(255, Math.round(v + 255 * amt))); return (f(r) << 16) | (f(g) << 8) | f(b); }
 
@@ -207,7 +208,11 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
   const trailMat = new THREE.MeshBasicMaterial({ color: C.ballColor, transparent: true, depthWrite: false, toneMapped: false }); let trail = null;
 
   const courtPoint = (nx, ny) => ({ x: (Math.max(0, Math.min(1, nx)) - 0.5) * C.L, z: (Math.max(0, Math.min(1, ny)) - 0.5) * C.W });
-  const pos = new THREE.Vector3(0, BR, 0); let cur = null, target = null, from = null, moveAt = 0, hidden = true, raf = 0, onScreen = true;
+  const pos = new THREE.Vector3(0, BR, 0), prevPos = new THREE.Vector3(0, BR, 0), rollAxis = new THREE.Vector3();
+  let cur = null, target = null, from = null, moveAt = 0, hidden = true, raf = 0, onScreen = true;
+  // The ball glides over the time until the next position (so it is always moving, like the football
+  // ball), not a fixed burst; lastSetAt tracks the feed's cadence to size that glide.
+  let glideMs = 700, lastSetAt = 0;
 
   function drawTrail() {
     if (trail) { scene.remove(trail); trail.geometry.dispose(); trail = null; }
@@ -216,8 +221,12 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
   }
   function frame() {
     raf = 0; const now = performance.now(); let busy = false;
-    if (target) { if (!cur) cur = target.clone(); else { const k = Math.min(1, (now - moveAt) / 650); cur.lerpVectors(from, target, k); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
-    const pulse = 1 + 0.12 * Math.sin(now / 200);
+    if (target) { if (!cur) cur = target.clone(); else { const k = Math.min(1, (now - moveAt) / glideMs); cur.lerpVectors(from, target, easeInOut(k)); busy = k < 1; } pos.set(cur.x, BR, cur.z); }
+    // Roll the ball as it travels: it spins about the axis across its motion, by distance / radius.
+    const dx = pos.x - prevPos.x, dz = pos.z - prevPos.z, dist = Math.hypot(dx, dz);
+    if (dist > 1e-4) { rollAxis.set(-dz, 0, dx).normalize(); ball.rotateOnWorldAxis(rollAxis, dist / BR); }
+    prevPos.copy(pos);
+    const pulse = 1 + 0.08 * Math.sin(now / 240);
     ball.visible = shadow.visible = !hidden; ball.position.copy(pos); ball.scale.setScalar(pulse);
     shadow.position.set(pos.x, 0.04, pos.z); shadow.scale.setScalar(pulse);
     drawTrail(); renderer.render(scene, camera);
@@ -235,8 +244,11 @@ export function createCourt3D(host, { sport = 'tennis', quality = 'high', onFram
     setBall(b) {
       if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y)) { hidden = true; schedule(); return; }
       hidden = false; const p = courtPoint(b.x, b.y), to = new THREE.Vector3(p.x, BR, p.z);
-      if (target && to.distanceTo(target) < 0.15) { schedule(); return; }
-      from = (cur || to).clone(); target = to; moveAt = performance.now(); schedule();
+      if (target && to.distanceTo(target) < 0.08) { schedule(); return; }
+      const now = performance.now();
+      // Glide over the gap since the last position, so the ball keeps rolling instead of hopping.
+      glideMs = lastSetAt ? Math.max(260, Math.min(1600, now - lastSetAt)) : 700; lastSetAt = now;
+      from = (cur || to).clone(); target = to; moveAt = now; schedule();
     },
     destroy() {
       if (raf) cancelAnimationFrame(raf); raf = 0; onScreen = false; ro?.disconnect(); io?.disconnect(); document.removeEventListener('visibilitychange', onVis);
