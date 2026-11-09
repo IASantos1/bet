@@ -1357,12 +1357,13 @@ function theSportsCourtDiag(c) {
   const rows = c.matches || [];
   return `<div class="panel"><div class="section-head"><h3>Campo 3D no site (ao vivo)</h3>
       <span class="pill ${c.watching ? 'won' : ''}">${c.watching} a seguir · ${c.viewers} a ver</span></div>
+    <p class="muted">Abra um jogo ao vivo de ténis/basquete/críquete no site (separador Tracker); os registos ficam aqui <b>uns minutos depois de fechar</b>, para poder vir ver o que aconteceu.</p>
     ${rows.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Tracker</th><th>Estado</th><th class="num">Msgs</th><th class="num">Bolas</th><th>Última bola</th></tr></thead><tbody>
-      ${rows.map((m) => `<tr><td>${esc(m.home || '?')} vs ${esc(m.away || '?')} <small class="muted">#${esc(m.eventId)} · ${esc(m.sport || '')}</small></td>
+      ${rows.map((m) => `<tr><td>${esc(m.home || '?')} vs ${esc(m.away || '?')} <small class="muted">#${esc(m.eventId)} · ${esc(m.sport || '')} · ${m.active ? '🔴 a ver' : m.endedAt ? `fechado ${esc(fmtDateTime(m.endedAt))}` : ''}</small></td>
         <td>${m.trackerId ? `<code>${esc(m.trackerId)}</code>` : '<span class="pill lost">sem tracker</span>'}</td>
         <td>${m.trackerId ? (m.balls ? '<span class="pill won">bola a chegar</span>' : m.msgs ? 'a ouvir, sem posição' : 'a ligar…') : `<span class="muted">${esc(m.reason || '—')}</span>`}</td>
         <td class="num">${m.msgs}</td><td class="num">${m.balls}</td><td>${m.lastBallAt ? esc(fmtDateTime(m.lastBallAt)) : '—'}</td></tr>`).join('')}
-    </tbody></table></div>` : '<p class="muted">Ninguém a ver um campo ao vivo agora. Abra um jogo ao vivo de ténis/basquete/críquete no site, no separador Tracker, e aparece aqui.</p>'}</div>`;
+    </tbody></table></div>` : '<p class="muted">Ainda sem registos. Abra um jogo ao vivo no site e volte aqui.</p>'}</div>`;
 }
 
 function adminFeed(f) {
