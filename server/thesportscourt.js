@@ -1,20 +1,20 @@
 // Streams the live ball of a tennis / basketball / cricket match to the browser, to drive the 3D court
-// (public/court3d.js). It links the site match to its TheSports tracker (through SportScore, see
-// thesportslink.js), tells the live manager (thesportslive.js) to watch that tracker, and publishes
-// { ball, score } on a bus keyed by the SITE event id — the same { snapshot, bus 'e:<id>', follow }
-// shape the match-page SSE already speaks. The tracker is resolved once per match and memoised; the
-// manager is watched only while at least one viewer is connected, and unwatched when the last leaves.
-// Nothing here reaches the network directly (the reads go through the injected clients).
+// (public/court3d.js). It links the SITE match to its TheSports feed game WITHOUT SportScore: while a
+// court is open it holds the whole feed flowing (thesportslive.hold) and matches the fixture to a feed
+// game by the players' names (thesportsfeedlink.matchFeedGame) — for tennis these are the two players,
+// so the link is exact. It then publishes { ball, score } on a bus keyed by the SITE event id — the
+// same { snapshot, bus 'e:<id>', follow } shape the match-page SSE already speaks. The match is kept
+// only while at least one viewer is connected. Nothing here reaches the network directly.
 
 import { EventEmitter } from 'node:events';
-import { resolveTracker, SS_SPORT } from './thesportslink.js';
+import { matchFeedGame } from './thesportsfeedlink.js';
 
 const samePos = (a, b) => (a?.x ?? null) === (b?.x ?? null) && (a?.y ?? null) === (b?.y ?? null);
 
-export function createTheSportsCourt({ thesportsLive = null, sportscore = null, pollMs = 400, log = () => {} } = {}) {
+export function createTheSportsCourt({ thesportsLive = null, pollMs = 400, log = () => {} } = {}) {
   const bus = new EventEmitter(); bus.setMaxListeners(0);
-  const byEvent = new Map(); // eventId -> { trackerId, refs, timer, last, resolving, ev }
-  const on = () => !!(thesportsLive?.enabled && sportscore?.enabled);
+  const byEvent = new Map(); // eventId -> { trackerId, refs, timer, last, ev, reason, balls, lastBallAt, msgs }
+  const on = () => !!(thesportsLive?.enabled);
 
   // Only the sports that have a 3D court (football keeps its own pitch).
   const hasCourt = (sport) => sport === 'tenis' || sport === 'basquetebol' || sport === 'criquete';
@@ -25,35 +25,31 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     bus.emit(`e:${eventId}`, { type: 'court', data: s.last });
   }
 
+  // Each tick: if not yet linked, try to match the fixture to a feed game by names; then stream its ball.
   function tick(eventId, s) {
-    const m = s.trackerId && thesportsLive.get(s.trackerId);
-    if (!m) { s.seen = false; return; }
-    s.seen = true; s.msgs = m.msgs || 0;
+    if (!s.trackerId) {
+      const hit = matchFeedGame(thesportsLive.games(), s.ev.home, s.ev.away);
+      if (hit) { s.trackerId = hit.id; s.reason = 'ok'; log(`court: ${s.ev.home} vs ${s.ev.away} → feed ${hit.id}`); }
+      else { s.reason = 'à procura no feed (sem jogo com estes nomes)'; return; }
+    }
+    const m = thesportsLive.get(s.trackerId);
+    if (!m) return;
+    s.msgs = m.msgs || 0;
     const ball = m.ball || null, score = m.score || null;
     if (!samePos(ball, s.last.ball) || score !== s.last.score) emit(eventId, s, ball, score);
   }
 
-  async function start(eventId, s) {
-    if (!s.trackerId && !s.resolving) {
-      s.resolving = true;
-      try {
-        const r = await resolveTracker(sportscore, { sport: s.ev.sport, home: s.ev.home, away: s.ev.away });
-        if (r?.found) { s.trackerId = r.trackerId; s.reason = 'ok'; }
-        else { s.reason = r?.reason || '—'; log(`court: sem tracker para ${s.ev.home} vs ${s.ev.away} (${s.reason})`); }
-      } catch (err) { s.reason = err.message; log(`court resolve: ${err.message}`); }
-      s.resolving = false;
-    }
-    if (!s.trackerId || s.refs <= 0 || !byEvent.has(eventId)) return;
-    thesportsLive.watch(s.trackerId);
+  function start(eventId, s) {
+    thesportsLive.hold(); // keep the whole feed flowing so we can match by names
     clearInterval(s.timer);
     s.timer = setInterval(() => tick(eventId, s), pollMs);
     if (s.timer.unref) s.timer.unref();
-    tick(eventId, s); // send at once if there is already a position
+    tick(eventId, s);
   }
 
   function stop(eventId, s) {
     clearInterval(s.timer); s.timer = null;
-    if (s.trackerId) thesportsLive.unwatch(s.trackerId);
+    thesportsLive.release();
     byEvent.delete(eventId);
   }
 
@@ -70,15 +66,15 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     follow(eventId, ev) {
       if (!on() || !hasCourt(ev?.sport)) return () => {};
       let s = byEvent.get(eventId);
-      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, resolving: false, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, seen: false }; byEvent.set(eventId, s); }
+      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0 }; byEvent.set(eventId, s); }
       s.ev = ev; s.refs += 1;
-      if (s.refs === 1) start(eventId, s).catch((err) => log(`court start: ${err.message}`));
+      if (s.refs === 1) start(eventId, s);
       let done = false;
       return () => { if (done) return; done = true; const cur = byEvent.get(eventId); if (!cur) return; cur.refs -= 1; if (cur.refs <= 0) stop(eventId, cur); };
     },
     status: () => ({
       enabled: on(), watching: [...byEvent.values()].filter((s) => s.trackerId).length, viewers: [...byEvent.values()].reduce((n, s) => n + s.refs, 0),
-      // Per followed match, for the admin: did the tracker resolve, and are balls flowing?
+      // Per followed match, for the admin: did we match a feed game, and are balls flowing?
       matches: [...byEvent.entries()].map(([eventId, s]) => ({
         eventId, home: s.ev?.home || null, away: s.ev?.away || null, sport: s.ev?.sport || null,
         trackerId: s.trackerId || null, reason: s.reason, viewers: s.refs, msgs: s.msgs || 0, balls: s.balls || 0,
@@ -88,5 +84,3 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     close() { for (const [id, s] of [...byEvent]) stop(id, s); },
   };
 }
-
-export { SS_SPORT };

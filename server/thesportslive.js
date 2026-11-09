@@ -15,7 +15,15 @@ export function createTheSportsLive({
   log = () => {}, WebSocketImpl = globalThis.WebSocket, mqttFactory = createMqttClient,
 } = {}) {
   const matches = new Map(); // id → { id, score, ball, stats, players, msgs, lastAt }
-  let client = null, listeningAll = false, autoStop = null;
+  let client = null, listeningAll = false, autoStop = null, holdCount = 0;
+
+  // The wildcard (every live match) is subscribed while the admin test is on OR while at least one
+  // court is held open (so we can match a site match to its feed game by the players' names).
+  function reconcileWildcard() {
+    if (!url) return;
+    const c = ensureClient(); if (!c) return;
+    if (holdCount > 0 || listeningAll) c.subscribe(WILDCARD); else c.unsubscribe(WILDCARD);
+  }
 
   function ensureClient() {
     if (client || !url) return client;
@@ -39,23 +47,32 @@ export function createTheSportsLive({
     /** Admin test: listen to every live match. Stops itself after `listenMinutes` so it is never left on. */
     listenAll() {
       if (!url) return false;
-      ensureClient().subscribe(WILDCARD);
-      listeningAll = true;
+      listeningAll = true; reconcileWildcard();
       clearTimeout(autoStop);
       autoStop = setTimeout(() => this.stopAll(), listenMinutes * 60_000);
       if (autoStop.unref) autoStop.unref();
       return true;
     },
-    stopAll() { if (client) client.unsubscribe(WILDCARD); listeningAll = false; clearTimeout(autoStop); },
+    stopAll() { listeningAll = false; clearTimeout(autoStop); reconcileWildcard(); },
+    /** Keep the whole feed flowing while a court is open (ref-counted); release() when it closes. */
+    hold() { holdCount += 1; reconcileWildcard(); },
+    release() { holdCount = Math.max(0, holdCount - 1); reconcileWildcard(); },
     /** Follow one match by its tracker id (what the SportScore match detail carries). */
     watch(trackerId) { const t = trackerTopic(trackerId); if (t) ensureClient()?.subscribe(t); return !!t; },
     unwatch(trackerId) { const t = trackerTopic(trackerId); if (t && client) client.unsubscribe(t); },
     /** The latest decoded state of one match, or null. */
     get(trackerId) { return matches.get(String(trackerId)) || null; },
+    /** Every live game seen, with its decoded lineup names — for matching a site fixture to its feed game. */
+    games() {
+      return [...matches.values()].map((m) => ({
+        id: m.id, score: m.score || null, ball: m.ball || null,
+        players: (m.players || []).map((p) => p && p.name).filter(Boolean), msgs: m.msgs, lastAt: m.lastAt,
+      }));
+    },
     clear() { matches.clear(); },
     status() {
       const c = client ? client.status() : { connected: false, messages: 0, lastError: null };
-      return { enabled: !!url, listeningAll, connected: c.connected, messages: c.messages, lastError: c.lastError, matches: matches.size };
+      return { enabled: !!url, listeningAll, held: holdCount, connected: c.connected, messages: c.messages, lastError: c.lastError, matches: matches.size };
     },
     /** Matches seen, most recently updated first, for the admin table. */
     snapshot(limit = 120) {

@@ -4,103 +4,79 @@ import { createTheSportsCourt } from '../server/thesportscourt.js';
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// A fake live manager (thesportslive.js) and SportScore client.
-function fakes({ ball = { x: 0.4, y: 0.6 }, score = '1-0', resolve = true } = {}) {
-  const watched = new Set();
+// A fake live manager (thesportslive.js): the feed holds games with lineup names and a ball.
+function fakes({ ball = { x: 0.4, y: 0.6 }, score = '1-0', present = true } = {}) {
+  const st = { held: 0 };
+  const game = { id: 'trk123abc', score, ball, players: ['Ann', 'Bea'], msgs: 5, lastAt: '2026-11-09T20:01:00Z' };
   const thesportsLive = {
     enabled: true,
-    watch: (id) => watched.add(id),
-    unwatch: (id) => watched.delete(id),
-    get: (id) => (watched.has(id) ? { id, ball, score } : null),
+    hold: () => { st.held += 1; },
+    release: () => { st.held = Math.max(0, st.held - 1); },
+    games: () => (present ? [{ id: 'other', players: ['Zoe', 'Yan'], msgs: 2 }, game] : [{ id: 'other', players: ['Zoe', 'Yan'], msgs: 2 }]),
+    get: (id) => (id === 'trk123abc' ? game : null),
   };
-  const sportscore = {
-    enabled: true,
-    matches: async () => ({ ok: true, data: { matches: resolve ? [{ url: '/tennis/match/a-vs-b/', home_team: { name: 'Ann' }, away_team: { name: 'Bea' }, status: 'live' }] : [] } }),
-    match: async () => ({ ok: true, data: { tracker: { id: 'trk123abc', sport: 'tennis' } } }),
-  };
-  return { thesportsLive, sportscore, watched };
+  return { thesportsLive, st };
 }
 
 const liveTennis = { id: 7, sport: 'tenis', status: 'live', home: 'Ann', away: 'Bea' };
 
 test('court: covers only live court sports while enabled', () => {
-  const { thesportsLive, sportscore } = fakes();
-  const court = createTheSportsCourt({ thesportsLive, sportscore });
+  const { thesportsLive } = fakes();
+  const court = createTheSportsCourt({ thesportsLive });
   assert.ok(court.covers(liveTennis));
   assert.ok(court.covers({ ...liveTennis, sport: 'basquetebol' }));
   assert.ok(!court.covers({ ...liveTennis, sport: 'futebol' })); // football keeps its own pitch
   assert.ok(!court.covers({ ...liveTennis, status: 'upcoming' })); // not live
 });
 
-test('court: disabled when a client is missing', () => {
-  assert.equal(createTheSportsCourt({ thesportsLive: { enabled: true }, sportscore: null }).enabled, false);
-  assert.equal(createTheSportsCourt({ thesportsLive: { enabled: false }, sportscore: { enabled: true } }).enabled, false);
+test('court: disabled when the feed manager is off', () => {
+  assert.equal(createTheSportsCourt({ thesportsLive: { enabled: false } }).enabled, false);
+  assert.equal(createTheSportsCourt({ thesportsLive: null }).enabled, false);
 });
 
-test('court: follow resolves the tracker, watches it and streams the ball', async () => {
-  const { thesportsLive, sportscore, watched } = fakes({ ball: { x: 0.2, y: 0.8 }, score: '2-1' });
-  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+test('court: follow holds the feed, links by names and streams the ball', async () => {
+  const { thesportsLive, st } = fakes({ ball: { x: 0.2, y: 0.8 }, score: '2-1' });
+  const court = createTheSportsCourt({ thesportsLive, pollMs: 10 });
   const got = [];
   court.bus.on('e:7', (m) => got.push(m));
   const unfollow = court.follow(7, liveTennis);
+  assert.equal(st.held, 1, 'holds the feed open while a court is watched');
   await delay(60);
-  assert.ok(watched.has('trk123abc'), 'watches the resolved tracker id');
   assert.ok(got.length >= 1, 'emits at least one court frame');
   assert.deepEqual(got[0], { type: 'court', data: { ball: { x: 0.2, y: 0.8 }, score: '2-1' } });
-  assert.deepEqual(court.snapshot(7), { ball: { x: 0.2, y: 0.8 }, score: '2-1' });
+  assert.equal(court.isFollowing(7), true);
+  assert.equal(court.status().matches[0].trackerId, 'trk123abc');
   unfollow();
-  assert.ok(!watched.has('trk123abc'), 'unwatches when the last viewer leaves');
+  assert.equal(st.held, 0, 'releases the feed when the last viewer leaves');
 });
 
-test('court: two viewers share one watch; it stops only when both leave', async () => {
-  const { thesportsLive, sportscore, watched } = fakes();
-  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+test('court: two viewers share one hold; it releases only when both leave', async () => {
+  const { thesportsLive, st } = fakes();
+  const court = createTheSportsCourt({ thesportsLive, pollMs: 10 });
   const a = court.follow(7, liveTennis);
   const b = court.follow(7, liveTennis);
-  await delay(40);
-  assert.ok(watched.has('trk123abc'));
+  await delay(30);
+  assert.equal(st.held, 1, 'one shared hold for the match, not one per viewer');
   a();
-  assert.ok(watched.has('trk123abc'), 'still watched while one viewer remains');
+  assert.equal(st.held, 1, 'still held while one viewer remains');
   b();
-  assert.ok(!watched.has('trk123abc'), 'stopped when the last viewer leaves');
+  assert.equal(st.held, 0, 'released when the last viewer leaves');
 });
 
-test('court: no tracker found → nothing watched, no throw', async () => {
-  const { thesportsLive, sportscore, watched } = fakes({ resolve: false });
-  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
+test('court: no feed game with these names → not linked, reason set, no throw', async () => {
+  const { thesportsLive } = fakes({ present: false });
+  const court = createTheSportsCourt({ thesportsLive, pollMs: 10 });
   const unfollow = court.follow(7, liveTennis);
-  await delay(40);
-  assert.equal(watched.size, 0);
-  unfollow();
-});
-
-test('court: status() reports per-match tracker resolution and ball flow (admin diagnostic)', async () => {
-  const { thesportsLive, sportscore } = fakes({ ball: { x: 0.3, y: 0.7 } });
-  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
-  court.follow(7, liveTennis);
-  await delay(50);
-  const st = court.status();
-  assert.equal(st.watching, 1);
-  assert.equal(st.viewers, 1);
-  const row = st.matches.find((m) => m.eventId === 7);
-  assert.equal(row.trackerId, 'trk123abc');
-  assert.equal(row.reason, 'ok');
-  assert.ok(row.balls >= 1 && row.hasBall);
-});
-
-test('court: status() shows the reason when no tracker was found', async () => {
-  const { thesportsLive, sportscore } = fakes({ resolve: false });
-  const court = createTheSportsCourt({ thesportsLive, sportscore, pollMs: 10 });
-  court.follow(7, liveTennis);
   await delay(40);
   const row = court.status().matches.find((m) => m.eventId === 7);
   assert.equal(row.trackerId, null);
-  assert.match(row.reason, /SportScore|encontr/i);
+  assert.match(row.reason, /feed/i);
+  unfollow();
 });
 
 test('court: follow on a non-court sport is a no-op', () => {
-  const { thesportsLive, sportscore } = fakes();
-  const court = createTheSportsCourt({ thesportsLive, sportscore });
+  const { thesportsLive } = fakes();
+  const court = createTheSportsCourt({ thesportsLive });
   const unfollow = court.follow(9, { ...liveTennis, sport: 'futebol' });
   assert.equal(court.isFollowing(9), false);
   unfollow();
