@@ -16,6 +16,7 @@ import { createWinHouseOddsPush, sioUrl } from './whpush.js';
 import { createWinHouseLive } from './whlive.js';
 import { createRapidStream } from './rapidstream.js';
 import { createSportScore } from './sportscore.js';
+import { createTheSportsLive } from './thesportslive.js';
 import { createStripe } from './stripe.js';
 import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
@@ -113,6 +114,11 @@ const rapidStream = config.rapidStream.apiKey ? createRapidStream({ ...config.ra
 
 // SportScore: free data (attribution tier), read from the admin's SportScore tab for now.
 const sportscore = config.sportscore.enabled ? createSportScore({ ...config.sportscore, log: (msg) => console.warn(`[sportscore] ${msg}`) }) : null;
+
+// TheSports live tracker over MQTT: built only when the address is set (the admin watches it to test).
+const thesportsLive = config.thesports.enabled && config.thesports.mqttUrl
+  ? createTheSportsLive({ url: config.thesports.mqttUrl, username: config.thesports.mqttUser, password: config.thesports.mqttPass, log: (msg) => console.warn(`[thesports] ${msg}`) })
+  : null;
 
 const casino = createCasino(db, { ...config.casino, log: (msg) => console.warn(`[casino] ${msg}`) });
 
@@ -213,7 +219,7 @@ const stopSanctions = sanctions.start();
 // Notifications on the phone: a won bet announced within ~20 s of being settled.
 const push = createPush(db, { ...config.push, log: (m) => console.warn(`[push] ${m}`) });
 const stopPush = push.start();
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, boardCacheMs: 2000 });
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
