@@ -22,7 +22,7 @@ import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
 import { rawForAdmin } from './sportscore.js';
-import { resolveTracker, trackerWidgetUrl } from './thesportslink.js';
+import { resolveTracker } from './thesportslink.js';
 import { createTheSportsCourt } from './thesportscourt.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
@@ -1167,11 +1167,11 @@ export function createApp(db, {
     if (!theSportsCourt.covers(ev) || !sportscore?.enabled) return res.status(204).end();
     const r = await resolveTracker(sportscore, { sport: ev.sport, home: ev.home, away: ev.away });
     if (!r?.found) return res.status(204).end();
-    // Prefer the exact URL the tracker endpoint names; fall back to building it from id + profile.
-    let url = null;
-    try { const t = await sportscore.tracker(r.ssSport, r.trackerId); url = (t?.links || []).find((u) => /widgets\.thesports01\.com/i.test(u)) || null; } catch { /* use the built one */ }
-    url = url || trackerWidgetUrl(r.ssSport, r.trackerId, r.trackerProfile);
-    if (!url) return res.status(204).end();
+    // Embed SportScore's OWN tracker widget page (meant to be framed by the partner `src`, so it is not
+    // X-Frame blocked like the inner TheSports URL). It loads the 3D court itself. No key in the URL.
+    const st = sportscore.status();
+    const base = String(st.baseUrl || 'https://sportscore.com/api/widget').replace(/\/+$/, '');
+    const url = `${base}/tracker/?sport=${r.ssSport}&id=${encodeURIComponent(r.trackerId)}&src=${encodeURIComponent(st.src || 'bet62')}`;
     res.json({ url, sport: ev.sport, via: r.via || null });
   }));
 
