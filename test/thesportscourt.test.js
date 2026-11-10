@@ -25,7 +25,7 @@ test('court: covers only live court sports while enabled', () => {
   const court = createTheSportsCourt({ thesportsLive });
   assert.ok(court.covers(liveTennis));
   assert.ok(court.covers({ ...liveTennis, sport: 'criquete' }));
-  assert.ok(!court.covers({ ...liveTennis, sport: 'basquetebol' })); // basketball widget needs a paid subscription
+  assert.ok(court.covers({ ...liveTennis, sport: 'basquetebol' })); // works once the iframe sends the referer
   assert.ok(!court.covers({ ...liveTennis, sport: 'futebol' })); // football keeps its own pitch
   assert.ok(!court.covers({ ...liveTennis, status: 'upcoming' })); // not live
 });

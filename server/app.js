@@ -186,7 +186,8 @@ export function createApp(db, {
   // the admin, per sport. zoom = scale, off = vertical nudge (%), ar = the visible box's width/height.
   // Cricket's field sits lower in its widget (a white strip above it), so it crops tighter (more zoom,
   // pulled up to skip the strip). These are only a starting point — fine-tuned in the admin régua.
-  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -6, ar: 1.7 }, criquete: { zoom: 1.8, off: -14, ar: 1.6 } };
+  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -6, ar: 1.7 }, criquete: { zoom: 1.8, off: -14, ar: 1.6 }, basquetebol: { zoom: 1.6, off: -6, ar: 1.7 } };
+  const COURT_SPORTS = ['tenis', 'criquete', 'basquetebol'];
   const courtCrop = () => { const s = getSetting(db, 'court.crop', null); return { ...COURT_CROP_DEFAULT, ...(s && typeof s === 'object' ? s : {}) }; };
   const cropOf = (sport) => courtCrop()[sport] || COURT_CROP_DEFAULT[sport] || { zoom: 1.6, off: 0, ar: 1.7 };
 
@@ -3043,7 +3044,7 @@ export function createApp(db, {
     }));
   }));
   // Court widget framing (crop/zoom), per sport — read and save, plus a live widget URL to preview it on.
-  admin.get('/court-crop', (_req, res) => res.json({ crop: courtCrop(), sports: ['tenis', 'criquete'] }));
+  admin.get('/court-crop', (_req, res) => res.json({ crop: courtCrop(), sports: COURT_SPORTS }));
   admin.post('/court-crop', (req, res) => {
     const clean = (c) => ({
       zoom: Math.max(1, Math.min(3, Number(c?.zoom) || 1.6)),
@@ -3052,17 +3053,16 @@ export function createApp(db, {
     });
     const body = req.body || {};
     const next = {};
-    for (const s of ['tenis', 'criquete']) if (body[s]) next[s] = clean(body[s]);
+    for (const s of COURT_SPORTS) if (body[s]) next[s] = clean(body[s]);
     setSetting(db, 'court.crop', { ...courtCrop(), ...next });
     res.json({ crop: courtCrop() });
   });
-  // One live match's widget URL, so the admin can preview the framing (ténis/críquete) or DIAGNOSE a
-  // sport that errors (basquete: shows the real "Your subscription" message + the exact id/URL we send,
-  // so we can tell a plan limit from a wrong identifier without guessing).
+  // One live match's widget URL, so the admin can preview the framing on a real game (also shows the id
+  // and URL we send, which is handy when a sport misbehaves).
   admin.get('/court-preview', wrap(async (req, res) => {
     needSportScore();
     const sport = String(req.query.sport || 'tenis');
-    if (!['tenis', 'criquete', 'basquetebol'].includes(sport)) return res.json({ url: null, reason: 'Desporto sem campo.' });
+    if (!COURT_SPORTS.includes(sport)) return res.json({ url: null, reason: 'Desporto sem campo.' });
     const row = db.prepare("SELECT * FROM events WHERE sport = ? AND status = 'live' ORDER BY updated_at DESC LIMIT 8").all(sport)
       .find(Boolean);
     if (!row) return res.json({ url: null, reason: 'Nenhum jogo ao vivo deste desporto agora.' });
@@ -3071,7 +3071,7 @@ export function createApp(db, {
     const st = sportscore.status();
     const base = String(st.baseUrl || 'https://sportscore.com/api/widget').replace(/\/+$/, '');
     const url = `${base}/tracker/?sport=${r.ssSport}&id=${encodeURIComponent(r.trackerId)}&src=${encodeURIComponent(st.src || 'bet62')}`;
-    res.json({ url, match: `${row.home} vs ${row.away}`, crop: cropOf(sport), ssSport: r.ssSport, trackerId: r.trackerId, via: r.via || null, diagnostic: sport === 'basquetebol' });
+    res.json({ url, match: `${row.home} vs ${row.away}`, crop: cropOf(sport), ssSport: r.ssSport, trackerId: r.trackerId, via: r.via || null });
   }));
 
   // TheSports live tracker (MQTT) — admin test only, nothing of this reaches the public site yet.
