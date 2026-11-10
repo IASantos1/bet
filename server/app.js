@@ -186,7 +186,7 @@ export function createApp(db, {
   // the admin, per sport. zoom = scale, off = vertical nudge (%), ar = the visible box's width/height.
   // Cricket's field sits lower in its widget (a white strip above it), so it crops tighter (more zoom,
   // pulled up to skip the strip). These are only a starting point — fine-tuned in the admin régua.
-  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -6, ar: 1.7 }, criquete: { zoom: 1.8, off: -14, ar: 1.6 }, basquetebol: { zoom: 1.6, off: -6, ar: 1.7 } };
+  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -16, ar: 1.7 }, criquete: { zoom: 1.8, off: -14, ar: 1.6 }, basquetebol: { zoom: 1.6, off: -6, ar: 1.7 } };
   const COURT_SPORTS = ['tenis', 'criquete', 'basquetebol'];
   const courtCrop = () => { const s = getSetting(db, 'court.crop', null); return { ...COURT_CROP_DEFAULT, ...(s && typeof s === 'object' ? s : {}) }; };
   const cropOf = (sport) => courtCrop()[sport] || COURT_CROP_DEFAULT[sport] || { zoom: 1.6, off: 0, ar: 1.7 };
