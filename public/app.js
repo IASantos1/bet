@@ -5867,7 +5867,7 @@ function courtWidget(e) {
     <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
       <span class="trk-score"><b id="courtHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="courtAwayScore">${e.awayScore ?? 0}</b></span>
       <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
-    <div class="court3d-turf"><iframe id="courtFrame" class="court3d-frame" title="Campo 3D ao vivo" allowtransparency="true" referrerpolicy="origin" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>
+    <div class="court3d-turf"><iframe id="courtFrame" class="court3d-frame" title="Campo 3D ao vivo" allowtransparency="true" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>
       <p class="trk-3d-off" id="courtOff">Campo 3D indisponível para este jogo.</p></div>
     <p class="trk-note" id="courtNote">A carregar o campo ao vivo…</p>
   </div>`;

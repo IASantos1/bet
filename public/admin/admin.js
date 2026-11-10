@@ -1157,8 +1157,10 @@ function adminCourtCrop(d) {
     <p class="muted">O campo 3D vem do widget da TheSports. Aqui corta-se para mostrar <b>só o campo</b> (esconde as estatísticas por baixo). Mexa nos cursores e carregue em <b>Pré-visualizar</b> para ver num jogo ao vivo; o site só muda depois de <b>Guardar</b> (quem já tem a página aberta vê ao recarregar).</p>
     ${COURT_SPORTS.map(([s, label]) => {
       const c = crop[s] || { zoom: 1.6, off: 0, ar: 1.7 };
+      const off = s === 'basquetebol';
       return `<div class="cc-sport" data-sport="${s}">
-        <h4>${label}</h4>
+        <h4>${label}${off ? ' <span class="pill void">campo desligado no site</span>' : ''}</h4>
+        ${off ? '<p class="muted">A SportScore devolve “Your subscription has expired!” para o basquete — a subscrição desse desporto caducou. O campo está desligado no site. Use “Pré-visualizar” para verificar: quando aparecer o campo (subscrição renovada), avise para o religar.</p>' : ''}
         <div class="cc-row">
           <div class="cc-box court-crop-box" data-sport="${s}">
             <iframe id="ccFrame-${s}" class="cc-frame" title="Pré-visualização ${label}" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>

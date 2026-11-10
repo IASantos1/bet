@@ -21,9 +21,11 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
   const byEvent = new Map();
   const on = () => !!(thesportsLive?.enabled);
 
-  // Sports with a working TheSports 3D widget (football keeps its own pitch). Basketball works once the
-  // iframe sends the referer: the widget authorises the embed by domain, so "no-referrer" broke it.
-  const hasCourt = (sport) => sport === 'tenis' || sport === 'criquete' || sport === 'basquetebol';
+  // Sports with a working TheSports 3D widget (football keeps its own pitch). Basketball is OFF: the
+  // widget returns "Your subscription has expired!" — the basketball add-on on the SportScore/TheSports
+  // plan has lapsed (confirmed in the admin preview, which sends the referer, so it is not that). The
+  // admin régua still previews it, to re-check once the subscription is renewed; flip it on here then.
+  const hasCourt = (sport) => sport === 'tenis' || sport === 'criquete';
 
   function emit(eventId, s, ball, score) {
     s.last = { ball: ball || null, score: score || null };
