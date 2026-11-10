@@ -3049,7 +3049,7 @@ export function createApp(db, {
     const clean = (c) => ({
       zoom: Math.max(1, Math.min(3, Number(c?.zoom) || 1.6)),
       off: Math.max(-60, Math.min(60, Number(c?.off) || 0)),
-      ar: Math.max(1, Math.min(4, Number(c?.ar) || 1.7)),
+      ar: Math.max(1, Math.min(5, Number(c?.ar) || 1.7)),
     });
     const body = req.body || {};
     const next = {};
