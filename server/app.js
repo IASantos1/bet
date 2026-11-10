@@ -3063,11 +3063,16 @@ export function createApp(db, {
     needSportScore();
     const sport = String(req.query.sport || 'tenis');
     if (!COURT_SPORTS.includes(sport)) return res.json({ url: null, reason: 'Desporto sem campo.' });
-    const row = db.prepare("SELECT * FROM events WHERE sport = ? AND status = 'live' ORDER BY updated_at DESC LIMIT 8").all(sport)
-      .find(Boolean);
-    if (!row) return res.json({ url: null, reason: 'Nenhum jogo ao vivo deste desporto agora.' });
-    const r = await resolveTracker(sportscore, { sport, home: row.home, away: row.away });
-    if (!r?.found) return res.json({ url: null, reason: `Não liguei "${row.home} vs ${row.away}"${r?.reason ? `: ${r.reason}` : ''}.`, match: `${row.home} vs ${row.away}` });
+    const rows = db.prepare("SELECT * FROM events WHERE sport = ? AND status = 'live' ORDER BY updated_at DESC LIMIT 12").all(sport);
+    if (!rows.length) return res.json({ url: null, reason: 'Nenhum jogo ao vivo deste desporto agora.' });
+    // Try several live games: many small leagues aren't on SportScore, so the first may not resolve.
+    let r = null, row = null;
+    for (const cand of rows) {
+      if (!row) row = cand;
+      const hit = await resolveTracker(sportscore, { sport, home: cand.home, away: cand.away });
+      if (hit?.found) { r = hit; row = cand; break; }
+    }
+    if (!r) return res.json({ url: null, reason: `Não liguei nenhum dos ${rows.length} jogos ao vivo (ex.: "${row.home} vs ${row.away}"). A SportScore pode não ter estes jogos — tente com outro jogo ao vivo.`, match: `${row.home} vs ${row.away}` });
     const st = sportscore.status();
     const base = String(st.baseUrl || 'https://sportscore.com/api/widget').replace(/\/+$/, '');
     const url = `${base}/tracker/?sport=${r.ssSport}&id=${encodeURIComponent(r.trackerId)}&src=${encodeURIComponent(st.src || 'bet62')}`;
