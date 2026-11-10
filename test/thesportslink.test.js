@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SS_SPORT, sameFixture, pickFixture, trackerOf, resolveTracker, slugify, slugCandidates } from '../server/thesportslink.js';
+import { SS_SPORT, sameFixture, pickFixture, trackerOf, resolveTracker, slugify, slugCandidates, trackerWidgetUrl } from '../server/thesportslink.js';
 
 // A matches-list answer shaped like SportScore's (teams as objects, status, url with the slug).
 const cricketList = {
@@ -39,6 +39,16 @@ test('TheSports link: slug building (accents, spaces, both orders)', () => {
   assert.deepEqual(slugCandidates('Aryna Sabalenka', 'Karolina Muchova'),
     ['aryna-sabalenka-vs-karolina-muchova', 'karolina-muchova-vs-aryna-sabalenka']);
   assert.deepEqual(slugCandidates('', 'B'), []);
+});
+
+test('TheSports link: trackerWidgetUrl builds the iframe URL (tennis under /3D/, cricket not)', () => {
+  assert.equal(trackerWidgetUrl('tennis', 'n54ql4fw1p1lrvy', 'vzrxjfyp7u6uymd'),
+    'https://widgets.thesports01.com/en/3D/tennis?profile=vzrxjfyp7u6uymd&uuid=n54ql4fw1p1lrvy');
+  assert.equal(trackerWidgetUrl('cricket', 'zp5rzpcdx6n4q82', '47q3ktv6gh1u8mx'),
+    'https://widgets.thesports01.com/en/cricket?profile=47q3ktv6gh1u8mx&uuid=zp5rzpcdx6n4q82');
+  assert.equal(trackerWidgetUrl('basketball', 'abc123', null),
+    'https://widgets.thesports01.com/en/3D/basketball?uuid=abc123');
+  assert.equal(trackerWidgetUrl('tennis', '', 'x'), null);
 });
 
 test('TheSports link: trackerOf reads tracker.id from the match detail', () => {
