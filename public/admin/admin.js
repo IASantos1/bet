@@ -1144,24 +1144,23 @@ function cardPreview() {
 
 // Court 3D framing: crop the embedded TheSports widget to show only the court, per sport.
 const COURT_SPORTS = [['tenis', 'Ténis'], ['criquete', 'Críquete'], ['basquetebol', 'Basquete']];
-// The third control is the "base" (the box height, as a % of the width). It maps to the aspect ratio
-// (ar = 100 / height%): lower % = shorter box, which trims the black edge below without any zoom.
+// Three INDEPENDENT controls (all % of the width): "size" = how big the court renders (fixed), "box" =
+// the visible window height — lower it to cut the black band BELOW without touching the court — and "up"
+// = slide to cut the band ABOVE. So the bottom and top crop separately.
 const CC_CTL = [
-  ['zoom', 'Aproximar (zoom)', 1, 3, 0.05],
-  ['off', 'Subir / descer', -60, 60, 1],
-  ['hgt', 'Altura da caixa (base)', 20, 100, 1],
+  ['size', 'Tamanho do campo', 40, 300, 1],
+  ['box', 'Cortar em baixo (altura visível)', 30, 260, 1],
+  ['up', 'Cortar em cima (subir)', 0, 120, 1],
 ];
-const hgtOf = (ar) => Math.round(100 / (Number(ar) || 1.7));
-const arOf = (hgt) => Math.max(1, Math.min(5, 100 / (Number(hgt) || 59)));
-const ccFmt = { zoom: (v) => `${Math.round(v * 100)}%`, off: (v) => `${v > 0 ? '+' : ''}${v}%`, hgt: (v) => `${v}%` };
-const ccInit = (c, key) => (key === 'hgt' ? hgtOf(c.ar) : c[key]);
+const CC_DEF = { size: 112, box: 96, up: 0 };
+const ccFmt = { size: (v) => `${v}%`, box: (v) => `${v}%`, up: (v) => `${v}%` };
 function adminCourtCrop(d) {
   const crop = d.crop || {};
   return `<div class="panel court-crop" id="courtCrop">
     <div class="section-head"><h2>Campo 3D — enquadramento</h2></div>
-    <p class="muted">O campo 3D vem do widget da TheSports. Para tirar uma <b>beirada preta</b>: baixe a <b>Altura da caixa (base)</b> até a caixa acabar certinho no campo (não use zoom — esse corta os lados); depois centre com <b>Subir / descer</b>. Carregue em <b>Pré-visualizar</b> para ver num jogo ao vivo; o site só muda depois de <b>Guardar</b>.</p>
+    <p class="muted">O campo 3D vem do widget da TheSports. Os cursores são independentes: <b>Cortar em baixo</b> esconde a faixa preta de baixo (sem mexer no campo), <b>Cortar em cima</b> esconde a de cima, e <b>Tamanho do campo</b> só muda o tamanho. Carregue em <b>Pré-visualizar</b> para ver num jogo ao vivo; o site só muda depois de <b>Guardar</b>.</p>
     ${COURT_SPORTS.map(([s, label]) => {
-      const c = crop[s] || { zoom: 1.6, off: 0, ar: 1.7 };
+      const c = { ...CC_DEF, ...(crop[s] || {}) };
       const off = s === 'basquetebol';
       return `<div class="cc-sport" data-sport="${s}">
         <h4>${label}${off ? ' <span class="pill void">campo desligado no site</span>' : ''}</h4>
@@ -1171,8 +1170,8 @@ function adminCourtCrop(d) {
             <iframe id="ccFrame-${s}" class="cc-frame" title="Pré-visualização ${label}" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>
           </div>
           <div class="cc-ctl">
-            ${CC_CTL.map(([key, lbl, lo, hi, step]) => `<label class="field">${lbl}: <b id="ccOut-${s}-${key}">${ccFmt[key](ccInit(c, key))}</b>
-              <input type="range" data-cc="${key}" data-sport="${s}" min="${lo}" max="${hi}" step="${step}" value="${ccInit(c, key)}"></label>`).join('')}
+            ${CC_CTL.map(([key, lbl, lo, hi, step]) => `<label class="field">${lbl}: <b id="ccOut-${s}-${key}">${ccFmt[key](c[key])}</b>
+              <input type="range" data-cc="${key}" data-sport="${s}" min="${lo}" max="${hi}" step="${step}" value="${c[key]}"></label>`).join('')}
             <div class="form-actions"><button class="ghost-btn btn-sm" data-action="court-preview" data-sport="${s}">Pré-visualizar com um jogo ao vivo</button>
               <button class="primary-btn btn-sm" data-action="court-crop-save" data-sport="${s}">Guardar</button></div>
             <p class="muted cc-msg" id="ccMsg-${s}"></p>
@@ -1184,18 +1183,17 @@ function adminCourtCrop(d) {
 }
 const ccForm = (sport) => {
   const get = (key) => Number($(`input[data-cc="${key}"][data-sport="${sport}"]`)?.value);
-  return { zoom: get('zoom'), off: get('off'), ar: arOf(get('hgt')) };
+  return { size: get('size'), box: get('box'), up: get('up') };
 };
 function applyCourtCropVars(sport) {
   for (const [s] of (sport ? [[sport]] : COURT_SPORTS)) {
     const box = $(`.court-crop-box[data-sport="${s}"]`);
     if (!box) continue;
     const c = ccForm(s);
-    box.style.setProperty('--court-ar', String(c.ar));
-    box.style.setProperty('--court-zoom', String(c.zoom));
-    box.style.setProperty('--court-off', String(c.off));
-    const vals = { zoom: c.zoom, off: c.off, hgt: hgtOf(c.ar) };
-    for (const [key] of CC_CTL) { const o = $(`#ccOut-${s}-${key}`); if (o) o.textContent = ccFmt[key](vals[key]); }
+    box.style.setProperty('--court-size', String(c.size));
+    box.style.setProperty('--court-box', String(c.box));
+    box.style.setProperty('--court-up', String(c.up));
+    for (const [key] of CC_CTL) { const o = $(`#ccOut-${s}-${key}`); if (o) o.textContent = ccFmt[key](c[key]); }
   }
 }
 
@@ -2124,8 +2122,8 @@ document.addEventListener('click', async (e) => {
     try {
       const r = await api('/api/admin/court-crop', { method: 'POST', body: { [s]: ccForm(s) } });
       const c = r.crop?.[s];
-      if (c) { const vals = { zoom: c.zoom, off: c.off, hgt: hgtOf(c.ar) }; for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = vals[key]; } applyCourtCropVars(s); }
-      toast('Enquadramento guardado', `${COURT_SPORTS.find(([v]) => v === s)?.[1] || s}: ${c ? `zoom ${ccFmt.zoom(c.zoom)} · ${ccFmt.off(c.off)}` : 'guardado'}`);
+      if (c) { for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = c[key]; } applyCourtCropVars(s); }
+      toast('Enquadramento guardado', `${COURT_SPORTS.find(([v]) => v === s)?.[1] || s}: ${c ? `baixo ${ccFmt.box(c.box)} · cima ${ccFmt.up(c.up)}` : 'guardado'}`);
     } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
     return;
   }
