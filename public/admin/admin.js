@@ -859,7 +859,9 @@ async function loadTab() {
     else if (tab === 'sportscore') main.innerHTML = adminSportScore(await api('/api/admin/sportscore'));
     else if (tab === 'thesports') {
       lastTheSports = await api('/api/admin/thesports');
-      main.innerHTML = adminTheSports(lastTheSports);
+      const crop = await api('/api/admin/court-crop').catch(() => null);
+      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '');
+      applyCourtCropVars();
       // While the tab is open, refresh the live table every 2 s.
       liveTimer = setInterval(async () => {
         if (state.tab !== 'thesports') { clearInterval(liveTimer); return; }
@@ -1138,6 +1140,67 @@ function cardPreview() {
   box.dataset.fit = c.fit;
   for (const [id, key] of CARD_TUNE) $(`#${id}Out`).textContent = `${c[key]}%`;
   box.style.setProperty('--cs-f', `${c.sharp ? `url(#gsharp${c.sharp}) ` : ''}brightness(${c.bright / 100}) contrast(${c.contrast / 100}) saturate(${c.sat / 100})`);
+}
+
+// Court 3D framing: crop the embedded TheSports widget to show only the court, per sport.
+const COURT_SPORTS = [['tenis', 'Ténis'], ['criquete', 'Críquete']];
+const CC_CTL = [
+  ['zoom', 'Aproximar (zoom)', 1, 3, 0.05],
+  ['off', 'Subir / descer', -60, 60, 1],
+  ['ar', 'Forma (largura ÷ altura)', 1, 4, 0.05],
+];
+const ccFmt = { zoom: (v) => `${Math.round(v * 100)}%`, off: (v) => `${v > 0 ? '+' : ''}${v}%`, ar: (v) => v.toFixed(2) };
+function adminCourtCrop(d) {
+  const crop = d.crop || {};
+  return `<div class="panel court-crop" id="courtCrop">
+    <div class="section-head"><h2>Campo 3D — enquadramento</h2></div>
+    <p class="muted">O campo 3D vem do widget da TheSports. Aqui corta-se para mostrar <b>só o campo</b> (esconde as estatísticas por baixo). Mexa nos cursores e carregue em <b>Pré-visualizar</b> para ver num jogo ao vivo; o site só muda depois de <b>Guardar</b> (quem já tem a página aberta vê ao recarregar).</p>
+    ${COURT_SPORTS.map(([s, label]) => {
+      const c = crop[s] || { zoom: 1.6, off: 0, ar: 1.7 };
+      return `<div class="cc-sport" data-sport="${s}">
+        <h4>${label}</h4>
+        <div class="cc-row">
+          <div class="cc-box court-crop-box" data-sport="${s}">
+            <iframe id="ccFrame-${s}" class="cc-frame" title="Pré-visualização ${label}" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>
+          </div>
+          <div class="cc-ctl">
+            ${CC_CTL.map(([key, lbl, lo, hi, step]) => `<label class="field">${lbl}: <b id="ccOut-${s}-${key}">${ccFmt[key](c[key])}</b>
+              <input type="range" data-cc="${key}" data-sport="${s}" min="${lo}" max="${hi}" step="${step}" value="${c[key]}"></label>`).join('')}
+            <div class="form-actions"><button class="ghost-btn btn-sm" data-action="court-preview" data-sport="${s}">Pré-visualizar com um jogo ao vivo</button>
+              <button class="primary-btn btn-sm" data-action="court-crop-save" data-sport="${s}">Guardar</button></div>
+            <p class="muted cc-msg" id="ccMsg-${s}"></p>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+    <div class="cc-sport cc-diag" data-sport="basquetebol">
+      <h4>Basquete — diagnóstico <span class="pill void">campo desligado</span></h4>
+      <p class="muted">O campo do basquete está desligado no site porque o widget devolve “Your subscription…”. Aqui carrega-se o widget real de um jogo ao vivo para ver a <b>mensagem exata</b> e o <b>identificador</b> que lhe enviamos — assim confirma-se se é limite do plano ou id errado, sem adivinhar.</p>
+      <div class="cc-row">
+        <div class="cc-box cc-box-free"><iframe id="ccFrame-basquetebol" class="cc-frame cc-frame-free" title="Diagnóstico basquete" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe></div>
+        <div class="cc-ctl">
+          <div class="form-actions"><button class="ghost-btn btn-sm" data-action="court-preview" data-sport="basquetebol">Carregar um jogo de basquete ao vivo</button></div>
+          <p class="muted cc-msg" id="ccMsg-basquetebol"></p>
+          <p class="muted cc-url" id="ccUrl-basquetebol"></p>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+const ccForm = (sport) => {
+  const get = (key) => Number($(`input[data-cc="${key}"][data-sport="${sport}"]`)?.value);
+  return { zoom: get('zoom'), off: get('off'), ar: get('ar') };
+};
+function applyCourtCropVars(sport) {
+  for (const [s] of (sport ? [[sport]] : COURT_SPORTS)) {
+    const box = $(`.court-crop-box[data-sport="${s}"]`);
+    if (!box) continue;
+    const c = ccForm(s);
+    box.style.setProperty('--court-ar', String(c.ar));
+    box.style.setProperty('--court-zoom', String(c.zoom));
+    box.style.setProperty('--court-off', String(c.off));
+    for (const [key] of CC_CTL) { const o = $(`#ccOut-${s}-${key}`); if (o) o.textContent = ccFmt[key](c[key]); }
+  }
 }
 
 function adminCasino(c) {
@@ -2044,6 +2107,32 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;
   }
+  if (action === 'court-preview') {
+    const s = actionEl.dataset.sport;
+    const frame = $(`#ccFrame-${s}`), msg = $(`#ccMsg-${s}`), urlBox = $(`#ccUrl-${s}`);
+    if (msg) msg.textContent = 'A procurar um jogo ao vivo…';
+    if (urlBox) urlBox.textContent = '';
+    try {
+      const r = await api(`/api/admin/court-preview?sport=${encodeURIComponent(s)}`);
+      if (r.url && frame) {
+        frame.src = r.url;
+        if (!r.diagnostic) applyCourtCropVars(s);
+        if (msg) msg.textContent = r.match || '';
+        if (urlBox && r.trackerId) urlBox.innerHTML = `id enviado: <code>${esc(r.trackerId)}</code> (${esc(r.ssSport || s)}${r.via ? ` · ${esc(r.via)}` : ''})<br><a href="${esc(r.url)}" target="_blank" rel="noopener">abrir o widget num separador</a>`;
+      } else if (msg) msg.textContent = r.reason || 'Sem jogo para pré-visualizar.';
+    } catch (err) { if (msg) msg.textContent = err.message; }
+    return;
+  }
+  if (action === 'court-crop-save') {
+    const s = actionEl.dataset.sport, msg = $(`#ccMsg-${s}`);
+    try {
+      const r = await api('/api/admin/court-crop', { method: 'POST', body: { [s]: ccForm(s) } });
+      const c = r.crop?.[s];
+      if (c) { for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = c[key]; } applyCourtCropVars(s); }
+      toast('Enquadramento guardado', `${COURT_SPORTS.find(([v]) => v === s)?.[1] || s}: ${c ? `zoom ${ccFmt.zoom(c.zoom)} · ${ccFmt.off(c.off)}` : 'guardado'}`);
+    } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'close-menu') { $('.adm')?.classList.remove('menu-open'); return; }
   if (action === 'refresh') { loadTab(); return; }
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
@@ -2655,6 +2744,7 @@ document.addEventListener('change', async (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (e.target.dataset?.cc) { applyCourtCropVars(e.target.dataset.sport); return; }
   if (['csHeight', 'csBright', 'csContrast', 'csSat'].includes(e.target.id)) { cardPreview(); artPreview(); return; }
   if (e.target.id === 'csZy' || e.target.id === 'csOy') { artPreview(); return; }
   if (e.target.id === 'csGameSearch') {
