@@ -182,14 +182,25 @@ export function createApp(db, {
 
   // Live 3D court (tennis/cricket): the TheSports widget, embedded. basketball is off (paid widget).
   const theSportsCourt = createTheSportsCourt({ thesportsLive, sportscore, log: (msg) => console.warn(`[court] ${msg}`) });
-  // How to frame the embedded widget so only the court shows (zoom in, hide the stats below). Tunable in
-  // the admin, per sport. zoom = scale, off = vertical nudge (%), ar = the visible box's width/height.
-  // Cricket's field sits lower in its widget (a white strip above it), so it crops tighter (more zoom,
-  // pulled up to skip the strip). These are only a starting point — fine-tuned in the admin régua.
-  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -16, ar: 1.7 }, criquete: { zoom: 1.8, off: -14, ar: 1.6 }, basquetebol: { zoom: 1.6, off: -6, ar: 1.7 } };
+  // How to frame the embedded widget. The widget renders at a FIXED size inside the iframe (`size` = the
+  // iframe's height as % of its width); the visible box is a WINDOW over it (`box` = the window's height
+  // as % of width) that clips the black band BELOW without resizing the court; `up` slides it to clip the
+  // band ABOVE. So bottom and top crop independently. All % of width. Tunable per sport in the admin.
+  const COURT_CROP_DEFAULT = {
+    tenis: { size: 112, box: 96, up: 0 },
+    criquete: { size: 150, box: 128, up: 8 },
+    basquetebol: { size: 112, box: 96, up: 0 },
+  };
   const COURT_SPORTS = ['tenis', 'criquete', 'basquetebol'];
   const courtCrop = () => { const s = getSetting(db, 'court.crop', null); return { ...COURT_CROP_DEFAULT, ...(s && typeof s === 'object' ? s : {}) }; };
-  const cropOf = (sport) => courtCrop()[sport] || COURT_CROP_DEFAULT[sport] || { zoom: 1.6, off: 0, ar: 1.7 };
+  // Coerce to the current {size, box, up} shape, falling back to defaults (older saved crops used other
+  // keys, so missing fields take the default and are rewritten next time the operator saves).
+  const cropOf = (sport) => {
+    const def = COURT_CROP_DEFAULT[sport] || { size: 112, box: 96, up: 0 };
+    const s = courtCrop()[sport];
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    return s ? { size: num(s.size, def.size), box: num(s.box, def.box), up: num(s.up, def.up) } : def;
+  };
 
   app.use((req, res, next) => {
     res.set({
@@ -3043,19 +3054,21 @@ export function createApp(db, {
       sport: String(req.query.sport || ''), home: String(req.query.home || '').slice(0, 120), away: String(req.query.away || '').slice(0, 120),
     }));
   }));
-  // Court widget framing (crop/zoom), per sport — read and save, plus a live widget URL to preview it on.
-  admin.get('/court-crop', (_req, res) => res.json({ crop: courtCrop(), sports: COURT_SPORTS }));
+  // Court widget framing, per sport — read and save, plus a live widget URL to preview it on.
+  const cropAll = () => Object.fromEntries(COURT_SPORTS.map((s) => [s, cropOf(s)]));
+  admin.get('/court-crop', (_req, res) => res.json({ crop: cropAll(), sports: COURT_SPORTS }));
   admin.post('/court-crop', (req, res) => {
-    const clean = (c) => ({
-      zoom: Math.max(1, Math.min(3, Number(c?.zoom) || 1.6)),
-      off: Math.max(-60, Math.min(60, Number(c?.off) || 0)),
-      ar: Math.max(1, Math.min(5, Number(c?.ar) || 1.7)),
+    const def = (s) => COURT_CROP_DEFAULT[s] || { size: 112, box: 96, up: 0 };
+    const clean = (c, s) => ({
+      size: Math.max(40, Math.min(300, Number(c?.size) || def(s).size)),
+      box: Math.max(30, Math.min(260, Number(c?.box) || def(s).box)),
+      up: Math.max(0, Math.min(120, Number(c?.up) || 0)),
     });
     const body = req.body || {};
-    const next = {};
-    for (const s of COURT_SPORTS) if (body[s]) next[s] = clean(body[s]);
-    setSetting(db, 'court.crop', { ...courtCrop(), ...next });
-    res.json({ crop: courtCrop() });
+    const saved = COURT_SPORTS.reduce((o, s) => { o[s] = cropOf(s); return o; }, {});
+    for (const s of COURT_SPORTS) if (body[s]) saved[s] = clean(body[s], s);
+    setSetting(db, 'court.crop', saved);
+    res.json({ crop: cropAll() });
   });
   // One live match's widget URL, so the admin can preview the framing on a real game (also shows the id
   // and URL we send, which is handy when a sport misbehaves).

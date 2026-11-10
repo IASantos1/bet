@@ -754,12 +754,14 @@ body.no-scroll { overflow: hidden; }
 .trk.no3d .trk-3d-off { display: grid; }
 .trk.no3d .trk-badge { display: none; }
 /* The live 3D court (tennis / basketball / cricket): one host, the engine draws the canvas inside it. */
-.court3d-turf { position: relative; aspect-ratio: var(--court-ar, 1.7); background: #0b1626; overflow: hidden; }
+/* The box is a WINDOW (its height = --court-box % of its width) over the widget, which renders at a FIXED
+   size (--court-size % of width). Shrinking the window clips the dark band BELOW without resizing the
+   court; --court-up slides the widget to clip the band ABOVE. So top and bottom crop independently. */
+.court3d-turf { position: relative; width: 100%; aspect-ratio: 100 / var(--court-box, 96); background: #0b1626; overflow: hidden; }
 .court3d-host { position: absolute; inset: 0; }
 .court3d-host .court3d-canvas { display: block; width: 100%; height: 100%; }
-/* The embedded widget shows court + stats; we zoom in and nudge so only the court square is in view. */
-.court3d-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block;
-  transform: scale(var(--court-zoom, 1.6)) translateY(calc(var(--court-off, 0) * 1%)); transform-origin: top center; }
+.court3d-frame { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 100 / var(--court-size, 112); border: 0; display: block;
+  transform: translateY(calc(var(--court-up, 0) * -1%)); }
 .trk.no3d .court3d-frame { display: none; }
 /* Court sports with no working widget (no tracker for this game): hide the whole box, leaving just the
    markets — no empty "indisponível" panel. Football keeps its own 2D fallback, so this is court-only. */

@@ -857,11 +857,11 @@
 .court-crop .cc-sport { margin: 10px 0 18px; }
 .court-crop .cc-sport h4 { margin: 0 0 8px; }
 .cc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
-.cc-box { position: relative; aspect-ratio: var(--court-ar, 1.7); border-radius: 12px; overflow: hidden; background: #0b1626; }
+.cc-box { position: relative; width: 100%; aspect-ratio: 100 / var(--court-box, 96); border-radius: 12px; overflow: hidden; background: #0b1626; }
 .cc-box-free { aspect-ratio: 16 / 10; }
-.cc-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block;
-  transform: scale(var(--court-zoom, 1.6)) translateY(calc(var(--court-off, 0) * 1%)); transform-origin: top center; }
-.cc-frame-free { transform: none; }
+.cc-frame { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 100 / var(--court-size, 112); border: 0; display: block;
+  transform: translateY(calc(var(--court-up, 0) * -1%)); }
+.cc-frame-free { transform: none; aspect-ratio: auto; height: 100%; }
 .cc-ctl { display: grid; gap: 12px; align-content: start; }
 .cc-ctl input[type="range"] { width: 100%; }
 .cc-msg { margin: 2px 0 0; min-height: 1.1em; }
