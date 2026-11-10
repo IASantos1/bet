@@ -22,7 +22,7 @@ import { houseKit } from './kits.js';
 import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
 import { rawForAdmin } from './sportscore.js';
-import { resolveTracker } from './thesportslink.js';
+import { resolveTracker, trackerWidgetUrl } from './thesportslink.js';
 import { createTheSportsCourt } from './thesportscourt.js';
 import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
@@ -1159,6 +1159,21 @@ export function createApp(db, {
     const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
     req.on('close', () => { clearInterval(heartbeat); theSportsCourt.bus.off(`e:${ev.id}`, onMessage); unfollow(); });
   });
+
+  // The TheSports 3D widget (their own iframe) for a live tennis/basketball/cricket match: resolves the
+  // tracker via SportScore and returns the widget URL for the match page to embed. 204 when there is none.
+  app.get('/api/events/:id/court-widget', wrap(async (req, res) => {
+    const ev = eventRow(req.params.id);
+    if (!theSportsCourt.covers(ev) || !sportscore?.enabled) return res.status(204).end();
+    const r = await resolveTracker(sportscore, { sport: ev.sport, home: ev.home, away: ev.away });
+    if (!r?.found) return res.status(204).end();
+    // Prefer the exact URL the tracker endpoint names; fall back to building it from id + profile.
+    let url = null;
+    try { const t = await sportscore.tracker(r.ssSport, r.trackerId); url = (t?.links || []).find((u) => /widgets\.thesports01\.com/i.test(u)) || null; } catch { /* use the built one */ }
+    url = url || trackerWidgetUrl(r.ssSport, r.trackerId, r.trackerProfile);
+    if (!url) return res.status(204).end();
+    res.json({ url, sport: ev.sport, via: r.via || null });
+  }));
 
   app.get('/api/results', (_req, res) => {
     res.json({ events: loadEvents("e.status = 'finished'", [], 'e.updated_at DESC', 30) });

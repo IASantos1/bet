@@ -43,6 +43,14 @@ export function trackerOf(detailData) {
   return { id: String(id), sport: (tr && tr.sport) || null, profile: (tr && tr.profile) || null };
 }
 
+/** The TheSports 3D widget URL for a tracker (their own iframe), when we embed it instead of our court. */
+export function trackerWidgetUrl(ssSport, uuid, profile) {
+  if (!uuid) return null;
+  const path = ssSport === 'cricket' ? 'cricket' : `3D/${ssSport}`; // tennis/basketball under /3D/, cricket not
+  const q = profile ? `profile=${encodeURIComponent(profile)}&` : '';
+  return `https://widgets.thesports01.com/en/${path}?${q}uuid=${encodeURIComponent(uuid)}`;
+}
+
 /** A SportScore-style slug from a name: no accents, lower case, non-alphanumerics → single hyphens. */
 export const slugify = (name) => String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
