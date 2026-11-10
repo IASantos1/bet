@@ -36,10 +36,10 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     s.resolving = true;
     try {
       const hit = matchFeedGame(thesportsLive.games(), s.ev.home, s.ev.away);
-      if (hit) { s.trackerId = hit.id; s.reason = 'ok (feed)'; log(`court: ${s.ev.home} vs ${s.ev.away} → feed ${hit.id}`); return; }
+      if (hit) { s.trackerId = hit.id; s.ids = [hit.id]; s.reason = 'ok (feed)'; log(`court: ${s.ev.home} vs ${s.ev.away} → feed ${hit.id}`); return; }
       if (sportscore?.enabled) {
         const r = await resolveTracker(sportscore, { sport: s.ev.sport, home: s.ev.home, away: s.ev.away });
-        if (r?.found) { s.trackerId = r.trackerId; s.reason = 'ok (sportscore)'; log(`court: ${s.ev.home} vs ${s.ev.away} → sportscore ${r.trackerId}`); return; }
+        if (r?.found) { s.trackerId = r.trackerId; s.ids = [r.trackerId, r.trackerProfile].filter(Boolean); s.reason = 'ok (sportscore)'; log(`court: ${s.ev.home} vs ${s.ev.away} → sportscore ${s.ids.join('/')}`); return; }
         s.reason = r?.reason || 'sem correspondência na SportScore';
       } else { s.reason = 'à procura no feed (sem jogo com estes nomes)'; }
     } catch (err) { s.reason = err.message; log(`court resolve: ${err.message}`); }
@@ -48,7 +48,8 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
 
   function tick(eventId, s) {
     if (!s.trackerId) { resolve(s).catch(() => {}); return; }
-    const m = thesportsLive.get(s.trackerId);
+    // The feed may publish the ball under the tracker's id OR its profile — try both.
+    let m = null; for (const id of s.ids || [s.trackerId]) { m = thesportsLive.get(id); if (m) { s.feedId = id; break; } }
     if (!m) return;
     s.msgs = m.msgs || 0;
     const ball = m.ball || null, score = m.score || null;
@@ -87,7 +88,7 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
       if (!on() || !hasCourt(ev?.sport)) return () => {};
       prune();
       let s = byEvent.get(eventId);
-      if (!s) { s = { trackerId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, resolving: false, nextResolveAt: 0, endedAt: null }; byEvent.set(eventId, s); }
+      if (!s) { s = { trackerId: null, ids: null, feedId: null, refs: 0, timer: null, last: { ball: null, score: null }, ev, reason: null, balls: 0, lastBallAt: null, msgs: 0, resolving: false, nextResolveAt: 0, endedAt: null }; byEvent.set(eventId, s); }
       s.ev = ev; s.refs += 1; s.endedAt = null;
       if (s.refs === 1) start(eventId, s);
       let done = false;
@@ -95,11 +96,15 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
     },
     status: () => {
       prune();
+      const feedIds = new Set((thesportsLive?.games?.() || []).map((g) => g.id));
       return {
         enabled: on(), watching: [...byEvent.values()].filter((s) => s.refs > 0 && s.trackerId).length, viewers: [...byEvent.values()].reduce((n, s) => n + s.refs, 0),
+        feedGames: feedIds.size,
         matches: [...byEvent.entries()].sort((a, b) => b[1].refs - a[1].refs).map(([eventId, s]) => ({
           eventId, home: s.ev?.home || null, away: s.ev?.away || null, sport: s.ev?.sport || null,
-          trackerId: s.trackerId || null, reason: s.reason, viewers: s.refs, active: s.refs > 0, msgs: s.msgs || 0, balls: s.balls || 0,
+          trackerId: s.trackerId || null, ids: s.ids || null, feedId: s.feedId || null,
+          inFeed: !!(s.ids || []).some((id) => feedIds.has(id)),
+          reason: s.reason, viewers: s.refs, active: s.refs > 0, msgs: s.msgs || 0, balls: s.balls || 0,
           hasBall: !!s.last?.ball, lastBallAt: s.lastBallAt ? new Date(s.lastBallAt).toISOString() : null,
           endedAt: s.endedAt ? new Date(s.endedAt).toISOString() : null,
         })),

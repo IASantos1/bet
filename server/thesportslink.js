@@ -70,7 +70,7 @@ export async function resolveTracker(sportscore, { sport, home, away } = {}) {
   for (const slug of slugCandidates(home, away)) {
     const det = await sportscore.match(ssSport, slug);
     const tr = det?.ok ? trackerOf(det.data) : null;
-    if (tr) return { found: true, trackerId: tr.id, sport, ssSport, slug, live: null, teams: { home, away }, trackerSport: tr.sport, via: 'slug' };
+    if (tr) return { found: true, trackerId: tr.id, trackerProfile: tr.profile || null, sport, ssSport, slug, live: null, teams: { home, away }, trackerSport: tr.sport, via: 'slug' };
   }
   // 2) fall back to the live list, matched by names.
   const list = await sportscore.matches(ssSport, 50);
@@ -81,5 +81,5 @@ export async function resolveTracker(sportscore, { sport, home, away } = {}) {
   if (!det?.ok) return { found: false, reason: det?.error || 'O detalhe do jogo não respondeu.', slug: fx.slug };
   const tr = trackerOf(det.data);
   if (!tr) return { found: false, reason: 'O jogo não traz tracker ao vivo (sem posição de bola).', slug: fx.slug, teams: fx.teams };
-  return { found: true, trackerId: tr.id, sport, ssSport, slug: fx.slug, live: fx.live, teams: fx.teams, trackerSport: tr.sport, via: 'list' };
+  return { found: true, trackerId: tr.id, trackerProfile: tr.profile || null, sport, ssSport, slug: fx.slug, live: fx.live, teams: fx.teams, trackerSport: tr.sport, via: 'list' };
 }

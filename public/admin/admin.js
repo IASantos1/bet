@@ -1360,8 +1360,13 @@ function theSportsCourtDiag(c) {
     <p class="muted">Abra um jogo ao vivo de ténis/basquete/críquete no site (separador Tracker); os registos ficam aqui <b>uns minutos depois de fechar</b>, para poder vir ver o que aconteceu.</p>
     ${rows.length ? `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Tracker</th><th>Estado</th><th class="num">Msgs</th><th class="num">Bolas</th><th>Última bola</th></tr></thead><tbody>
       ${rows.map((m) => `<tr><td>${esc(m.home || '?')} vs ${esc(m.away || '?')} <small class="muted">#${esc(m.eventId)} · ${esc(m.sport || '')} · ${m.active ? '🔴 a ver' : m.endedAt ? `fechado ${esc(fmtDateTime(m.endedAt))}` : ''}</small></td>
-        <td>${m.trackerId ? `<code>${esc(m.trackerId)}</code>` : '<span class="pill lost">sem tracker</span>'}</td>
-        <td>${m.trackerId ? (m.balls ? '<span class="pill won">bola a chegar</span>' : m.msgs ? 'a ouvir, sem posição' : 'a ligar…') : `<span class="muted">${esc(m.reason || '—')}</span>`}</td>
+        <td>${m.trackerId ? `<code>${esc(m.trackerId)}</code>${m.ids && m.ids.length > 1 ? `<br><small class="muted">+ ${esc(m.ids.slice(1).join(', '))}</small>` : ''}` : '<span class="pill lost">sem tracker</span>'}</td>
+        <td>${m.trackerId
+          ? (m.balls ? '<span class="pill won">bola a chegar</span>'
+            : m.msgs ? 'a ouvir, sem posição'
+              : m.inFeed ? 'no feed, a aguardar posição'
+                : '<span class="pill lost">id não está no feed ⚠️</span>')
+          : `<span class="muted">${esc(m.reason || '—')}</span>`}</td>
         <td class="num">${m.msgs}</td><td class="num">${m.balls}</td><td>${m.lastBallAt ? esc(fmtDateTime(m.lastBallAt)) : '—'}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Ainda sem registos. Abra um jogo ao vivo no site e volte aqui.</p>'}</div>`;
 }
