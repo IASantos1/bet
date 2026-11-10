@@ -2753,6 +2753,21 @@ document.addEventListener('input', (e) => {
     }, 250);
     return;
   }
+  if (e.target.id === 'banGameSearch') {
+    clearTimeout(fsSearchTimer);
+    const q = e.target.value.trim();
+    fsSearchTimer = setTimeout(async () => {
+      const box = $('#banGameResults');
+      if (!box) return;
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      try {
+        const r = await api(`/api/casino/games?limit=8&q=${encodeURIComponent(q)}`);
+        box.innerHTML = r.games.length ? r.games.map((g) => `<button type="button" class="fs-result" data-action="ban-game-pick" data-id="${g.id}" data-name="${esc(g.name)}">${esc(g.name)} <small class="muted">${esc(g.provider)}</small></button>`).join('')
+          : '<small class="muted">Nenhum jogo encontrado.</small>';
+      } catch (err) { box.innerHTML = `<small class="muted">${esc(err.message)}</small>`; }
+    }, 250);
+    return;
+  }
   if (skinEd && e.target.closest?.('.skin-ed')) { skinInput(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banPreview(); return; }
   if (colEd && e.target.id === 'colSearch') { colSearch(e.target.value.trim()); return; }
@@ -3314,6 +3329,8 @@ function openBannerEditor(b = null) {
         <label class="field"><span>Texto do botão</span><input id="banCta" maxlength="30" value="${esc(b?.cta || '')}" placeholder="Ex.: Jogar agora"></label>
         <label class="field"><span>Ligação</span><input id="banLink" maxlength="300" value="${esc(b?.link || '')}" placeholder="#/casino/jogo/123 · #/promocoes · https://…">
           <small class="muted">Página do site (#/…) ou endereço https://. Vazio = banner sem ligação.</small></label>
+        <label class="field ban-wide"><span>Procurar jogo para o botão</span><input id="banGameSearch" placeholder="Ex.: Aviator, Gates of Olympus…" autocomplete="off">
+          <small class="muted">Escolha um jogo e a ligação acima passa a abri-lo.</small><div class="fs-results" id="banGameResults"></div></label>
         <label class="field ban-wide"><span>Condições (aparecem por baixo do banner)</span><input id="banTerms" maxlength="300" value="${esc(b?.terms || '')}" placeholder="Ex.: Depósito mín. 20 €. Rodadas de 0,20 €. Validade 7 dias. Termos e condições aplicáveis."></label>
         <label class="field"><span>Começa</span><input type="datetime-local" id="banStart" value="${toLocal(b?.startsAt)}"><small class="muted">Vazio = já.</small></label>
         <label class="field"><span>Termina</span><input type="datetime-local" id="banEnd" value="${toLocal(b?.endsAt)}"><small class="muted">Vazio = sem fim.</small></label>
@@ -3398,6 +3415,11 @@ async function banAction(action, el) {
   if (action === 'ban-back') { banEd = null; loadTab(); return; }
   if (action === 'ban-edit') { openBannerEditor((state.banners || []).find((b) => b.id === Number(el.dataset.id))); return; }
   if (action === 'ban-rm-m') { banEd.removeM = true; banEd.imageM = null; el.remove(); banPreview(); return; }
+  if (action === 'ban-game-pick') {
+    const link = $('#banLink'); if (link) link.value = `#/casino/jogo/${el.dataset.id}`;
+    $('#banGameResults').innerHTML = ''; const s = $('#banGameSearch'); if (s) s.value = el.dataset.name || '';
+    toast('Ligação', `O botão abre «${el.dataset.name || 'o jogo'}».`); banPreview(); return;
+  }
   if (action === 'ban-enabled') {
     try { await api(`/api/admin/banners/${el.dataset.id}/enabled`, { method: 'POST', body: { on: el.checked } }); toast(el.checked ? 'Banner ativo' : 'Banner desligado'); loadTab(); } catch (err) { el.checked = !el.checked; toast('Erro', err.message, 'error'); }
     return;
