@@ -5970,8 +5970,13 @@ function ensureCourt3D() {
   fetch(`/api/events/${m.id}/court-widget`).then((r) => (r.status === 200 ? r.json() : null)).then((d) => {
     if (m.widget !== w || m.widgetKind !== 'court') return;
     const frame = $('#courtFrame', w);
-    if (d?.url && frame) { frame.src = d.url; if (note) note.textContent = 'Campo 3D ao vivo (TheSports).'; }
-    else { w.classList.add('no3d'); if (note) note.textContent = 'Sem campo 3D para este jogo.'; }
+    if (d?.url && frame) {
+      frame.src = d.url;
+      // Frame only the court (crop the stats below): zoom + vertical nudge + box shape, set by the admin.
+      const turf = frame.parentElement, c = d.crop || {};
+      if (turf) { turf.style.setProperty('--court-ar', c.ar ?? 1.7); turf.style.setProperty('--court-zoom', c.zoom ?? 1.6); turf.style.setProperty('--court-off', c.off ?? 0); }
+      if (note) note.textContent = 'Campo 3D ao vivo.';
+    } else { w.classList.add('no3d'); if (note) note.textContent = 'Sem campo 3D para este jogo.'; }
   }).catch(() => { if (m.widget === w) { w.classList.add('no3d'); if (note) note.textContent = 'Sem campo 3D para este jogo.'; } });
 }
 

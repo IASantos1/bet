@@ -180,8 +180,13 @@ export function createApp(db, {
   const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: loginAttempts });
   const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: registrations });
 
-  // Live 3D court (tennis/basketball/cricket): streams the TheSports ball to the match page.
+  // Live 3D court (tennis/cricket): the TheSports widget, embedded. basketball is off (paid widget).
   const theSportsCourt = createTheSportsCourt({ thesportsLive, sportscore, log: (msg) => console.warn(`[court] ${msg}`) });
+  // How to frame the embedded widget so only the court shows (zoom in, hide the stats below). Tunable in
+  // the admin, per sport. zoom = scale, off = vertical nudge (%), ar = the visible box's width/height.
+  const COURT_CROP_DEFAULT = { tenis: { zoom: 1.6, off: -6, ar: 1.7 }, criquete: { zoom: 1.5, off: -4, ar: 1.7 } };
+  const courtCrop = () => { const s = getSetting(db, 'court.crop', null); return { ...COURT_CROP_DEFAULT, ...(s && typeof s === 'object' ? s : {}) }; };
+  const cropOf = (sport) => courtCrop()[sport] || COURT_CROP_DEFAULT[sport] || { zoom: 1.6, off: 0, ar: 1.7 };
 
   app.use((req, res, next) => {
     res.set({
@@ -1172,7 +1177,7 @@ export function createApp(db, {
     const st = sportscore.status();
     const base = String(st.baseUrl || 'https://sportscore.com/api/widget').replace(/\/+$/, '');
     const url = `${base}/tracker/?sport=${r.ssSport}&id=${encodeURIComponent(r.trackerId)}&src=${encodeURIComponent(st.src || 'bet62')}`;
-    res.json({ url, sport: ev.sport, via: r.via || null });
+    res.json({ url, sport: ev.sport, via: r.via || null, crop: cropOf(ev.sport) });
   }));
 
   app.get('/api/results', (_req, res) => {
@@ -3034,6 +3039,37 @@ export function createApp(db, {
     res.json(await resolveTracker(sportscore, {
       sport: String(req.query.sport || ''), home: String(req.query.home || '').slice(0, 120), away: String(req.query.away || '').slice(0, 120),
     }));
+  }));
+  // Court widget framing (crop/zoom), per sport — read and save, plus a live widget URL to preview it on.
+  admin.get('/court-crop', (_req, res) => res.json({ crop: courtCrop(), sports: ['tenis', 'criquete'] }));
+  admin.post('/court-crop', (req, res) => {
+    const clean = (c) => ({
+      zoom: Math.max(1, Math.min(3, Number(c?.zoom) || 1.6)),
+      off: Math.max(-60, Math.min(60, Number(c?.off) || 0)),
+      ar: Math.max(1, Math.min(4, Number(c?.ar) || 1.7)),
+    });
+    const body = req.body || {};
+    const next = {};
+    for (const s of ['tenis', 'criquete']) if (body[s]) next[s] = clean(body[s]);
+    setSetting(db, 'court.crop', { ...courtCrop(), ...next });
+    res.json({ crop: courtCrop() });
+  });
+  // One live match's widget URL, so the admin can preview the framing (ténis/críquete) or DIAGNOSE a
+  // sport that errors (basquete: shows the real "Your subscription" message + the exact id/URL we send,
+  // so we can tell a plan limit from a wrong identifier without guessing).
+  admin.get('/court-preview', wrap(async (req, res) => {
+    needSportScore();
+    const sport = String(req.query.sport || 'tenis');
+    if (!['tenis', 'criquete', 'basquetebol'].includes(sport)) return res.json({ url: null, reason: 'Desporto sem campo.' });
+    const row = db.prepare("SELECT * FROM events WHERE sport = ? AND status = 'live' ORDER BY updated_at DESC LIMIT 8").all(sport)
+      .find(Boolean);
+    if (!row) return res.json({ url: null, reason: 'Nenhum jogo ao vivo deste desporto agora.' });
+    const r = await resolveTracker(sportscore, { sport, home: row.home, away: row.away });
+    if (!r?.found) return res.json({ url: null, reason: `Não liguei "${row.home} vs ${row.away}"${r?.reason ? `: ${r.reason}` : ''}.`, match: `${row.home} vs ${row.away}` });
+    const st = sportscore.status();
+    const base = String(st.baseUrl || 'https://sportscore.com/api/widget').replace(/\/+$/, '');
+    const url = `${base}/tracker/?sport=${r.ssSport}&id=${encodeURIComponent(r.trackerId)}&src=${encodeURIComponent(st.src || 'bet62')}`;
+    res.json({ url, match: `${row.home} vs ${row.away}`, crop: cropOf(sport), ssSport: r.ssSport, trackerId: r.trackerId, via: r.via || null, diagnostic: sport === 'basquetebol' });
   }));
 
   // TheSports live tracker (MQTT) — admin test only, nothing of this reaches the public site yet.

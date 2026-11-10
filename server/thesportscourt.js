@@ -21,8 +21,9 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
   const byEvent = new Map();
   const on = () => !!(thesportsLive?.enabled);
 
-  // Only the sports that have a 3D court (football keeps its own pitch).
-  const hasCourt = (sport) => sport === 'tenis' || sport === 'basquetebol' || sport === 'criquete';
+  // Sports with a working TheSports 3D widget (basketball needs a paid subscription we don't have;
+  // football keeps its own pitch).
+  const hasCourt = (sport) => sport === 'tenis' || sport === 'criquete';
 
   function emit(eventId, s, ball, score) {
     s.last = { ball: ball || null, score: score || null };
