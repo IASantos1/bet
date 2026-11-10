@@ -21,9 +21,9 @@ export function createTheSportsCourt({ thesportsLive = null, sportscore = null, 
   const byEvent = new Map();
   const on = () => !!(thesportsLive?.enabled);
 
-  // Sports with a working TheSports 3D widget (basketball needs a paid subscription we don't have;
-  // football keeps its own pitch).
-  const hasCourt = (sport) => sport === 'tenis' || sport === 'criquete';
+  // Sports with a working TheSports 3D widget (football keeps its own pitch). Basketball works once the
+  // iframe sends the referer: the widget authorises the embed by domain, so "no-referrer" broke it.
+  const hasCourt = (sport) => sport === 'tenis' || sport === 'criquete' || sport === 'basquetebol';
 
   function emit(eventId, s, ball, score) {
     s.last = { ball: ball || null, score: score || null };

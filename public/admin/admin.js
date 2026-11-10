@@ -1143,7 +1143,7 @@ function cardPreview() {
 }
 
 // Court 3D framing: crop the embedded TheSports widget to show only the court, per sport.
-const COURT_SPORTS = [['tenis', 'Ténis'], ['criquete', 'Críquete']];
+const COURT_SPORTS = [['tenis', 'Ténis'], ['criquete', 'Críquete'], ['basquetebol', 'Basquete']];
 const CC_CTL = [
   ['zoom', 'Aproximar (zoom)', 1, 3, 0.05],
   ['off', 'Subir / descer', -60, 60, 1],
@@ -1173,18 +1173,6 @@ function adminCourtCrop(d) {
         </div>
       </div>`;
     }).join('')}
-    <div class="cc-sport cc-diag" data-sport="basquetebol">
-      <h4>Basquete — diagnóstico <span class="pill void">campo desligado</span></h4>
-      <p class="muted">O campo do basquete está desligado no site porque o widget devolve “Your subscription…”. Aqui carrega-se o widget real de um jogo ao vivo para ver a <b>mensagem exata</b> e o <b>identificador</b> que lhe enviamos — assim confirma-se se é limite do plano ou id errado, sem adivinhar.</p>
-      <div class="cc-row">
-        <div class="cc-box cc-box-free"><iframe id="ccFrame-basquetebol" class="cc-frame cc-frame-free" title="Diagnóstico basquete" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe></div>
-        <div class="cc-ctl">
-          <div class="form-actions"><button class="ghost-btn btn-sm" data-action="court-preview" data-sport="basquetebol">Carregar um jogo de basquete ao vivo</button></div>
-          <p class="muted cc-msg" id="ccMsg-basquetebol"></p>
-          <p class="muted cc-url" id="ccUrl-basquetebol"></p>
-        </div>
-      </div>
-    </div>
   </div>`;
 }
 const ccForm = (sport) => {
@@ -2116,7 +2104,7 @@ document.addEventListener('click', async (e) => {
       const r = await api(`/api/admin/court-preview?sport=${encodeURIComponent(s)}`);
       if (r.url && frame) {
         frame.src = r.url;
-        if (!r.diagnostic) applyCourtCropVars(s);
+        applyCourtCropVars(s);
         if (msg) msg.textContent = r.match || '';
         if (urlBox && r.trackerId) urlBox.innerHTML = `id enviado: <code>${esc(r.trackerId)}</code> (${esc(r.ssSport || s)}${r.via ? ` · ${esc(r.via)}` : ''})<br><a href="${esc(r.url)}" target="_blank" rel="noopener">abrir o widget num separador</a>`;
       } else if (msg) msg.textContent = r.reason || 'Sem jogo para pré-visualizar.';
