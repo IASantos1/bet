@@ -4930,7 +4930,12 @@ function matchPage(sub) {
   if (!e) return '<div class="loading">A carregar o jogo…</div>';
 
   const live = e.status === 'live';
-  const center = live
+  // With the embedded mini-court (ténis/críquete), the widget already shows the score/sets/point below,
+  // so drop the redundant score header on top of the match page (the live-list event cards keep theirs).
+  const courtEmbed = live && !!e.court;
+  const center = courtEmbed
+    ? ''
+    : live
     ? `<div class="match-score" id="matchScore">${e.homeScore ?? 0} - ${e.awayScore ?? 0}</div>${e.sport === 'tenis' ? `<div class="tn-sets" id="matchClock"><span>${esc(e.clock || '')}</span></div>` : `<div class="live-clock big" id="matchClock"><i class="pulse-dot"></i><span>${esc(clockLabel(e))}</span></div>`}
        ${e.sport === 'tenis' ? `<div class="tn-cell tn-hero" id="matchTennis">${tennisLiveCell(e)}</div>` : ''}`
     : e.status === 'finished'
