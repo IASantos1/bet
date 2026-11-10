@@ -3273,7 +3273,7 @@ function adminBanners(d) {
   const rows = list.map((b, i) => {
     const [cls, label] = banState(b);
     return `<div class="ban-card">
-      <div class="ban-thumb">${b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
+      <div class="ban-thumb">${b.model === 'aviator' ? '<span class="ban-thumb-av">✈ Aviator</span>' : b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
       <div class="grow"><strong>${esc(b.title || '(sem título)')}</strong>
         <small class="${cls}">${esc(label)}</small>
         <small class="muted">${esc(BAN_AUD[b.audience])}${b.link ? ` · ${esc(b.link)}` : ''}</small></div>
@@ -3296,14 +3296,18 @@ function adminBanners(d) {
 const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
 function openBannerEditor(b = null) {
-  banEd = { id: b?.id || null, imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false,
+  banEd = { id: b?.id || null, model: b?.model || 'image', imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false,
     vidD: !!b?.video?.d, vidM: !!(b?.video?.m && b.img.m !== b.img.d) };
   $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ban-back">‹ Banners</button></div>
     <div class="panel ban-ed"><h3>${b ? 'Editar banner' : 'Novo banner'}</h3>
       <div class="ban-grid">
-        <label class="field"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
+        <label class="field ban-wide"><span>Modelo</span><select id="banModel">
+          <option value="image"${banEd.model !== 'aviator' ? ' selected' : ''}>Imagem / vídeo (carregado por si)</option>
+          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option></select>
+          <small class="muted">O modelo "Aviator" é desenhado pelo site (aviãozinho a subir), encaixa em PC e telemóvel e usa o título, texto e botão abaixo.</small></label>
+        <label class="field ban-img"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
           <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
-        <label class="field"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
+        <label class="field ban-img"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
           <small class="muted">Recomendado 1080×1440 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
         <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
         <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
@@ -3326,13 +3330,32 @@ function openBannerEditor(b = null) {
   banPreview();
 }
 
+// The drawn Aviator banner (same markup as the public site), for the admin preview.
+function aviatorArt() {
+  return `<div class="cban-av" aria-hidden="true">
+    <span class="cban-av-glow"></span>
+    <svg class="cban-av-curve" viewBox="0 0 100 50" preserveAspectRatio="none" focusable="false">
+      <defs>
+        <linearGradient id="avLine" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff2d55"/><stop offset=".6" stop-color="#ff5e3a"/><stop offset="1" stop-color="#ffb01f"/></linearGradient>
+        <linearGradient id="avFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff2d55" stop-opacity=".42"/><stop offset="1" stop-color="#ff2d55" stop-opacity="0"/></linearGradient>
+      </defs>
+      <path class="cban-av-area" d="M0 50 C 34 49 58 38 78 16 L 99 1 L 99 50 Z" fill="url(#avFill)"/>
+      <path class="cban-av-line" d="M0 50 C 34 49 58 38 78 16 L 99 1" fill="none" stroke="url(#avLine)" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <svg class="cban-av-plane" viewBox="0 0 24 24" focusable="false"><path d="M1.6 21.2 L22.4 12 L1.6 2.8 L1.6 9.6 L14.6 12 L1.6 14.4 Z" fill="#fff"/></svg>
+    <span class="cban-av-mult">2.57×</span>
+  </div>`;
+}
+
 function banPreview() {
   if (!banEd) return;
+  const av = banEd.model === 'aviator';
+  $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
   const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
   const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
-  const slide = (src) => `<div class="cban-slide">${src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>'}
+  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
     ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
   $('#banPvD').innerHTML = slide(d);
@@ -3356,6 +3379,7 @@ async function bannerImage(file) {
 }
 
 async function banChange(t) {
+  if (t.id === 'banModel') { banEd.model = t.value === 'aviator' ? 'aviator' : 'image'; banPreview(); return; }
   if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
     try {
       const r = await bannerImage(t.files[0]);
@@ -3391,11 +3415,12 @@ async function banAction(action, el) {
     return;
   }
   if (action === 'ban-save') {
-    if (!banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
+    const model = $('#banModel')?.value === 'aviator' ? 'aviator' : 'image';
+    if (model === 'image' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
     el.disabled = true;
     try {
       await api('/api/admin/banners', { method: 'POST', body: {
-        id: banEd.id, title: $('#banTitle').value, subtitle: $('#banSub').value, cta: $('#banCta').value, link: $('#banLink').value.trim(),
+        id: banEd.id, model, title: $('#banTitle').value, subtitle: $('#banSub').value, cta: $('#banCta').value, link: $('#banLink').value.trim(),
         terms: $('#banTerms').value, audience: $('#banAud').value, enabled: $('#banEnabled').checked,
         startsAt: fromLocal($('#banStart').value), endsAt: fromLocal($('#banEnd').value),
         imageD: banEd.imageD || undefined, imageM: banEd.imageM || undefined, removeM: banEd.removeM || undefined,

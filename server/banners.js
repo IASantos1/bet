@@ -38,7 +38,12 @@ export function createBanners(db) {
     link TEXT NOT NULL DEFAULT '', terms TEXT NOT NULL DEFAULT '', audience TEXT NOT NULL DEFAULT 'all',
     starts_at TEXT, ends_at TEXT, sort INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
     image_d BLOB, mime_d TEXT, image_m BLOB, mime_m TEXT, updated_at TEXT NOT NULL)`);
-  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m,
+  // "model": how the banner is drawn — 'image' (uploaded picture/video, the default) or 'aviator'
+  // (a built-in animated banner, no upload, so it never crops and scales on any screen).
+  const bcols = new Set(db.prepare('PRAGMA table_info(casino_banners)').all().map((c) => c.name));
+  if (!bcols.has('model')) db.exec("ALTER TABLE casino_banners ADD COLUMN model TEXT NOT NULL DEFAULT 'image'");
+  const MODELS = new Set(['image', 'aviator']);
+  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m, model,
     image_d IS NOT NULL AS has_d, image_m IS NOT NULL AS has_m`;
   const row = (r) => {
     const v = encodeURIComponent(r.updated_at);
@@ -47,6 +52,7 @@ export function createBanners(db) {
     return {
       id: r.id, title: r.title, subtitle: r.subtitle, cta: r.cta, link: r.link, terms: r.terms, audience: r.audience,
       startsAt: r.starts_at, endsAt: r.ends_at, sort: r.sort, enabled: !!r.enabled, updatedAt: r.updated_at,
+      model: r.model || 'image',
       img: { d: d || m, m: m || d },
       // Which side is a video (played muted in a loop) rather than a picture.
       video: { d: /^video\//.test((d ? r.mime_d : r.mime_m) || ''), m: /^video\//.test((m ? r.mime_m : r.mime_d) || '') },
@@ -59,9 +65,9 @@ export function createBanners(db) {
   function live({ signedIn = false, now = nowIso() } = {}) {
     return db.prepare(`SELECT ${COLS} FROM casino_banners WHERE enabled = 1
         AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)
-        AND (image_d IS NOT NULL OR image_m IS NOT NULL) ORDER BY sort, id`).all(now, now)
+        AND (model != 'image' OR image_d IS NOT NULL OR image_m IS NOT NULL) ORDER BY sort, id`).all(now, now)
       .filter((r) => r.audience === 'all' || r.audience === (signedIn ? 'user' : 'guest'))
-      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img, video }) => ({ id, title, subtitle, cta, link: href, terms, img, video }));
+      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img, video, model }) => ({ id, title, subtitle, cta, link: href, terms, img, video, model }));
   }
 
   function image(id, which) {
@@ -77,16 +83,18 @@ export function createBanners(db) {
     const id = input.id ? Number(input.id) : null;
     if (id && !get(id)) throw new BannerError('Banner não encontrado.');
     const audience = AUDIENCES.has(input.audience) ? input.audience : 'all';
+    const model = MODELS.has(input.model) ? input.model : 'image';
     const fields = {
       title: text(input.title, 80), subtitle: text(input.subtitle, 160), cta: text(input.cta, 30), link: link(input.link),
       terms: text(input.terms, 300), audience, starts_at: when(input.startsAt), ends_at: when(input.endsAt),
-      enabled: input.enabled === false ? 0 : 1, updated_at: nowIso(),
+      model, enabled: input.enabled === false ? 0 : 1, updated_at: nowIso(),
     };
     if (fields.starts_at && fields.ends_at && fields.ends_at <= fields.starts_at) throw new BannerError('O fim tem de ser depois do início.');
     if (input.imageD) { const d = decode(input.imageD); Object.assign(fields, { image_d: d.buf, mime_d: d.mime }); }
     if (input.imageM) { const m = decode(input.imageM); Object.assign(fields, { image_m: m.buf, mime_m: m.mime }); }
     if (input.removeM) Object.assign(fields, { image_m: null, mime_m: null });
-    if (!id && !input.imageD && !input.imageM) throw new BannerError('Carregue a imagem do banner.');
+    // A built-in model (e.g. Aviator) is drawn, so it needs no upload; an image banner still does.
+    if (!id && model === 'image' && !input.imageD && !input.imageM) throw new BannerError('Carregue a imagem do banner.');
     const keys = Object.keys(fields);
     if (id) {
       db.prepare(`UPDATE casino_banners SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id);

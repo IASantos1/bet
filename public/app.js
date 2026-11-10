@@ -1475,6 +1475,25 @@ function spotlightCard(s) {
 }
 
 /** The carousel: one slide per banner (its phone picture on small screens), arrows, dots and the terms. */
+// A built-in, drawn Aviator banner (model === 'aviator'): night sky, a rising red multiplier curve and a
+// little plane climbing it, with a pulsing multiplier. All vector/CSS, so it is crisp and fills any size
+// (computer or phone) without ever cropping. The admin's title/text/button overlay on top as usual.
+function aviatorArt() {
+  return `<div class="cban-av" aria-hidden="true">
+    <span class="cban-av-glow"></span>
+    <svg class="cban-av-curve" viewBox="0 0 100 50" preserveAspectRatio="none" focusable="false">
+      <defs>
+        <linearGradient id="avLine" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff2d55"/><stop offset=".6" stop-color="#ff5e3a"/><stop offset="1" stop-color="#ffb01f"/></linearGradient>
+        <linearGradient id="avFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff2d55" stop-opacity=".42"/><stop offset="1" stop-color="#ff2d55" stop-opacity="0"/></linearGradient>
+      </defs>
+      <path class="cban-av-area" d="M0 50 C 34 49 58 38 78 16 L 99 1 L 99 50 Z" fill="url(#avFill)"/>
+      <path class="cban-av-line" d="M0 50 C 34 49 58 38 78 16 L 99 1" fill="none" stroke="url(#avLine)" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <svg class="cban-av-plane" viewBox="0 0 24 24" focusable="false"><path d="M1.6 21.2 L22.4 12 L1.6 2.8 L1.6 9.6 L14.6 12 L1.6 14.4 Z" fill="#fff"/></svg>
+    <span class="cban-av-mult">2.57×</span>
+  </div>`;
+}
+
 function casinoBanners() {
   const list = state.casinoBanners || [];
   if (!list.length) return '';
@@ -1483,6 +1502,7 @@ function casinoBanners() {
     const tag = b.link ? `a href="${esc(b.link)}"${ext ? ' target="_blank" rel="noopener"' : ''}` : 'div';
     const copy = b.title || b.subtitle || b.cta
       ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
+    if (b.model === 'aviator') return `<${tag} class="cban-slide cban-av-slide" data-cban="${i}">${aviatorArt()}${copy}</${tag.split(' ')[0]}>`;
     // A video plays muted in a loop (as a picture would show); computer and phone can differ.
     const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
     const media = b.video?.d || b.video?.m
