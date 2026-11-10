@@ -362,7 +362,7 @@ export const config = {
   },
 
   limits: {
-    minStakeCents: int(env.MIN_STAKE_CENTS, 100), // €1
+    minStakeCents: int(env.MIN_STAKE_CENTS, 20), // €0,20
     maxStakeCents: int(env.MAX_STAKE_CENTS, 100_000), // €1.000
     maxPayoutCents: int(env.MAX_PAYOUT_CENTS, 5_000_000), // €50.000
     maxSelections: 20,

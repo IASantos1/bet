@@ -257,7 +257,7 @@ test('stake limits and insufficient balance', async () => {
   const ev = await createEvent(adm);
   const p = await newPlayer(10);
   const pick = [{ selectionId: sel(ev, '1').id, odds: 2 }];
-  assert.equal((await p('POST', '/api/bets', { mode: 'single', stake: 0.5, selections: pick })).status, 400);
+  assert.equal((await p('POST', '/api/bets', { mode: 'single', stake: 0.1, selections: pick })).status, 400); // below the €0,20 minimum
   const r = await p('POST', '/api/bets', { mode: 'single', stake: 20, selections: pick });
   assert.equal(r.status, 400);
   assert.match(r.body.error, /Saldo insuficiente/);
