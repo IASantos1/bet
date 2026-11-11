@@ -1166,21 +1166,29 @@ export function createWinHouseFeed(db, {
   const findEvent = db.prepare('SELECT * FROM events WHERE source = ? AND external_id = ?');
   const upsertSel = db.prepare(
     `INSERT INTO selections (event_id, market, code, odds_x100, active) VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL`
+     ON CONFLICT (event_id, market, code) DO UPDATE SET odds_x100 = excluded.odds_x100, active = 1, src = NULL, closed_at = NULL`
   );
 
+  // A line the book no longer offers is only removed once it has been closed for DROP_GRACE_MS. Until
+  // then it stays (active = 0), so a bet slip built just before the line shifted finds it and closes
+  // cleanly ("mercado fechado") instead of failing with the confusing "Seleção inexistente".
+  const DROP_GRACE_MS = 6 * 60_000;
   const closedSel = db.prepare(`SELECT s.id, s.market, s.code FROM selections s WHERE s.event_id = ? AND s.active = 0 AND s.src IS NULL
-    AND s.market NOT IN ('1x2', 'ml') AND NOT EXISTS (SELECT 1 FROM bet_legs l WHERE l.selection_id = s.id)`);
+    AND s.market NOT IN ('1x2', 'ml') AND s.closed_at IS NOT NULL AND s.closed_at < ?
+    AND NOT EXISTS (SELECT 1 FROM bet_legs l WHERE l.selection_id = s.id)`);
   const dropSel = db.prepare('DELETE FROM selections WHERE id = ?');
 
   function writePrices(eventId, prices) {
     prices = withPushed(eventId, prices);
-    db.prepare('UPDATE selections SET active = 0 WHERE event_id = ?').run(eventId);
+    // Close everything, stamping when each line first closed (kept on later refreshes); the upserts below
+    // reopen the offered lines and clear their stamp.
+    db.prepare('UPDATE selections SET active = 0, closed_at = COALESCE(closed_at, ?) WHERE event_id = ? AND (active = 1 OR closed_at IS NULL)').run(nowIso(), eventId);
     for (const [k, v] of Object.entries(prices)) upsertSel.run(eventId, ...k.split('|'), v);
-    // Lines the book no longer offers go (they would pile up as locked picks); a pick suspended by
-    // the push a moment ago stays, locked, and so does anything with bets on it.
+    // Lines closed for long enough go (they would pile up as locked picks); a pick suspended by the push
+    // a moment ago stays, locked, and so does anything with bets on it.
     const held = pushed.get(eventId);
-    for (const r of closedSel.all(eventId)) {
+    const graceBefore = new Date(Date.now() - DROP_GRACE_MS).toISOString();
+    for (const r of closedSel.all(eventId, graceBefore)) {
       const p = held?.get(`${r.market}|${r.code}`);
       if (p && p.v === 0 && Date.now() - p.at < PUSH_FRESH_MS) continue;
       dropSel.run(r.id);

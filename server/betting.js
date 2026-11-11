@@ -57,7 +57,7 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
   const changes = [];
   for (const pick of picks) {
     const sel = getSel.get(Number(pick.selectionId));
-    if (!sel) throw new HttpError(400, 'Seleção inexistente.');
+    if (!sel) throw new HttpError(400, 'Esta seleção já não está disponível (a linha ou a odd mudou). Remova-a do boletim e, se quiser, volte a escolhê-la.', { closed: [Number(pick.selectionId)] });
     // Feed matches in play need a recent live price; manual events are the operator's call.
     // Each source vouches for its own in-play prices (PropLine: pl_live_at).
     const liveAt = sel.src === 'pl' ? sel.pl_live_at : sel.live_odds_at;
