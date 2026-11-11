@@ -773,9 +773,19 @@ test('game pages: the line after the [CODE] tag is not part of the market name; 
   assert.deepEqual(codes(), [
     '1000300~European Handicap Including Overtime~1 (0:6)=1', '1000300~European Handicap Including Overtime~1 (0:8)=1', '1000300~European Handicap Including Overtime~2 (0:8)=1',
   ]);
-  // The 0:8 line leaves the book: gone, not shown locked.
+  // The 0:8 line leaves the book: kept briefly (active = 0) so a slip built just before closes cleanly,
+  // not shown bettable.
   lists.livePages[50] = [[o(3, '1.9', '1', '0:6')]];
   lists.live = [football(50, 31, '1-0', ODD)]; // a goal: the page is read again at once
+  await t.feed.syncLive();
+  await t.feed.syncLiveDetails();
+  assert.deepEqual(codes(), [
+    '1000300~European Handicap Including Overtime~1 (0:6)=1',
+    '1000300~European Handicap Including Overtime~1 (0:8)=0', '1000300~European Handicap Including Overtime~2 (0:8)=0',
+  ]);
+  // Once they have been closed long enough (past the grace), they are removed (not left piling up).
+  t.db.prepare("UPDATE selections SET closed_at = '2000-01-01T00:00:00.000Z' WHERE active = 0").run();
+  lists.live = [football(50, 32, '2-0', ODD)]; // another goal forces a fresh read
   await t.feed.syncLive();
   await t.feed.syncLiveDetails();
   assert.deepEqual(codes(), ['1000300~European Handicap Including Overtime~1 (0:6)=1']);

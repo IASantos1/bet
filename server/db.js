@@ -598,6 +598,11 @@ function migrate(db) {
   if (!new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name)).has('src')) {
     db.exec('ALTER TABLE selections ADD COLUMN src TEXT');
   }
+  // When a (non-main) line stopped being offered: kept a while before it is removed, so a bet slip built
+  // just before a line shift still finds it and closes cleanly instead of failing with "doesn't exist".
+  if (!new Set(db.prepare('PRAGMA table_info(selections)').all().map((c) => c.name)).has('closed_at')) {
+    db.exec('ALTER TABLE selections ADD COLUMN closed_at TEXT');
+  }
   // Provider event ids matched to our events (PropLine has its own ids and team spellings).
   db.exec(`CREATE TABLE IF NOT EXISTS provider_links (
     provider TEXT NOT NULL, provider_event_id TEXT NOT NULL, event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
