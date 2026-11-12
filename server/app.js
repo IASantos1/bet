@@ -3014,6 +3014,11 @@ export function createApp(db, {
     if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
     res.json({ books: await bb.sportsbooks() });
   }));
+  // Search the whole Big Bang catalogue (hidden games included) to find a game's real name and id.
+  admin.get('/casino/search', wrap(async (req, res) => {
+    if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
+    res.json(await bb.searchAll(String(req.query?.q || '').slice(0, 60)));
+  }));
   admin.post('/casino/sportsbook-launch', wrap(async (req, res) => {
     if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
     const g = await bb.anyGame(req.body?.gameId);

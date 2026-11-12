@@ -10,7 +10,7 @@
 // A sandbox key (ek_test_…) works the same; its callbacks carry "sandbox": true and never move
 // real money (BigBang plays them with a virtual balance).
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { CATEGORIES, categoryOf, diversify, dropCrossDuplicates, familyKey, featuredGames, houseNames, sortProviders, themesOf, titleKey as nameKey } from './casinolobby.js';
+import { CATEGORIES, categoryOf, compact, diversify, dropCrossDuplicates, familyKey, featuredGames, houseNames, sortProviders, themesOf, titleKey as nameKey } from './casinolobby.js';
 import { getSetting, setSetting } from './db.js';
 import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
@@ -401,6 +401,18 @@ export function createBigBang(db, {
     return catalog.byId.get(Number(id)) || null;
   }
 
+  /** Admin: search the whole catalogue (hidden games included) by name or provider substring. */
+  async function searchAll(q, limit = 80) {
+    await games();
+    const needle = compact(q);
+    if (needle.length < 2) return { total: catalog.byId.size, matches: [] };
+    const matches = [...catalog.byId.values()]
+      .filter((g) => compact(g.name).includes(needle) || compact(g.provider).includes(needle))
+      .slice(0, limit)
+      .map((g) => ({ id: g.id, name: g.name, provider: g.provider, type: g.type, premium: !!g.premium }));
+    return { total: catalog.byId.size, matches };
+  }
+
   /** The sportsbook / esports books found in the catalogue (by name, else provider), for the admin only. */
   async function sportsbooks() {
     await games();
@@ -595,5 +607,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
