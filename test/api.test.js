@@ -668,6 +668,19 @@ test('banners do casino: o admin cria; o site mostra os que estão no ar para qu
   assert.equal((await client()('POST', '/api/admin/banners', { title: 'x' })).status, 401);
 });
 
+test('gestor de ligas: desligar uma liga esconde os jogos no site; religar fá-los voltar (nada é apagado)', async () => {
+  const adm = await adminClient();
+  const ev = (await adm('POST', '/api/admin/events', { sport: 'futebol', competition: 'Liga Bloqueável FC', home: 'A', away: 'B', startTime: new Date(Date.now() + 3600_000).toISOString(), odds: { 1: 2, X: 3, 2: 4 } })).body.event;
+  const shown = () => client()('GET', '/api/events').then((r) => r.body.events.some((e) => e.id === ev.id));
+  assert.ok(await shown());
+  assert.ok((await adm('GET', '/api/admin/leagues')).body.leagues.some((l) => l.competition === 'Liga Bloqueável FC'));
+  assert.equal((await adm('POST', '/api/admin/leagues', { blocked: ['Liga Bloqueável FC'] })).status, 200);
+  assert.ok(!(await shown()), 'liga desligada fica escondida');
+  assert.ok((await adm('GET', '/api/admin/leagues')).body.leagues.find((l) => l.competition === 'Liga Bloqueável FC').blocked);
+  await adm('POST', '/api/admin/leagues', { blocked: [] });
+  assert.ok(await shown(), 'religar traz os jogos de volta');
+});
+
 test('a winning accumulator keeps where it came from; an origin that does not fit the bet is ignored', async () => {
   const adm = await adminClient();
   const p = await newPlayer(50);

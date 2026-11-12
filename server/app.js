@@ -686,8 +686,14 @@ export function createApp(db, {
     return pick.sort((a, b) => '1X2'.indexOf(a.short) - '1X2'.indexOf(b.short));
   }
 
+  // Leagues the operator switched off in the admin (by normalized name). Hidden from the whole site at
+  // once, reversibly (nothing is deleted — switching a league back on brings its games straight back).
+  const blockedLeagues = () => { const s = getSetting(db, 'leagues.blocked', null); return new Set(Array.isArray(s) ? s.map(leagueKey) : []); };
+
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
-    const events = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
+    const all = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
+    const bl = blockedLeagues();
+    const events = bl.size ? all.filter((e) => !bl.has(leagueKey(e.competition))) : all;
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
@@ -887,11 +893,15 @@ export function createApp(db, {
   });
 
   // Countries and leagues of the sidebar, with how many games each has open (in play or within a month).
-  const openFixtures = (sport) => db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
-    AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
-    AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))
-    AND ${NOT_GONE}`)
-    .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore(), unseenBefore());
+  const openFixtures = (sport) => {
+    const rows = db.prepare(`SELECT e.id, e.competition FROM events e WHERE e.sport = ?
+      AND (e.status = 'live' OR (e.status = 'scheduled' AND e.start_time > ? AND e.start_time < ?))
+      AND (e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))
+      AND ${NOT_GONE}`)
+      .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore(), unseenBefore());
+    const bl = blockedLeagues();
+    return bl.size ? rows.filter((e) => !bl.has(leagueKey(e.competition))) : rows;
+  };
   // Team badges kept here (teamlogos.js: API-Football asks for its logos not to be fetched each time).
   app.get('/team-logo/:id', (req, res) => {
     const f = teamLogos?.file?.(req.params.id);
@@ -3069,6 +3079,27 @@ export function createApp(db, {
     for (const s of COURT_SPORTS) if (body[s]) saved[s] = clean(body[s], s);
     setSetting(db, 'court.crop', saved);
     res.json({ crop: cropAll() });
+  });
+
+  // League manager: every league with games now (per sport), and which are switched off. Blocking hides
+  // a league's games site-wide at once, reversibly (nothing is deleted; switch it back on and they return).
+  const LEAGUE_WOMEN = /\b(wom[ae]n|women|femin|femen|f[ée]mini|damen|frauen|ladies|mulheres|wta)\b|\(w\)|\(f\)/i;
+  const LEAGUE_YOUTH = /\b(u-?\s?\d{2}|sub-?\s?\d{2}|under-?\s?\d{2}|juvenil|juvenis|youth|jugend|primavera)\b/i;
+  admin.get('/leagues', (_req, res) => {
+    const bl = blockedLeagues();
+    const rows = db.prepare(`SELECT sport, competition, COUNT(*) AS n, SUM(CASE WHEN status = 'live' THEN 1 ELSE 0 END) AS live
+      FROM events WHERE status IN ('scheduled', 'live') AND (status = 'live' OR start_time > ?) GROUP BY sport, competition`).all(nowIso());
+    const leagues = rows.map((r) => ({
+      sport: r.sport, competition: r.competition, count: r.n, live: r.live || 0, blocked: bl.has(leagueKey(r.competition)),
+      kind: LEAGUE_WOMEN.test(r.competition) ? 'women' : LEAGUE_YOUTH.test(r.competition) ? 'youth' : null,
+    })).sort((a, b) => a.sport.localeCompare(b.sport) || b.count - a.count || a.competition.localeCompare(b.competition));
+    res.json({ leagues, blocked: getSetting(db, 'leagues.blocked', []) });
+  });
+  admin.post('/leagues', (req, res) => {
+    const list = Array.isArray(req.body?.blocked)
+      ? [...new Set(req.body.blocked.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.slice(0, 160)))].slice(0, 4000) : [];
+    setSetting(db, 'leagues.blocked', list);
+    res.json({ ok: true, blocked: list });
   });
   // One live match's widget URL, so the admin can preview the framing on a real game (also shows the id
   // and URL we send, which is handy when a sport misbehaves).

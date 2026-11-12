@@ -784,6 +784,17 @@
 .ban-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ban-thumb-av { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-weight: 800; font-size: 13px; color: #fff;
   background: radial-gradient(120% 150% at 84% 118%, rgba(255, 45, 85, .5), transparent 55%), linear-gradient(160deg, #15122c, #05050c); }
+
+/* League manager */
+.lg-search { flex: 1; min-width: 180px; }
+.lg-list { display: grid; gap: 14px; margin: 8px 0 14px; }
+.lg-group h4 { margin: 0 0 6px; }
+.lg-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer; }
+.lg-row input { width: 18px; height: 18px; flex: none; }
+.lg-row:has(input:not(:checked)) { opacity: .55; background: repeating-linear-gradient(135deg, transparent, transparent 7px, rgba(255, 90, 90, .08) 7px, rgba(255, 90, 90, .08) 14px); }
+.lg-name { font-weight: 600; }
+.lg-count { font-size: 12px; color: var(--muted, #8a94a3); white-space: nowrap; }
+.lg-live { color: #e23; }
 .ban-order { display: flex; gap: 4px; }
 .ban-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 14px; align-items: start; }
 .ban-grid .ban-wide { grid-column: 1 / -1; }
