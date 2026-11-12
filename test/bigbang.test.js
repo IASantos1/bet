@@ -593,10 +593,27 @@ test('Halloween Dice (does not work) is hidden, also in a list the operator alre
   const db = openDb(':memory:');
   setSetting(db, 'casino.hidden', ['Divine 9']);
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
-  assert.deepEqual(bb.hiddenList(), ['Divine 9', 'Halloween Dice']);
+  assert.deepEqual(bb.hiddenList(), ['Divine 9', 'Halloween Dice', 'Betby Sportsbook', 'BTi Sportsbook', 'LuckSport', 'SABA Sports', 'TF Gaming Esports']);
   setSetting(db, 'casino.hidden', ['Divine 9']); // the operator shows it again
   assert.deepEqual(createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl }).hiddenList(), ['Divine 9']);
   assert.ok(createBigBang(openDb(':memory:'), { apiKey: KEY }).hiddenList().includes('Halloween Dice'));
+});
+
+test('sportsbooks: hidden from the public casino, listed and opened only for the admin, by id even when hidden', async () => {
+  const sb = { id: 7777, name: 'Betby Sportsbook', title: 'Betby Sportsbook', provider: 'Betby', category: 'Betby', category_title: 'Betby', thumbnail: null, game_type: 'live', is_premium: true };
+  const db = openDb(':memory:');
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi([sb]).fetchImpl });
+  const pub = await bb.games();
+  assert.ok(!pub.games.some((g) => g.id === 7777), 'the sportsbook never shows in the public catalogue');
+  assert.equal(await bb.game(7777), null); // the public game endpoint refuses a hidden game
+  // The admin list finds it by name, with its real id.
+  const books = await bb.sportsbooks();
+  const betby = books.find((b) => b.name === 'Betby Sportsbook');
+  assert.deepEqual([betby.id, betby.premium], [7777, true]);
+  // anyGame returns the hidden game; the admin opens it with a real token.
+  assert.equal((await bb.anyGame(7777)).name, 'Betby Sportsbook');
+  const url = await bb.launch({ gameId: 7777, token: playerToken(1), returnUrl: '' });
+  assert.equal(url, 'https://g/real/7777/b62_1');
 });
 
 test('variety: one game of a family per row; "Porque jogaste" brings the family, the theme, then the provider', async () => {

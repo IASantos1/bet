@@ -1285,7 +1285,11 @@ function adminCasino(c) {
     <form class="panel" data-form="casino-hidden"><h3>Jogos escondidos</h3>
       <p class="muted">Jogos que não aparecem no casino (lobby, pesquisa, fornecedores e "do mesmo estilo"). Um por linha: o nome do jogo como aparece no site, ou o ID (está no URL: #/casino/jogo/ID).</p>
       <div class="field"><textarea name="hidden" rows="5">${esc((c.hidden || []).join('\n'))}</textarea></div>
-      <div class="form-actions"><button class="primary-btn">Guardar</button></div></form>`;
+      <div class="form-actions"><button class="primary-btn">Guardar</button></div></form>
+    <div class="panel"><h3>Sportsbooks da Big Bang (só administrador)</h3>
+      <p class="muted">Casas de apostas e esports ligadas à Big Bang (Betby, BTi, SABA, LuckSport, TF Gaming). Estão <b>escondidas do casino público</b> — aqui podes abri-las com a tua conta para ver como funcionam e como vêm os dados (odds, mercados). Abrem com dinheiro real (não têm demo).</p>
+      <div class="form-actions"><button class="ghost-btn btn-sm" data-action="sb-load">Carregar lista</button></div>
+      <div id="sbList"></div></div>`;
   }
   if (!c.enabled) {
     return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
@@ -2633,6 +2637,26 @@ document.addEventListener('click', async (e) => {
       const { steps } = await api('/api/admin/casino/palace-test', { method: 'POST', body: {} });
       $('#palaceTest').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
     } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'sb-load') {
+    actionEl.disabled = true;
+    try {
+      const { books } = await api('/api/admin/casino/sportsbooks');
+      const rows = books.map((b) => `<tr><td><strong>${esc(b.name)}</strong><br><small class="muted">${esc(b.provider)}</small></td>
+        <td>${b.id ? `<span class="pill won">no catálogo${b.premium ? ' · Premium' : ''}</span>` : '<span class="pill lost">não encontrado</span>'}</td>
+        <td class="num">${b.id ? `<button class="ghost-btn btn-sm" data-action="sb-open" data-id="${b.id}" data-name="${esc(b.name)}">Abrir (admin)</button>` : ''}</td></tr>`).join('');
+      $('#sbList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'sb-open') {
+    const tab = window.open('about:blank', '_blank');
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/sportsbook-launch', { method: 'POST', body: { gameId: Number(actionEl.dataset.id) } });
+      if (!r.url) throw new Error('A Big Bang não devolveu o endereço do jogo.');
+      if (tab) tab.location = r.url; else window.location.assign(r.url);
+      toast('Aberto', `${actionEl.dataset.name} abriu numa aba nova.`);
+    } catch (err) { tab?.close(); toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
   } else if (action === 'tg-auto') {
     try {
