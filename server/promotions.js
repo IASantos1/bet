@@ -34,8 +34,8 @@ export const PROMO_DEFAULTS = {
   // multiples only (no free bet, no bonus money).
   accaBoost: { active: true, startAt: null, endAt: null, tiers: [[4, 5], [8, 10], [12, 15], [17, 20]], minOdds: 1.2, maxBoost: 500 },
   casinoFs: {
-    active: true, startAt: null, endAt: null, tiers: [[10, 5], [20, 10], [50, 25], [100, 50]], spinValue: 0.2,
-    validityDays: 7, maxDeposit: 100, maxClaims: null, games: [], gameBets: {}, firstDepositOnly: true,
+    active: true, startAt: null, endAt: null, tiers: [[20, 100]], spinValue: 0.1,
+    validityDays: 7, maxDeposit: 100, maxClaims: 1, games: [], gameBets: {}, firstDepositOnly: true,
   },
   // A free bet on a deposit: [deposit from €, free bet €] (€20 → a €10 free bet), the same tiers as the
   // free spins; one free bet of that amount, priced at least minOdds, valid validityDays.
@@ -117,7 +117,7 @@ const isoOrNull = (v) => {
 
 /** Validates and saves the configuration sent by the admin (unknown fields are ignored). */
 // The house's free-spins games, put in the free-spins list once (by name: their ids differ per catalogue).
-export const FS_DEFAULT_GAMES = ['Fortune Tiger', 'Big Bass Splash', 'The Dog House', 'Shining Crown', 'Cash Heat', '3 Lucky Lions'];
+export const FS_DEFAULT_GAMES = ['Big Bass Bonanza'];
 const nameWords = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   .replace(/[™®©]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w && w !== 'the');
 /**

@@ -92,7 +92,7 @@ test('seamless wallet: balance read, bets and wins applied once per transaction,
 test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at most the game\'s bet, winnings paid as real money', () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
-  savePromoConfig(db, { casinoFs: { games: '4822:0.10, 4821:0.20' } });
+  savePromoConfig(db, { casinoFs: { tiers: '10:5, 20:10, 50:25, 100:50', spinValue: 0.2, maxClaims: null, games: '4822:0.10, 4821:0.20' } });
   assert.deepEqual(promoConfig(db).casinoFs.gameBets, { 4822: 0.1, 4821: 0.2 });
   const u = player(db);
   // €10 → 5 spins, worth 5 × €0.20 = €1.
@@ -133,7 +133,7 @@ test('free spins: spins by deposit tier (worth spins × €0.20 to us), each at 
 test('free spins: expiry pays what they won and drops the spins not played', () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });
-  savePromoConfig(db, { casinoFs: { games: '4821' } });
+  savePromoConfig(db, { casinoFs: { tiers: '10:5, 20:10, 50:25, 100:50', spinValue: 0.2, games: '4821' } });
   const u = player(db);
   tx(db, () => postTransaction(db, u, 2000, 'deposit', 'd'));
   const s = tx(db, () => onDeposit(db, { userId: u, amountCents: 2000, ref: 'pi', choice: 'casino' }));
@@ -151,7 +151,7 @@ test('free spins: none below the first tier, none without eligible games; the �
   const u = player(db);
   tx(db, () => postTransaction(db, u, 5000, 'deposit', 'd'));
   assert.equal(tx(db, () => onDeposit(db, { userId: u, amountCents: 5000, ref: 'a', choice: 'casino' })), null); // no games configured
-  savePromoConfig(db, { casinoFs: { games: [4821] } });
+  savePromoConfig(db, { casinoFs: { tiers: '10:5, 20:10, 50:25, 100:50', games: [4821] } });
   const v = player(db);
   tx(db, () => postTransaction(db, v, 900, 'deposit', 'd'));
   assert.equal(tx(db, () => onDeposit(db, { userId: v, amountCents: 900, ref: 'b', choice: 'casino' })), null); // below €10
@@ -193,7 +193,7 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     const empty = await call('POST', '/api/casino/launch', { gameId: 4822 });
     assert.equal(empty.status, 400);
     assert.equal(empty.body.needsDeposit, true);
-    savePromoConfig(db, { casinoFs: { games: [4822] } });
+    savePromoConfig(db, { casinoFs: { tiers: '10:5, 20:10, 50:25, 100:50', spinValue: 0.2, games: [4822] } });
     const d = await call('POST', '/api/wallet/deposit', { amount: 20, method: 'mbway', promo: 'casino' });
     assert.equal(d.body.bonus.spins, 10); // €20 → 10 spins
     assert.equal(d.body.user.bonus, 0);
@@ -634,7 +634,7 @@ test('a game shown once for two providers is in both providers\' filter', async 
 
 test('free spins and the deposit free bet: only on the first deposit, €20 → 10 spins / a €10 free bet', () => {
   const db = openDb(':memory:');
-  savePromoConfig(db, { casinoFs: { games: [4821] } });
+  savePromoConfig(db, { casinoFs: { tiers: '10:5, 20:10, 50:25, 100:50', maxClaims: null, games: [4821] } });
   const a = player(db);
   tx(db, () => postTransaction(db, a, 2000, 'deposit', 'd1'));
   assert.equal(tx(db, () => onDeposit(db, { userId: a, amountCents: 2000, ref: 'a1', choice: 'casino' })).spins, 10);

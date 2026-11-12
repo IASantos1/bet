@@ -358,6 +358,7 @@ test('free spins: the house games are found by name in the catalogue and added o
     { id: 11, name: 'Fortune Tiger' }, { id: 12, name: 'Big Bass Splash' }, { id: 13, name: 'Big Bass Splash 1000' },
     { id: 14, name: 'The Dog House Megaways' }, { id: 15, name: 'The Dog House' }, { id: 16, name: 'Shining Crown' },
     { id: 17, name: 'CashHeat' }, { id: 18, name: 'Lucky 3 Lions' }, { id: 19, name: 'Sweet Bonanza' },
+    { id: 21, name: 'Big Bass Bonanza' },
   ];
   assert.equal(findGameByName('The Dog House', catalogue).id, 15); // not the Megaways one
   assert.equal(findGameByName('Big Bass Splash', catalogue).id, 12);
@@ -370,7 +371,7 @@ test('free spins: the house games are found by name in the catalogue and added o
   assert.equal(seedFsGames(db, []), null); // catalogue not loaded yet: tried again later
   const r = seedFsGames(db, catalogue);
   assert.deepEqual(r.missing, []);
-  assert.deepEqual(promoConfig(db).casinoFs.games, [11, 12, 15, 16, 17, 18]);
+  assert.deepEqual(promoConfig(db).casinoFs.games, [21]); // the house free-spins game: Big Bass Bonanza
   assert.equal(seedFsGames(db, catalogue), null); // once only: the admin's later changes stay
 });
 
