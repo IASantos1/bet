@@ -1828,6 +1828,37 @@ body.maint-on { overflow: hidden; }
 @media (max-width: 700px) { .cban-av-mult { left: 0; right: 0; top: 7%; text-align: center; } }
 @media (prefers-reduced-motion: reduce) { .cban-av-plane, .cban-av-mult { animation: none; } }
 
+/* Free Spins promo banner (model === 'freespins'): a drawn gold/purple scene with the offer baked in,
+   crisp at any size and never cropped. An optional admin button overlays at the bottom (.cban-fs-copy). */
+.cban-fs { position: absolute; inset: 0; overflow: hidden; background:
+  radial-gradient(120% 150% at 88% 118%, rgba(255, 196, 0, .32), transparent 55%),
+  radial-gradient(100% 130% at 6% -16%, rgba(150, 70, 255, .4), transparent 60%),
+  linear-gradient(150deg, #2a1150 0%, #1a0b36 55%, #0c0620 100%); }
+.cban-fs-glow { position: absolute; left: 50%; top: 42%; width: 70%; height: 80%; transform: translate(-50%, -50%); pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255, 200, 70, .3), transparent 70%); filter: blur(14px); }
+.cban-fs-coin { position: absolute; display: grid; place-items: center; width: clamp(16px, 4.4cqw, 40px); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe79a, #ffbf2e 55%, #d98a12 100%); color: #7a4e07; font-weight: 900;
+  font-size: clamp(9px, 2.3cqw, 20px); box-shadow: 0 2px 8px rgba(0, 0, 0, .35), inset 0 0 0 2px rgba(255, 255, 255, .35);
+  animation: cbanFsFloat 3.6s ease-in-out infinite; }
+.cban-fs-coin.a { left: 7%; top: 22%; animation-delay: 0s; }
+.cban-fs-coin.b { left: 15%; top: 64%; animation-delay: .5s; }
+.cban-fs-coin.c { left: 80%; top: 20%; animation-delay: 1s; }
+.cban-fs-coin.d { left: 88%; top: 66%; animation-delay: 1.5s; }
+.cban-fs-coin.e { left: 72%; top: 78%; width: clamp(12px, 3cqw, 28px); animation-delay: .8s; }
+.cban-fs-stack { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4cqw; text-align: center; padding: 0 6%; }
+.cban-fs-top { font-weight: 800; letter-spacing: .04em; color: #ffe6a6; font-size: clamp(11px, 2.1cqw, 26px); text-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
+.cban-fs-top b { color: #fff; }
+.cban-fs-prize { display: inline-flex; align-items: baseline; gap: .4em; line-height: .95; font-weight: 900;
+  background: linear-gradient(180deg, #fff6d6, #ffc400 60%, #ff9d2e); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, .45)); }
+.cban-fs-prize b { font-size: clamp(34px, 11cqw, 128px); }
+.cban-fs-prize span { font-size: clamp(16px, 4.6cqw, 54px); letter-spacing: -.01em; }
+.cban-fs-sub { color: #e7dcff; font-size: clamp(10px, 1.5cqw, 20px); opacity: .92; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+.cban-fs-copy { inset: auto 0 0 0; justify-content: flex-end; align-items: center; padding: 0 0 5cqw; background: none; }
+.cban-fs-copy .cban-cta { align-self: center; background: linear-gradient(180deg, #ffd24a, #ff9d2e); box-shadow: 0 6px 18px rgba(255, 140, 0, .4); }
+@keyframes cbanFsFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14%); } }
+@media (prefers-reduced-motion: reduce) { .cban-fs-coin { animation: none; } }
+
 /* "Os meus jogos": ▶ on games played recently, ♥ on the game page */
 .recent-card .game-art { position: relative; }
 .recent-card .play-badge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px; border-radius: 50%;

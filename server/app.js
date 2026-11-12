@@ -2399,17 +2399,20 @@ export function createApp(db, {
   }));
 
   admin.get('/users', (_req, res) => {
+    const now = nowIso();
+    // Free spins each player has available now (active grants, not expired): rounds left and how many grants.
+    const fsCol = `(SELECT COALESCE(SUM(spins_left), 0) FROM casino_spins s WHERE s.user_id = u.id AND s.status = 'active' AND s.expires_at > ?) AS fs_spins`;
     const rows = db.prepare(
-      `SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets
+      `SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets, ${fsCol}
          FROM users u ORDER BY u.id DESC LIMIT 200`
-    ).all();
+    ).all(now);
     // Identity documents waiting for the administrator: shown first, whenever they were sent.
-    const kycPending = db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets,
+    const kycPending = db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM bets b WHERE b.user_id = u.id) AS bets, ${fsCol},
         (SELECT MAX(created_at) FROM kyc_documents d WHERE d.user_id = u.id AND d.status = 'pending') AS sent_at
-      FROM users u WHERE EXISTS (SELECT 1 FROM kyc_documents d WHERE d.user_id = u.id AND d.status = 'pending') ORDER BY sent_at`).all();
+      FROM users u WHERE EXISTS (SELECT 1 FROM kyc_documents d WHERE d.user_id = u.id AND d.status = 'pending') ORDER BY sent_at`).all(now);
     res.json({
-      users: rows.map((u) => ({ ...userOut(u), bets: u.bets })),
-      kycPending: kycPending.map((u) => ({ ...userOut(u), bets: u.bets, kycSentAt: u.sent_at })),
+      users: rows.map((u) => ({ ...userOut(u), bets: u.bets, freeSpins: u.fs_spins || 0 })),
+      kycPending: kycPending.map((u) => ({ ...userOut(u), bets: u.bets, freeSpins: u.fs_spins || 0, kycSentAt: u.sent_at })),
     });
   });
 
@@ -2631,8 +2634,13 @@ export function createApp(db, {
     const documents = db.prepare('SELECT id, kind, file_name, mime_type, file_size, status, created_at, reviewed_at FROM kyc_documents WHERE user_id = ? ORDER BY id DESC').all(u.id)
       .map((d) => ({ id: d.id, kind: d.kind, fileName: d.file_name, mimeType: d.mime_type, size: d.file_size, status: d.status, createdAt: d.created_at, reviewedAt: d.reviewed_at }));
     const sum = (type) => cents(db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND type = ?').get(u.id, type).s);
+    // Free spins this player has had (newest first): how many, how many left, their value and winnings.
+    const freeSpins = db.prepare(`SELECT id, status, spins, spins_left, spin_value_cents, won_cents, paid_cents, expires_at, created_at
+      FROM casino_spins WHERE user_id = ? ORDER BY id DESC LIMIT 20`).all(u.id)
+      .map((s) => ({ id: s.id, status: s.status, spins: s.spins, spinsLeft: s.spins_left ?? s.spins, value: cents(s.spin_value_cents),
+        won: cents((s.status === 'active' ? s.won_cents : s.paid_cents) || 0), expiresAt: s.expires_at, createdAt: s.created_at }));
     res.json({
-      user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked, inCasino }, bets, transactions: txs, withdrawals, documents,
+      user: { ...userOut(u), bets: bets.length, promoBlocked: !!u.promo_blocked, inCasino }, bets, transactions: txs, withdrawals, documents, freeSpins,
       withdraw: withdrawEligibility(db, u),
       promotions: playerPromos(db, u.id), limits: limitsView(currentLimits(db, u)),
       totals: { deposits: sum('deposit'), withdrawals: -sum('withdrawal'), staked: -sum('bet'), payouts: sum('payout'),

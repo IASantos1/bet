@@ -371,6 +371,11 @@ test('admin players: balance add / subtract / set, and free spins given by hand'
   assert.deepEqual([r.status, r.body.freeSpins.spins, r.body.freeSpins.value, r.body.freeSpins.games.length], [200, 5, 1, 2]);
   assert.equal((await fs({ spins: 5, spinValue: '0.20' })).status, 409);
   assert.equal((await p('GET', '/api/me/free-spins/active')).body.freeSpins.spinsLeft, 5);
+  // The admin users list and detail show the player's available free spins.
+  const meRow = (await adm('GET', '/api/admin/users')).body.users.find((u) => u.id === me.id);
+  assert.equal(meRow.freeSpins, 5);
+  const det = (await adm('GET', `/api/admin/users/${me.id}`)).body;
+  assert.ok(Array.isArray(det.freeSpins) && det.freeSpins.some((s) => s.status === 'active' && s.spinsLeft === 5));
 });
 
 test('admin players: wallet credit/debit, free bets, ban and the detail page', async () => {
@@ -649,6 +654,12 @@ test('banners do casino: o admin cria; o site mostra os que estão no ar para qu
   assert.equal(av.body.banner.model, 'aviator');
   assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.title === 'Aviator' && x.model === 'aviator'));
   await adm('POST', `/api/admin/banners/${av.body.banner.id}/delete`, {});
+  // The built-in "freespins" model is also drawn (offer baked in), so it needs no image and goes live.
+  const fsb = (await adm('POST', '/api/admin/banners', { cta: 'Participar', link: '#/promocoes', model: 'freespins' }));
+  assert.equal(fsb.status, 200);
+  assert.equal(fsb.body.banner.model, 'freespins');
+  assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.model === 'freespins'));
+  await adm('POST', `/api/admin/banners/${fsb.body.banner.id}/delete`, {});
   assert.equal((await adm('POST', '/api/admin/banners', { title: 'X', imageD: png, link: 'javascript:alert(1)' })).status, 400, 'only #/ or https links');
   const a = (await adm('POST', '/api/admin/banners', { title: 'Free Spins', subtitle: '100 rodadas', cta: 'Jogar', link: '#/promocoes', terms: 'Dep. mín. 20 €', imageD: png })).body.banner;
   const b = (await adm('POST', '/api/admin/banners', { title: 'Só visitantes', imageD: png, imageM: png, audience: 'guest' })).body.banner;

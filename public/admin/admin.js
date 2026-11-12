@@ -121,9 +121,9 @@ const ICON = {
 };
 
 function usersTable(users) {
-  return `<div class="table-wrap"><table class="users-table"><thead><tr><th>#</th><th>Nome</th><th>Email</th><th class="num">Saldo</th><th class="num">FreeBets</th><th>KYC</th><th class="num">Apostas</th><th>Registo</th><th></th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="users-table"><thead><tr><th>#</th><th>Nome</th><th>Email</th><th class="num">Saldo</th><th class="num">FreeBets</th><th class="num">Free Spins</th><th>KYC</th><th class="num">Apostas</th><th>Registo</th><th></th></tr></thead><tbody>
     ${users.map((u) => `<tr class="${u.banned ? 'is-banned' : ''}"><td>${u.id}</td><td>${esc(u.name)}${u.role === 'admin' ? ' <span class="pill">Admin</span>' : ''}${u.banned ? ' <span class="pill lost">Banido</span>' : ''}</td><td>${esc(u.email)}</td>
-      <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
+      <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td class="num">${u.freeSpins ? `<span class="pill won">${u.freeSpins}</span>` : '<span class="muted">—</span>'}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
       <td class="num">${u.bets}</td><td>${esc(fmtDateTime(u.createdAt))}</td>
       <td><div class="user-acts">
         <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" data-balance="${u.balance}" title="Ajustar saldo">${ICON.wallet}</button>
@@ -631,6 +631,21 @@ function kycDocCard(x) {
   </div>`;
 }
 
+const FS_LABEL = { active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' };
+const FS_PILL = { active: 'won', closed: '', expired: 'void', cancelled: 'lost' };
+/** A player's free spins: each grant, how many are left, their value and what was won. */
+function freeSpinsPanel(list) {
+  const fs = list || [];
+  if (!fs.length) return '<div class="panel"><h3>Free Spins</h3><p class="muted">Este jogador ainda não recebeu Free Spins.</p></div>';
+  const left = fs.filter((s) => s.status === 'active').reduce((a, s) => a + s.spinsLeft, 0);
+  return `<div class="panel"><div class="section-head"><h3>Free Spins</h3>${left ? `<span class="pill won">${left} por jogar</span>` : ''}</div>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Estado</th><th class="num">Rodadas</th><th class="num">Por jogar</th><th class="num">Valor/rodada</th><th class="num">Ganho</th><th>Expira</th><th>Recebida</th></tr></thead><tbody>
+      ${fs.map((s) => `<tr><td>${s.id}</td><td><span class="pill ${FS_PILL[s.status] ?? ''}">${FS_LABEL[s.status] || s.status}</span></td>
+        <td class="num">${s.spins}</td><td class="num">${s.status === 'active' ? s.spinsLeft : 0}</td><td class="num">${money(s.value)}</td><td class="num">${money(s.won)}</td>
+        <td>${esc(fmtDateTime(s.expiresAt))}</td><td>${esc(fmtDateTime(s.createdAt))}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
 function userDetailView(d) {
   const u = d.user;
   const deposits = d.transactions.filter((t) => t.type === 'deposit');
@@ -648,6 +663,7 @@ function userDetailView(d) {
         <div><small>Saldo</small><strong>${money(u.balance)}</strong></div>
         ${u.inCasino !== null && u.inCasino !== undefined ? `<div title="Jogo aberto: o saldo está no casino enquanto joga e volta quando sai."><small>No casino agora</small><strong>${typeof u.inCasino === 'number' ? money(u.inCasino) : esc(u.inCasino)}</strong></div>` : ''}
         <div><small>FreeBets</small><strong>${money(u.freebet)}</strong></div>
+        <div title="Rodadas grátis por jogar agora (promoções ativas, por expirar)."><small>Free Spins</small><strong>${(d.freeSpins || []).filter((s) => s.status === 'active').reduce((a, s) => a + s.spinsLeft, 0)}</strong></div>
         <div><small>Depósitos</small><strong>${money(d.totals.deposits)}</strong></div><div><small>Levantamentos</small><strong>${money(d.totals.withdrawals)}</strong></div>
         <div><small>Apostado</small><strong>${money(d.totals.staked)}</strong></div><div><small>Prémios</small><strong>${money(d.totals.payouts)}</strong></div>
         <div title="Soma das transferências para o casino e das que voltaram. A diferença é o que perdeu (ou ganhou) nas slots."><small>Casino: enviado / voltou</small><strong>${money(d.totals.casinoOut)} / ${money(d.totals.casinoIn)}</strong></div>
@@ -659,6 +675,7 @@ function userDetailView(d) {
       </div>
     </div>
     ${userPromosPanel(d)}
+    ${freeSpinsPanel(d.freeSpins)}
     <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}${canWithdraw}</div>
     <div class="panel"><h3>Apostas <small class="muted">${d.bets.length}</small></h3>${d.bets.length ? d.bets.map((b) => betCard(b)).join('') : '<p class="muted">Sem apostas.</p>'}</div>
     <div class="panel"><h3>Depósitos <small class="muted">${deposits.length}</small></h3>${deposits.length ? `<div class="table-wrap"><table><tbody>${deposits.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem depósitos.</p>'}</div>
@@ -3424,7 +3441,7 @@ function adminBanners(d) {
   const rows = list.map((b, i) => {
     const [cls, label] = banState(b);
     return `<div class="ban-card">
-      <div class="ban-thumb">${b.model === 'aviator' ? '<span class="ban-thumb-av">✈ Aviator</span>' : b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
+      <div class="ban-thumb">${b.model === 'aviator' ? '<span class="ban-thumb-av">✈ Aviator</span>' : b.model === 'freespins' ? '<span class="ban-thumb-av">🎰 Free Spins</span>' : b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
       <div class="grow"><strong>${esc(b.title || '(sem título)')}</strong>
         <small class="${cls}">${esc(label)}</small>
         <small class="muted">${esc(BAN_AUD[b.audience])}${b.link ? ` · ${esc(b.link)}` : ''}</small></div>
@@ -3454,8 +3471,9 @@ function openBannerEditor(b = null) {
       <div class="ban-grid">
         <label class="field ban-wide"><span>Modelo</span><select id="banModel">
           <option value="image"${banEd.model !== 'aviator' ? ' selected' : ''}>Imagem / vídeo (carregado por si)</option>
-          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option></select>
-          <small class="muted">O modelo "Aviator" é desenhado pelo site (aviãozinho a subir), encaixa em PC e telemóvel e usa o título, texto e botão abaixo.</small></label>
+          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option>
+          <option value="freespins"${banEd.model === 'freespins' ? ' selected' : ''}>Free Spins — Deposita 20€ e ganha 100 (animado, nunca corta)</option></select>
+          <small class="muted">Os modelos "Aviator" e "Free Spins" são desenhados pelo site (encaixam em PC e telemóvel e nunca cortam). O "Free Spins" já traz a mensagem "Deposita 20€ e ganha 100 Free Spins" — basta pôr o texto do botão e a ligação (ex.: #/promocoes).</small></label>
         <label class="field ban-img"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
           <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
         <label class="field ban-img"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
@@ -3502,17 +3520,35 @@ function aviatorArt() {
 
 function banPreview() {
   if (!banEd) return;
-  const av = banEd.model === 'aviator';
-  $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
+  const av = banEd.model === 'aviator', fs = banEd.model === 'freespins', drawn = av || fs;
+  $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', drawn ? 'none' : ''));
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
   const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
   const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
-  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
-    ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
+  const art = av ? aviatorArt() : fs ? freeSpinsArt() : '';
+  // The Free Spins model carries its own message, so only the button overlays.
+  const copy = fs
+    ? (cta ? `<div class="cban-copy cban-fs-copy"><span class="cban-cta">${esc(cta)}</span></div>` : '')
+    : (title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : '');
+  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}${fs ? ' cban-fs-slide' : ''}">${drawn ? art : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
+    ${copy}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
   $('#banPvD').innerHTML = slide(d);
   $('#banPvM').innerHTML = slide(m);
+}
+
+// The drawn Free Spins banner (same markup as the public site), for the admin preview.
+function freeSpinsArt() {
+  return `<div class="cban-fs" aria-hidden="true">
+    <span class="cban-fs-glow"></span>
+    <span class="cban-fs-coin a">€</span><span class="cban-fs-coin b">€</span><span class="cban-fs-coin c">€</span><span class="cban-fs-coin d">€</span><span class="cban-fs-coin e">€</span>
+    <div class="cban-fs-stack">
+      <span class="cban-fs-top">DEPOSITA <b>20€</b> E GANHA</span>
+      <span class="cban-fs-prize"><b>100</b> <span>FREE SPINS</span></span>
+      <span class="cban-fs-sub">rodadas grátis para jogar no casino</span>
+    </div>
+  </div>`;
 }
 
 /** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). A video as it is. */
@@ -3532,7 +3568,7 @@ async function bannerImage(file) {
 }
 
 async function banChange(t) {
-  if (t.id === 'banModel') { banEd.model = t.value === 'aviator' ? 'aviator' : 'image'; banPreview(); return; }
+  if (t.id === 'banModel') { banEd.model = ['aviator', 'freespins'].includes(t.value) ? t.value : 'image'; banPreview(); return; }
   if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
     try {
       const r = await bannerImage(t.files[0]);
@@ -3573,7 +3609,7 @@ async function banAction(action, el) {
     return;
   }
   if (action === 'ban-save') {
-    const model = $('#banModel')?.value === 'aviator' ? 'aviator' : 'image';
+    const model = ['aviator', 'freespins'].includes($('#banModel')?.value) ? $('#banModel').value : 'image';
     if (model === 'image' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
     el.disabled = true;
     try {
