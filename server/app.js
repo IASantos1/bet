@@ -3008,6 +3008,21 @@ export function createApp(db, {
     res.json({ hidden: list });
   });
 
+  // The sportsbooks plugged into BigBang (Betby, BTi, SABA…): hidden from the public casino, opened
+  // only here so the admin can see how each works and how its data comes through the API.
+  admin.get('/casino/sportsbooks', wrap(async (_req, res) => {
+    if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
+    res.json({ books: await bb.sportsbooks() });
+  }));
+  admin.post('/casino/sportsbook-launch', wrap(async (req, res) => {
+    if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
+    const g = await bb.anyGame(req.body?.gameId);
+    if (!g) throw new HttpError(404, 'Jogo não encontrado no catálogo da Big Bang.');
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const url = await bb.launch({ gameId: g.id, token: playerToken(req.user.id), returnUrl: `${origin}/casino-return.html` });
+    res.json({ url, game: { id: g.id, name: g.name, provider: g.provider } });
+  }));
+
   admin.post('/casino/test', wrap(async (_req, res) => {
     if (bb) return res.json({ steps: (await bb.diagnose()).steps });
     if (!casino) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Casino não inicializado.' }] });

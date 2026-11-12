@@ -30,13 +30,26 @@ export function signMove(p, key) {
 }
 
 const TYPE_LABEL = { slot: 'Slots', live: 'Ao Vivo', crash: 'Crash' };
+/**
+ * Sportsbooks / esports books plugged into BigBang as "games" (CA = BigBang's own aggregator). They are
+ * hidden from the public casino and opened only from the admin (Casino → Sportsbooks), to inspect them
+ * and later see how their data (odds, markets) comes through the same API.
+ */
+export const SPORTSBOOKS = [
+  { name: 'Betby Sportsbook', provider: 'Betby' },
+  { name: 'BTi Sportsbook', provider: 'BTI Sports' },
+  { name: 'LuckSport', provider: 'Luck Sport' },
+  { name: 'SABA Sports', provider: 'SABA Sports' },
+  { name: 'TF Gaming Esports', provider: 'TF Gaming' },
+];
 /** Hidden until the operator changes the list (admin → Casino). */
-export const HIDDEN_DEFAULT = ['Berry Berry Bonanza', 'Divine 9', 'Halloween Dice'];
+export const HIDDEN_DEFAULT = ['Berry Berry Bonanza', 'Divine 9', 'Halloween Dice', ...SPORTSBOOKS.map((s) => s.name)];
 /**
  * Games found not to work, put once into the operator's list too (when it was already changed in the
  * admin, the defaults above no longer apply); taking one out of the list in the admin shows it again.
  */
-const HIDDEN_LATER = [['2026-10-halloween-dice', 'Halloween Dice']];
+const HIDDEN_LATER = [['2026-10-halloween-dice', 'Halloween Dice'],
+  ...SPORTSBOOKS.map((s) => [`2026-11-sb-${nameKey(s.name).replace(/\s+/g, '-')}`, s.name])];
 /**
  * Games known as hits across the market (first = most popular), for the "Populares" order before
  * Bet62 has its own numbers; the rounds played here in the last 30 days weigh far more.
@@ -382,6 +395,23 @@ export function createBigBang(db, {
     return g && shown(g, hidden()) ? g : null;
   }
 
+  /** Any game in the catalogue by id, hidden ones included (admin inspection, never the public lobby). */
+  async function anyGame(id) {
+    await games();
+    return catalog.byId.get(Number(id)) || null;
+  }
+
+  /** The sportsbook / esports books found in the catalogue (by name, else provider), for the admin only. */
+  async function sportsbooks() {
+    await games();
+    const all = [...catalog.byId.values()];
+    return SPORTSBOOKS.map((sb) => {
+      const pk = providerKey(sb.provider);
+      const g = all.find((x) => nameKey(x.name) === nameKey(sb.name)) || all.find((x) => x.providerId === pk);
+      return { name: sb.name, provider: sb.provider, id: g?.id ?? null, catName: g?.name ?? null, type: g?.type ?? null, premium: !!g?.premium };
+    });
+  }
+
   /**
    * BigBang's own copy of a Palace slot (same provider and title, else same title): free spins are
    * played there, where a bet other than the fixed one is refused before it is taken.
@@ -565,5 +595,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
