@@ -746,7 +746,39 @@ function go(tab) {
   state.tab = TABS.some((t) => t.id === tab) ? tab : 'painel';
   state.userDetail = null;
   if (location.hash !== `#${state.tab}`) history.replaceState(null, '', `#${state.tab}`);
-  render();
+  // Keep the shell (sidebar, header) in place and only swap the content: navigation is instant,
+  // with a light skeleton while the tab's data arrives, instead of rebuilding the whole page.
+  if (!state.user || !$('.adm')) { render(); return; }
+  syncShellChrome();
+  loadTab();
+}
+
+/** Update the active nav item and page title without rebuilding the shell. */
+function syncShellChrome() {
+  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
+  $$('[data-tab]').forEach((el) => {
+    if (el.classList.contains('adm-nav') || el.closest('.adm-bottom')) el.classList.toggle('active', el.dataset.tab === state.tab);
+  });
+  const h1 = $('.adm-top h1'); if (h1) h1.textContent = tab.label;
+}
+
+/** A light placeholder shown the instant a tab opens, so navigation never looks frozen. */
+function skeleton() {
+  return `<div class="adm-skel" aria-hidden="true">
+    <div class="adm-skel-row adm-skel-title"></div>
+    <div class="adm-skel-cards"><span></span><span></span><span></span><span></span></div>
+    <div class="adm-skel-panel"><div class="adm-skel-row"></div><div class="adm-skel-row"></div><div class="adm-skel-row"></div><div class="adm-skel-row"></div></div>
+  </div>`;
+}
+
+/** Refresh the withdrawals badge in the background, without blocking the tab's own content. */
+async function refreshBadge() {
+  try {
+    const s = await api('/api/admin/stats');
+    state.stats = s;
+    const badge = $('.adm-nav[data-tab="levantamentos"] .adm-badge');
+    if (badge) badge.textContent = s.pendingWithdrawals;
+  } catch { /* leave the last value */ }
 }
 
 // ---------- tabs ----------
@@ -848,13 +880,18 @@ async function loadTab() {
   if (!main) return;
   clearInterval(liveTimer); liveTimer = null;
   if (tsCourt) { stopTsCourtFeed(); tsCourt.destroy(); tsCourt = null; tsCourtId = null; }
+  main.innerHTML = skeleton(); // instant feedback; the tab replaces it once its data arrives
+  refreshBadge(); // the withdrawals badge updates on its own, never blocking this tab
   try {
-    const s = await api('/api/admin/stats');
-    state.stats = s;
-    const badge = $('.adm-nav[data-tab="levantamentos"] .adm-badge');
-    if (badge) badge.textContent = s.pendingWithdrawals;
     const tab = state.tab;
-    if (tab === 'painel') main.innerHTML = dashboard(s, await api('/api/admin/settlement').catch(() => null), await api('/api/admin/backups').catch(() => null), await api('/api/admin/2fa').catch(() => null));
+    if (tab === 'painel') {
+      const [s, settle, backups, totp] = await Promise.all([
+        api('/api/admin/stats'), api('/api/admin/settlement').catch(() => null),
+        api('/api/admin/backups').catch(() => null), api('/api/admin/2fa').catch(() => null),
+      ]);
+      state.stats = s;
+      main.innerHTML = dashboard(s, settle, backups, totp);
+    }
     else if (tab === 'novo') main.innerHTML = adminNewEvent();
     else if (tab === 'feed') main.innerHTML = adminFeed(await api('/api/admin/feed'));
     else if (tab === 'sportscore') main.innerHTML = adminSportScore(await api('/api/admin/sportscore'));
