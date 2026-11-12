@@ -65,6 +65,7 @@ const TABS = [
   { id: 'colecoes', label: 'Coleções do casino', icon: 'casino', section: 'Avançado' },
   { id: 'destaques', label: 'Destaques do casino', icon: 'megaphone', section: 'Avançado' },
   { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
+  { id: 'ligas', label: 'Ligas (ligar/desligar)', icon: 'catalog', section: 'Avançado' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
 
@@ -886,6 +887,7 @@ async function loadTab() {
       lastVisibility = vis.sports;
       main.innerHTML = marketCatalog(cat);
     }
+    else if (tab === 'ligas') { lastLeagues = await api('/api/admin/leagues'); main.innerHTML = adminLeagues(lastLeagues); }
     else if (tab === 'liquidacao') main.innerHTML = adminSettlement(await api('/api/admin/settlement'));
     else if (tab === 'promocoes') {
       const [pr, fsp] = await Promise.all([api('/api/admin/promotions'), api('/api/admin/fs-promotions')]);
@@ -1195,6 +1197,36 @@ function applyCourtCropVars(sport) {
     box.style.setProperty('--court-up', String(c.up));
     for (const [key] of CC_CTL) { const o = $(`#ccOut-${s}-${key}`); if (o) o.textContent = ccFmt[key](c[key]); }
   }
+}
+
+// ---------- league manager: switch leagues on/off (hidden site-wide, reversibly) ----------
+let lastLeagues = null, lgBlocked = new Set();
+const LG_SPORT = { futebol: 'Futebol', basquetebol: 'Basquete', tenis: 'Ténis', criquete: 'Críquete', andebol: 'Andebol', voleibol: 'Voleibol', hoquei: 'Hóquei', badminton: 'Badminton', tenismesa: 'Ténis de mesa', basebol: 'Basebol', futebolamericano: 'Futebol americano' };
+const lgKind = (k) => (k === 'women' ? ' <span class="pill void">Feminino</span>' : k === 'youth' ? ' <span class="pill void">Jovens</span>' : '');
+function lgCountText() {
+  const el = $('#lgCount'); if (el) el.textContent = lgBlocked.size ? `${lgBlocked.size} liga(s) desligada(s).` : 'Todas as ligas ligadas.';
+}
+function adminLeagues(d) {
+  lgBlocked = new Set(d.blocked || []);
+  const bySport = {};
+  for (const l of d.leagues) (bySport[l.sport] ||= []).push(l);
+  const row = (l) => `<label class="lg-row" data-name="${esc(l.competition.toLowerCase())}">
+    <input type="checkbox" data-lg="${esc(l.competition)}"${lgBlocked.has(l.competition) ? '' : ' checked'}>
+    <span class="lg-name">${esc(l.competition)}${lgKind(l.kind)}</span>
+    <span class="lg-count">${l.live ? `<b class="lg-live">${l.live} ao vivo</b> · ` : ''}${l.count} jogo${l.count === 1 ? '' : 's'}</span></label>`;
+  const groups = Object.entries(bySport)
+    .sort((a, b) => (a[0] === 'futebol' ? -1 : b[0] === 'futebol' ? 1 : a[0].localeCompare(b[0])))
+    .map(([sp, list]) => `<div class="lg-group"><h4>${LG_SPORT[sp] || sp} <small class="muted">(${list.length})</small></h4>${list.map(row).join('')}</div>`).join('');
+  return `<div class="panel"><div class="section-head"><h2>Ligas — ligar / desligar</h2></div>
+    <p class="muted">Todas as ligas com jogos agora. <b>Desligue</b> (tire o visto) uma liga para esconder os jogos dela no site — é reversível (volte a ligar e voltam). Bom para dias com muitos jogos femininos/menores. No fim carregue em <b>Guardar</b>.</p>
+    <div class="form-actions"><input id="lgSearch" class="lg-search" placeholder="Procurar liga (ex.: Women, NBA, Serie)…" autocomplete="off">
+      <button class="ghost-btn btn-sm" data-action="lg-bulk" data-kind="women">Desligar femininas</button>
+      <button class="ghost-btn btn-sm" data-action="lg-bulk" data-kind="youth">Desligar jovens</button>
+      <button class="ghost-btn btn-sm" data-action="lg-bulk" data-kind="on">Ligar todas</button></div>
+    <p class="muted" id="lgCount">${lgBlocked.size ? `${lgBlocked.size} liga(s) desligada(s).` : 'Todas as ligas ligadas.'}</p>
+    <div id="lgList" class="lg-list">${groups || '<p class="muted">Sem ligas com jogos agora.</p>'}</div>
+    <div class="form-actions"><button class="primary-btn" data-action="lg-save">Guardar</button>
+      <button class="ghost-btn btn-sm" data-action="refresh">Recarregar lista</button></div></div>`;
 }
 
 function adminCasino(c) {
@@ -2127,6 +2159,19 @@ document.addEventListener('click', async (e) => {
     } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
     return;
   }
+  if (action === 'lg-bulk') {
+    const kind = actionEl.dataset.kind;
+    if (kind === 'on') lgBlocked.clear();
+    else for (const l of (lastLeagues?.leagues || [])) if (l.kind === kind) lgBlocked.add(l.competition);
+    $$('#lgList input[data-lg]').forEach((i) => { i.checked = !lgBlocked.has(i.dataset.lg); });
+    lgCountText(); return;
+  }
+  if (action === 'lg-save') {
+    actionEl.disabled = true;
+    try { const r = await api('/api/admin/leagues', { method: 'POST', body: { blocked: [...lgBlocked] } }); lgBlocked = new Set(r.blocked || []); lgCountText(); toast('Ligas guardadas', lgBlocked.size ? `${lgBlocked.size} liga(s) desligada(s).` : 'Todas as ligas ligadas.'); }
+    catch (err) { toast('Erro', err.message, 'error'); } finally { actionEl.disabled = false; }
+    return;
+  }
   if (action === 'close-menu') { $('.adm')?.classList.remove('menu-open'); return; }
   if (action === 'refresh') { loadTab(); return; }
   if (action === 'user-detail') { state.userDetail = Number(actionEl.dataset.id); loadTab(); return; }
@@ -2695,6 +2740,7 @@ document.addEventListener('click', async (e) => {
 // Free-spins games: searched by name in the casino catalogue.
 let fsSearchTimer = null;
 document.addEventListener('change', async (e) => {
+  if (e.target.dataset?.lg !== undefined) { if (e.target.checked) lgBlocked.delete(e.target.dataset.lg); else lgBlocked.add(e.target.dataset.lg); lgCountText(); return; }
   if (e.target.id === 'tsCourtSport') { tsCourtSport = e.target.value || 'tennis'; if (tsCourtId) buildTsCourt(); return; }
   if (skinEd && e.target.closest?.('.skin-ed')) { skinChange(e.target); return; }
   if (banEd && e.target.closest?.('.ban-ed')) { banChange(e.target); return; }
@@ -2739,6 +2785,12 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('input', (e) => {
   if (e.target.dataset?.cc) { applyCourtCropVars(e.target.dataset.sport); return; }
+  if (e.target.id === 'lgSearch') {
+    const q = e.target.value.trim().toLowerCase();
+    $$('#lgList .lg-row').forEach((r) => { r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none'; });
+    $$('#lgList .lg-group').forEach((g) => { g.style.display = [...g.querySelectorAll('.lg-row')].some((r) => r.style.display !== 'none') ? '' : 'none'; });
+    return;
+  }
   if (['csHeight', 'csBright', 'csContrast', 'csSat'].includes(e.target.id)) { cardPreview(); artPreview(); return; }
   if (e.target.id === 'csZy' || e.target.id === 'csOy') { artPreview(); return; }
   if (e.target.id === 'csGameSearch') {
