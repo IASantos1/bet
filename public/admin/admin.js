@@ -1289,7 +1289,12 @@ function adminCasino(c) {
     <div class="panel"><h3>Sportsbooks da Big Bang (só administrador)</h3>
       <p class="muted">Casas de apostas e esports ligadas à Big Bang (Betby, BTi, SABA, LuckSport, TF Gaming). Estão <b>escondidas do casino público</b> — aqui podes abri-las com a tua conta para ver como funcionam e como vêm os dados (odds, mercados). Abrem com dinheiro real (não têm demo).</p>
       <div class="form-actions"><button class="ghost-btn btn-sm" data-action="sb-load">Carregar lista</button></div>
-      <div id="sbList"></div></div>`;
+      <div id="sbList"></div>
+      <h4>Procurar no catálogo (para encontrar o nome/ID reais)</h4>
+      <p class="muted">Se os sportsbooks aparecem "não encontrado", procura aqui no catálogo completo da Big Bang (inclui os escondidos). Escreve parte do nome ou do fornecedor (ex.: <code>sport</code>, <code>betby</code>, <code>bet</code>, <code>saba</code>, <code>esport</code>). Depois podes abrir qualquer resultado com a tua conta.</p>
+      <div class="form-actions"><input id="sbSearch" placeholder="ex.: betby, sport, esport…" autocomplete="off" maxlength="60">
+        <button class="ghost-btn btn-sm" data-action="sb-search">Procurar</button></div>
+      <div id="sbSearchOut"></div></div>`;
   }
   if (!c.enabled) {
     return `<div class="panel"><div class="notice">O servidor não está a ver a configuração do casino:
@@ -2646,6 +2651,20 @@ document.addEventListener('click', async (e) => {
         <td>${b.id ? `<span class="pill won">no catálogo${b.premium ? ' · Premium' : ''}</span>` : '<span class="pill lost">não encontrado</span>'}</td>
         <td class="num">${b.id ? `<button class="ghost-btn btn-sm" data-action="sb-open" data-id="${b.id}" data-name="${esc(b.name)}">Abrir (admin)</button>` : ''}</td></tr>`).join('');
       $('#sbList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>Jogo</th><th>Estado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'sb-search') {
+    const q = ($('#sbSearch')?.value || '').trim();
+    if (q.length < 2) return toast('Procurar', 'Escreve pelo menos 2 letras.', 'error');
+    actionEl.disabled = true;
+    try {
+      const { total, matches } = await api(`/api/admin/casino/search?q=${encodeURIComponent(q)}`);
+      const rows = matches.map((b) => `<tr><td><strong>${esc(b.name)}</strong><br><small class="muted">${esc(b.provider)} · ${esc(b.type || '')}${b.premium ? ' · Premium' : ''}</small></td>
+        <td><code>${b.id}</code></td>
+        <td class="num"><button class="ghost-btn btn-sm" data-action="sb-open" data-id="${b.id}" data-name="${esc(b.name)}">Abrir (admin)</button></td></tr>`).join('');
+      $('#sbSearchOut').innerHTML = matches.length
+        ? `<p class="muted">${matches.length} resultado(s) · catálogo tem ${total} jogos.</p><div class="table-wrap"><table><thead><tr><th>Jogo</th><th>ID</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="notice">Nenhum jogo no catálogo com "${esc(q)}" (catálogo tem ${total} jogos). Se nem assim aparece, estes sportsbooks não vêm no feed de jogos da Big Bang — são um produto à parte e abrem por outra via (API/endpoint diferente).</div>`;
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
   } else if (action === 'sb-open') {

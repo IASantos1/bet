@@ -614,6 +614,10 @@ test('sportsbooks: hidden from the public casino, listed and opened only for the
   assert.equal((await bb.anyGame(7777)).name, 'Betby Sportsbook');
   const url = await bb.launch({ gameId: 7777, token: playerToken(1), returnUrl: '' });
   assert.equal(url, 'https://g/real/7777/b62_1');
+  // The admin can search the whole catalogue (hidden ones included) to find the real name/id.
+  const found = await bb.searchAll('betby');
+  assert.ok(found.total >= 1 && found.matches.some((m) => m.id === 7777 && m.name === 'Betby Sportsbook'));
+  assert.deepEqual((await bb.searchAll('nothinghere')).matches, []);
 });
 
 test('variety: one game of a family per row; "Porque jogaste" brings the family, the theme, then the provider', async () => {
