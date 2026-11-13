@@ -4672,7 +4672,7 @@ function mountHelp() {
   if ($('#helpWidget')) return;
   const el = document.createElement('div');
   el.id = 'helpWidget';
-  el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas">💬<span>Ajuda</span></button>
+  el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas — assistente"><span class="help-fab-bot" aria-hidden="true">🤖</span><span class="help-fab-tip">Ajuda</span></button>
     <section id="helpPanel" class="help-panel" aria-hidden="true" aria-label="Assistente de ajuda">
       <header class="help-head"><span class="help-dot"></span><div class="help-title"><b>Assistente BET62</b><small>Dúvidas com resposta imediata</small></div><button class="help-x" aria-label="Fechar">✕</button></header>
       <div class="help-msgs" id="helpMsgs"></div>

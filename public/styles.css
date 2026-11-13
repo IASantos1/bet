@@ -2414,13 +2414,18 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .game-art .excl-badge, .game-art .play-badge { z-index: 2; }
 
 /* ---------- help assistant (FAQ chat) ---------- */
-#helpWidget { position: fixed; z-index: 70; left: 16px; bottom: 20px; }
-.help-fab { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px 0 14px; border: 0; border-radius: 999px;
-  background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; font-weight: 900; font-size: 14px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .35), inset 0 1px rgba(255, 255, 255, .25); cursor: pointer; }
-.help-fab span { line-height: 1; }
+#helpWidget { position: fixed; z-index: 70; right: 12px; bottom: 38%; left: auto; }
+.help-fab { position: relative; display: grid; place-items: center; width: 58px; height: 58px; padding: 0; border: 0; border-radius: 50%;
+  background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; cursor: pointer;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .4), inset 0 1px rgba(255, 255, 255, .3); animation: helpBob 3.2s ease-in-out infinite; }
+.help-fab-bot { font-size: 30px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); }
+.help-fab-tip { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
+  font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; opacity: .92; pointer-events: none; }
+.help-fab::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid rgba(53, 208, 127, .55); animation: helpRing 2.4s ease-out infinite; }
+@keyframes helpBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes helpRing { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.5); opacity: 0; } }
 .help-fab.hidden { display: none; }
-.help-panel { position: fixed; left: 16px; bottom: 20px; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 100px));
+.help-panel { position: fixed; right: 12px; bottom: 20px; left: auto; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 100px));
   display: none; flex-direction: column; overflow: hidden; border-radius: 18px; border: 1px solid var(--line);
   background: var(--panel, #272c32); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
 .help-panel.on { display: flex; animation: helpIn .22s ease; }
@@ -2448,5 +2453,8 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .help-support { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2, #20262c); color: var(--text-2); font-weight: 800; font-size: 13px; cursor: pointer; }
 .help-support:hover { color: var(--strong); border-color: rgba(53, 208, 127, .5); }
 body.immersive #helpWidget { display: none; }
-@media (max-width: 980px) { #helpWidget, .help-panel { bottom: 74px; } .help-panel { height: min(70vh, calc(100vh - 150px)); } }
-@media (prefers-reduced-motion: reduce) { .help-panel.on { animation: none; } }
+@media (max-width: 980px) {
+  #helpWidget { right: 10px; bottom: 36%; }
+  .help-panel { right: 8px; left: 8px; width: auto; bottom: 74px; height: min(72vh, calc(100vh - 160px)); }
+}
+@media (prefers-reduced-motion: reduce) { .help-panel.on, .help-fab { animation: none; } .help-fab::after { display: none; } }
