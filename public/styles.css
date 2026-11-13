@@ -2416,7 +2416,8 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 /* ---------- help assistant (FAQ chat) ---------- */
 /* The robot peeks from the right edge: only half shows, so it never covers the content. A tap opens the
    chat; on hover/focus it slides fully in. */
-#helpWidget { position: fixed; z-index: 70; right: 0; bottom: 38%; left: auto; }
+/* Web/computer: low in the right corner, out of the way. Phone: at mid-height (set in the media query). */
+#helpWidget { position: fixed; z-index: 70; right: 0; bottom: 28px; left: auto; }
 .help-fab { position: relative; display: grid; place-items: center; width: 58px; height: 58px; padding: 0; border: 0; border-radius: 50%;
   background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; cursor: pointer;
   box-shadow: -4px 6px 18px rgba(0, 0, 0, .4), inset 0 1px rgba(255, 255, 255, .3);
