@@ -121,9 +121,9 @@ const ICON = {
 };
 
 function usersTable(users) {
-  return `<div class="table-wrap"><table class="users-table"><thead><tr><th>#</th><th>Nome</th><th>Email</th><th class="num">Saldo</th><th class="num">FreeBets</th><th>KYC</th><th class="num">Apostas</th><th>Registo</th><th></th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="users-table"><thead><tr><th>#</th><th>Nome</th><th>Email</th><th class="num">Saldo</th><th class="num">FreeBets</th><th class="num">Free Spins</th><th>KYC</th><th class="num">Apostas</th><th>Registo</th><th></th></tr></thead><tbody>
     ${users.map((u) => `<tr class="${u.banned ? 'is-banned' : ''}"><td>${u.id}</td><td>${esc(u.name)}${u.role === 'admin' ? ' <span class="pill">Admin</span>' : ''}${u.banned ? ' <span class="pill lost">Banido</span>' : ''}</td><td>${esc(u.email)}</td>
-      <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
+      <td class="num">${money(u.balance)}</td><td class="num">${money(u.freebet)}</td><td class="num">${u.freeSpins ? `<span class="pill won">${u.freeSpins}</span>` : '<span class="muted">—</span>'}</td><td><span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></td>
       <td class="num">${u.bets}</td><td>${esc(fmtDateTime(u.createdAt))}</td>
       <td><div class="user-acts">
         <button class="ua wallet" data-action="user-balance" data-id="${u.id}" data-name="${esc(u.name)}" data-balance="${u.balance}" title="Ajustar saldo">${ICON.wallet}</button>
@@ -631,6 +631,21 @@ function kycDocCard(x) {
   </div>`;
 }
 
+const FS_LABEL = { active: 'Ativa', closed: 'Terminada', expired: 'Expirada', cancelled: 'Cancelada' };
+const FS_PILL = { active: 'won', closed: '', expired: 'void', cancelled: 'lost' };
+/** A player's free spins: each grant, how many are left, their value and what was won. */
+function freeSpinsPanel(list) {
+  const fs = list || [];
+  if (!fs.length) return '<div class="panel"><h3>Free Spins</h3><p class="muted">Este jogador ainda não recebeu Free Spins.</p></div>';
+  const left = fs.filter((s) => s.status === 'active').reduce((a, s) => a + s.spinsLeft, 0);
+  return `<div class="panel"><div class="section-head"><h3>Free Spins</h3>${left ? `<span class="pill won">${left} por jogar</span>` : ''}</div>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Estado</th><th class="num">Rodadas</th><th class="num">Por jogar</th><th class="num">Valor/rodada</th><th class="num">Ganho</th><th>Expira</th><th>Recebida</th></tr></thead><tbody>
+      ${fs.map((s) => `<tr><td>${s.id}</td><td><span class="pill ${FS_PILL[s.status] ?? ''}">${FS_LABEL[s.status] || s.status}</span></td>
+        <td class="num">${s.spins}</td><td class="num">${s.status === 'active' ? s.spinsLeft : 0}</td><td class="num">${money(s.value)}</td><td class="num">${money(s.won)}</td>
+        <td>${esc(fmtDateTime(s.expiresAt))}</td><td>${esc(fmtDateTime(s.createdAt))}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
 function userDetailView(d) {
   const u = d.user;
   const deposits = d.transactions.filter((t) => t.type === 'deposit');
@@ -648,6 +663,7 @@ function userDetailView(d) {
         <div><small>Saldo</small><strong>${money(u.balance)}</strong></div>
         ${u.inCasino !== null && u.inCasino !== undefined ? `<div title="Jogo aberto: o saldo está no casino enquanto joga e volta quando sai."><small>No casino agora</small><strong>${typeof u.inCasino === 'number' ? money(u.inCasino) : esc(u.inCasino)}</strong></div>` : ''}
         <div><small>FreeBets</small><strong>${money(u.freebet)}</strong></div>
+        <div title="Rodadas grátis por jogar agora (promoções ativas, por expirar)."><small>Free Spins</small><strong>${(d.freeSpins || []).filter((s) => s.status === 'active').reduce((a, s) => a + s.spinsLeft, 0)}</strong></div>
         <div><small>Depósitos</small><strong>${money(d.totals.deposits)}</strong></div><div><small>Levantamentos</small><strong>${money(d.totals.withdrawals)}</strong></div>
         <div><small>Apostado</small><strong>${money(d.totals.staked)}</strong></div><div><small>Prémios</small><strong>${money(d.totals.payouts)}</strong></div>
         <div title="Soma das transferências para o casino e das que voltaram. A diferença é o que perdeu (ou ganhou) nas slots."><small>Casino: enviado / voltou</small><strong>${money(d.totals.casinoOut)} / ${money(d.totals.casinoIn)}</strong></div>
@@ -659,6 +675,7 @@ function userDetailView(d) {
       </div>
     </div>
     ${userPromosPanel(d)}
+    ${freeSpinsPanel(d.freeSpins)}
     <div class="panel"><h3>Verificação de identidade (KYC) <span class="pill ${u.kycStatus}">${KYC_LABEL[u.kycStatus] || u.kycStatus}</span></h3>${docs}${canWithdraw}</div>
     <div class="panel"><h3>Apostas <small class="muted">${d.bets.length}</small></h3>${d.bets.length ? d.bets.map((b) => betCard(b)).join('') : '<p class="muted">Sem apostas.</p>'}</div>
     <div class="panel"><h3>Depósitos <small class="muted">${deposits.length}</small></h3>${deposits.length ? `<div class="table-wrap"><table><tbody>${deposits.map((t) => `<tr><td>${esc(fmtDateTime(t.createdAt))}</td><td>${esc(t.description)}</td><td class="num">${money(t.amount)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sem depósitos.</p>'}</div>

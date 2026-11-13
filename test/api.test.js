@@ -371,6 +371,11 @@ test('admin players: balance add / subtract / set, and free spins given by hand'
   assert.deepEqual([r.status, r.body.freeSpins.spins, r.body.freeSpins.value, r.body.freeSpins.games.length], [200, 5, 1, 2]);
   assert.equal((await fs({ spins: 5, spinValue: '0.20' })).status, 409);
   assert.equal((await p('GET', '/api/me/free-spins/active')).body.freeSpins.spinsLeft, 5);
+  // The admin users list and detail show the player's available free spins.
+  const meRow = (await adm('GET', '/api/admin/users')).body.users.find((u) => u.id === me.id);
+  assert.equal(meRow.freeSpins, 5);
+  const det = (await adm('GET', `/api/admin/users/${me.id}`)).body;
+  assert.ok(Array.isArray(det.freeSpins) && det.freeSpins.some((s) => s.status === 'active' && s.spinsLeft === 5));
 });
 
 test('admin players: wallet credit/debit, free bets, ban and the detail page', async () => {
