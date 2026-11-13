@@ -2383,11 +2383,17 @@ const KYC_STATE = {
 };
 const badge = (label, st, sub = '') => `<div class="pf-row"><div><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</div><span class="pf-badge ${KYC_STATE[st][0]}">${KYC_STATE[st][1]}</span></div>`;
 
+let kycJustSent = false; // set right after a successful upload, to show the confirmation + time once
 async function loadKyc() {
   let k;
   try { k = await api('/api/me/kyc'); } catch (err) { toast('Erro', err.message, 'error'); return; }
   const box = $('#kycBox');
   if (!box) return;
+  // Right after sending: a clear confirmation with the verification time, shown once at the top.
+  const sentNote = kycJustSent && k.status !== 'approved'
+    ? '<div class="pf-note ok kyc-sent"><strong>✅ Documento(s) enviado(s) com sucesso!</strong> A sua verificação está em análise e demora normalmente <strong>entre 24 e 72 horas</strong>. Avisamos assim que estiver concluída.</div>'
+    : '';
+  kycJustSent = false;
   // A slot's state: its best document (approved, else pending, else rejected).
   const slot = (kinds) => {
     const docs = k.documents.filter((d) => kinds.includes(d.kind)).map((d) => d.status);
@@ -2402,7 +2408,7 @@ async function loadKyc() {
   const idState = slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']);
   const bankState = slot(['Comprovativo de IBAN / morada']);
   const canSend = (st) => st === 'missing' || st === 'rejected';
-  box.innerHTML = `${notice}
+  box.innerHTML = `${sentNote}${notice}
     <div class="pf-list">
       ${badge('Email', 'given', esc(u.email))}
       ${badge('NIF', u.nif ? 'given' : 'none', u.nif ? esc(u.nif) : 'Indique-o em Dados bancários')}
@@ -2496,7 +2502,7 @@ async function kycCamera() {
         el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A verificação demora normalmente entre 24 e 72 horas.</span></div>';
         el.querySelector('.cam-hint').textContent = '';
         acts.innerHTML = '<button class="primary-btn cam-close">OK</button>';
-        acts.querySelector('.cam-close').onclick = () => { el.remove(); loadKyc(); };
+        acts.querySelector('.cam-close').onclick = () => { el.remove(); kycJustSent = true; loadKyc(); };
         if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
       } catch (err) {
         ev.target.disabled = false; ev.target.textContent = 'Enviar';
@@ -4086,6 +4092,7 @@ const formHandlers = {
     await api('/api/me/kyc', { method: 'POST', body: { kind: form.kind.value, mimeType: file.type, fileName: file.name, data } });
     if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
     toast('Comprovativo enviado', 'A verificação demora normalmente entre 24 e 72 horas.');
+    kycJustSent = true;
     loadKyc();
   },
   async password(form) {
