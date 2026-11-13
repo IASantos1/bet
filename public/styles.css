@@ -2420,13 +2420,11 @@ html:not(.light) .page-title p { color: #c9d3cc; }
    face, and only half the circle shows so it stays out of the way. A tap opens the chat; on hover/focus
    it slides fully in. */
 #helpWidget { position: fixed; z-index: 70; right: 0; bottom: 26%; left: auto; }
-.help-fab { position: relative; display: grid; place-items: center; width: 62px; height: 62px; padding: 0; border: 0; border-radius: 50%;
-  background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; cursor: pointer;
-  box-shadow: -4px 6px 18px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .3);
-  transform: translateX(50%); transition: transform .2s ease; }
-.help-fab:hover, .help-fab:focus-visible, .help-fab:active { transform: translateX(6%); outline: none; }
-.help-fab-bot { font-size: 32px; line-height: 1; margin-left: -20px; transform: rotate(-90deg); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); transition: margin .2s ease; }
-.help-fab:hover .help-fab-bot, .help-fab:focus-visible .help-fab-bot, .help-fab:active .help-fab-bot { margin-left: 0; }
+.help-fab { position: relative; display: grid; place-items: center; width: 78px; height: 84px; padding: 0; border: 0; background: none; cursor: pointer;
+  transform: translateX(42%); transition: transform .2s ease; }
+.help-fab:hover, .help-fab:focus-visible, .help-fab:active { transform: translateX(2%); outline: none; }
+.help-fab-bot { width: 78px; height: 84px; display: block; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .45)); }
+.help-fab:active { transform: translateX(2%) scale(.96); }
 .help-fab-tip { position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
   font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; opacity: .92; pointer-events: none; }
 .help-fab.hidden { display: none; }

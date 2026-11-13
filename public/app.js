@@ -4672,7 +4672,23 @@ function mountHelp() {
   if ($('#helpWidget')) return;
   const el = document.createElement('div');
   el.id = 'helpWidget';
-  el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas — assistente"><span class="help-fab-bot" aria-hidden="true">🤖</span><span class="help-fab-tip">Ajuda</span></button>
+  el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas — assistente">
+      <svg class="help-fab-bot" viewBox="0 0 80 80" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="hbHead" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f7fb"/><stop offset="1" stop-color="#b4c0cf"/></linearGradient>
+          <linearGradient id="hbEye" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8bf2c0"/><stop offset="1" stop-color="#17c268"/></linearGradient>
+        </defs>
+        <line x1="40" y1="9" x2="40" y2="20" stroke="#8e9bad" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="40" cy="8" r="4.5" fill="url(#hbEye)"/>
+        <rect x="8" y="36" width="7" height="17" rx="3.5" fill="#9aa7b8"/>
+        <rect x="65" y="36" width="7" height="17" rx="3.5" fill="#9aa7b8"/>
+        <rect x="14" y="20" width="52" height="46" rx="17" fill="url(#hbHead)" stroke="#5b6775" stroke-width="2"/>
+        <rect x="21" y="28" width="38" height="30" rx="13" fill="#0f1b26"/>
+        <circle cx="31" cy="43" r="6" fill="url(#hbEye)"/><circle cx="47" cy="43" r="6" fill="url(#hbEye)"/>
+        <circle cx="29" cy="41" r="1.8" fill="#eafff4"/><circle cx="45" cy="41" r="1.8" fill="#eafff4"/>
+        <rect x="31" y="51" width="18" height="3.4" rx="1.7" fill="#1f8f5a" opacity=".85"/>
+      </svg>
+      <span class="help-fab-tip">Ajuda</span></button>
     <section id="helpPanel" class="help-panel" aria-hidden="true" aria-label="Assistente de ajuda">
       <header class="help-head"><span class="help-dot"></span><div class="help-title"><b>Assistente BET62</b><small>Dúvidas com resposta imediata</small></div><button class="help-x" aria-label="Fechar">✕</button></header>
       <div class="help-msgs" id="helpMsgs"></div>
