@@ -3441,7 +3441,7 @@ function adminBanners(d) {
   const rows = list.map((b, i) => {
     const [cls, label] = banState(b);
     return `<div class="ban-card">
-      <div class="ban-thumb">${b.model === 'aviator' ? '<span class="ban-thumb-av">✈ Aviator</span>' : b.model === 'freespins' ? '<span class="ban-thumb-av">🎰 Free Spins</span>' : b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
+      <div class="ban-thumb">${b.model === 'aviator' ? '<span class="ban-thumb-av">✈ Aviator</span>' : b.video?.d ? `<video src="${esc(b.img.d)}" muted loop autoplay playsinline></video>` : `<img src="${esc(b.img.d)}" alt="">`}</div>
       <div class="grow"><strong>${esc(b.title || '(sem título)')}</strong>
         <small class="${cls}">${esc(label)}</small>
         <small class="muted">${esc(BAN_AUD[b.audience])}${b.link ? ` · ${esc(b.link)}` : ''}</small></div>
@@ -3471,9 +3471,8 @@ function openBannerEditor(b = null) {
       <div class="ban-grid">
         <label class="field ban-wide"><span>Modelo</span><select id="banModel">
           <option value="image"${banEd.model !== 'aviator' ? ' selected' : ''}>Imagem / vídeo (carregado por si)</option>
-          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option>
-          <option value="freespins"${banEd.model === 'freespins' ? ' selected' : ''}>Free Spins — Deposita 20€ e ganha 100 (animado, nunca corta)</option></select>
-          <small class="muted">Os modelos "Aviator" e "Free Spins" são desenhados pelo site (encaixam em PC e telemóvel e nunca cortam). O "Free Spins" já traz a mensagem "Deposita 20€ e ganha 100 Free Spins" — basta pôr o texto do botão e a ligação (ex.: #/promocoes).</small></label>
+          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option></select>
+          <small class="muted">O modelo "Aviator" é desenhado pelo site (aviãozinho a subir), encaixa em PC e telemóvel e usa o título, texto e botão abaixo.</small></label>
         <label class="field ban-img"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
           <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
         <label class="field ban-img"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
@@ -3520,35 +3519,17 @@ function aviatorArt() {
 
 function banPreview() {
   if (!banEd) return;
-  const av = banEd.model === 'aviator', fs = banEd.model === 'freespins', drawn = av || fs;
-  $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', drawn ? 'none' : ''));
+  const av = banEd.model === 'aviator';
+  $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
   const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
   const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
-  const art = av ? aviatorArt() : fs ? freeSpinsArt() : '';
-  // The Free Spins model carries its own message, so only the button overlays.
-  const copy = fs
-    ? (cta ? `<div class="cban-copy cban-fs-copy"><span class="cban-cta">${esc(cta)}</span></div>` : '')
-    : (title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : '');
-  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}${fs ? ' cban-fs-slide' : ''}">${drawn ? art : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
-    ${copy}</div>
+  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
+    ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
   $('#banPvD').innerHTML = slide(d);
   $('#banPvM').innerHTML = slide(m);
-}
-
-// The drawn Free Spins banner (same markup as the public site), for the admin preview.
-function freeSpinsArt() {
-  return `<div class="cban-fs" aria-hidden="true">
-    <span class="cban-fs-glow"></span>
-    <span class="cban-fs-coin a">€</span><span class="cban-fs-coin b">€</span><span class="cban-fs-coin c">€</span><span class="cban-fs-coin d">€</span><span class="cban-fs-coin e">€</span>
-    <div class="cban-fs-stack">
-      <span class="cban-fs-top">DEPOSITA <b>20€</b> E GANHA</span>
-      <span class="cban-fs-prize"><b>100</b> <span>FREE SPINS</span></span>
-      <span class="cban-fs-sub">rodadas grátis para jogar no casino</span>
-    </div>
-  </div>`;
 }
 
 /** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). A video as it is. */
@@ -3568,7 +3549,7 @@ async function bannerImage(file) {
 }
 
 async function banChange(t) {
-  if (t.id === 'banModel') { banEd.model = ['aviator', 'freespins'].includes(t.value) ? t.value : 'image'; banPreview(); return; }
+  if (t.id === 'banModel') { banEd.model = t.value === 'aviator' ? 'aviator' : 'image'; banPreview(); return; }
   if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
     try {
       const r = await bannerImage(t.files[0]);
@@ -3609,7 +3590,7 @@ async function banAction(action, el) {
     return;
   }
   if (action === 'ban-save') {
-    const model = ['aviator', 'freespins'].includes($('#banModel')?.value) ? $('#banModel').value : 'image';
+    const model = $('#banModel')?.value === 'aviator' ? 'aviator' : 'image';
     if (model === 'image' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
     el.disabled = true;
     try {

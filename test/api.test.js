@@ -654,12 +654,6 @@ test('banners do casino: o admin cria; o site mostra os que estão no ar para qu
   assert.equal(av.body.banner.model, 'aviator');
   assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.title === 'Aviator' && x.model === 'aviator'));
   await adm('POST', `/api/admin/banners/${av.body.banner.id}/delete`, {});
-  // The built-in "freespins" model is also drawn (offer baked in), so it needs no image and goes live.
-  const fsb = (await adm('POST', '/api/admin/banners', { cta: 'Participar', link: '#/promocoes', model: 'freespins' }));
-  assert.equal(fsb.status, 200);
-  assert.equal(fsb.body.banner.model, 'freespins');
-  assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.model === 'freespins'));
-  await adm('POST', `/api/admin/banners/${fsb.body.banner.id}/delete`, {});
   assert.equal((await adm('POST', '/api/admin/banners', { title: 'X', imageD: png, link: 'javascript:alert(1)' })).status, 400, 'only #/ or https links');
   const a = (await adm('POST', '/api/admin/banners', { title: 'Free Spins', subtitle: '100 rodadas', cta: 'Jogar', link: '#/promocoes', terms: 'Dep. mín. 20 €', imageD: png })).body.banner;
   const b = (await adm('POST', '/api/admin/banners', { title: 'Só visitantes', imageD: png, imageM: png, audience: 'guest' })).body.banner;

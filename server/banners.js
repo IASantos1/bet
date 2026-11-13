@@ -42,7 +42,7 @@ export function createBanners(db) {
   // (a built-in animated banner, no upload, so it never crops and scales on any screen).
   const bcols = new Set(db.prepare('PRAGMA table_info(casino_banners)').all().map((c) => c.name));
   if (!bcols.has('model')) db.exec("ALTER TABLE casino_banners ADD COLUMN model TEXT NOT NULL DEFAULT 'image'");
-  const MODELS = new Set(['image', 'aviator', 'freespins']);
+  const MODELS = new Set(['image', 'aviator']);
   const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m, model,
     image_d IS NOT NULL AS has_d, image_m IS NOT NULL AS has_m`;
   const row = (r) => {

@@ -1494,21 +1494,6 @@ function aviatorArt() {
   </div>`;
 }
 
-// A built-in, drawn Free Spins promo banner (model === 'freespins'): festive gold/purple scene with
-// floating coins and the offer baked in — "Deposita 20€ · 100 Free Spins". All vector/CSS, so it is
-// crisp and fills any size (computer or phone) without ever cropping. An optional admin button overlays.
-function freeSpinsArt() {
-  return `<div class="cban-fs" aria-hidden="true">
-    <span class="cban-fs-glow"></span>
-    <span class="cban-fs-coin a">€</span><span class="cban-fs-coin b">€</span><span class="cban-fs-coin c">€</span><span class="cban-fs-coin d">€</span><span class="cban-fs-coin e">€</span>
-    <div class="cban-fs-stack">
-      <span class="cban-fs-top">DEPOSITA <b>20€</b> E GANHA</span>
-      <span class="cban-fs-prize"><b>100</b> <span>FREE SPINS</span></span>
-      <span class="cban-fs-sub">rodadas grátis para jogar no casino</span>
-    </div>
-  </div>`;
-}
-
 function casinoBanners() {
   const list = state.casinoBanners || [];
   if (!list.length) return '';
@@ -1518,11 +1503,6 @@ function casinoBanners() {
     const copy = b.title || b.subtitle || b.cta
       ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
     if (b.model === 'aviator') return `<${tag} class="cban-slide cban-av-slide" data-cban="${i}">${aviatorArt()}${copy}</${tag.split(' ')[0]}>`;
-    // The Free Spins promo is self-contained (the offer is drawn in); only an optional button overlays.
-    if (b.model === 'freespins') {
-      const cta = b.cta ? `<div class="cban-copy cban-fs-copy"><span class="cban-cta">${esc(b.cta)}</span></div>` : '';
-      return `<${tag} class="cban-slide cban-fs-slide" data-cban="${i}">${freeSpinsArt()}${cta}</${tag.split(' ')[0]}>`;
-    }
     // A video plays muted in a loop (as a picture would show); computer and phone can differ.
     const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
     const media = b.video?.d || b.video?.m
