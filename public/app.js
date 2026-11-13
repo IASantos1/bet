@@ -1494,6 +1494,22 @@ function aviatorArt() {
   </div>`;
 }
 
+// An animated sea overlay drawn over an uploaded picture (model === 'sea'): rising bubbles, a few fish
+// swimming across, swaying seaweed and soft light rays — all vector/CSS, so the operator's own image
+// comes alive without replacing it. Sizing for the computer is tuned in the admin (height, focus, fit).
+function seaOverlay() {
+  const bub = Array.from({ length: 11 }, (_, k) => `<i class="sea-bub b${k % 6}"></i>`).join('');
+  const fish = (cls, fill) => `<svg class="sea-fish ${cls}" viewBox="0 0 48 28" focusable="false" aria-hidden="true"><path d="M31 14c-6-8-18-9-27-5 3 3 3 7 0 10 9 4 21 3 27-5z" fill="${fill}"/><path d="M31 14l12-7v14z" fill="${fill}"/><circle cx="12" cy="12" r="1.6" fill="#07263f"/></svg>`;
+  const weed = Array.from({ length: 6 }, (_, k) => `<span class="sea-weed w${k}"></span>`).join('');
+  return `<div class="cban-sea" aria-hidden="true">
+    <span class="sea-rays"></span>
+    <div class="sea-weeds">${weed}</div>
+    ${fish('f0', '#ffd24a')}${fish('f1', '#4ec3ff')}${fish('f2', '#ff8a3c')}
+    <div class="sea-bubbles">${bub}</div>
+    <span class="sea-shimmer"></span>
+  </div>`;
+}
+
 function casinoBanners() {
   const list = state.casinoBanners || [];
   if (!list.length) return '';
@@ -1503,6 +1519,15 @@ function casinoBanners() {
     const copy = b.title || b.subtitle || b.cta
       ? `<div class="cban-copy">${b.title ? `<h2>${esc(b.title)}</h2>` : ''}${b.subtitle ? `<p>${esc(b.subtitle)}</p>` : ''}${b.cta ? `<span class="cban-cta">${esc(b.cta)}</span>` : ''}</div>` : '';
     if (b.model === 'aviator') return `<${tag} class="cban-slide cban-av-slide" data-cban="${i}">${aviatorArt()}${copy}</${tag.split(' ')[0]}>`;
+    // The uploaded picture with the animated sea overlay. Sizing is applied after render (CSP: no inline styles).
+    if (b.model === 'sea') {
+      const s = b.style || {};
+      const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
+      const media = b.video?.d || b.video?.m
+        ? `${b.video.d ? vid(b.img.d, 'cban-d') : `<img class="cban-d" src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}">`}${b.img.m !== b.img.d ? (b.video.m ? vid(b.img.m, 'cban-m') : `<img class="cban-m" src="${esc(b.img.m)}" alt="">`) : ''}`
+        : `<picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>`;
+      return `<${tag} class="cban-slide cban-sea-slide${b.img.m !== b.img.d && (b.video?.d || b.video?.m) ? ' two' : ''}" data-cban="${i}" data-pch="${Number(s.pcH) || 29}" data-focal="${s.focal ?? 50}" data-fit="${s.fit === 'contain' ? 'contain' : 'cover'}">${media}${seaOverlay()}${copy}</${tag.split(' ')[0]}>`;
+    }
     // A video plays muted in a loop (as a picture would show); computer and phone can differ.
     const vid = (src, cls) => `<video class="${cls}" src="${esc(src)}" autoplay muted loop playsinline preload="${i ? 'metadata' : 'auto'}" aria-label="${esc(b.title || 'Promoção')}"></video>`;
     const media = b.video?.d || b.video?.m
@@ -1850,6 +1875,18 @@ let skinTimer = null;
  * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
  */
 /** The casino cards chosen in the admin: height (% of the width), cover fit, games per row, picture tuning. */
+/** Per-banner sizing for the animated "sea" model (set here, not inline, so the strict CSP allows it):
+ * on the computer the banner height and the picture's focus/fit follow the admin's choices. */
+function applyBannerStyles() {
+  for (const el of $$('.cban-sea-slide[data-pch]')) {
+    el.style.setProperty('--cban-pch', String(Number(el.dataset.pch) || 29));
+    const img = $('img, video', el);
+    if (img) {
+      img.style.objectFit = el.dataset.fit === 'contain' ? 'contain' : 'cover';
+      img.style.objectPosition = `50% ${Math.min(100, Math.max(0, Number(el.dataset.focal) || 50))}%`;
+    }
+  }
+}
 function applyCasinoCards(c) {
   const root = document.documentElement;
   if (!c) return;
@@ -3712,6 +3749,7 @@ function render({ keepScroll = false } = {}) {
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   if (immersive) placeSkins();
+  applyBannerStyles();
   watchCasinoMore();
   watchSportsMore();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
