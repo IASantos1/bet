@@ -4618,6 +4618,36 @@ window.addEventListener('pagehide', () => {
 // ---------- help assistant (FAQ chat, answers from the site's real settings) ----------
 const helpNorm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const PAY_LABEL = { mbway: 'MB WAY', multibanco: 'Multibanco', cartao: 'Cartão', applepay: 'Apple Pay', googlepay: 'Google Pay' };
+// ---- live data the chat can show, straight from the site (no external service) ----
+const odds1x2 = (e) => { const m = {}; (e.selections || []).forEach((s) => { if (['1', 'X', '2'].includes(s.code)) m[s.code] = s.odds; }); return m; };
+/** One match as a tappable line: teams, league, time/live and the 1X2 odds, linking to the match page. */
+function chatMatchLine(e) {
+  const o = odds1x2(e);
+  const when = e.status === 'live' ? '🔴 ao vivo' : esc(fmtWhen(e.startTime));
+  const odds = ['1', 'X', '2'].map((c) => (o[c] ? `<span>${c}<b>${fmtOdds(o[c])}</b></span>` : '')).join('');
+  return `<a class="help-match" href="#/jogo/${e.id}" data-help-go><b>${esc(e.home)}</b> <i>×</i> <b>${esc(e.away)}</b><small>${esc(leagueShort(e.competition))} · ${when}</small>${odds ? `<span class="help-odds">${odds}</span>` : ''}</a>`;
+}
+/** Today's football: live now first, then the ones starting today, with odds. */
+function chatFootballToday() {
+  const evs = (state.events || []).filter((e) => e.sport === 'futebol');
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const live = evs.filter((e) => e.status === 'live');
+  const soon = evs.filter((e) => e.status === 'scheduled' && new Date(e.startTime) <= end).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  if (!live.length && !soon.length) return 'De momento não há jogos de futebol para hoje. Vê todos em <b>Desporto</b>. <a href="#/desporto" data-help-go>Abrir Desporto →</a>';
+  let html = '';
+  if (live.length) html += `<b>🔴 Ao vivo agora (${live.length})</b>${live.slice(0, 6).map(chatMatchLine).join('')}`;
+  if (soon.length) html += `<b>📅 Hoje (${soon.length})</b>${soon.slice(0, 6).map(chatMatchLine).join('')}`;
+  return `${html}<div class="help-more"><a href="#/desporto" data-help-go>Ver todo o desporto →</a></div>`;
+}
+/** Matches whose team or league matches the text (live first, then by time). */
+function chatSearchGames(term) {
+  const n = helpNorm(term);
+  if (n.length < 2) return [];
+  return (state.events || []).filter((e) => helpNorm(`${e.home} ${e.away} ${e.competition}`).includes(n))
+    .sort((a, b) => (b.status === 'live') - (a.status === 'live') || a.startTime.localeCompare(b.startTime)).slice(0, 8);
+}
+/** A one-tap link to search news about a club (opens in a new tab — no external service needed). */
+const chatNewsLink = (term) => `<div class="help-more"><a href="https://www.google.com/search?q=${encodeURIComponent(`${term} futebol notícias`)}" target="_blank" rel="noopener">🔎 Procurar notícias de “${esc(term)}” →</a></div>`;
 /** The help topics: a chip label, the words that match them, and the answer (built from state.config). */
 function helpTopics() {
   const c = state.config || {};
@@ -4631,10 +4661,12 @@ function helpTopics() {
       answer: () => `<b>Depósitos</b><br>• Métodos: <b>${methods}</b>.<br>• Depósito mínimo: <b>${money(c.minDeposit ?? 10)}</b>.<br>• O saldo fica disponível assim que o pagamento é confirmado.` },
     { id: 'apostas', label: '🎯 Apostas', keywords: ['aposta', 'apostar', 'aposta minima', 'odd', 'cotacao', 'bilhete', 'boletim', 'multipla', 'simples', 'valor minimo'],
       answer: () => `<b>Apostas</b><br>• Aposta mínima: <b>${money(c.minStake ?? 0.2)}</b>; máxima: <b>${money(c.maxStake ?? 1000)}</b>.<br>• Escolha as odds nos jogos (vão para o boletim) e finalize em “Apostar”.<br>• Pode fazer apostas simples ou múltiplas.` },
-    { id: 'procurar-jogos', label: '🎰 Procurar jogos (casino)', keywords: ['procurar jogo', 'pesquisar jogo', 'encontrar jogo', 'slot', 'casino', 'fornecedor', 'big bass', 'aviator', 'gates', 'sweet bonanza'],
-      answer: () => '<b>Procurar jogos no casino</b><br>Vá a <b>Casino</b> e use a barra <i>“Procurar jogo ou fornecedor…”</i> no topo. Pode filtrar por tipo (Slots, Ao Vivo, Crash…) e por fornecedor.' },
-    { id: 'procurar-desporto', label: '⚽ Procurar ligas / equipas', keywords: ['liga', 'ligas', 'equipa', 'time', 'campeonato', 'desporto', 'futebol', 'procurar jogo', 'premier', 'serie a', 'la liga', 'ao vivo'],
-      answer: () => '<b>Procurar desporto</b><br>Vá a <b>Desporto</b> e escolha a modalidade/liga, ou use a <b>lupa 🔍</b> no topo para procurar por equipa, liga ou jogo. Em <b>Ao Vivo</b> vê os jogos a decorrer agora.' },
+    { id: 'jogos-hoje', label: '⚽ Jogos de hoje / ao vivo', keywords: ['jogos de hoje', 'jogo hoje', 'hoje', 'ao vivo', 'agora', 'que jogos', 'futebol hoje', 'jogos'],
+      answer: () => chatFootballToday() },
+    { id: 'procurar-desporto', label: '🔎 Procurar equipa / liga', keywords: ['procurar equipa', 'procurar liga', 'equipa', 'time', 'liga', 'ligas', 'campeonato', 'clube', 'noticias', 'noticia'],
+      answer: () => 'Escreve aqui o nome da <b>equipa</b> ou <b>liga</b> (ex.: <i>Benfica, Porto, Premier League</i>) e eu mostro os próximos jogos com as odds. Também te dou um atalho para procurares notícias do clube.' },
+    { id: 'procurar-jogos', label: '🎰 Jogos do casino', keywords: ['procurar jogo', 'pesquisar jogo', 'encontrar jogo', 'slot', 'slots', 'casino', 'fornecedor', 'big bass', 'aviator', 'gates', 'sweet bonanza', 'roleta'],
+      answer: () => '<b>Jogos do casino</b><br>Vá a <b>Casino</b> e use a barra <i>“Procurar jogo ou fornecedor…”</i> no topo — pode filtrar por Slots, Ao Vivo, Crash e por fornecedor. <a href="#/casino" data-help-go>Abrir o Casino →</a>' },
     { id: 'bonus', label: '🎁 Bónus / Free Spins', keywords: ['bonus', 'free spin', 'free spins', 'rodada', 'rodadas', 'promo', 'promocao', 'promocoes', 'giros', 'rollover'],
       answer: () => '<b>Bónus e Free Spins</b><br>Veja as promoções ativas em <b>Promoções</b>. As Free Spins de boas-vindas (quando ativas) dão rodadas grátis ao fazer o 1.º depósito. O saldo de bónus passa a saldo real quando o rollover é cumprido; pedir um levantamento com um bónus ativo cancela o bónus.' },
     { id: 'responsavel', label: '🛡️ Jogo responsável', keywords: ['responsavel', 'limite', 'limites', 'autoexclusao', 'autoexcluir', 'pausa', 'vicio', 'dependencia', 'ajuda'],
@@ -4650,8 +4682,12 @@ function helpAnswer(text) {
   const n = helpNorm(text);
   let best = null, score = 0;
   for (const t of helpTopics()) { const s = t.keywords.reduce((a, k) => a + (n.includes(helpNorm(k)) ? 1 : 0), 0); if (s > score) { score = s; best = t; } }
-  if (best && score > 0) helpBot(best.answer());
-  else helpBot(`Ainda não tenho uma resposta para isso 🤔. Escolha um dos temas ou use <b>“Falar com o suporte”</b>.${helpChips()}`);
+  if (best && score > 1) { helpBot(best.answer()); return; }
+  // A team or league name → show its games (with odds) and a shortcut to search news.
+  const games = chatSearchGames(text);
+  if (games.length) { helpBot(`<b>Encontrei ${games.length} jogo(s) para “${esc(text)}”:</b>${games.map(chatMatchLine).join('')}${chatNewsLink(text.trim())}`); return; }
+  if (best && score > 0) { helpBot(best.answer()); return; }
+  helpBot(`Não encontrei jogos nem uma resposta para “${esc(text)}” 🤔.${chatNewsLink(text.trim())}Ou escolha um tema:${helpChips()}`);
 }
 function helpSupport() {
   const sup = state.config?.supportEmail;
@@ -4701,6 +4737,9 @@ function mountHelp() {
   $('#helpSupport').addEventListener('click', helpSupport);
   $('#helpForm').addEventListener('submit', (e) => { e.preventDefault(); const t = $('#helpText').value.trim(); if (!t) return; helpUser(t); $('#helpText').value = ''; setTimeout(() => helpAnswer(t), 180); });
   $('#helpMsgs').addEventListener('click', (e) => {
+    // An internal link (a match, the casino, the sports page): open it and close the chat.
+    const link = e.target.closest('a[data-help-go]');
+    if (link && (link.getAttribute('href') || '').startsWith('#/')) { helpToggle(false); return; }
     const b = e.target.closest('[data-help-topic]'); if (!b) return;
     const top = helpTopics().find((x) => x.id === b.dataset.helpTopic); if (!top) return;
     helpUser(top.label.replace(/^\S+\s/, '')); setTimeout(() => helpBot(top.answer()), 180);
