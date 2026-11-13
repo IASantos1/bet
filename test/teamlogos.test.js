@@ -61,7 +61,7 @@ test('badges looked up by name for teams the feed sends without one; misses kept
   const r = await logos.run();
   assert.deepEqual(r, { asked: 4, found: 2 });
   assert.equal(asked.at(-1), 'Porto'); // Porto has the feed's badge: looked up last (a spare)
-  assert.deepEqual(logos.get('futebol', 'Eintracht Frankfurt'), { logo: 'https://r2.thesportsdb.com/images/media/team/badge/ef.png', colors: ['#e1000f', '#000000'], kit: 'https://r2.thesportsdb.com/images/media/team/equipment/ef.png', ver: 2, apif: false, alt: [], checkedAt: logos.get('futebol', 'Eintracht Frankfurt').checkedAt });
+  assert.deepEqual(logos.get('futebol', 'Eintracht Frankfurt'), { logo: 'https://r2.thesportsdb.com/images/media/team/badge/ef.png', colors: ['#e1000f', '#000000'], kit: 'https://r2.thesportsdb.com/images/media/team/equipment/ef.png', ver: 3, apif: false, alt: [], checkedAt: logos.get('futebol', 'Eintracht Frankfurt').checkedAt });
   assert.equal(logos.get('futebol', '1. Koln').logo, 'https://r2.thesportsdb.com/k.png'); // second spelling, football one
   assert.deepEqual(logos.get('futebol', '1. Koln').colors, ['#ffffff']);
   assert.equal(logos.get('futebol', 'Nowhere United').logo, null); // another club's name: not taken
@@ -219,6 +219,17 @@ test('close names within one league: the one team that fits, or none', () => {
   assert.equal(closeName('Celta', mixed)?.name, 'Celta Vigo');
   assert.equal(closeName('Celtic', mixed)?.name, 'Celtic');
   assert.equal(closeName('Celta', mixed.filter((x) => x.logo !== 'celta')), null);
+  // A Brazilian state suffix (MG, RJ…) is not enough to tell two clubs apart: Atlético-MG (Série A,
+  // Clube Atlético Mineiro) and Athletic Club MG (Série B) must not share a badge, even though
+  // "atlético"/"athletic" are common words that reduce both to just "mg".
+  const br = [{ name: 'Atletico-MG', logo: 'cam' }, { name: 'Athletic Club', logo: 'athletic' }];
+  assert.equal(closeName('Atletico-MG', br)?.logo, 'cam');
+  assert.equal(closeName('Athletic Club MG', br), null, 'Athletic Club never gets Atlético-MG badge');
+  // Two clubs told apart only by their state keep their own badge (the state is not stripped when a
+  // real name word remains alongside it).
+  const america = [{ name: 'America-MG', logo: 'amg' }, { name: 'America-RJ', logo: 'arj' }];
+  assert.equal(closeName('America-MG', america)?.logo, 'amg');
+  assert.equal(closeName('America-RJ', america)?.logo, 'arj');
 });
 
 test('free pass: the competition is matched to its kept league and close names there get the badge, no request', async () => {

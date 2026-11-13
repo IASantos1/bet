@@ -25,7 +25,7 @@ const SPORT_NAME = {
   andebol: 'Handball', esports: 'ESports', futamericano: 'American Football', basebol: 'Baseball', raguebi: 'Rugby', mma: 'Fighting',
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
-const VERSION = 2; // entries saved by an older version are looked up again
+const VERSION = 3; // entries saved by an older version are looked up again
 const API_SPORTS = { futebol: 'football', basquetebol: 'basketball', hoquei: 'hockey', voleibol: 'volleyball', andebol: 'handball',
   futamericano: 'american-football', basebol: 'baseball', raguebi: 'rugby', mma: 'mma' };
 // MMA has fighters, not teams: their photo is looked up by name (API-MMA), shown like a badge.
@@ -107,7 +107,15 @@ const sameWord = (a, b) => {
 const COMMON = new Set(['united', 'utd', 'city', 'town', 'county', 'rovers', 'wanderers', 'athletic', 'atletico', 'atletic', 'sporting',
   'real', 'albion', 'hotspur', 'rangers', 'inter', 'internacional', 'dynamo', 'dinamo', 'racing', 'deportivo', 'borussia', 'union',
   'saint', 'st', 'san', 'santa', 'sport', 'sports', 'esporte', 'football', 'futebol', 'futbol', 'women', 'ii', 'b', 'u19', 'u21', 'u23']);
-const strong = (name) => { const w = words(name); const s = w.filter((x) => !COMMON.has(x)); return s.length ? s : w; };
+const strong = (name) => {
+  const w = words(name);
+  const s = w.filter((x) => !COMMON.has(x));
+  // A short code like a Brazilian state suffix (MG, RJ, SP…) must not become the only telling word:
+  // "Atlético-MG" and "Athletic Club MG" both strip to just "mg" (atlético/athletic are common words),
+  // which would wrongly match them. When stripping leaves only such short tokens, keep the full words so
+  // the real names (atletico ≠ athletic) still tell the clubs apart.
+  return s.some((x) => x.length > 2) ? s : w;
+};
 
 /** The one team whose name is the same club ({ name, logo } list): every telling word of each name is in the
  * other ("Stade Rennais" ~ "Rennes", "Lille OSC" ~ "Lille"), and no other team fits. Null otherwise. */
