@@ -2282,7 +2282,7 @@ const PROFILE_SECTIONS = [
   { id: 'apostas', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
   { id: 'promocoes', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
   { id: 'afiliados', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
-  { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. A verificação demora normalmente entre 5 e 24 horas.' },
+  { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. A verificação demora normalmente entre 24 e 72 horas.' },
   { id: 'seguranca', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
   { id: 'preferencias', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
   { id: 'limites', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Limites de depósito, aposta e perda, pausas e autoexclusão para uma experiência de jogo responsável.' },
@@ -2396,7 +2396,7 @@ async function loadKyc() {
   const u = state.user;
   const notice = {
     approved: '<div class="pf-note ok"><strong>Conta verificada.</strong> Os levantamentos estão desbloqueados.</div>',
-    pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A verificação demora normalmente entre 5 e 24 horas.</div>',
+    pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A verificação demora normalmente entre 24 e 72 horas.</div>',
     rejected: '<div class="pf-note bad"><strong>Verificação recusada.</strong> Envie documentos legíveis e dentro da validade.</div>',
   }[k.status] || '<div class="pf-note">Para desbloquear levantamentos: fotografe o seu documento de identificação (frente e verso) e envie um comprovativo de IBAN ou extrato bancário.</div>';
   const idState = slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']);
@@ -2493,7 +2493,7 @@ async function kycCamera() {
         for (const [n, [kind]] of steps.entries()) {
           await api('/api/me/kyc', { method: 'POST', body: { kind, mimeType: 'image/jpeg', fileName: `${kind === 'id_front' ? 'frente' : 'verso'}.jpg`, data: shots[n].split(',')[1] } });
         }
-        el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A verificação demora normalmente entre 5 e 24 horas.</span></div>';
+        el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A verificação demora normalmente entre 24 e 72 horas.</span></div>';
         el.querySelector('.cam-hint').textContent = '';
         acts.innerHTML = '<button class="primary-btn cam-close">OK</button>';
         acts.querySelector('.cam-close').onclick = () => { el.remove(); loadKyc(); };
@@ -4085,7 +4085,7 @@ const formHandlers = {
     });
     await api('/api/me/kyc', { method: 'POST', body: { kind: form.kind.value, mimeType: file.type, fileName: file.name, data } });
     if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
-    toast('Comprovativo enviado', 'A verificação demora normalmente entre 5 e 24 horas.');
+    toast('Comprovativo enviado', 'A verificação demora normalmente entre 24 e 72 horas.');
     loadKyc();
   },
   async password(form) {
