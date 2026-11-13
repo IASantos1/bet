@@ -2414,16 +2414,18 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .game-art .excl-badge, .game-art .play-badge { z-index: 2; }
 
 /* ---------- help assistant (FAQ chat) ---------- */
-#helpWidget { position: fixed; z-index: 70; right: 12px; bottom: 38%; left: auto; }
+/* The robot peeks from the right edge: only half shows, so it never covers the content. A tap opens the
+   chat; on hover/focus it slides fully in. */
+#helpWidget { position: fixed; z-index: 70; right: 0; bottom: 38%; left: auto; }
 .help-fab { position: relative; display: grid; place-items: center; width: 58px; height: 58px; padding: 0; border: 0; border-radius: 50%;
   background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; cursor: pointer;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .4), inset 0 1px rgba(255, 255, 255, .3); animation: helpBob 3.2s ease-in-out infinite; }
-.help-fab-bot { font-size: 30px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); }
-.help-fab-tip { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
+  box-shadow: -4px 6px 18px rgba(0, 0, 0, .4), inset 0 1px rgba(255, 255, 255, .3);
+  transform: translateX(50%); transition: transform .2s ease; }
+.help-fab:hover, .help-fab:focus-visible, .help-fab:active { transform: translateX(6%); outline: none; }
+.help-fab-bot { font-size: 30px; line-height: 1; margin-left: -18px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); transition: margin .2s ease; }
+.help-fab:hover .help-fab-bot, .help-fab:focus-visible .help-fab-bot, .help-fab:active .help-fab-bot { margin-left: 0; }
+.help-fab-tip { position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
   font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; opacity: .92; pointer-events: none; }
-.help-fab::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid rgba(53, 208, 127, .55); animation: helpRing 2.4s ease-out infinite; }
-@keyframes helpBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
-@keyframes helpRing { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.5); opacity: 0; } }
 .help-fab.hidden { display: none; }
 .help-panel { position: fixed; right: 12px; bottom: 20px; left: auto; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 100px));
   display: none; flex-direction: column; overflow: hidden; border-radius: 18px; border: 1px solid var(--line);
