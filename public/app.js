@@ -4615,7 +4615,84 @@ window.addEventListener('pagehide', () => {
   if (state.casinoSession) closeCasino({ keepalive: true });
 });
 
+// ---------- help assistant (FAQ chat, answers from the site's real settings) ----------
+const helpNorm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const PAY_LABEL = { mbway: 'MB WAY', multibanco: 'Multibanco', cartao: 'Cartão', applepay: 'Apple Pay', googlepay: 'Google Pay' };
+/** The help topics: a chip label, the words that match them, and the answer (built from state.config). */
+function helpTopics() {
+  const c = state.config || {};
+  const methods = (c.payMethods || ['mbway', 'multibanco', 'cartao']).map((m) => PAY_LABEL[m] || m).join(', ') || 'MB WAY, Multibanco, Cartão';
+  return [
+    { id: 'verificacao', label: '📄 Documentos / Verificação', keywords: ['documento', 'verificacao', 'verificar', 'kyc', 'identidade', 'cartao de cidadao', 'comprovativo', 'iban', 'validar', 'validacao', 'conta verificada'],
+      answer: () => `<b>Verificação de identidade (KYC)</b><br>Envie em <b>Perfil → Verificação</b>:<br>• <b>Documento de identificação</b> (Cartão de Cidadão ou passaporte) — frente e verso.<br>• <b>Comprovativo de IBAN</b> (documento do banco com o seu nome e IBAN) ou extrato.<br>A verificação demora normalmente <b>entre 24 e 72 horas</b>. Avisamos assim que estiver concluída.` },
+    { id: 'levantamento', label: '💸 Levantamentos / Prazos', keywords: ['levantamento', 'levantar', 'saque', 'sacar', 'retirar', 'retirada', 'prazo', 'receber', 'quanto tempo', 'demora', 'pagamento'],
+      answer: () => `<b>Levantamentos</b><br>• Valor mínimo: <b>${money(c.minWithdraw ?? 20)}</b>.<br>• Até <b>${money(c.instantWithdraw ?? 200)}</b> é pago <b>na hora</b>; acima disso a equipa decide em <b>24–72 h</b>.<br>• Precisa de ter a <b>conta verificada (KYC)</b> e de ter <b>ganho uma aposta depois do último depósito</b>.<br>• Só um levantamento de cada vez.` },
+    { id: 'deposito', label: '➕ Depósitos / Métodos', keywords: ['deposito', 'depositar', 'carregar', 'metodo', 'metodos', 'mbway', 'multibanco', 'cartao', 'pagar', 'como pago', 'apple pay', 'google pay'],
+      answer: () => `<b>Depósitos</b><br>• Métodos: <b>${methods}</b>.<br>• Depósito mínimo: <b>${money(c.minDeposit ?? 10)}</b>.<br>• O saldo fica disponível assim que o pagamento é confirmado.` },
+    { id: 'apostas', label: '🎯 Apostas', keywords: ['aposta', 'apostar', 'aposta minima', 'odd', 'cotacao', 'bilhete', 'boletim', 'multipla', 'simples', 'valor minimo'],
+      answer: () => `<b>Apostas</b><br>• Aposta mínima: <b>${money(c.minStake ?? 0.2)}</b>; máxima: <b>${money(c.maxStake ?? 1000)}</b>.<br>• Escolha as odds nos jogos (vão para o boletim) e finalize em “Apostar”.<br>• Pode fazer apostas simples ou múltiplas.` },
+    { id: 'procurar-jogos', label: '🎰 Procurar jogos (casino)', keywords: ['procurar jogo', 'pesquisar jogo', 'encontrar jogo', 'slot', 'casino', 'fornecedor', 'big bass', 'aviator', 'gates', 'sweet bonanza'],
+      answer: () => '<b>Procurar jogos no casino</b><br>Vá a <b>Casino</b> e use a barra <i>“Procurar jogo ou fornecedor…”</i> no topo. Pode filtrar por tipo (Slots, Ao Vivo, Crash…) e por fornecedor.' },
+    { id: 'procurar-desporto', label: '⚽ Procurar ligas / equipas', keywords: ['liga', 'ligas', 'equipa', 'time', 'campeonato', 'desporto', 'futebol', 'procurar jogo', 'premier', 'serie a', 'la liga', 'ao vivo'],
+      answer: () => '<b>Procurar desporto</b><br>Vá a <b>Desporto</b> e escolha a modalidade/liga, ou use a <b>lupa 🔍</b> no topo para procurar por equipa, liga ou jogo. Em <b>Ao Vivo</b> vê os jogos a decorrer agora.' },
+    { id: 'bonus', label: '🎁 Bónus / Free Spins', keywords: ['bonus', 'free spin', 'free spins', 'rodada', 'rodadas', 'promo', 'promocao', 'promocoes', 'giros', 'rollover'],
+      answer: () => '<b>Bónus e Free Spins</b><br>Veja as promoções ativas em <b>Promoções</b>. As Free Spins de boas-vindas (quando ativas) dão rodadas grátis ao fazer o 1.º depósito. O saldo de bónus passa a saldo real quando o rollover é cumprido; pedir um levantamento com um bónus ativo cancela o bónus.' },
+    { id: 'responsavel', label: '🛡️ Jogo responsável', keywords: ['responsavel', 'limite', 'limites', 'autoexclusao', 'autoexcluir', 'pausa', 'vicio', 'dependencia', 'ajuda'],
+      answer: () => '<b>Jogo responsável</b><br>Em <b>Perfil → Jogo responsável</b> pode definir limites e autoexcluir-se por um período. Ajuda: <b>SICAD — Linha Vida 1414</b> (anónima e confidencial).' },
+  ];
+}
+const helpChips = () => `<div class="help-chips">${helpTopics().map((t) => `<button type="button" data-help-topic="${t.id}">${t.label}</button>`).join('')}</div>`;
+function helpBubble(html, who) { const m = $('#helpMsgs'); if (!m) return; const d = document.createElement('div'); d.className = `help-b ${who}`; d.innerHTML = html; m.appendChild(d); m.scrollTop = m.scrollHeight; }
+const helpUser = (t) => helpBubble(esc(t), 'me');
+const helpBot = (html) => helpBubble(html, 'bot');
+function helpWelcome() { helpBot(`Olá! 👋 Sou o assistente da <b>BET62</b>. Em que posso ajudar? Escolha um tema ou escreva a sua dúvida.${helpChips()}`); }
+function helpAnswer(text) {
+  const n = helpNorm(text);
+  let best = null, score = 0;
+  for (const t of helpTopics()) { const s = t.keywords.reduce((a, k) => a + (n.includes(helpNorm(k)) ? 1 : 0), 0); if (s > score) { score = s; best = t; } }
+  if (best && score > 0) helpBot(best.answer());
+  else helpBot(`Ainda não tenho uma resposta para isso 🤔. Escolha um dos temas ou use <b>“Falar com o suporte”</b>.${helpChips()}`);
+}
+function helpSupport() {
+  const sup = state.config?.supportEmail;
+  if (sup) { window.location.href = `mailto:${sup}?subject=${encodeURIComponent('Pedido de ajuda — BET62')}`; return; }
+  const ph = state.config?.supportPhone;
+  toast('Suporte', ph ? `Contacte o suporte: ${ph}` : 'Veja os contactos em Perfil → Suporte.');
+}
+function helpToggle(open) {
+  const p = $('#helpPanel'); if (!p) return;
+  const show = open === undefined ? !p.classList.contains('on') : open;
+  p.classList.toggle('on', show);
+  p.setAttribute('aria-hidden', show ? 'false' : 'true');
+  $('#helpFab')?.classList.toggle('hidden', show);
+  if (show && !$('#helpMsgs').children.length) helpWelcome();
+  if (show) setTimeout(() => $('#helpText')?.focus(), 60);
+}
+function mountHelp() {
+  if ($('#helpWidget')) return;
+  const el = document.createElement('div');
+  el.id = 'helpWidget';
+  el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas">💬<span>Ajuda</span></button>
+    <section id="helpPanel" class="help-panel" aria-hidden="true" aria-label="Assistente de ajuda">
+      <header class="help-head"><span class="help-dot"></span><div class="help-title"><b>Assistente BET62</b><small>Dúvidas com resposta imediata</small></div><button class="help-x" aria-label="Fechar">✕</button></header>
+      <div class="help-msgs" id="helpMsgs"></div>
+      <form class="help-input" id="helpForm"><input id="helpText" placeholder="Escreva a sua dúvida…" autocomplete="off" maxlength="200"><button class="help-send" aria-label="Enviar">➤</button></form>
+      <div class="help-foot"><button type="button" class="help-support" id="helpSupport">✉️ Falar com o suporte</button></div>
+    </section>`;
+  document.body.appendChild(el);
+  $('#helpFab').addEventListener('click', () => helpToggle());
+  $('.help-x', el).addEventListener('click', () => helpToggle(false));
+  $('#helpSupport').addEventListener('click', helpSupport);
+  $('#helpForm').addEventListener('submit', (e) => { e.preventDefault(); const t = $('#helpText').value.trim(); if (!t) return; helpUser(t); $('#helpText').value = ''; setTimeout(() => helpAnswer(t), 180); });
+  $('#helpMsgs').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-help-topic]'); if (!b) return;
+    const top = helpTopics().find((x) => x.id === b.dataset.helpTopic); if (!top) return;
+    helpUser(top.label.replace(/^\S+\s/, '')); setTimeout(() => helpBot(top.answer()), 180);
+  });
+}
+
 function bindChrome() {
+  mountHelp();
   $('#loginBtn').addEventListener('click', () => openAuth('login'));
   $('#registerBtn').addEventListener('click', () => openAuth('register'));
   $('#searchBtn').addEventListener('click', openSearch);
