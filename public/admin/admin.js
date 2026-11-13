@@ -3473,15 +3473,14 @@ function openBannerEditor(b = null) {
       <div class="ban-grid">
         <label class="field ban-wide"><span>Modelo</span><select id="banModel">
           <option value="image"${banEd.model !== 'aviator' ? ' selected' : ''}>Imagem / vídeo (carregado por si)</option>
-          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option>
-          <option value="sea"${banEd.model === 'sea' ? ' selected' : ''}>Mar animado — a sua imagem + bolhas, peixes e algas a mexer</option></select>
-          <small class="muted">O modelo "Aviator" é desenhado pelo site (aviãozinho a subir). O modelo "Mar animado" usa a <b>sua</b> imagem e põe por cima bolhas a subir, peixes a nadar e algas a abanar — ideal para a imagem do Big Bass. Regule a altura no PC abaixo.</small></label>
-        <label class="field ban-img"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
-          <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição). No "Mar animado" pode usar a sua imagem vertical e ajustar a altura/enquadramento abaixo.</small></label>
-        <label class="field ban-img"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
+          <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option></select>
+          <small class="muted">"Imagem / vídeo" mostra o que carregar (um vídeo toca sem som e em repetição — ideal para ter os peixes a nadar). Use os controlos de tamanho no PC abaixo para a imagem/vídeo vertical aparecer sem cortar. O "Aviator" é desenhado pelo site.</small></label>
+        <label class="field ban-img"><span>Imagem ou vídeo para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
+          <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB). Para uma imagem/vídeo vertical, suba a "Altura no PC" abaixo para não cortar.</small></label>
+        <label class="field ban-img"><span>Imagem ou vídeo para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
           <small class="muted">Recomendado 1080×1440 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
         <label class="field ban-sea"><span>Altura no PC: <b id="banPchV">${banEd.style.pcH}</b>% da largura</span><input type="range" id="banPch" min="20" max="140" step="1" value="${banEd.style.pcH}">
-          <small class="muted">Mais alto mostra mais da imagem vertical no computador (29% ≈ faixa larga; ~60–80% fica mais quadrado).</small></label>
+          <small class="muted">Regula a altura do banner no computador. 29% ≈ faixa larga (padrão); mais alto (~70–120%) mostra uma imagem/vídeo vertical inteiro, sem cortar.</small></label>
         <label class="field ban-sea"><span>Enquadramento vertical no PC: <b id="banFocalV">${banEd.style.focal}</b>%</span><input type="range" id="banFocal" min="0" max="100" step="1" value="${banEd.style.focal}">
           <small class="muted">0 = topo da imagem, 100 = fundo. Só conta quando a imagem é cortada ("Preencher").</small></label>
         <label class="field ban-sea"><span>Ajuste da imagem no PC</span><select id="banFit"><option value="cover"${banEd.style.fit !== 'contain' ? ' selected' : ''}>Preencher (corta para encher)</option><option value="contain"${banEd.style.fit === 'contain' ? ' selected' : ''}>Mostrar inteira (sem cortar)</option></select></label>
@@ -3527,36 +3526,27 @@ function aviatorArt() {
 
 function banPreview() {
   if (!banEd) return;
-  const av = banEd.model === 'aviator', sea = banEd.model === 'sea';
+  const av = banEd.model === 'aviator';
   $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
-  $$('.ban-ed .ban-sea').forEach((el) => el.style.setProperty('display', sea ? '' : 'none'));
+  $$('.ban-ed .ban-sea').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
   const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
   const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
   const copy = title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : '';
-  const slide = (src, pc) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}${sea ? ' cban-sea-slide' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}${sea && src ? seaOverlay() : ''}
+  const slide = (src, pc) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}${!av && pc ? ' cban-sized' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
     ${copy}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
   $('#banPvD').innerHTML = slide(d, true);
   $('#banPvM').innerHTML = slide(m, false);
-  if (sea) {
+  if (!av) {
     // The computer preview follows the height/focus/fit chosen (set here, not inline: strict CSP).
-    const pv = $('#banPvD .cban-sea-slide');
+    const pv = $('#banPvD .cban-slide');
     if (pv) {
       pv.style.setProperty('--cban-pch', String(banEd.style.pcH));
-      const im = $('img, video', pv);
-      if (im) { im.style.objectFit = banEd.style.fit === 'contain' ? 'contain' : 'cover'; im.style.objectPosition = `50% ${banEd.style.focal}%`; }
+      for (const im of $$('img, video', pv)) { im.style.objectFit = banEd.style.fit === 'contain' ? 'contain' : 'cover'; im.style.objectPosition = `50% ${banEd.style.focal}%`; }
     }
   }
-}
-
-// The animated sea overlay (same markup as the public site), for the admin preview.
-function seaOverlay() {
-  const bub = Array.from({ length: 11 }, (_, k) => `<i class="sea-bub b${k % 6}"></i>`).join('');
-  const fish = (cls, fill) => `<svg class="sea-fish ${cls}" viewBox="0 0 48 28" focusable="false" aria-hidden="true"><path d="M31 14c-6-8-18-9-27-5 3 3 3 7 0 10 9 4 21 3 27-5z" fill="${fill}"/><path d="M31 14l12-7v14z" fill="${fill}"/><circle cx="12" cy="12" r="1.6" fill="#07263f"/></svg>`;
-  const weed = Array.from({ length: 6 }, (_, k) => `<span class="sea-weed w${k}"></span>`).join('');
-  return `<div class="cban-sea" aria-hidden="true"><span class="sea-rays"></span><div class="sea-weeds">${weed}</div>${fish('f0', '#ffd24a')}${fish('f1', '#4ec3ff')}${fish('f2', '#ff8a3c')}<div class="sea-bubbles">${bub}</div><span class="sea-shimmer"></span></div>`;
 }
 
 /** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). A video as it is. */
@@ -3576,7 +3566,7 @@ async function bannerImage(file) {
 }
 
 async function banChange(t) {
-  if (t.id === 'banModel') { banEd.model = ['aviator', 'sea'].includes(t.value) ? t.value : 'image'; banPreview(); return; }
+  if (t.id === 'banModel') { banEd.model = t.value === 'aviator' ? 'aviator' : 'image'; banPreview(); return; }
   if (t.id === 'banPch') { banEd.style.pcH = Number(t.value); const v = $('#banPchV'); if (v) v.textContent = t.value; banPreview(); return; }
   if (t.id === 'banFocal') { banEd.style.focal = Number(t.value); const v = $('#banFocalV'); if (v) v.textContent = t.value; banPreview(); return; }
   if (t.id === 'banFit') { banEd.style.fit = t.value === 'contain' ? 'contain' : 'cover'; banPreview(); return; }
@@ -3620,7 +3610,7 @@ async function banAction(action, el) {
     return;
   }
   if (action === 'ban-save') {
-    const model = ['aviator', 'sea'].includes($('#banModel')?.value) ? $('#banModel').value : 'image';
+    const model = $('#banModel')?.value === 'aviator' ? 'aviator' : 'image';
     if (model !== 'aviator' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
     el.disabled = true;
     try {

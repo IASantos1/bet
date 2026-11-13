@@ -42,13 +42,12 @@ export function createBanners(db) {
   // (a built-in animated banner, no upload, so it never crops and scales on any screen).
   const bcols = new Set(db.prepare('PRAGMA table_info(casino_banners)').all().map((c) => c.name));
   if (!bcols.has('model')) db.exec("ALTER TABLE casino_banners ADD COLUMN model TEXT NOT NULL DEFAULT 'image'");
-  // "style" (JSON) tunes how the uploaded picture shows on the computer for the animated models:
-  // pcH = banner height as % of the width (taller fits a portrait image), focal = vertical focus
-  // 0–100, fit = cover/contain. Mobile keeps the portrait banner.
+  // "style" (JSON) tunes how an uploaded picture/video shows on the computer: pcH = banner height as %
+  // of the width (taller fits a portrait image/video without cropping), focal = vertical focus 0–100,
+  // fit = cover/contain. Mobile keeps the portrait banner.
   if (!bcols.has('style')) db.exec('ALTER TABLE casino_banners ADD COLUMN style TEXT');
-  // 'sea' = the uploaded picture with an animated sea overlay (rising bubbles, swimming fish, swaying
-  // seaweed). 'aviator' is fully drawn (no upload); 'image' and 'sea' need an uploaded picture.
-  const MODELS = new Set(['image', 'aviator', 'sea']);
+  // 'image' = an uploaded picture or video (its PC size/fit tuned by "style"); 'aviator' is fully drawn.
+  const MODELS = new Set(['image', 'aviator']);
   const DRAWN = new Set(['aviator']); // models that need no uploaded image
   const clampNum = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
   const parseStyle = (s) => {
@@ -106,7 +105,7 @@ export function createBanners(db) {
     if (input.imageD) { const d = decode(input.imageD); Object.assign(fields, { image_d: d.buf, mime_d: d.mime }); }
     if (input.imageM) { const m = decode(input.imageM); Object.assign(fields, { image_m: m.buf, mime_m: m.mime }); }
     if (input.removeM) Object.assign(fields, { image_m: null, mime_m: null });
-    // A fully-drawn model (Aviator) needs no upload; 'image' and 'sea' still need a picture.
+    // A fully-drawn model (Aviator) needs no upload; an image/video banner still needs a file.
     if (!id && !DRAWN.has(model) && !input.imageD && !input.imageM) throw new BannerError('Carregue a imagem do banner.');
     const keys = Object.keys(fields);
     if (id) {
