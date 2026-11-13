@@ -42,8 +42,19 @@ export function createBanners(db) {
   // (a built-in animated banner, no upload, so it never crops and scales on any screen).
   const bcols = new Set(db.prepare('PRAGMA table_info(casino_banners)').all().map((c) => c.name));
   if (!bcols.has('model')) db.exec("ALTER TABLE casino_banners ADD COLUMN model TEXT NOT NULL DEFAULT 'image'");
+  // "style" (JSON) tunes how an uploaded picture/video shows on the computer: pcH = banner height as %
+  // of the width (taller fits a portrait image/video without cropping), focal = vertical focus 0–100,
+  // fit = cover/contain. Mobile keeps the portrait banner.
+  if (!bcols.has('style')) db.exec('ALTER TABLE casino_banners ADD COLUMN style TEXT');
+  // 'image' = an uploaded picture or video (its PC size/fit tuned by "style"); 'aviator' is fully drawn.
   const MODELS = new Set(['image', 'aviator']);
-  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m, model,
+  const DRAWN = new Set(['aviator']); // models that need no uploaded image
+  const clampNum = (v, lo, hi, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; };
+  const parseStyle = (s) => {
+    let o = {}; try { o = s ? JSON.parse(s) : {}; } catch { o = {}; }
+    return { pcH: clampNum(o.pcH, 20, 140, 29), focal: clampNum(o.focal, 0, 100, 50), fit: o.fit === 'contain' ? 'contain' : 'cover' };
+  };
+  const COLS = `id, title, subtitle, cta, link, terms, audience, starts_at, ends_at, sort, enabled, updated_at, mime_d, mime_m, model, style,
     image_d IS NOT NULL AS has_d, image_m IS NOT NULL AS has_m`;
   const row = (r) => {
     const v = encodeURIComponent(r.updated_at);
@@ -52,7 +63,7 @@ export function createBanners(db) {
     return {
       id: r.id, title: r.title, subtitle: r.subtitle, cta: r.cta, link: r.link, terms: r.terms, audience: r.audience,
       startsAt: r.starts_at, endsAt: r.ends_at, sort: r.sort, enabled: !!r.enabled, updatedAt: r.updated_at,
-      model: r.model || 'image',
+      model: r.model || 'image', style: parseStyle(r.style),
       img: { d: d || m, m: m || d },
       // Which side is a video (played muted in a loop) rather than a picture.
       video: { d: /^video\//.test((d ? r.mime_d : r.mime_m) || ''), m: /^video\//.test((m ? r.mime_m : r.mime_d) || '') },
@@ -65,9 +76,9 @@ export function createBanners(db) {
   function live({ signedIn = false, now = nowIso() } = {}) {
     return db.prepare(`SELECT ${COLS} FROM casino_banners WHERE enabled = 1
         AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)
-        AND (model != 'image' OR image_d IS NOT NULL OR image_m IS NOT NULL) ORDER BY sort, id`).all(now, now)
+        AND (model = 'aviator' OR image_d IS NOT NULL OR image_m IS NOT NULL) ORDER BY sort, id`).all(now, now)
       .filter((r) => r.audience === 'all' || r.audience === (signedIn ? 'user' : 'guest'))
-      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img, video, model }) => ({ id, title, subtitle, cta, link: href, terms, img, video, model }));
+      .map(row).map(({ id, title, subtitle, cta, link: href, terms, img, video, model, style }) => ({ id, title, subtitle, cta, link: href, terms, img, video, model, style }));
   }
 
   function image(id, which) {
@@ -87,14 +98,15 @@ export function createBanners(db) {
     const fields = {
       title: text(input.title, 80), subtitle: text(input.subtitle, 160), cta: text(input.cta, 30), link: link(input.link),
       terms: text(input.terms, 300), audience, starts_at: when(input.startsAt), ends_at: when(input.endsAt),
-      model, enabled: input.enabled === false ? 0 : 1, updated_at: nowIso(),
+      model, style: JSON.stringify(parseStyle(input.style ? JSON.stringify(input.style) : null)),
+      enabled: input.enabled === false ? 0 : 1, updated_at: nowIso(),
     };
     if (fields.starts_at && fields.ends_at && fields.ends_at <= fields.starts_at) throw new BannerError('O fim tem de ser depois do início.');
     if (input.imageD) { const d = decode(input.imageD); Object.assign(fields, { image_d: d.buf, mime_d: d.mime }); }
     if (input.imageM) { const m = decode(input.imageM); Object.assign(fields, { image_m: m.buf, mime_m: m.mime }); }
     if (input.removeM) Object.assign(fields, { image_m: null, mime_m: null });
-    // A built-in model (e.g. Aviator) is drawn, so it needs no upload; an image banner still does.
-    if (!id && model === 'image' && !input.imageD && !input.imageM) throw new BannerError('Carregue a imagem do banner.');
+    // A fully-drawn model (Aviator) needs no upload; an image/video banner still needs a file.
+    if (!id && !DRAWN.has(model) && !input.imageD && !input.imageM) throw new BannerError('Carregue a imagem do banner.');
     const keys = Object.keys(fields);
     if (id) {
       db.prepare(`UPDATE casino_banners SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => fields[k]), id);

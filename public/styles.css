@@ -1025,6 +1025,9 @@ html.splash-on { overflow: hidden; }
 .pf-note.ok { border-color: rgba(81, 197, 128, .45); background: rgba(81, 197, 128, .10); }
 .pf-note.warn { border-color: rgba(226, 179, 60, .45); background: rgba(226, 179, 60, .10); }
 .pf-note.bad { border-color: rgba(233, 90, 116, .45); background: rgba(233, 90, 116, .10); }
+.pf-note.kyc-sent { border-color: rgba(81, 197, 128, .6); background: rgba(81, 197, 128, .16); box-shadow: 0 6px 18px rgba(81, 197, 128, .14); animation: kycSentIn .35s ease; }
+@keyframes kycSentIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pf-note.kyc-sent { animation: none; } }
 .pf-box { padding: 18px; margin-bottom: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
 .pf-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .pf-chip { padding: 8px 14px; border-radius: 8px; background: var(--dim); color: var(--text-3); font-weight: 600; font-size: 13px; }
@@ -1827,6 +1830,11 @@ body.maint-on { overflow: hidden; }
 @keyframes cbanAvPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 @media (max-width: 700px) { .cban-av-mult { left: 0; right: 0; top: 7%; text-align: center; } }
 @media (prefers-reduced-motion: reduce) { .cban-av-plane, .cban-av-mult { animation: none; } }
+
+/* A banner whose PC height/fit the operator tuned (for a portrait picture or video that must not be
+   cropped on the computer): the height follows --cban-pch (% of width); the phone keeps the portrait. */
+.cban-slide.cban-sized { aspect-ratio: 100 / var(--cban-pch, 29); }
+@media (max-width: 700px) { .cban-slide.cban-sized { aspect-ratio: 3 / 4; } }
 
 /* "Os meus jogos": ▶ on games played recently, ♥ on the game page */
 .recent-card .game-art { position: relative; }

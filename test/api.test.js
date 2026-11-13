@@ -654,6 +654,12 @@ test('banners do casino: o admin cria; o site mostra os que estão no ar para qu
   assert.equal(av.body.banner.model, 'aviator');
   assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.title === 'Aviator' && x.model === 'aviator'));
   await adm('POST', `/api/admin/banners/${av.body.banner.id}/delete`, {});
+  // A picture/video banner can tune its PC size (height/focus/fit) so a portrait image/video is not
+  // cropped on the computer; the values are saved and clamped.
+  const sb = (await adm('POST', '/api/admin/banners', { imageD: png, link: '#/promocoes', style: { pcH: 500, focal: 70, fit: 'contain' } })).body.banner;
+  assert.deepEqual([sb.style.pcH, sb.style.focal, sb.style.fit], [140, 70, 'contain']); // pcH clamped to 140
+  assert.ok((await client()('GET', '/api/casino/banners')).body.banners.some((x) => x.id === sb.id && x.style.focal === 70));
+  await adm('POST', `/api/admin/banners/${sb.id}/delete`, {});
   assert.equal((await adm('POST', '/api/admin/banners', { title: 'X', imageD: png, link: 'javascript:alert(1)' })).status, 400, 'only #/ or https links');
   const a = (await adm('POST', '/api/admin/banners', { title: 'Free Spins', subtitle: '100 rodadas', cta: 'Jogar', link: '#/promocoes', terms: 'Dep. mín. 20 €', imageD: png })).body.banner;
   const b = (await adm('POST', '/api/admin/banners', { title: 'Só visitantes', imageD: png, imageM: png, audience: 'guest' })).body.banner;

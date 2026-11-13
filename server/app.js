@@ -595,6 +595,20 @@ export function createApp(db, {
 
   // Banners at the top of the casino (Admin → Banners): the ones running now for this visitor.
   const banners = createBanners(db);
+  // A ready-made animated "Big Bass — Deposite 20€ e ganha 100 Free Spins" video banner that comes with
+  // the site (made from public/casino/banners/bigbass-freespins.mp4). Created once, then it is an
+  // ordinary banner: edit, resize, disable or remove it in Admin → Banners.
+  try {
+    const bbKey = 'casino.banner.bigbass-fs.v1';
+    const bbFile = path.join(PUBLIC_DIR, 'casino', 'banners', 'bigbass-freespins.mp4');
+    if (!getSetting(db, bbKey, false) && fs.existsSync(bbFile)) {
+      const data = `data:video/mp4;base64,${fs.readFileSync(bbFile).toString('base64')}`;
+      banners.save({ model: 'image', link: '#/promocoes', imageD: data, imageM: data, enabled: false,
+        terms: 'Depósito mínimo 20 €. 100 rodadas grátis de 0,10 € no 1.º depósito. Termos e condições aplicáveis.',
+        style: { pcH: 95, focal: 50, fit: 'cover' } });
+      setSetting(db, bbKey, true);
+    }
+  } catch (err) { console.warn(`[banner big bass] ${err.message}`); }
   const collections = createCollections(db);
   app.get('/api/casino/banners', (req, res) => res.json({ banners: banners.live({ signedIn: !!req.user }) }));
   app.get('/api/casino/banner/:id/:which', (req, res) => sendImage(res, banners.image(req.params.id, req.params.which), req));

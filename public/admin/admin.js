@@ -2882,6 +2882,7 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('input', (e) => {
   if (e.target.dataset?.cc) { applyCourtCropVars(e.target.dataset.sport); return; }
+  if (banEd && (e.target.id === 'banPch' || e.target.id === 'banFocal')) { banChange(e.target); return; }
   if (e.target.id === 'lgSearch') {
     const q = e.target.value.trim().toLowerCase();
     $$('#lgList .lg-row').forEach((r) => { r.style.display = !q || r.dataset.name.includes(q) ? '' : 'none'; });
@@ -3465,18 +3466,24 @@ const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMi
 
 function openBannerEditor(b = null) {
   banEd = { id: b?.id || null, model: b?.model || 'image', imageD: null, imageM: null, srcD: b?.img.d || null, srcM: b?.img.m && b.img.m !== b.img.d ? b.img.m : null, removeM: false,
-    vidD: !!b?.video?.d, vidM: !!(b?.video?.m && b.img.m !== b.img.d) };
+    vidD: !!b?.video?.d, vidM: !!(b?.video?.m && b.img.m !== b.img.d),
+    style: { pcH: b?.style?.pcH || 29, focal: b?.style?.focal ?? 50, fit: b?.style?.fit || 'cover' } };
   $('#adminMain').innerHTML = `<div class="form-actions"><button class="ghost-btn btn-sm" data-action="ban-back">‹ Banners</button></div>
     <div class="panel ban-ed"><h3>${b ? 'Editar banner' : 'Novo banner'}</h3>
       <div class="ban-grid">
         <label class="field ban-wide"><span>Modelo</span><select id="banModel">
           <option value="image"${banEd.model !== 'aviator' ? ' selected' : ''}>Imagem / vídeo (carregado por si)</option>
           <option value="aviator"${banEd.model === 'aviator' ? ' selected' : ''}>Aviator (animado, sem imagem — nunca corta)</option></select>
-          <small class="muted">O modelo "Aviator" é desenhado pelo site (aviãozinho a subir), encaixa em PC e telemóvel e usa o título, texto e botão abaixo.</small></label>
-        <label class="field ban-img"><span>Imagem para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
-          <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB, toca sem som e em repetição).</small></label>
-        <label class="field ban-img"><span>Imagem para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
+          <small class="muted">"Imagem / vídeo" mostra o que carregar (um vídeo toca sem som e em repetição — ideal para ter os peixes a nadar). Use os controlos de tamanho no PC abaixo para a imagem/vídeo vertical aparecer sem cortar. O "Aviator" é desenhado pelo site.</small></label>
+        <label class="field ban-img"><span>Imagem ou vídeo para computador</span><input type="file" id="banImgD" accept="image/*,video/mp4,video/webm">
+          <small class="muted">Imagem 1920×560 (JPG/WEBP) ou vídeo curto MP4/WEBM (até 12 MB). Para uma imagem/vídeo vertical, suba a "Altura no PC" abaixo para não cortar.</small></label>
+        <label class="field ban-img"><span>Imagem ou vídeo para telemóvel (opcional)</span><input type="file" id="banImgM" accept="image/*,video/mp4,video/webm">
           <small class="muted">Recomendado 1080×1440 (vertical). Sem ela, usa a do computador. ${banEd.srcM ? '<button type="button" class="link-btn" data-action="ban-rm-m">Remover</button>' : ''}</small></label>
+        <label class="field ban-sea"><span>Altura no PC: <b id="banPchV">${banEd.style.pcH}</b>% da largura</span><input type="range" id="banPch" min="20" max="140" step="1" value="${banEd.style.pcH}">
+          <small class="muted">Regula a altura do banner no computador. 29% ≈ faixa larga (padrão); mais alto (~70–120%) mostra uma imagem/vídeo vertical inteiro, sem cortar.</small></label>
+        <label class="field ban-sea"><span>Enquadramento vertical no PC: <b id="banFocalV">${banEd.style.focal}</b>%</span><input type="range" id="banFocal" min="0" max="100" step="1" value="${banEd.style.focal}">
+          <small class="muted">0 = topo da imagem, 100 = fundo. Só conta quando a imagem é cortada ("Preencher").</small></label>
+        <label class="field ban-sea"><span>Ajuste da imagem no PC</span><select id="banFit"><option value="cover"${banEd.style.fit !== 'contain' ? ' selected' : ''}>Preencher (corta para encher)</option><option value="contain"${banEd.style.fit === 'contain' ? ' selected' : ''}>Mostrar inteira (sem cortar)</option></select></label>
         <label class="field"><span>Título</span><input id="banTitle" maxlength="80" value="${esc(b?.title || '')}" placeholder="Ex.: 100 Free Spins no Gates of Olympus"></label>
         <label class="field"><span>Texto</span><input id="banSub" maxlength="160" value="${esc(b?.subtitle || '')}" placeholder="Ex.: Deposite 20 € e receba as rodadas grátis"></label>
         <label class="field"><span>Texto do botão</span><input id="banCta" maxlength="30" value="${esc(b?.cta || '')}" placeholder="Ex.: Jogar agora"></label>
@@ -3521,15 +3528,25 @@ function banPreview() {
   if (!banEd) return;
   const av = banEd.model === 'aviator';
   $$('.ban-ed .ban-img').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
+  $$('.ban-ed .ban-sea').forEach((el) => el.style.setProperty('display', av ? 'none' : ''));
   const title = $('#banTitle').value.trim(), sub = $('#banSub').value.trim(), cta = $('#banCta').value.trim(), terms = $('#banTerms').value.trim();
   const d = banEd.imageD || banEd.srcD, mOwn = banEd.imageM || (banEd.removeM ? null : banEd.srcM), m = mOwn || d;
   const isVid = (src) => (src === d ? banEd.vidD : banEd.vidM) || /^data:video\//.test(src || '');
   const media = (src) => (isVid(src) ? `<video src="${esc(src)}" autoplay muted loop playsinline></video>` : `<img src="${esc(src)}" alt="">`);
-  const slide = (src) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
-    ${title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : ''}</div>
+  const copy = title || sub || cta ? `<div class="cban-copy">${title ? `<h2>${esc(title)}</h2>` : ''}${sub ? `<p>${esc(sub)}</p>` : ''}${cta ? `<span class="cban-cta">${esc(cta)}</span>` : ''}</div>` : '';
+  const slide = (src, pc) => `<div class="cban-slide${av ? ' cban-av-slide' : ''}${!av && pc ? ' cban-sized' : ''}">${av ? aviatorArt() : (src ? media(src) : '<div class="ban-noimg">Carregue a imagem ou o vídeo</div>')}
+    ${copy}</div>
     <p class="cban-terms"><b>18+</b> Jogue com responsabilidade.${terms ? ` ${esc(terms)}` : ''}</p>`;
-  $('#banPvD').innerHTML = slide(d);
-  $('#banPvM').innerHTML = slide(m);
+  $('#banPvD').innerHTML = slide(d, true);
+  $('#banPvM').innerHTML = slide(m, false);
+  if (!av) {
+    // The computer preview follows the height/focus/fit chosen (set here, not inline: strict CSP).
+    const pv = $('#banPvD .cban-slide');
+    if (pv) {
+      pv.style.setProperty('--cban-pch', String(banEd.style.pcH));
+      for (const im of $$('img, video', pv)) { im.style.objectFit = banEd.style.fit === 'contain' ? 'contain' : 'cover'; im.style.objectPosition = `50% ${banEd.style.focal}%`; }
+    }
+  }
 }
 
 /** A picture for a banner: at most 2400 px wide, as JPEG (smaller than PNG for photos). A video as it is. */
@@ -3550,6 +3567,9 @@ async function bannerImage(file) {
 
 async function banChange(t) {
   if (t.id === 'banModel') { banEd.model = t.value === 'aviator' ? 'aviator' : 'image'; banPreview(); return; }
+  if (t.id === 'banPch') { banEd.style.pcH = Number(t.value); const v = $('#banPchV'); if (v) v.textContent = t.value; banPreview(); return; }
+  if (t.id === 'banFocal') { banEd.style.focal = Number(t.value); const v = $('#banFocalV'); if (v) v.textContent = t.value; banPreview(); return; }
+  if (t.id === 'banFit') { banEd.style.fit = t.value === 'contain' ? 'contain' : 'cover'; banPreview(); return; }
   if ((t.id === 'banImgD' || t.id === 'banImgM') && t.files?.[0]) {
     try {
       const r = await bannerImage(t.files[0]);
@@ -3591,13 +3611,14 @@ async function banAction(action, el) {
   }
   if (action === 'ban-save') {
     const model = $('#banModel')?.value === 'aviator' ? 'aviator' : 'image';
-    if (model === 'image' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
+    if (model !== 'aviator' && !banEd.id && !banEd.imageD && !banEd.imageM) { toast('Banner', 'Carregue a imagem para computador.', 'error'); return; }
     el.disabled = true;
     try {
       await api('/api/admin/banners', { method: 'POST', body: {
         id: banEd.id, model, title: $('#banTitle').value, subtitle: $('#banSub').value, cta: $('#banCta').value, link: $('#banLink').value.trim(),
         terms: $('#banTerms').value, audience: $('#banAud').value, enabled: $('#banEnabled').checked,
         startsAt: fromLocal($('#banStart').value), endsAt: fromLocal($('#banEnd').value),
+        style: banEd.style,
         imageD: banEd.imageD || undefined, imageM: banEd.imageM || undefined, removeM: banEd.removeM || undefined,
       } });
       toast('Banner guardado'); banEd = null; loadTab();

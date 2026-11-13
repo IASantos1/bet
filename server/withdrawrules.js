@@ -6,7 +6,7 @@
 // Up to `instantMaxCents` (€200) a withdrawal is approved at once; above it the team decides in 24–72 h.
 
 const KYC_MESSAGE = {
-  pending: 'Os seus documentos estão em análise. Aguarde a aprovação para efetuar levantamentos.',
+  pending: 'Os seus documentos estão em análise (normalmente entre 24 e 72 horas). Aguarde a aprovação para efetuar levantamentos.',
   rejected: 'A verificação de identidade foi rejeitada. Envie novamente os documentos (Perfil → Verificação) para desbloquear levantamentos.',
   not_submitted: 'Para levantar é necessário verificar a sua identidade: envie os documentos em Perfil → Verificação.',
 };

@@ -1508,7 +1508,10 @@ function casinoBanners() {
     const media = b.video?.d || b.video?.m
       ? `${b.video.d ? vid(b.img.d, 'cban-d') : `<img class="cban-d" src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}">`}${b.img.m !== b.img.d ? (b.video.m ? vid(b.img.m, 'cban-m') : `<img class="cban-m" src="${esc(b.img.m)}" alt="">`) : ''}`
       : `<picture><source media="(max-width: 700px)" srcset="${esc(b.img.m)}"><img src="${esc(b.img.d)}" alt="${esc(b.title || 'Promoção')}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'}></picture>`;
-    return `<${tag} class="cban-slide${b.img.m !== b.img.d && (b.video?.d || b.video?.m) ? ' two' : ''}" data-cban="${i}">${media}${copy}</${tag.split(' ')[0]}>`;
+    // PC size/fit tuned in the admin (height, vertical focus, cover/contain) — applied after render (CSP).
+    const s = b.style || {};
+    const sized = Number(s.pcH) && Number(s.pcH) !== 29;
+    return `<${tag} class="cban-slide${b.img.m !== b.img.d && (b.video?.d || b.video?.m) ? ' two' : ''}" data-cban="${i}"${sized || s.fit === 'contain' || (s.focal ?? 50) !== 50 ? ` data-pch="${Number(s.pcH) || 29}" data-focal="${s.focal ?? 50}" data-fit="${s.fit === 'contain' ? 'contain' : 'cover'}"` : ''}>${media}${copy}</${tag.split(' ')[0]}>`;
   };
   const many = list.length > 1;
   return `<section class="cban" aria-roledescription="carrossel" aria-label="Promoções do casino">
@@ -1850,6 +1853,19 @@ let skinTimer = null;
  * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
  */
 /** The casino cards chosen in the admin: height (% of the width), cover fit, games per row, picture tuning. */
+/** Per-banner PC sizing (set here, not inline, so the strict CSP allows it): on the computer the
+ * banner height and the picture/video's focus and fit follow the admin's choices. The phone keeps
+ * the portrait banner. */
+function applyBannerStyles() {
+  for (const el of $$('.cban-slide[data-pch]')) {
+    el.classList.add('cban-sized');
+    el.style.setProperty('--cban-pch', String(Number(el.dataset.pch) || 29));
+    for (const img of $$('img, video', el)) {
+      img.style.objectFit = el.dataset.fit === 'contain' ? 'contain' : 'cover';
+      img.style.objectPosition = `50% ${Math.min(100, Math.max(0, Number(el.dataset.focal) || 50))}%`;
+    }
+  }
+}
 function applyCasinoCards(c) {
   const root = document.documentElement;
   if (!c) return;
@@ -2266,7 +2282,7 @@ const PROFILE_SECTIONS = [
   { id: 'apostas', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
   { id: 'promocoes', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
   { id: 'afiliados', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
-  { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. O processo demora até 48 horas úteis.' },
+  { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. A verificação demora normalmente entre 24 e 72 horas.' },
   { id: 'seguranca', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
   { id: 'preferencias', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
   { id: 'limites', label: 'Limites e autoexclusão', title: 'Limites e Autoexclusão', text: 'Limites de depósito, aposta e perda, pausas e autoexclusão para uma experiência de jogo responsável.' },
@@ -2367,11 +2383,17 @@ const KYC_STATE = {
 };
 const badge = (label, st, sub = '') => `<div class="pf-row"><div><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</div><span class="pf-badge ${KYC_STATE[st][0]}">${KYC_STATE[st][1]}</span></div>`;
 
+let kycJustSent = false; // set right after a successful upload, to show the confirmation + time once
 async function loadKyc() {
   let k;
   try { k = await api('/api/me/kyc'); } catch (err) { toast('Erro', err.message, 'error'); return; }
   const box = $('#kycBox');
   if (!box) return;
+  // Right after sending: a clear confirmation with the verification time, shown once at the top.
+  const sentNote = kycJustSent && k.status !== 'approved'
+    ? '<div class="pf-note ok kyc-sent"><strong>✅ Documento(s) enviado(s) com sucesso!</strong> A sua verificação está em análise e demora normalmente <strong>entre 24 e 72 horas</strong>. Avisamos assim que estiver concluída.</div>'
+    : '';
+  kycJustSent = false;
   // A slot's state: its best document (approved, else pending, else rejected).
   const slot = (kinds) => {
     const docs = k.documents.filter((d) => kinds.includes(d.kind)).map((d) => d.status);
@@ -2380,13 +2402,13 @@ async function loadKyc() {
   const u = state.user;
   const notice = {
     approved: '<div class="pf-note ok"><strong>Conta verificada.</strong> Os levantamentos estão desbloqueados.</div>',
-    pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A equipa responde até 48 horas úteis.</div>',
+    pending: '<div class="pf-note warn"><strong>Documentos em análise.</strong> A verificação demora normalmente entre 24 e 72 horas.</div>',
     rejected: '<div class="pf-note bad"><strong>Verificação recusada.</strong> Envie documentos legíveis e dentro da validade.</div>',
   }[k.status] || '<div class="pf-note">Para desbloquear levantamentos: fotografe o seu documento de identificação (frente e verso) e envie um comprovativo de IBAN ou extrato bancário.</div>';
   const idState = slot(['Documento (frente)', 'Documento (verso)', 'Passaporte']);
   const bankState = slot(['Comprovativo de IBAN / morada']);
   const canSend = (st) => st === 'missing' || st === 'rejected';
-  box.innerHTML = `${notice}
+  box.innerHTML = `${sentNote}${notice}
     <div class="pf-list">
       ${badge('Email', 'given', esc(u.email))}
       ${badge('NIF', u.nif ? 'given' : 'none', u.nif ? esc(u.nif) : 'Indique-o em Dados bancários')}
@@ -2477,10 +2499,10 @@ async function kycCamera() {
         for (const [n, [kind]] of steps.entries()) {
           await api('/api/me/kyc', { method: 'POST', body: { kind, mimeType: 'image/jpeg', fileName: `${kind === 'id_front' ? 'frente' : 'verso'}.jpg`, data: shots[n].split(',')[1] } });
         }
-        el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A equipa vai analisá-lo em até 48 horas úteis.</span></div>';
+        el.querySelector('.cam-view').innerHTML = '<div class="cam-okmsg">✅<b>Documento enviado</b><span>A verificação demora normalmente entre 24 e 72 horas.</span></div>';
         el.querySelector('.cam-hint').textContent = '';
         acts.innerHTML = '<button class="primary-btn cam-close">OK</button>';
-        acts.querySelector('.cam-close').onclick = () => { el.remove(); loadKyc(); };
+        acts.querySelector('.cam-close').onclick = () => { el.remove(); kycJustSent = true; loadKyc(); };
         if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
       } catch (err) {
         ev.target.disabled = false; ev.target.textContent = 'Enviar';
@@ -3712,6 +3734,7 @@ function render({ keepScroll = false } = {}) {
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
   if (immersive) placeSkins();
+  applyBannerStyles();
   watchCasinoMore();
   watchSportsMore();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
@@ -4068,7 +4091,8 @@ const formHandlers = {
     });
     await api('/api/me/kyc', { method: 'POST', body: { kind: form.kind.value, mimeType: file.type, fileName: file.name, data } });
     if (state.user.kycStatus !== 'approved') state.user.kycStatus = 'pending';
-    toast('Comprovativo enviado', 'A equipa vai analisá-lo em até 48 horas úteis.');
+    toast('Comprovativo enviado', 'A verificação demora normalmente entre 24 e 72 horas.');
+    kycJustSent = true;
     loadKyc();
   },
   async password(form) {
