@@ -2461,3 +2461,15 @@ body.immersive #helpWidget { display: none; }
   .help-panel { right: 8px; left: 8px; width: auto; bottom: 74px; height: min(72vh, calc(100vh - 160px)); }
 }
 @media (prefers-reduced-motion: reduce) { .help-panel.on, .help-fab { animation: none; } .help-fab::after { display: none; } }
+
+/* Help chat: live match lines and inline links */
+.help-match { display: block; margin-top: 8px; padding: 9px 11px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2, #20262c); color: var(--text); text-decoration: none; }
+.help-match:hover { border-color: rgba(53, 208, 127, .5); }
+.help-match i { color: var(--text-3); font-style: normal; margin: 0 2px; }
+.help-match small { display: block; color: var(--text-3); font-size: 11px; margin-top: 2px; }
+.help-odds { display: inline-flex; gap: 6px; margin-top: 7px; }
+.help-odds span { display: inline-flex; gap: 5px; align-items: baseline; background: var(--bg, #1a1f24); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px; font-size: 11px; color: var(--text-3); }
+.help-odds span b { color: var(--strong); font-size: 12px; }
+.help-more { margin-top: 10px; }
+.help-more a { color: #7fd4a0; font-weight: 800; font-size: 12px; text-decoration: none; }
+.help-more a:hover { text-decoration: underline; }
