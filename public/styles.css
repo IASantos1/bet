@@ -2416,15 +2416,18 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 /* ---------- help assistant (FAQ chat) ---------- */
 /* The robot peeks from the right edge: only half shows, so it never covers the content. A tap opens the
    chat; on hover/focus it slides fully in. */
-/* A full round robot button in the bottom-right corner, out of the way. */
-#helpWidget { position: fixed; z-index: 70; right: 18px; bottom: 22px; left: auto; }
-.help-fab { position: relative; display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 0; border-radius: 50%;
+/* A round robot button that sits HALF off the right edge (peeking from the side): you see the robot's
+   face, and only half the circle shows so it stays out of the way. A tap opens the chat; on hover/focus
+   it slides fully in. */
+#helpWidget { position: fixed; z-index: 70; right: 0; bottom: 26%; left: auto; }
+.help-fab { position: relative; display: grid; place-items: center; width: 62px; height: 62px; padding: 0; border: 0; border-radius: 50%;
   background: linear-gradient(135deg, var(--viva, #35d07f), #16a34a); color: #042b16; cursor: pointer;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .3); transition: transform .15s ease; }
-.help-fab:hover, .help-fab:focus-visible { transform: scale(1.06); outline: none; }
-.help-fab:active { transform: scale(.96); }
-.help-fab-bot { font-size: 32px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); }
-.help-fab-tip { position: absolute; right: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
+  box-shadow: -4px 6px 18px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .3);
+  transform: translateX(50%); transition: transform .2s ease; }
+.help-fab:hover, .help-fab:focus-visible, .help-fab:active { transform: translateX(6%); outline: none; }
+.help-fab-bot { font-size: 32px; line-height: 1; margin-left: -20px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .3)); transition: margin .2s ease; }
+.help-fab:hover .help-fab-bot, .help-fab:focus-visible .help-fab-bot, .help-fab:active .help-fab-bot { margin-left: 0; }
+.help-fab-tip { position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); background: #0f172a; color: #fff;
   font-size: 11px; font-weight: 800; padding: 4px 9px; border-radius: 8px; white-space: nowrap; opacity: .92; pointer-events: none; }
 .help-fab.hidden { display: none; }
 .help-panel { position: fixed; right: 12px; bottom: 20px; left: auto; width: min(380px, calc(100vw - 32px)); height: min(560px, calc(100vh - 100px));
@@ -2456,7 +2459,7 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .help-support:hover { color: var(--strong); border-color: rgba(53, 208, 127, .5); }
 body.immersive #helpWidget { display: none; }
 @media (max-width: 980px) {
-  #helpWidget { right: 14px; bottom: 140px; }
+  #helpWidget { right: 0; bottom: 24%; }
   .help-panel { right: 8px; left: 8px; width: auto; bottom: 74px; height: min(72vh, calc(100vh - 160px)); }
 }
 @media (prefers-reduced-motion: reduce) { .help-panel.on, .help-fab { animation: none; } .help-fab::after { display: none; } }
