@@ -89,7 +89,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false },
+  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto' },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -4227,6 +4227,8 @@ document.addEventListener('click', async (e) => {
   if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
   const statTabBtn = e.target.closest('[data-stat-tab]');
   if (statTabBtn) { state.match.statTab = statTabBtn.dataset.statTab; render({ keepScroll: true }); return; }
+  const momHalfBtn = e.target.closest('[data-mom-half]');
+  if (momHalfBtn) { state.match.momHalf = momHalfBtn.dataset.momHalf; render({ keepScroll: true }); return; }
   const standBtn = e.target.closest('[data-stand-view]');
   if (standBtn) { state.match.standView = standBtn.dataset.standView; render({ keepScroll: true }); return; }
 
@@ -4916,7 +4918,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D(); dropCourt3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto' });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -5895,26 +5897,31 @@ function ldSeries(a, e, { xg = null } = {}) {
 function ldMomentum(a, e) {
   const rows = a?.momentum || [];
   if (!rows.length) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
-  // The chart always spans the whole match: 0' on the left, half-time (HT) in the middle, full-time
-  // (FT) on the right. Stoppage time (45+ / 90+) is clamped into the frame so it never spills over.
-  const END = 90;
-  const by = new Map(rows.map((r) => [Math.min(END, r.m), r.home - r.away]));
-  const top = Math.max(3, ...rows.map((r) => Math.abs(r.home - r.away)));
-  const bw = 360 / (END + 1);
-  const X = (m) => 30 + Math.min(END, m) * bw;
+  // Each half fills the whole width: the 1st half runs 0'→45', the 2nd 45'→90'. By default we show the
+  // half the game is in (the latest tracked minute); the operator can switch with the selector.
+  const auto = rows.at(-1).m > 45 ? '2' : '1';
+  const half = state.match.momHalf && state.match.momHalf !== 'auto' ? state.match.momHalf : auto;
+  const second = half === '2';
+  const [lo, hi] = second ? [45, 90] : [0, 45];
+  const span = hi - lo;
+  const inHalf = rows.filter((r) => (second ? r.m > 45 : r.m <= 45));
+  const clamp = (m) => Math.min(hi, Math.max(lo, m));
+  const by = new Map(inHalf.map((r) => [clamp(r.m), r.home - r.away]));
+  const top = Math.max(3, ...(inHalf.length ? inHalf : rows).map((r) => Math.abs(r.home - r.away)));
+  const bw = 360 / (span + 1);
+  const X = (m) => 30 + (clamp(m) - lo) * bw;
   const bars = [...by.entries()].map(([m, v]) => {
     if (!v) return '';
     const hgt = (Math.abs(v) / top) * 34;
     return `<rect x="${X(m).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : 40}" width="${Math.max(1.5, bw - 1).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
   }).join('');
-  const ht = X(45).toFixed(1);
-  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
-    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>
-      <line x1="${ht}" y1="8" x2="${ht}" y2="72" class="ld-ht"/>${bars}
-      <text x="${X(0).toFixed(1)}" y="88" class="ld-tick">0'</text>
-      <text x="${ht}" y="88" class="ld-tick" text-anchor="middle">HT</text>
-      <text x="${X(90).toFixed(1)}" y="88" class="ld-tick" text-anchor="end">FT</text></svg>
-    <p class="ld-note">Quem está a pressionar, minuto a minuto (ataques, ataques perigosos, remates e cantos).</p></div>`;
+  const mid = Math.round((lo + hi) / 2);
+  const sel = `<div class="ld-halfsel">${[['1', '1.ª parte'], ['2', '2.ª parte']].map(([h, l]) => `<button type="button" class="${half === h ? 'active' : ''}" data-mom-half="${h}">${l}</button>`).join('')}</div>`;
+  const tick = (m, anchor) => `<text x="${X(m).toFixed(1)}" y="88" class="ld-tick"${anchor ? ` text-anchor="${anchor}"` : ''}>${m}'</text>`;
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${sel}${ldLegend(e)}</div>
+    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>${bars}
+      ${tick(lo)}${tick(mid, 'middle')}${tick(hi, 'end')}</svg>
+    <p class="ld-note">${second ? '2.ª parte' : '1.ª parte'} — quem está a pressionar, minuto a minuto (ataques, ataques perigosos, remates e cantos).</p></div>`;
 }
 
 // The shots on a goal frame: on target inside, off target around it (a picture of the count, not where they were taken).
