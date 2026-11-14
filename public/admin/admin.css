@@ -868,7 +868,12 @@
 .court-crop .cc-sport { margin: 10px 0 18px; }
 .court-crop .cc-sport h4 { margin: 0 0 8px; }
 .cc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.cc-screens { display: inline-flex; gap: 4px; margin: 0 0 10px; padding: 3px; border-radius: 10px; background: #0b1626; }
+.cc-screen-btn { border: 0; background: transparent; color: #9fb0c4; font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.cc-screen-btn.active { background: #1f8f4e; color: #fff; }
 .cc-box { position: relative; width: 100%; aspect-ratio: 100 / var(--court-box, 96); border-radius: 12px; overflow: hidden; background: #0b1626; }
+/* The PC mini-court is a narrower column on the site: preview it at a similar width so the crop matches. */
+.cc-box.cc-pc { max-width: 360px; }
 .cc-box-free { aspect-ratio: 16 / 10; }
 .cc-frame { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 100 / var(--court-size, 112); border: 0; display: block;
   transform: translateY(calc(var(--court-up, 0) * -1%)); }

@@ -218,9 +218,12 @@ export function createApp(db, {
   // keys, so missing fields take the default and are rewritten next time the operator saves).
   const cropOf = (sport) => {
     const def = COURT_CROP_DEFAULT[sport] || { size: 112, box: 96, up: 0 };
-    const s = courtCrop()[sport];
+    const s = courtCrop()[sport] || {};
     const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
-    return s ? { size: num(s.size, def.size), box: num(s.box, def.box), up: num(s.up, def.up) } : def;
+    const base = { size: num(s.size, def.size), box: num(s.box, def.box), up: num(s.up, def.up) };
+    // Separate PC values (the mini-court column is a different width on desktop): they fall back to the
+    // phone values when not set, so tuning one screen never breaks the other.
+    return { ...base, pcSize: num(s.pcSize, base.size), pcBox: num(s.pcBox, base.box), pcUp: num(s.pcUp, base.up) };
   };
 
   app.use((req, res, next) => {
@@ -3142,11 +3145,14 @@ export function createApp(db, {
   admin.get('/court-crop', (_req, res) => res.json({ crop: cropAll(), sports: COURT_SPORTS }));
   admin.post('/court-crop', (req, res) => {
     const def = (s) => COURT_CROP_DEFAULT[s] || { size: 112, box: 96, up: 0 };
-    const clean = (c, s) => ({
-      size: Math.max(40, Math.min(300, Number(c?.size) || def(s).size)),
-      box: Math.max(30, Math.min(260, Number(c?.box) || def(s).box)),
-      up: Math.max(0, Math.min(120, Number(c?.up) || 0)),
-    });
+    const clamp = (v, lo, hi, fb) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : fb);
+    const clean = (c, s) => {
+      const size = Math.max(40, Math.min(300, Number(c?.size) || def(s).size));
+      const box = Math.max(30, Math.min(260, Number(c?.box) || def(s).box));
+      const up = Math.max(0, Math.min(120, Number(c?.up) || 0));
+      // PC values default to the phone ones when omitted.
+      return { size, box, up, pcSize: clamp(c?.pcSize, 40, 300, size), pcBox: clamp(c?.pcBox, 30, 260, box), pcUp: clamp(c?.pcUp, 0, 120, up) };
+    };
     const body = req.body || {};
     const saved = COURT_SPORTS.reduce((o, s) => { o[s] = cropOf(s); return o; }, {});
     for (const s of COURT_SPORTS) if (body[s]) saved[s] = clean(body[s], s);
