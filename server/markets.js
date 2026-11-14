@@ -145,6 +145,27 @@ export function legOutcome(market, code, home, away, { homeGames = null, awayGam
   }
 }
 
+/**
+ * In-play lock: given the CURRENT score of a live match, is a goal-total leg already decided in a
+ * way future goals cannot reverse? Goals only go up, so an "over" that has passed is won for good and
+ * an "under" that has passed is lost for good; both-teams-to-score locks once both have scored. The
+ * other side (an over not yet reached, an under still alive, btts not yet both) stays open until the
+ * match ends. Only ou / tou / btts (full-match totals); returns 'won' | 'lost' | null.
+ */
+export function lockedGoalOutcome(market, code, home, away) {
+  if (!Number.isInteger(home) || !Number.isInteger(away)) return null;
+  if (market === 'btts') return home > 0 && away > 0 ? (code === 'Y' ? 'won' : 'lost') : null;
+  if (market === 'ou' || market === 'tou') {
+    const inner = market === 'tou' ? code.slice(1) : code;        // "O2.5" / "U1.5"
+    const total = market === 'tou' ? (code[0] === '1' ? home : away) : home + away;
+    const out = overUnder(inner, total);                          // 'won' | 'lost' | 'void'
+    // Only the irreversible side: an over already won, or an under already lost.
+    if (inner[0] === 'O' && out === 'won') return 'won';
+    if (inner[0] === 'U' && out === 'lost') return 'lost';
+  }
+  return null;
+}
+
 /** Human label for a selection, e.g. ("ou","O2.5") → "Mais de 2.5". */
 export function selectionLabel(market, code, home = 'Casa', away = 'Fora') {
   if (PERIOD_MARKETS.has(market)) {

@@ -252,6 +252,9 @@ export const config = {
     noResultVoidHours: Math.max(12, int(env.NO_RESULT_VOID_HOURS, 72)),
     // Provider markets ('x') that cannot be read automatically: voided this long after the match ended.
     specialVoidHours: Math.max(1, int(env.SPECIAL_VOID_HOURS, 2)),
+    // In-play early settlement: a goal-total leg already decided for good is settled while the match is
+    // live, but only after the score has stood this long (VAR guard), so a disallowed goal is not paid.
+    inPlayVarSeconds: Math.max(0, int(env.INPLAY_VAR_SECONDS, 60)),
   },
 
   // In-play bets on feed matches are refused when the last live price is older than this.

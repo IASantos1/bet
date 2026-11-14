@@ -353,3 +353,102 @@ test('WinHouse numbered markets (the catalog\'s real names and selections) settl
   // Without the halves: the half markets wait.
   assert.equal(specialOutcome(code(1010037, 'Equipa 1 Marca em Ambos os Tempos', 'yes'), { ...ctx, periods: null }), null);
 });
+
+test('in-play: a goal-total leg already decided is settled live, after the VAR delay', () => {
+  const { db, balance } = setup();
+  const ts = nowIso();
+  const id = Number(db.prepare(
+    `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, source, created_at, updated_at)
+     VALUES ('futebol', 'Liga', 'Casa', 'Fora', ?, 'live', 2, 0, 'manual', ?, ?)`
+  ).run(iso(-30 * 60_000), ts, ts).lastInsertRowid);
+  // Selections for the markets under test.
+  for (const [m, c] of [['ou', 'O1.5'], ['ou', 'U1.5'], ['ou', 'O2.5'], ['tou', '1O0.5'], ['btts', 'Y']]) {
+    db.prepare('INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, ?, ?, 200)').run(id, m, c);
+  }
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(db.prepare('SELECT id FROM users').get().id);
+  const place = (market, code) => {
+    const sel = db.prepare('SELECT id FROM selections WHERE event_id = ? AND market = ? AND code = ?').get(id, market, code);
+    return tx(db, () => placeBets(db, user, { mode: 'single', stakeCents: 1_000, picks: [{ selectionId: sel.id, odds: 2 }] }))[0];
+  };
+  const over15 = place('ou', 'O1.5');   // 2 goals → won for good
+  const under15 = place('ou', 'U1.5');  // 2 goals → lost for good
+  const over25 = place('ou', 'O2.5');   // only 2 goals → still open
+  const team1 = place('tou', '1O0.5');  // home has 2 → won
+  const btts = place('btts', 'Y');      // away still 0 → open
+  const statusOf = (b) => db.prepare('SELECT status FROM bets WHERE id = ?').get(b).status;
+  const engine = createSettlementEngine(db, { inPlayVarSeconds: 60 });
+
+  // VAR guard: the score has only just changed → nothing settles yet.
+  db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(iso(-10_000), id);
+  assert.deepEqual(engine.runOnce(), { settled: 0, voided: 0 });
+  assert.equal(statusOf(over15), 'open');
+
+  // Score held past the VAR delay → the decided legs settle, the rest stay open.
+  db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(iso(-70_000), id);
+  const r = engine.runOnce();
+  assert.equal(r.settled, 1);
+  assert.equal(statusOf(over15), 'won');
+  assert.equal(statusOf(team1), 'won');
+  assert.equal(statusOf(under15), 'lost');
+  assert.equal(statusOf(over25), 'open', 'over 2.5 not reached yet');
+  assert.equal(statusOf(btts), 'open', 'away has not scored');
+  assert.equal(balance(), 10_000 - 5_000 + 2_000 + 2_000, '5 stakes out, two €20 wins back');
+  assert.deepEqual(engine.runOnce(), { settled: 0, voided: 0 }, 'idempotent');
+  db.close();
+});
+
+test('in-play: first-half markets settle at half-time; second-half overs lock as goals come', () => {
+  const { db } = setup();
+  const ts = nowIso();
+  // 1st half ended 1-0; in the 2nd half it is now 2-0 (one goal since the break).
+  const id = Number(db.prepare(
+    `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, ht_home, ht_away, source, created_at, updated_at)
+     VALUES ('futebol', 'Liga', 'Casa', 'Fora', ?, 'live', 2, 0, 1, 0, 'manual', ?, ?)`
+  ).run(iso(-60 * 60_000), ts, ts).lastInsertRowid);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(db.prepare('SELECT id FROM users').get().id);
+  const place = (market, code) => {
+    db.prepare('INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, ?, ?, 200)').run(id, market, code);
+    const sel = db.prepare('SELECT id FROM selections WHERE event_id = ? AND market = ? AND code = ?').get(id, market, code);
+    return tx(db, () => placeBets(db, user, { mode: 'single', stakeCents: 1_000, picks: [{ selectionId: sel.id, odds: 2 }] }))[0];
+  };
+  const h1win = place('pw', '1:1');     // 1st half 1-0 → home wins → won
+  const h1draw = place('pw', '1:X');    // 1st half → not a draw → lost
+  const h1o05 = place('pou', '1:O0.5'); // 1st half total 1 → won
+  const h2o05 = place('pou', '2:O0.5'); // 2nd half 1 goal → won
+  const h2o15 = place('pou', '2:O1.5'); // 2nd half only 1 → open
+  const statusOf = (b) => db.prepare('SELECT status FROM bets WHERE id = ?').get(b).status;
+  const engine = createSettlementEngine(db, { inPlayVarSeconds: 60 });
+  db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(iso(-70_000), id);
+  engine.runOnce();
+  assert.equal(statusOf(h1win), 'won');
+  assert.equal(statusOf(h1draw), 'lost');
+  assert.equal(statusOf(h1o05), 'won');
+  assert.equal(statusOf(h2o05), 'won');
+  assert.equal(statusOf(h2o15), 'open', '2nd-half over 1.5 not reached');
+  db.close();
+});
+
+test('in-play: a first-half winner does not settle mid-half (only an over locks early)', () => {
+  const { db } = setup();
+  const ts = nowIso();
+  // Still in the 1st half (no half-time score yet), 1-0 now.
+  const id = Number(db.prepare(
+    `INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, source, created_at, updated_at)
+     VALUES ('futebol', 'Liga', 'Casa', 'Fora', ?, 'live', 1, 0, 'manual', ?, ?)`
+  ).run(iso(-20 * 60_000), ts, ts).lastInsertRowid);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(db.prepare('SELECT id FROM users').get().id);
+  const place = (market, code) => {
+    db.prepare('INSERT INTO selections (event_id, market, code, odds_x100) VALUES (?, ?, ?, 200)').run(id, market, code);
+    const sel = db.prepare('SELECT id FROM selections WHERE event_id = ? AND market = ? AND code = ?').get(id, market, code);
+    return tx(db, () => placeBets(db, user, { mode: 'single', stakeCents: 1_000, picks: [{ selectionId: sel.id, odds: 2 }] }))[0];
+  };
+  const h1win = place('pw', '1:1');     // could still change before the break → open
+  const h1o05 = place('pou', '1:O0.5'); // a goal already fell in the half → won
+  const statusOf = (b) => db.prepare('SELECT status FROM bets WHERE id = ?').get(b).status;
+  const engine = createSettlementEngine(db, { inPlayVarSeconds: 60 });
+  db.prepare('UPDATE events SET score_at = ? WHERE id = ?').run(iso(-70_000), id);
+  engine.runOnce();
+  assert.equal(statusOf(h1win), 'open', 'half winner waits for the break');
+  assert.equal(statusOf(h1o05), 'won');
+  db.close();
+});

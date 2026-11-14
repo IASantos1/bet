@@ -126,6 +126,7 @@ const settlement = createSettlementEngine(db, {
   postponedVoidHours: config.settlement.postponedVoidHours,
   noResultVoidHours: config.settlement.noResultVoidHours,
   specialVoidHours: config.settlement.specialVoidHours,
+  inPlayVarSeconds: config.settlement.inPlayVarSeconds,
   log: (msg) => console.log(`[liquidação] ${msg}`),
 });
 const stopSettlement = settlement.start();
