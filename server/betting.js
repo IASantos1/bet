@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome, statOutcome } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome, statOutcome, lockedGoalOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
 import { postTransaction } from './wallet.js';
@@ -228,6 +228,31 @@ export function settleLiveStats(db, eventId) {
   const bets = new Set();
   for (const leg of legs) {
     const out = statOutcome(leg.code, { ...stats, final: false });
+    if (!out) continue;
+    setLeg.run(out, leg.id);
+    bets.add(leg.bet_id);
+  }
+  for (const id of bets) settleBet(db, id);
+  return bets.size;
+}
+
+/**
+ * A match in play: goal-total legs (over/under, team totals, both teams to score) already decided for
+ * good by the current score are settled now — an "over" passed is won, an "under" passed is lost, and
+ * a ticket with a lost leg is lost at once. A VAR guard holds settlement until the score has stood for
+ * `varDelayMs` (events.score_at marks the last change; a disallowed goal moves the score back), so a
+ * goal under review is not paid out early. The rest wait for the final score. Returns the tickets touched.
+ */
+export function settleLiveGoals(db, eventId, { varDelayMs = 60_000 } = {}) {
+  const ev = db.prepare('SELECT status, home_score, away_score, score_at FROM events WHERE id = ?').get(eventId);
+  if (!ev || ev.status !== 'live' || !Number.isInteger(ev.home_score) || !Number.isInteger(ev.away_score)) return 0;
+  // VAR guard: only once the score has held for the delay (score_at is bumped on every score change).
+  if (!ev.score_at || Date.now() - Date.parse(ev.score_at) < varDelayMs) return 0;
+  const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open' AND market IN ('ou','tou','btts')").all(eventId);
+  const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
+  const bets = new Set();
+  for (const leg of legs) {
+    const out = lockedGoalOutcome(leg.market, leg.code, ev.home_score, ev.away_score);
     if (!out) continue;
     setLeg.run(out, leg.id);
     bets.add(leg.bet_id);
