@@ -6214,7 +6214,13 @@ function ensureCourt3D() {
       // Frame the court: the widget renders at a fixed size (court-size), the box is a window over it
       // (court-box clips the band below), court-up slides it to clip the band above. Set by the admin.
       const turf = frame.parentElement, c = d.crop || {};
-      if (turf) { turf.style.setProperty('--court-size', c.size ?? 112); turf.style.setProperty('--court-box', c.box ?? 96); turf.style.setProperty('--court-up', c.up ?? 0); }
+      // Desktop uses its own values (the mini-court column is a different width); phones use the base ones.
+      const wide = window.matchMedia('(min-width: 1001px)').matches;
+      if (turf) {
+        turf.style.setProperty('--court-size', (wide ? c.pcSize : c.size) ?? 112);
+        turf.style.setProperty('--court-box', (wide ? c.pcBox : c.box) ?? 96);
+        turf.style.setProperty('--court-up', (wide ? c.pcUp : c.up) ?? 0);
+      }
       if (note) note.textContent = 'Campo 3D ao vivo.';
     } else { w.classList.add('no3d'); if (note) note.textContent = 'Sem campo 3D para este jogo.'; }
   }).catch(() => { if (m.widget === w) { w.classList.add('no3d'); if (note) note.textContent = 'Sem campo 3D para este jogo.'; } });

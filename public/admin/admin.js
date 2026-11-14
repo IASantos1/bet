@@ -1210,24 +1210,45 @@ const CC_CTL = [
 ];
 const CC_DEF = { size: 112, box: 96, up: 0 };
 const ccFmt = { size: (v) => `${v}%`, box: (v) => `${v}%`, up: (v) => `${v}%` };
+// Each sport keeps a phone set and a PC set; the sliders edit the screen chosen by the toggle.
+const CC_SCREENS = [['phone', '📱 Telemóvel'], ['pc', '💻 Computador']];
+let ccState = {};
+function ccInit(crop) {
+  const keep = ccState;
+  ccState = {};
+  for (const [s] of COURT_SPORTS) {
+    const c = (crop && crop[s]) || CC_DEF;
+    ccState[s] = {
+      phone: { size: c.size ?? CC_DEF.size, box: c.box ?? CC_DEF.box, up: c.up ?? CC_DEF.up },
+      pc: { size: c.pcSize ?? c.size ?? CC_DEF.size, box: c.pcBox ?? c.box ?? CC_DEF.box, up: c.pcUp ?? c.up ?? CC_DEF.up },
+      screen: keep[s]?.screen || 'phone',
+    };
+  }
+}
+const ccReadSliders = (s) => ({
+  size: Number($(`input[data-cc="size"][data-sport="${s}"]`)?.value),
+  box: Number($(`input[data-cc="box"][data-sport="${s}"]`)?.value),
+  up: Number($(`input[data-cc="up"][data-sport="${s}"]`)?.value),
+});
 function adminCourtCrop(d) {
-  const crop = d.crop || {};
+  ccInit(d.crop || {});
   return `<div class="panel court-crop" id="courtCrop">
     <div class="section-head"><h2>Campo 3D — enquadramento</h2></div>
-    <p class="muted">O campo 3D vem do widget da TheSports. Os cursores são independentes: <b>Cortar em baixo</b> esconde a faixa preta de baixo (sem mexer no campo), <b>Cortar em cima</b> esconde a de cima, e <b>Tamanho do campo</b> só muda o tamanho. Carregue em <b>Pré-visualizar</b> para ver num jogo ao vivo; o site só muda depois de <b>Guardar</b>.</p>
+    <p class="muted">O campo 3D vem do widget da TheSports. Regule <b>📱 Telemóvel</b> e <b>💻 Computador</b> em separado (o mini-campo tem larguras diferentes), com o seletor em cima de cada desporto — assim mexer num ecrã não estraga o outro. Os cursores são independentes: <b>Cortar em baixo</b> esconde a faixa preta de baixo, <b>Cortar em cima</b> a de cima, e <b>Tamanho do campo</b> só muda o tamanho. <b>Pré-visualizar</b> mostra num jogo ao vivo; o site só muda depois de <b>Guardar</b> (guarda os dois ecrãs).</p>
     ${COURT_SPORTS.map(([s, label]) => {
-      const c = { ...CC_DEF, ...(crop[s] || {}) };
+      const st = ccState[s]; const cur = st[st.screen];
       const off = s === 'basquetebol';
       return `<div class="cc-sport" data-sport="${s}">
         <h4>${label}${off ? ' <span class="pill void">campo desligado no site</span>' : ''}</h4>
         ${off ? '<p class="muted">A SportScore devolve “Your subscription has expired!” para o basquete — a subscrição desse desporto caducou. O campo está desligado no site. Use “Pré-visualizar” para verificar: quando aparecer o campo (subscrição renovada), avise para o religar.</p>' : ''}
+        <div class="cc-screens">${CC_SCREENS.map(([sc, lbl]) => `<button type="button" class="cc-screen-btn${st.screen === sc ? ' active' : ''}" data-action="court-screen" data-sport="${s}" data-screen="${sc}">${lbl}</button>`).join('')}</div>
         <div class="cc-row">
-          <div class="cc-box court-crop-box" data-sport="${s}">
+          <div class="cc-box court-crop-box${st.screen === 'pc' ? ' cc-pc' : ''}" data-sport="${s}">
             <iframe id="ccFrame-${s}" class="cc-frame" title="Pré-visualização ${label}" sandbox="allow-scripts allow-same-origin" loading="lazy"></iframe>
           </div>
           <div class="cc-ctl">
-            ${CC_CTL.map(([key, lbl, lo, hi, step]) => `<label class="field">${lbl}: <b id="ccOut-${s}-${key}">${ccFmt[key](c[key])}</b>
-              <input type="range" data-cc="${key}" data-sport="${s}" min="${lo}" max="${hi}" step="${step}" value="${c[key]}"></label>`).join('')}
+            ${CC_CTL.map(([key, lbl, lo, hi, step]) => `<label class="field">${lbl}: <b id="ccOut-${s}-${key}">${ccFmt[key](cur[key])}</b>
+              <input type="range" data-cc="${key}" data-sport="${s}" min="${lo}" max="${hi}" step="${step}" value="${cur[key]}"></label>`).join('')}
             <div class="form-actions"><button class="ghost-btn btn-sm" data-action="court-preview" data-sport="${s}">Pré-visualizar com um jogo ao vivo</button>
               <button class="primary-btn btn-sm" data-action="court-crop-save" data-sport="${s}">Guardar</button></div>
             <p class="muted cc-msg" id="ccMsg-${s}"></p>
@@ -1237,15 +1258,13 @@ function adminCourtCrop(d) {
     }).join('')}
   </div>`;
 }
-const ccForm = (sport) => {
-  const get = (key) => Number($(`input[data-cc="${key}"][data-sport="${sport}"]`)?.value);
-  return { size: get('size'), box: get('box'), up: get('up') };
-};
 function applyCourtCropVars(sport) {
   for (const [s] of (sport ? [[sport]] : COURT_SPORTS)) {
     const box = $(`.court-crop-box[data-sport="${s}"]`);
     if (!box) continue;
-    const c = ccForm(s);
+    const c = ccReadSliders(s);
+    if (ccState[s]) ccState[s][ccState[s].screen] = c; // keep the chosen screen's set in sync
+    box.classList.toggle('cc-pc', ccState[s]?.screen === 'pc');
     box.style.setProperty('--court-size', String(c.size));
     box.style.setProperty('--court-box', String(c.box));
     box.style.setProperty('--court-up', String(c.up));
@@ -2212,13 +2231,26 @@ document.addEventListener('click', async (e) => {
     } catch (err) { if (msg) msg.textContent = err.message; }
     return;
   }
+  if (action === 'court-screen') {
+    const s = actionEl.dataset.sport, screen = actionEl.dataset.screen;
+    const st = ccState[s];
+    if (!st || st.screen === screen) return;
+    st[st.screen] = ccReadSliders(s);        // keep the current screen's edits
+    st.screen = screen;
+    const cur = st[screen];
+    for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = cur[key]; }
+    for (const b of $$(`[data-action="court-screen"][data-sport="${s}"]`)) b.classList.toggle('active', b.dataset.screen === screen);
+    applyCourtCropVars(s);
+    return;
+  }
   if (action === 'court-crop-save') {
-    const s = actionEl.dataset.sport, msg = $(`#ccMsg-${s}`);
+    const s = actionEl.dataset.sport, msg = $(`#ccMsg-${s}`), st = ccState[s];
+    if (st) st[st.screen] = ccReadSliders(s);
+    const payload = { size: st.phone.size, box: st.phone.box, up: st.phone.up, pcSize: st.pc.size, pcBox: st.pc.box, pcUp: st.pc.up };
     try {
-      const r = await api('/api/admin/court-crop', { method: 'POST', body: { [s]: ccForm(s) } });
-      const c = r.crop?.[s];
-      if (c) { for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = c[key]; } applyCourtCropVars(s); }
-      toast('Enquadramento guardado', `${COURT_SPORTS.find(([v]) => v === s)?.[1] || s}: ${c ? `baixo ${ccFmt.box(c.box)} · cima ${ccFmt.up(c.up)}` : 'guardado'}`);
+      const r = await api('/api/admin/court-crop', { method: 'POST', body: { [s]: payload } });
+      if (r.crop) { ccInit(r.crop); const cur = ccState[s][ccState[s].screen]; for (const [key] of CC_CTL) { const inp = $(`input[data-cc="${key}"][data-sport="${s}"]`); if (inp) inp.value = cur[key]; } applyCourtCropVars(s); }
+      toast('Enquadramento guardado', `${COURT_SPORTS.find(([v]) => v === s)?.[1] || s}: 📱 baixo ${ccFmt.box(st.phone.box)} · 💻 baixo ${ccFmt.box(st.pc.box)}`);
     } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
     return;
   }
