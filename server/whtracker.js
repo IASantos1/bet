@@ -417,7 +417,10 @@ export function createWinHouseTracker(db, {
   }
   function track(w, s, spot, side) {
     const a = (w.analytics ||= { ...(restored(w.eventId) || blankAnalytics()), at: Date.now() - 4_000 });
-    const min = minuteOf(s.clock);
+    // First-half stoppage (45+2 → 47) belongs to the first half: keep it at the 45' mark so the
+    // momentum chart does not plot it in the second-half region.
+    const rawMin = minuteOf(s.clock);
+    const min = rawMin !== null && /1|first/i.test(String(s.period ?? '')) && rawMin > 45 ? 45 : rawMin;
     const sit = s.situation?.situation;
     if (spot?.x !== null && spot?.x !== undefined && HEAT_WEIGHT[sit] && (side === 'home' || side === 'away')) {
       const cx = Math.min(HEAT_W - 1, Math.floor((spot.x / 100) * HEAT_W));

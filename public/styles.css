@@ -2272,6 +2272,7 @@ b.ld-h { color: var(--ld-home); } b.ld-a { color: var(--ld-away); }
 .ld-chart { display: block; width: 100%; height: auto; }
 .ld-line { stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
 .ld-axis { stroke: var(--line); stroke-width: 1; } .ld-grid line, .ld-grid-line { }
+.ld-ht { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; opacity: .7; }
 .ld-chart .ld-grid { stroke: var(--line); stroke-width: .6; stroke-dasharray: 2 3; }
 .ld-tick { fill: var(--text-3); font-size: 10px; text-anchor: middle; font-weight: 700; }
 .ld-pitches { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

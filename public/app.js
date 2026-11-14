@@ -5895,20 +5895,25 @@ function ldSeries(a, e, { xg = null } = {}) {
 function ldMomentum(a, e) {
   const rows = a?.momentum || [];
   if (!rows.length) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
-  const end = Math.max(90, rows.at(-1).m);
-  const by = new Map(rows.map((r) => [r.m, r.home - r.away]));
+  // The chart always spans the whole match: 0' on the left, half-time (HT) in the middle, full-time
+  // (FT) on the right. Stoppage time (45+ / 90+) is clamped into the frame so it never spills over.
+  const END = 90;
+  const by = new Map(rows.map((r) => [Math.min(END, r.m), r.home - r.away]));
   const top = Math.max(3, ...rows.map((r) => Math.abs(r.home - r.away)));
-  const bw = 360 / (end + 1);
-  const bars = [...Array(end + 1).keys()].map((m) => {
-    const v = by.get(m) || 0;
+  const bw = 360 / (END + 1);
+  const X = (m) => 30 + Math.min(END, m) * bw;
+  const bars = [...by.entries()].map(([m, v]) => {
     if (!v) return '';
     const hgt = (Math.abs(v) / top) * 34;
-    return `<rect x="${(30 + m * bw).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : 40}" width="${Math.max(1.5, bw - 1).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
+    return `<rect x="${X(m).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : 40}" width="${Math.max(1.5, bw - 1).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
   }).join('');
-  const X = (m) => 30 + m * bw;
+  const ht = X(45).toFixed(1);
   return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
-    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>${bars}
-      ${[0, 45, 90].map((m) => `<text x="${X(m)}" y="88" class="ld-tick">${m}'</text>`).join('')}</svg>
+    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>
+      <line x1="${ht}" y1="8" x2="${ht}" y2="72" class="ld-ht"/>${bars}
+      <text x="${X(0).toFixed(1)}" y="88" class="ld-tick">0'</text>
+      <text x="${ht}" y="88" class="ld-tick" text-anchor="middle">HT</text>
+      <text x="${X(90).toFixed(1)}" y="88" class="ld-tick" text-anchor="end">FT</text></svg>
     <p class="ld-note">Quem está a pressionar, minuto a minuto (ataques, ataques perigosos, remates e cantos).</p></div>`;
 }
 
