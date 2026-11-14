@@ -4647,7 +4647,22 @@ function chatSearchGames(term) {
     .sort((a, b) => (b.status === 'live') - (a.status === 'live') || a.startTime.localeCompare(b.startTime)).slice(0, 8);
 }
 /** A one-tap link to search news about a club (opens in a new tab — no external service needed). */
-const chatNewsLink = (term) => `<div class="help-more"><a href="https://www.google.com/search?q=${encodeURIComponent(`${term} futebol notícias`)}" target="_blank" rel="noopener">🔎 Procurar notícias de “${esc(term)}” →</a></div>`;
+const chatNewsLink = (term) => `<div class="help-more"><a href="https://www.google.com/search?q=${encodeURIComponent(`${term} futebol notícias`)}" target="_blank" rel="noopener">🔎 Ver mais notícias de “${esc(term)}” no Google →</a></div>`;
+const chatNewsItem = (x) => `<a class="help-news" href="${esc(x.link)}" target="_blank" rel="noopener"><b>${esc(x.title)}</b><small>${esc(x.source || '')}${x.date ? ` · ${esc(x.date)}` : ''}</small></a>`;
+/** Real recent news about a club, inside the chat (free Google News RSS via the server). */
+async function helpNews(term) {
+  const m = $('#helpMsgs'); if (!m) return;
+  const d = document.createElement('div'); d.className = 'help-b bot';
+  d.innerHTML = `<b>📰 Notícias de “${esc(term)}”</b><div class="help-news-load">A procurar…</div>`;
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+  try {
+    const { news } = await api(`/api/news?q=${encodeURIComponent(term)}`);
+    d.innerHTML = (news && news.length)
+      ? `<b>📰 Notícias de “${esc(term)}”</b>${news.map(chatNewsItem).join('')}${chatNewsLink(term)}`
+      : `Não encontrei notícias recentes de “${esc(term)}”.${chatNewsLink(term)}`;
+  } catch { d.innerHTML = `Não consegui carregar as notícias agora.${chatNewsLink(term)}`; }
+  m.scrollTop = m.scrollHeight;
+}
 /** The help topics: a chip label, the words that match them, and the answer (built from state.config). */
 function helpTopics() {
   const c = state.config || {};
@@ -4683,11 +4698,12 @@ function helpAnswer(text) {
   let best = null, score = 0;
   for (const t of helpTopics()) { const s = t.keywords.reduce((a, k) => a + (n.includes(helpNorm(k)) ? 1 : 0), 0); if (s > score) { score = s; best = t; } }
   if (best && score > 1) { helpBot(best.answer()); return; }
-  // A team or league name → show its games (with odds) and a shortcut to search news.
+  const term = text.trim();
+  // A team or league name → show its games (with odds) and real recent news about the club.
   const games = chatSearchGames(text);
-  if (games.length) { helpBot(`<b>Encontrei ${games.length} jogo(s) para “${esc(text)}”:</b>${games.map(chatMatchLine).join('')}${chatNewsLink(text.trim())}`); return; }
+  if (games.length) { helpBot(`<b>Encontrei ${games.length} jogo(s) para “${esc(term)}”:</b>${games.map(chatMatchLine).join('')}`); helpNews(term); return; }
   if (best && score > 0) { helpBot(best.answer()); return; }
-  helpBot(`Não encontrei jogos nem uma resposta para “${esc(text)}” 🤔.${chatNewsLink(text.trim())}Ou escolha um tema:${helpChips()}`);
+  helpBot(`Não encontrei jogos para “${esc(term)}”. Vou ver se há notícias 👇`); helpNews(term);
 }
 function helpSupport() {
   const sup = state.config?.supportEmail;
