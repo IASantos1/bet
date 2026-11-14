@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { nowIso } from './db.js';
 import { HttpError } from './security.js';
-import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, TENNIS_AUTO, tennisOutcome, statOutcome, lockedGoalOutcome } from './markets.js';
+import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, splitPeriod, TENNIS_AUTO, tennisOutcome, statOutcome, lockedGoalOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
 import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from './promotions.js';
 import { postTransaction } from './wallet.js';
@@ -256,6 +256,48 @@ export function settleLiveGoals(db, eventId, { varDelayMs = 60_000 } = {}) {
     if (!out) continue;
     setLeg.run(out, leg.id);
     bets.add(leg.bet_id);
+  }
+  for (const id of bets) settleBet(db, id);
+  return bets.size;
+}
+
+// A period goal-total / both-teams leg already decided for good by that half's running score.
+const lockedPeriodOutcome = (market, innerCode, h, a) =>
+  market === 'pou' ? lockedGoalOutcome('ou', innerCode, h, a)
+    : market === 'pbtts' ? lockedGoalOutcome('btts', innerCode, h, a)
+      : null; // winner / handicap / odd-even: wait for the period to end (the lead can still change)
+
+/**
+ * A match in play: the half (period) markets. The FIRST HALF is settled for good once its half-time
+ * score is known (events.ht_home / ht_away) — result, totals, both teams and odd/even of the half. In
+ * the SECOND HALF, an "over" of that half is locked as soon as the goals since half-time pass the line
+ * (and an "under" lost); winner / odd-even wait for the half to end. Same VAR guard as the goal totals.
+ * Returns the tickets touched.
+ */
+export function settleLiveHalves(db, eventId, { varDelayMs = 60_000 } = {}) {
+  const ev = db.prepare('SELECT status, home_score, away_score, ht_home, ht_away, score_at FROM events WHERE id = ?').get(eventId);
+  if (!ev || ev.status !== 'live' || !Number.isInteger(ev.home_score) || !Number.isInteger(ev.away_score)) return 0;
+  if (!ev.score_at || Date.now() - Date.parse(ev.score_at) < varDelayMs) return 0;
+  const htKnown = Number.isInteger(ev.ht_home) && Number.isInteger(ev.ht_away);
+  const legs = db.prepare("SELECT id, bet_id, market, code FROM bet_legs WHERE event_id = ? AND status = 'open' AND market IN ('pw','pou','phcp','poe','pbtts')").all(eventId);
+  if (!legs.length) return 0;
+  const setLeg = db.prepare('UPDATE bet_legs SET status = ? WHERE id = ?');
+  const bets = new Set();
+  for (const leg of legs) {
+    const p = splitPeriod(leg.code);
+    if (!p) continue;
+    let out = null;
+    if (p.period === 1 && htKnown) {
+      // First half is over → settle it for good on the half-time score.
+      out = legOutcome(leg.market, leg.code, 0, 0, { periods: [[ev.ht_home, ev.ht_away]] });
+    } else if (p.period === 1 && !htKnown) {
+      // Still in the first half → only the irreversible side (an over passed, an under lost, both teams).
+      out = lockedPeriodOutcome(leg.market, p.code, ev.home_score, ev.away_score);
+    } else if (p.period === 2 && htKnown) {
+      // Second half in play → goals since half-time; lock the irreversible side only.
+      out = lockedPeriodOutcome(leg.market, p.code, ev.home_score - ev.ht_home, ev.away_score - ev.ht_away);
+    }
+    if (out && out !== 'open') { setLeg.run(out, leg.id); bets.add(leg.bet_id); }
   }
   for (const id of bets) settleBet(db, id);
   return bets.size;

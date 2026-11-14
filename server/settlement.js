@@ -20,7 +20,7 @@
 // Results themselves come from the data feed (feed.js) or from the admin panel.
 
 import { nowIso, tx } from './db.js';
-import { settleEvent, settleBet, settleLiveGoals } from './betting.js';
+import { settleEvent, settleBet, settleLiveGoals, settleLiveHalves, settleLiveStats } from './betting.js';
 import { splitSpecial } from './markets.js';
 
 const H = 3_600_000;
@@ -44,15 +44,26 @@ export function createSettlementEngine(db, {
     }
 
     // In-play: goal-total legs already decided for good (an "over" passed, an "under" passed, both
-    // teams scored) are settled while the match is live, once the score has held for the VAR delay.
+    // teams scored) and the half (period) markets are settled while the match is live, once the score
+    // has held for the VAR delay. First-half markets settle at half-time; second-half "overs" lock
+    // as the goals since the break pass the line.
     const varMs = inPlayVarSeconds * 1000;
     const liveGoals = db.prepare(
       `SELECT DISTINCT e.id FROM events e JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
         WHERE e.status = 'live' AND e.score_at IS NOT NULL AND e.score_at <= ?
-          AND l.market IN ('ou', 'tou', 'btts')`
+          AND l.market IN ('ou', 'tou', 'btts', 'pw', 'pou', 'phcp', 'poe', 'pbtts')`
     ).all(new Date(now - varMs).toISOString());
     for (const { id } of liveGoals) {
-      settled += tx(db, () => settleLiveGoals(db, id, { varDelayMs: varMs })) > 0 ? 1 : 0;
+      settled += tx(db, () => settleLiveGoals(db, id, { varDelayMs: varMs }) + settleLiveHalves(db, id, { varDelayMs: varMs })) > 0 ? 1 : 0;
+    }
+
+    // In-play statistics (corners, yellow cards, shots): over passed → won, under passed → lost.
+    const liveStats = db.prepare(
+      `SELECT DISTINCT e.id FROM events e JOIN bet_legs l ON l.event_id = e.id AND l.status = 'open'
+        WHERE e.status = 'live' AND l.market = 'x' AND e.match_stats IS NOT NULL`
+    ).all();
+    for (const { id } of liveStats) {
+      settled += tx(db, () => settleLiveStats(db, id)) > 0 ? 1 : 0;
     }
 
     // Provider markets still open on a match that ended a while ago: read once more, else voided.
