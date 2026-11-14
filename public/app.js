@@ -3319,8 +3319,9 @@ function reconcileSlip() {
       continue;
     }
     item.closed = !ev || !sel || !sel.active || !isOpen(ev);
-    // Só marca "odd alterada" quando o valor EXIBIDO (2 casas) muda — evita travar por diferença mínima (ex.: 1.35 → 1.35).
-    item.newOdds = sel && fmtOdds(sel.odds) !== fmtOdds(item.odds) ? sel.odds : undefined;
+    // A odd atualiza-se sozinha (sem botão "aceitar"); só bloqueamos quando a seleção fica indisponível.
+    if (sel && !item.closed) item.odds = sel.odds;
+    item.newOdds = undefined;
   }
 }
 
@@ -3445,12 +3446,15 @@ function renderBuilderSlip() {
   $('#slipFabCount').textContent = n;
   $('#slipFab').classList.toggle('hidden', false);
   $$('.bet-tabs button').forEach((x) => x.classList.remove('active'));
-  const changed = b.legs.some((l) => l.newOdds);
-  $('#betItems').innerHTML = `<div class="bet-item${changed ? ' warn' : ''}">
+  const bev = state.events.find((e) => e.id === b.eventId);
+  if (bev && isOpen(bev)) b.closed = false; // evento reabriu → volta a permitir apostar
+  const closed = b.closed || (bev ? !isOpen(bev) : false);
+  $('#betItems').innerHTML = `<div class="bet-item${closed ? ' closed' : ''}">
       ${b.boost ? `<div class="pick-ribbon in-slip${b.boost.pct >= 20 ? ' super' : ''}">${ICON_ROCKET}${b.boost.pct}% ${b.boost.pct >= 20 ? 'SUPER BOOST' : 'BOOST'}</div>` : ''}
       <div class="bet-item-top"><span>${esc(b.competition)} · ${b.boost ? 'Melhor escolha' : 'Criador de apostas'}</span><span><span class="odd">${fmtOdds(builderTotal(b))}</span><button class="remove-bet" data-remove-builder aria-label="Remover">×</button></span></div>
       <strong>${esc(b.match)}</strong>
-      ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small>${l.newOdds ? ` <small class="note">${fmtOdds(l.odds)} → ${fmtOdds(l.newOdds)}</small>` : ''}</div>`).join('')}
+      ${b.legs.map((l) => `<div class="selection">${esc(l.label)} <small class="muted">· ${esc(l.marketName)}</small></div>`).join('')}
+      ${closed ? '<div class="note red">Indisponível de momento — aguarde ou remova.</div>' : ''}
     </div>`;
   $('#betFooter').classList.remove('hidden');
   freebetUi();
@@ -3462,9 +3466,9 @@ function renderBuilderSlip() {
   $('#potential').textContent = money(t.potential);
   $('#slipError').classList.add('hidden');
   const btn = $('#placeBet');
-  btn.disabled = false;
-  btn.textContent = changed ? 'ACEITAR NOVAS ODDS' : state.user ? 'APOSTAR AGORA' : 'ENTRAR PARA APOSTAR';
-  btn.dataset.state = changed ? 'accept' : 'place';
+  btn.disabled = closed;
+  btn.textContent = closed ? 'INDISPONÍVEL' : state.user ? 'APOSTAR AGORA' : 'ENTRAR PARA APOSTAR';
+  btn.dataset.state = 'place';
 }
 
 function renderSlip() {
@@ -3476,10 +3480,10 @@ function renderSlip() {
   $('#slipFab').classList.toggle('hidden', n === 0);
   $$('.bet-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.mode));
   $('#betItems').innerHTML = n
-    ? state.slip.map((s) => `<div class="bet-item${s.closed ? ' closed' : s.newOdds ? ' warn' : ''}">
+    ? state.slip.map((s) => `<div class="bet-item${s.closed ? ' closed' : ''}">
         <div class="bet-item-top"><span>${esc(s.competition)}</span><span><span class="odd">${fmtOdds(s.odds)}</span><button class="remove-bet" data-remove="${s.selectionId}" aria-label="Remover">×</button></span></div>
         <strong>${esc(s.match)}</strong><div class="selection">${esc(s.label || CODE_LABEL[s.code])}${s.marketName && s.market !== '1x2' ? ` <small class="muted">· ${esc(s.marketName)}</small>` : ''}</div>
-        ${s.closed ? '<div class="note red">Mercado fechado — remova esta seleção.</div>' : s.newOdds ? `<div class="note">Odd alterada: ${fmtOdds(s.odds)} → ${fmtOdds(s.newOdds)}</div>` : ''}
+        ${s.closed ? '<div class="note red">Indisponível de momento — remova ou aguarde.</div>' : ''}
       </div>`).join('')
     : `<div class="empty-bet"><div>🎟️</div><strong>O seu boletim está vazio</strong><span>Selecione uma odd para começar a sua aposta.</span></div>${slipPromos()}`;
   $('#betFooter').classList.toggle('hidden', n === 0);
@@ -3494,29 +3498,23 @@ function renderSlip() {
   $('#potential').textContent = money(t.potential);
   renderBoost(t);
 
-  const changed = state.slip.some((s) => s.newOdds);
   const closed = state.slip.some((s) => s.closed);
   const btn = $('#placeBet');
   let error = '';
-  if (closed) error = 'Há seleções com o mercado fechado.';
-  else if (state.mode === 'multiple' && n < 2) error = 'Uma múltipla precisa de pelo menos 2 seleções.';
+  if (state.mode === 'multiple' && n < 2) error = 'Uma múltipla precisa de pelo menos 2 seleções.';
+  // Seleção indisponível não é "erro" vermelho: o próprio botão fica "INDISPONÍVEL".
   $('#slipError').textContent = error;
   $('#slipError').classList.toggle('hidden', !error);
-  btn.disabled = !!error;
-  btn.textContent = changed ? 'ACEITAR NOVAS ODDS' : state.user ? 'APOSTAR AGORA' : 'ENTRAR PARA APOSTAR';
-  btn.dataset.state = changed ? 'accept' : 'place';
+  btn.disabled = !!error || closed;
+  btn.textContent = closed ? 'INDISPONÍVEL' : state.user ? 'APOSTAR AGORA' : 'ENTRAR PARA APOSTAR';
+  btn.dataset.state = 'place';
 }
 
-async function placeBet() {
+async function placeBet(retry = 0) {
   const btn = $('#placeBet');
-  if (btn.dataset.state === 'accept') {
-    state.builder?.legs.forEach((l) => { if (l.newOdds) { l.odds = l.newOdds; delete l.newOdds; } });
-    state.slip.forEach((s) => { if (s.newOdds) s.odds = s.newOdds; });
-    saveSlip();
-    renderSlip();
-    return;
-  }
   if (!state.user) return openAuth('login');
+  // Seleção indisponível (lance crítico / mercado fechado): não aposta, o botão já mostra "INDISPONÍVEL".
+  if (state.slip.some((s) => s.closed) || state.builder?.closed) { renderSlip(); return; }
   const { stake, freebet } = slipTotals();
   btn.disabled = true;
   btn.textContent = 'A PROCESSAR…';
@@ -3539,17 +3537,31 @@ async function placeBet() {
     syncSelectedButtons();
     setSlipOpen(false);
   } catch (err) {
-    if (err.data?.changes) {
+    if (err.data?.closed) {
+      // Mercado fechado / lance crítico → marca indisponível (botão "INDISPONÍVEL"), não aposta.
+      for (const id of err.data.closed) {
+        const item = state.slip.find((s) => s.selectionId === id) || state.builder?.legs.find((l) => l.selectionId === id);
+        if (item) item.closed = true;
+      }
+      if (state.builder && err.data.closed.length) state.builder.closed = true;
+      saveSlip();
+      await refreshEvents({ full: true });
+      toast('Indisponível', 'Uma seleção ficou indisponível neste momento.', 'error');
+    } else if (err.data?.changes) {
+      // Odds mudaram entre o clique e o servidor → aceita automaticamente e reenvia uma vez.
       for (const c of err.data.changes) {
         const item = state.slip.find((s) => s.selectionId === c.selectionId) || state.builder?.legs.find((l) => l.selectionId === c.selectionId);
-        // Mudança real (valor exibido difere) → pede aceitação; diferença mínima → sincroniza sem travar.
-        if (item) { if (fmtOdds(c.odds) !== fmtOdds(item.odds)) item.newOdds = c.odds; else item.odds = c.odds; }
+        if (item) item.odds = c.odds;
       }
+      saveSlip();
       await refreshEvents({ full: true });
+      if (retry < 1) { renderSlip(); return placeBet(retry + 1); }
+      toast('Odds atualizadas', 'As odds mudaram; toque novamente para confirmar.', 'error');
     } else if (err.status === 401) {
       openAuth('login');
+    } else {
+      toast('Aposta não registada', err.message, 'error');
     }
-    toast('Aposta não registada', err.message, 'error');
   } finally {
     renderSlip();
   }
