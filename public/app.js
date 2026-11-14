@@ -4689,7 +4689,16 @@ function helpTopics() {
   ];
 }
 const helpChips = () => `<div class="help-chips">${helpTopics().map((t) => `<button type="button" data-help-topic="${t.id}">${t.label}</button>`).join('')}</div>`;
-function helpBubble(html, who) { const m = $('#helpMsgs'); if (!m) return; const d = document.createElement('div'); d.className = `help-b ${who}`; d.innerHTML = html; m.appendChild(d); m.scrollTop = m.scrollHeight; }
+const HELP_MSG_TTL = 60000; // mensagens somem sozinhas após ~60s
+function helpBubble(html, who) {
+  const m = $('#helpMsgs'); if (!m) return;
+  const d = document.createElement('div'); d.className = `help-b ${who}`; d.innerHTML = html;
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+  d._helpTimer = setTimeout(() => {
+    d.classList.add('fade-out');
+    setTimeout(() => { d.remove(); }, 600);
+  }, HELP_MSG_TTL);
+}
 const helpUser = (t) => helpBubble(esc(t), 'me');
 const helpBot = (html) => helpBubble(html, 'bot');
 function helpWelcome() { helpBot(`Olá! 👋 Sou o assistente da <b>BET62</b>. Em que posso ajudar? Escolha um tema ou escreva a sua dúvida.${helpChips()}`); }

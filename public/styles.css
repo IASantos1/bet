@@ -2439,7 +2439,8 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .help-dot { width: 9px; height: 9px; border-radius: 50%; background: #9dffc4; box-shadow: 0 0 0 3px rgba(157, 255, 196, .25); flex: none; }
 .help-x { margin-left: auto; background: rgba(255, 255, 255, .15); border: 0; color: #fff; width: 28px; height: 28px; border-radius: 8px; font-size: 14px; cursor: pointer; }
 .help-msgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--bg, #1a1f24); }
-.help-b { max-width: 88%; padding: 10px 12px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
+.help-b { max-width: 88%; padding: 10px 12px; border-radius: 14px; font-size: 13px; line-height: 1.5; transition: opacity .5s ease, transform .5s ease; }
+.help-b.fade-out { opacity: 0; transform: translateY(-6px) scale(.96); pointer-events: none; }
 .help-b.bot { align-self: flex-start; background: var(--card, #272c32); border: 1px solid var(--line); color: var(--text); border-bottom-left-radius: 4px; }
 .help-b.me { align-self: flex-end; background: linear-gradient(135deg, #1f8f4e, #15723d); color: #fff; border-bottom-right-radius: 4px; }
 .help-b b { color: var(--strong); }
