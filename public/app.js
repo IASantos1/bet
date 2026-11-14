@@ -4703,7 +4703,7 @@ const helpUser = (t) => helpBubble(esc(t), 'me');
 const helpBot = (html) => helpBubble(html, 'bot');
 function helpWelcome() { helpBot(`Olá! 👋 Sou o assistente da <b>BET62</b>. Em que posso ajudar? Escolha um tema ou escreva a sua dúvida.${helpChips()}`); }
 // Palavras de "recheio" que removemos para descobrir o clube/assunto das notícias.
-const NEWS_STOP = ['noticias', 'noticia', 'news', 'sobre', 'do', 'da', 'de', 'dos', 'das', 'o', 'a', 'os', 'as', 'para', 'pra', 'no', 'na', 'em', 'ultimas', 'ultima', 'recentes', 'jogo', 'jogos', 'hoje', 'ver', 'quero', 'mostra', 'mostrar', 'me'];
+const NEWS_STOP = ['noticias', 'noticia', 'news', 'novidades', 'novidade', 'novas', 'sobre', 'do', 'da', 'de', 'dos', 'das', 'o', 'a', 'os', 'as', 'para', 'pra', 'no', 'na', 'em', 'ultimas', 'ultima', 'recentes', 'qual', 'quais', 'que', 'ha', 'tem', 'futebol', 'jogo', 'jogos', 'hoje', 'ver', 'quero', 'saber', 'mostra', 'mostrar', 'me'];
 function newsTerm(text) {
   const words = helpNorm(text).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
   const kept = words.filter((w) => !NEWS_STOP.includes(w));
@@ -4715,7 +4715,7 @@ function newsTerm(text) {
 function helpAnswer(text) {
   const n = helpNorm(text);
   // Pedido explícito de notícias → busca já as notícias (do clube/assunto), sem cair no atalho de ajuda.
-  if (/notici|news/.test(n)) {
+  if (/notici|news|novidade/.test(n)) {
     const t = newsTerm(text);
     const games = chatSearchGames(t);
     if (games.length) helpBot(`<b>Próximos jogos de “${esc(t)}”:</b>${games.map(chatMatchLine).join('')}`);
