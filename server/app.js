@@ -94,6 +94,27 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const cents = (c) => Math.round(c) / 100;
 const str = (v, max = 120) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
+/** Decode the few XML/HTML entities that appear in RSS text. */
+const decodeXmlEntities = (s) => String(s || '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&');
+/** Parse a Google News RSS feed into [{ title, link, source, date }], newest first. */
+export function parseNewsRss(xml) {
+  const out = [];
+  for (const it of String(xml).match(/<item\b[\s\S]*?<\/item>/g) || []) {
+    const title = decodeXmlEntities((it.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || '').replace(/<[^>]+>/g, '').trim();
+    const link = decodeXmlEntities((it.match(/<link>([\s\S]*?)<\/link>/) || [])[1] || '').trim();
+    const source = decodeXmlEntities((it.match(/<source[^>]*>([\s\S]*?)<\/source>/) || [])[1] || '').trim();
+    const pub = (it.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1] || '';
+    if (!title || !/^https?:\/\//i.test(link)) continue;
+    const t = source && title.endsWith(` - ${source}`) ? title.slice(0, -(source.length + 3)) : title;
+    const d = pub ? new Date(pub) : null;
+    out.push({ title: t, link, source, date: d && !Number.isNaN(+d) ? d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' }) : '' });
+  }
+  return out;
+}
+
 function parseCookies(header = '') {
   const out = {};
   for (const part of header.split(';')) {
@@ -1025,6 +1046,25 @@ export function createApp(db, {
     params.push(goneBefore(), unseenBefore());
     res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 1500), serverTime: now });
   });
+
+  // Free club/team news for the help assistant, from Google News RSS (no key, no cost). Cached 10 min.
+  const newsCache = new Map(); // normalized query -> { at, items }
+  app.get('/api/news', wrap(async (req, res) => {
+    const q = String(req.query.q || '').trim().slice(0, 60).replace(/[^\p{L}\p{N} .&'-]/gu, ' ').replace(/\s+/g, ' ').trim();
+    if (q.length < 2) return res.json({ news: [] });
+    const key = q.toLowerCase();
+    const hit = newsCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60_000) return res.json({ news: hit.items });
+    try {
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} futebol`)}&hl=pt-PT&gl=PT&ceid=PT:pt`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bet62/1.0)' }, signal: AbortSignal.timeout(6000) });
+      if (!r.ok) throw new Error(`news ${r.status}`);
+      const items = parseNewsRss(await r.text()).slice(0, 5);
+      newsCache.set(key, { at: Date.now(), items });
+      if (newsCache.size > 300) newsCache.clear();
+      res.json({ news: items });
+    } catch { res.json({ news: [], error: 'indisponivel' }); }
+  }));
 
   // One match with every market (the match page).
   app.get('/api/events/:id', async (req, res, next) => {
