@@ -1983,17 +1983,8 @@ export function createApp(db, {
           // the player's own balance stays here; only the picked game opens.
           let fs = spinsRow(db, Number(req.body.freeSpins), req.user.id);
           if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
-          // Not yet on this casino: it cannot refuse a bet, so they are played on BigBang's copy of
-          // the game, where only the fixed bet is accepted (and the game sees one spin's bet at a time).
-          if (fs.palace_cents === null) {
-            const copy = await bb.twin(g);
-            if (!copy) throw new HttpError(400, 'Este jogo não permite fixar a aposta das Free Spins. Escolha outro jogo.');
-            fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
-            db.prepare('UPDATE casino_spins SET play_game = ? WHERE id = ?').run(copy.id, fs.id);
-            const url = await bb.launch({ gameId: copy.id, token: playerToken(req.user.id, fs.id), returnUrl });
-            notePlayed(req.user.id, g.id);
-            return res.json({ url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left ?? fs.spins, spins: fs.spins }, balance: cents(userById(req.user.id).balance_cents) });
-          }
+          // Free spins play directly on the Palace game (same slot the player knows), at the fixed bet
+          // the Palace enforces (CASINO_FS_BET_PARAM). BigBang is used only for the live tables.
           fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
           const fund = fs.palace_cents === null ? fs.value_cents : 0;
           if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
