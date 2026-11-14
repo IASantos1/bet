@@ -2092,10 +2092,12 @@ function casinoPlayPage() {
   // Free spins are played at a fixed bet: said when the game opens, and again (louder) when the
   // player raises it in the game (BigBang refuses the spin; at Palace it uses several Free Spins).
   const bet = money(g.fsBet || 0.2);
+  // Onde ajustar a aposta no jogo (controlo de aposta / ícone de moedas, no fundo do jogo).
+  const how = `Toque no valor da <b>APOSTA</b> (ícone de moedas, em baixo) e escolha <b>${bet}</b>`;
   const fsNote = !g.fs || g.fsEnded ? ''
-    : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ Esta promoção utiliza uma aposta fixa de <b>${bet}</b> por rodada. ${g.fsPalace
-      ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'A rodada não foi aceite e nenhuma Free Spin foi usada.'} Ajusta o valor da aposta para <b>${bet}</b> para continuar.</div>`
-      : `<div class="fs-bet-note">Jogue com a aposta de <b>${bet}</b> por rodada: cada rodada usa 1 Free Spin.</div>`;
+    : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ As Free Spins usam a aposta fixa de <b>${bet}</b> por rodada. ${g.fsPalace
+      ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'A rodada não foi aceite e nenhuma Free Spin foi gasta.'} ${how} para continuar.</div>`
+      : `<div class="fs-bet-note">⚠️ Ajuste a aposta para <b>${bet}</b> antes de girar: ${how}. Cada rodada usa 1 Free Spin.</div>`;
   return `<div class="casino-player">
     ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}${fsNote}
     <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
