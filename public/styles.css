@@ -2457,6 +2457,8 @@ html:not(.light) .page-title p { color: #c9d3cc; }
 .help-support { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2, #20262c); color: var(--text-2); font-weight: 800; font-size: 13px; cursor: pointer; }
 .help-support:hover { color: var(--strong); border-color: rgba(53, 208, 127, .5); }
 body.immersive #helpWidget { display: none; }
+/* Esconde o robô de ajuda enquanto o boletim está aberto, para não cobrir o valor/odds. */
+body.slip-open #helpWidget { display: none; }
 @media (max-width: 980px) {
   #helpWidget { right: 0; bottom: 24%; }
   .help-panel { right: 8px; left: 8px; width: auto; bottom: 74px; height: min(72vh, calc(100vh - 160px)); }

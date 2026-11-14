@@ -3319,7 +3319,8 @@ function reconcileSlip() {
       continue;
     }
     item.closed = !ev || !sel || !sel.active || !isOpen(ev);
-    item.newOdds = sel && sel.odds !== item.odds ? sel.odds : undefined;
+    // Só marca "odd alterada" quando o valor EXIBIDO (2 casas) muda — evita travar por diferença mínima (ex.: 1.35 → 1.35).
+    item.newOdds = sel && fmtOdds(sel.odds) !== fmtOdds(item.odds) ? sel.odds : undefined;
   }
 }
 
@@ -3541,7 +3542,8 @@ async function placeBet() {
     if (err.data?.changes) {
       for (const c of err.data.changes) {
         const item = state.slip.find((s) => s.selectionId === c.selectionId) || state.builder?.legs.find((l) => l.selectionId === c.selectionId);
-        if (item) item.newOdds = c.odds;
+        // Mudança real (valor exibido difere) → pede aceitação; diferença mínima → sincroniza sem travar.
+        if (item) { if (fmtOdds(c.odds) !== fmtOdds(item.odds)) item.newOdds = c.odds; else item.odds = c.odds; }
       }
       await refreshEvents({ full: true });
     } else if (err.status === 401) {
