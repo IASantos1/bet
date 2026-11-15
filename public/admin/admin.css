@@ -952,3 +952,14 @@
 
 /* Painéis: cantos e respiro mais uniformes */
 .admin-body .adm-body .panel { border-radius: 14px; }
+
+/* Ritmo vertical: separação consistente entre blocos em todas as páginas. */
+.admin-body .adm-body #adminMain > * + * { margin-top: 16px; }
+.admin-body .adm-body .panel { padding: 20px 22px; }
+.admin-body .adm-body .section-head { margin-bottom: 16px; }
+
+/* Formulários densos (promoções, etc.): mais respiro e campos de altura uniforme. */
+.admin-body .adm-grid { gap: 14px 16px; }
+.admin-body .adm-grid .field { gap: 6px; }
+.admin-body .adm-grid .field input, .admin-body .adm-grid .field select { height: 40px; padding: 0 12px; border-radius: 8px; }
+.admin-body .form-grid { gap: 2px 16px; }
