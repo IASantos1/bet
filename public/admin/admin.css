@@ -1067,3 +1067,46 @@
 .admin-body .adm-secure-label { color: #8fe7b6; }
 
 .admin-body .adm-eyebrow { color: var(--accent-2); }
+
+/* ============================================================
+   ESTRUTURA v3 — navegação por categorias no topo + sub-abas.
+   Conteúdo em largura total; mais fácil de manobrar.
+   ============================================================ */
+.admin-body .adm-v3 { display: block; min-height: 100vh; }
+.admin-body .adm-appbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 11px 24px; background: rgba(9, 16, 12, .82); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
+.admin-body .adm-appbrand { display: flex; align-items: center; gap: 11px; flex: none; }
+.admin-body .adm-cats { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.admin-body .adm-cats::-webkit-scrollbar { display: none; }
+.admin-body .adm-cat { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 11px; border: 1px solid transparent; background: transparent; color: #a9bccb; font-weight: 750; font-size: 14px; white-space: nowrap; cursor: pointer; }
+.admin-body .adm-cat:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.admin-body .adm-cat.active { background: var(--accent-soft); color: #d6ffe8; border-color: rgba(47, 208, 114, .3); }
+.admin-body .adm-cat .adm-icon { display: inline-grid; } .admin-body .adm-cat .adm-icon svg { width: 18px; height: 18px; }
+.admin-body .adm-cat .adm-badge { position: static; margin-left: 2px; }
+.admin-body .adm-appright { display: flex; align-items: center; gap: 10px; flex: none; }
+.admin-body .adm-subbar { position: sticky; top: 57px; z-index: 15; background: rgba(8, 15, 11, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hair2); padding: 0 24px; }
+.admin-body .adm-subnav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.admin-body .adm-subnav::-webkit-scrollbar { display: none; }
+.admin-body .adm-sub { display: inline-flex; align-items: center; gap: 7px; padding: 12px 13px; background: none; border: 0; border-bottom: 2px solid transparent; color: #8294a8; font-weight: 700; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.admin-body .adm-sub:hover { color: #fff; }
+.admin-body .adm-sub.active { color: #fff; border-bottom-color: var(--accent); }
+.admin-body .adm-sub .adm-icon { display: inline-grid; } .admin-body .adm-sub .adm-icon svg { width: 15px; height: 15px; opacity: .85; }
+.admin-body .adm-v3 .adm-main { width: 100%; min-width: 0; }
+.admin-body .adm-v3 .adm-body { max-width: 1400px; margin: 0 auto; padding: 22px 24px 52px; }
+/* Gaveta (telemóvel) */
+.admin-body .adm-v3 .adm-burger { display: none; background: none; border: 0; color: #cfe8d8; }
+.admin-body .adm-drawer { position: fixed; left: 0; top: 0; bottom: 0; width: 282px; z-index: 60; transform: translateX(-100%); transition: transform .25s; display: flex; flex-direction: column; background: linear-gradient(180deg, #0d1522, #0b101a); border-right: 1px solid var(--hair); }
+.admin-body .adm-v3.menu-open .adm-drawer { transform: none; }
+.admin-body .adm-v3.menu-open .adm-overlay { display: block; position: fixed; inset: 0; z-index: 55; background: #000b; }
+.admin-body .adm-drawer-nav { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 1040px) {
+  .admin-body .adm-cats { display: none; }
+  .admin-body .adm-v3 .adm-burger { display: inline-grid; place-items: center; }
+  .admin-body .adm-secure-label { display: none; }
+  .admin-body .adm-appbar, .admin-body .adm-subbar { padding-left: 14px; padding-right: 14px; }
+  .admin-body .adm-v3 .adm-body { padding: 16px 14px 60px; }
+}
+
+/* Item ativo na gaveta: verde (remove resquício vermelho antigo) */
+.admin-body .adm-nav.active { background: var(--accent-soft); border-color: rgba(47, 208, 114, .35); color: #eafff2; }
+.admin-body .adm-nav.active::before { content: ""; position: absolute; left: -2px; top: 7px; bottom: 7px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.admin-body .adm-drawer-nav .adm-nav { position: relative; }
