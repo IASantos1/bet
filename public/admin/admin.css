@@ -1029,3 +1029,41 @@
 
 /* Pills refinadas */
 .admin-body .pill { border-radius: 999px; font-weight: 700; }
+
+/* ============================================================
+   TEMA VERDE BET62 (escuro) — identidade verde do site aplicada
+   a todo o admin. Sobrepõe o acento vermelho/azul da v2.
+   ============================================================ */
+.admin-body {
+  --accent: #2fd072;
+  --accent-2: #46e58c;
+  --accent-soft: rgba(47, 208, 114, .15);
+  --accent-glow: rgba(47, 208, 114, .55);
+  --ok: #46e58c;
+  --surf: #0f1a15;
+  --surf2: #0c150f;
+  --raised: #12201a;
+  --hair: rgba(110, 205, 160, .14);
+  --hair2: rgba(110, 205, 160, .08);
+  background:
+    radial-gradient(1200px 620px at 8% -8%, rgba(32, 150, 95, .22), transparent 60%),
+    radial-gradient(1000px 680px at 104% -2%, rgba(47, 208, 114, .10), transparent 55%),
+    #07120d;
+}
+/* Marca */
+.admin-body .adm-brand-mark { color: #46e58c; border-color: rgba(70, 229, 140, .4); background: linear-gradient(145deg, rgba(47, 208, 114, .28), rgba(47, 208, 114, .06)); box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 0 24px rgba(47, 208, 114, .18); }
+.admin-body .brand-word span { color: #46e58c; }
+.admin-body .adm-tag { color: #8fe7b6; background: rgba(47, 208, 114, .1); }
+/* Sidebar ativo (barra + brilho verde) */
+.admin-body .adm-nav.active::before { background: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+/* Botões primários em verde */
+.admin-body .primary-btn { background: linear-gradient(180deg, #35d884, #17a85a); box-shadow: 0 8px 20px rgba(23, 168, 90, .32); color: #04140b; }
+.admin-body .primary-btn:hover { filter: brightness(1.06); }
+/* Foco em verde */
+.admin-body :is(button, input, select, textarea, a):focus-visible { outline-color: rgba(70, 229, 140, .9); }
+/* Topo: marca em verde */
+.admin-body .adm-top-kicker i, .admin-body .adm-top-kicker { color: #6f8a7e; }
+/* Área restrita / shields em verde */
+.admin-body .adm-secure-label { color: #8fe7b6; }
+
+.admin-body .adm-eyebrow { color: var(--accent-2); }
