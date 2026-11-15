@@ -963,3 +963,69 @@
 .admin-body .adm-grid .field { gap: 6px; }
 .admin-body .adm-grid .field input, .admin-body .adm-grid .field select { height: 40px; padding: 0 12px; border-radius: 8px; }
 .admin-body .form-grid { gap: 2px 16px; }
+
+/* ============================================================
+   REPAGINAÇÃO v2 — mais qualidade visual (superfícies, cartões,
+   navegação, tabelas). Só aparência; estrutura e classes intactas.
+   ============================================================ */
+.admin-body {
+  --accent: #ff5b6e;
+  --accent-soft: rgba(255, 91, 110, .14);
+  --ok: #39d98a;
+  --surf: #121a27;
+  --surf2: #0e1521;
+  --raised: #16202f;
+  --hair: rgba(152, 173, 198, .12);
+  --hair2: rgba(152, 173, 198, .08);
+  --elev: 0 12px 34px rgba(0, 0, 0, .38);
+  background:
+    radial-gradient(1200px 620px at 10% -8%, rgba(46, 96, 132, .20), transparent 60%),
+    radial-gradient(1000px 680px at 102% -2%, rgba(255, 91, 110, .08), transparent 55%),
+    #080c13;
+}
+
+/* Sidebar — mais calma e legível */
+.admin-body .adm-side { width: 258px; background: linear-gradient(180deg, #0d1522, #0b101a); border-right: 1px solid var(--hair); box-shadow: none; }
+.admin-body .adm-nav { border-radius: 10px; color: #9db0c6; font-weight: 650; padding: 10px 11px; border-color: transparent; position: relative; }
+.admin-body .adm-nav:hover { background: rgba(255, 255, 255, .045); color: #fff; }
+.admin-body .adm-nav.active { background: linear-gradient(90deg, var(--accent-soft), transparent 82%); color: #fff; border-color: transparent; }
+.admin-body .adm-nav.active::before { content: ""; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); box-shadow: 0 0 12px rgba(255, 91, 110, .7); }
+.admin-body .adm-section { color: #5b6b7e; letter-spacing: .11em; }
+
+/* Top bar */
+.admin-body .adm-top { background: rgba(10, 14, 20, .72); border-bottom: 1px solid var(--hair); backdrop-filter: blur(10px); padding: 15px 26px; }
+.admin-body .adm-top h1 { font-size: 21px; font-weight: 820; letter-spacing: -.02em; }
+
+/* Cartões de KPI — elevados e limpos */
+.admin-body .adm-cards { gap: 14px; }
+.admin-body .adm-card { background: linear-gradient(170deg, var(--raised), var(--surf2)); border: 1px solid var(--hair); border-radius: 16px; padding: 18px; box-shadow: var(--elev); }
+.admin-body .adm-card.blue, .admin-body .adm-card.green, .admin-body .adm-card.gold, .admin-body .adm-card.red { border-top: 1px solid var(--hair); }
+.admin-body .adm-card::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--c, var(--accent)); border-radius: 16px 16px 0 0; }
+.admin-body .adm-card.blue { --c: #49a7ff; } .admin-body .adm-card.green { --c: var(--ok); } .admin-body .adm-card.gold { --c: #f6c454; } .admin-body .adm-card.red { --c: var(--accent); }
+.admin-body .adm-card small { color: #8294a8; font-size: 12px; font-weight: 600; }
+.admin-body .adm-card strong { font-size: 26px; font-weight: 820; letter-spacing: -.03em; }
+.admin-body .adm-card em { color: #6b7d92; font-size: 12px; }
+.admin-body .adm-card-icon { opacity: .45; }
+
+/* Alerta de topo */
+.admin-body .adm-alert { border-radius: 14px; box-shadow: var(--elev); }
+
+/* Painéis — superfície suave com profundidade */
+.admin-body .adm-body .panel { background: linear-gradient(180deg, var(--surf), var(--surf2)); border: 1px solid var(--hair); border-radius: 16px; box-shadow: var(--elev); padding: 20px 22px; }
+
+/* Tabelas — recipiente arredondado, cabeçalho forte, linhas limpas */
+.admin-body .table-wrap { border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; background: var(--surf2); }
+.admin-body .table-wrap table { border-collapse: separate; border-spacing: 0; }
+.admin-body .table-wrap thead th { background: rgba(255, 255, 255, .015); border-bottom: 1px solid var(--hair); padding: 12px 14px; }
+.admin-body .table-wrap tbody td { padding: 13px 14px; border-top: 1px solid var(--hair2); }
+.admin-body .table-wrap tbody tr:first-child td { border-top: 0; }
+.admin-body .table-wrap tbody tr:hover td { background: rgba(255, 255, 255, .03); }
+
+/* Botões */
+.admin-body .primary-btn { background: linear-gradient(180deg, #ff6472, #ec3f54); border: 0; box-shadow: 0 8px 20px rgba(236, 63, 84, .28); }
+.admin-body .primary-btn:hover { filter: brightness(1.06); }
+.admin-body .ghost-btn { background: rgba(255, 255, 255, .035); border: 1px solid var(--hair); }
+.admin-body .ghost-btn:hover { background: rgba(255, 255, 255, .07); }
+
+/* Pills refinadas */
+.admin-body .pill { border-radius: 999px; font-weight: 700; }
