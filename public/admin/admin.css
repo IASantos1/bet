@@ -916,3 +916,39 @@
 }
 @keyframes admShimmer { from { background-position: 180% 0; } to { background-position: -80% 0; } }
 @media (max-width: 900px) { .adm-skel-cards { grid-template-columns: 1fr 1fr; } }
+
+/* ============================================================
+   Polimento tipográfico e de componentes (Nov 2026):
+   letras mais nítidas, escala de títulos consistente, números
+   alinhados (tabular) e tabelas com mais respiro e hierarquia.
+   ============================================================ */
+.admin-body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: .003em;
+}
+.admin-body .adm { line-height: 1.5; }
+
+/* Escala de títulos */
+.adm-top h1 { font-size: 20px; font-weight: 800; letter-spacing: -.015em; }
+.admin-body .adm-body h2 { font-size: 17px; font-weight: 800; letter-spacing: -.012em; line-height: 1.25; }
+.admin-body .adm-body h3 { font-size: 14.5px; font-weight: 800; letter-spacing: -.006em; line-height: 1.3; }
+.admin-body .adm-body h4 { font-size: 13px; font-weight: 800; }
+
+/* Números alinhados em tudo o que conta (tabelas, cartões, valores) */
+.admin-body :is(.adm-card strong, .adm-card em, .user-sums strong, .am-bal, .am-fb,
+  td.num, th.num, .num, .adm-badge) { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+.adm-card strong { letter-spacing: -.02em; font-weight: 800; }
+
+/* Tabelas: cabeçalho discreto em maiúsculas, mais respiro, hover claro */
+.admin-body .table-wrap table { font-size: 13px; }
+.admin-body .table-wrap thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .045em; font-weight: 800; color: var(--text-3); }
+.admin-body .table-wrap :is(td, th) { padding: 11px 12px; }
+.admin-body .table-wrap tbody tr:hover td { background: var(--row-hover); }
+
+/* Botões e campos: peso e espaçamento consistentes */
+.admin-body :is(.primary-btn, .ghost-btn, .danger-btn, .btn-sm) { font-weight: 800; letter-spacing: .005em; }
+
+/* Painéis: cantos e respiro mais uniformes */
+.admin-body .adm-body .panel { border-radius: 14px; }
