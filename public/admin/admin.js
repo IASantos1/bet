@@ -730,39 +730,28 @@ function loginView(error = '') {
 
 // ---------- layout ----------
 
-// Navegação por categorias no topo (mais fácil de manobrar que um menu lateral de 22 itens).
-const GROUPS = [
-  { id: 'operacao', label: 'Operação', icon: 'dashboard', tabs: ['painel', 'eventos', 'liquidacao', 'apostas'] },
-  { id: 'jogadores', label: 'Jogadores', icon: 'users', tabs: ['utilizadores', 'levantamentos', 'risco', 'afiliados'] },
-  { id: 'promocoes', label: 'Promoções', icon: 'gift', tabs: ['promocoes', 'campanhas', 'telegram'] },
-  { id: 'casino', label: 'Casino', icon: 'casino', tabs: ['casino', 'peliculas', 'banners', 'colecoes', 'destaques'] },
-  { id: 'dados', label: 'Desporto & Dados', icon: 'radio', tabs: ['novo', 'feed', 'sportscore', 'thesports', 'mercados', 'ligas'] },
-];
-const groupOf = (tabId) => (GROUPS.find((g) => g.tabs.includes(tabId)) || GROUPS[0]).id;
-const catTabs = (catId) => (GROUPS.find((g) => g.id === catId) || GROUPS[0]).tabs.map((id) => TABS.find((t) => t.id === id)).filter(Boolean);
-const subBtn = (t) => { const pending = state.stats?.pendingWithdrawals || 0; return `<button class="adm-sub${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span class="adm-icon">${adminIcon(t.icon, 15)}</span>${esc(t.label)}${t.id === 'levantamentos' && pending ? `<b class="adm-badge">${pending}</b>` : ''}</button>`; };
-
+// Menu lateral (estilo Bet62Novo): secções Operações/Avançado, acento verde, marca branco+verde.
+const ADMIN_VERSION = 'v2';
 function shell() {
-  const cat = groupOf(state.tab);
+  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
   const pending = state.stats?.pendingWithdrawals || 0;
-  const catBtn = (g) => { const p = g.id === 'jogadores' && pending ? `<b class="adm-badge">${pending}</b>` : ''; return `<button class="adm-cat${g.id === cat ? ' active' : ''}" data-cat="${g.id}"><span class="adm-icon">${adminIcon(g.icon, 18)}</span><span>${esc(g.label)}</span>${p}</button>`; };
-  const drawer = `<div class="adm-side-head"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>OPERATIONS</small></div><span class="adm-tag">ADMIN</span></div>
-    <nav class="adm-drawer-nav">${GROUPS.map((g) => `<div class="adm-section">${esc(g.label)}</div>${catTabs(g.id).map((t) => `<button class="adm-nav${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span class="adm-icon">${adminIcon(t.icon)}</span><span class="grow">${esc(t.label)}</span></button>`).join('')}`).join('')}</nav>
+  const link = (t) => `<button class="adm-nav${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span class="adm-icon">${adminIcon(t.icon)}</span><span class="grow">${esc(t.label)}</span>${t.id === 'levantamentos' && pending ? `<b class="adm-badge">${pending}</b>` : ''}</button>`;
+  const sections = [...new Set(TABS.map((t) => t.section))];
+  const sidebar = `<div class="adm-side-head"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>Admin</small></div><span class="adm-tag">${ADMIN_VERSION}</span></div>
+    <nav class="adm-side-nav">${sections.map((sec) => `<div class="adm-section">${esc(sec)}</div>${TABS.filter((t) => t.section === sec).map(link).join('')}`).join('')}</nav>
     <div class="adm-side-foot"><div class="adm-user"><span class="adm-user-dot"></span>${esc(state.user?.email || '')}</div><a class="adm-nav" href="/"><span class="adm-icon">${adminIcon('home')}</span><span class="grow">Ver o site</span></a><button class="adm-nav" data-action="logout"><span class="adm-icon">${adminIcon('logout')}</span><span class="grow">Sair</span></button></div>`;
-  return `<div class="adm adm-v3">
-    <header class="adm-appbar">
-      <div class="adm-appbrand"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>ADMIN</small></div></div>
-      <nav class="adm-cats">${GROUPS.map(catBtn).join('')}</nav>
-      <div class="adm-appright">
-        <span class="adm-secure-label">${adminIcon('shield', 14)} Área restrita</span>
-        <button class="ghost-btn btn-sm adm-refresh" data-action="refresh">${adminIcon('refresh', 15)}<span>Atualizar</span></button>
-        <button class="adm-burger" data-action="open-menu" aria-label="Menu">${adminIcon('menu', 20)}</button>
-      </div>
-    </header>
-    <div class="adm-subbar"><nav class="adm-subnav" id="admSub">${catTabs(cat).map(subBtn).join('')}</nav></div>
-    <main class="adm-main"><div class="adm-body"><div id="adminMain"><div class="loading">A carregar…</div></div></div></main>
+  return `<div class="adm">
+    <aside class="adm-side" id="admSide">${sidebar}</aside>
     <div class="adm-overlay" data-action="close-menu"></div>
-    <aside class="adm-drawer" id="admDrawer">${drawer}</aside>
+    <main class="adm-main">
+      <header class="adm-top"><button class="adm-burger" data-action="open-menu" aria-label="Menu">${adminIcon('menu', 20)}</button>
+        <div class="adm-top-title"><span class="adm-top-kicker">BET62 <i>/</i> ADMINISTRAÇÃO</span><h1>${esc(tab.label)}</h1></div>
+        <span class="adm-secure-label">${adminIcon('shield', 14)} Área restrita</span>
+        <button class="ghost-btn btn-sm adm-refresh" data-action="refresh">${adminIcon('refresh', 15)}<span>Atualizar</span></button></header>
+      <div class="adm-body"><div id="adminMain"><div class="loading">A carregar…</div></div></div>
+    </main>
+    <nav class="adm-bottom">${MOBILE_TABS.map((id) => TABS.find((t) => t.id === id)).map((t) => `<button class="${t.id === state.tab ? 'active' : ''}" data-tab="${t.id}"><span>${adminIcon(t.icon, 18)}</span>${esc(t.label)}</button>`).join('')}
+      <button data-action="open-menu"><span>${adminIcon('menu', 18)}</span>Mais</button></nav>
   </div>`;
 }
 
@@ -783,12 +772,13 @@ function go(tab) {
   loadTab();
 }
 
-/** Update the active category, its sub-tabs and the drawer without rebuilding the shell. */
+/** Update the active nav item and page title without rebuilding the shell. */
 function syncShellChrome() {
-  const cat = groupOf(state.tab);
-  $$('[data-cat]').forEach((el) => el.classList.toggle('active', el.dataset.cat === cat));
-  const sub = $('#admSub'); if (sub) sub.innerHTML = catTabs(cat).map(subBtn).join('');
-  $$('.adm-drawer-nav [data-tab]').forEach((el) => el.classList.toggle('active', el.dataset.tab === state.tab));
+  const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
+  $$('[data-tab]').forEach((el) => {
+    if (el.classList.contains('adm-nav') || el.closest('.adm-bottom')) el.classList.toggle('active', el.dataset.tab === state.tab);
+  });
+  const h1 = $('.adm-top h1'); if (h1) h1.textContent = tab.label;
 }
 
 /** A light placeholder shown the instant a tab opens, so navigation never looks frozen. */
@@ -2121,8 +2111,6 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const tabEl = e.target.closest('[data-tab]');
   if (tabEl) { $('.adm')?.classList.remove('menu-open'); go(tabEl.dataset.tab); return; }
-  const catEl = e.target.closest('[data-cat]');
-  if (catEl) { const cat = catEl.dataset.cat; if (groupOf(state.tab) !== cat) { const first = catTabs(cat)[0]; if (first) go(first.id); } return; }
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
