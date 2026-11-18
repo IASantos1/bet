@@ -149,9 +149,14 @@ export async function resolveBetbyTracker(cfg, event) {
   const c = cacheFor(cfg);
   try { await ensureFresh(c); } catch { /* feed down: fall back */ }
   const ourStart = event.start ? Date.parse(event.start) : NaN;
+  // When we know this sport's BETBY/Betradar id, require the BETBY event to be the SAME sport. This stops a
+  // game matching another sport's fixture by a coincidental team name (which then loads a wrong/empty
+  // tracker — "Widget could not be loaded"). When we don't know the id, fall back to team + time only.
+  const wantSport = SPORT_ID[event.sport];
   let best = null;
   let bestGap = Infinity;
   for (const be of c.events.values()) {
+    if (wantSport && be.desc?.sport != null && String(be.desc.sport) !== wantSport) continue;
     const names = (be.desc?.competitors || []).map((x) => x && x.name).filter(Boolean);
     if (names.length < 2) continue;
     // Either orientation (BETBY's home/away may differ from ours).
