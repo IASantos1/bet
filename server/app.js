@@ -733,11 +733,18 @@ export function createApp(db, {
   // Leagues the operator switched off in the admin (by normalized name). Hidden from the whole site at
   // once, reversibly (nothing is deleted — switching a league back on brings its games straight back).
   const blockedLeagues = () => { const s = getSetting(db, 'leagues.blocked', null); return new Set(Array.isArray(s) ? s.map(leagueKey) : []); };
+  // Hide games whose team names arrive untranslated — in a non-Latin script (Chinese, Japanese, Korean,
+  // Cyrillic, Arabic, Hebrew, Thai…). A Portuguese player can't read them, so they are blocked from the
+  // board automatically. On by default; the admin can turn it off with the setting events.hideForeign=false.
+  const FOREIGN_NAME_RE = /[Ѐ-ӿ֐-׿؀-ۿ฀-๿぀-ヿ㐀-䶿一-鿿가-힯]/;
+  const hideForeign = () => getSetting(db, 'events.hideForeign', true) !== false;
+  const foreignName = (e) => FOREIGN_NAME_RE.test(e.home || '') || FOREIGN_NAME_RE.test(e.away || '');
 
   function loadEvents(where, params = [], order = 'e.start_time ASC', limit = 300, { allMarkets = false } = {}) {
     const all = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     const bl = blockedLeagues();
-    const events = bl.size ? all.filter((e) => !bl.has(leagueKey(e.competition))) : all;
+    const hf = hideForeign();
+    const events = all.filter((e) => (!bl.size || !bl.has(leagueKey(e.competition))) && !(hf && foreignName(e)));
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
@@ -947,7 +954,8 @@ export function createApp(db, {
       AND ${NOT_GONE}`)
       .all(sport, nowIso(), new Date(Date.now() + horizonMs(31)).toISOString(), goneBefore(), unseenBefore());
     const bl = blockedLeagues();
-    return bl.size ? rows.filter((e) => !bl.has(leagueKey(e.competition))) : rows;
+    const hf = hideForeign();
+    return rows.filter((e) => (!bl.size || !bl.has(leagueKey(e.competition))) && !(hf && foreignName(e)));
   };
   // Team badges kept here (teamlogos.js: API-Football asks for its logos not to be fetched each time).
   app.get('/team-logo/:id', (req, res) => {
