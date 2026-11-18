@@ -39,6 +39,13 @@ test('BETBY tracker: team orientation can be swapped', async () => {
   assert.ok(url, 'home/away swapped vs BETBY should still match');
 });
 
+test('BETBY tracker: a cross-sport name coincidence does NOT match', async () => {
+  // BETBY has a SOCCER event (sport "1") for "Giants vs Eagles"; our live game is AMERICAN FOOTBALL.
+  globalThis.fetch = fakeFeeds({ competitors: [{ name: 'Giants' }, { name: 'Eagles' }], sport: '1' });
+  const url = await resolveBetbyTracker({ ...cfg, brandId: 'xsport' }, { sport: 'futebol-americano', home: 'Giants', away: 'Eagles' });
+  assert.equal(url, null, 'same names but different sport must not match');
+});
+
 test('BETBY tracker: a different fixture does not match', async () => {
   globalThis.fetch = fakeFeeds();
   assert.equal(await resolveBetbyTracker({ ...cfg, brandId: 'nomatch' }, { sport: 'futebol', home: 'Sporting', away: 'Braga' }), null);
