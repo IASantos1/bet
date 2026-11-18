@@ -6214,33 +6214,32 @@ function mountLiveWidget() {
   // graph ("Momento do jogo") is shown instead, so a live game is never left with an empty tracker area.
   const native = e?.status === 'live' && e.court && e.sport === 'criquete' ? 'court' : null;
   const betbyOn = e?.status === 'live' && !!state.config?.betby;
-  // While BETBY is still resolving for the first time, show a short "loading" state instead of the pressure
-  // graph — otherwise the graph flashes and is then replaced by the mini-field. Once the first attempt is
-  // done (or a ~2 s grace passes), it settles on the mini-field (if found) or the graph (if not).
-  const betbyWaiting = betbyOn && !native && !m.betbyUrl && !m.betbyDone && !m.betbyGraceOver;
+  // The mini-field is matched on the SERVER (hidden engine) and arrives on the event as `betbyTracker`. The
+  // browser never does the name matching — it only mounts the URL the server locked in.
+  if (betbyOn && !native && e.betbyTracker && !m.betbyUrl) m.betbyUrl = e.betbyTracker;
+  // While the server is still resolving for the first time, show a short "loading" state instead of the
+  // pressure graph — otherwise the graph flashes and is then replaced by the mini-field. After a ~4 s grace
+  // it settles on the graph (the field still appears later if the server resolves it).
+  const betbyWaiting = betbyOn && !native && !m.betbyUrl && !m.betbyGraceOver;
   const kind = e?.status !== 'live' ? null
     : native ? native
       : m.betbyUrl ? 'betby'
         : betbyWaiting ? 'betbyloading'
           : 'momentum';
-  // Ask BETBY for the mini-field for every non-cricket live game. We retry a few times, ~16 s apart: the
-  // feed may still be loading on the first attempt, so a game that does have a tracker still gets matched.
-  if (betbyOn && !native && !m.betbyUrl
-      && (!m.betbyAsked || (Date.now() - (m.betbyAt || 0) > 15000 && (m.betbyTries || 0) < 12))) {
-    const first = !m.betbyAsked;
-    m.betbyAsked = true; m.betbyAt = Date.now(); m.betbyTries = (m.betbyTries || 0) + 1;
+  // On first showing a live game with BETBY on: nudge the server to (re)match now by relaying the public
+  // feed (only a browser can read it), and use the URL it returns for this game at once. Don't hold the
+  // loading state longer than ~4 s.
+  if (betbyOn && !native && !m.betbyUrl && !m.betbyAsked) {
+    m.betbyAsked = true;
     const want = e.id;
-    // Don't hold the "loading" state for long: after ~2 s fall back to the graph while BETBY keeps trying.
-    if (first) setTimeout(() => { if (state.match.id === want && !state.match.betbyUrl && !state.match.betbyDone) { state.match.betbyGraceOver = true; if (currentRoute().page === 'jogo') mountLiveWidget(); } }, 2200);
+    setTimeout(() => { if (state.match.id === want && !state.match.betbyUrl) { state.match.betbyGraceOver = true; if (currentRoute().page === 'jogo') mountLiveWidget(); } }, 4000);
     import('./betby-tracker.js')
-      .then(({ resolveBetbyTracker }) => resolveBetbyTracker(state.config.betby, { sport: e.sport, home: e.home, away: e.away, start: e.startTime || e.start }))
-      .then((url) => {
-        if (state.match.id !== want) return;
-        state.match.betbyDone = true;
-        if (url && !state.match.betbyUrl) state.match.betbyUrl = url;
-        if (currentRoute().page === 'jogo') mountLiveWidget();
+      .then(({ relayBetby }) => relayBetby(state.config.betby))
+      .then((urls) => {
+        if (state.match.id !== want || state.match.betbyUrl) return;
+        if (urls && urls[want]) { state.match.betbyUrl = urls[want]; if (currentRoute().page === 'jogo') mountLiveWidget(); }
       })
-      .catch(() => { if (state.match.id === want) { state.match.betbyDone = true; if (currentRoute().page === 'jogo') mountLiveWidget(); } });
+      .catch(() => {});
   }
   if (!kind) {
     drop3D(); dropCourt3D(); dropBetby();
@@ -6722,17 +6721,14 @@ async function init() {
   boardReq.catch(() => {});
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
-  // BETBY matching engine: keep the feed warm, load the admin alias catalog, and in the background match
-  // every live game to its mini-field and lock the confident ones — so opening a game is instant (no flash).
+  // BETBY feed relay: only a browser can read BETBY's public board (the server gets 503), so in the
+  // background we fetch it and hand it to our server. The hidden server-side engine does ALL the name
+  // matching and locks each game to its mini-field; the browser never sees that logic. Opening a game is
+  // then instant because its `betbyTracker` URL is already resolved on the event.
   if (config?.betby) {
-    const runEngine = () => import('./betby-tracker.js').then((mod) => {
-      mod.setBetbyAliases(config.betby.aliases || []);
-      const live = (state.events || []).filter((e) => e.status === 'live')
-        .map((e) => ({ sport: e.sport, home: e.home, away: e.away, start: e.startTime || e.start }));
-      return live.length ? mod.runBetbyEngine(config.betby, live) : mod.warmBetby(config.betby);
-    }).catch(() => {});
-    runEngine();
-    setInterval(() => { if (!document.hidden) runEngine(); }, 20000);
+    const relay = () => import('./betby-tracker.js').then(({ relayBetby }) => relayBetby(config.betby)).catch(() => {});
+    relay();
+    setInterval(() => { if (!document.hidden) relay(); }, 20000);
   }
   applyCasinoCards(config?.casinoCards);
   applyCasinoArt(config?.casinoArt);

@@ -62,6 +62,7 @@ import {
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
+import { createBetbyEngine } from './betby-engine.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -205,6 +206,17 @@ export function createApp(db, {
 
   // Live 3D court (tennis/cricket): the TheSports widget, embedded. basketball is off (paid widget).
   const theSportsCourt = createTheSportsCourt({ thesportsLive, sportscore, log: (msg) => console.warn(`[court] ${msg}`) });
+  // BETBY mini-field matching engine — the hidden "motor" that evaluates team names server-side and locks a
+  // game to its BETBY tracker. The browser only relays BETBY's public feed (POST /api/betby/feed); the name
+  // evaluation never leaves the server. Off entirely unless BETBY is configured.
+  const betbyEngine = createBetbyEngine();
+  if (betby) betbyEngine.setAliases(getSetting(db, 'betby.aliases', []) || []);
+  // The tracker URL our engine builds for a live game, embedded in the event payload (or undefined when off
+  // / unmatched). Only live games can have a mini-field, so we skip the rest.
+  const betbyTrackerFor = (e) => {
+    if (!betby || e.status !== 'live') return undefined;
+    return betbyEngine.resolve({ tracker: betby.tracker, locale: betby.locale }, { sport: e.sport, home: e.home, away: e.away, start: e.start_time }) || undefined;
+  };
   // How to frame the embedded widget. The widget renders at a FIXED size inside the iframe (`size` = the
   // iframe's height as % of its width); the visible box is a WINDOW over it (`box` = the window's height
   // as % of width) that clips the black band BELOW without resizing the court; `up` slides it to clip the
@@ -418,6 +430,9 @@ export function createApp(db, {
   app.use('/api/admin/skins', express.json({ limit: '16mb' }));
   app.use('/api/admin/banners', express.json({ limit: '36mb' }));
   app.use('/api/admin/spotlights', express.json({ limit: '36mb' }));
+  // The BETBY feed relay: the browser POSTs the current public live board (team names / widgets) for the
+  // engine to match. A full board is larger than the 32 kb default, so this route gets its own limit.
+  app.use('/api/betby/feed', express.json({ limit: '3mb' }));
   app.use('/api', express.json({ limit: '32kb' }));
   // API answers are live data: never kept by the browser, a proxy or the installed app (PWA).
   app.use('/api', (req, res, next) => {
@@ -798,6 +813,9 @@ export function createApp(db, {
         liveTracker: e.status === 'live' && (e.source === 'bzzoiro' || (e.source === 'winhouse' && e.sport === 'futebol' && !!winhouseTracker?.enabled)),
         // A live 3D court (tennis / basketball / cricket) is available for this game (TheSports feed).
         court: theSportsCourt.covers(e),
+        // The BETBY mini-field tracker URL our hidden engine resolved for this live game (undefined when off
+        // or not yet matched). The browser just mounts it — it never does the name matching itself.
+        betbyTracker: betbyTrackerFor(e),
         // Live video on WinHouse for this game (the TV filter and the play button).
         stream: e.status === 'live' && e.source === 'winhouse' && !!winhouseFeed?.streamOf?.(e.external_id).has,
       };
@@ -895,7 +913,9 @@ export function createApp(db, {
       rapidKey: !!rapidStream,
       // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
       // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
-      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: { ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) }, aliases: ((() => { const a = getSetting(db, 'betby.aliases', null); return Array.isArray(a) ? a : []; })()) } : null,
+      // Only what the browser needs to FETCH and relay the public BETBY feed — never the matching logic or
+      // the name catalog (those stay server-side in the engine).
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: { ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) } } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
@@ -1222,6 +1242,21 @@ export function createApp(db, {
       }
       res.json({ success: true, streams });
     } catch (err) { next(err); }
+  });
+
+  // BETBY feed relay. The Railway server gets 503 from BETBY, so the browser fetches the public per-brand
+  // board and POSTs it here as { events: {id:{sport,scheduled,names}}, widgets: {id:[...]} }. The hidden
+  // engine evaluates the names against our live games and locks the confident ones. No odds, no markets —
+  // just "which BETBY event is this game". Returns the resolved tracker URLs for the live board right away.
+  app.post('/api/betby/feed', (req, res) => {
+    if (!betby) return res.status(404).json({ error: 'betby off' });
+    try {
+      betbyEngine.ingest(req.body || {});
+      const live = loadEvents("e.status = 'live'");
+      const urls = betbyEngine.urlsFor({ tracker: betby.tracker, locale: betby.locale },
+        live.map((e) => ({ id: e.id, sport: e.sport, home: e.home, away: e.away, start: e.startTime })));
+      res.json({ ok: true, urls });
+    } catch (err) { res.status(400).json({ error: String(err && err.message || err) }); }
   });
 
   // Server-sent events for a live match: score/clock/stats, ball position, actions and odds changes.
@@ -3210,6 +3245,7 @@ export function createApp(db, {
       if (clean.length >= 2000) break;
     }
     setSetting(db, 'betby.aliases', clean);
+    betbyEngine.setAliases(clean); // the engine picks up the new catalog at once
     res.json({ aliases: clean });
   });
 
