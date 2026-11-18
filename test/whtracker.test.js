@@ -83,6 +83,10 @@ test('real widget-data: sc counts are stats (not events), H1 is the half-time sc
   assert.equal(clockFrom(1500, 'First Half', 'live'), "25'");
   assert.equal(clockFrom(2820, 'First Half', 'live'), "45+2'");
   assert.equal(clockFrom(2700, 'Half Time', 'live'), 'Intervalo');
+  // Extra time (prolongamento) reads clearly, not as a misleading "90+15'".
+  assert.equal(clockFrom(6300, 'Extra Time', 'live'), "Prol. 105'");
+  assert.equal(clockFrom(null, 'Extra Time First Half', 'live'), 'Prolongamento');
+  assert.equal(clockFrom(null, 'Penalties', 'live'), 'Pénaltis');
 });
 
 test('the tracker WebSocket moves the ball every frame; widget-data keeps the rest', async () => {

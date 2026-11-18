@@ -1085,6 +1085,22 @@ test('a game WinHouse still lists after it ended: clock stopped past full time, 
   assert.match(listedButOver({ sport: 'basquetebol', minutes: 40 }, { liveSince: now - 4 * 3_600_000, now }), /ao vivo há/);
 });
 
+test('a knockout level at full time keeps playing into extra time (prolongamento), not killed at 90\'', () => {
+  const now = Date.now();
+  // A cup tie level 1-1: the clock sits at 90' through the break before extra time.
+  const cupLevel = { sport: 'futebol', minutes: 90, competition: 'Spain. Copa del Rey', homeScore: 1, awayScore: 1 };
+  assert.equal(listedButOver(cupLevel, { clock: { minute: 90, since: now - 12 * 60_000 }, now }), null, 'level cup tie at 90\' holds for extra time');
+  assert.match(listedButOver(cupLevel, { clock: { minute: 90, since: now - 22 * 60_000 }, now }), /parado em 90/, 'but not forever — over after the long grace');
+  // A decided cup tie (not level) ends at 90' as usual.
+  const cupDecided = { sport: 'futebol', minutes: 90, competition: 'Spain. Copa del Rey', homeScore: 2, awayScore: 1 };
+  assert.match(listedButOver(cupDecided, { clock: { minute: 90, since: now - 11 * 60_000 }, now }), /parado em 90/, 'a decided cup tie still ends at 90\'');
+  // A league draw at 90' is over as usual (no extra time in a league).
+  const leagueDraw = { sport: 'futebol', minutes: 90, competition: 'Spain. La Liga', homeScore: 1, awayScore: 1 };
+  assert.match(listedButOver(leagueDraw, { clock: { minute: 90, since: now - 11 * 60_000 }, now }), /parado em 90/, 'a league draw still ends at 90\'');
+  // Once extra time is running (clock past 90') the game is live as before.
+  assert.equal(listedButOver({ sport: 'futebol', minutes: 105, competition: 'Spain. Copa del Rey', homeScore: 1, awayScore: 1 }, { clock: { minute: 105, since: now - 60_000 }, now }), null);
+});
+
 test('live: a finished game WinHouse keeps listing (clock past 125\') is closed and settled', async () => {
   const lists = { live: [football(7, 88, '1-0', ODD)] };
   const t = setupFeed(lists);

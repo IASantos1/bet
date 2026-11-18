@@ -952,6 +952,11 @@ export function cappedClock(sport, clock, startIso, now = Date.now()) {
 const FULL_TIME = { futebol: 90, futsal: 40, andebol: 60, hoquei: 60 };
 const FROZEN_MS = { futebol: 10 * 60_000, futsal: 15 * 60_000, andebol: 10 * 60_000, hoquei: 15 * 60_000 };
 const MAX_MINUTE = { futebol: 125, futsal: 60, andebol: 80 };
+// A knockout tie level at full time goes to extra time (prolongamento). The clock sits at 90' through the
+// break before it, so a level game in a cup / final / qualification keeps a longer grace there — otherwise
+// it is killed as "over" just as it should enter extra time. League draws (not knockout) still settle at 90'.
+const EXTRA_TIME_BREAK_MS = 20 * 60_000;
+const KNOCKOUT_RE = /\b(cup|copa|coppa|coupe|pokal|beker|kup[ae]?|puchar|ta[cç]a|supercup|super\s*cup|superta[cç]a|play\s*-?\s*off|playoffs?|knock\s*-?\s*out|final|finals|semif|quarterf|qualif|eliminat|promotion|relegation|libertadores|sudamericana|champions|europa|conference|afc|caf|concacaf|uefa|copa del rey|dfb)\b/i;
 const MAX_LIVE_MS = { futebol: 3 * 3_600_000, tenis: 6 * 3_600_000 };
 const MAX_LIVE_DEFAULT_MS = 3.5 * 3_600_000;
 
@@ -984,7 +989,12 @@ export function listedButOver(ev, { clock = null, liveSince = null, score = null
   }
   if (Number.isFinite(m) && MAX_MINUTE[ev.sport] && m > MAX_MINUTE[ev.sport]) return `relógio em ${Math.floor(m)}'`;
   if (Number.isFinite(m) && FULL_TIME[ev.sport] && m >= FULL_TIME[ev.sport] && clock && clock.minute === m && now - clock.since >= FROZEN_MS[ev.sport]) {
-    return `relógio parado em ${Math.floor(m)}' há ${Math.round((now - clock.since) / 60_000)} min`;
+    // A knockout level at ~90' is heading into extra time: hold the game through the break instead of
+    // declaring it over. Once extra time begins the clock moves past 90' and this no longer applies.
+    const maybeExtraTime = ev.sport === 'futebol' && m >= FULL_TIME.futebol && m < FULL_TIME.futebol + 3
+      && Number.isInteger(h) && Number.isInteger(a) && h === a && KNOCKOUT_RE.test(ev.competition || '');
+    const grace = maybeExtraTime ? EXTRA_TIME_BREAK_MS : FROZEN_MS[ev.sport];
+    if (now - clock.since >= grace) return `relógio parado em ${Math.floor(m)}' há ${Math.round((now - clock.since) / 60_000)} min`;
   }
   if (liveSince && now - liveSince > (MAX_LIVE_MS[ev.sport] ?? MAX_LIVE_DEFAULT_MS)) return `ao vivo há ${Math.round((now - liveSince) / 60_000)} min`;
   return null;

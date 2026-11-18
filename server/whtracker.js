@@ -284,10 +284,21 @@ const XY_HOLD_MS = 5_000;
  * The match clock from the tracker's timer (seconds played): "67'", or "45+2'" / "90+3'" in
  * added time; "Intervalo" at half time. null when there is no timer.
  */
+// Extra time (prolongamento) and penalties, named in English or Portuguese by WinHouse's status/period.
+const EXTRA_TIME = /extra|overtime|\bot\b|\bet\b|\baet\b|prolong/i;
+const PENALTIES = /penalt|shoot.?out|\bpens?\b|grandes penal|desempate por/i;
+
 export function clockFrom(timer, period, status, length = 90) {
   // timer = seconds played (5469 → 91 minutes → "90+1'").
   const s = `${status ?? ''} ${period ?? ''}`.toLowerCase();
-  if (/half.?time|interval|break|\bht\b/.test(s)) return 'Intervalo';
+  if (PENALTIES.test(s)) return 'Pénaltis';
+  if (/half.?time|interval|break|\bht\b/.test(s) && !EXTRA_TIME.test(s)) return 'Intervalo';
+  // Extra time: the clock continues past 90'. Show it with a "Prol." prefix so it reads as prolongamento,
+  // never the misleading "90+15'" the second-half formula would give.
+  if (EXTRA_TIME.test(s)) {
+    if (timer === null || timer === undefined || !Number.isFinite(Number(timer)) || Number(timer) < 0) return 'Prolongamento';
+    return `Prol. ${Math.floor(Number(timer) / 60)}'`;
+  }
   if (timer === null || timer === undefined || !Number.isFinite(Number(timer)) || Number(timer) < 0) return null;
   const min = Math.floor(Number(timer) / 60);
   const half = length / 2;
@@ -295,10 +306,12 @@ export function clockFrom(timer, period, status, length = 90) {
   const end = second ? length : half;
   if (!second && !/1|first/i.test(String(period ?? ''))) return `${min}'`;
   return min > end ? `${end}+${min - end}'` : `${min}'`;
-}
+};
 
 const PERIOD_LABEL = (p, status) => {
   const s = `${status ?? ''} ${p ?? ''}`.toLowerCase();
+  if (PENALTIES.test(s)) return 'Pénaltis';
+  if (EXTRA_TIME.test(s)) return 'Prolongamento';
   if (/half.?time|interval|break|ht\b/.test(s)) return 'Intervalo';
   if (/2|second/i.test(String(p ?? ''))) return '2.ª parte';
   if (/1|first/i.test(String(p ?? ''))) return '1.ª parte';
