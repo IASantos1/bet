@@ -89,7 +89,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false },
+  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -4918,7 +4918,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D(); dropCourt3D(); dropBetby();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -6211,6 +6211,23 @@ function sizeBetbyFrame(frame) {
   const w = turf ? turf.clientWidth : frame.clientWidth;
   if (w > 0) frame.style.height = `${Math.round(0.72 * w + 150)}px`;
 }
+// The exact height differs by sport (basketball's field is wide and short, tennis' is tall, each has its
+// own scoreboard). The formula above is only a first guess; the tracker page itself knows its real content
+// height and posts it. We listen for that message (only from the tracker's own origin) and use it, so every
+// sport fits with no cropping and no wasted space. If the tracker never posts, the formula stands.
+function betbyTrackerOrigin() {
+  try { return new URL(state.config?.betby?.tracker || '').origin; } catch { return null; }
+}
+function betbyMsgHeight(data) {
+  if (typeof data === 'number') return data;
+  if (data && typeof data === 'object') return Number(data.height ?? data.frameHeight ?? data.scrollHeight ?? data?.payload?.height ?? NaN);
+  if (typeof data === 'string' && /height/i.test(data)) {
+    try { const o = JSON.parse(data); const h = Number(o.height ?? o.frameHeight ?? NaN); if (Number.isFinite(h)) return h; } catch { /* not JSON */ }
+    const m = data.match(/(\d{3,4})/);
+    return m ? Number(m[1]) : NaN;
+  }
+  return NaN;
+}
 function ensureBetbySize() {
   const m = state.match;
   const frame = m.widget && $('#betbyFrame', m.widget);
@@ -6218,14 +6235,24 @@ function ensureBetbySize() {
   sizeBetbyFrame(frame);
   m.betbyRO?.disconnect();
   if (typeof ResizeObserver === 'function') {
-    m.betbyRO = new ResizeObserver(() => sizeBetbyFrame(frame));
+    m.betbyRO = new ResizeObserver(() => { if (!m.betbySized) sizeBetbyFrame(frame); });
     m.betbyRO.observe(frame.parentElement || frame);
   }
+  if (m.betbyMsg) window.removeEventListener('message', m.betbyMsg);
+  const origin = betbyTrackerOrigin();
+  m.betbyMsg = (ev) => {
+    if (!origin || ev.origin !== origin || state.match.widget !== m.widget) return;
+    const h = betbyMsgHeight(ev.data);
+    if (Number.isFinite(h) && h > 150 && h < 2400) { m.betbySized = true; frame.style.height = `${Math.round(h)}px`; }
+  };
+  window.addEventListener('message', m.betbyMsg);
 }
 function dropBetby() {
   const m = state.match;
   m.betbyRO?.disconnect();
   m.betbyRO = null;
+  if (m.betbyMsg) { window.removeEventListener('message', m.betbyMsg); m.betbyMsg = null; }
+  m.betbySized = false;
 }
 
 // ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------
