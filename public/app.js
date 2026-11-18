@@ -5199,7 +5199,7 @@ function matchPage(sub) {
     </section>
     <div class="match-views">
       ${live ? `<button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
-      ${(e.liveTracker || e.court || (e.sport === 'tenis' && TENNIS_COURT)) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
+      ${(e.liveTracker || e.court || (e.sport === 'tenis' && TENNIS_COURT) || (state.config?.betby && (state.config.betby.all !== false || m.betbyUrl))) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
       <button class="${m.tab === 'estatisticas' ? 'active' : ''}" data-match-tab="${m.tab === 'estatisticas' ? 'mercados' : 'estatisticas'}" title="${m.tab === 'estatisticas' ? 'Voltar aos mercados' : 'Estatísticas do jogo'}">${ICON_STATS}<span>Estatísticas</span></button>
     </div>
     ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
@@ -6156,14 +6156,21 @@ function mountLiveWidget() {
   }
   // Leaving the video: the trial player stops (no stream left downloading in the background).
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
-  const kind = e?.status !== 'live' ? null
+  // The native widget for this live match (WinHouse 3D pitch / court / tennis), or null for sports with none.
+  const native = e?.status !== 'live' ? null
     : e.liveTracker ? 'football'
       : e.court ? 'court'
-        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis'
-          : m.betbyUrl ? 'betby' : null;
-  // No native widget for this live match: ask BETBY (once) for a mini-field. Purely additive — if it finds
-  // nothing, the screen stays exactly as it is now. Only runs when the server enabled it (BETBY_BRAND_ID).
-  if (!kind && e?.status === 'live' && state.config?.betby && !m.betbyAsked) {
+        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis' : null;
+  // With BETBY on in "all" mode, BETBY is the mini-field for every sport and the native widget is only a
+  // reserve: once BETBY resolves a tracker for this game it wins; if it finds nothing, the native widget
+  // (or nothing, as before) stays. In fill mode BETBY only covers sports with no native widget.
+  const betbyOn = e?.status === 'live' && !!state.config?.betby;
+  const betbyAll = betbyOn && state.config.betby.all !== false;
+  const kind = e?.status !== 'live' ? null
+    : m.betbyUrl ? 'betby'
+      : native;
+  // Ask BETBY once per match: for any live game in "all" mode, or only gap sports in fill mode.
+  if (betbyOn && !m.betbyAsked && (betbyAll || !native)) {
     m.betbyAsked = true;
     const want = e.id;
     import('./betby-tracker.js')
