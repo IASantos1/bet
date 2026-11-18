@@ -153,6 +153,34 @@ export function createBetbyEngine() {
       aliases = m;
     },
 
+    /** Diagnostic: the top BETBY candidates for our game (no threshold), each with its score and whether it
+     *  carries a mini-field widget. Lets an operator see the exact BETBY name to pin in the catalog. */
+    candidates(event, n = 3) {
+      if (!event || !event.home || !event.away) return [];
+      const home = alias(event.home), away = alias(event.away);
+      const ourStart = event.start ? Date.parse(event.start) : NaN;
+      const out = [];
+      for (const be of events.values()) {
+        const beSport = be.sport != null ? SPORT_BY_ID[String(be.sport)] : undefined;
+        if (beSport && event.sport && beSport !== event.sport) continue;
+        const names = Array.isArray(be.names) ? be.names.filter(Boolean) : [];
+        if (names.length < 2) continue;
+        const sh = scoreTeams(home, names[0]), sa = scoreTeams(away, names[1]);
+        const xh = scoreTeams(home, names[1]), xa = scoreTeams(away, names[0]);
+        const straight = Math.min(sh, sa), swap = Math.min(xh, xa);
+        const [minSide, avg, swapped] = straight >= swap ? [straight, (sh + sa) / 2, false] : [swap, (xh + xa) / 2, true];
+        const bbStart = be.scheduled ? be.scheduled * 1000 : NaN;
+        const gapH = Number.isFinite(ourStart) && Number.isFinite(bbStart) ? Math.round(Math.abs(ourStart - bbStart) / 3_600_000) : null;
+        out.push({
+          home: swapped ? names[1] : names[0], away: swapped ? names[0] : names[1],
+          score: Math.round(avg * 100) / 100, minSide: Math.round(minSide * 100) / 100,
+          hasWidget: !!statscoreId(widgets.get(be.id)), gapH,
+        });
+      }
+      out.sort((a, b) => b.score - a.score);
+      return out.slice(0, n);
+    },
+
     status() { return { feedAt, events: events.size, widgets: widgets.size, locked: [...resolved.values()].filter((r) => r.url).length }; },
   };
 }

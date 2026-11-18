@@ -95,6 +95,17 @@ test('engine: the admin alias catalog pins a name that would not auto-match', ()
   assert.ok(eng2.resolve(cfg, { sport: 'futebol', home: 'Encarnados', away: 'Porto' }), 'the alias pins the mini-field');
 });
 
+test('engine: candidates exposes the closest BETBY name and score for the catalog (even below threshold)', () => {
+  const eng = createBetbyEngine();
+  eng.ingest(snapshot({ names: ['RCD Mallorca', 'Villarreal CF'] }));
+  // Our board writes "Mallorca" vs a mismatching opponent — the pair won't auto-bind, but the diagnostic
+  // must still surface "RCD Mallorca" as the closest candidate so the operator can pin it.
+  const cand = eng.candidates({ sport: 'futebol', home: 'Mallorca', away: 'Getafe' }, 1);
+  assert.equal(cand.length, 1);
+  assert.equal(cand[0].home, 'RCD Mallorca');
+  assert.ok(cand[0].score > 0 && cand[0].hasWidget === true);
+});
+
 test('engine: urlsFor returns a map keyed by our event id', () => {
   const eng = createBetbyEngine();
   eng.ingest(snapshot());

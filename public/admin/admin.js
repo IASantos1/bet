@@ -917,15 +917,18 @@ async function loadTab() {
       const crop = await api('/api/admin/court-crop').catch(() => null);
       const betbySize = await api('/api/admin/betby-size').catch(() => null);
       const betbyAliases = await api('/api/admin/betby-aliases').catch(() => null);
-      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '') + (betbySize?.enabled ? adminBetbySize(betbySize) : '') + (betbyAliases?.enabled ? adminBetbyAliases(betbyAliases) : '');
+      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '') + (betbySize?.enabled ? adminBetbySize(betbySize) : '') + (betbyAliases?.enabled ? adminBetbyAliases(betbyAliases) : '') + (betbyAliases?.enabled ? adminBetbyEngine() : '');
       applyCourtCropVars();
-      // While the tab is open, refresh the live table every 2 s.
+      if (betbyAliases?.enabled) refreshBetbyEngine();
+      // While the tab is open, refresh the live table every 2 s (and the BETBY engine diagnostic ~every 15 s).
+      let beTick = 0;
       liveTimer = setInterval(async () => {
         if (state.tab !== 'thesports') { clearInterval(liveTimer); return; }
         try {
           const d = await api('/api/admin/thesports'); lastTheSports = d; const box = $('#tsLive'); if (box) box.innerHTML = theSportsLive(d);
           if (tsCourt && tsCourtId) { const m = (d.games || []).find((x) => x.id === tsCourtId); if (m) { if (m.ball) tsCourt.setBall(m.ball); const nm = $('#tsCourtName'); if (nm) nm.textContent = `Jogo ${tsCourtId}${m.score ? ` · ${m.score}` : ''}`; } }
         } catch { /* keep last */ }
+        if ($('#betbyEngine') && (beTick++ % 8 === 0)) refreshBetbyEngine();
       }, 2000);
     }
     else if (tab === 'casino') {
@@ -1318,6 +1321,42 @@ function adminBetbyAliases(d) {
       <span class="muted bs-msg" id="alMsg"></span>
     </div>
   </div>`;
+}
+
+// ---------- BETBY engine diagnostic: which live games matched, and the closest BETBY name (to catalog) ----------
+function adminBetbyEngine() {
+  return `<div class="panel betby-engine" id="betbyEngine">
+    <div class="section-head"><h2>Minicampo BETBY — diagnóstico do motor</h2></div>
+    <p class="muted">O motor compara os nomes no servidor. Aqui vê, para cada jogo ao vivo, se o minicampo <b>casou</b> e qual o <b>nome mais próximo na BETBY</b> com a sua pontuação — se não casou, copie o nome da BETBY para o catálogo acima. Precisa que o feed da BETBY esteja a chegar (o site ao vivo aberto num separador ajuda).</p>
+    <div id="beStatus" class="muted">A carregar…</div>
+    <div id="beList"></div>
+  </div>`;
+}
+async function refreshBetbyEngine() {
+  const status = $('#beStatus'); if (!status) return;
+  // Feed the engine from this admin browser too (only a browser can read BETBY's public feed).
+  try {
+    const d0 = await api('/api/admin/betby-engine');
+    if (d0?.relay?.base) await import('/betby-tracker.js').then(({ relayBetby }) => relayBetby({ ...d0.relay, tracker: '' })).catch(() => {});
+  } catch { /* ignore */ }
+  let d;
+  try { d = await api('/api/admin/betby-engine'); } catch { if (status) status.textContent = 'Indisponível.'; return; }
+  if (!$('#beStatus')) return; // tab changed
+  const s = d.status || {};
+  const age = d.feedAgeSec == null ? 'sem feed ainda' : `feed há ${d.feedAgeSec}s`;
+  $('#beStatus').innerHTML = `${age} · ${s.events || 0} jogos na BETBY · ${s.locked || 0} travados`;
+  const games = d.games || [];
+  const row = (g) => {
+    const c = g.candidate;
+    const cand = c ? `${esc(c.home)} × ${esc(c.away)} <b class="be-score">${Math.round(c.score * 100)}%</b>${c.hasWidget ? '' : ' <span class="muted">(sem campo)</span>'}` : '<span class="muted">nenhum</span>';
+    const pin = c && !g.matched ? `<button class="primary-btn btn-sm" data-action="betby-pin-cand" data-from="${esc(g.home)}" data-to="${esc(c.home)}">Fixar</button>` : '';
+    return `<div class="be-row ${g.matched ? 'ok' : 'no'}">
+      <span class="be-mark">${g.matched ? '✓' : '—'}</span>
+      <span class="be-game">${esc(g.home)} × ${esc(g.away)} <i class="muted">${esc(g.sport)}</i></span>
+      <span class="be-cand">${cand}</span>${pin}
+    </div>`;
+  };
+  $('#beList').innerHTML = games.length ? games.map(row).join('') : '<p class="muted">Nenhum jogo ao vivo agora.</p>';
 }
 
 // ---------- league manager: switch leagues on/off (hidden site-wide, reversibly) ----------
@@ -2314,6 +2353,15 @@ document.addEventListener('click', async (e) => {
   }
   if (action === 'betby-alias-add') {
     const list = $('#alList'); if (list) list.insertAdjacentHTML('beforeend', aliasRow());
+    return;
+  }
+  if (action === 'betby-pin-cand') {
+    const list = $('#alList');
+    if (list) {
+      list.insertAdjacentHTML('beforeend', aliasRow({ from: actionEl.dataset.from, to: actionEl.dataset.to }));
+      $('#betbyAliases')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      toast('Nome adicionado ao catálogo', 'Clique Guardar para aplicar');
+    }
     return;
   }
   if (action === 'betby-alias-del') {

@@ -939,3 +939,15 @@
   .betby-aliases .al-from { grid-area: from; } .betby-aliases .al-to { grid-area: to; }
   .betby-aliases .al-arrow { grid-area: arrow; } .betby-aliases .icon-btn { grid-area: del; }
 }
+.betby-engine .be-row { display: grid; grid-template-columns: 20px minmax(0, 1.1fr) minmax(0, 1.4fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; }
+.betby-engine .be-row.no { background: rgba(255, 122, 122, 0.08); }
+.betby-engine .be-row.ok { background: rgba(95, 212, 122, 0.08); }
+.betby-engine .be-mark { text-align: center; font-weight: 800; }
+.betby-engine .be-row.ok .be-mark { color: #5fd47a; } .betby-engine .be-row.no .be-mark { color: #ff9a5f; }
+.betby-engine .be-game i { font-style: normal; font-size: 12px; margin-left: 6px; }
+.betby-engine .be-score { font-variant-numeric: tabular-nums; color: #ffd166; }
+@media (max-width: 760px) {
+  .betby-engine .be-row { grid-template-columns: 20px 1fr auto; grid-template-areas: "mark game pin" "cand cand cand"; }
+  .betby-engine .be-mark { grid-area: mark; } .betby-engine .be-game { grid-area: game; }
+  .betby-engine .be-cand { grid-area: cand; } .betby-engine [data-action="betby-pin-cand"] { grid-area: pin; }
+}

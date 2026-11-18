@@ -3249,6 +3249,23 @@ export function createApp(db, {
     res.json({ aliases: clean });
   });
 
+  // BETBY engine diagnostic: for each live game, whether the mini-field matched, and the closest BETBY
+  // candidate with its score — so the operator sees the exact BETBY name to pin in the catalog, and whether
+  // the feed is even arriving. Read-only; the feed snapshot comes from real visitors relaying it.
+  admin.get('/betby-engine', (_req, res) => {
+    if (!betby) return res.json({ enabled: false });
+    const st = betbyEngine.status();
+    const live = loadEvents("e.status = 'live'");
+    const games = live.map((e) => {
+      const ev = { sport: e.sport, home: e.home, away: e.away, start: e.startTime };
+      const url = betbyEngine.resolve({ tracker: betby.tracker, locale: betby.locale }, ev);
+      const cand = betbyEngine.candidates(ev, 1)[0] || null;
+      return { id: e.id, sport: e.sport, home: e.home, away: e.away, matched: !!url, candidate: cand };
+    }).sort((a, b) => (a.matched - b.matched) || a.sport.localeCompare(b.sport));
+    res.json({ enabled: true, status: st, feedAgeSec: st.feedAt ? Math.round((Date.now() - st.feedAt) / 1000) : null,
+      relay: { base: betby.baseUrl, brandId: betby.brandId, locale: betby.locale }, games });
+  });
+
   // League manager: every league with games now (per sport), and which are switched off. Blocking hides
   // a league's games site-wide at once, reversibly (nothing is deleted; switch it back on and they return).
   const LEAGUE_WOMEN = /\b(wom[ae]n|women|femin|femen|f[ée]mini|damen|frauen|ladies|mulheres|wta)\b|\(w\)|\(f\)/i;
