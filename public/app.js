@@ -6205,7 +6205,8 @@ function mountLiveWidget() {
 // The BETBY tracker iframe stacks a scoreboard, the field and an icon bar. The field is about 0.7×width
 // tall; the scoreboard and icon bar are fixed bands. We size the iframe to fit all three with a little
 // headroom so the bottom line of the field is never cut off, and keep it in step as the column resizes.
-// A size the admin set for this sport (height as % of the natural size), or null for the default.
+// The size for this sport (height as % of the natural size), from the server (per-sport defaults merged with
+// the admin's own values), or null for the plain formula. A flat field like tennis needs less than 100%.
 function betbySizePct() {
   const sport = state.match.data?.sport;
   const sizes = state.config?.betby?.sizes || {};

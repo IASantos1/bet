@@ -87,6 +87,8 @@ const REF_COOKIE = 'b62_ref'; // the referral code a visitor arrived with (affil
 const REF_DAYS = 30;
 const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'voleibol', 'andebol', 'futsal', 'tenismesa', 'badminton',
   'futamericano', 'basebol', 'raguebi', 'criquete', 'boxe', 'mma'];
+// BETBY mini-field height per sport, as a % of the natural size: sports with a flat field need less height.
+const BETBY_SIZE_DEFAULTS = { tenis: 76, tenismesa: 80, badminton: 84, voleibol: 88 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // ---------- helpers ----------
@@ -886,7 +888,7 @@ export function createApp(db, {
       rapidKey: !!rapidStream,
       // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
       // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
-      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: (() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })() } : null,
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: { ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) } } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
@@ -3170,7 +3172,9 @@ export function createApp(db, {
   // BETBY mini-field size, per sport: a height as a % of the natural size (100 = default). Tennis and
   // basketball fields have different shapes, so each sport can be tuned on its own. Only used when BETBY on.
   const BETBY_SIZE_SPORTS = [['futebol', 'Futebol'], ['basquetebol', 'Basquete'], ['tenis', 'Ténis'], ['voleibol', 'Voleibol'], ['andebol', 'Andebol'], ['hoquei', 'Hóquei'], ['tenismesa', 'Ténis de mesa'], ['badminton', 'Badminton'], ['futamericano', 'Futebol americano'], ['basebol', 'Basebol'], ['criquete', 'Críquete'], ['dardos', 'Dardos']];
-  const betbySizes = () => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; };
+  // Per-sport starting heights: a flat field (tennis, table tennis, badminton, volleyball) needs less than
+  // 100% of the formula or it leaves a white strip below. The admin can override any of these.
+  const betbySizes = () => ({ ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) });
   admin.get('/betby-size', (_req, res) => res.json({ sizes: betbySizes(), sports: BETBY_SIZE_SPORTS, enabled: !!betby }));
   admin.post('/betby-size', (req, res) => {
     const body = req.body || {};
