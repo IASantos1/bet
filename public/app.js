@@ -5199,7 +5199,7 @@ function matchPage(sub) {
     </section>
     <div class="match-views">
       ${live ? `<button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
-      ${(e.liveTracker || e.court || (e.sport === 'tenis' && TENNIS_COURT) || (state.config?.betby && (state.config.betby.all !== false || m.betbyUrl))) ? `<button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}` : ''}
+      <button class="${m.view !== 'stream' ? 'active' : ''}" data-match-view="tracker" title="Tracker">${ICON_PITCH}<span>Tracker</span></button>` : ''}
       <button class="${m.tab === 'estatisticas' ? 'active' : ''}" data-match-tab="${m.tab === 'estatisticas' ? 'mercados' : 'estatisticas'}" title="${m.tab === 'estatisticas' ? 'Voltar aos mercados' : 'Estatísticas do jogo'}">${ICON_STATS}<span>Estatísticas</span></button>
     </div>
     ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
@@ -5924,9 +5924,8 @@ function momentumSeries(a, e) {
   return { out, top };
 }
 
-function ldMomentum(a, e) {
-  if (!(a?.momentum || []).length && !ldStat('possession')) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
-  // The whole match on one axis: 0' → HT (45') → 90', continuous from the kick-off (no 1.ª/2.ª selector).
+// Just the chart (0' → HT → 90'), reused by the stats card and by the tracker fallback (momentumWidget).
+function momentumSvg(a, e) {
   const { out, top } = momentumSeries(a, e);
   const X = (m) => 30 + (m / 90) * 360;
   const bw = 360 / 92;
@@ -5936,10 +5935,16 @@ function ldMomentum(a, e) {
   }).join('');
   const htX = X(45).toFixed(1);
   const tick = (m, label, anchor) => `<text x="${X(m).toFixed(1)}" y="88" class="ld-tick"${anchor ? ` text-anchor="${anchor}"` : ''}>${label}</text>`;
-  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
-    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>
+  return `<svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>
       <line x1="${htX}" y1="6" x2="${htX}" y2="74" class="ld-ht"/>${bars}
-      ${tick(0, "0'")}${tick(45, 'HT', 'middle')}${tick(90, "90'", 'end')}</svg>
+      ${tick(0, "0'")}${tick(45, 'HT', 'middle')}${tick(90, "90'", 'end')}</svg>`;
+}
+
+function ldMomentum(a, e) {
+  if (!(a?.momentum || []).length && !ldStat('possession')) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
+  // The whole match on one axis: 0' → HT (45') → 90', continuous from the kick-off (no 1.ª/2.ª selector).
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
+    ${momentumSvg(a, e)}
     <p class="ld-note">Quem está a pressionar, do apito inicial ao fim — ataques, ataques perigosos, remates e cantos.</p></div>`;
 }
 
@@ -6151,6 +6156,26 @@ function betbyWidget(e) {
   </div>`;
 }
 
+// Fallback for a live game with no mini-field (no BETBY tracker and no cricket court): the team names and
+// score up top, and the "Momento do jogo" pressure graph below, so there's always a live read of the game.
+function momentumWidget(e) {
+  return `<div class="trk trk-mom-card" data-kind="momentum">
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
+      <span class="trk-score"><b id="momHomeScore">${e.homeScore ?? 0}</b><span>-</span><b id="momAwayScore">${e.awayScore ?? 0}</b><small id="momClock">${esc(e.clock || '')}</small></span>
+      <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
+    <div class="trk-mom" id="trkMom">${momentumSvg(state.match.analytics, e)}</div>
+    <p class="trk-note">Momento do jogo — quem está a pressionar, do apito ao fim.</p>
+  </div>`;
+}
+function ensureMomentum() {
+  const m = state.match, w = m.widget, e = m.data;
+  if (!w || m.widgetKind !== 'momentum' || !e) return;
+  const host = $('#trkMom', w);
+  if (host) host.innerHTML = momentumSvg(m.analytics, e);
+  const set = (id, v) => { const el = $(id, w); if (el) el.textContent = v; };
+  set('#momHomeScore', e.homeScore ?? 0); set('#momAwayScore', e.awayScore ?? 0); set('#momClock', e.clock || '');
+}
+
 /** Mounts / moves the widget for the current match into the right slot. */
 function mountLiveWidget() {
   const m = state.match;
@@ -6175,23 +6200,19 @@ function mountLiveWidget() {
   }
   // Leaving the video: the trial player stops (no stream left downloading in the background).
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
-  // The native widget for this live match (WinHouse 3D pitch / court / tennis), or null for sports with none.
-  const native = e?.status !== 'live' ? null
-    : e.liveTracker ? 'football'
-      : e.court ? 'court'
-        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis' : null;
-  // With BETBY on in "all" mode, BETBY is the mini-field for every sport and the native widget is only a
-  // reserve: once BETBY resolves a tracker for this game it wins; if it finds nothing, the native widget
-  // (or nothing, as before) stays. In fill mode BETBY only covers sports with no native widget.
+  // Cricket keeps its live SportScore court. Football, tennis and every other sport use the BETBY mini-field;
+  // the WinHouse 3D pitch and the tennis court are off. When BETBY has no tracker for the game, the pressure
+  // graph ("Momento do jogo") is shown instead, so a live game is never left with an empty tracker area.
+  const native = e?.status === 'live' && e.court && e.sport === 'criquete' ? 'court' : null;
   const betbyOn = e?.status === 'live' && !!state.config?.betby;
-  const betbyAll = betbyOn && state.config.betby.all !== false;
   const kind = e?.status !== 'live' ? null
-    : m.betbyUrl ? 'betby'
-      : native;
-  // Ask BETBY for the mini-field (every sport in "all" mode, or only gap sports in fill mode). We retry a
-  // few times, ~16 s apart: the BETBY feed may still be loading on the first attempt, so a game that does
-  // have a tracker still gets matched instead of being given up on after a single early miss.
-  if (betbyOn && !m.betbyUrl && (betbyAll || !native)
+    : native ? native
+      : m.betbyUrl ? 'betby'
+        : 'momentum';
+  // Ask BETBY for the mini-field for every non-cricket live game. We retry a few times, ~16 s apart: the
+  // BETBY feed may still be loading on the first attempt, so a game that does have a tracker still gets
+  // matched instead of being given up on after a single early miss (the pressure graph shows meanwhile).
+  if (betbyOn && !native && !m.betbyUrl
       && (!m.betbyAsked || (Date.now() - (m.betbyAt || 0) > 15000 && (m.betbyTries || 0) < 12))) {
     m.betbyAsked = true; m.betbyAt = Date.now(); m.betbyTries = (m.betbyTries || 0) + 1;
     const want = e.id;
@@ -6215,17 +6236,15 @@ function mountLiveWidget() {
     drop3D(); dropCourt3D(); dropBetby();
     m.widget?.remove();
     const holder = document.createElement('div');
-    holder.innerHTML = kind === 'football' ? footballWidget(e) : kind === 'court' ? courtWidget(e) : kind === 'betby' ? betbyWidget(e) : tennisWidget(e);
+    holder.innerHTML = kind === 'court' ? courtWidget(e) : kind === 'betby' ? betbyWidget(e) : momentumWidget(e);
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
-    if (kind === 'football') warmClips();
     if (kind === 'betby') { const f = $('#betbyFrame', m.widget); if (f && m.betbyUrl) f.src = m.betbyUrl; }
   }
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
-  if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); }
-  else if (kind === 'court') ensureCourt3D();
+  if (kind === 'court') ensureCourt3D();
   else if (kind === 'betby') ensureBetbySize();
-  else if (kind === 'tennis') updateTennisCourt();
+  else if (kind === 'momentum') ensureMomentum();
 }
 
 // The BETBY tracker iframe stacks a scoreboard, the field and an icon bar. The field is about 0.7×width
