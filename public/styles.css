@@ -2501,15 +2501,16 @@ html:is(.light, :not(.light)) .topbar {
   border-bottom-color: transparent;
 }
 /* Fundo e superfícies com as cores do repositório BETBY (azul-marinho), mantendo o verde da marca.
+   SÓ no modo escuro — o modo claro mantém o fundo cinza-claro e os cartões brancos.
    Fundo rgb(10,14,23) = #0a0e17; superfície/cartões rgb(18,26,41) = #121a29; borda branco 8%. */
-:root { --page: #0a0e17; --panels: #121a29; --card: #121a29; --dim: #0f1622; --border: rgba(255, 255, 255, .08); }
-/* Cartões de evento: azul-marinho com um leve reflexo metálico no topo. */
-.match-card, .live-card {
+html:not(.light) { --page: #0a0e17; --panels: #121a29; --card: #121a29; --dim: #0f1622; --border: rgba(255, 255, 255, .08); }
+/* Cartões de evento: azul-marinho com um leve reflexo metálico no topo (só no modo escuro). */
+html:not(.light) .match-card, html:not(.light) .live-card {
   background: linear-gradient(180deg, #1a2436 0%, #121a29 52%, #0e1521 100%);
   border-color: rgba(255, 255, 255, .09);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 3px 9px rgba(0, 0, 0, .35);
 }
-.match-card.clickable:hover, .live-card.clickable:hover {
+html:not(.light) .match-card.clickable:hover, html:not(.light) .live-card.clickable:hover {
   border-color: rgba(255, 255, 255, .18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 7px 20px rgba(0, 0, 0, .5);
 }
