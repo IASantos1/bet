@@ -916,7 +916,8 @@ async function loadTab() {
       lastTheSports = await api('/api/admin/thesports');
       const crop = await api('/api/admin/court-crop').catch(() => null);
       const betbySize = await api('/api/admin/betby-size').catch(() => null);
-      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '') + (betbySize?.enabled ? adminBetbySize(betbySize) : '');
+      const betbyAliases = await api('/api/admin/betby-aliases').catch(() => null);
+      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '') + (betbySize?.enabled ? adminBetbySize(betbySize) : '') + (betbyAliases?.enabled ? adminBetbyAliases(betbyAliases) : '');
       applyCourtCropVars();
       // While the tab is open, refresh the live table every 2 s.
       liveTimer = setInterval(async () => {
@@ -1293,6 +1294,29 @@ function adminBetbySize(d) {
         <span class="muted bs-msg" id="bsMsg-${s}"></span>
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+// ---------- BETBY name catalog: map a WinHouse name to its BETBY name so the engine locks the mini-field ----------
+function aliasRow(a = {}) {
+  return `<div class="al-row">
+    <input class="al-from" placeholder="Nome no nosso site (WinHouse)" value="${esc(a.from || '')}">
+    <span class="al-arrow">→</span>
+    <input class="al-to" placeholder="Nome na BETBY" value="${esc(a.to || '')}">
+    <button class="icon-btn" data-action="betby-alias-del" title="Remover">✕</button>
+  </div>`;
+}
+function adminBetbyAliases(d) {
+  const rows = (d.aliases || []).map(aliasRow).join('');
+  return `<div class="panel betby-aliases" id="betbyAliases">
+    <div class="section-head"><h2>Minicampo BETBY — catálogo de nomes</h2></div>
+    <p class="muted">O motor de correspondência liga cada jogo ao minicampo da BETBY pelo nome das equipas. Quando um nome não bate (a WinHouse usa abreviações, a BETBY usa nomes completos), adicione-o aqui: à esquerda o nome como aparece no nosso site, à direita o nome exato na BETBY. O motor passa a usar esta ligação. Clique <b>Guardar</b> para aplicar.</p>
+    <div id="alList">${rows || aliasRow()}</div>
+    <div class="al-actions">
+      <button class="primary-btn btn-sm" data-action="betby-alias-add">+ Adicionar</button>
+      <button class="primary-btn btn-sm" data-action="betby-alias-save">Guardar</button>
+      <span class="muted bs-msg" id="alMsg"></span>
+    </div>
   </div>`;
 }
 
@@ -2285,6 +2309,26 @@ document.addEventListener('click', async (e) => {
       await api('/api/admin/betby-size', { method: 'POST', body: { [s]: v } });
       if (msg) msg.textContent = 'Guardado.';
       toast('Minicampo BETBY guardado', `${s}: ${v}%`);
+    } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'betby-alias-add') {
+    const list = $('#alList'); if (list) list.insertAdjacentHTML('beforeend', aliasRow());
+    return;
+  }
+  if (action === 'betby-alias-del') {
+    actionEl.closest('.al-row')?.remove(); return;
+  }
+  if (action === 'betby-alias-save') {
+    const msg = $('#alMsg');
+    const aliases = $$('#alList .al-row').map((r) => ({
+      from: r.querySelector('.al-from')?.value?.trim() || '',
+      to: r.querySelector('.al-to')?.value?.trim() || '',
+    })).filter((a) => a.from && a.to);
+    try {
+      await api('/api/admin/betby-aliases', { method: 'POST', body: { aliases } });
+      if (msg) msg.textContent = `Guardado (${aliases.length}).`;
+      toast('Catálogo BETBY guardado', `${aliases.length} nome(s)`);
     } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
     return;
   }

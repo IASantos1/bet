@@ -6722,12 +6722,17 @@ async function init() {
   boardReq.catch(() => {});
   const [config] = await Promise.all([api('/api/config').catch(() => null), refreshMe()]);
   state.config = config;
-  // Pre-load the BETBY feed so opening a live game resolves its mini-field at once (no graph flash first),
-  // and keep it warm in the background while the app is open.
+  // BETBY matching engine: keep the feed warm, load the admin alias catalog, and in the background match
+  // every live game to its mini-field and lock the confident ones — so opening a game is instant (no flash).
   if (config?.betby) {
-    const warm = () => import('./betby-tracker.js').then(({ warmBetby }) => warmBetby(config.betby)).catch(() => {});
-    warm();
-    setInterval(() => { if (!document.hidden) warm(); }, 20000);
+    const runEngine = () => import('./betby-tracker.js').then((mod) => {
+      mod.setBetbyAliases(config.betby.aliases || []);
+      const live = (state.events || []).filter((e) => e.status === 'live')
+        .map((e) => ({ sport: e.sport, home: e.home, away: e.away, start: e.startTime || e.start }));
+      return live.length ? mod.runBetbyEngine(config.betby, live) : mod.warmBetby(config.betby);
+    }).catch(() => {});
+    runEngine();
+    setInterval(() => { if (!document.hidden) runEngine(); }, 20000);
   }
   applyCasinoCards(config?.casinoCards);
   applyCasinoArt(config?.casinoArt);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveBetbyTracker, sameTeam } from '../public/betby-tracker.js';
+import { resolveBetbyTracker, runBetbyEngine, scoreTeams, sameTeam, setBetbyAliases } from '../public/betby-tracker.js';
 
 test('team-name matching: club prefixes/suffixes, added cities and transliterated names still match', () => {
   // Prefix/suffix club designators (football + basketball).
@@ -85,4 +85,32 @@ test('BETBY tracker: no Statscore widget → null (nothing to embed)', async () 
 test('BETBY tracker: feed failure is swallowed → null', async () => {
   globalThis.fetch = () => Promise.reject(new Error('blocked'));
   assert.equal(await resolveBetbyTracker({ ...cfg, brandId: 'down' }, { sport: 'futebol', home: 'Benfica', away: 'Porto' }), null);
+});
+
+test('scoreTeams: a confident match scores higher than a weak one, non-matches near zero', () => {
+  assert.ok(scoreTeams('Benfica', 'SL Benfica') >= 0.6, 'club prefix is a confident match');
+  assert.ok(scoreTeams('Benfica', 'SL Benfica') > scoreTeams('Real Madrid', 'Atletico Madrid'), 'real pair beats a shared-city coincidence');
+  assert.ok(scoreTeams('Sporting', 'Benfica') < 0.5, 'different clubs score low');
+});
+
+test('matching engine: a confident game is LOCKED so opening it is instant even once the feed is gone', async () => {
+  globalThis.fetch = fakeFeeds();
+  const engCfg = { ...cfg, brandId: 'engine1' };
+  const live = [{ sport: 'futebol', home: 'Benfica', away: 'Porto', start: '2023-11-14T22:13:20.000Z' }];
+  await runBetbyEngine(engCfg, live);
+  // Feed now down: the locked verdict must still resolve without touching the network.
+  globalThis.fetch = () => Promise.reject(new Error('blocked'));
+  const url = await resolveBetbyTracker(engCfg, live[0]);
+  assert.ok(url && url.startsWith('https://ui.invisiblesport.com/tracker.html?providers='), 'locked match resolves offline');
+});
+
+test('matching engine: the admin alias catalog pins a name that would not auto-match', async () => {
+  // BETBY carries "SL Benfica"; our board writes it as "Encarnados" — only the alias links them.
+  globalThis.fetch = fakeFeeds();
+  const aliasCfg = { ...cfg, brandId: 'alias1' };
+  assert.equal(await resolveBetbyTracker(aliasCfg, { sport: 'futebol', home: 'Encarnados', away: 'Porto' }), null, 'no match before the alias');
+  setBetbyAliases([{ from: 'Encarnados', to: 'SL Benfica' }]);
+  const url = await resolveBetbyTracker({ ...cfg, brandId: 'alias2' }, { sport: 'futebol', home: 'Encarnados', away: 'Porto' });
+  assert.ok(url, 'the alias pins the mini-field');
+  setBetbyAliases([]); // reset for other tests
 });

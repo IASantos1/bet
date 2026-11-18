@@ -82,21 +82,30 @@ function tokens(name) {
 }
 const squash = (name) => tokens(name).join('');
 
-export function sameTeam(a, b) {
+// How close two team names are, 0..1. 1 = same once club words are stripped; high for one name inside the
+// other (added city/suffix); the Jaccard of the tokens otherwise; a floor when a long distinctive token is
+// shared (the club's own name, for transliterated cities). The matching engine ranks candidates by this.
+export function scoreTeams(a, b) {
   const sa = squash(a), sb = squash(b);
-  if (!sa || !sb) return false;
-  if (sa === sb) return true;
-  // One name inside the other once the club words are stripped: handles an added city or suffix, e.g.
-  // "Real Union" ⊂ "Real Union de Irun", "Radnicki 1923" ⊂ "FK Radnicki 1923 Kragujevac", "Utebo" ⊂ "Utebo FC".
-  if ((sa.includes(sb) || sb.includes(sa)) && Math.min(sa.length, sb.length) >= 4) return true;
+  if (!sa || !sb) return 0;
+  if (sa === sb) return 1;
   const ta = tokens(a), tb = tokens(b);
-  const overlap = ta.filter((t) => tb.includes(t)).length;
-  if (overlap >= 2 || (overlap >= 1 && Math.min(ta.length, tb.length) === 1)) return true;
-  // A long distinctive token in common (the club's own name), for transliterated cities like
-  // "Kolossos Rodou" vs "BC Kolossos Rhodes". The 7-char floor skips common cities (madrid, napoli…) so two
-  // different clubs of the same city don't match; the resolver also requires BOTH teams to match and uses time.
-  return ta.some((t) => t.length >= 7 && tb.includes(t));
+  const setB = new Set(tb);
+  const inter = ta.filter((t) => setB.has(t)).length;
+  const union = new Set([...ta, ...tb]).size || 1;
+  let s = inter / union; // Jaccard of the significant tokens
+  // "Real Union" ⊂ "Real Union de Irun", "Radnicki 1923" ⊂ "FK Radnicki 1923 Kragujevac", "Utebo" ⊂ "Utebo FC".
+  if ((sa.includes(sb) || sb.includes(sa)) && Math.min(sa.length, sb.length) >= 4) s = Math.max(s, 0.9);
+  // A single short name that is one of the other's tokens (e.g. "Porto" in "FC Porto Futebol").
+  if (overlapOk(ta, tb, inter)) s = Math.max(s, 0.75);
+  // A long distinctive token in common (≥7 skips cities like madrid/napoli), e.g. "Kolossos" / "Radnicki".
+  if (ta.some((t) => t.length >= 7 && setB.has(t))) s = Math.max(s, 0.8);
+  return s;
 }
+const overlapOk = (ta, tb, inter) => inter >= 2 || (inter >= 1 && Math.min(ta.length, tb.length) === 1);
+
+// Boolean match kept for callers/tests: names count as the same at 0.5 or above.
+export function sameTeam(a, b) { return scoreTeams(a, b) >= 0.5; }
 
 // Our sport name → the BETBY/Betradar sport id used in the tracker's sportId. A wrong id only mis-scales
 // the pitch drawing, so this is best-effort; when the BETBY event already tells us its sport we use that.
@@ -110,7 +119,7 @@ const caches = new Map();
 function cacheFor(cfg) {
   const key = `${cfg.base}|${cfg.brandId}|${cfg.locale}`;
   let c = caches.get(key);
-  if (!c) { c = { cfg, events: new Map(), widgets: new Map(), applied: new Set(), sideVersion: null, at: 0, inflight: null }; caches.set(key, c); }
+  if (!c) { c = { cfg, events: new Map(), widgets: new Map(), applied: new Set(), sideVersion: null, at: 0, inflight: null, resolved: new Map() }; caches.set(key, c); }
   return c;
 }
 
@@ -161,38 +170,90 @@ export function warmBetby(cfg) {
   try { return ensureFresh(cacheFor(cfg)); } catch { return Promise.resolve(); }
 }
 
-/**
- * The BETBY tracker (mini-field) URL for `event`, or null. `event` is our live match: { sport, home, away, start }.
- * Matches by both team names; when several match, the BETBY event whose kick-off is closest wins.
- */
-export async function resolveBetbyTracker(cfg, event) {
-  if (!cfg || !cfg.base || !cfg.brandId || !event || !event.home || !event.away) return null;
-  const c = cacheFor(cfg);
-  try { await ensureFresh(c); } catch { /* feed down: fall back */ }
+const PAIR_MIN = 0.5;       // each team must score at least this in the chosen orientation
+const PAIR_GOOD = 0.6;      // the pair's average score to accept the match
+const ALIASES = { normal: new Map() }; // our-name → betby-name overrides, loaded from the admin catalog
+
+// Replace any name the admin mapped in the catalog (so a team that won't auto-match can be pinned by hand).
+const alias = (name) => ALIASES.normal.get(squash(name)) || name;
+
+/** Load the admin alias catalog: [{ from, to }] (our name → BETBY name). Normalised once for fast lookup. */
+export function setBetbyAliases(list) {
+  ALIASES.normal = new Map();
+  for (const a of (Array.isArray(list) ? list : [])) {
+    if (a && a.from && a.to) ALIASES.normal.set(squash(a.from), String(a.to));
+  }
+}
+
+// The best BETBY event for our game, with its score. Scores both team names (either orientation), keeps the
+// orientation whose weaker side is strongest, and ranks by score then by closeness of kick-off.
+function bestMatch(c, event) {
+  const home = alias(event.home), away = alias(event.away);
   const ourStart = event.start ? Date.parse(event.start) : NaN;
-  let best = null;
-  let bestGap = Infinity;
+  let best = null, bestScore = 0, bestGap = Infinity;
   for (const be of c.events.values()) {
-    // Soft sport gate: reject only when the BETBY event's sport is one we RECOGNISE and it is a DIFFERENT
-    // sport than ours. A wrong or unknown BETBY sport id therefore never blocks a real match — it just
-    // can't rule out a rare cross-sport team-name clash, which the name + kick-off match still guards.
+    // Soft sport gate: reject only when BETBY's sport is one we recognise AND it differs from ours.
     const beSport = be.desc?.sport != null ? SPORT_BY_ID[String(be.desc.sport)] : undefined;
     if (beSport && beSport !== event.sport) continue;
     const names = (be.desc?.competitors || []).map((x) => x && x.name).filter(Boolean);
     if (names.length < 2) continue;
-    // Either orientation (BETBY's home/away may differ from ours).
-    const straight = sameTeam(event.home, names[0]) && sameTeam(event.away, names[1]);
-    const swapped = sameTeam(event.home, names[1]) && sameTeam(event.away, names[0]);
-    if (!straight && !swapped) continue;
+    const sh = scoreTeams(home, names[0]), sa = scoreTeams(away, names[1]);
+    const xh = scoreTeams(home, names[1]), xa = scoreTeams(away, names[0]);
+    const straightMin = Math.min(sh, sa), swapMin = Math.min(xh, xa);
+    const pick = straightMin >= swapMin ? [straightMin, (sh + sa) / 2] : [swapMin, (xh + xa) / 2];
+    const [minSide, avg] = pick;
+    if (minSide < PAIR_MIN || avg < PAIR_GOOD) continue;
     const bbStart = be.desc?.scheduled ? be.desc.scheduled * 1000 : NaN;
     const gap = Number.isFinite(ourStart) && Number.isFinite(bbStart) ? Math.abs(ourStart - bbStart) : 0;
-    if (gap < bestGap) { best = be; bestGap = gap; }
+    if (gap > 12 * 3600 * 1000) continue; // same teams, different fixture
+    if (avg > bestScore + 1e-6 || (Math.abs(avg - bestScore) <= 1e-6 && gap < bestGap)) { best = be; bestScore = avg; bestGap = gap; }
   }
-  if (!best) return null;
-  // Kick-offs more than 12h apart are almost certainly two different fixtures of the same teams.
-  if (Number.isFinite(bestGap) && bestGap > 12 * 3600 * 1000) return null;
-  const hit = statscoreId(c.widgets.get(best.id));
-  if (!hit) return null;
-  const sportId = best.desc?.sport || SPORT_ID[event.sport] || '1';
-  return trackerUrl(cfg, hit.provider, sportId, hit.eventId);
+  return best;
+}
+
+const sig = (event) => `${event.sport}|${squash(event.home)}|${squash(event.away)}`;
+
+// Resolve one game to its mini-field URL (or null) and cache the verdict, so later lookups are instant.
+function resolveOne(c, event) {
+  const be = bestMatch(c, event);
+  if (!be) return null;
+  const hit = statscoreId(c.widgets.get(be.id));
+  if (!hit) return null; // matched, but BETBY has no Statscore widget for it yet
+  const sportId = be.desc?.sport || SPORT_ID[event.sport] || '1';
+  return trackerUrl(c.cfg, hit.provider, sportId, hit.eventId);
+}
+
+/**
+ * The BETBY tracker (mini-field) URL for `event` ({ sport, home, away, start }), or null. Backed by a cache:
+ * once a game is matched with confidence the URL is locked in, so opening it is instant.
+ */
+export async function resolveBetbyTracker(cfg, event) {
+  if (!cfg || !cfg.base || !cfg.brandId || !event || !event.home || !event.away) return null;
+  const c = cacheFor(cfg);
+  const key = sig(event);
+  const hit = c.resolved.get(key);
+  if (hit && hit.url) return hit.url; // a locked match — instant
+  try { await ensureFresh(c); } catch { /* feed down: fall back */ }
+  const url = resolveOne(c, event);
+  c.resolved.set(key, { url: url || null, at: Date.now() });
+  return url;
+}
+
+/**
+ * The matching engine: given the list of our live/soon games, match each against the BETBY feed and LOCK the
+ * confident ones (cache their URL) so, by the time a user opens the game, the mini-field is already resolved.
+ * Runs in the background from the live page; safe to call every few seconds (the feed self-throttles).
+ */
+export async function runBetbyEngine(cfg, events) {
+  if (!cfg || !cfg.base || !cfg.brandId || !Array.isArray(events) || !events.length) return;
+  const c = cacheFor(cfg);
+  try { await ensureFresh(c); } catch { return; }
+  for (const e of events) {
+    if (!e || !e.home || !e.away) continue;
+    const key = sig(e);
+    const prev = c.resolved.get(key);
+    if (prev && prev.url) continue; // already locked
+    const url = resolveOne(c, e);
+    c.resolved.set(key, { url: url || null, at: Date.now() });
+  }
 }

@@ -895,7 +895,7 @@ export function createApp(db, {
       rapidKey: !!rapidStream,
       // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
       // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
-      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: { ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) } } : null,
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: { ...BETBY_SIZE_DEFAULTS, ...((() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })()) }, aliases: ((() => { const a = getSetting(db, 'betby.aliases', null); return Array.isArray(a) ? a : []; })()) } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
@@ -3194,6 +3194,23 @@ export function createApp(db, {
     }
     setSetting(db, 'betby.sizes', saved);
     res.json({ sizes: saved });
+  });
+
+  // BETBY name catalog: operator-curated aliases so a WinHouse name maps to its BETBY name (the engine
+  // applies these before scoring). Each entry { from, to } — "from" is what we show, "to" is BETBY's name.
+  const betbyAliases = () => { const a = getSetting(db, 'betby.aliases', null); return Array.isArray(a) ? a : []; };
+  admin.get('/betby-aliases', (_req, res) => res.json({ aliases: betbyAliases(), enabled: !!betby }));
+  admin.post('/betby-aliases', (req, res) => {
+    const list = Array.isArray(req.body?.aliases) ? req.body.aliases : [];
+    const clean = [];
+    for (const row of list) {
+      const from = String(row?.from || '').trim().slice(0, 80);
+      const to = String(row?.to || '').trim().slice(0, 80);
+      if (from && to) clean.push({ from, to });
+      if (clean.length >= 2000) break;
+    }
+    setSetting(db, 'betby.aliases', clean);
+    res.json({ aliases: clean });
   });
 
   // League manager: every league with games now (per sport), and which are switched off. Blocking hides

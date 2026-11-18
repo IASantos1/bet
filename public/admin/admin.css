@@ -928,3 +928,14 @@
   .betby-size .bs-out { grid-area: out; } .betby-size [data-action="betby-size-save"] { grid-area: save; }
   .betby-size .bs-msg { grid-area: msg; }
 }
+.betby-aliases .al-row { display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 32px; gap: 10px; align-items: center; margin: 8px 0; }
+.betby-aliases .al-row input { width: 100%; }
+.betby-aliases .al-arrow { text-align: center; color: #9fb0c4; }
+.betby-aliases .al-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.betby-aliases .icon-btn { background: transparent; border: 1px solid #2a3a4f; color: #9fb0c4; border-radius: 8px; cursor: pointer; height: 32px; }
+.betby-aliases .icon-btn:hover { color: #ff7a7a; border-color: #ff7a7a; }
+@media (max-width: 760px) {
+  .betby-aliases .al-row { grid-template-columns: 1fr 1fr 32px; grid-template-areas: "from from del" "arrow arrow arrow" "to to to"; }
+  .betby-aliases .al-from { grid-area: from; } .betby-aliases .al-to { grid-area: to; }
+  .betby-aliases .al-arrow { grid-area: arrow; } .betby-aliases .icon-btn { grid-area: del; }
+}
