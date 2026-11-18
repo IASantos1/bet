@@ -89,7 +89,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto' },
+  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -4918,7 +4918,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D(); dropCourt3D();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto' });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -6119,6 +6119,19 @@ function courtWidget(e) {
   </div>`;
 }
 
+// BETBY mini-field (minicampo): the generic live tracker, embedded as an iframe, for sports that have no
+// native widget. The URL is resolved in the browser from BETBY's public feed (public/betby-tracker.js) and
+// only ever adds a mini-field — it never changes our odds, markets or scores.
+function betbyWidget(e) {
+  return `<div class="trk" data-kind="betby">${expandBtn()}
+    <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
+      <span class="trk-score"><b>${e.homeScore ?? 0}</b><span>-</span><b>${e.awayScore ?? 0}</b></span>
+      <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
+    <div class="court3d-turf"><iframe id="betbyFrame" class="court3d-frame" title="Minicampo ao vivo" scrolling="no" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy" allow="fullscreen"></iframe></div>
+    <p class="trk-note">Minicampo ao vivo.</p>
+  </div>`;
+}
+
 /** Mounts / moves the widget for the current match into the right slot. */
 function mountLiveWidget() {
   const m = state.match;
@@ -6146,7 +6159,18 @@ function mountLiveWidget() {
   const kind = e?.status !== 'live' ? null
     : e.liveTracker ? 'football'
       : e.court ? 'court'
-        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis' : null;
+        : (e.sport === 'tenis' && TENNIS_COURT) ? 'tennis'
+          : m.betbyUrl ? 'betby' : null;
+  // No native widget for this live match: ask BETBY (once) for a mini-field. Purely additive — if it finds
+  // nothing, the screen stays exactly as it is now. Only runs when the server enabled it (BETBY_BRAND_ID).
+  if (!kind && e?.status === 'live' && state.config?.betby && !m.betbyAsked) {
+    m.betbyAsked = true;
+    const want = e.id;
+    import('./betby-tracker.js')
+      .then(({ resolveBetbyTracker }) => resolveBetbyTracker(state.config.betby, { sport: e.sport, home: e.home, away: e.away, start: e.startTime || e.start }))
+      .then((url) => { if (url && state.match.id === want && !state.match.betbyUrl) { state.match.betbyUrl = url; mountLiveWidget(); } })
+      .catch(() => {});
+  }
   if (!kind) {
     drop3D(); dropCourt3D();
     m.widget?.remove();
@@ -6158,15 +6182,16 @@ function mountLiveWidget() {
     drop3D(); dropCourt3D();
     m.widget?.remove();
     const holder = document.createElement('div');
-    holder.innerHTML = kind === 'football' ? footballWidget(e) : kind === 'court' ? courtWidget(e) : tennisWidget(e);
+    holder.innerHTML = kind === 'football' ? footballWidget(e) : kind === 'court' ? courtWidget(e) : kind === 'betby' ? betbyWidget(e) : tennisWidget(e);
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
     if (kind === 'football') warmClips();
+    if (kind === 'betby') { const f = $('#betbyFrame', m.widget); if (f && m.betbyUrl) f.src = m.betbyUrl; }
   }
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
   if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); }
   else if (kind === 'court') ensureCourt3D();
-  else updateTennisCourt();
+  else if (kind === 'tennis') updateTennisCourt();
 }
 
 // ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------

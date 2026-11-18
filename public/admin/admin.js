@@ -730,12 +730,14 @@ function loginView(error = '') {
 
 // ---------- layout ----------
 
+// Menu lateral (estilo Bet62Novo): secções Operações/Avançado, acento verde, marca branco+verde.
+const ADMIN_VERSION = 'v2';
 function shell() {
   const tab = TABS.find((t) => t.id === state.tab) || TABS[0];
   const pending = state.stats?.pendingWithdrawals || 0;
   const link = (t) => `<button class="adm-nav${t.id === state.tab ? ' active' : ''}" data-tab="${t.id}"><span class="adm-icon">${adminIcon(t.icon)}</span><span class="grow">${esc(t.label)}</span>${t.id === 'levantamentos' && pending ? `<b class="adm-badge">${pending}</b>` : ''}</button>`;
   const sections = [...new Set(TABS.map((t) => t.section))];
-  const sidebar = `<div class="adm-side-head"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>OPERATIONS</small></div><span class="adm-tag">ADMIN</span></div>
+  const sidebar = `<div class="adm-side-head"><span class="adm-brand-mark">B</span><div class="adm-brand-lockup"><span class="brand-word small">BET<span>62</span></span><small>Admin</small></div><span class="adm-tag">${ADMIN_VERSION}</span></div>
     <nav class="adm-side-nav">${sections.map((sec) => `<div class="adm-section">${esc(sec)}</div>${TABS.filter((t) => t.section === sec).map(link).join('')}`).join('')}</nav>
     <div class="adm-side-foot"><div class="adm-user"><span class="adm-user-dot"></span>${esc(state.user?.email || '')}</div><a class="adm-nav" href="/"><span class="adm-icon">${adminIcon('home')}</span><span class="grow">Ver o site</span></a><button class="adm-nav" data-action="logout"><span class="adm-icon">${adminIcon('logout')}</span><span class="grow">Sair</span></button></div>`;
   return `<div class="adm">

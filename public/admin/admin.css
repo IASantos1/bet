@@ -916,3 +916,198 @@
 }
 @keyframes admShimmer { from { background-position: 180% 0; } to { background-position: -80% 0; } }
 @media (max-width: 900px) { .adm-skel-cards { grid-template-columns: 1fr 1fr; } }
+
+/* ============================================================
+   Polimento tipográfico e de componentes (Nov 2026):
+   letras mais nítidas, escala de títulos consistente, números
+   alinhados (tabular) e tabelas com mais respiro e hierarquia.
+   ============================================================ */
+.admin-body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: .003em;
+}
+.admin-body .adm { line-height: 1.5; }
+
+/* Escala de títulos */
+.adm-top h1 { font-size: 20px; font-weight: 800; letter-spacing: -.015em; }
+.admin-body .adm-body h2 { font-size: 17px; font-weight: 800; letter-spacing: -.012em; line-height: 1.25; }
+.admin-body .adm-body h3 { font-size: 14.5px; font-weight: 800; letter-spacing: -.006em; line-height: 1.3; }
+.admin-body .adm-body h4 { font-size: 13px; font-weight: 800; }
+
+/* Números alinhados em tudo o que conta (tabelas, cartões, valores) */
+.admin-body :is(.adm-card strong, .adm-card em, .user-sums strong, .am-bal, .am-fb,
+  td.num, th.num, .num, .adm-badge) { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+.adm-card strong { letter-spacing: -.02em; font-weight: 800; }
+
+/* Tabelas: cabeçalho discreto em maiúsculas, mais respiro, hover claro */
+.admin-body .table-wrap table { font-size: 13px; }
+.admin-body .table-wrap thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .045em; font-weight: 800; color: var(--text-3); }
+.admin-body .table-wrap :is(td, th) { padding: 11px 12px; }
+.admin-body .table-wrap tbody tr:hover td { background: var(--row-hover); }
+
+/* Botões e campos: peso e espaçamento consistentes */
+.admin-body :is(.primary-btn, .ghost-btn, .danger-btn, .btn-sm) { font-weight: 800; letter-spacing: .005em; }
+
+/* Painéis: cantos e respiro mais uniformes */
+.admin-body .adm-body .panel { border-radius: 14px; }
+
+/* Ritmo vertical: separação consistente entre blocos em todas as páginas. */
+.admin-body .adm-body #adminMain > * + * { margin-top: 16px; }
+.admin-body .adm-body .panel { padding: 20px 22px; }
+.admin-body .adm-body .section-head { margin-bottom: 16px; }
+
+/* Formulários densos (promoções, etc.): mais respiro e campos de altura uniforme. */
+.admin-body .adm-grid { gap: 14px 16px; }
+.admin-body .adm-grid .field { gap: 6px; }
+.admin-body .adm-grid .field input, .admin-body .adm-grid .field select { height: 40px; padding: 0 12px; border-radius: 8px; }
+.admin-body .form-grid { gap: 2px 16px; }
+
+/* ============================================================
+   REPAGINAÇÃO v2 — mais qualidade visual (superfícies, cartões,
+   navegação, tabelas). Só aparência; estrutura e classes intactas.
+   ============================================================ */
+.admin-body {
+  --accent: #ff5b6e;
+  --accent-soft: rgba(255, 91, 110, .14);
+  --ok: #39d98a;
+  --surf: #121a27;
+  --surf2: #0e1521;
+  --raised: #16202f;
+  --hair: rgba(152, 173, 198, .12);
+  --hair2: rgba(152, 173, 198, .08);
+  --elev: 0 12px 34px rgba(0, 0, 0, .38);
+  background:
+    radial-gradient(1200px 620px at 10% -8%, rgba(46, 96, 132, .20), transparent 60%),
+    radial-gradient(1000px 680px at 102% -2%, rgba(255, 91, 110, .08), transparent 55%),
+    #080c13;
+}
+
+/* Sidebar — mais calma e legível */
+.admin-body .adm-side { width: 258px; background: linear-gradient(180deg, #0d1522, #0b101a); border-right: 1px solid var(--hair); box-shadow: none; }
+.admin-body .adm-nav { border-radius: 10px; color: #9db0c6; font-weight: 650; padding: 10px 11px; border-color: transparent; position: relative; }
+.admin-body .adm-nav:hover { background: rgba(255, 255, 255, .045); color: #fff; }
+.admin-body .adm-nav.active { background: linear-gradient(90deg, var(--accent-soft), transparent 82%); color: #fff; border-color: transparent; }
+.admin-body .adm-nav.active::before { content: ""; position: absolute; left: -2px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); box-shadow: 0 0 12px rgba(255, 91, 110, .7); }
+.admin-body .adm-section { color: #5b6b7e; letter-spacing: .11em; }
+
+/* Top bar */
+.admin-body .adm-top { background: rgba(10, 14, 20, .72); border-bottom: 1px solid var(--hair); backdrop-filter: blur(10px); padding: 15px 26px; }
+.admin-body .adm-top h1 { font-size: 21px; font-weight: 820; letter-spacing: -.02em; }
+
+/* Cartões de KPI — elevados e limpos */
+.admin-body .adm-cards { gap: 14px; }
+.admin-body .adm-card { background: linear-gradient(170deg, var(--raised), var(--surf2)); border: 1px solid var(--hair); border-radius: 16px; padding: 18px; box-shadow: var(--elev); }
+.admin-body .adm-card.blue, .admin-body .adm-card.green, .admin-body .adm-card.gold, .admin-body .adm-card.red { border-top: 1px solid var(--hair); }
+.admin-body .adm-card::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--c, var(--accent)); border-radius: 16px 16px 0 0; }
+.admin-body .adm-card.blue { --c: #49a7ff; } .admin-body .adm-card.green { --c: var(--ok); } .admin-body .adm-card.gold { --c: #f6c454; } .admin-body .adm-card.red { --c: var(--accent); }
+.admin-body .adm-card small { color: #8294a8; font-size: 12px; font-weight: 600; }
+.admin-body .adm-card strong { font-size: 26px; font-weight: 820; letter-spacing: -.03em; }
+.admin-body .adm-card em { color: #6b7d92; font-size: 12px; }
+.admin-body .adm-card-icon { opacity: .45; }
+
+/* Alerta de topo */
+.admin-body .adm-alert { border-radius: 14px; box-shadow: var(--elev); }
+
+/* Painéis — superfície suave com profundidade */
+.admin-body .adm-body .panel { background: linear-gradient(180deg, var(--surf), var(--surf2)); border: 1px solid var(--hair); border-radius: 16px; box-shadow: var(--elev); padding: 20px 22px; }
+
+/* Tabelas — recipiente arredondado, cabeçalho forte, linhas limpas */
+.admin-body .table-wrap { border: 1px solid var(--hair); border-radius: 14px; overflow: hidden; background: var(--surf2); }
+.admin-body .table-wrap table { border-collapse: separate; border-spacing: 0; }
+.admin-body .table-wrap thead th { background: rgba(255, 255, 255, .015); border-bottom: 1px solid var(--hair); padding: 12px 14px; }
+.admin-body .table-wrap tbody td { padding: 13px 14px; border-top: 1px solid var(--hair2); }
+.admin-body .table-wrap tbody tr:first-child td { border-top: 0; }
+.admin-body .table-wrap tbody tr:hover td { background: rgba(255, 255, 255, .03); }
+
+/* Botões */
+.admin-body .primary-btn { background: linear-gradient(180deg, #ff6472, #ec3f54); border: 0; box-shadow: 0 8px 20px rgba(236, 63, 84, .28); }
+.admin-body .primary-btn:hover { filter: brightness(1.06); }
+.admin-body .ghost-btn { background: rgba(255, 255, 255, .035); border: 1px solid var(--hair); }
+.admin-body .ghost-btn:hover { background: rgba(255, 255, 255, .07); }
+
+/* Pills refinadas */
+.admin-body .pill { border-radius: 999px; font-weight: 700; }
+
+/* ============================================================
+   TEMA VERDE BET62 (escuro) — identidade verde do site aplicada
+   a todo o admin. Sobrepõe o acento vermelho/azul da v2.
+   ============================================================ */
+.admin-body {
+  --accent: #2fd072;
+  --accent-2: #46e58c;
+  --accent-soft: rgba(47, 208, 114, .15);
+  --accent-glow: rgba(47, 208, 114, .55);
+  --ok: #46e58c;
+  --surf: #0f1a15;
+  --surf2: #0c150f;
+  --raised: #12201a;
+  --hair: rgba(110, 205, 160, .14);
+  --hair2: rgba(110, 205, 160, .08);
+  background:
+    radial-gradient(1200px 620px at 8% -8%, rgba(32, 150, 95, .22), transparent 60%),
+    radial-gradient(1000px 680px at 104% -2%, rgba(47, 208, 114, .10), transparent 55%),
+    #07120d;
+}
+/* Marca BET62 igual ao site: "BET" branco, "62" verde-lima com brilho. */
+.admin-body .adm-brand-mark { color: #b4ff2e; border-color: rgba(180, 255, 46, .4); background: linear-gradient(145deg, rgba(180, 255, 46, .22), rgba(180, 255, 46, .05)); box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 0 24px rgba(180, 255, 46, .16); }
+.admin-body .brand-word { color: #ffffff; }
+.admin-body .brand-word span { color: #b4ff2e; text-shadow: 0 1px 2px rgba(0, 60, 20, .45), 0 0 14px rgba(180, 255, 46, .45); }
+.admin-body .adm-tag { color: #8fe7b6; background: rgba(47, 208, 114, .1); }
+/* Sidebar ativo (barra + brilho verde) */
+.admin-body .adm-nav.active::before { background: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+/* Botões primários em verde */
+.admin-body .primary-btn { background: linear-gradient(180deg, #35d884, #17a85a); box-shadow: 0 8px 20px rgba(23, 168, 90, .32); color: #04140b; }
+.admin-body .primary-btn:hover { filter: brightness(1.06); }
+/* Foco em verde */
+.admin-body :is(button, input, select, textarea, a):focus-visible { outline-color: rgba(70, 229, 140, .9); }
+/* Topo: marca em verde */
+.admin-body .adm-top-kicker i, .admin-body .adm-top-kicker { color: #6f8a7e; }
+/* Área restrita / shields em verde */
+.admin-body .adm-secure-label { color: #8fe7b6; }
+
+.admin-body .adm-eyebrow { color: var(--accent-2); }
+
+/* ============================================================
+   ESTRUTURA v3 — navegação por categorias no topo + sub-abas.
+   Conteúdo em largura total; mais fácil de manobrar.
+   ============================================================ */
+.admin-body .adm-v3 { display: block; min-height: 100vh; }
+.admin-body .adm-appbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 11px 24px; background: rgba(9, 16, 12, .82); backdrop-filter: blur(12px); border-bottom: 1px solid var(--hair); }
+.admin-body .adm-appbrand { display: flex; align-items: center; gap: 11px; flex: none; }
+.admin-body .adm-cats { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.admin-body .adm-cats::-webkit-scrollbar { display: none; }
+.admin-body .adm-cat { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 11px; border: 1px solid transparent; background: transparent; color: #a9bccb; font-weight: 750; font-size: 14px; white-space: nowrap; cursor: pointer; }
+.admin-body .adm-cat:hover { background: rgba(255, 255, 255, .05); color: #fff; }
+.admin-body .adm-cat.active { background: var(--accent-soft); color: #d6ffe8; border-color: rgba(47, 208, 114, .3); }
+.admin-body .adm-cat .adm-icon { display: inline-grid; } .admin-body .adm-cat .adm-icon svg { width: 18px; height: 18px; }
+.admin-body .adm-cat .adm-badge { position: static; margin-left: 2px; }
+.admin-body .adm-appright { display: flex; align-items: center; gap: 10px; flex: none; }
+.admin-body .adm-subbar { position: sticky; top: 57px; z-index: 15; background: rgba(8, 15, 11, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hair2); padding: 0 24px; }
+.admin-body .adm-subnav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.admin-body .adm-subnav::-webkit-scrollbar { display: none; }
+.admin-body .adm-sub { display: inline-flex; align-items: center; gap: 7px; padding: 12px 13px; background: none; border: 0; border-bottom: 2px solid transparent; color: #8294a8; font-weight: 700; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+.admin-body .adm-sub:hover { color: #fff; }
+.admin-body .adm-sub.active { color: #fff; border-bottom-color: var(--accent); }
+.admin-body .adm-sub .adm-icon { display: inline-grid; } .admin-body .adm-sub .adm-icon svg { width: 15px; height: 15px; opacity: .85; }
+.admin-body .adm-v3 .adm-main { width: 100%; min-width: 0; }
+.admin-body .adm-v3 .adm-body { max-width: 1400px; margin: 0 auto; padding: 22px 24px 52px; }
+/* Gaveta (telemóvel) */
+.admin-body .adm-v3 .adm-burger { display: none; background: none; border: 0; color: #cfe8d8; }
+.admin-body .adm-drawer { position: fixed; left: 0; top: 0; bottom: 0; width: 282px; z-index: 60; transform: translateX(-100%); transition: transform .25s; display: flex; flex-direction: column; background: linear-gradient(180deg, #0d1522, #0b101a); border-right: 1px solid var(--hair); }
+.admin-body .adm-v3.menu-open .adm-drawer { transform: none; }
+.admin-body .adm-v3.menu-open .adm-overlay { display: block; position: fixed; inset: 0; z-index: 55; background: #000b; }
+.admin-body .adm-drawer-nav { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 1040px) {
+  .admin-body .adm-cats { display: none; }
+  .admin-body .adm-v3 .adm-burger { display: inline-grid; place-items: center; }
+  .admin-body .adm-secure-label { display: none; }
+  .admin-body .adm-appbar, .admin-body .adm-subbar { padding-left: 14px; padding-right: 14px; }
+  .admin-body .adm-v3 .adm-body { padding: 16px 14px 60px; }
+}
+
+/* Item ativo na gaveta: verde (remove resquício vermelho antigo) */
+.admin-body .adm-nav.active { background: var(--accent-soft); border-color: rgba(47, 208, 114, .35); color: #eafff2; }
+.admin-body .adm-nav.active::before { content: ""; position: absolute; left: -2px; top: 7px; bottom: 7px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.admin-body .adm-drawer-nav .adm-nav { position: relative; }
