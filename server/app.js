@@ -9,7 +9,7 @@ import { parseLivestream, sessionRefused } from './whlive.js';
 import { divisionOf } from './footballdivisions.js';
 import { COUNTRY_SPORTS, leagueCountry } from './countryleagues.js';
 import { TOUR_GROUPS, tourOf, tourLabel } from './tennistours.js';
-import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank, cappedClock, sameGame } from './winhouse.js';
+import { LEAGUE_TREES, leagueKey, skippedLeagues, SOURCE as WH_SOURCE, SPORT_MARKETS as WH_SPORT_MARKETS, namedWinnerMarket, eventsOf, liveGamesByRank, cappedClock, sameGame, teamKey } from './winhouse.js';
 import { summary as providerSummary } from './providerlimit.js';
 import { nowIso, tx, getSetting, setSetting } from './db.js';
 import { createSkins, SkinError } from './skins.js';
@@ -759,7 +759,32 @@ export function createApp(db, {
     const all = db.prepare(`SELECT e.* FROM events e WHERE ${where} ORDER BY ${order} LIMIT ${limit}`).all(...params);
     const bl = blockedLeagues();
     const hf = hideForeign();
-    const events = all.filter((e) => (!bl.size || !bl.has(leagueKey(e.competition))) && !(hf && foreignName(e)));
+    const kept = all.filter((e) => (!bl.size || !bl.has(leagueKey(e.competition))) && !(hf && foreignName(e)));
+    // Collapse the same fixture showing twice — a stale duplicate row (e.g. still "Intervalo") alongside the
+    // current one (e.g. "89'"), or a pre-match row beside its live twin. Two rows are the same fixture when
+    // the sport, league and both team names match AND the kick-offs are within the twin window (3 h); a game
+    // on another day with the same name is a different fixture and stays. We keep the most live, most recently
+    // updated row of each so a game never appears twice in a list.
+    const TWIN_MS = 3 * 3_600_000;
+    const fixName = (e) => `${e.sport}|${leagueKey(e.competition)}|${teamKey(e.home)}|${teamKey(e.away)}`;
+    const rank = (e) => (e.status === 'live' ? 2 : e.status === 'scheduled' ? 1 : 0);
+    const better = (e, cur) => rank(e) > rank(cur) || (rank(e) === rank(cur) && String(e.updated_at || '') > String(cur.updated_at || ''));
+    const byName = new Map();
+    for (const e of kept) { const k = fixName(e); const g = byName.get(k); if (g) g.push(e); else byName.set(k, [e]); }
+    const drop = new Set(); // ids of the losing twin in each duplicate pair
+    for (const list of byName.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
+      for (let i = 0; i < list.length;) {
+        let j = i, best = list[i];
+        while (j + 1 < list.length && Math.abs(Date.parse(list[j + 1].start_time) - Date.parse(list[i].start_time)) <= TWIN_MS) {
+          j++; if (better(list[j], best)) best = list[j];
+        }
+        for (let k = i; k <= j; k++) if (list[k] !== best) drop.add(list[k].id);
+        i = j + 1;
+      }
+    }
+    const events = drop.size ? kept.filter((e) => !drop.has(e.id)) : kept;
     if (!events.length) return [];
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
