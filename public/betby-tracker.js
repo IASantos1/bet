@@ -91,6 +91,8 @@ function sameTeam(a, b) {
 // the pitch drawing, so this is best-effort; when the BETBY event already tells us its sport we use that.
 // Keyed by the site's own sport slugs (server SPORTS): futebol, basquetebol, tenis, hoquei, voleibol, …
 const SPORT_ID = { futebol: '1', basquetebol: '2', tenis: '5', hoquei: '4', andebol: '6', voleibol: '23', basebol: '3', criquete: '21', futamericano: '16', raguebi: '12', dardos: '22', tenismesa: '20', badminton: '31', futsal: '29', boxe: '10', mma: '117' };
+// Reverse map: a BETBY/Betradar sport id → our sport slug, for the ids we recognise.
+const SPORT_BY_ID = Object.fromEntries(Object.entries(SPORT_ID).map(([slug, id]) => [id, slug]));
 
 // ---- feed cache (one per brand, refreshed on a short interval, shared by every match on screen) ----
 const caches = new Map();
@@ -150,14 +152,14 @@ export async function resolveBetbyTracker(cfg, event) {
   const c = cacheFor(cfg);
   try { await ensureFresh(c); } catch { /* feed down: fall back */ }
   const ourStart = event.start ? Date.parse(event.start) : NaN;
-  // When we know this sport's BETBY/Betradar id, require the BETBY event to be the SAME sport. This stops a
-  // game matching another sport's fixture by a coincidental team name (which then loads a wrong/empty
-  // tracker — "Widget could not be loaded"). When we don't know the id, fall back to team + time only.
-  const wantSport = SPORT_ID[event.sport];
   let best = null;
   let bestGap = Infinity;
   for (const be of c.events.values()) {
-    if (wantSport && be.desc?.sport != null && String(be.desc.sport) !== wantSport) continue;
+    // Soft sport gate: reject only when the BETBY event's sport is one we RECOGNISE and it is a DIFFERENT
+    // sport than ours. A wrong or unknown BETBY sport id therefore never blocks a real match — it just
+    // can't rule out a rare cross-sport team-name clash, which the name + kick-off match still guards.
+    const beSport = be.desc?.sport != null ? SPORT_BY_ID[String(be.desc.sport)] : undefined;
+    if (beSport && beSport !== event.sport) continue;
     const names = (be.desc?.competitors || []).map((x) => x && x.name).filter(Boolean);
     if (names.length < 2) continue;
     // Either orientation (BETBY's home/away may differ from ours).

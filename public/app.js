@@ -89,7 +89,7 @@ const state = {
   fsExpanded: false,
   liveTv: false, liveSport: '',
   leagueTree: null, sideOpen: {}, leagueView: null,
-  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false },
+  match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false, betbyAt: 0, betbyTries: 0 },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
   mode: 'single',
@@ -4918,7 +4918,7 @@ function leaveMatch() {
   clearTimeout(m.clipTimer);
   drop3D(); dropCourt3D(); dropBetby();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false, betbyAt: 0, betbyTries: 0 });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -6188,13 +6188,20 @@ function mountLiveWidget() {
   const kind = e?.status !== 'live' ? null
     : m.betbyUrl ? 'betby'
       : native;
-  // Ask BETBY once per match: for any live game in "all" mode, or only gap sports in fill mode.
-  if (betbyOn && !m.betbyAsked && (betbyAll || !native)) {
-    m.betbyAsked = true;
+  // Ask BETBY for the mini-field (every sport in "all" mode, or only gap sports in fill mode). We retry a
+  // few times, ~16 s apart: the BETBY feed may still be loading on the first attempt, so a game that does
+  // have a tracker still gets matched instead of being given up on after a single early miss.
+  if (betbyOn && !m.betbyUrl && (betbyAll || !native)
+      && (!m.betbyAsked || (Date.now() - (m.betbyAt || 0) > 15000 && (m.betbyTries || 0) < 12))) {
+    m.betbyAsked = true; m.betbyAt = Date.now(); m.betbyTries = (m.betbyTries || 0) + 1;
     const want = e.id;
     import('./betby-tracker.js')
       .then(({ resolveBetbyTracker }) => resolveBetbyTracker(state.config.betby, { sport: e.sport, home: e.home, away: e.away, start: e.startTime || e.start }))
-      .then((url) => { if (url && state.match.id === want && !state.match.betbyUrl) { state.match.betbyUrl = url; mountLiveWidget(); } })
+      .then((url) => {
+        if (state.match.id !== want || state.match.betbyUrl) return;
+        if (url) { state.match.betbyUrl = url; mountLiveWidget(); }
+        else if ((state.match.betbyTries || 0) < 12) setTimeout(() => { if (state.match.id === want && !state.match.betbyUrl && currentRoute().page === 'jogo') mountLiveWidget(); }, 16000);
+      })
       .catch(() => {});
   }
   if (!kind) {
