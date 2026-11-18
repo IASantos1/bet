@@ -307,6 +307,19 @@ export const config = {
     listPath: unquote(env.RAPIDAPI_STREAM_LIST_PATH),
     streamPath: unquote(env.RAPIDAPI_STREAM_PATH),
   },
+  // BETBY tracker (minicampo) — ONLY the live mini-field, read in the visitor's browser from the BETBY
+  // public per-brand feeds; it never touches our odds, markets, bets or settlement (those stay 100%
+  // WinHouse). Completely off unless BETBY_BRAND_ID is set in the Railway Variables: then our live
+  // match screen looks up a matching BETBY event (by sport + team names) and, for sports that have no
+  // mini-field yet, shows the BETBY/Statscore tracker. Any failure falls back to the current widget.
+  // BETBY=0 forces it off. The demo brand (1653815133341880320 on demoapi.betby.com) works for testing.
+  betby: {
+    enabled: env.BETBY !== '0' && !!unquote(env.BETBY_BRAND_ID),
+    baseUrl: (unquote(env.BETBY_BASE_URL) || 'https://demoapi.betby.com').replace(/\/$/, ''),
+    brandId: unquote(env.BETBY_BRAND_ID),
+    tracker: (unquote(env.BETBY_TRACKER_URL) || 'https://ui.invisiblesport.com').replace(/\/$/, ''),
+    locale: unquote(env.BETBY_LOCALE) || 'en-gb',
+  },
   // Telegram channel (telegram.js): the bot (@BotFather) and the channel it posts to, as an
   // administrator. Automatic posts only in Railway's production environment (a PR preview has the
   // same variables); TELEGRAM_AUTO=0 turns them off. Minutes between automatic posts, how long a

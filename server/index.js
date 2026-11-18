@@ -220,7 +220,9 @@ const stopSanctions = sanctions.start();
 // Notifications on the phone: a won bet announced within ~20 s of being settled.
 const push = createPush(db, { ...config.push, log: (m) => console.warn(`[push] ${m}`) });
 const stopPush = push.start();
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, boardCacheMs: 2000 });
+const betby = config.betby.enabled ? config.betby : null;
+if (betby) console.log(`BETBY tracker (minicampo): ligado · marca ${betby.brandId} · ${betby.baseUrl}`);
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.

@@ -190,7 +190,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, betby = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -226,6 +226,10 @@ export function createApp(db, {
     return { ...base, pcSize: num(s.pcSize, base.size), pcBox: num(s.pcBox, base.box), pcUp: num(s.pcUp, base.up) };
   };
 
+  // The BETBY mini-field is read by the visitor's browser straight from the BETBY feed host; allow only
+  // that exact origin in connect-src, and only when the feature is on. The tracker iframe itself is
+  // already covered by frame-src https:.
+  const betbyConnect = betby ? (() => { try { return ` ${new URL(betby.baseUrl).origin}`; } catch { return ''; } })() : '';
   app.use((req, res, next) => {
     res.set({
       'Content-Security-Policy':
@@ -233,7 +237,7 @@ export function createApp(db, {
         // Revolut's card form, Apple Pay and Google Pay (inside our page) load from merchant.revolut.com
         // (Google Pay from pay.google.com) and put their bank check (3-D Secure) over the page.
         `default-src 'self'; img-src 'self' data: https:; style-src 'self'${revolutPay ? " 'unsafe-inline'" : ''}; script-src 'self' https://js.stripe.com${revolutPay ? ' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://pay.google.com https://www.gstatic.com' : ''}; `
-        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://*.google.com https://google.com https://*.gstatic.com' : ''}${rapidStream?.enabled ? ' https:' : ''}; ` +
+        + `connect-src 'self' https://api.stripe.com${revolutPay ? ' https://*.revolut.com https://*.google.com https://google.com https://*.gstatic.com' : ''}${rapidStream?.enabled ? ' https:' : ''}${betbyConnect}; ` +
         // Live video (HLS) plays from the stream's own host.
         "media-src 'self' https: blob:; worker-src 'self' blob:; " +
         // Casino games run inside the page in an iframe from the provider's host.
@@ -880,6 +884,9 @@ export function createApp(db, {
       // Trial video source for live football (RapidAPI): the match page asks /api/live2/:id.
       rapidStream: !!rapidStream?.enabled,
       rapidKey: !!rapidStream,
+      // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
+      // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
