@@ -2493,17 +2493,46 @@ body.slip-open #helpWidget { display: none; }
 
 /* A barra do topo volta ao verde chapado de antes (sem o efeito metálico, que criava uma divisão com a
    faixa do topo do telemóvel). O verde original está definido mais acima (html … .topbar). */
-/* Fundo e superfícies com as cores do repositório BETBY (azul-marinho), mantendo o verde da marca.
-   SÓ no modo escuro — o modo claro mantém o fundo cinza-claro e os cartões brancos.
-   Fundo rgb(10,14,23) = #0a0e17; superfície/cartões rgb(18,26,41) = #121a29; borda branco 8%. */
-html:not(.light) { --page: #0a0e17; --panels: #121a29; --card: #121a29; --dim: #0f1622; --border: rgba(255, 255, 255, .08); }
-/* Cartões de evento: azul-marinho com um leve reflexo metálico no topo (só no modo escuro). */
+/* ===== Re-skin BET62 — sistema de design do repositório BETBY (cores, cantos, superfícies, sombras),
+   mantendo o verde da marca (o acento deles é vermelho; aqui fica verde). Fonte já é a mesma (Inter). ===== */
+/* Cantos mais arredondados nos dois temas (rounded-xl ≈ 12px), como no outro repo. */
+:root { --radius: 12px; }
+/* Modo escuro: fundo azul-petróleo, 3 tons de superfície, odds azul-marinho com preço dourado, borda branco 8%. */
+html:not(.light) {
+  --page: #0a0e17; --panels: #121a29; --card: #121a29; --dim: #0f1622;
+  --border: rgba(255, 255, 255, .08); --row-hover: #2c3d5c;
+  --odd-cell: #1e2a40; --odd-hover: #2c3d5c; --odd-price: #ffd166; --odd-selected: #1f9d3a; --odd-selected-price: #ffffff;
+}
+/* Superfícies com sombra suave ("vidro") e borda subtil. */
+html:not(.light) .match-card, html:not(.light) .live-card, html:not(.light) .panel, html:not(.light) .game-card, html:not(.light) .promo-card {
+  border-color: var(--border);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .28);
+}
+/* Cartões de evento: azul-marinho com um leve reflexo no topo. */
 html:not(.light) .match-card, html:not(.light) .live-card {
-  background: linear-gradient(180deg, #1a2436 0%, #121a29 52%, #0e1521 100%);
-  border-color: rgba(255, 255, 255, .09);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 3px 9px rgba(0, 0, 0, .35);
+  background: linear-gradient(180deg, #1a2436 0%, #121a29 60%, #0e1521 100%);
 }
 html:not(.light) .match-card.clickable:hover, html:not(.light) .live-card.clickable:hover {
   border-color: rgba(255, 255, 255, .18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 7px 20px rgba(0, 0, 0, .5);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+}
+
+/* Modo claro igual ao repositório BETBY: superfícies cinzentas (não branco), odds cinza com preço escuro.
+   Fundo rgb(236,239,243); superfície rgb(220,225,231); surface-2/3 mais escuros; borda escura 14%. Verde mantido. */
+html.light {
+  --page: #eceff3; --card: #dce1e7; --panels: #dce1e7; --dim: #d0d6de; --row-hover: #c4cbd5;
+  --border: rgba(15, 23, 42, .14); --scrollbar: #d8dde3; --disabled: #d7dce2;
+  --odd-cell: #c5cdd7; --odd-hover: #b6bfcb; --odd-price: #0f172a;
+}
+/* Cartões/painéis com sombra suave sobre o fundo cinza (como no repo). */
+html.light .match-card, html.light .live-card, html.light .panel, html.light .game-card, html.light .promo-card {
+  border-color: var(--border);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .10);
+}
+html.light .match-card, html.light .live-card {
+  background: var(--card);
+}
+html.light .match-card.clickable:hover, html.light .live-card.clickable:hover {
+  border-color: rgba(15, 23, 42, .22);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .16);
 }
