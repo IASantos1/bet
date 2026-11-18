@@ -916,3 +916,15 @@
 }
 @keyframes admShimmer { from { background-position: 180% 0; } to { background-position: -80% 0; } }
 @media (max-width: 900px) { .adm-skel-cards { grid-template-columns: 1fr 1fr; } }
+
+/* BETBY mini-field size, per sport: a labelled slider row + save. */
+.betby-size .bs-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 54px auto minmax(0, 120px); gap: 12px; align-items: center; margin: 8px 0; }
+.betby-size .bs-name { font-weight: 650; color: #e5edf5; }
+.betby-size .bs-out { font-variant-numeric: tabular-nums; text-align: right; color: #9fb0c4; }
+.betby-size .bs-msg { font-size: 12px; }
+@media (max-width: 760px) {
+  .betby-size .bs-row { grid-template-columns: 1fr auto auto; grid-template-areas: "name name name" "slider out save" "msg msg msg"; }
+  .betby-size .bs-name { grid-area: name; } .betby-size input[data-bs] { grid-area: slider; }
+  .betby-size .bs-out { grid-area: out; } .betby-size [data-action="betby-size-save"] { grid-area: save; }
+  .betby-size .bs-msg { grid-area: msg; }
+}

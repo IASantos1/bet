@@ -915,7 +915,8 @@ async function loadTab() {
     else if (tab === 'thesports') {
       lastTheSports = await api('/api/admin/thesports');
       const crop = await api('/api/admin/court-crop').catch(() => null);
-      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '');
+      const betbySize = await api('/api/admin/betby-size').catch(() => null);
+      main.innerHTML = adminTheSports(lastTheSports) + (crop ? adminCourtCrop(crop) : '') + (betbySize?.enabled ? adminBetbySize(betbySize) : '');
       applyCourtCropVars();
       // While the tab is open, refresh the live table every 2 s.
       liveTimer = setInterval(async () => {
@@ -1270,6 +1271,29 @@ function applyCourtCropVars(sport) {
     box.style.setProperty('--court-up', String(c.up));
     for (const [key] of CC_CTL) { const o = $(`#ccOut-${s}-${key}`); if (o) o.textContent = ccFmt[key](c[key]); }
   }
+}
+
+// ---------- BETBY mini-field size, per sport ----------
+// Tennis and basketball fields have different shapes, so each sport's mini-field can be made taller or
+// shorter on its own. The value is a height as a % of the natural size (100 = default). It applies to
+// phone and PC alike, because the height is computed from the available width.
+const BETBY_DEF = 100;
+function adminBetbySize(d) {
+  const sizes = d.sizes || {};
+  return `<div class="panel betby-size" id="betbySize">
+    <div class="section-head"><h2>Minicampo BETBY — tamanho</h2></div>
+    <p class="muted">O minicampo da BETBY aparece em todos os desportos. Como o campo de cada desporto tem uma forma diferente (o ténis é alto, o basquete é largo e baixo), aqui pode ajustar a <b>altura</b> de cada um — <b>100%</b> é o tamanho normal; menos encolhe, mais aumenta. Aplica-se a telemóvel e computador (a altura acompanha a largura). O site muda depois de <b>Guardar</b>.</p>
+    ${(d.sports || []).map(([s, label]) => {
+      const v = Number.isFinite(Number(sizes[s])) ? Number(sizes[s]) : BETBY_DEF;
+      return `<div class="bs-row" data-sport="${s}">
+        <span class="bs-name">${label}</span>
+        <input type="range" data-bs="${s}" min="50" max="200" step="1" value="${v}">
+        <b class="bs-out" id="bsOut-${s}">${v}%</b>
+        <button class="primary-btn btn-sm" data-action="betby-size-save" data-sport="${s}">Guardar</button>
+        <span class="muted bs-msg" id="bsMsg-${s}"></span>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 // ---------- league manager: switch leagues on/off (hidden site-wide, reversibly) ----------
@@ -2254,6 +2278,16 @@ document.addEventListener('click', async (e) => {
     } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
     return;
   }
+  if (action === 'betby-size-save') {
+    const s = actionEl.dataset.sport, msg = $(`#bsMsg-${s}`), inp = $(`input[data-bs="${s}"]`);
+    const v = Number(inp?.value) || BETBY_DEF;
+    try {
+      await api('/api/admin/betby-size', { method: 'POST', body: { [s]: v } });
+      if (msg) msg.textContent = 'Guardado.';
+      toast('Minicampo BETBY guardado', `${s}: ${v}%`);
+    } catch (err) { if (msg) msg.textContent = err.message; toast('Erro', err.message, 'error'); }
+    return;
+  }
   if (action === 'lg-bulk') {
     const kind = actionEl.dataset.kind;
     if (kind === 'on') lgBlocked.clear();
@@ -2914,6 +2948,7 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('input', (e) => {
   if (e.target.dataset?.cc) { applyCourtCropVars(e.target.dataset.sport); return; }
+  if (e.target.dataset?.bs) { const o = $(`#bsOut-${e.target.dataset.bs}`); if (o) o.textContent = `${e.target.value}%`; return; }
   if (banEd && (e.target.id === 'banPch' || e.target.id === 'banFocal')) { banChange(e.target); return; }
   if (e.target.id === 'lgSearch') {
     const q = e.target.value.trim().toLowerCase();

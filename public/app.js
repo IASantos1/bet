@@ -6205,11 +6205,23 @@ function mountLiveWidget() {
 // The BETBY tracker iframe stacks a scoreboard, the field and an icon bar. The field is about 0.7×width
 // tall; the scoreboard and icon bar are fixed bands. We size the iframe to fit all three with a little
 // headroom so the bottom line of the field is never cut off, and keep it in step as the column resizes.
+// The size for this sport (height as % of the natural size), from the server (per-sport defaults merged with
+// the admin's own values), or null for the plain formula. A flat field like tennis needs less than 100%.
+function betbySizePct() {
+  const sport = state.match.data?.sport;
+  const sizes = state.config?.betby?.sizes || {};
+  const pct = sport ? Number(sizes[sport]) : NaN;
+  return Number.isFinite(pct) && pct > 0 ? pct : null;
+}
 function sizeBetbyFrame(frame) {
   if (!frame) return;
   const turf = frame.parentElement;
   const w = turf ? turf.clientWidth : frame.clientWidth;
-  if (w > 0) frame.style.height = `${Math.round(0.72 * w + 150)}px`;
+  if (w <= 0) return;
+  let h = 0.72 * w + 150;
+  const pct = betbySizePct();
+  if (pct) h = h * pct / 100;
+  frame.style.height = `${Math.round(h)}px`;
 }
 // The exact height differs by sport (basketball's field is wide and short, tennis' is tall, each has its
 // own scoreboard). The formula above is only a first guess; the tracker page itself knows its real content
@@ -6242,6 +6254,8 @@ function ensureBetbySize() {
   const origin = betbyTrackerOrigin();
   m.betbyMsg = (ev) => {
     if (!origin || ev.origin !== origin || state.match.widget !== m.widget) return;
+    // An explicit size set by the admin for this sport wins over whatever the tracker reports.
+    if (betbySizePct()) return;
     const h = betbyMsgHeight(ev.data);
     if (Number.isFinite(h) && h > 150 && h < 2400) { m.betbySized = true; frame.style.height = `${Math.round(h)}px`; }
   };
