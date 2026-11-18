@@ -391,6 +391,10 @@ export function createWinHouseTracker(db, {
   const HEAT_W = 12;
   const HEAT_H = 8;
   const PRESS = { attack: 1, dangerous_attack: 2, corner: 2, shot: 3, freekick: 1, penalty: 4, goal: 4 };
+  // Pressure weight of each timeline event. The timeline carries the whole match from the kick-off (even on
+  // the first open), so building the momentum from it gives the real history, not just from when we started
+  // watching. Attributed to the team that made it (goal/corner/shot).
+  const TIMELINE_PRESS = { goal: 4, corner_awarded: 2, shot_on_target: 3, shot_off_target: 2 };
   const HEAT_WEIGHT = { safe: 0.5, possession: 1, attack: 2, dangerous_attack: 3, corner: 2, shot: 3, freekick: 1.5, penalty: 3 };
   const minuteOf = (clock) => { const m = /^(\d+)(?:\+(\d+))?/.exec(String(clock || '')); return m ? Math.min(130, Number(m[1]) + (m[2] ? Number(m[2]) : 0)) : null; };
   // Kept in the database too (every 30 s while it grows), so a restart or a deploy mid-match keeps
@@ -444,8 +448,23 @@ export function createWinHouseTracker(db, {
   const analyticsOut = (w) => {
     const a = w.analytics;
     if (!a) return null;
+    // Fill the minutes the live momentum does not have (the ones before anyone was watching) with the real
+    // corners/shots/goals from the timeline, which covers the whole match from the kick-off. So the first
+    // viewer already sees who pressed more in the first half, instead of a chart that only fills from the
+    // minute they opened the game. Minutes the live momentum already has are kept as they are (no double
+    // count — the live situations there already include those corners/shots/goals).
+    const merged = {};
+    for (const [m, v] of Object.entries(a.momentum)) merged[m] = { home: v.home || 0, away: v.away || 0 };
+    for (const x of (w.last?.timeline || [])) {
+      const tw = TIMELINE_PRESS[x.type];
+      if (!tw || (x.team !== 'home' && x.team !== 'away') || x.minute == null) continue;
+      const key = Math.min(90, Math.max(0, x.minute));
+      if (a.momentum[key]) continue; // the live momentum already covers this minute
+      const mm = (merged[key] ||= { home: 0, away: 0 });
+      mm[x.team] += tw;
+    }
     const rows = (o) => Object.entries(o).map(([m, v]) => ({ m: Number(m), ...v })).sort((x, y) => x.m - y.m);
-    return { heat: a.heat, w: HEAT_W, h: HEAT_H, momentum: rows(a.momentum), series: rows(a.series) };
+    return { heat: a.heat, w: HEAT_W, h: HEAT_H, momentum: rows(merged), series: rows(a.series) };
   };
 
   /** Publishes what changed in a watched match's tracker state (merged widget-data + ws frames). */

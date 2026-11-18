@@ -71,20 +71,31 @@ function trackerUrl(cfg, provider, sportId, eventId) {
 }
 
 // ---- team-name matching (same accent/case stripping our app uses elsewhere) ----
-const STOP = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'ca', 'sd', 'ud', 'sad', 'club', 'clube', 'de', 'do', 'da', 'the', 'if', 'bk', 'fk', 'sk', 'u21', 'u20', 'u19', 'u23', 'b']);
+// Club designators dropped before comparing names, so a prefix/suffix like "FC Porto" vs "Porto",
+// "Gence BC" vs "Gence" or "CE Sabadell FC" vs "Sabadell" still matches. Covers football and basketball.
+const STOP = new Set(['fc', 'cf', 'sc', 'ac', 'afc', 'cd', 'ca', 'sd', 'ud', 'sad', 'club', 'clube', 'de', 'do',
+  'da', 'the', 'if', 'bk', 'fk', 'sk', 'u21', 'u20', 'u19', 'u23', 'b', 'bc', 'ce', 'cs', 'csu', 'csm', 'kk',
+  'ec', 'asd', 'ssd', 'ad', 'us', 'usd', 'cska', 'bsc', 'calcio', 'basket', 'baloncesto']);
 function tokens(name) {
   return String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((t) => t && t.length > 1 && !STOP.has(t));
 }
 const squash = (name) => tokens(name).join('');
 
-function sameTeam(a, b) {
+export function sameTeam(a, b) {
   const sa = squash(a), sb = squash(b);
   if (!sa || !sb) return false;
-  if (sa === sb || sa.includes(sb) || sb.includes(sa)) return true;
+  if (sa === sb) return true;
+  // One name inside the other once the club words are stripped: handles an added city or suffix, e.g.
+  // "Real Union" ⊂ "Real Union de Irun", "Radnicki 1923" ⊂ "FK Radnicki 1923 Kragujevac", "Utebo" ⊂ "Utebo FC".
+  if ((sa.includes(sb) || sb.includes(sa)) && Math.min(sa.length, sb.length) >= 4) return true;
   const ta = tokens(a), tb = tokens(b);
   const overlap = ta.filter((t) => tb.includes(t)).length;
-  return overlap >= 2 || (overlap >= 1 && Math.min(ta.length, tb.length) === 1);
+  if (overlap >= 2 || (overlap >= 1 && Math.min(ta.length, tb.length) === 1)) return true;
+  // A long distinctive token in common (the club's own name), for transliterated cities like
+  // "Kolossos Rodou" vs "BC Kolossos Rhodes". The 7-char floor skips common cities (madrid, napoli…) so two
+  // different clubs of the same city don't match; the resolver also requires BOTH teams to match and uses time.
+  return ta.some((t) => t.length >= 7 && tb.includes(t));
 }
 
 // Our sport name → the BETBY/Betradar sport id used in the tracker's sportId. A wrong id only mis-scales
