@@ -154,6 +154,13 @@ function ensureFresh(c) {
   return c.inflight;
 }
 
+/** Load the BETBY feed into cache ahead of time, so opening a game resolves the mini-field at once (no delay
+ *  where the pressure graph shows first and is then replaced by the field). Safe to call often. */
+export function warmBetby(cfg) {
+  if (!cfg || !cfg.base || !cfg.brandId) return Promise.resolve();
+  try { return ensureFresh(cacheFor(cfg)); } catch { return Promise.resolve(); }
+}
+
 /**
  * The BETBY tracker (mini-field) URL for `event`, or null. `event` is our live match: { sport, home, away, start }.
  * Matches by both team names; when several match, the BETBY event whose kick-off is closest wins.
