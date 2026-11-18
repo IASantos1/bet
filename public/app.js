@@ -6202,14 +6202,14 @@ function mountLiveWidget() {
   else if (kind === 'tennis') updateTennisCourt();
 }
 
-// The BETBY tracker iframe shows a scoreboard, the field and an icon bar; its natural height is about
-// 0.7×width + 112px. We size it to that (no cropping) and keep it in step as the column resizes, so the
-// bottom of the field is never cut off.
+// The BETBY tracker iframe stacks a scoreboard, the field and an icon bar. The field is about 0.7×width
+// tall; the scoreboard and icon bar are fixed bands. We size the iframe to fit all three with a little
+// headroom so the bottom line of the field is never cut off, and keep it in step as the column resizes.
 function sizeBetbyFrame(frame) {
   if (!frame) return;
   const turf = frame.parentElement;
   const w = turf ? turf.clientWidth : frame.clientWidth;
-  if (w > 0) frame.style.height = `${Math.round(0.7 * w + 112)}px`;
+  if (w > 0) frame.style.height = `${Math.round(0.72 * w + 150)}px`;
 }
 function ensureBetbySize() {
   const m = state.match;
