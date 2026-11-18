@@ -2500,13 +2500,13 @@ html:is(.light, :not(.light)) .topbar {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), inset 0 -2px 7px rgba(0, 0, 0, .22), 0 3px 16px rgba(0, 70, 28, .35);
   border-bottom-color: transparent;
 }
-/* Cartões de evento (fundo escuro): gradiente vertical + fio de luz no topo = metal escovado escuro. */
+/* Cartões de evento: cinza metálico escuro (aço escovado/gunmetal) — brilho no topo, base mais escura. */
 .match-card, .live-card {
-  background: linear-gradient(180deg, #30363e 0%, #272c32 48%, #212730 100%);
-  border-color: #454c55;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 2px 6px rgba(0, 0, 0, .28);
+  background: linear-gradient(180deg, #3c434c 0%, #30363e 46%, #262b32 100%);
+  border-color: #4c545e;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .13), inset 0 -1px 0 rgba(0, 0, 0, .3), 0 3px 9px rgba(0, 0, 0, .3);
 }
 .match-card.clickable:hover, .live-card.clickable:hover {
-  border-color: var(--row-hover);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 6px 18px rgba(0, 0, 0, .42);
+  border-color: #5a636e;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 7px 20px rgba(0, 0, 0, .45);
 }
