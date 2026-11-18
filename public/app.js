@@ -5894,34 +5894,53 @@ function ldSeries(a, e, { xg = null } = {}) {
       <circle cx="${X(last.m)}" cy="${Y(last.da)}" r="4" class="ld-away-fill"/><circle cx="${X(last.m)}" cy="${Y(last.dh)}" r="4" class="ld-home-fill"/></svg></div>`;
 }
 
+// A continuous "momentum" series for minutes 0..lastMin. Real pressure (home−away per tracked minute) is
+// used where it exists; the kick-off, the gaps and the quiet minutes are filled with a gentle simulation
+// that leans to whoever has the ball (possession). This way the graph starts at the opening whistle, never
+// breaks, and never spikes where nothing happened — the real peaks still stand out above the simulation.
+function momentumSeries(a, e) {
+  const rows = (a?.momentum || []).slice().sort((p, q) => p.m - q.m);
+  const pos = ldStat('possession');
+  const clockMin = (() => { const mm = String(e.clock || '').match(/(\d+)/); return mm ? Math.min(90, +mm[1]) : 0; })();
+  const lastMin = Math.max(1, Math.min(90, Math.max(clockMin, rows.at(-1)?.m || 0)));
+  const realBy = new Map(rows.map((r) => [Math.round(r.m), (r.home || 0) - (r.away || 0)]));
+  const bias = pos && (pos[0] + pos[1]) ? (pos[0] - pos[1]) / (pos[0] + pos[1]) : 0; // −1..1 toward home
+  const top = Math.max(3, ...rows.map((r) => Math.abs((r.home || 0) - (r.away || 0))));
+  // Deterministic noise seeded by the event id, so the simulation is stable across re-renders.
+  let seed = 2166136261 >>> 0;
+  for (const ch of String(e.id || '1')) seed = ((seed ^ ch.charCodeAt(0)) * 16777619) >>> 0;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const minSim = top * 0.12;          // a flat minute still shows this much, so there are no gaps
+  const target = bias * top * 0.3;    // where the simulation leans (possession)
+  const out = [];
+  let w = target;
+  for (let mn = 0; mn <= lastMin; mn++) {
+    w += (rnd() - 0.5) * top * 0.2 + (target - w) * 0.12; // gentle mean-reverting walk
+    let v = w;
+    if (realBy.has(mn)) { v = realBy.get(mn); w = v * 0.55 + w * 0.45; } // snap to the real value, keep momentum
+    if (Math.abs(v) < minSim) v = (v < 0 || (v === 0 && bias < 0)) ? -minSim : minSim; // keep it continuous
+    out.push({ m: mn, v });
+  }
+  return { out, top };
+}
+
 function ldMomentum(a, e) {
-  const rows = a?.momentum || [];
-  if (!rows.length) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
-  // Each half fills the whole width: the 1st half runs 0'→45', the 2nd 45'→90'. By default we show the
-  // half the game is in (the latest tracked minute); the operator can switch with the selector.
-  const auto = rows.at(-1).m > 45 ? '2' : '1';
-  const half = state.match.momHalf && state.match.momHalf !== 'auto' ? state.match.momHalf : auto;
-  const second = half === '2';
-  const [lo, hi] = second ? [45, 90] : [0, 45];
-  const span = hi - lo;
-  const inHalf = rows.filter((r) => (second ? r.m > 45 : r.m <= 45));
-  const clamp = (m) => Math.min(hi, Math.max(lo, m));
-  const by = new Map(inHalf.map((r) => [clamp(r.m), r.home - r.away]));
-  const top = Math.max(3, ...(inHalf.length ? inHalf : rows).map((r) => Math.abs(r.home - r.away)));
-  const bw = 360 / (span + 1);
-  const X = (m) => 30 + (clamp(m) - lo) * bw;
-  const bars = [...by.entries()].map(([m, v]) => {
-    if (!v) return '';
-    const hgt = (Math.abs(v) / top) * 34;
-    return `<rect x="${X(m).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : 40}" width="${Math.max(1.5, bw - 1).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
+  if (!(a?.momentum || []).length && !ldStat('possession')) return ldWaiting('〰️', 'Momento do jogo', { wide: true });
+  // The whole match on one axis: 0' → HT (45') → 90', continuous from the kick-off (no 1.ª/2.ª selector).
+  const { out, top } = momentumSeries(a, e);
+  const X = (m) => 30 + (m / 90) * 360;
+  const bw = 360 / 92;
+  const bars = out.map(({ m, v }) => {
+    const hgt = Math.max(1.5, Math.min(34, (Math.abs(v) / top) * 34));
+    return `<rect x="${(X(m) - bw / 2).toFixed(1)}" y="${v > 0 ? (40 - hgt).toFixed(1) : '40'}" width="${Math.max(1.2, bw - 0.7).toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" class="${v > 0 ? 'ld-home-fill' : 'ld-away-fill'}"/>`;
   }).join('');
-  const mid = Math.round((lo + hi) / 2);
-  const sel = `<div class="ld-halfsel">${[['1', '1.ª parte'], ['2', '2.ª parte']].map(([h, l]) => `<button type="button" class="${half === h ? 'active' : ''}" data-mom-half="${h}">${l}</button>`).join('')}</div>`;
-  const tick = (m, anchor) => `<text x="${X(m).toFixed(1)}" y="88" class="ld-tick"${anchor ? ` text-anchor="${anchor}"` : ''}>${m}'</text>`;
-  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${sel}${ldLegend(e)}</div>
-    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>${bars}
-      ${tick(lo)}${tick(mid, 'middle')}${tick(hi, 'end')}</svg>
-    <p class="ld-note">${second ? '2.ª parte' : '1.ª parte'} — quem está a pressionar, minuto a minuto (ataques, ataques perigosos, remates e cantos).</p></div>`;
+  const htX = X(45).toFixed(1);
+  const tick = (m, label, anchor) => `<text x="${X(m).toFixed(1)}" y="88" class="ld-tick"${anchor ? ` text-anchor="${anchor}"` : ''}>${label}</text>`;
+  return `<div class="ld-card ld-wide"><div class="ld-head"><span class="ld-ic">〰️</span><h4>Momento do jogo</h4>${ldLegend(e)}</div>
+    <svg class="ld-chart" viewBox="0 0 400 92" aria-hidden="true"><line x1="30" y1="40" x2="390" y2="40" class="ld-axis"/>
+      <line x1="${htX}" y1="6" x2="${htX}" y2="74" class="ld-ht"/>${bars}
+      ${tick(0, "0'")}${tick(45, 'HT', 'middle')}${tick(90, "90'", 'end')}</svg>
+    <p class="ld-note">Quem está a pressionar, do apito inicial ao fim — ataques, ataques perigosos, remates e cantos.</p></div>`;
 }
 
 // The shots on a goal frame: on target inside, off target around it (a picture of the count, not where they were taken).
