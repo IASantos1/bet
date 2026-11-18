@@ -319,6 +319,10 @@ export const config = {
     brandId: unquote(env.BETBY_BRAND_ID),
     tracker: (unquote(env.BETBY_TRACKER_URL) || 'https://ui.invisiblesport.com').replace(/\/$/, ''),
     locale: unquote(env.BETBY_LOCALE) || 'en-gb',
+    // all=true (por omissão): a BETBY é o minicampo de TODOS os desportos; os widgets nativos (campo 3D
+    // do futebol WinHouse, court do ténis/críquete) ficam só como reserva, quando a BETBY não tem o jogo.
+    // BETBY_ALL=0 volta ao modo anterior: a BETBY só preenche os desportos que não têm widget nativo.
+    all: env.BETBY_ALL !== '0',
   },
   // Telegram channel (telegram.js): the bot (@BotFather) and the channel it posts to, as an
   // administrator. Automatic posts only in Railway's production environment (a PR preview has the

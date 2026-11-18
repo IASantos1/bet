@@ -886,7 +886,7 @@ export function createApp(db, {
       rapidKey: !!rapidStream,
       // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
       // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
-      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale } : null,
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
