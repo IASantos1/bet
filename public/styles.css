@@ -2536,3 +2536,9 @@ html.light .match-card.clickable:hover, html.light .live-card.clickable:hover {
   border-color: rgba(15, 23, 42, .22);
   box-shadow: 0 10px 24px rgba(15, 23, 42, .16);
 }
+
+/* Tracker fallback — a live game with no mini-field shows the "Momento do jogo" pressure graph here. */
+.trk-mom { --ld-home: #f2fff4; --ld-away: var(--viva); padding: 12px 12px 2px; }
+html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
+.trk-mom .ld-chart { width: 100%; height: auto; }
+.trk-mom-card .trk-note { color: var(--text-3); font-size: 11px; padding: 2px 12px 11px; margin: 0; }
