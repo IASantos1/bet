@@ -2542,3 +2542,8 @@ html.light .match-card.clickable:hover, html.light .live-card.clickable:hover {
 html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .trk-mom .ld-chart { width: 100%; height: auto; }
 .trk-mom-card .trk-note { color: var(--text-3); font-size: 11px; padding: 2px 12px 11px; margin: 0; }
+
+/* Short "loading" state while the BETBY mini-field resolves (so the pressure graph doesn't flash first). */
+.trk-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 150px; color: var(--text-3); font-size: 13px; }
+.trk-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--viva); animation: trkSpin .8s linear infinite; }
+@keyframes trkSpin { to { transform: rotate(360deg); } }

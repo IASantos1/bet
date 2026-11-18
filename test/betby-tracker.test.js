@@ -1,6 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveBetbyTracker } from '../public/betby-tracker.js';
+import { resolveBetbyTracker, sameTeam } from '../public/betby-tracker.js';
+
+test('team-name matching: club prefixes/suffixes, added cities and transliterated names still match', () => {
+  // Prefix/suffix club designators (football + basketball).
+  assert.ok(sameTeam('Gence', 'Gence BC'));
+  assert.ok(sameTeam('Zemun', 'FK Zemun'));
+  assert.ok(sameTeam('Utebo', 'Utebo FC'));
+  assert.ok(sameTeam('Sabadell', 'CE Sabadell FC'));
+  assert.ok(sameTeam('Besiktas', 'Besiktas'));
+  // An added city / suffix.
+  assert.ok(sameTeam('Real Union', 'Real Union de Irun'));
+  assert.ok(sameTeam('Radnicki 1923', 'FK Radnicki 1923 Kragujevac'));
+  // Transliterated city, same club name.
+  assert.ok(sameTeam('Kolossos Rodou', 'BC Kolossos Rhodes'));
+  // Hyphen / case differences.
+  assert.ok(sameTeam('Capital City Go-Go', 'Capital City GO-GO'));
+  // Different clubs that merely share a city must NOT match on their own.
+  assert.ok(!sameTeam('Real Madrid', 'Atletico Madrid'));
+  assert.ok(!sameTeam('Sporting', 'Benfica'));
+});
 
 const cfg = { base: 'https://demoapi.betby.com', brandId: 'B1', tracker: 'https://ui.invisiblesport.com', locale: 'en-gb' };
 

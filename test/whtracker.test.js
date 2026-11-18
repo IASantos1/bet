@@ -325,6 +325,31 @@ test('live dashboard history: ball grid per side in possession, pressure per min
   stop();
 });
 
+test('momentum is filled from the timeline for minutes before anyone was watching (real history from 0’)', async () => {
+  const db = openDb(':memory:');
+  const ts = nowIso();
+  const id = Number(db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, home_score, away_score, clock, source, external_id, created_at, updated_at)
+    VALUES ('futebol', 'L', 'A', 'B', ?, 'live', 1, 0, '45''', 'winhouse', '970', ?, ?)`).run(ts, ts, ts).lastInsertRowid);
+  // The game is at 45'; the first viewer only opens it now. The timeline carries the whole first half.
+  const client = {
+    enabled: true,
+    widget: async () => ({ ok: true, status: 200, body: null, text: '<script>src="/widget-data?event_id=E970&api_key=KEY"</script>' }),
+    widgetData: async () => ({ ok: true, status: 200, body: {
+      status: 'live', period: 'First Half', timer: 2700, stats: { 'On Target': [3, 1] }, situation: 'Home Attack', xy: [0.6, 0.5],
+      timeline: [{ type: 'CORNER', minute: 10, team: 'home' }, { type: 'On Target', minute: 15, team: 'home' }, { type: 'GOAL', minute: 23, team: 'away' }],
+    } }),
+  };
+  const t = createWinHouseTracker(db, { client, pollMs: 60_000, ws: false });
+  const stop = t.follow(id, '970');
+  await new Promise((r) => setTimeout(r, 20));
+  const mom = Object.fromEntries(t.snapshot(id).analytics.momentum.map((m) => [m.m, [m.home, m.away]]));
+  // Real pressure of the minutes nobody watched, taken from the timeline: corner 10' and shot 15' (home), goal 23' (away).
+  assert.deepEqual(mom[10], [2, 0]);
+  assert.deepEqual(mom[15], [3, 0]);
+  assert.deepEqual(mom[23], [0, 4]);
+  stop();
+});
+
 test('the server follows the live football matches itself (up to the limit) and lets go of finished ones', async () => {
   const db = openDb(':memory:');
   const ts = nowIso();
