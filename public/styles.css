@@ -767,6 +767,11 @@ body.no-scroll { overflow: hidden; }
    markets — no empty "indisponível" panel. Football keeps its own 2D fallback, so this is court-only. */
 .trk[data-kind="court"].no3d { display: none; }
 .trk[data-kind="court"]:fullscreen .court3d-turf, .trk.expanded[data-kind="court"] .court3d-turf { width: min(100%, calc((100vh - 120px) * 1.6)); margin: 0 auto; aspect-ratio: 16 / 9; }
+/* BETBY mini-field: the whole tracker (scoreboard + field + icon bar) shown without cropping. Its height
+   is set in JS to the tracker's natural ratio (~0.7×width + 112px), so the bottom line is never cut. */
+.betby-turf { position: relative; width: 100%; background: #0b1626; overflow: hidden; }
+.betby-frame { display: block; width: 100%; border: 0; }
+.trk[data-kind="betby"]:fullscreen .betby-turf, .trk.expanded[data-kind="betby"] .betby-turf { width: min(100%, calc((100vh - 120px) * 1.4)); margin: 0 auto; }
 .trk-clip { position: absolute; inset: 0; z-index: 8; background: #0d1114; opacity: 0; visibility: hidden; cursor: pointer; transition: opacity .25s, visibility 0s .25s; }
 .trk-clip.on { opacity: 1; visibility: visible; transition: opacity .25s; }
 .trk-clip video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }

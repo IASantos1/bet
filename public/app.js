@@ -4916,9 +4916,9 @@ function leaveMatch() {
   clearInterval(m.timer);
   stopRapid();
   clearTimeout(m.clipTimer);
-  drop3D(); dropCourt3D();
+  drop3D(); dropCourt3D(); dropBetby();
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
-  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false });
+  Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null });
   clearTimeout(m.streamTimer);
   $('#sideTracker')?.replaceChildren();
 }
@@ -6127,7 +6127,7 @@ function betbyWidget(e) {
     <div class="trk-head"><span class="trk-team">${sideBadge(e, 'home', 'mini')}${esc(tname(e, 'home'))}</span>
       <span class="trk-score"><b>${e.homeScore ?? 0}</b><span>-</span><b>${e.awayScore ?? 0}</b></span>
       <span class="trk-team away">${esc(tname(e, 'away'))}${sideBadge(e, 'away', 'mini')}</span></div>
-    <div class="court3d-turf"><iframe id="betbyFrame" class="court3d-frame" title="Minicampo ao vivo" scrolling="no" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy" allow="fullscreen"></iframe></div>
+    <div class="betby-turf"><iframe id="betbyFrame" class="betby-frame" title="Minicampo ao vivo" scrolling="no" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy" allow="fullscreen"></iframe></div>
     <p class="trk-note">Minicampo ao vivo.</p>
   </div>`;
 }
@@ -6179,14 +6179,14 @@ function mountLiveWidget() {
       .catch(() => {});
   }
   if (!kind) {
-    drop3D(); dropCourt3D();
+    drop3D(); dropCourt3D(); dropBetby();
     m.widget?.remove();
     m.widget = null;
     if (m.streamEl?.parentElement) m.streamEl.remove();
     return;
   }
   if (!m.widget || m.widgetKind !== kind) {
-    drop3D(); dropCourt3D();
+    drop3D(); dropCourt3D(); dropBetby();
     m.widget?.remove();
     const holder = document.createElement('div');
     holder.innerHTML = kind === 'football' ? footballWidget(e) : kind === 'court' ? courtWidget(e) : kind === 'betby' ? betbyWidget(e) : tennisWidget(e);
@@ -6198,7 +6198,34 @@ function mountLiveWidget() {
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
   if (kind === 'football') { updateTracker({ instant: true }); updateActionsList(); ensure3D(); }
   else if (kind === 'court') ensureCourt3D();
+  else if (kind === 'betby') ensureBetbySize();
   else if (kind === 'tennis') updateTennisCourt();
+}
+
+// The BETBY tracker iframe shows a scoreboard, the field and an icon bar; its natural height is about
+// 0.7×width + 112px. We size it to that (no cropping) and keep it in step as the column resizes, so the
+// bottom of the field is never cut off.
+function sizeBetbyFrame(frame) {
+  if (!frame) return;
+  const turf = frame.parentElement;
+  const w = turf ? turf.clientWidth : frame.clientWidth;
+  if (w > 0) frame.style.height = `${Math.round(0.7 * w + 112)}px`;
+}
+function ensureBetbySize() {
+  const m = state.match;
+  const frame = m.widget && $('#betbyFrame', m.widget);
+  if (!frame) return;
+  sizeBetbyFrame(frame);
+  m.betbyRO?.disconnect();
+  if (typeof ResizeObserver === 'function') {
+    m.betbyRO = new ResizeObserver(() => sizeBetbyFrame(frame));
+    m.betbyRO.observe(frame.parentElement || frame);
+  }
+}
+function dropBetby() {
+  const m = state.match;
+  m.betbyRO?.disconnect();
+  m.betbyRO = null;
 }
 
 // ---------- the football pitch in 3D (public/trk3d.js, loaded when first needed) ----------
