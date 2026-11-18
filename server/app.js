@@ -886,7 +886,7 @@ export function createApp(db, {
       rapidKey: !!rapidStream,
       // BETBY mini-field (minicampo) for sports with no native widget — public feed read in the browser;
       // null (off) unless BETBY_BRAND_ID is set. Carries only what the tracker needs: no odds, no markets.
-      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false } : null,
+      betby: betby ? { base: betby.baseUrl, brandId: betby.brandId, tracker: betby.tracker, locale: betby.locale, all: betby.all !== false, sizes: (() => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; })() } : null,
       maintenance: m.on ? { scope: m.scope, message: m.message, since: m.since } : null,
       // WinHouse is down: the live page says why it has no games.
       liveDown: !!winhouseFeed?.liveDown?.(),
@@ -3165,6 +3165,23 @@ export function createApp(db, {
     for (const s of COURT_SPORTS) if (body[s]) saved[s] = clean(body[s], s);
     setSetting(db, 'court.crop', saved);
     res.json({ crop: cropAll() });
+  });
+
+  // BETBY mini-field size, per sport: a height as a % of the natural size (100 = default). Tennis and
+  // basketball fields have different shapes, so each sport can be tuned on its own. Only used when BETBY on.
+  const BETBY_SIZE_SPORTS = [['futebol', 'Futebol'], ['basquetebol', 'Basquete'], ['tenis', 'Ténis'], ['voleibol', 'Voleibol'], ['andebol', 'Andebol'], ['hoquei', 'Hóquei'], ['tenismesa', 'Ténis de mesa'], ['badminton', 'Badminton'], ['futamericano', 'Futebol americano'], ['basebol', 'Basebol'], ['criquete', 'Críquete'], ['dardos', 'Dardos']];
+  const betbySizes = () => { const s = getSetting(db, 'betby.sizes', null); return s && typeof s === 'object' ? s : {}; };
+  admin.get('/betby-size', (_req, res) => res.json({ sizes: betbySizes(), sports: BETBY_SIZE_SPORTS, enabled: !!betby }));
+  admin.post('/betby-size', (req, res) => {
+    const body = req.body || {};
+    const saved = { ...betbySizes() };
+    for (const [s] of BETBY_SIZE_SPORTS) {
+      if (body[s] === undefined || body[s] === null) continue;
+      const v = Number(body[s]);
+      if (Number.isFinite(v)) saved[s] = Math.max(50, Math.min(200, Math.round(v)));
+    }
+    setSetting(db, 'betby.sizes', saved);
+    res.json({ sizes: saved });
   });
 
   // League manager: every league with games now (per sport), and which are switched off. Blocking hides

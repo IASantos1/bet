@@ -89,7 +89,8 @@ function sameTeam(a, b) {
 
 // Our sport name → the BETBY/Betradar sport id used in the tracker's sportId. A wrong id only mis-scales
 // the pitch drawing, so this is best-effort; when the BETBY event already tells us its sport we use that.
-const SPORT_ID = { futebol: '1', basquete: '2', tenis: '5', 'hoquei-gelo': '4', andebol: '6', voleibol: '23', basebol: '3', criquete: '21', 'futebol-americano': '16', rugby: '12', snooker: '19', dardos: '22', 'tenis-mesa': '20', badminton: '31', 'e-sports': '109' };
+// Keyed by the site's own sport slugs (server SPORTS): futebol, basquetebol, tenis, hoquei, voleibol, …
+const SPORT_ID = { futebol: '1', basquetebol: '2', tenis: '5', hoquei: '4', andebol: '6', voleibol: '23', basebol: '3', criquete: '21', futamericano: '16', raguebi: '12', dardos: '22', tenismesa: '20', badminton: '31', futsal: '29', boxe: '10', mma: '117' };
 
 // ---- feed cache (one per brand, refreshed on a short interval, shared by every match on screen) ----
 const caches = new Map();
