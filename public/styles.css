@@ -2491,15 +2491,8 @@ body.slip-open #helpWidget { display: none; }
 .help-news small { display: block; color: var(--text-3); font-size: 11px; margin-top: 3px; }
 .help-news-load { color: var(--text-3); font-size: 12px; margin-top: 6px; }
 
-/* ---------- Acabamento metálico: barra verde do topo + cartões de evento ---------- */
-/* Barra do topo: verde com reflexo no cimo (gloss) e sombra em baixo — dá profundidade metálica. */
-html:is(.light, :not(.light)) .topbar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, #37c75c 0%, #24a644 50%, #178a33 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), inset 0 -2px 7px rgba(0, 0, 0, .22), 0 3px 16px rgba(0, 70, 28, .35);
-  border-bottom-color: transparent;
-}
+/* A barra do topo volta ao verde chapado de antes (sem o efeito metálico, que criava uma divisão com a
+   faixa do topo do telemóvel). O verde original está definido mais acima (html … .topbar). */
 /* Fundo e superfícies com as cores do repositório BETBY (azul-marinho), mantendo o verde da marca.
    SÓ no modo escuro — o modo claro mantém o fundo cinza-claro e os cartões brancos.
    Fundo rgb(10,14,23) = #0a0e17; superfície/cartões rgb(18,26,41) = #121a29; borda branco 8%. */
