@@ -311,7 +311,11 @@ export function createWinHouseClient({
     const hits = [];
     // Does the book's tracker know VAR reviews? Every mention in its docs and scripts, with the text around it.
     const varHits = [];
+    // Does the book let us PLACE and SETTLE a bet (so WinHouse settles the ticket, not us)? Every mention of a
+    // bet-placement / settlement / seamless-wallet endpoint in its docs and scripts, with the text around it.
+    const betHits = [];
     const KEYWORDS = /livegames|prematchgame|livegame|liveevent|live_game|liveodds|live-odds|gameodds|getgame|event_odds|ws-widget|widget-data|socket\.io|sockjs|signalr/gi;
+    const BET_KEYWORDS = /place.?bet|placebet|makebet|make_bet|\/bet\b|betslip|bet_slip|coupon|\bticket\b|\bstake\b|\bwager\b|cash.?out|cashout|settle|payout|bet.?history|my.?bets|openbets|wallet|balance|debit|credit|\/aaa\/|betstatus|bet_status|calculateBet|betRequest/gi;
     const scan = (text, where) => {
       for (const m of text.matchAll(/["'`](\/?(?:ajax|api|ws-|widget|socket|live|game|event|odds|sport)[A-Za-z0-9_\-./{}$:?=&+]*)["'`]/gi)) add(m[1], where);
       for (const m of text.matchAll(/\/ajax\/[A-Za-z0-9_\-/]+/g)) add(m[0], where);
@@ -319,6 +323,11 @@ export function createWinHouseClient({
       for (const m of text.matchAll(/\bVAR\b|video.?assistant|var_?(?:review|check|decision)/g)) {
         if (varHits.length >= 30) break;
         varHits.push({ where, around: text.slice(Math.max(0, m.index - 150), m.index + 200).replace(/\s+/g, ' ') });
+      }
+      for (const m of text.matchAll(BET_KEYWORDS)) {
+        if (betHits.length >= 50) break;
+        const around = text.slice(Math.max(0, m.index - 120), m.index + 200).replace(/\s+/g, ' ');
+        if (!betHits.some((x) => x.around === around)) betHits.push({ where, match: m[0], around });
       }
       for (const m of text.matchAll(KEYWORDS)) {
         if (hits.length >= 40) break;
@@ -394,6 +403,9 @@ export function createWinHouseClient({
       at: new Date().toISOString(), baseUrl: base, visited, links: [...links].slice(0, 60), scriptsFound: seen.size - pagesRead,
       docRoutes: [...docRoutes].slice(0, 200),
       varHits,
+      // Bet-placement / settlement / wallet endpoints the book exposes (for sending our ticket to WinHouse so
+      // WinHouse settles it). Empty here usually means the book is iframe-only (no server bet-placement API).
+      betting: { hits: betHits, routes: list.filter((r) => /bet|ticket|coupon|stake|wager|cashout|settle|wallet|balance|payout|\/aaa\//i.test(r.path)).map((r) => r.path).slice(0, 80) },
       routes: list.slice(0, 300), live: list.filter((r) => /live|game|event|match|odd|market/i.test(r.path)).map((r) => r.path).slice(0, 60), hits,
       docs,
       // The token swap first (it is what the live video is missing).
