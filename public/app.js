@@ -2237,13 +2237,15 @@ function myPromosView() {
 
 function promosPage() {
   if (!state.campaigns) loadPromos();
-  const cards = (state.campaigns || []).filter((c) => c.id !== 'welcome' || c.open).map(campaignCard).join('');
+  // Only the promotions that are on show up; a disabled or out-of-window one disappears entirely (never
+  // an "Indisponível" card). Turning one on/off in the admin makes it appear/disappear here on its own.
+  const cards = (state.campaigns || []).filter((c) => c.open).map(campaignCard).join('');
   return `<div class="page-title"><h1>Promoções</h1><p>Ofertas e campanhas da Bet62.</p></div>
     ${state.user ? `<section class="section"><details class="promo-mine"${state.promosOpen ? ' open' : ''} data-promos-toggle>
       <summary class="section-head"><h2>As minhas promoções</h2><span class="promo-chev" aria-hidden="true">⌄</span></summary>
       <div class="panel pf-panel">${myPromosView()}</div></details></section>` : ''}
     <section class="section"><div class="section-head"><h2>Campanhas</h2></div>
-      ${cards ? `<div class="promo-grid grid">${cards}</div>` : '<div class="loading">A carregar…</div>'}</section>
+      ${state.campaigns ? (cards ? `<div class="promo-grid grid">${cards}</div>` : '<p class="muted">Sem promoções ativas de momento.</p>') : '<div class="loading">A carregar…</div>'}</section>
     <section class="section notice">Só uma promoção de depósito ativa de cada vez. O saldo de bónus não pode ser levantado: passa a saldo real quando o rollover é cumprido; ao expirar ou ser cancelado, só o saldo de bónus é removido. Pedir um levantamento com um bónus de depósito ativo cancela esse bónus. Promoções sujeitas a verificação de elegibilidade (conta ativa, sem autoexclusão, sem contas duplicadas, depósito confirmado e não revertido).</section>
     ${footer()}`;
 }
