@@ -953,10 +953,10 @@ html.splash-on { overflow: hidden; }
 .splash::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 200px; pointer-events: none; background: radial-gradient(ellipse 60% 100% at 50% 100%, rgba(124, 255, 107, .12) 0%, transparent 70%); }
 .splash-brand { position: relative; display: flex; align-items: flex-end; line-height: 1; font-weight: 900; font-style: italic; letter-spacing: -.04em; animation: splash-brand .5s .05s ease-out both; }
 .splash-bet { color: #fff; font-size: clamp(72px, 13vw, 100px); }
-.splash-62 { color: #7cff6b; font-size: clamp(92px, 17vw, 130px); line-height: .92; text-shadow: 0 0 48px rgba(124, 255, 107, .55), 0 0 100px rgba(60, 200, 60, .35); }
+.splash-62 { color: #e11d48; font-size: clamp(92px, 17vw, 130px); line-height: .92; text-shadow: 0 0 48px rgba(225, 29, 72, .55), 0 0 100px rgba(176, 13, 44, .35); }
 .splash-sub { position: relative; margin-top: 14px; color: var(--text-2); font-size: clamp(13px, 2.6vw, 16px); font-weight: 700; letter-spacing: .38em; text-transform: uppercase; animation: splash-fade .4s .35s ease-out both; }
 .splash-bar { position: relative; width: min(220px, 50vw); height: 3px; margin-top: 26px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; animation: splash-fade .3s .3s both; }
-.splash-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3ee05a, #7cff6b); box-shadow: 0 0 10px rgba(124, 255, 107, .6); transform-origin: left; animation: splash-load 1.1s .3s linear both; }
+.splash-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #b00d2c, #e11d48); box-shadow: 0 0 10px rgba(225, 29, 72, .6); transform-origin: left; animation: splash-load 1.1s .3s linear both; }
 .splash-tag { position: absolute; bottom: 56px; left: 16px; right: 16px; margin: 0; text-align: center; color: rgba(255, 255, 255, .45); font-size: 12px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; animation: splash-fade .4s .5s both; }
 .splash-skip { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 16px); right: calc(env(safe-area-inset-right, 0px) + 18px); min-height: 38px; padding: 0 15px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 999px; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 800; cursor: pointer; }
 .splash-skip:hover, .splash-skip:focus-visible { border-color: rgba(255, 255, 255, .55); color: #fff; outline: none; }
@@ -1937,8 +1937,8 @@ html:not(.light) .pick-card::after { filter: invert(1); opacity: .07; }
 /* ---------- Vivid accents: one signature colour (lime) for what the player acts on, a colour per sport,
    gold for boosted prices, a pulsing live dot. Lime fills keep dark text; on the light theme the thin
    lime marks (logo, underlines) turn a deeper green to stay readable on white. ---------- */
-:root { --viva: #7cff6b; --viva-ink: #0b1a0a; --viva-text: #7cff6b; --viva-glow: rgba(124, 255, 107, .35); --boost-price: #ffc83d; }
-html.light { --viva-text: #1f9d3a; --viva-glow: rgba(60, 200, 60, .28); --boost-price: #d98a00; }
+:root { --viva: #e11d48; --viva-ink: #ffffff; --viva-text: #fb7185; --viva-glow: rgba(225, 29, 72, .35); --boost-price: #ffc83d; }
+html.light { --viva-text: #be123c; --viva-glow: rgba(225, 29, 72, .28); --boost-price: #d98a00; }
 
 .brand-word span, .brand > span:last-child span { color: var(--viva-text); text-shadow: 0 0 14px var(--viva-glow); }
 html.light .brand-word span, html.light .brand > span:last-child span { text-shadow: none; }
@@ -2391,7 +2391,7 @@ html.light .promo-card.off { opacity: .6; }
    hundred pixels (it scrolls away with the page); further down the page stays light. */
 html.light body { background: #eef1f5 linear-gradient(180deg, #23a240 0, #5cc56f 120px, #a8e2ad 260px, #dcf1dc 420px, #eef1f5 620px) no-repeat; }
 html.light .content { background: transparent; }
-html:is(.light, :not(.light)) .topbar { background: linear-gradient(90deg, #178a33, #23a240 55%, #2fb34a); border-bottom-color: transparent; }
+html:is(.light, :not(.light)) .topbar { background: linear-gradient(180deg, #c8102e 0%, #b00d2c 100%); border-bottom-color: transparent; }
 html:is(.light, :not(.light)) .topbar .brand-word { color: #fff; }
 html:is(.light, :not(.light)) .topbar .brand-word span { color: #b4ff2e; text-shadow: 0 1px 2px rgba(0, 60, 20, .45), 0 0 14px rgba(180, 255, 46, .45); }
 html:is(.light, :not(.light)) .topbar .topnav a { color: rgba(255, 255, 255, .82); }
