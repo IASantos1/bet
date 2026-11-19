@@ -271,6 +271,43 @@ test('free pass: the competition is matched to its kept league and close names t
   assert.equal(api.length, 1);
 });
 
+test('a league given by name is resolved to its id and its teams kept (Malavan gets its own badge)', async () => {
+  const db = openDb(':memory:');
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('futebol', 'Iran. Pro League', 'Malavan', 'Gol Gohar', ?, 'live', 'winhouse', ?, ?)`).run(soon, nowIso(), nowIso());
+  const api = [];
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    if (u.hostname === 'media.api-sports.io') return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+    if (u.hostname.endsWith('api-sports.io')) {
+      api.push(u.pathname + u.search);
+      if (u.pathname.endsWith('/leagues')) {
+        return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response: [
+          { league: { id: 290, name: 'Persian Gulf Pro League', logo: 'https://media.api-sports.io/football/leagues/290.png' }, country: { name: 'Iran' } },
+          { league: { id: 140, name: 'La Liga', logo: 'https://media.api-sports.io/football/leagues/140.png' }, country: { name: 'Spain' } },
+        ] }) };
+      }
+      const response = [{ team: { name: 'Malavan', code: 'MAL', logo: 'https://media.api-sports.io/football/teams/2740.png' } },
+        { team: { name: 'Gol Gohar', code: 'GOL', logo: 'https://media.api-sports.io/football/teams/2745.png' } }];
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ teams: null }) };
+  };
+  const named = [{ sport: 'futebol', country: 'Iran', name: 'Persian Gulf Pro League' }];
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: {}, namedPacks: named, perRun: 0 });
+  await logos.run();
+  assert.ok(api.some((p) => p.startsWith('/leagues?search=')), 'the league is looked up by name');
+  assert.ok(api.some((p) => p.startsWith('/teams?league=290')), 'its id 290 is then fetched whole');
+  assert.match(logos.get('futebol', 'Malavan')?.logo || '', /^\/team-logo\//);
+  assert.equal(db.prepare("SELECT league_id FROM named_leagues WHERE sport = 'futebol'").get().league_id, 290);
+  // Resolved once: a new run does not look the league up again.
+  const before = api.length;
+  const again = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: {}, namedPacks: named, perRun: 0 });
+  await again.run();
+  assert.ok(!api.slice(before).some((p) => p.startsWith('/leagues?search=')), 'the id is kept, not looked up again');
+});
+
 test('a promoted club gets its own badge from another kept league, and a wrong old match is redone', async () => {
   const db = openDb(':memory:');
   // A badge saved by the earlier rule (Leeds United given Manchester United's).

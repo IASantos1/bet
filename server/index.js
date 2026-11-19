@@ -22,7 +22,7 @@ import { createEupago } from './eupago.js';
 import { createRevolut } from './revolut.js';
 import { createRevolutPay } from './revolutpay.js';
 import { createBrevo } from './brevo.js';
-import { createTeamLogos } from './teamlogos.js';
+import { createTeamLogos, NAMED_PACKS } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
 import { expireDue, runCashback, seedFsGames, retireWelcome } from './promotions.js';
 import { createBigBang } from './bigbang.js';
@@ -207,7 +207,7 @@ if (revolut) {
   const missing = [['REVOLUT_JWT_ISSUER', d.issuer], ['REVOLUT_PRIVATE_KEY', d.privateKey], ['REVOLUT_REFRESH_TOKEN', d.refreshToken], ['REVOLUT_PAYOUT_ACCOUNT_ID', d.accountId]].filter(([, ok]) => !ok).map(([k]) => k);
   console.log(`Revolut: ${revolut.configured ? `ligada (${revolut.environment}, issuer ${d.issuer}), pagamento automático €${revolut.autoMinCents / 100}–€${revolut.autoMaxCents / 100}` : `incompleta (em falta ou inválida: ${missing.join(', ')})`}`);
 }
-const teamLogos = createTeamLogos(db, { ...config.teamLogos, persistent: config.dbPersistent, log: (m) => console.warn(`[emblemas] ${m}`) });
+const teamLogos = createTeamLogos(db, { ...config.teamLogos, namedPacks: NAMED_PACKS, persistent: config.dbPersistent, log: (m) => console.warn(`[emblemas] ${m}`) });
 const stopTeamLogos = teamLogos.start();
 if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[emblemas] API-Football ativo (até ${config.teamLogos.apiFootballDaily} pesquisas por dia e desporto)`);
 const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] ${m}`) });

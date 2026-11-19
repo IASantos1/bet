@@ -39,6 +39,32 @@ const LEAGUE_PACKS = {
   basebol: [1], // MLB
 };
 const PACK_RETRY_MS = 30 * 86_400_000;
+// More leagues to keep whole, given by name + country instead of by id: their API-Football id is looked
+// up once from the /leagues endpoint (the API gives the right id — no guessing) and then their team
+// list is kept like LEAGUE_PACKS. These are leagues the feed often shows whose teams the big packs miss,
+// so clubs like Malavan (Iran) or the Egyptian sides get their real badge instead of a neutral shirt.
+export const NAMED_PACKS = [
+  { sport: 'futebol', country: 'Iran', name: 'Persian Gulf Pro League' },
+  { sport: 'futebol', country: 'Egypt', name: 'Premier League' },
+  { sport: 'futebol', country: 'Slovenia', name: 'PrvaLiga' },
+  { sport: 'futebol', country: 'Jordan', name: 'Pro League' },
+  { sport: 'futebol', country: 'Qatar', name: 'Stars League' },
+  { sport: 'futebol', country: 'United-Arab-Emirates', name: 'Pro League' },
+  { sport: 'futebol', country: 'Morocco', name: 'Botola Pro' },
+  { sport: 'futebol', country: 'Algeria', name: 'Ligue 1' },
+  { sport: 'futebol', country: 'Tunisia', name: 'Ligue 1' },
+  { sport: 'futebol', country: 'Israel', name: "Ligat Ha'al" },
+  { sport: 'futebol', country: 'Japan', name: 'J1 League' },
+  { sport: 'futebol', country: 'South-Korea', name: 'K League 1' },
+  { sport: 'futebol', country: 'China', name: 'Super League' },
+  { sport: 'futebol', country: 'Australia', name: 'A-League' },
+  { sport: 'futebol', country: 'India', name: 'Super League' },
+  { sport: 'futebol', country: 'Serbia', name: 'Super Liga' },
+  { sport: 'futebol', country: 'Bulgaria', name: 'First League' },
+  { sport: 'futebol', country: 'Slovakia', name: 'Super Liga' },
+  { sport: 'futebol', country: 'Ukraine', name: 'Premier League' },
+  { sport: 'futebol', country: 'Russia', name: 'Premier League' },
+];
 // API-Football league ids whose official logo the site shows (the home page's league row): kept here
 // like the team badges, fetched once from its media server (no key, no request of the daily quota).
 export const LEAGUE_LOGO_IDS = new Set([39, 40, 45, 140, 141, 143, 135, 136, 137, 78, 79, 81, 61, 62, 66, 94, 95, 96, 88, 89, 144, 179,
@@ -152,7 +178,7 @@ const colour = (c) => {
 
 export function createTeamLogos(db, {
   key = '123', apiFootballKey = '', apiFootballVia = '', apiFootballDaily = 90, apiFootballPerMinute = 8, fetchImpl = globalThis.fetch, perRun = 12, enabled = true,
-  log = () => {}, persistent = true, leaguePacks = LEAGUE_PACKS,
+  log = () => {}, persistent = true, leaguePacks = LEAGUE_PACKS, namedPacks = [],
 } = {}) {
   db.exec(`CREATE TABLE IF NOT EXISTS team_logos (
     team_key TEXT PRIMARY KEY, logo TEXT, colors TEXT, checked_at TEXT NOT NULL)`);
@@ -183,6 +209,23 @@ export function createTeamLogos(db, {
   const dirLogos = db.prepare('SELECT DISTINCT logo FROM team_directory');
   const packGet = db.prepare('SELECT fetched_at FROM team_directory_packs WHERE sport = ? AND league = ?');
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
+  // Leagues given by name (NAMED_PACKS): the API-Football id found once for each, kept so it is not
+  // looked up again. A null id means the league was searched and not found (tried again after a month).
+  db.exec('CREATE TABLE IF NOT EXISTS named_leagues (sport TEXT NOT NULL, name_key TEXT NOT NULL, league_id INTEGER, checked_at TEXT NOT NULL, PRIMARY KEY (sport, name_key))');
+  const namedGet = db.prepare('SELECT league_id, checked_at FROM named_leagues WHERE sport = ? AND name_key = ?');
+  const namedPut = db.prepare('INSERT OR REPLACE INTO named_leagues (sport, name_key, league_id, checked_at) VALUES (?, ?, ?, ?)');
+  const resolvedPacks = new Map(); // sport → Set of ids found for the named leagues
+  for (const r of db.prepare('SELECT sport, league_id FROM named_leagues WHERE league_id IS NOT NULL').all()) {
+    if (!resolvedPacks.has(r.sport)) resolvedPacks.set(r.sport, new Set());
+    resolvedPacks.get(r.sport).add(r.league_id);
+  }
+  // The leagues kept whole: those given by id (leaguePacks) plus those resolved by name (resolvedPacks).
+  const allPacks = () => {
+    const out = {};
+    for (const [sp, ids] of Object.entries(leaguePacks)) out[sp] = [...ids];
+    for (const [sp, ids] of resolvedPacks) out[sp] = [...new Set([...(out[sp] || []), ...ids])];
+    return out;
+  };
   // Badges matched by an earlier close-name rule (which let "United" alone match, then "Celta" take
   // Celtic's) are matched again.
   for (const m of ['migrate:close-names-2', 'migrate:close-names-3', 'migrate:close-names-4']) {
@@ -334,7 +377,7 @@ export function createTeamLogos(db, {
   /** The next league lists to fetch (never fetched, or a month old). */
   function packsDue() {
     const old = Date.now() - PACK_RETRY_MS;
-    return Object.entries(leaguePacks).flatMap(([sport, ids]) => ids.map((league) => ({ sport, league })))
+    return Object.entries(allPacks()).flatMap(([sport, ids]) => ids.map((league) => ({ sport, league })))
       .filter(({ sport, league }) => { const r = packGet.get(sport, league); return !r || new Date(r.fetched_at).getTime() < old; });
   }
 
@@ -417,7 +460,7 @@ export function createTeamLogos(db, {
     if (!row || (!row.logo && Date.now() - new Date(row.checked_at).getTime() > PACK_RETRY_MS)) {
       if (!apifCan(sport)) return null;
       if (!leagueAsking.has(k)) {
-        leagueAsking.set(k, findLeague(sport, short, country).then((logo) => { leagueRowPut.run(k, logo, nowIso()); })
+        leagueAsking.set(k, findLeague(sport, short, country).then((hit) => { leagueRowPut.run(k, hit?.logo || null, nowIso()); })
           .catch(() => {}).finally(() => leagueAsking.delete(k)));
       }
       await leagueAsking.get(k);
@@ -427,7 +470,10 @@ export function createTeamLogos(db, {
     const path = await keepFile(row.logo);
     return path.startsWith('/team-logo/') ? fileGet.get(path.slice(11)) || null : null;
   }
-  async function findLeague(sport, short, country) {
+  // Finds a league by name + country: the matching league object ({ id, name, logo, country }), or null.
+  // `strict` takes only an exact-name match (for resolving a NAMED_PACK to its id, so the wrong league is
+  // never kept); otherwise a league that contains the name is accepted too (for the league logo).
+  async function findLeague(sport, short, country, { strict = false } = {}) {
     const want = loose(short);
     const land = loose(country);
     const place = (l) => loose(l.country?.name || (typeof l.country === 'string' ? l.country : ''));
@@ -440,10 +486,28 @@ export function createTeamLogos(db, {
           || (land === 'unitedstates' && place(l) === 'usa') || (land === 'czechrepublic' && place(l) === 'czechia')));
       const theirs = (l) => loose(l.name);
       const hit = found.find((l) => theirs(l) === want)
-        || found.find((l) => theirs(l).includes(want) || want.includes(theirs(l)));
-      if (hit) return hit.logo;
+        || (strict ? null : found.find((l) => theirs(l).includes(want) || want.includes(theirs(l))));
+      if (hit) return hit;
     }
     return null;
+  }
+
+  /** Resolves each NAMED_PACK to its API-Football id (kept), so its teams are fetched like a numbered pack. */
+  async function resolveNamedPacks() {
+    const stale = Date.now() - PACK_RETRY_MS;
+    for (const { sport, country, name } of namedPacks) {
+      if (!API_SPORTS[sport] || !apifCan(sport) || minuteCalls >= apiFootballPerMinute - 1) break;
+      const nk = loose(`${country} ${name}`);
+      const row = namedGet.get(sport, nk);
+      if (row && (row.league_id != null || new Date(row.checked_at).getTime() > stale)) continue;
+      let id = null;
+      try { id = (await findLeague(sport, name, country, { strict: true }))?.id ?? null; } catch (err) { if (err.rate) break; }
+      namedPut.run(sport, nk, id != null ? Number(id) : null, nowIso());
+      if (id != null) {
+        if (!resolvedPacks.has(sport)) resolvedPacks.set(sport, new Set());
+        resolvedPacks.get(sport).add(Number(id));
+      }
+    }
   }
 
   /** A kept badge: { type, body } or null. */
@@ -560,7 +624,7 @@ export function createTeamLogos(db, {
     }
     return found;
   }
-  const LEAGUE_PACKS_SPORTS = () => leaguePacks;
+  const LEAGUE_PACKS_SPORTS = () => allPacks();
 
   // Every badge of the kept league lists is downloaded ahead (image calls cost no API requests, but
   // API-Sports limits them per minute, so a few a run), so a team's first game already has it.
@@ -586,6 +650,10 @@ export function createTeamLogos(db, {
     let asked = 0;
     let found = 0;
     try {
+      // The named leagues' ids first (once each), so they join the packs fetched below.
+      if (apif) {
+        try { await resolveNamedPacks(); } catch (err) { log(`resolução de ligas por nome: ${err.message}`); }
+      }
       // Whole league lists first (a few a minute): one request covers a league's teams.
       if (apif) {
         for (const { sport, league } of packsDue().slice(0, 3)) {
@@ -666,7 +734,7 @@ export function createTeamLogos(db, {
     const count = (sql, ...a) => db.prepare(sql).get(...a).n;
     const packs = count('SELECT COUNT(*) AS n FROM team_directory_packs WHERE teams > 0');
     steps.push({ name: 'Ligas guardadas (API-Football)', ok: !apif || packs > 0,
-      detail: `${packs} de ${Object.values(leaguePacks).flat().length} ligas · ${count('SELECT COUNT(DISTINCT logo) AS n FROM team_directory')} equipas${seasonKept() ? ` · época ${seasonKept()}` : ''}` });
+      detail: `${packs} de ${Object.values(allPacks()).flat().length} ligas · ${count('SELECT COUNT(DISTINCT logo) AS n FROM team_directory')} equipas${seasonKept() ? ` · época ${seasonKept()}` : ''}` });
     const total = cache.size;
     const withLogo = [...cache.values()].filter((c) => c.logo).length;
     const local = [...cache.values()].filter((c) => typeof c.logo === 'string' && c.logo.startsWith('/team-logo/')).length;
