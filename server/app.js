@@ -818,12 +818,15 @@ export function createApp(db, {
           ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
           : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
-        // The feed's badge; else one found by name (teamlogos.js), with the kit colours for the shirt drawn without one.
-        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || teamLogos?.get(e.sport, e.home)?.logo || null,
-        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || teamLogos?.get(e.sport, e.away)?.logo || null,
-        // The badge found here, to show should the feed's not load.
-        homeLogoAlt: !nat && teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
-        awayLogoAlt: !nat && teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
+        // Only WinHouse's own badge (and the tennis/darts player photo): WinHouse now sends one for every
+        // team and tennis player, so the API-Football lookup is no longer used for badges — it is what
+        // gave wrong crests to teams it mis-matched (Malavan → Málaga). A team with no badge keeps the
+        // neutral shirt in its kit colours (better than another club's crest). The kit colours below still
+        // come from there, for the drawn shirt only.
+        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || null,
+        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || null,
+        homeLogoAlt: null,
+        awayLogoAlt: null,
         // The house's kit first (server/kits.js: stripes, sleeves), else the badge provider's colours.
         homeKit: houseKit(e.sport, raw.home) || teamLogos?.get(e.sport, raw.home)?.colors || null,
         awayKit: houseKit(e.sport, raw.away) || teamLogos?.get(e.sport, raw.away)?.colors || null,
