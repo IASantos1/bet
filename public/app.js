@@ -6213,23 +6213,26 @@ function mountLiveWidget() {
   }
   // Leaving the video: the trial player stops (no stream left downloading in the background).
   if (m.rapid) { stopRapid(); m.streamEl?.remove(); m.streamEl = null; m.streamKey = null; }
-  // Cricket keeps its live SportScore court. Football, tennis and every other sport use the BETBY mini-field;
-  // the WinHouse 3D pitch and the tennis court are off. When BETBY has no tracker for the game, the pressure
-  // graph ("Momento do jogo") is shown instead, so a live game is never left with an empty tracker area.
+  // Cricket keeps its live SportScore court. Every sport prefers the BETBY mini-field when there is one.
+  // When BETBY has no tracker for a LIVE FOOTBALL game the feed covers, we show OUR OWN pitch (the live
+  // ball, attacks and situations) instead of only the pressure graph; any other sport falls back to the
+  // pressure graph ("Momento do jogo"), so a live game is never left with an empty tracker area.
   const native = e?.status === 'live' && e.court && e.sport === 'criquete' ? 'court' : null;
   const betbyOn = e?.status === 'live' && !!state.config?.betby;
   // The mini-field is matched on the SERVER (hidden engine) and arrives on the event as `betbyTracker`. The
   // browser never does the name matching — it only mounts the URL the server locked in.
   if (betbyOn && !native && e.betbyTracker && !m.betbyUrl) m.betbyUrl = e.betbyTracker;
   // While the server is still resolving for the first time, show a short "loading" state instead of the
-  // pressure graph — otherwise the graph flashes and is then replaced by the mini-field. After a ~4 s grace
-  // it settles on the graph (the field still appears later if the server resolves it).
+  // fallback — otherwise it flashes and is then replaced by the mini-field. After a ~4 s grace it settles.
   const betbyWaiting = betbyOn && !native && !m.betbyUrl && !m.betbyGraceOver;
+  // Our native football mini-field: a live football game the provider covers (ball position / situations).
+  const nativePitch = e?.status === 'live' && e.sport === 'futebol' && !!e.liveTracker;
   const kind = e?.status !== 'live' ? null
     : native ? native
       : m.betbyUrl ? 'betby'
         : betbyWaiting ? 'betbyloading'
-          : 'momentum';
+          : nativePitch ? 'football'
+            : 'momentum';
   // On first showing a live game with BETBY on: nudge the server to (re)match now by relaying the public
   // feed (only a browser can read it), and use the URL it returns for this game at once. Don't hold the
   // loading state longer than ~4 s.
@@ -6256,7 +6259,7 @@ function mountLiveWidget() {
     drop3D(); dropCourt3D(); dropBetby();
     m.widget?.remove();
     const holder = document.createElement('div');
-    holder.innerHTML = kind === 'court' ? courtWidget(e) : kind === 'betby' ? betbyWidget(e) : kind === 'betbyloading' ? betbyLoadingWidget(e) : momentumWidget(e);
+    holder.innerHTML = kind === 'court' ? courtWidget(e) : kind === 'football' ? footballWidget(e) : kind === 'betby' ? betbyWidget(e) : kind === 'betbyloading' ? betbyLoadingWidget(e) : momentumWidget(e);
     m.widget = holder.firstElementChild;
     m.widgetKind = kind;
     if (kind === 'betby') { const f = $('#betbyFrame', m.widget); if (f && m.betbyUrl) f.src = m.betbyUrl; }
@@ -6264,6 +6267,7 @@ function mountLiveWidget() {
   if (slot && m.widget.parentElement !== slot) slot.replaceChildren(m.widget);
   if (kind === 'court') ensureCourt3D();
   else if (kind === 'betby') ensureBetbySize();
+  else if (kind === 'football') { ensure3D(); updateTracker({ instant: true }); }
   else if (kind === 'momentum') ensureMomentum();
 }
 
