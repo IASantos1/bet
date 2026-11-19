@@ -351,7 +351,9 @@ export const config = {
   // API_FOOTBALL_DAILY lookups a day per sport (default 90; the free plan allows 100) and
   // API_FOOTBALL_PER_MINUTE a minute (default 8; the free plan allows 10).
   teamLogos: {
-    key: unquote(env.THESPORTSDB_KEY) || '123', enabled: env.TEAM_LOGOS !== '0',
+    // Off by default: the badges now come from WinHouse only. Set TEAM_LOGOS=1 to bring the
+    // API-Football / TheSportsDB lookups back (they were what mis-matched some crests).
+    key: unquote(env.THESPORTSDB_KEY) || '123', enabled: env.TEAM_LOGOS === '1',
     apiFootballKey: unquote(env.API_FOOTBALL_KEY), apiFootballVia: unquote(env.API_FOOTBALL_VIA).toLowerCase(),
     apiFootballDaily: Math.max(0, Number(env.API_FOOTBALL_DAILY) || 90),
     apiFootballPerMinute: Math.max(1, Number(env.API_FOOTBALL_PER_MINUTE) || 8),

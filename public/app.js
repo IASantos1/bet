@@ -352,9 +352,6 @@ function wornShirt(cls, [a, b], kit, { big = false, badge = '' } = {}) {
     <path d="M70 15C76 29 87 37 100 37S124 29 130 15" fill="none" stroke="${b}" stroke-width="${trim}" stroke-linecap="round"/>${badge}
     <path d="${SHIRT_BODY}" fill="none" stroke="rgba(0,0,0,.4)" stroke-width="${big ? 2 : 5}" stroke-linejoin="round"/></svg>`;
 }
-function jerseySvg(name, kit) {
-  return wornShirt('team-kit', kitOf(name, kit), kit);
-}
 // Pictures that failed to load: the next refresh draws their replacement straight away (no blink).
 const BROKEN_IMG = new Set();
 function teamBadge(logo, name, size = '', fallback = null, kit = null, alt = null) {
@@ -363,10 +360,10 @@ function teamBadge(logo, name, size = '', fallback = null, kit = null, alt = nul
     else if (fallback && !BROKEN_IMG.has(fallback)) { logo = fallback; fallback = null; size = `${size} flag`.trim(); }
     else logo = null;
   }
+  // No badge: show nothing (just the team name) — no drawn shirt, no initials.
+  if (!logo) return '';
   const cls = `team-icon${size ? ` ${size}` : ''}`;
   const kitAttr = kit === false ? ' data-kit="none"' : Array.isArray(kit) ? ` data-kit="${esc(kit.join(','))}"` : '';
-  if (!logo && kit === false) return `<div class="${cls}">${esc(size.split(' ').includes('mini') ? initials(name).slice(0, 1) : initials(name))}</div>`;
-  if (!logo) return `<div class="${cls} kit">${jerseySvg(name, kit)}</div>`;
   return `<div class="${cls} has-logo" data-initials="${esc(initials(name))}" data-name="${esc(name)}"${kitAttr}><img class="team-logo" src="${esc(logo)}" alt="" loading="lazy"${fallback ? ` data-fallback="${esc(fallback)}"` : ''}${alt && alt !== logo ? ` data-alt="${esc(alt)}"` : ''}></div>`;
 }
 
@@ -461,11 +458,8 @@ function sideBadge(e, side, size = '') {
   const flag = flagUrl(e[`${side}Country`]);
   const logo = e[`${side}Logo`];
   if (!logo && flag) return teamBadge(flag, e[side], `${size} flag`.trim());
-  // Players (tennis, darts…) have no shirt: initials when there is no photo nor flag.
+  // No logo: show no badge at all (just the name) — no shirt, no kit picture. Flags above still apply.
   const solo = ['tenis', 'tenismesa', 'badminton', 'dardos', 'boxe', 'mma'].includes(e.sport);
-  // No badge: the team's real kit picture (the drawn shirt if it does not load).
-  const kitImg = e[`${side}KitImg`];
-  if (!logo && !solo && kitImg) return teamBadge(kitImg, e[side], `${size} kit-photo`.trim(), null, e[`${side}Kit`]);
   // Player photos (and any player picture) are round.
   return teamBadge(logo, e[side], flag || solo ? `${size} player`.trim() : size, flag, solo ? false : e[`${side}Kit`], e[`${side}LogoAlt`]);
 }
@@ -4495,12 +4489,8 @@ document.addEventListener('error', (e) => {
     img.parentElement.classList.add('flag');
     return;
   }
-  const box = img.parentElement;
-  box.classList.remove('has-logo');
-  box.classList.remove('flag', 'kit-photo');
-  // No badge after all: the shirt (players keep their initials).
-  if (box.classList.contains('player') || box.dataset.kit === 'none') box.textContent = box.classList.contains('mini') ? box.dataset.initials.slice(0, 1) : box.dataset.initials;
-  else { box.classList.add('kit'); box.innerHTML = jerseySvg(box.dataset.name, box.dataset.kit ? box.dataset.kit.split(',') : null); }
+  // No badge after all: remove it, leaving just the team name (no shirt, no initials).
+  img.parentElement.remove();
 }, true);
 // A league badge that fails to load falls back to the sport icon.
 document.addEventListener('error', (e) => {
