@@ -352,6 +352,30 @@ export function retireWelcome(db) {
   return true;
 }
 
+/**
+ * Once: leaves only two promotions on — the protected first bet (minimum stake €5, minimum odds 3) and
+ * the casino Free Spins (€20 → 100). Reload, cashback, the multiples boost and the deposit free bet are
+ * switched off (the admin may turn any of them back on). Applied to a saved configuration too, since
+ * savePromoConfig stores every field and would otherwise keep the old ones on.
+ */
+export function simplifyPromos2026(db) {
+  if (getSetting(db, 'promo.simplified2026', null)) return false;
+  const saved = getSetting(db, 'promo.config', {}) || {};
+  const off = (k) => ({ ...(saved[k] || {}), active: false });
+  setSetting(db, 'promo.config', {
+    ...saved,
+    welcome: off('welcome'),
+    reload: off('reload'),
+    cashback: off('cashback'),
+    accaBoost: off('accaBoost'),
+    depositFb: off('depositFb'),
+    firstBet: { ...(saved.firstBet || {}), active: true, minStake: 5, minOdds: 3, maxRefund: 10 },
+    casinoFs: { ...(saved.casinoFs || {}), active: true },
+  });
+  setSetting(db, 'promo.simplified2026', nowIso());
+  return true;
+}
+
 /** Whether the player has never deposited (for the deposit form's offers). */
 export const firstDeposit = (db, userId) => !db.prepare("SELECT 1 FROM transactions WHERE user_id = ? AND type = 'deposit' LIMIT 1").get(userId);
 
