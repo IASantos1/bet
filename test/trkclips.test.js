@@ -4,11 +4,16 @@ import { existsSync, statSync } from 'node:fs';
 import { CLIPS, clipFormat, scorer, cornerClip, situationClip, createClipGate, createCornerWatch, restartSeen, marketsReopened, GOAL_HOLD, GOAL_GAP_MS, CORNER_GAP_MS, CORNER_WAIT_MS } from '../public/trkclips.js';
 
 test('the clips are in public/media and small enough for a phone', () => {
-  for (const { src } of Object.values(CLIPS)) {
+  // The clips that ship today: their video files must be present. The other entries are placeholders
+  // (trkclips.js: "tocam assim que o ficheiro de vídeo existir em /media, até lá nada é mostrado") —
+  // they may have no file yet, but any file that is there must still be small enough for a phone.
+  const shipped = new Set(['goal', 'corner-right', 'corner-left']);
+  for (const [kind, { src }] of Object.entries(CLIPS)) {
     for (const ext of ['mp4', 'webm']) {
       const file = new URL(`../public${src}.${ext}`, import.meta.url);
-      assert.ok(existsSync(file), `${src}.${ext}`);
-      assert.ok(statSync(file).size < 700_000, `${src}.${ext} is too big`);
+      const there = existsSync(file);
+      if (shipped.has(kind)) assert.ok(there, `${src}.${ext} (clipe incluído em falta)`);
+      if (there) assert.ok(statSync(file).size < 700_000, `${src}.${ext} is too big`);
     }
   }
 });

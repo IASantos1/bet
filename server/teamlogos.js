@@ -118,15 +118,19 @@ const strong = (name) => {
 };
 
 /** The one team whose name is the same club ({ name, logo } list): every telling word of each name is in the
- * other ("Stade Rennais" ~ "Rennes", "Lille OSC" ~ "Lille"), and no other team fits. Null otherwise. */
-export function closeName(name, teams) {
+ * other ("Stade Rennais" ~ "Rennes", "Lille OSC" ~ "Lille"), and no other team fits. Null otherwise.
+ * `fuzzy` (default) allows a stem match (rennais ~ rennes); pass false for an exact word match only, for
+ * the cross-league search of all a sport's teams, where a loose prefix wrongly pairs distinct clubs
+ * ("Malavan" ~ "Málaga", both starting "mala"). */
+export function closeName(name, teams, { fuzzy = true } = {}) {
   const mine = strong(name);
   if (!mine.length) return null;
+  const eq = fuzzy ? sameWord : (a, b) => a === b;
   const fits = new Map();
   for (const t of teams) {
     const theirs = strong(t.name);
     if (!theirs.length) continue;
-    const ok = mine.every((w) => theirs.some((x) => sameWord(w, x))) && theirs.every((x) => mine.some((w) => sameWord(w, x)));
+    const ok = mine.every((w) => theirs.some((x) => eq(w, x))) && theirs.every((x) => mine.some((w) => eq(w, x)));
     if (ok) fits.set(t.logo, t);
   }
   if (fits.size === 1) return [...fits.values()][0];
@@ -181,7 +185,7 @@ export function createTeamLogos(db, {
   const packPut = db.prepare('INSERT OR REPLACE INTO team_directory_packs (sport, league, season, teams, fetched_at) VALUES (?, ?, ?, ?, ?)');
   // Badges matched by an earlier close-name rule (which let "United" alone match, then "Celta" take
   // Celtic's) are matched again.
-  for (const m of ['migrate:close-names-2', 'migrate:close-names-3']) {
+  for (const m of ['migrate:close-names-2', 'migrate:close-names-3', 'migrate:close-names-4']) {
     if (db.prepare('SELECT 1 FROM api_quota WHERE name = ?').get(m)) continue;
     db.exec("UPDATE team_logos SET logo = NULL, apif = 0 WHERE logo LIKE '/team-logo/%'");
     db.prepare('INSERT INTO api_quota (name, day, used) VALUES (?, ?, 1)').run(m, new Date().toISOString().slice(0, 10));
@@ -538,10 +542,12 @@ export function createTeamLogos(db, {
           if (league === undefined) league = competitionLeague(sport, teams);
           if (league != null) remote = closeName(name, dirOfLeague.all(sport, league))?.logo || null;
         }
-        // Not in its competition's league (promoted, another country…): the same club among all kept teams.
+        // Not in its competition's league (promoted, another country…): the same club among all kept
+        // teams — by exact name only, never a loose stem: across leagues a prefix match pairs distinct
+        // clubs ("Malavan" with "Málaga"), so the fuzzy rule is kept to the team's own league above.
         if (!remote) {
           if (!allTeams.has(sport)) allTeams.set(sport, dirOfSport.all(sport));
-          remote = closeName(name, allTeams.get(sport))?.logo || null;
+          remote = closeName(name, allTeams.get(sport), { fuzzy: false })?.logo || null;
         }
         if (!remote) continue;
         downloads += 1;

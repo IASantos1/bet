@@ -230,6 +230,14 @@ test('close names within one league: the one team that fits, or none', () => {
   const america = [{ name: 'America-MG', logo: 'amg' }, { name: 'America-RJ', logo: 'arj' }];
   assert.equal(closeName('America-MG', america)?.logo, 'amg');
   assert.equal(closeName('America-RJ', america)?.logo, 'arj');
+  // The cross-league search (all a sport's teams) is exact-only: a shared prefix must never pair two
+  // distinct clubs. "Malavan" (Iran) and "Málaga" (Spain) both reduce to a "mala…" stem, so the fuzzy
+  // rule would wrongly give Malavan the Málaga badge — exactly the reported bug.
+  const spain = [{ name: 'Malaga', logo: 'malaga' }, { name: 'Mallorca', logo: 'mallorca' }, { name: 'Valencia', logo: 'valencia' }];
+  assert.equal(closeName('Malavan', spain, { fuzzy: true })?.name, 'Malaga', 'fuzzy stem wrongly pairs Malavan with Málaga');
+  assert.equal(closeName('Malavan', spain, { fuzzy: false }), null, 'exact match never gives Malavan the Málaga badge');
+  // Exact-only still finds a real same-club match (promoted team listed by its plain name).
+  assert.equal(closeName('Valencia CF', spain, { fuzzy: false })?.logo, 'valencia');
 });
 
 test('free pass: the competition is matched to its kept league and close names there get the badge, no request', async () => {
