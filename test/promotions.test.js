@@ -399,7 +399,7 @@ test('1st deposit: no 100% welcome bonus by default (€20 → €10 free bet); 
   assert.equal(getSetting(db, 'promo.config').welcome.active, true);
 });
 
-test('simplify promotions: once, only the protected first bet (€5, odd 3) and the Free Spins stay on', async () => {
+test('simplify promotions: once, the protected first bet (€5, odd 3), the Free Spins and the boost stay on', async () => {
   const db = setup();
   const { simplifyPromos2026, promoConfig } = await import('../server/promotions.js');
   // A saved config with everything on (and the first bet at its old minimum odds).
@@ -409,12 +409,22 @@ test('simplify promotions: once, only the protected first bet (€5, odd 3) and 
   const c = promoConfig(db);
   assert.equal(c.reload.active, false);
   assert.equal(c.cashback.active, false);
-  assert.equal(c.accaBoost.active, false);
   assert.equal(c.depositFb.active, false);
   assert.equal(c.welcome.active, false);
   assert.equal(c.firstBet.active, true);
   assert.equal(c.firstBet.minStake, 5);
   assert.equal(c.firstBet.minOdds, 3);
   assert.equal(c.casinoFs.active, true);
+  assert.equal(c.accaBoost.active, true);
   assert.equal(simplifyPromos2026(db), false); // runs once
+});
+
+test('enable boost: once, turns the multiples boost back on for a config that had it off', async () => {
+  const db = setup();
+  const { enableBoost2026, promoConfig } = await import('../server/promotions.js');
+  savePromoConfig(db, { accaBoost: { active: false } });
+  assert.equal(promoConfig(db).accaBoost.active, false);
+  assert.equal(enableBoost2026(db), true);
+  assert.equal(promoConfig(db).accaBoost.active, true);
+  assert.equal(enableBoost2026(db), false); // runs once
 });
