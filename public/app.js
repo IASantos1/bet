@@ -912,7 +912,6 @@ function sportsPage(sub, rest = '') {
   // The big games' banners under the sports strip (football; all sports or football chosen).
   const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
   return `<div class="page-title"><h1>Desporto</h1>${banners ? '' : '<p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p>'}</div>
-    ${leagueRow(state.sport || '')}
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
       ${sports.map((s) => `<button class="sport-tile${state.sport === s ? ' active' : ''}" data-sport="${esc(s)}">${sportIcon(s)}<span>${esc(SPORT_META[s]?.name || s)}</span></button>`).join('')}
