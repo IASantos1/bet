@@ -64,6 +64,20 @@ export const NAMED_PACKS = [
   { sport: 'futebol', country: 'Slovakia', name: 'Super Liga' },
   { sport: 'futebol', country: 'Ukraine', name: 'Premier League' },
   { sport: 'futebol', country: 'Russia', name: 'Premier League' },
+  // Basquetebol (API-Basketball): as ligas mais mostradas, para alinhar os nomes da WinHouse com os
+  // da API e os emblemas aparecerem. Cada id é procurado uma vez pelo nome, como no futebol.
+  { sport: 'basquetebol', country: 'USA', name: 'NBA' },
+  { sport: 'basquetebol', country: 'Europe', name: 'Euroleague' },
+  { sport: 'basquetebol', country: 'Europe', name: 'EuroCup' },
+  { sport: 'basquetebol', country: 'Spain', name: 'Liga ACB' },
+  { sport: 'basquetebol', country: 'Italy', name: 'Lega A' },
+  { sport: 'basquetebol', country: 'Germany', name: 'BBL' },
+  { sport: 'basquetebol', country: 'France', name: 'Pro A' },
+  { sport: 'basquetebol', country: 'Greece', name: 'Basket League' },
+  { sport: 'basquetebol', country: 'Turkey', name: 'Super Ligi' },
+  { sport: 'basquetebol', country: 'Australia', name: 'NBL' },
+  { sport: 'basquetebol', country: 'Brazil', name: 'NBB' },
+  { sport: 'basquetebol', country: 'China', name: 'CBA' },
 ];
 // API-Football league ids whose official logo the site shows (the home page's league row): kept here
 // like the team badges, fetched once from its media server (no key, no request of the daily quota).
@@ -320,17 +334,25 @@ export function createTeamLogos(db, {
   // The season to ask for: the current one, or the latest the plan allows (the free plan has a range).
   const seasonNow = () => { const d = new Date(); return d.getUTCMonth() >= 6 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; };
   const seasonKept = () => { const r = quotaRow.get('apif:season'); return r ? Number(r.used) : null; };
+  // API-Sports basketball, ice hockey, volleyball and handball name a season by the two years it spans
+  // ("2024-2025"), not by one year like football — a numeric season is refused, so a pack never loads.
+  const SPLIT_SEASON = new Set(['basquetebol', 'hoquei', 'voleibol', 'andebol']);
+  /** The seasons to try for a sport, newest first, in that sport's own format. */
+  function seasonTries(sport) {
+    const y = seasonNow();
+    if (SPLIT_SEASON.has(sport)) return [...new Set([y, y - 1, y - 2])].map((yy) => `${yy}-${yy + 1}`);
+    return [...new Set([seasonKept(), y, y - 1, 2024, 2023, 2022].filter(Boolean))].map(String);
+  }
   /** Fetches one league's team list whole into team_directory. */
   async function loadPack(sport, league) {
-    const tries = [...new Set([seasonKept(), seasonNow(), seasonNow() - 1, 2024, 2023, 2022].filter(Boolean))];
-    for (const season of tries) {
+    for (const season of seasonTries(sport)) {
       if (!apifCan(sport) || minuteCalls >= apiFootballPerMinute) return false;
       let list;
-      try { list = await apiCall(sport, `teams?league=${league}&season=${season}`); } catch (err) {
+      try { list = await apiCall(sport, `teams?league=${league}&season=${encodeURIComponent(season)}`); } catch (err) {
         if (err.season) continue; // that season is not in the plan: an older one
         throw err;
       }
-      quotaSet.run('apif:season', today(), season);
+      if (!SPLIT_SEASON.has(sport)) quotaSet.run('apif:season', today(), Number(season));
       let n = 0;
       for (const x of list) {
         const t = x.team || x;
@@ -338,7 +360,7 @@ export function createTeamLogos(db, {
         for (const v of [...nameVariants(t.name), t.code].filter(Boolean)) if (loose(v).length >= 3) dirPut.run(sport, loose(v), t.name, t.logo, league);
         n += 1;
       }
-      packPut.run(sport, league, season, n, nowIso());
+      packPut.run(sport, league, SPLIT_SEASON.has(sport) ? null : Number(season), n, nowIso());
       return true;
     }
     packPut.run(sport, league, null, 0, nowIso()); // no season works: try again next month

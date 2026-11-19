@@ -308,6 +308,40 @@ test('a league given by name is resolved to its id and its teams kept (Malavan g
   assert.ok(!api.slice(before).some((p) => p.startsWith('/leagues?search=')), 'the id is kept, not looked up again');
 });
 
+test('basketball league packs use the two-year season format (2024-2025) and keep their teams', async () => {
+  const db = openDb(':memory:');
+  db.prepare(`INSERT INTO events (sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES ('basquetebol', 'USA. NBA', 'LA Lakers', 'Boston Celtics', ?, 'live', 'winhouse', ?, ?)`).run(nowIso(), nowIso(), nowIso());
+  const api = [];
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    if (u.hostname === 'media.api-sports.io') return { ok: true, status: 200, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+    if (u.hostname.endsWith('api-sports.io')) {
+      api.push(u.pathname + u.search);
+      assert.equal(u.hostname, 'v1.basketball.api-sports.io', 'basketball uses its own API host');
+      if (u.pathname.endsWith('/leagues')) {
+        return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response: [
+          { id: 12, name: 'NBA', type: 'League', logo: 'https://media.api-sports.io/basketball/leagues/12.png', country: { name: 'USA' } },
+        ] }) };
+      }
+      const season = u.searchParams.get('season');
+      assert.match(season, /^\d{4}-\d{4}$/, 'a two-year season is sent for basketball');
+      const response = [{ id: 133, name: 'Los Angeles Lakers', logo: 'https://media.api-sports.io/basketball/teams/133.png' },
+        { id: 139, name: 'Boston Celtics', logo: 'https://media.api-sports.io/basketball/teams/139.png' }];
+      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ errors: [], response }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ teams: null }) };
+  };
+  const named = [{ sport: 'basquetebol', country: 'USA', name: 'NBA' }];
+  const logos = createTeamLogos(db, { fetchImpl, apiFootballKey: 'k', leaguePacks: {}, namedPacks: named, perRun: 0 });
+  await logos.run();
+  assert.ok(api.some((p) => p.startsWith('/leagues?search=')), 'the NBA is looked up by name');
+  assert.ok(api.some((p) => /\/teams\?league=12&season=\d{4}-\d{4}/.test(p)), 'its teams are fetched with a two-year season');
+  // "Boston Celtics" matches exactly; "LA Lakers" matches "Los Angeles Lakers" by close name within the league.
+  assert.match(logos.get('basquetebol', 'Boston Celtics')?.logo || '', /^\/team-logo\//);
+  assert.match(logos.get('basquetebol', 'LA Lakers')?.logo || '', /^\/team-logo\//);
+});
+
 test('a promoted club gets its own badge from another kept league, and a wrong old match is redone', async () => {
   const db = openDb(':memory:');
   // A badge saved by the earlier rule (Leeds United given Manchester United's).
