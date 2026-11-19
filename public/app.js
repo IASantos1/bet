@@ -1,6 +1,6 @@
 // Bet62 frontend — vanilla JS single-page app talking to the JSON API in /server.
 
-import { CLIPS, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, marketsReopened, createClipGate, createCornerWatch } from './trkclips.js';
+import { CLIPS, SITUATION_CLIP, GOAL_HOLD, clipFormat, scorer, situationClip, restartSeen, marketsReopened, createClipGate, createCornerWatch } from './trkclips.js';
 import { qualityTier, zoneTier, DANGER } from './trk3dmath.js';
 import { colourSportIcon } from './sporticons.js';
 import { celebrate } from './winfx.js';
@@ -5072,9 +5072,16 @@ function startMatchStream(id) {
     m.cornerWatch ||= createCornerWatch();
     if (situationClip(before, d) === 'goal') { m.cornerWatch.reset(); celebrateGoal(d.side); return; }
     const corner = m.cornerWatch.frame(m.ball);
-    if (corner) playClip(corner);
+    if (corner) { playClip(corner); return; }
+    // Outros lances: toca o clipe próprio quando a situação muda (lateral, livre, penálti, baliza, fora de jogo).
+    const sit = d.situation;
+    if (sit && sit !== before?.situation && SITUATION_CLIP[sit]) playClip(SITUATION_CLIP[sit]);
   });
-  on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); if (a?.type === 'card') flashCard(a.team, a.card || a.color || a.cardColor); });
+  on('action', (a) => {
+    m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList();
+    if (a?.type === 'card') flashCard(a.team, a.card || a.color || a.cardColor);
+    else if (a?.type === 'shot_on_target') playClip('shot'); // "remate" à baliza
+  });
   on('odds', () => loadMatch(id, { quiet: true }));
   // No stream (match not covered by the live socket): the page keeps polling instead.
   es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.es = null; };
@@ -6595,11 +6602,14 @@ function celebrateGoal(side) {
  * until `m.clipHold.release()` (markets open again, the game going again) or GOAL_HOLD.maxMs; a VAR
  * review keeps it and says so.
  */
+// Event clips whose video file is not there (yet): once one fails to load we stop asking for it this
+// session, so a missing clip makes no noise. Goal/corner always exist, so they are never suppressed.
+const clipMissing = new Set();
 function playClip(kind, { onEnd, hold = false } = {}) {
   const m = state.match;
   const clip = CLIPS[kind];
   m.clipGate ||= createClipGate();
-  if (!clip || !m.clipGate.want(kind)) return;
+  if (!clip || clipMissing.has(kind) || !m.clipGate.want(kind)) { onEnd?.(); return; }
   const w = m.widget;
   const box = w && $('#trkClip', w);
   const video = w && $('#trkClipVideo', w);
@@ -6642,7 +6652,7 @@ function playClip(kind, { onEnd, hold = false } = {}) {
     box.classList.add('held');
   };
   video.onended = () => { if (m.clipToken === token && !m.clipHold?.frozen) finish(); };
-  video.onerror = finish;
+  video.onerror = () => { if (kind !== 'goal' && !String(kind).startsWith('corner')) clipMissing.add(kind); finish(); };
   // (the box may still be showing a clip this one cut short: started is per clip)
   let started = false;
   video.onplaying = () => {

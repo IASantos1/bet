@@ -7,7 +7,16 @@ export const CLIPS = {
   goal: { src: '/media/trk-golo', ms: 3900 },
   'corner-right': { src: '/media/trk-canto-direito', ms: 2250 },
   'corner-left': { src: '/media/trk-canto-esquerdo', ms: 2250 },
+  // Outros lances — tocam assim que o ficheiro de vídeo existir em /media (até lá, nada é mostrado).
+  throwin: { src: '/media/trk-lateral', ms: 1900 },
+  freekick: { src: '/media/trk-livre', ms: 2300 },
+  penalty: { src: '/media/trk-penalti', ms: 2800 },
+  goalkick: { src: '/media/trk-baliza', ms: 1900 },
+  offside: { src: '/media/trk-foradejogo', ms: 2000 },
+  shot: { src: '/media/trk-remate', ms: 2300 },
 };
+/** Situação ao vivo → clipe a tocar (golo e canto têm o seu próprio tratamento, não entram aqui). */
+export const SITUATION_CLIP = { throwin: 'throwin', freekick: 'freekick', penalty: 'penalty', goalkick: 'goalkick', offside: 'offside' };
 export const CLIP_FORMATS = { mp4: 'video/mp4; codecs="avc1.4D401E"', webm: 'video/webm; codecs="vp9"' };
 
 /**
