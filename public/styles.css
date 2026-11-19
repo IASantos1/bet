@@ -817,10 +817,10 @@ body.no-scroll { overflow: hidden; }
 .trk-arrow { position: absolute; inset: 0; pointer-events: none; transition: clip-path 900ms cubic-bezier(.22, 1, .36, 1); clip-path: polygon(0 0, 0 0, 0 0); }
 .trk-arrow.home.neutral { background: linear-gradient(to right, #5a5a5a3d, #2d2d2d80); }
 .trk-arrow.away.neutral { background: linear-gradient(to left, #5a5a5a3d, #2d2d2d80); }
-.trk-arrow.home.attacking { background: linear-gradient(to right, #dc822838, #d63c1480); }
-.trk-arrow.away.attacking { background: linear-gradient(to left, #dc822838, #d63c1480); }
-.trk-arrow.home.danger { background: linear-gradient(to right, #ff787833, #d20a0a94); animation: trkPulse 900ms ease-in-out infinite; }
-.trk-arrow.away.danger { background: linear-gradient(to left, #ff787833, #d20a0a94); animation: trkPulse 900ms ease-in-out infinite; }
+.trk-arrow.home.attacking { background: linear-gradient(to right, rgba(232, 224, 70, .05), rgba(232, 224, 70, .5)); }
+.trk-arrow.away.attacking { background: linear-gradient(to left, rgba(232, 224, 70, .05), rgba(232, 224, 70, .5)); }
+.trk-arrow.home.danger { background: linear-gradient(to right, rgba(235, 110, 55, .08), rgba(226, 54, 49, .62)); animation: trkPulse 900ms ease-in-out infinite; }
+.trk-arrow.away.danger { background: linear-gradient(to left, rgba(235, 110, 55, .08), rgba(226, 54, 49, .62)); animation: trkPulse 900ms ease-in-out infinite; }
 .trk-trails { position: absolute; inset: 0; pointer-events: none; }
 .trk-trail { position: absolute; height: 3px; border-radius: 3px; transform-origin: 0 50%; margin-top: -1.5px; background: linear-gradient(90deg, #ffffff00 0%, #ffffffb0 100%); animation: trkTrail 1400ms ease-out forwards; }
 .trk-trail.hot { height: 4px; background: linear-gradient(90deg, #ffffff00 0%, #ffd65ae6 60%, #fff 100%); filter: drop-shadow(0 0 5px #ffc83ca6); }
@@ -832,14 +832,14 @@ body.no-scroll { overflow: hidden; }
 .trk-ball.resting .trk-ball-svg { animation: none; }
 /* Commentary and incident list under the pitch: not shown (the header and the Estatísticas tab carry them). */
 .trk-note, .trk-actions { display: none; }
-.trk-badge { position: absolute; z-index: 6; color: #fff; display: none; align-items: stretch; gap: 7px; padding: 5px 9px 5px 6px; max-width: 70%; border: 1px solid #ffffff1f; border-radius: var(--radius); background: #0a0a0c8c; backdrop-filter: blur(6px); transform: translate(-50%, -50%); transition: left 900ms cubic-bezier(.22, 1, .36, 1), top 900ms cubic-bezier(.22, 1, .36, 1); pointer-events: none; }
+/* Rótulo de situação como no mini-campo da BETBY: a equipa que ataca e o estado, ao centro-baixo. */
+.trk-badge { position: absolute; z-index: 6; color: #fff; display: none; flex-direction: column; align-items: center; text-align: center; gap: 0; max-width: 86%; transform: translate(-50%, -100%); transition: left .35s ease, top .35s ease; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .8), 0 0 12px rgba(0, 0, 0, .55); }
 .trk-badge.on { display: flex; }
-.trk-badge div { display: flex; flex-direction: column; min-width: 0; }
-.trk-badge b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.trk-badge small { font-size: 10px; color: #c9ced6; white-space: nowrap; }
-.trk-badge-bar { width: 3px; border-radius: 2px; background: #ff5050; flex: none; }
-.trk-badge.away .trk-badge-bar { background: #5096ff; }
-.trk-badge.hot { border-color: #ff821eb3; box-shadow: 0 0 14px #ff640038; }
+.trk-badge div { display: flex; flex-direction: column; align-items: center; min-width: 0; max-width: 100%; }
+.trk-badge b { font-size: clamp(14px, 4.4cqw, 21px); font-weight: 900; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.trk-badge small { font-size: clamp(10px, 3cqw, 13px); font-weight: 900; letter-spacing: 1.3px; text-transform: uppercase; color: #f1e23f; }
+.trk-badge.hot small { color: #ff6a4a; }
+.trk-badge-bar { display: none; }
 .trk-note { margin: 0; padding: 7px 11px 0; min-height: 16px; font-size: 11px; color: var(--text-2); }
 .trk-actions { padding: 4px 11px 9px; display: grid; gap: 3px; }
 .trk-action { display: grid; grid-template-columns: 26px auto 1fr; gap: 6px; font-size: 11px; align-items: baseline; }

@@ -6465,7 +6465,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeTeam', w).textContent = ko === 'away' ? tname(e, 'away') : ko === 'home' ? tname(e, 'home') : '';
     $('#trkBadgeText', w).textContent = 'Pontapé de saída';
     badge.style.left = '50%';
-    badge.style.top = '30%';
+    badge.style.top = '92%';
     p3?.setBall({ x: 50, y: 50, side: ko || 'home', resting: true, instant: true });
     m.prevBall = null;
     return;
@@ -6482,7 +6482,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeTeam', w).textContent = '';
     $('#trkBadgeText', w).textContent = 'Intervalo';
     badge.style.left = '50%';
-    badge.style.top = '30%';
+    badge.style.top = '92%';
     p3?.setBall({ x: 50, y: 50, resting: true, instant: true });
     m.prevBall = null;
     return;
@@ -6510,8 +6510,8 @@ function updateTracker({ instant = false } = {}) {
   badge.classList.toggle('hot', danger);
   $('#trkBadgeTeam', w).textContent = tname(e, side === 'away' ? 'away' : 'home');
   $('#trkBadgeText', w).textContent = SITUATION_LABEL[b.situation] || (b.situation ? String(b.situation).replaceAll('_', ' ') : 'Em jogo');
-  badge.style.left = `${Math.min(78, Math.max(22, b.x))}%`;
-  badge.style.top = `${b.y > 55 ? Math.max(14, b.y - 22) : Math.min(86, b.y + 22)}%`;
+  badge.style.left = '50%';
+  badge.style.top = '92%';
 
   // Fading trail behind the ball, from where it was to where it is (a comet that dissolves).
   const from = m.prevBall;
