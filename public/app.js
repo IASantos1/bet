@@ -5074,7 +5074,7 @@ function startMatchStream(id) {
     const corner = m.cornerWatch.frame(m.ball);
     if (corner) playClip(corner);
   });
-  on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); });
+  on('action', (a) => { m.actions.push(a); m.actions = m.actions.slice(-15); updateActionsList(); if (a?.type === 'card') flashCard(a.team, a.card || a.color || a.cardColor); });
   on('odds', () => loadMatch(id, { quiet: true }));
   // No stream (match not covered by the live socket): the page keeps polling instead.
   es.onerror = () => { if (es.readyState === EventSource.CLOSED) m.es = null; };
@@ -6111,6 +6111,7 @@ function footballWidget(e) {
       <div class="trk-3d" id="trk3dHost"></div>
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
+      <div class="trk-card" id="trkCard" aria-hidden="true"></div>
       <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p>
       <div class="trk-clip" id="trkClip" aria-hidden="true"><video id="trkClipVideo" muted playsinline preload="none" disablepictureinpicture></video>
         <div class="trk-clip-goal"><b id="trkClipLabel">GOLO!</b><span>BET62</span></div></div>
@@ -6667,6 +6668,18 @@ function updateActionsList() {
   const items = [...state.match.actions].reverse().slice(0, 4);
   box.innerHTML = items.map((a) => `<div class="trk-action ${a.team || ''}"><span>${esc(a.minuteLabel || (a.minute !== null && a.minute !== undefined ? `${a.minute}'` : ''))}</span><b>${esc(ACTION_LABEL[a.type] || String(a.type || '').replaceAll('_', ' '))}</b>
     <small>${esc(a.player || (a.team === 'home' ? e?.home : a.team === 'away' ? e?.away : ''))}</small></div>`).join('');
+}
+
+// A card the referee shows: our own animation on the pitch (yellow or red), ~2.5 s.
+function flashCard(team, color) {
+  const w = state.match.widget;
+  if (!w || state.match.widgetKind !== 'football') return;
+  const card = $('#trkCard', w);
+  if (!card) return;
+  card.classList.toggle('red', String(color || '').toLowerCase().includes('red') || String(color || '').toLowerCase().includes('verm'));
+  card.classList.remove('show');
+  void card.offsetWidth; // reinicia a animação
+  card.classList.add('show');
 }
 
 const POINT_VALUE = { 0: 0, 15: 1, 30: 2, 40: 3, A: 4, AD: 4 };

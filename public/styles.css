@@ -840,6 +840,20 @@ body.no-scroll { overflow: hidden; }
 .trk-badge small { font-size: clamp(10px, 3cqw, 13px); font-weight: 900; letter-spacing: 1.3px; text-transform: uppercase; color: #f1e23f; }
 .trk-badge.hot small { color: #ff6a4a; }
 .trk-badge-bar { display: none; }
+/* Cartão (amarelo/vermelho) a saltar no campo quando o árbitro o mostra. */
+.trk-card { position: absolute; z-index: 7; left: 50%; top: 40%; width: 30px; height: 42px; border-radius: 4px;
+  background: linear-gradient(145deg, #ffe169, #f2c62a); box-shadow: 0 7px 18px #0009, inset 0 0 0 1.5px #0003;
+  transform: translate(-50%, -50%) rotate(-12deg) scale(.4); opacity: 0; pointer-events: none; }
+.trk-card.red { background: linear-gradient(145deg, #ff5b54, #d42a24); }
+.trk-card.show { animation: trkCard 2.5s ease forwards; }
+@keyframes trkCard {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(-26deg) scale(.35); }
+  12% { opacity: 1; transform: translate(-50%, -54%) rotate(-7deg) scale(1.08); }
+  22% { transform: translate(-50%, -52%) rotate(-12deg) scale(1); }
+  82% { opacity: 1; transform: translate(-50%, -52%) rotate(-12deg) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -58%) rotate(-12deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .trk-card.show { animation-duration: .01s; } }
 .trk-note { margin: 0; padding: 7px 11px 0; min-height: 16px; font-size: 11px; color: var(--text-2); }
 .trk-actions { padding: 4px 11px 9px; display: grid; gap: 3px; }
 .trk-action { display: grid; grid-template-columns: 26px auto 1fr; gap: 6px; font-size: 11px; align-items: baseline; }
