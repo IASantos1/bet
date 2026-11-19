@@ -946,6 +946,12 @@
 .betby-engine .be-row.ok .be-mark { color: #5fd47a; } .betby-engine .be-row.no .be-mark { color: #ff9a5f; }
 .betby-engine .be-game i { font-style: normal; font-size: 12px; margin-left: 6px; }
 .betby-engine .be-score { font-variant-numeric: tabular-nums; color: #ffd166; }
+.wh-jwt { margin-top: 14px; border-top: 1px solid #22304a; padding-top: 12px; }
+.wh-jwt code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 5px; }
+.wh-flow { margin: 10px 0; padding: 10px; border: 1px solid #22304a; border-radius: 10px; }
+.wh-flow-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wh-jwt-decoded { margin-top: 8px; }
+.wh-jwt-decoded pre { margin: 4px 0 8px; max-height: 220px; overflow: auto; }
 @media (max-width: 760px) {
   .betby-engine .be-row { grid-template-columns: 20px 1fr auto; grid-template-areas: "mark game pin" "cand cand cand"; }
   .betby-engine .be-mark { grid-area: mark; } .betby-engine .be-game { grid-area: game; }

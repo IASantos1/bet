@@ -1775,10 +1775,55 @@ function winhousePanel(w) {
       <button class="ghost-btn btn-sm" data-action="winhouse-copy">Copiar resultado</button></div>
       <div class="form-actions"><label class="field adm-inline">Procurar liga (ex.: Argentina) <input id="whSkipQ" maxlength="60"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-skipped">Ligas recusadas</button></div>
-      <pre class="raw-odds hidden" id="whOut"></pre>` : ''}
+      <pre class="raw-odds hidden" id="whOut"></pre>
+      <div class="wh-jwt">
+        <h4>JWT da WinHouse — como se gera</h4>
+        <p class="muted">Um JWT da WinHouse é a <b>sessão de um jogador</b>, criada <b>pelo servidor</b> (não é uma chave fixa que se cola). Este teste corre os fluxos de token que a WinHouse expõe e mostra o token devolvido já <b>descodificado</b> (cabeçalho + dados), para veres de onde sai e que credencial o gera. A chave que assina (<code>WINHOUSE_WALLET_KEY</code>) fica só nas Variables do servidor — nunca aparece aqui.</p>
+        <div class="form-actions">
+          <label class="field adm-inline">Player de teste <input id="whAuthPlayer" maxlength="40" placeholder="test-1"></label>
+          <label class="field adm-inline">Token de login (opcional) <input id="whAuthSignin" maxlength="4000" placeholder="x-access-token → troca por lToken"></label>
+          <button class="ghost-btn btn-sm" data-action="winhouse-auth">Gerar sessão / ver JWT</button>
+        </div>
+        <div id="whAuthOut"></div>
+      </div>` : ''}
     ${w?.enabled ? `<h4>Revisão VAR na WinHouse</h4>${w.varSeen?.length
     ? `<p>✅ A WinHouse já enviou VAR (${w.varSeen.length} exemplo(s)). Copie e envie para o ligarmos ao minicampo:</p><pre class="raw-odds">${esc(JSON.stringify(w.varSeen, null, 2))}</pre>`
     : '<p class="muted">Ainda nenhum tracker da WinHouse mencionou VAR. O servidor está atento a todos os jogos de futebol ao vivo e guarda aqui o primeiro que aparecer. "Descobrir rotas" também procura VAR na documentação e nos scripts da WinHouse (campo varHits).</p>'}` : ''}<br>`;
+}
+
+// The WinHouse JWT probe result: for each token flow, whether it ran, and the token it returned decoded.
+function renderWhAuth(d) {
+  if (!d) return '';
+  const cfg = d.config || {};
+  const creds = `WINHOUSE_WALLET_KEY ${cfg.walletKey ? '✅' : '❌'} · WINHOUSE_TENANT ${cfg.tenant ? '✅' : '❌'} · WINHOUSE_API_KEY ${cfg.apiKey ? '✅' : '❌'}`;
+  const minted = (d.flows || []).find((f) => f.jwt);
+  const head = minted
+    ? `<p class="pill won">✅ JWT gerado por <b>${esc(minted.endpoint)}</b>. É a sessão de um jogador — assinada com ${esc(minted.needs)}.</p>`
+    : (d.flows || []).some((f) => f.ok)
+      ? '<p class="pill void">Os fluxos responderam, mas nenhum devolveu um JWT (veja os corpos abaixo).</p>'
+      : '<p class="pill lost">Nenhum fluxo gerou um JWT — falta a credencial que o assina (WINHOUSE_WALLET_KEY + WINHOUSE_TENANT) ou a WinHouse recusou.</p>';
+  const flow = (f) => {
+    const badge = f.skipped ? `<span class="pill">ignorado</span>` : f.error ? `<span class="pill lost">erro</span>`
+      : f.ok ? `<span class="pill won">HTTP ${f.status}</span>` : `<span class="pill lost">HTTP ${f.status ?? '—'}</span>`;
+    const jwt = f.jwt ? `<div class="wh-jwt-decoded">
+        <div><b>Token (sessão):</b> <code>${esc(f.tokenPreview || '')}</code></div>
+        ${f.jwt.expiresAt ? `<div><b>Validade:</b> ${esc(f.jwt.expiresAt)} ${f.jwt.expired ? '<span class="pill lost">expirado</span>' : `<span class="pill won">${Math.max(0, Math.round((f.jwt.expiresInSec || 0) / 3600))} h</span>`}</div>` : ''}
+        <div><b>Cabeçalho:</b></div><pre class="raw-odds">${esc(JSON.stringify(f.jwt.header, null, 2))}</pre>
+        <div><b>Dados (claims):</b></div><pre class="raw-odds">${esc(JSON.stringify(f.jwt.payload, null, 2))}</pre>
+      </div>` : '';
+    const body = !f.jwt && (f.body !== undefined || f.text) ? `<pre class="raw-odds">${esc(f.body !== undefined ? JSON.stringify(f.body, null, 2) : f.text)}</pre>` : '';
+    return `<div class="wh-flow">
+      <div class="wh-flow-head"><b>${esc(f.name)}</b> <code>${esc(f.endpoint)}</code> ${badge}</div>
+      <div class="muted">Precisa de: ${esc(f.needs)}${f.skipped ? ` — <b>${esc(f.skipped)}</b>` : ''}${f.error ? ` — ${esc(f.error)}` : ''}${f.ms ? ` · ${f.ms} ms` : ''}</div>
+      ${jwt}${body}
+    </div>`;
+  };
+  return `<div class="wh-auth">
+    <p class="muted">Base: <code>${esc(d.baseUrl || '—')}</code> · player de teste: <code>${esc(d.playerId)}</code><br>${creds}</p>
+    ${head}
+    ${(d.flows || []).map(flow).join('')}
+    <p class="muted">Para o site usar isto, a WinHouse tem de te dar a <b>chave da carteira</b> (que assina os tokens); põe-na em <code>WINHOUSE_WALLET_KEY</code> e o <code>WINHOUSE_TENANT</code> nas Variables do servidor. O servidor passa a gerar a sessão de cada jogador sozinho — nunca se cola um JWT fixo.</p>
+  </div>`;
 }
 
 function proplinePanel(p) {
@@ -2748,6 +2793,16 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     actionEl.textContent = 'Descobrir rotas';
+  } else if (action === 'winhouse-auth') {
+    const out = $('#whAuthOut');
+    actionEl.disabled = true;
+    actionEl.textContent = 'A gerar…';
+    try {
+      const r = await api('/api/admin/winhouse/auth', { method: 'POST', body: { playerId: $('#whAuthPlayer')?.value.trim() || null, signInToken: $('#whAuthSignin')?.value.trim() || null } });
+      if (out) out.innerHTML = renderWhAuth(r);
+    } catch (err) { toast('Erro', err.message, 'error'); if (out) out.innerHTML = `<p class="pill lost">${esc(err.message)}</p>`; }
+    actionEl.disabled = false;
+    actionEl.textContent = 'Gerar sessão / ver JWT';
   } else if (action === 'winhouse-video') {
     const box = $('#whOut');
     actionEl.disabled = true;

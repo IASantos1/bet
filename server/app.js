@@ -63,6 +63,7 @@ import {
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
 import { createBetbyEngine } from './betby-engine.js';
+import { decodeJwt, maskTokens } from './jwtpeek.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -3454,6 +3455,41 @@ export function createApp(db, {
       if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
       const gameId = /^\d{1,15}$/.test(String(req.body?.gameId || '')) ? String(req.body.gameId) : null;
       res.json(await winhouse.discover({ gameId }));
+    } catch (err) { next(err); }
+  });
+
+  // How a WinHouse JWT (player session) is generated: run the token flows the book exposes and show the
+  // token each returns, DECODED (header + claims), so the operator sees exactly where the JWT comes from
+  // and what credential mints it. The real secret stays in the server env; only decoded claims are shown.
+  admin.post('/winhouse/auth', async (req, res, next) => {
+    try {
+      if (!winhouse?.enabled) throw new HttpError(409, 'WinHouse desligado: defina WINHOUSE_BASE_URL nas variáveis do servidor.');
+      const playerId = (String(req.body?.playerId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)) || 'test-1';
+      const signInToken = typeof req.body?.signInToken === 'string' ? req.body.signInToken.trim().slice(0, 4000) : '';
+      const cfg = { baseUrl: config.winhouse.baseUrl || null, tenant: !!config.winhouse.tenant, apiKey: !!config.winhouse.apiKey, walletKey: !!config.winhouse.walletKey };
+      const flows = [];
+      const tokenOf = (body) => (body && typeof body === 'object' ? body.token || body.jwt || body.access_token || body.lToken || null : null);
+      const mask = (t) => (typeof t === 'string' && t.length > 18 ? `${t.slice(0, 12)}…${t.slice(-6)}` : t);
+      const run = async (name, endpoint, needs, enabled, fn) => {
+        const f = { name, endpoint, needs, enabled };
+        if (!enabled) { f.skipped = 'credencial em falta nas variáveis do servidor'; flows.push(f); return; }
+        try {
+          const r = await fn();
+          const tok = tokenOf(r.body);
+          Object.assign(f, {
+            status: r.status, ok: r.ok, ms: r.ms,
+            tokenPreview: tok ? mask(tok) : null, jwt: tok ? decodeJwt(tok) : null,
+            body: r.body ? maskTokens(r.body) : undefined, text: r.body ? undefined : String(r.text || '').slice(0, 800),
+          });
+        } catch (e) { f.error = String((e && e.message) || e); }
+        flows.push(f);
+      };
+      // The supported way to mint a WinHouse player JWT: the seamless-wallet session (wallet key + tenant).
+      await run('tenantSession', '/tenant/session', 'WINHOUSE_WALLET_KEY + WINHOUSE_TENANT', cfg.walletKey && cfg.tenant, () => winhouse.tenantSession(playerId));
+      await run('tenantSso', '/tenant/sso', 'WINHOUSE_WALLET_KEY + WINHOUSE_TENANT', cfg.walletKey && cfg.tenant, () => winhouse.tenantSso(playerId));
+      // Only if an operator pasted a sign-in token to swap for a read-scope one.
+      if (signInToken) await run('tokenL', '/aaa/token_l', 'token de login colado (x-access-token)', true, () => winhouse.tokenL(signInToken));
+      res.json({ at: new Date().toISOString(), baseUrl: cfg.baseUrl, config: cfg, playerId, flows });
     } catch (err) { next(err); }
   });
 
