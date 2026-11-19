@@ -3756,6 +3756,9 @@ function render({ keepScroll = false } = {}) {
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
   showMaintenance(page);
+  // Assistente de ajuda (o robô): só aparece na página de Perfil, não na home/ao-vivo/desporto.
+  const hw = $('#helpWidget');
+  if (hw) { const onProfile = page === 'perfil'; hw.classList.toggle('hidden', !onProfile); if (!onProfile) helpToggle(false); }
 }
 
 // Maintenance (switched in the admin): a full screen over the site, or over sports only (the casino,
@@ -4768,6 +4771,7 @@ function mountHelp() {
   if ($('#helpWidget')) return;
   const el = document.createElement('div');
   el.id = 'helpWidget';
+  el.classList.add('hidden'); // o assistente só aparece na página de Perfil (ver render())
   el.innerHTML = `<button id="helpFab" class="help-fab" aria-label="Ajuda e dúvidas — assistente">
       <svg class="help-fab-bot" viewBox="0 0 80 80" aria-hidden="true" focusable="false">
         <defs>
