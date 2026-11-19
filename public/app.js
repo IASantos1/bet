@@ -576,7 +576,10 @@ function liveClock(e) {
 function tennisLiveCell(e) {
   const t = e.tennis || {};
   const pts = tennisPoints(t.point);
-  return `${liveClock(e)}<span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
+  // Games of each set played (6-4, 7-5…), the set in play outlined — so a tennis game with no mini-field
+  // still shows the full set-by-set score in the header, as it did before.
+  const sets = (t.sets || []).map(([h, a], i) => `<span class="${i === t.sets.length - 1 ? 'cur' : ''}"><small>S${i + 1}</small>${esc(String(h))}-${esc(String(a))}</span>`).join('');
+  return `${liveClock(e)}${sets ? `<span class="tn-sets-row">${sets}</span>` : ''}<span class="tn-point">${pts ? `${esc(pts[0])} - ${esc(pts[1])}` : ''}</span>`;
 }
 
 /** Tennis on a card (live page, lists): who serves, the games of the set being played (in gold) and

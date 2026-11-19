@@ -891,6 +891,10 @@ body.no-scroll { overflow: hidden; }
 .trk-score #trkPoint { font-size: 15px; color: var(--gold); }
 .raw-odds { max-height: 320px; overflow: auto; background: #07090c; border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 11px; white-space: pre-wrap; margin-top: 8px; }
 .tn-sets { color: var(--text-2); font-weight: 800; font-size: 13px; }
+.tn-sets-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; margin-top: 6px; font-weight: 800; font-size: 11px; }
+.tn-sets-row span { display: inline-flex; flex-direction: column; align-items: center; background: var(--dim); border-radius: 6px; padding: 2px 7px; min-width: 20px; }
+.tn-sets-row span.cur { outline: 1px solid var(--gold); }
+.tn-sets-row small { color: var(--muted); font-size: 9px; }
 .brand-word { font-weight: 900; font-style: italic; letter-spacing: -1px; font-size: 26px; color: var(--strong); }
 .brand-word span { color: var(--logo); }
 .brand-word.small { font-size: 18px; }
@@ -1725,19 +1729,19 @@ html[data-card-fit="contain"] .game-card .game-img { object-fit: contain; }
 .sport-tile.active span { font-weight: 900; }
 
 /* Home: popular leagues, two rows of cards with a round badge, scrolling sideways */
-.lg-row { display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, auto); grid-auto-columns: max-content; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin-bottom: 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+/* League filter: square cards (logo on top, league name below), one row that scrolls sideways. */
+.lg-row { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 10px; overflow-x: auto; padding: 2px 2px 12px; margin-bottom: 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .lg-row::-webkit-scrollbar { display: none; }
-.lg-row.one { grid-template-rows: auto; }
-.lg-card { display: flex; align-items: center; gap: 9px; padding: 6px 13px 6px 6px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); color: var(--text); text-decoration: none; white-space: nowrap; }
+.lg-card { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; min-height: 120px; padding: 16px 10px 14px; border-radius: 16px; border: 1px solid var(--border); background: var(--panel); color: var(--text); text-decoration: none; text-align: center; }
 .lg-card:hover { border-color: var(--text-4); }
-.lg-card b { font-size: 14px; font-weight: 800; }
-.lg-badge { position: relative; flex: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--dim); display: grid; place-items: center; }
-.lg-badge img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
-.lg-badge i { font-style: normal; font-size: 20px; }
+.lg-card b { font-size: 13.5px; font-weight: 800; line-height: 1.25; }
+.lg-badge { position: relative; flex: none; width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--border); background: var(--dim); display: grid; place-items: center; }
+.lg-badge img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
+.lg-badge i { font-style: normal; font-size: 30px; }
 /* The league's own logo: whole (not cut round), on white so dark logos show in the dark theme too. */
 .lg-badge.logo { background: #fff; border-color: #e3e6ea; }
-.lg-badge img.lg-logo { width: 28px; height: 28px; border-radius: 0; object-fit: contain; }
-.lg-badge em { position: absolute; right: -6px; bottom: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text); }
+.lg-badge img.lg-logo { width: 42px; height: 42px; border-radius: 0; object-fit: contain; }
+.lg-badge em { position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text); }
 .lg-badge em svg { width: 15px; height: 15px; }
 .sport-tile { position: relative; }
 .sport-tile .tile-n { position: absolute; top: 4px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--live); color: #fff; font-style: normal; font-size: 10px; font-weight: 900; line-height: 18px; text-align: center; }
@@ -1955,7 +1959,7 @@ html:not(.light) .pick-card::after { filter: invert(1); opacity: .07; }
 .pick-btn:hover { background: var(--row-hover); }
 @media (max-width: 700px) { .pick-ribbon { font-size: 13px; padding: 6px 14px 6px 12px; } .pick-hot { font-size: 13px; padding: 4px 8px; } .pick-legs li { font-size: 14px; } }
 .lg-badge.sport { background: var(--panel2); color: var(--text); }
-.lg-badge.sport svg { width: 22px; height: 22px; }
+.lg-badge.sport svg { width: 30px; height: 30px; }
 
 /* ---------- Vivid accents: one signature colour (lime) for what the player acts on, a colour per sport,
    gold for boosted prices, a pulsing live dot. Lime fills keep dark text; on the light theme the thin
