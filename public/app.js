@@ -2721,11 +2721,10 @@ const payMethods = () => ((state.config || {}).payMethods || ['mbway', 'multiban
 function depositFormHtml() {
   const c = state.config || {};
   if (c.paymentsMode === 'disabled') return '<div class="notice">Os depósitos ficam disponíveis assim que um fornecedor de pagamentos for configurado.</div>';
-  // 1st deposit without the 100% welcome bonus: the sports offer is the free bet (€20 → €10).
-  const sportBonus = !(state.user?.firstDeposit && !c.welcomeBonus);
   return `${c.paymentsMode === 'demo' ? '<div class="notice"><strong>Modo demonstração:</strong> nenhum pagamento real é processado; o valor é creditado de imediato.</div><br>' : ''}
     ${c.paymentsMode === 'eupago' ? '<div class="notice">Pagamentos processados pela Eupago. Escolha um método de pagamento.</div><br>' : ''}
-    <form data-form="deposit" class="deposit-form">
+    <form data-form="deposit" class="deposit-form" data-bonus="off">
+      <input type="hidden" name="promo" value="none">
       <div class="methods payment-methods" role="radiogroup" aria-label="Método de pagamento">${(() => {
         const off = new Set(c.payMethodsOff || []);
         const first = payMethods().find((m) => !off.has(m));
@@ -2734,6 +2733,10 @@ function depositFormHtml() {
           ? `<label class="method payment-method-logo off" aria-disabled="true" title="${PAY_LOGO[m].name}: temporariamente indisponível"><input type="radio" name="method" value="${m}" disabled><img src="${PAY_LOGO[m].src}" alt="${PAY_LOGO[m].name}"><small class="pm-off">Indisponível</small></label>`
           : `<label class="method payment-method-logo"><input type="radio" name="method" value="${m}"${m === first ? ' checked' : ''}><img src="${PAY_LOGO[m].src}" alt="${PAY_LOGO[m].name}" title="${PAY_LOGO[m].name}"></label>`).join('');
       })()}</div>
+      <label class="bonus-toggle" for="bonusSwitch">
+        <span class="bonus-toggle-text"><b>🎁 Deposite €20 e ativa o bónus</b><small>Deposita €20 e ganha 100 Free Spins</small></span>
+        <span class="switch"><input type="checkbox" id="bonusSwitch" role="switch" aria-label="Ativar bónus de 100 Free Spins"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+      </label>
       <div class="amount-presets">${DEPOSIT_PRESETS.map((v) => `<button type="button" data-amount="${v}">€${v}</button>`).join('')}</div>
       <div class="form-grid">
         <div class="field"><label>Valor (€${c.minDeposit ?? 5} – €${c.maxDeposit ?? 5000})</label><input name="amount" type="number" min="${c.minDeposit ?? 5}" max="${c.maxDeposit ?? 5000}" step="0.01" value="20" required inputmode="decimal"></div>
@@ -2741,11 +2744,6 @@ function depositFormHtml() {
       </div>
       <div class="card-slot hidden" id="cardSlot"></div>
       <div class="form-actions"><button class="primary-btn">Depositar</button></div>
-      <div class="promo-pick"><span>Promoção deste depósito</span>
-        ${sportBonus ? '<label><input type="radio" name="promo" value="sport" checked> Bónus de desporto</label>' : ''}
-        <label><input type="radio" name="promo" value="casino"> Free Spins casino</label>
-        <label><input type="radio" name="promo" value="freebet"${sportBonus ? '' : ' checked'}> Free Bet desporto</label>
-        <label><input type="radio" name="promo" value="none"> Sem promoção</label></div>
       <div class="deposit-offer" id="depositOffer"></div>
     </form>
     <div id="depositPanel"></div>`;
@@ -3638,27 +3636,6 @@ function renderSidebar() {
  * around it is replaced, it and its children stay untouched. Falls back to innerHTML when the new
  * page has no such element.
  */
-function mergeKeeping(root, html, keepId) {
-  const fresh = document.createElement('div');
-  fresh.innerHTML = html;
-  if (!fresh.querySelector(`#${keepId}`)) { root.innerHTML = html; return; }
-  const holds = (n) => n.nodeType === 1 && (n.id === keepId || !!n.querySelector(`#${keepId}`));
-  (function merge(oldEl, newEl) {
-    if (oldEl !== root) {
-      for (const a of [...oldEl.attributes]) if (!newEl.hasAttribute(a.name)) oldEl.removeAttribute(a.name);
-      for (const a of [...newEl.attributes]) if (oldEl.getAttribute(a.name) !== a.value) oldEl.setAttribute(a.name, a.value);
-    }
-    if (oldEl.id === keepId) return;
-    const oldPath = [...oldEl.childNodes].find(holds);
-    const kids = [...newEl.childNodes];
-    const i = kids.findIndex(holds);
-    for (const c of [...oldEl.childNodes]) if (c !== oldPath) c.remove();
-    oldPath.before(...kids.slice(0, i));
-    oldPath.after(...kids.slice(i + 1));
-    merge(oldPath, kids[i]);
-  })(root, fresh);
-}
-
 /**
  * Brings `root` to the given HTML changing only what differs: a refresh (odds, clock, score) touches
  * just those nodes, so badges, casino pictures and buttons stay as they are instead of being built
@@ -3672,6 +3649,9 @@ function morphNode(cur, next) {
   for (const a of [...cur.attributes]) if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
   for (const a of [...next.attributes]) if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
   if (cur.tagName === 'IFRAME' || cur.tagName === 'VIDEO' || cur.tagName === 'CANVAS') return;
+  // A live mount point (the mini-field, filled by JS after the render): keep its children untouched, or a
+  // refresh would wipe the widget and the iframe/canvas inside would reload — the blinking mini-field bug.
+  if (cur.hasAttribute('data-keep')) return;
   morphChildren(cur, next);
 }
 function morphChildren(parent, nextParent) {
@@ -3738,13 +3718,11 @@ function render({ keepScroll = false } = {}) {
   // scores): only the person scrolling moves them, never the refresh.
   const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
   const html = immersive ? casinoPlayPage() : (pages[page] || homePage)();
-  // A playing video must never leave the document: an iframe that is detached, even for a moment,
-  // reloads (black "Loading stream…", sound lost). The match page refreshes every few seconds, so
-  // there the new page is merged around the slot that holds it instead of replacing everything.
-  const keep = page === 'jogo' ? $('#content #trackerInline') : null;
-  if (keep?.querySelector('iframe')) mergeKeeping($('#content'), html, 'trackerInline');
-  // A refresh of the same page changes only what moved; a new page is built whole.
-  else if (keepScroll && $('#content').dataset.page === page) morph($('#content'), html);
+  // A refresh of the same page changes only what moved (odds, score, clock): badges, pictures and the
+  // live mini-field (marked data-keep, so morph leaves its iframe/canvas alone) stay as they are instead
+  // of being rebuilt — which made the sport icon and the mini-field blink on every match-page refresh.
+  // The match page always refreshes in place (it polls every few seconds); a new page is built whole.
+  if ($('#content').dataset.page === page && (keepScroll || page === 'jogo')) morph($('#content'), html);
   else $('#content').innerHTML = html;
   $('#content').dataset.page = page;
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
@@ -4584,7 +4562,24 @@ document.addEventListener('input', (e) => {
   if (e.target.id === 'stake') renderSlip();
   if (e.target.closest('form[data-form="deposit"]')) depositOffer();
 });
-document.addEventListener('change', (e) => { if (e.target.closest('form[data-form="deposit"]')) depositOffer(); });
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'bonusSwitch') applyBonus(e.target.closest('form[data-form="deposit"]'), e.target.checked);
+  if (e.target.closest('form[data-form="deposit"]')) depositOffer();
+});
+
+/** The deposit bonus switch: on → lock the deposit to €20 and claim the 100 Free Spins; off → no promotion. */
+function applyBonus(form, on) {
+  if (!form) return;
+  form.dataset.bonus = on ? 'on' : 'off';
+  const promo = form.querySelector('input[name="promo"]');
+  if (promo) promo.value = on ? 'casino' : 'none';
+  const amt = form.amount;
+  if (amt) {
+    if (on) { amt.value = '20'; amt.min = '20'; amt.readOnly = true; }
+    else { amt.readOnly = false; amt.min = String((state.config || {}).minDeposit ?? 5); }
+  }
+  $$('.amount-presets [data-amount]', form).forEach((b) => b.classList.toggle('active', on && b.dataset.amount === '20'));
+}
 
 // What the deposit typed would earn (decided again by the server when the payment is confirmed).
 let offerTimer = null;
@@ -4609,7 +4604,7 @@ function depositOffer() {
     const box = walletEl('#depositOffer');
     if (!form || !box) return;
     const promo = form.promo?.value || 'none';
-    if (promo === 'none') { box.innerHTML = '<small class="muted">Sem promoção neste depósito.</small>'; return; }
+    if (promo === 'none') { box.innerHTML = ''; return; }
     try {
       const o = await api(`/api/promotions/offer?amount=${encodeURIComponent(form.amount.value)}&method=${encodeURIComponent(form.method.value)}&promo=${promo}`);
       const dep = money(Number(form.amount.value) || 0);
@@ -4924,7 +4919,10 @@ function leaveMatch() {
   Object.assign(m, { score: null, kickoff: null, cornerWatch: null, clipGate: null, clipToken: null, clipTimer: null, clipHold: null });
   Object.assign(m, { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, courtAsked: false, timer: null, ball: null, prevBall: null, actions: [], live: null, streaming: false, widget: null, widgetKind: null, streamEl: null, streamKey: null, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false, betbyAt: 0, betbyTries: 0, betbyDone: false, betbyGraceOver: false });
   clearTimeout(m.streamTimer);
+  // The mini-field slots are JS-managed and kept across refreshes (data-keep), so clear them by hand when
+  // the match is left or swapped — otherwise the previous game's field would linger until the new one mounts.
   $('#sideTracker')?.replaceChildren();
+  $('#content #trackerInline')?.replaceChildren();
 }
 
 // A match page read ahead: when the finger touches a game (or the mouse rests on it), its page is
@@ -5206,7 +5204,7 @@ function matchPage(sub) {
         <div class="match-center">${center}</div>
         <div class="match-team">${sideBadge(e, 'away', 'big')}<strong>${esc(tname(e, 'away'))}${redCard(e, 'away')}${e.sport === 'tenis' && live ? ' <i class="serve-dot" data-serve="away" title="Ao serviço"></i>' : ''}</strong></div>
       </div>
-      <div id="trackerInline" class="tracker-inline"></div>
+      <div id="trackerInline" class="tracker-inline" data-keep></div>
     </section>
     <div class="match-views">
       ${live ? `<button class="${m.view === 'stream' ? 'active' : ''}${hasTv(e) ? '' : ' none'}" data-match-view="stream" title="${hasTv(e) ? 'Transmissão ao vivo' : 'Sem transmissão para este jogo'}">${ICON_PLAY}<span>Live</span></button>
