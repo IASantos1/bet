@@ -818,15 +818,13 @@ export function createApp(db, {
           ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
           : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
-        // Only WinHouse's own badge (and the tennis/darts player photo): WinHouse now sends one for every
-        // team and tennis player, so the API-Football lookup is no longer used for badges — it is what
-        // gave wrong crests to teams it mis-matched (Malavan → Málaga). A team with no badge keeps the
-        // neutral shirt in its kit colours (better than another club's crest). The kit colours below still
-        // come from there, for the drawn shirt only.
-        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || null,
-        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || null,
-        homeLogoAlt: null,
-        awayLogoAlt: null,
+        // WinHouse's own badge first; else, for the OTHER sports only, the API-Football one (by name).
+        // Football does not use API-Football here (per the operator), so it shows WinHouse or just the name.
+        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || (e.sport === 'futebol' ? null : teamLogos?.get(e.sport, e.home)?.logo) || null,
+        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || (e.sport === 'futebol' ? null : teamLogos?.get(e.sport, e.away)?.logo) || null,
+        // The API-Football badge, to show should the feed's own not load (other sports only).
+        homeLogoAlt: !nat && e.sport !== 'futebol' && teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
+        awayLogoAlt: !nat && e.sport !== 'futebol' && teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
         // The house's kit first (server/kits.js: stripes, sleeves), else the badge provider's colours.
         homeKit: houseKit(e.sport, raw.home) || teamLogos?.get(e.sport, raw.home)?.colors || null,
         awayKit: houseKit(e.sport, raw.away) || teamLogos?.get(e.sport, raw.away)?.colors || null,
