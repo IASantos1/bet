@@ -28,14 +28,19 @@ const isPlayerType = (t) => Boolean(t && PLAYER_TYPES.has(String(t)));
 
 // Map a BETBY player market to a grader kind (server/playermarkets.js) we can settle from GOAL API.
 // By market id first (confirmed from a real match: 40 anytime scorer, 898 2+, 899 3+), then by name.
-const MARKET_KIND_BY_ID = { 40: 'anytime_scorer', 898: 'scorer_2plus', 899: 'hattrick' };
-function kindOf(marketId, marketName = '') {
-  const byId = MARKET_KIND_BY_ID[Number(marketId)];
+const MARKET_KIND_BY_ID = { 40: 'anytime_scorer', 898: 'scorer_2plus', 899: 'hattrick', 39: 'last_scorer' };
+function kindOf(marketId, marketName = '', variant = '') {
+  const id = Number(marketId);
+  // Market 38 is the Nth goalscorer (variant goalnr): only the FIRST goalscorer is one we settle.
+  if (id === 38) return specifiersOf(variant).goalnr === '1' ? 'first_scorer' : null;
+  const byId = MARKET_KIND_BY_ID[id];
   if (byId) return byId;
   const n = String(marketName).toLowerCase();
   if (/\bexpuls|sent.?off|cart[aã]o vermelho|red card/.test(n)) return 'to_be_sent_off';
   if (/advertido|amarelo|booked|carded|cart[aã]o|booking/.test(n)) return 'to_be_carded';
   if (/assist[êe]ncia|\bassist/.test(n)) return 'anytime_assist';
+  if (/[uú]ltimo marcador|last goalscorer/.test(n)) return 'last_scorer';
+  if (/primeiro marcador|1.?\s*marcador|first goalscorer/.test(n)) return 'first_scorer';
   if (/3\s*\+|hat.?trick|tr[êe]s ou mais/.test(n)) return 'hattrick';
   if (/2\s*\+|dois ou mais|marcar 2/.test(n)) return 'scorer_2plus';
   if (/marcador em qualquer|qualquer altura|a qualquer momento|anytime|a marcar\b|to score/.test(n)) return 'anytime_scorer';
@@ -269,7 +274,7 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
           list.push({ id: String(outcomeId), name: named ? fillTemplate(named, tmpl(variant)) : null, odd: cell?.k != null ? Number(cell.k) : null, blocked: cell?.b === 1 });
         }
         const marketName = fillTemplate(descEntry?.name || entry.name, tmpl(variant)) || `Mercado ${marketId}`;
-        if (list.length) out.push({ marketId: String(marketId), marketType: entry.market_type, marketName, variant, kind: kindOf(marketId, marketName), outcomes: list });
+        if (list.length) out.push({ marketId: String(marketId), marketType: entry.market_type, marketName, variant, kind: kindOf(marketId, marketName, variant), outcomes: list });
       }
     }
     return out;

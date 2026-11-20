@@ -56,6 +56,9 @@ export const MARKET_KINDS = {
   anytime_assist: { need: 'assists', min: 1, label: 'Assistência a qualquer momento' },
   to_be_carded: { need: 'cards', min: 1, label: 'Recebe cartão' },
   to_be_sent_off: { need: 'red', min: 1, label: 'Expulso' },
+  // Order-based: need the ordered goals (report.goals), settled only at full time (the order is final).
+  first_scorer: { need: 'order', pos: 'first', label: 'Primeiro marcador' },
+  last_scorer: { need: 'order', pos: 'last', label: 'Último marcador' },
 };
 
 /**
@@ -67,6 +70,16 @@ export function gradePlayerMarket(market, report, { finished = false } = {}) {
   const spec = MARKET_KINDS[market?.kind];
   if (!spec) return { result: 'VOID', reason: `mercado desconhecido: ${market?.kind}`, confidence: 'none' };
   if (!report || !Array.isArray(report.players)) return { result: 'PENDING', reason: 'sem relatório do jogo', confidence: 'none' };
+  // First / last goalscorer: decided from the ordered goals, only once the match is over (the order is final).
+  if (spec.need === 'order') {
+    if (!finished) return { result: 'PENDING', reason: 'decidido no fim do jogo', confidence: 'none' };
+    const goals = Array.isArray(report.goals) ? report.goals : [];
+    if (!goals.length) return { result: report.players.length || report.goals ? 'LOST' : 'PENDING', reason: 'sem golos no jogo', confidence: 'none' };
+    const target = spec.pos === 'first' ? goals[0] : goals[goals.length - 1];
+    const { player: mt, confidence: c } = matchPlayerName(market.player, [{ id: target.id, name: target.player, team: target.team, goals: 1, assists: 0, yellow: 0, red: 0 }], market.side || null, market.playerId);
+    if (mt) return { result: 'WON', reason: `${spec.pos === 'first' ? 'Primeiro' : 'Último'} golo: ${target.player}`, confidence: c };
+    return { result: 'LOST', reason: `${spec.pos === 'first' ? 'Primeiro' : 'Último'} golo: ${target.player}`, confidence: 'none' };
+  }
   const { player, confidence } = matchPlayerName(market.player, report.players, market.side || null, market.playerId);
   const count = (p) => (spec.need === 'cards' ? (p.yellow + p.red) : p[spec.need]) || 0;
   if (!player) {

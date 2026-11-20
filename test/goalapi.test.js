@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createGoalApi, findFixture, normalizeForm, normalizeH2H, normalizeStandings, normalizeMatchEvents } from '../server/goalapi.js';
+import { createGoalApi, findFixture, normalizeForm, normalizeH2H, normalizeStandings, normalizeMatchEvents, orderedGoals } from '../server/goalapi.js';
 
 const HOUR = 3_600_000;
 const ko = new Date(Math.floor(Date.now() / HOUR) * HOUR + 5 * HOUR); // in 5 h, on the hour
@@ -223,4 +223,16 @@ test('match events: flat player/team fallback still works', () => {
   assert.equal(players.find((p) => p.id === 'q1').team, 'away');
   assert.equal(players.find((p) => p.id === 'q1').goals, 1);
   assert.equal(players.find((p) => p.id === 'q2').yellow, 1);
+});
+
+test('orderedGoals: goals in scoring order, own goals excluded', () => {
+  const goals = orderedGoals([
+    { type: 'GOAL', awayScorer: 'S. Solans', awayScorerId: 'a1', time: '23' },
+    { type: 'GOAL', homeScorer: 'Otamendi (og)', homeScorerId: 'h9', time: '40' },
+    { type: 'YELLOWCARD', homeYellowCard: 'Pepe', time: '44' },
+    { type: 'GOAL', homeScorer: 'Di María', homeScorerId: 'h1', time: '67' },
+  ]);
+  assert.equal(goals.length, 2); // own goal excluded
+  assert.equal(goals[0].player, 'S. Solans'); // first by minute
+  assert.equal(goals[1].player, 'Di María'); // last
 });

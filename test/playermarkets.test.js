@@ -44,6 +44,25 @@ test('grade: assists, cards and sent-off', () => {
   assert.equal(gradePlayerMarket({ kind: 'to_be_sent_off', player: 'Sérgio Solans', side: 'away' }, report, { finished: true }).result, 'LOST');
 });
 
+test('grade: first / last goalscorer from the ordered goals, only at full time', () => {
+  const rep = {
+    players: [{ id: 'p1', name: 'Di María', team: 'home', goals: 1, assists: 0, yellow: 0, red: 0 }],
+    goals: [
+      { player: 'J. Félix', id: 'p9', team: 'home', order: 12 },
+      { player: 'Di María', id: 'p1', team: 'home', order: 67 },
+    ],
+  };
+  // Not finished: both pending (order not final).
+  assert.equal(gradePlayerMarket({ kind: 'first_scorer', player: 'João Félix', side: 'home' }, rep).result, 'PENDING');
+  // Finished: first = Félix, last = Di María.
+  assert.equal(gradePlayerMarket({ kind: 'first_scorer', player: 'João Félix', side: 'home' }, rep, { finished: true }).result, 'WON');
+  assert.equal(gradePlayerMarket({ kind: 'first_scorer', player: 'Di María', side: 'home' }, rep, { finished: true }).result, 'LOST');
+  assert.equal(gradePlayerMarket({ kind: 'last_scorer', player: 'Di María', side: 'home' }, rep, { finished: true }).result, 'WON');
+  assert.equal(gradePlayerMarket({ kind: 'last_scorer', player: 'João Félix', side: 'home' }, rep, { finished: true }).result, 'LOST');
+  // No goals, finished: the bet loses.
+  assert.equal(gradePlayerMarket({ kind: 'first_scorer', player: 'X', side: 'home' }, { players: [{ name: 'Y', team: 'home', goals: 0, assists: 0, yellow: 0, red: 0 }], goals: [] }, { finished: true }).result, 'LOST');
+});
+
 test('grade: unknown player is pending while live, loss when finished with a feed', () => {
   assert.equal(gradePlayerMarket({ kind: 'anytime_scorer', player: 'Ninguém', side: 'home' }, report).result, 'PENDING');
   assert.equal(gradePlayerMarket({ kind: 'anytime_scorer', player: 'Ninguém', side: 'home' }, report, { finished: true }).result, 'LOST');

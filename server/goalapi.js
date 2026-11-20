@@ -228,6 +228,40 @@ export function normalizeMatchEvents(raw, fx = null) {
   return [...by.values()];
 }
 
+/**
+ * The match's goals in the order they were scored (by minute), each with its scorer — for first / last
+ * goalscorer markets. Own goals are left out (they are not a "goalscorer" for betting). Same side-prefixed
+ * shape as normalizeMatchEvents (homeScorer / awayScorer + time / timeNum).
+ */
+export function orderedGoals(raw) {
+  const list = Array.isArray(raw) ? raw : ['events', 'incidents', 'timeline', 'data', 'items', 'goals'].map((k) => raw?.[k]).find(Array.isArray) || [];
+  const goals = [];
+  list.forEach((ev, i) => {
+    if (!ev || typeof ev !== 'object') return;
+    const type = slug(ev.type || ev.eventType || ev.event_type || ev.incident || ev.kind);
+    if (!/goal/.test(type) && type !== 'score') return;
+    const min = Number(ev.timeNum ?? ev.time ?? ev.minute);
+    for (const side of ['home', 'away']) {
+      const name = ev[`${side}Scorer`] ?? ev[`${side}_scorer`];
+      const id = ev[`${side}ScorerId`] ?? ev[`${side}_scorer_id`];
+      if ((name != null && name !== '') || (id != null && id !== '')) {
+        if (isOwnGoal(name)) continue;
+        goals.push({ player: cleanPlayer(name), id: id != null && id !== '' ? String(id) : null, team: side, order: Number.isFinite(min) ? min : i });
+      }
+    }
+    // Flat fallback: player + team on the event itself.
+    if (!ev.homeScorer && !ev.awayScorer) {
+      const name = ev.player?.name || ev.playerName || (typeof ev.player === 'string' ? ev.player : null);
+      const id = ev.player?.id ?? ev.playerId ?? null;
+      if ((name || id != null) && !isOwnGoal(name) && !/own/.test(type)) {
+        const team = ev.team === 'home' || ev.team === 'away' ? ev.team : null;
+        goals.push({ player: cleanPlayer(name), id: id != null ? String(id) : null, team, order: Number.isFinite(min) ? min : i });
+      }
+    }
+  });
+  return goals.sort((a, b) => a.order - b.order);
+}
+
 /** Head-to-head of our two teams, in the shape of the match page (home/away as in our event). */
 export function normalizeH2H(raw, ev) {
   const matches = Array.isArray(raw?.matches) ? raw.matches : [];
@@ -528,6 +562,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       home: { id: fx.home?.id || null, name: fx.home?.name || ev.home },
       away: { id: fx.away?.id || null, name: fx.away?.name || ev.away },
       players: normalizeMatchEvents(raw, fx),
+      goals: orderedGoals(raw),
       raw: raw || null,
     };
   }

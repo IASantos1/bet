@@ -289,7 +289,7 @@ const isOpen = (e) => e.status === 'live' || (e.status === 'scheduled' && new Da
 const inSlip = (selId) => state.slip.some((s) => s.selectionId === selId);
 // A slip item's stable id: a WinHouse selection, or a BETBY player market (event + market + player).
 const itemKey = (s) => (s.betby ? `bb:${s.eventId}:${s.betby.marketId}:${s.betby.player}` : `sel:${s.selectionId}`);
-const BETBY_KIND_LABEL = { anytime_scorer: 'Marca a qualquer momento', scorer_2plus: 'Marca 2 ou mais', hattrick: 'Hat-trick', anytime_assist: 'Assistência', to_be_carded: 'Recebe cartão', to_be_sent_off: 'Expulso' };
+const BETBY_KIND_LABEL = { anytime_scorer: 'Marca a qualquer momento', scorer_2plus: 'Marca 2 ou mais', hattrick: 'Hat-trick', anytime_assist: 'Assistência', to_be_carded: 'Recebe cartão', to_be_sent_off: 'Expulso', first_scorer: 'Primeiro marcador', last_scorer: 'Último marcador' };
 
 // In play, a favourite this short means the main market is as good as gone: the other markets are the bet.
 const SHORT_FAVOURITE = 1.05;
