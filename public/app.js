@@ -5853,9 +5853,7 @@ function matchStatsView(e) {
   const tabs = [];
   if (e.status !== 'scheduled') tabs.push(['aovivo', e.status === 'live' ? 'Ao vivo' : 'Jogo']);
   const hasLineups = (ins.lineups?.home?.starters?.length || ins.lineups?.away?.starters?.length);
-  const hasPlayers = Array.isArray(ins.players) && ins.players.some((p) => p.goals || p.assists || p.yellow || p.red);
   if (hasLineups) tabs.push(['equipas', 'Titulares']);
-  if (hasPlayers) tabs.push(['jogadores', 'Jogadores']);
   if (ins.h2h || ins.form?.home || ins.form?.away || ins.venue) tabs.push(['h2h', 'H2H']);
   if (ins.standings?.rows?.length) tabs.push(['classificacao', 'Classificação']);
   if (!tabs.length) {
@@ -5864,7 +5862,7 @@ function matchStatsView(e) {
   if (!tabs.some(([k]) => k === m.statTab)) m.statTab = tabs[0][0];
   const menu = tabs.length > 1 ? `<div class="market-cats stat-tabs" data-hscroll="stat-tabs">${tabs.map(([k, l]) => `<button class="${m.statTab === k ? 'active' : ''}" data-stat-tab="${k}">${l}</button>`).join('')}</div>` : '';
   const body = m.statTab === 'h2h' ? h2hView(e, ins) : m.statTab === 'classificacao' ? standingsView(e, ins.standings)
-    : m.statTab === 'equipas' ? lineupsView(e, ins.lineups) : m.statTab === 'jogadores' ? playerStatsView(e, ins.players) : liveStatsView(e);
+    : m.statTab === 'equipas' ? lineupsView(e, ins.lineups, ins.players) : liveStatsView(e);
   return menu + body;
 }
 
@@ -5907,28 +5905,48 @@ function venueView(e, v) {
   return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, tname(e, 'home'), 'em casa')}${side(v.away, tname(e, 'away'), 'fora')}</div></div>`;
 }
 
-/** Starting XI and bench of each team (GOAL API lineups). */
-function lineupsView(e, lu) {
-  if (!lu) return '<div class="panel empty">Sem formações para este jogo.</div>';
-  const row = (p) => `<div class="lu-row"><span class="lu-num">${p.number != null && p.number !== '' ? esc(String(p.number)) : ''}</span>${p.image ? `<img class="lu-img" src="${esc(p.image)}" alt="" loading="lazy">` : ''}<span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`;
-  const col = (side, name) => {
-    const t = lu[side] || {};
-    return `<div class="lu-col"><h4>${esc(name)}</h4>
-      ${t.starters?.length ? `<div class="lu-sec">Titulares</div>${t.starters.map(row).join('')}` : '<p class="muted">Sem titulares.</p>'}
-      ${t.bench?.length ? `<div class="lu-sec">Suplentes</div>${t.bench.map(row).join('')}` : ''}</div>`;
-  };
-  return `<div class="panel"><h3>Formações</h3><div class="lu-grid">${col('home', tname(e, 'home'))}${col('away', tname(e, 'away'))}</div></div>`;
-}
+// A starter's position line: goalkeeper, defender, midfielder or forward (GOAL API gives these names).
+const posCat = (p) => {
+  const s = String(p?.position || '').toLowerCase();
+  if (/goal|guarda|keeper|\bgk\b/.test(s)) return 'gk';
+  if (/def|back|zagueiro|lateral/.test(s)) return 'def';
+  if (/forward|attack|strik|avan|ponta|wing/.test(s)) return 'fwd';
+  if (/mid|meio|midfield/.test(s)) return 'mid';
+  return 'mid';
+};
 
-/** Player match stats (goals, assists, cards) from the GOAL API report. */
-function playerStatsView(e, players) {
-  if (!Array.isArray(players) || !players.length) return '<div class="panel empty">Sem estatísticas de jogadores.</div>';
-  const active = players.filter((p) => p.goals || p.assists || p.yellow || p.red)
-    .sort((a, b) => (b.goals * 3 + b.assists * 2 + b.yellow + b.red) - (a.goals * 3 + a.assists * 2 + a.yellow + a.red));
-  const side = (s) => s === 'home' ? tname(e, 'home') : s === 'away' ? tname(e, 'away') : '';
-  const row = (p) => `<div class="ps-row"><span class="ps-name">${esc(p.name)}${p.team ? `<small> · ${esc(side(p.team))}</small>` : ''}</span>
-    <span class="ps-marks">${p.goals ? `<b class="ps-g" title="Golos">⚽ ${p.goals}</b>` : ''}${p.assists ? `<b class="ps-a" title="Assistências">🅰 ${p.assists}</b>` : ''}${p.yellow ? `<b class="ps-y" title="Amarelos">🟨 ${p.yellow}</b>` : ''}${p.red ? `<b class="ps-r" title="Vermelhos">🟥 ${p.red}</b>` : ''}</span></div>`;
-  return `<div class="panel"><h3>Jogadores</h3>${active.map(row).join('')}</div>`;
+/** The starting XI on a mini pitch (away on top, home below) with the bench listed underneath.
+ * A ⚽ (with the count) marks a player who has scored, from the GOAL API match report. */
+function lineupsView(e, lu, players) {
+  if (!lu) return '<div class="panel empty">Sem formações para este jogo.</div>';
+  // How many goals each player scored, looked up by name (surname) / id — to mark the scorers on the pitch.
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const surnameOf = (s) => { const t = norm(s).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
+  const scorers = new Map(); // surname -> goals, plus full name
+  for (const p of (Array.isArray(players) ? players : [])) {
+    if (!p.goals) continue;
+    scorers.set(norm(p.name), p.goals);
+    if (surnameOf(p.name)) scorers.set(surnameOf(p.name), Math.max(scorers.get(surnameOf(p.name)) || 0, p.goals));
+  }
+  const goalsOf = (p) => scorers.get(norm(p.name)) || scorers.get(surnameOf(p.name)) || 0;
+  const group = (starters) => { const g = { gk: [], def: [], mid: [], fwd: [] }; for (const p of (starters || [])) g[posCat(p)].push(p); return g; };
+  const home = group(lu.home?.starters);
+  const away = group(lu.away?.starters);
+  const cell = (p) => { const g = goalsOf(p); return `<div class="pp"><span class="pp-av${p.image ? '' : ' no'}">${p.image ? `<img src="${esc(p.image)}" alt="" loading="lazy">` : ''}<b>${esc(String(p.number ?? ''))}</b>${g ? `<i class="pp-goal">⚽${g > 1 ? g : ''}</i>` : ''}</span><span class="pp-name">${esc(p.name)}</span></div>`; };
+  const row = (arr) => (arr.length ? `<div class="pitch-line">${arr.map(cell).join('')}</div>` : '');
+  const pitch = `<div class="pitch">
+    <div class="pitch-team top">${esc(tname(e, 'away'))}</div>
+    <div class="pitch-half">${row(away.gk)}${row(away.def)}${row(away.mid)}${row(away.fwd)}</div>
+    <div class="pitch-half">${row(home.fwd)}${row(home.mid)}${row(home.def)}${row(home.gk)}</div>
+    <div class="pitch-team bottom">${esc(tname(e, 'home'))}</div>
+  </div>`;
+  const subCol = (side, name) => {
+    const bench = lu[side]?.bench || [];
+    return `<div class="lu-col"><h4>${esc(name)}</h4>${bench.length ? bench.map((p) => `<div class="lu-row"><span class="lu-num">${esc(String(p.number ?? ''))}</span>${p.image ? `<img class="lu-img" src="${esc(p.image)}" alt="" loading="lazy">` : ''}<span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`).join('') : '<p class="muted">—</p>'}</div>`;
+  };
+  const anyStart = home.gk.length || home.def.length || away.gk.length || away.def.length;
+  return `${anyStart ? `<div class="panel pitch-panel">${pitch}</div>` : ''}
+    <div class="panel"><h3>Suplentes</h3><div class="lu-grid">${subCol('home', tname(e, 'home'))}${subCol('away', tname(e, 'away'))}</div></div>`;
 }
 
 function standingsView(e, t) {
