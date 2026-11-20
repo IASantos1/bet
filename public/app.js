@@ -5601,22 +5601,25 @@ async function loadStream(e, el) {
 function marketsView(e) {
   // The page as the list had it: its main market now, the others in a moment.
   if (e.partial) return `${e.markets.length ? marketBlocks(e, e.markets) : ''}<div class="panel empty loading-more">A carregar todos os mercados…</div>`;
-  if (!e.markets?.length) {
-    return `<div class="panel empty">${e.status === 'live' ? '<span class="odds-state suspended">Suspenso</span>' : 'Ainda não há mercados para este jogo.'}</div>`;
-  }
   const m = state.match;
-  const counts = new Map();
-  for (const mk of e.markets) counts.set(marketCat(mk, e.sport), (counts.get(marketCat(mk, e.sport)) || 0) + 1);
-  // BETBY player markets (Marcador): their own tab, not mixed into the WinHouse categories.
+  const wh = e.markets || [];
+  // BETBY player markets (Marcador): their own tab, kept even when WinHouse has no markets (suspended live).
   const betbyMk = state.match.betby?.markets || [];
   const betbyCount = betbyMk.reduce((n, mk) => n + mk.outcomes.length, 0);
+  if (!wh.length && !betbyMk.length) {
+    return `<div class="panel empty">${e.status === 'live' ? '<span class="odds-state suspended">Suspenso</span>' : 'Ainda não há mercados para este jogo.'}</div>`;
+  }
+  const counts = new Map();
+  for (const mk of wh) counts.set(marketCat(mk, e.sport), (counts.get(marketCat(mk, e.sport)) || 0) + 1);
   if (m.cat !== 'todos' && m.cat !== 'marcador' && !counts.has(m.cat)) m.cat = 'todos';
   if (m.cat === 'marcador' && !betbyMk.length) m.cat = 'todos';
-  let chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
-    .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
+  // No WinHouse markets right now but there are player markets: show the Marcador tab by default.
+  if (!wh.length && betbyMk.length) m.cat = 'marcador';
+  let chips = wh.length ? marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
+    .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? wh.length : counts.get(k)}</small></button>`).join('') : '';
   if (betbyMk.length) chips += `<button class="${m.cat === 'marcador' ? 'active' : ''}" data-market-cat="marcador">Marcador<small>${betbyCount}</small></button>`;
   if (m.cat === 'marcador') return `<div class="market-cats" data-hscroll="market-cats">${chips}</div>${betbyMarketsHtml(e)}`;
-  const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk, e.sport) === m.cat);
+  const shown = m.cat === 'todos' ? wh : wh.filter((mk) => marketCat(mk, e.sport) === m.cat);
   return `${m.cat === 'todos' && e.status === 'scheduled' ? picksSection() : ''}<div class="market-cats" data-hscroll="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
 }
 
