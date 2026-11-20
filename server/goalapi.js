@@ -144,8 +144,10 @@ const compactFixture = (f) => {
   return {
     id: String(id), ko, leagueId: leagueId ? String(leagueId) : null, league: f.leagueName || f.league?.name || f.league_name || null,
     country: f.countryName || f.country_name || null,
-    home: { id: home.id ? String(home.id) : null, name: String(home.name), logo: home.logo || null },
-    away: { id: away.id ? String(away.id) : null, name: String(away.name), logo: away.logo || null },
+    // The badge is in the embedded team object (homeTeam.badge) or in the flat teamHomeBadge field,
+    // depending on the endpoint — take whichever is there.
+    home: { id: home.id ? String(home.id) : null, name: String(home.name), logo: home.logo || httpsLogo(f.teamHomeBadge || f.home_team_badge) || null },
+    away: { id: away.id ? String(away.id) : null, name: String(away.name), logo: away.logo || httpsLogo(f.teamAwayBadge || f.away_team_badge) || null },
   };
 };
 

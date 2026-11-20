@@ -143,8 +143,10 @@ test('football badges: GOAL API team logos are captured per event and served by 
     const u = new URL(url);
     const body = (data) => ({ ok: true, status: 200, json: async () => ({ success: true, data, pagination: { hasMore: false } }) });
     if (u.pathname.startsWith('/v1/fixtures/date/') && u.pathname.endsWith(ko.toISOString().slice(0, 10))) {
+      // Home badge in the flat teamHomeBadge field; away badge in the embedded awayTeam.badge — both paths.
       return body([{ id: '99', leagueId: 'L1', leagueName: 'LaLiga', kickoffUtc: ko.toISOString(),
-        homeTeam: { id: 't-rm', name: 'Real Madrid CF', logo: rm }, awayTeam: { id: 't-fcb', name: 'FC Barcelona', logo: fcb } }]);
+        homeTeamId: 't-rm', homeTeamName: 'Real Madrid CF', teamHomeBadge: rm,
+        awayTeam: { id: 't-fcb', name: 'FC Barcelona', badge: fcb } }]);
     }
     return body([]);
   };
