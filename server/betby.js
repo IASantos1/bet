@@ -214,19 +214,24 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     }
     steps.push({ name: 'Catálogo de nomes', ok: Boolean(catalog?.markets?.size), detail: catalog ? `${catalog.markets.size} mercados com nome` : 'não carregado' });
     if (catalogRaw) steps.push({ name: 'Catálogo cru (forma)', ok: true, detail: catalogRaw });
-    // Player markets found across the live + prematch stores, with one named example.
-    let withPlayer = 0; let example = null;
+    // Player markets across the live + prematch stores: how many games, how many with names resolved,
+    // and up to three named examples with their sport id (so we confirm football scorer/card markets).
+    let withPlayer = 0; let named = 0; const examples = [];
     for (const store of [stores.live, stores.prematch]) {
       for (const ev of store.values()) {
         const pm = eventPlayerMarkets(ev);
-        if (pm.length) { withPlayer += 1; if (!example) { const t = teamsOf(ev); example = { t, pm }; } }
+        if (!pm.length) continue;
+        withPlayer += 1;
+        const withName = pm.find((m) => m.outcomes.some((o) => o.name));
+        if (!withName) continue;
+        named += 1;
+        if (examples.length < 3) { const t = teamsOf(ev); examples.push({ t, sport: ev?.desc?.sport ?? '?', m: withName }); }
       }
     }
-    steps.push({ name: 'Mercados de jogador encontrados', ok: withPlayer > 0, detail: `${withPlayer} jogos com mercados de jogador` });
-    if (example) {
-      const m = example.pm[0];
-      const sel = m.outcomes.slice(0, 4).map((o) => `${o.name || `#${o.id}`}${o.odd ? ` @${o.odd}` : ''}`).join(' · ');
-      steps.push({ name: `Exemplo: ${example.t.home || '?'} - ${example.t.away || '?'}`, ok: Boolean(m.outcomes.some((o) => o.name)), detail: `${m.marketName} [${m.marketType}]: ${sel}` });
+    steps.push({ name: 'Mercados de jogador encontrados', ok: named > 0, detail: `${withPlayer} jogos · ${named} com nomes resolvidos` });
+    for (const ex of examples) {
+      const sel = ex.m.outcomes.slice(0, 4).map((o) => `${o.name || `#${o.id}`}${o.odd ? ` @${o.odd}` : ''}`).join(' · ');
+      steps.push({ name: `Exemplo (desporto ${ex.sport}): ${ex.t.home || '?'} - ${ex.t.away || '?'}`, ok: true, detail: `${ex.m.marketName} [${ex.m.marketType}]: ${sel}` });
     }
     return steps;
   }
