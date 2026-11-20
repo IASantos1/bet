@@ -195,7 +195,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, betby = null, betbyCollector = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, betby = null, betbyCollector = null, betbyBets = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -1871,6 +1871,53 @@ export function createApp(db, {
     const offers = new Map(rows.filter((b) => b.status === 'open').map((b) => [b.id, offerView(cashoutOffer(db, b))]));
     res.json({ bets: withLegs(rows).map((b) => (offers.has(b.id) ? { ...b, cashout: offers.get(b.id) } : b)) });
   });
+  // BETBY player markets of one of our football games (what WinHouse does not offer), with player names
+  // and odds, each mapped to the settle-able market kind. Public (odds), used by the match page.
+  app.get('/api/events/:id/betby-markets', wrap(async (req, res) => {
+    if (!betbyCollector?.on) return res.json({ markets: [] });
+    const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ? AND sport = 'futebol'").get(Number(req.params.id));
+    if (!ev || (ev.status !== 'scheduled' && ev.status !== 'live')) return res.json({ markets: [] });
+    const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
+    if (!m) return res.json({ markets: [] });
+    const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
+    // Only named, settle-able outcomes; tag each with the side (for settlement) accounting for a swap.
+    const markets = pm.map((mk) => ({
+      marketId: mk.marketId, kind: mk.kind, name: mk.marketName,
+      outcomes: mk.outcomes.filter((o) => o.name && o.odd > 1 && !o.blocked).map((o) => ({ player: o.name, odds: o.odd })),
+    })).filter((mk) => mk.outcomes.length);
+    res.json({ markets, betbyEventId: m.event.id, swapped: m.swapped });
+  }));
+
+  // Place a BETBY player bet (we settle it ourselves from GOAL API). Single selection, own wallet.
+  app.post('/api/betby-bets', requireUser, maintenanceGuard(), reclaimCasino, wrap(async (req, res) => {
+    if (!betbyBets) throw new HttpError(503, 'Indisponível.');
+    const b = req.body || {};
+    const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ?").get(Number(b.eventId));
+    if (!ev) throw new HttpError(404, 'Jogo não encontrado.');
+    // Re-read the live BETBY markets so the odd/player are confirmed server-side (anti-tamper).
+    let liveMarkets = null; let side = b.side || null;
+    if (betbyCollector?.on) {
+      const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
+      if (m) {
+        liveMarkets = await betbyCollector.footballPlayerMarkets(m.event).catch(() => null);
+        if (!side) side = m.swapped ? 'away' : 'home';
+      }
+    }
+    const stakeCents = parseEuros(b.stake, 'Valor da aposta');
+    const id = betbyBets.place(req.user, {
+      eventId: ev.id, marketId: b.marketId, marketKind: b.kind, player: String(b.player || '').slice(0, 80),
+      side, odds: Number(b.odds), stakeCents, _liveMarkets: liveMarkets,
+    });
+    const u = userById(req.user.id);
+    res.status(201).json({ id, balance: cents(u.balance_cents), user: userOut(u) });
+  }));
+
+  // The player's own BETBY bets.
+  app.get('/api/betby-bets', requireUser, (req, res) => {
+    const rows = betbyBets ? betbyBets.listForUser(req.user.id, 100) : [];
+    res.json({ bets: rows.map((r) => ({ id: r.id, event: r.event_name, market: r.market_name, player: r.player, odds: r.odds_x100 / 100, stake: cents(r.stake_cents), status: r.status, payout: cents(r.payout_cents), note: r.note, createdAt: r.created_at })) });
+  });
+
   // Sharing a ticket: a link anyone can open (#/b/<token>) with its picks, odds and result.
   app.post('/api/bets/:id/share', requireUser, (req, res) => {
     const b = db.prepare('SELECT id, share_token FROM bets WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);

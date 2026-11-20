@@ -25,6 +25,7 @@ import { createBrevo } from './brevo.js';
 import { createTeamLogos, NAMED_PACKS } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
 import { createBetby } from './betby.js';
+import { createBetbyBets } from './betbybets.js';
 import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026 } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -239,7 +240,13 @@ if (betbyCollector.on) {
   setTimeout(runPoll, 15_000).unref();
   setInterval(runPoll, config.betby.pollMs).unref();
 }
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, betbyCollector, boardCacheMs: 2000 });
+// BETBY player bets we settle ourselves from GOAL API when the game ends (opt-in with the collector).
+const betbyBets = createBetbyBets(db, { goalApi, betby: betbyCollector, limits: config.limits, log: (m) => console.log(`[betby-bets] ${m}`) });
+if (betbyCollector.on && goalApi.enabled) {
+  const runSettle = () => betbyBets.settleOpen().catch((err) => console.warn(`[betby-bets] ${err.message}`));
+  setInterval(runSettle, 3 * 60_000).unref();
+}
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, betbyCollector, betbyBets, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
