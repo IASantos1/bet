@@ -20,6 +20,22 @@ const PLAYER_TYPES = new Set(['PlayerProps', 'PlayerPropsPlus', 'PlayerPropsPlus
   'PlayerPropsOddEven', 'PlayerPropsEP', 'PlayersH2H']);
 const isPlayerType = (t) => Boolean(t && PLAYER_TYPES.has(String(t)));
 
+// Map a BETBY player market to a grader kind (server/playermarkets.js) we can settle from GOAL API.
+// By market id first (confirmed from a real match: 40 anytime scorer, 898 2+, 899 3+), then by name.
+const MARKET_KIND_BY_ID = { 40: 'anytime_scorer', 898: 'scorer_2plus', 899: 'hattrick' };
+function kindOf(marketId, marketName = '') {
+  const byId = MARKET_KIND_BY_ID[Number(marketId)];
+  if (byId) return byId;
+  const n = String(marketName).toLowerCase();
+  if (/\bexpuls|sent.?off|cart[aã]o vermelho|red card/.test(n)) return 'to_be_sent_off';
+  if (/advertido|amarelo|booked|carded|cart[aã]o|booking/.test(n)) return 'to_be_carded';
+  if (/assist[êe]ncia|\bassist/.test(n)) return 'anytime_assist';
+  if (/3\s*\+|hat.?trick|tr[êe]s ou mais/.test(n)) return 'hattrick';
+  if (/2\s*\+|dois ou mais|marcar 2/.test(n)) return 'scorer_2plus';
+  if (/marcador em qualquer|qualquer altura|a qualquer momento|anytime|a marcar\b|to score/.test(n)) return 'anytime_scorer';
+  return null; // a player market we do not settle (yet)
+}
+
 // Fill the BETBY name template markers ({$competitor1}, {total}, {hcp}…) with plain text; drop the rest.
 function fillTemplate(template, values) {
   return String(template || '').replace(/\{[^}]+\}/g, (tok) => {
@@ -226,13 +242,14 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
    *   [{ marketId, marketType, marketName, variant, outcomes: [{ id, name, odd, blocked }] }]
    * Empty when the catalog is not loaded or the event has no player markets.
    */
-  function eventPlayerMarkets(ev) {
+  function eventPlayerMarkets(ev, marketsOverride = null) {
     if (!ev || !catalog?.markets) return [];
     const teams = teamsOf(ev);
     const tmpl = (variant) => ({ ...specifiersOf(variant), competitor1: teams.home || '', competitor2: teams.away || '' });
     const perEvent = eventDescs.get(ev.id)?.markets || null; // real player names, when fetched
+    const markets = marketsOverride || ev.markets || {};
     const out = [];
-    for (const [marketId, variants] of Object.entries(ev.markets || {})) {
+    for (const [marketId, variants] of Object.entries(markets)) {
       const entry = catalog.markets.get(String(marketId)) || catalog.markets.get(String(Number(marketId)));
       if (!entry || !isPlayerType(entry.market_type)) continue;
       const descEntry = perEvent?.get(String(marketId)) || perEvent?.get(String(Number(marketId))) || null;
@@ -245,10 +262,23 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
           const named = names?.find((x) => String(x.id) === String(outcomeId))?.name;
           list.push({ id: String(outcomeId), name: named ? fillTemplate(named, tmpl(variant)) : null, odd: cell?.k != null ? Number(cell.k) : null, blocked: cell?.b === 1 });
         }
-        if (list.length) out.push({ marketId: String(marketId), marketType: entry.market_type, marketName: fillTemplate(descEntry?.name || entry.name, tmpl(variant)) || `Mercado ${marketId}`, variant, outcomes: list });
+        const marketName = fillTemplate(descEntry?.name || entry.name, tmpl(variant)) || `Mercado ${marketId}`;
+        if (list.length) out.push({ marketId: String(marketId), marketType: entry.market_type, marketName, variant, kind: kindOf(marketId, marketName), outcomes: list });
       }
     }
     return out;
+  }
+
+  /**
+   * The player markets of a football match, with real player names, ready to offer and to settle. Fetches
+   * the full per-event markets (scorer/cards are not in the feed) and the per-event descriptions (names),
+   * then names and maps them to our grader kinds. Only markets we can settle (a known kind) are returned.
+   */
+  async function footballPlayerMarkets(ev) {
+    if (!on || !ev?.id) return [];
+    const feed = stores.live.has(ev.id) ? 'live' : 'prematch';
+    const [full] = await Promise.all([fetchEventMarkets(feed, ev.id).catch(() => null), fetchEventDescriptions(ev.id).catch(() => null)]);
+    return eventPlayerMarkets(ev, full || ev.markets).filter((m) => m.kind);
   }
 
   async function poll() {
@@ -316,6 +346,10 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
           const t = teamsOf(best.ev);
           steps.push({ name: `Exemplo: ${t.home || '?'} - ${t.away || '?'}`, ok: true, detail: best.players.slice(0, 14).map(describe).join(' · ') });
           steps.push({ name: 'Todos os mercados desse jogo', ok: true, detail: best.mids.slice(0, 30).map(describe).join(' · ').slice(0, 900) });
+          // Named, settleable player markets of that match (full markets + player names + grader kind).
+          const pm = await footballPlayerMarkets(best.ev).catch(() => []);
+          const lines = pm.slice(0, 4).map((m) => `${m.marketName} →${m.kind}: ${m.outcomes.filter((o) => o.name).slice(0, 3).map((o) => `${o.name}${o.odd ? ` @${o.odd}` : ''}`).join(', ')}`);
+          steps.push({ name: 'Mercados liquidáveis (com nomes)', ok: pm.length > 0, detail: lines.join(' · ') || 'nenhum mapeado ainda' });
         } else {
           const ex = matches[0]; const feed = stores.live.has(ex.id) ? 'live' : 'prematch';
           const full = await fetchEventMarkets(feed, ex.id).catch(() => null);
@@ -355,5 +389,5 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
 
   const status = () => ({ on, lastRunAt, lastOkAt, lastError, live: stores.live.size, prematch: stores.prematch.size, markets: catalog?.markets?.size || 0 });
 
-  return { on, poll, diagnose, status, stores, eventPlayerMarkets, teamsOf, fetchEventDescriptions, fetchEventMarkets, _internal: { applyDeltas, versionsOf, fillTemplate, isPlayerType, catalogOutcomes, setCatalog: (c) => { catalog = c; }, setEventDesc: (id, markets) => eventDescs.set(id, { at: Date.now(), markets }) } };
+  return { on, poll, diagnose, status, stores, eventPlayerMarkets, footballPlayerMarkets, teamsOf, fetchEventDescriptions, fetchEventMarkets, _internal: { applyDeltas, versionsOf, fillTemplate, isPlayerType, catalogOutcomes, setCatalog: (c) => { catalog = c; }, setEventDesc: (id, markets) => eventDescs.set(id, { at: Date.now(), markets }) } };
 }

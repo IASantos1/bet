@@ -71,6 +71,22 @@ test('per-event descriptions resolve real player names (catalog only has generic
   assert.equal(pm[0].outcomes.find((o) => o.id === '101').name, 'J. Félix');
 });
 
+test('eventPlayerMarkets maps real BETBY market ids to grader kinds', () => {
+  const b = make();
+  b._internal.setCatalog({ at: Date.now(), markets: new Map([
+    ['40', { id: '40', name: 'Marcador em qualquer altura', market_type: 'PlayerProps', variants: { '': [{ outcomes: [{ id: '1', name: 'Di María' }] }] } }],
+    ['898', { id: '898', name: 'Jogador a marcar 2+', market_type: 'PlayerProps', variants: { '': [{ outcomes: [{ id: '1', name: 'Di María' }] }] } }],
+    ['899', { id: '899', name: 'Jogador a marcar 3+', market_type: 'PlayerProps', variants: { '': [{ outcomes: [{ id: '1', name: 'Di María' }] }] } }],
+  ]) });
+  const ev = { id: 'e1', desc: { competitors: [{ name: 'Benfica' }, { name: 'Porto' }] }, markets: {
+    40: { '': { 1: { k: 2.5 } } }, 898: { '': { 1: { k: 6 } } }, 899: { '': { 1: { k: 21 } } },
+  } };
+  const byId = Object.fromEntries(b.eventPlayerMarkets(ev).map((m) => [m.marketId, m.kind]));
+  assert.equal(byId['40'], 'anytime_scorer');
+  assert.equal(byId['898'], 'scorer_2plus');
+  assert.equal(byId['899'], 'hattrick');
+});
+
 test('off when collect is false', () => {
   assert.equal(createBetby({ collect: false, brandId: 'B1' }).on, false);
   assert.equal(createBetby({ collect: true, brandId: '' }).on, false);
