@@ -309,6 +309,13 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   const quotaSet = db.prepare(`INSERT INTO api_quota (name, day, used) VALUES ('goal', ?, ?)
     ON CONFLICT(name) DO UPDATE SET day = excluded.day, used = excluded.used`);
   const used = () => { const r = quotaRow.get(); return r && r.day === day(Date.now()) ? r.used : 0; };
+  // One-time: links and day lists cached before team badges were read hold no logo, and a kept link is
+  // never re-fetched — purge them once so everything re-links with the badge-aware compactFixture.
+  const MARK = 'meta:badges-v2';
+  if (enabled && !cacheGet.get(MARK)) {
+    db.prepare("DELETE FROM goal_cache WHERE key LIKE 'link:%' OR key LIKE 'fixtures:%'").run();
+    cacheSet.run(MARK, '1', Date.now());
+  }
   let lastError = null;
   let pausedUntil = 0; // after a refused key or a 429: no requests for a while
   const inflight = new Map();
@@ -386,10 +393,14 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   async function link(ev) {
     const name = `link:${ev.id}`;
     const row = cacheGet.get(name);
-    if (row) { const fx = JSON.parse(row.body); if (fx) return fx; }
+    const kept = row ? JSON.parse(row.body) : null;
+    // A kept link that already carries a badge is final; one without still gets re-resolved, in case a
+    // later day list (or a fix) now has the emblem. Re-resolving against the kept day lists costs no request.
+    if (kept && (kept.home?.logo || kept.away?.logo)) return kept;
     const fx = findFixture(ev, await candidatesFor(ev));
-    if (fx) cacheSet.run(name, JSON.stringify(fx), Date.now());
-    return fx;
+    if (fx && (fx.home?.logo || fx.away?.logo)) { cacheSet.run(name, JSON.stringify(fx), Date.now()); return fx; }
+    if (fx && !kept) cacheSet.run(name, JSON.stringify(fx), Date.now());
+    return kept || fx;
   }
 
   /** Whether this event gets GOAL API statistics at all (football, big or medium league). */
