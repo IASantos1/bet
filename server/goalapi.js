@@ -532,6 +532,36 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     };
   }
 
+  const lineupsRaw = (fxid) => cached(`lineups:${fxid}`, TTL.events, async () => (await request(`/fixtures/${encodeURIComponent(fxid)}/lineups`)).data);
+
+  /**
+   * Which players are on the home side and which on the away side, so a player market can be split by team.
+   * Returns { home: [names], away: [names], homeId, awayId } or null. Player names are matched by the UI;
+   * the feed's shape varies, so every likely place is tried and the raw is kept for the diagnostic.
+   */
+  async function lineups(ev) {
+    if (!enabled || ev?.sport !== 'futebol') return null;
+    const fx = await link(ev).catch(() => null);
+    if (!fx) return null;
+    const raw = await lineupsRaw(fx.id).catch(() => null);
+    if (!raw) return null;
+    const names = (side) => {
+      // home / away block, under many possible keys; then its players list; then each player's name.
+      const block = raw[`${side}`] ?? raw[`${side}Team`] ?? raw[`${side}_team`] ?? raw[`team_${side}`]
+        ?? (Array.isArray(raw.teams) ? raw.teams.find((t) => String(t?.side || t?.type).toLowerCase() === side
+          || String(t?.id) === String(side === 'home' ? fx.home?.id : fx.away?.id)) : null) ?? null;
+      const src = block || raw;
+      const arr = ['players', 'lineup', 'startingXI', 'starting_xi', 'formation', 'squad', `${side}Players`, `${side}_players`]
+        .map((k) => src?.[k]).find(Array.isArray) || [];
+      const bench = ['substitutes', 'subs', 'bench', `${side}Substitutes`].map((k) => src?.[k]).find(Array.isArray) || [];
+      return [...arr, ...bench].map((p) => (typeof p === 'string' ? p : p?.name || p?.player?.name || p?.playerName || p?.player_name)).filter(Boolean);
+    };
+    const home = names('home');
+    const away = names('away');
+    if (!home.length && !away.length) return { home: [], away: [], homeId: fx.home?.id || null, awayId: fx.away?.id || null, raw };
+    return { home, away, homeId: fx.home?.id || null, awayId: fx.away?.id || null, raw };
+  }
+
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
   async function insights(ev) {
     const empty = { h2h: null, standings: null, form: null, venue: null };
@@ -659,5 +689,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, syncBadges, matchReport, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, syncBadges, matchReport, lineups, status, diagnose, refresh };
 }

@@ -2584,17 +2584,13 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .bp-market { border-top: 1px solid var(--line); padding: 9px 0; }
 .bp-market:first-of-type { border-top: 0; }
 .bp-name { font-size: 12px; color: var(--text-2); font-weight: 700; margin-bottom: 7px; }
-.bp-outs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
-.bp-out { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text-2); border-radius: var(--radius); padding: 8px 10px; cursor: pointer; font-size: 13px; }
-.bp-out:hover { border-color: var(--gold); }
+.bp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.bp-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bp-team { font-size: 11px; font-weight: 800; color: var(--text-2); text-transform: uppercase; letter-spacing: .02em; padding: 2px 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-outs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 6px; }
+.bp-out { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid transparent; background: var(--odd-cell); color: var(--text-2); border-radius: var(--radius); padding: 9px 11px; cursor: pointer; font-size: 13px; transition: border-color .15s, background .15s; }
+.bp-out:hover { background: var(--odd-hover); }
 .bp-out span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bp-out b { color: var(--gold); font-weight: 900; }
-.bp-slip { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
-.bp-pick { font-size: 13px; margin-bottom: 8px; }
-.bp-pick em { color: var(--gold); font-style: normal; font-weight: 900; }
-.bp-pick span { color: var(--text-3); }
-.bp-row { display: flex; gap: 8px; }
-.bp-row input { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius); padding: 9px 11px; }
-.bp-ret { color: var(--text-3); font-size: 12px; margin-top: 6px; min-height: 16px; }
-.bp-out.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--panel2)); color: var(--text); }
-.bp-out.on b { color: var(--text); }
+.bp-out b { color: var(--odd-price); font-weight: 900; }
+.bp-out.on, .bp-out.on:hover { background: var(--odd-selected); color: var(--odd-selected-price); }
+.bp-out.on b { color: var(--odd-selected-price); }

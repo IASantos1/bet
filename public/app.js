@@ -5232,10 +5232,24 @@ async function loadBetbyPlayer(id) {
   if (state.match.id !== id || !$('#betbyPlayer')) return;
   const markets = data?.markets || [];
   if (!markets.length) { mount.replaceChildren(); return; }
+  const teams = data.teams || {};
+  const byOdds = (a, b) => a.odds - b.odds;
+  const btnHtml = (mk, o) => `<button class="bp-out" data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}" data-side="${esc(o.side || '')}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`;
+  const marketHtml = (mk) => {
+    const home = mk.outcomes.filter((o) => o.side === 'home').sort(byOdds);
+    const away = mk.outcomes.filter((o) => o.side === 'away').sort(byOdds);
+    const rest = mk.outcomes.filter((o) => !o.side).sort(byOdds);
+    // Two team columns when we know the sides (lineups), home on the left and away on the right.
+    const cols = (home.length || away.length)
+      ? `<div class="bp-cols">
+          <div class="bp-col"><div class="bp-team">${esc(teams.home || '')}</div>${home.map((o) => btnHtml(mk, o)).join('')}</div>
+          <div class="bp-col"><div class="bp-team">${esc(teams.away || '')}</div>${away.map((o) => btnHtml(mk, o)).join('')}</div>
+        </div>${rest.length ? `<div class="bp-outs">${rest.map((o) => btnHtml(mk, o)).join('')}</div>` : ''}`
+      : `<div class="bp-outs">${rest.map((o) => btnHtml(mk, o)).join('')}</div>`;
+    return `<div class="bp-market"><div class="bp-name">${esc(mk.name)}</div>${cols}</div>`;
+  };
   mount.innerHTML = `<div class="bp-head"><span>Mercados de jogador</span><small>BET62 · combina no mesmo boletim</small></div>
-    ${markets.map((mk) => `<div class="bp-market"><div class="bp-name">${esc(mk.name)}</div><div class="bp-outs">
-      ${mk.outcomes.slice(0, 20).map((o) => `<button class="bp-out" data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`).join('')}
-    </div></div>`).join('')}`;
+    ${markets.map(marketHtml).join('')}`;
   mount.querySelectorAll('.bp-out').forEach((btn) => btn.addEventListener('click', () => addBetbyPick(btn.dataset)));
   syncBetbySelected();
 }
@@ -5248,7 +5262,7 @@ function addBetbyPick(ds) {
   const i = state.slip.findIndex((s) => itemKey(s) === key);
   if (i >= 0) state.slip.splice(i, 1);
   else state.slip.push({
-    betby: { eventId: e.id, marketId: ds.m, kind: ds.k, player: ds.p }, odds: Number(ds.o),
+    betby: { eventId: e.id, marketId: ds.m, kind: ds.k, player: ds.p, side: ds.side || null }, odds: Number(ds.o),
     label: ds.p, market: 'betby', marketName: BETBY_KIND_LABEL[ds.k] || ds.k,
     match: `${e.home} vs ${e.away}`, competition: 'Mercado de jogador', eventId: e.id,
   });

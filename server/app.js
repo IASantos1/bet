@@ -1855,9 +1855,9 @@ export function createApp(db, {
           if (!market || !outcome) throw new HttpError(409, 'Mercado/jogador já não disponível na BETBY.');
           if (outcome.blocked || !(outcome.odd > 1)) throw new HttpError(409, 'Seleção suspensa.');
           odds = Math.min(odds > 1 ? odds : outcome.odd, outcome.odd); // never above the current BETBY odd
-          side = side || (m.swapped ? 'away' : 'home');
           betbyEventId = m.event.id; marketName = market.marketName;
         }
+        // The side is GOAL-API-relative (from the lineup); null lets settlement match the player on either team.
         picks.push({ betby: { eventId: ev.id, marketId: b.marketId, kind: b.kind, player: String(b.player || '').slice(0, 80), side, betbyEventId, marketName }, odds });
       } else {
         picks.push({ selectionId: s?.selectionId, odds: s?.odds });
@@ -1906,12 +1906,26 @@ export function createApp(db, {
     const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
     if (!m) return res.json({ markets: [] });
     const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
-    // Only named, settle-able outcomes; tag each with the side (for settlement) accounting for a swap.
+    // Which players are on each team, so the UI can put team A on the left and team B on the right.
+    const lu = await goalApi?.lineups?.(ev).catch(() => null);
+    const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const surname = (s) => { const t = slug(s).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
+    const homeSet = new Set((lu?.home || []).map(slug));
+    const awaySet = new Set((lu?.away || []).map(slug));
+    const homeSur = new Set((lu?.home || []).map(surname));
+    const awaySur = new Set((lu?.away || []).map(surname));
+    const sideOf = (name) => {
+      const s = slug(name); const sur = surname(name);
+      if (homeSet.has(s) || homeSur.has(sur)) { if (!(awaySet.has(s) || awaySur.has(sur))) return 'home'; }
+      if (awaySet.has(s) || awaySur.has(sur)) { if (!(homeSet.has(s) || homeSur.has(sur))) return 'away'; }
+      return null;
+    };
     const markets = pm.map((mk) => ({
       marketId: mk.marketId, kind: mk.kind, name: mk.marketName,
-      outcomes: mk.outcomes.filter((o) => o.name && o.odd > 1 && !o.blocked).map((o) => ({ player: o.name, odds: o.odd })),
+      outcomes: mk.outcomes.filter((o) => o.name && o.odd > 1 && !o.blocked).map((o) => ({ player: o.name, odds: o.odd, side: sideOf(o.name) })),
     })).filter((mk) => mk.outcomes.length);
-    res.json({ markets, betbyEventId: m.event.id, swapped: m.swapped });
+    // Sides are GOAL-API-relative (= our event's home/away), the same basis settlement uses.
+    res.json({ markets, betbyEventId: m.event.id, teams: { home: ev.home, away: ev.away }, haveLineups: Boolean(lu && (lu.home.length || lu.away.length)) });
   }));
 
   // Place a BETBY player bet (we settle it ourselves from GOAL API). Single selection, own wallet.
