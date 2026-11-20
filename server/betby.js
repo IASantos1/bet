@@ -225,8 +225,9 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
   }
 
   // The full markets of one event (scorer, cards, player props) from the per-event endpoint. The working
-  // URL template is discovered once and kept. Returns a markets object { marketId: { variant: { outcomeId: cell } } }.
-  let eventTpl = null;
+  // URL template is discovered and kept PER FEED — the live and prematch endpoints can differ, so a
+  // template that works prematch must not be assumed for live (that left live games with no player markets).
+  const eventTpl = {}; // feed -> working template
   const eventMarketsCache = new Map(); // eventId -> { at, markets }
   async function fetchEventMarkets(feed, eventId) {
     const hit = eventMarketsCache.get(eventId);
@@ -234,8 +235,8 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     const fill = (t) => t.replace('{base}', baseUrl).replace('{feed}', feed).replace('{brand}', brandId).replace('{locale}', locale).replace('{id}', eventId);
     const tryOne = async (t) => { const raw = await requestJson('', fill(t)).catch(() => null); const m = raw ? extractMarkets(raw, eventId) : null; return m && Object.keys(m).length ? m : null; };
     let markets = null;
-    if (eventTpl) markets = await tryOne(eventTpl);
-    if (!markets) for (const t of EVENT_CANDIDATES) { const m = await tryOne(t); if (m) { eventTpl = t; markets = m; break; } }
+    if (eventTpl[feed]) markets = await tryOne(eventTpl[feed]);
+    if (!markets) for (const t of EVENT_CANDIDATES) { const m = await tryOne(t); if (m) { eventTpl[feed] = t; markets = m; break; } }
     if (markets) eventMarketsCache.set(eventId, { at: Date.now(), markets });
     return markets;
   }
@@ -390,7 +391,7 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
           const players = mids.filter(looksPlayer);
           if (players.length) { withPlayers += 1; if (!best) best = { ev, mids, players }; }
         }
-        steps.push({ name: 'Endpoint de mercados por evento', ok: Boolean(eventTpl), detail: eventTpl ? `funciona: ${eventTpl}` : `nenhum dos ${EVENT_CANDIDATES.length} candidatos respondeu` });
+        steps.push({ name: 'Endpoint de mercados por evento', ok: Object.keys(eventTpl).length > 0, detail: Object.keys(eventTpl).length ? Object.entries(eventTpl).map(([f, t]) => `${f}: ${t}`).join(' · ') : `nenhum dos ${EVENT_CANDIDATES.length} candidatos respondeu` });
         steps.push({ name: 'Futebol com mercados de jogador (completos)', ok: withPlayers > 0, detail: `${withPlayers} de ${matches.length} jogos sondados têm · até ${maxMarkets} mercados por jogo` });
         if (best) {
           const t = teamsOf(best.ev);
