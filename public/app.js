@@ -5942,7 +5942,7 @@ function lineupsView(e, lu, players) {
   </div>`;
   const subCol = (side, name) => {
     const bench = lu[side]?.bench || [];
-    return `<div class="lu-col"><h4>${esc(name)}</h4>${bench.length ? bench.map((p) => `<div class="lu-row"><span class="lu-num">${esc(String(p.number ?? ''))}</span>${p.image ? `<img class="lu-img" src="${esc(p.image)}" alt="" loading="lazy">` : ''}<span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`).join('') : '<p class="muted">—</p>'}</div>`;
+    return `<div class="lu-col"><h4>${esc(name)}</h4>${bench.length ? bench.map((p) => `<div class="lu-row"><span class="lu-num">${esc(String(p.number ?? ''))}</span>${p.image ? `<img class="lu-img" src="${esc(p.image)}" alt="" loading="lazy">` : ''}<span class="lu-name">${esc(p.name)}</span></div>`).join('') : '<p class="muted">—</p>'}</div>`;
   };
   const anyStart = home.gk.length || home.def.length || away.gk.length || away.def.length;
   return `${anyStart ? `<div class="panel pitch-panel">${pitch}</div>` : ''}
