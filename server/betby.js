@@ -13,10 +13,35 @@
 
 const digestField = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+// Market types (catalog field market_type) that are player markets — the ones WinHouse does not have
+// and we settle ourselves from GOAL API. Taken from the sister project's live match page.
+const PLAYER_TYPES = new Set(['PlayerProps', 'PlayerPropsPlus', 'PlayerPropsPlus2', 'PlayerPropsH2H',
+  'PlayerPropsTotal', 'PlayerPropsCombo', 'PlayerPropsExtra', 'PlayerPropsYesNo', 'PlayerPropsPrebuilt',
+  'PlayerPropsOddEven', 'PlayerPropsEP', 'PlayersH2H']);
+const isPlayerType = (t) => Boolean(t && PLAYER_TYPES.has(String(t)));
+
+// Fill the BETBY name template markers ({$competitor1}, {total}, {hcp}…) with plain text; drop the rest.
+function fillTemplate(template, values) {
+  return String(template || '').replace(/\{[^}]+\}/g, (tok) => {
+    const key = tok.slice(1, -1).trim().replace(/^[!%$]/, '').toLowerCase();
+    if (key === 'competitor1') return values.competitor1 || '';
+    if (key === 'competitor2') return values.competitor2 || '';
+    return values[key] != null ? String(values[key]) : '';
+  }).replace(/\s+/g, ' ').trim();
+}
+
+// The specifiers of a feed variant ("total=2.5|hcp=-1") as a map.
+function specifiersOf(variant) {
+  const out = {};
+  for (const part of String(variant || '').split('|')) { const i = part.indexOf('='); if (i > 0) out[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim(); }
+  return out;
+}
+
 export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () => {} } = {}) {
   const baseUrl = String(cfg.baseUrl || 'https://demoapi.betby.com').replace(/\/+$/, '');
   const brandId = cfg.brandId || '';
   const locale = cfg.locale || 'en-gb';
+  const marketLocale = cfg.marketLocale || 'pt';
   const timeoutMs = Math.max(1000, Number(cfg.timeoutMs || 12000));
   const on = Boolean(cfg.collect && brandId);
 
@@ -93,25 +118,66 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     feeds[feed] = { ...feeds[feed], ok: true, error: null, events: store.size, indexKeys: Object.keys(index || {}).slice(0, 12), versions: versions.length };
   }
 
-  // The market descriptions catalog: market and outcome (player) names. Its exact shape is confirmed by
-  // the diagnostic; we parse defensively and keep the raw head so the parser can be matched to reality.
+  // The brand's market descriptions catalog, served whole in one request and keyed by market id:
+  //   { marketId: { id, name, market_type, variants: { variant: [{ outcomes: [{ id, name }] }] }, ... } }
+  // name / outcome name carry markers ({$competitor1}, {total}…); market_type tells a player market.
+  // (Confirmed against the sister project's lib/betby.ts.) Kept as-is for name lookup at settlement.
   async function fetchCatalog() {
-    const url = `${baseUrl}/api/v3/descriptions/brand/${brandId}/markets/${locale}`;
+    const url = `${baseUrl}/api/v3/descriptions/brand/${brandId}/markets/${marketLocale}`;
     const raw = await requestJson('', url);
     catalogRaw = JSON.stringify(raw).slice(0, 1200);
     const markets = new Map();
-    // Try the likely shapes: an array of markets, or an object keyed by market id.
-    const entries = Array.isArray(raw) ? raw.map((m) => [m.id ?? m.marketId, m])
-      : raw && typeof raw === 'object' ? Object.entries(raw.markets || raw.data || raw) : [];
+    const entries = Array.isArray(raw) ? raw.map((m) => [m?.id, m]) : raw && typeof raw === 'object' ? Object.entries(raw.markets || raw.data || raw) : [];
     for (const [id, m] of entries) {
       if (!m || typeof m !== 'object' || id == null) continue;
-      const outcomes = new Map();
-      const outs = Array.isArray(m.outcomes) ? m.outcomes : Array.isArray(m.selections) ? m.selections : m.outcomes && typeof m.outcomes === 'object' ? Object.entries(m.outcomes).map(([oid, o]) => ({ id: oid, ...(o && typeof o === 'object' ? o : { name: o }) })) : [];
-      for (const o of outs) { const oid = o.id ?? o.outcomeId; if (oid != null) outcomes.set(String(oid), o.player || o.playerName || o.name || o.title || null); }
-      markets.set(String(id), { name: m.name || m.title || m.marketName || null, kind: m.type || m.kind || m.marketType || null, outcomes });
+      markets.set(String(id), { id: String(id), name: m.name || null, market_type: m.market_type || m.marketType || m.type || null, variants: m.variants || null });
     }
     catalog = { at: Date.now(), markets };
     return markets.size;
+  }
+
+  // The catalog outcome names for a market+variant (the sister project's catalogOutcomes): the exact
+  // variant, else the market's only variant group. Returns [{ id, name }] or null.
+  function catalogOutcomes(entry, variant) {
+    const vs = entry?.variants;
+    if (!vs || typeof vs !== 'object') return null;
+    const group = vs[variant] ?? vs[`variant=${variant}`] ?? Object.values(vs)[0];
+    return Array.isArray(group) ? group[0]?.outcomes || null : null;
+  }
+
+  // The team names of a feed event, from its desc.competitors (the feed DOES carry them in desc).
+  function teamsOf(ev) {
+    const c = ev?.desc?.competitors;
+    if (!Array.isArray(c) || c.length < 2) return { home: null, away: null };
+    return { home: c[0]?.name || null, away: c[1]?.name || null };
+  }
+
+  /**
+   * The player markets of one feed event, named from the catalog: for every market whose catalog
+   * market_type is a PlayerProps type, each outcome with its player name and current odd. Shape:
+   *   [{ marketId, marketType, marketName, variant, outcomes: [{ id, name, odd, blocked }] }]
+   * Empty when the catalog is not loaded or the event has no player markets.
+   */
+  function eventPlayerMarkets(ev) {
+    if (!ev || !catalog?.markets) return [];
+    const teams = teamsOf(ev);
+    const tmpl = (variant) => ({ ...specifiersOf(variant), competitor1: teams.home || '', competitor2: teams.away || '' });
+    const out = [];
+    for (const [marketId, variants] of Object.entries(ev.markets || {})) {
+      const entry = catalog.markets.get(String(marketId)) || catalog.markets.get(String(Number(marketId)));
+      if (!entry || !isPlayerType(entry.market_type)) continue;
+      for (const [variant, outcomes] of Object.entries(variants || {})) {
+        if (!outcomes || typeof outcomes !== 'object') continue;
+        const names = catalogOutcomes(entry, variant);
+        const list = [];
+        for (const [outcomeId, cell] of Object.entries(outcomes)) {
+          const named = names?.find((x) => String(x.id) === String(outcomeId))?.name;
+          list.push({ id: String(outcomeId), name: named ? fillTemplate(named, tmpl(variant)) : null, odd: cell?.k != null ? Number(cell.k) : null, blocked: cell?.b === 1 });
+        }
+        if (list.length) out.push({ marketId: String(marketId), marketType: entry.market_type, marketName: fillTemplate(entry.name, tmpl(variant)) || `Mercado ${marketId}`, variant, outcomes: list });
+      }
+    }
+    return out;
   }
 
   async function poll() {
@@ -148,10 +214,24 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     }
     steps.push({ name: 'Catálogo de nomes', ok: Boolean(catalog?.markets?.size), detail: catalog ? `${catalog.markets.size} mercados com nome` : 'não carregado' });
     if (catalogRaw) steps.push({ name: 'Catálogo cru (forma)', ok: true, detail: catalogRaw });
+    // Player markets found across the live + prematch stores, with one named example.
+    let withPlayer = 0; let example = null;
+    for (const store of [stores.live, stores.prematch]) {
+      for (const ev of store.values()) {
+        const pm = eventPlayerMarkets(ev);
+        if (pm.length) { withPlayer += 1; if (!example) { const t = teamsOf(ev); example = { t, pm }; } }
+      }
+    }
+    steps.push({ name: 'Mercados de jogador encontrados', ok: withPlayer > 0, detail: `${withPlayer} jogos com mercados de jogador` });
+    if (example) {
+      const m = example.pm[0];
+      const sel = m.outcomes.slice(0, 4).map((o) => `${o.name || `#${o.id}`}${o.odd ? ` @${o.odd}` : ''}`).join(' · ');
+      steps.push({ name: `Exemplo: ${example.t.home || '?'} - ${example.t.away || '?'}`, ok: Boolean(m.outcomes.some((o) => o.name)), detail: `${m.marketName} [${m.marketType}]: ${sel}` });
+    }
     return steps;
   }
 
   const status = () => ({ on, lastRunAt, lastOkAt, lastError, live: stores.live.size, prematch: stores.prematch.size, markets: catalog?.markets?.size || 0 });
 
-  return { on, poll, diagnose, status, stores, _internal: { applyDeltas, versionsOf, digestField } };
+  return { on, poll, diagnose, status, stores, eventPlayerMarkets, teamsOf, _internal: { applyDeltas, versionsOf, fillTemplate, isPlayerType, catalogOutcomes, setCatalog: (c) => { catalog = c; } } };
 }

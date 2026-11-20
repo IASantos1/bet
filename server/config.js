@@ -328,6 +328,9 @@ export const config = {
     // (BETBY_COLLECT=1), pois só funciona se a BETBY tiver autorizado o IP do servidor (senão: 503 bc).
     collect: env.BETBY_COLLECT === '1' && !!unquote(env.BETBY_BRAND_ID),
     pollMs: Math.max(5000, int(env.BETBY_POLL_MS, 15000)),
+    // Idioma do catálogo de mercados (nomes de mercado e de jogador), servido em qualquer idioma
+    // independentemente do feed (ex.: pt). Separado do locale do feed (en-gb).
+    marketLocale: unquote(env.BETBY_MARKET_LOCALE) || 'pt',
   },
   // Telegram channel (telegram.js): the bot (@BotFather) and the channel it posts to, as an
   // administrator. Automatic posts only in Railway's production environment (a PR preview has the
