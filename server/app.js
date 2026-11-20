@@ -805,6 +805,8 @@ export function createApp(db, {
       // Main market on the cards: 1X2, or the match winner in sports without a draw.
       const main = rows.some((s) => s.market === '1x2') || !rows.some((s) => s.market === 'ml') ? '1x2' : 'ml';
       const pub = (s) => ({ id: s.id, market: s.market, code: s.code, label: selectionLabel(s.market, s.code, e.home, e.away), odds: s.odds_x100 / 100, active: !!s.active });
+      // Football badges come from the GOAL API (kept by its syncBadges); the other sports from API-Football.
+      const gBadge = e.sport === 'futebol' ? goalApi?.badge(e) : null;
       const out = {
         id: e.id, sport: e.sport, competition: e.competition, home: e.home, away: e.away,
         // The names shown on screen when long ("Sporting Clube de Portugal" → "Sporting CP"): null, the full one.
@@ -818,13 +820,13 @@ export function createApp(db, {
           ? rows.filter((s) => s.market === main).sort((a, b) => codeRank(main, a.code) - codeRank(main, b.code)).map(pub)
           : providerWinner(rows, e).map((s) => ({ ...pub(s), code: s.short })),
         marketCount: new Set(rows.filter((s) => s.active && s.market !== main).map((s) => (s.market === 'x' ? `x${splitSpecial(s.code)?.id}` : s.market))).size,
-        // WinHouse's own badge first; else, for the OTHER sports only, the API-Football one (by name).
-        // Football does not use API-Football here (per the operator), so it shows WinHouse or just the name.
-        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || (e.sport === 'futebol' ? null : teamLogos?.get(e.sport, e.home)?.logo) || null,
-        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || (e.sport === 'futebol' ? null : teamLogos?.get(e.sport, e.away)?.logo) || null,
-        // The API-Football badge, to show should the feed's own not load (other sports only).
-        homeLogoAlt: !nat && e.sport !== 'futebol' && teamLogo(e.source, e.home_team_ext) ? teamLogos?.get(e.sport, e.home)?.logo || null : null,
-        awayLogoAlt: !nat && e.sport !== 'futebol' && teamLogo(e.source, e.away_team_ext) ? teamLogos?.get(e.sport, e.away)?.logo || null : null,
+        // WinHouse's own badge first; then, for FOOTBALL the GOAL API badge, for the OTHER sports the
+        // API-Football one. A team no source has shows just its name.
+        homeLogo: nat ? null : teamLogo(e.source, e.home_team_ext) || (e.sport === 'futebol' ? gBadge?.home : teamLogos?.get(e.sport, e.home)?.logo) || null,
+        awayLogo: nat ? null : teamLogo(e.source, e.away_team_ext) || (e.sport === 'futebol' ? gBadge?.away : teamLogos?.get(e.sport, e.away)?.logo) || null,
+        // The found badge, to show should the feed's own not load (GOAL API for football, API-Football otherwise).
+        homeLogoAlt: !nat && teamLogo(e.source, e.home_team_ext) ? (e.sport === 'futebol' ? gBadge?.home || null : teamLogos?.get(e.sport, e.home)?.logo || null) : null,
+        awayLogoAlt: !nat && teamLogo(e.source, e.away_team_ext) ? (e.sport === 'futebol' ? gBadge?.away || null : teamLogos?.get(e.sport, e.away)?.logo || null) : null,
         // The house's kit first (server/kits.js: stripes, sleeves), else the badge provider's colours.
         homeKit: houseKit(e.sport, raw.home) || teamLogos?.get(e.sport, raw.home)?.colors || null,
         awayKit: houseKit(e.sport, raw.away) || teamLogos?.get(e.sport, raw.away)?.colors || null,

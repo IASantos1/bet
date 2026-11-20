@@ -215,7 +215,13 @@ if (config.teamLogos.apiFootballKey && config.teamLogos.enabled) console.log(`[e
 const brevo = createBrevo({ ...config.brevo, log: (m) => console.warn(`[brevo] ${m}`) });
 if (brevo.configured) console.log(`Brevo: emails de ${config.brevo.senderEmail}${brevo.smsConfigured ? ', SMS ligado' : ''}`);
 const goalApi = createGoalApi(db, { ...config.goalApi, log: (m) => console.warn(`[goal-api] ${m}`) });
-if (goalApi.enabled) console.log(`[goal-api] estatísticas ativas (até ${config.goalApi.daily} pedidos por dia)`);
+if (goalApi.enabled) {
+  console.log(`[goal-api] estatísticas e emblemas de futebol ativos (até ${config.goalApi.daily} pedidos por dia)`);
+  // Match live and upcoming football games to their GOAL API fixture so their team badges are ready on the cards.
+  const runBadges = () => goalApi.syncBadges().catch((err) => console.warn(`[goal-api] emblemas: ${err.message}`));
+  setTimeout(runBadges, 20_000).unref();
+  setInterval(runBadges, 5 * 60_000).unref();
+}
 // Sanctions lists (EU, UN; UK optional): downloaded once a day, every player compared with them.
 const sanctions = createSanctions(db, { urls: config.sanctions, log: (msg) => console.log(`[sanções] ${msg}`) });
 const stopSanctions = sanctions.start();

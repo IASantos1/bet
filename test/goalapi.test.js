@@ -132,6 +132,29 @@ test('insights: only big and medium leagues, answers kept, daily limit kept', as
   assert.equal(calls.length - before, 1);
 });
 
+test('football badges: GOAL API team logos are captured per event and served by badge()', async () => {
+  const db = openDb(':memory:');
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO events (id, sport, competition, home, away, start_time, status, source, created_at, updated_at)
+    VALUES (7, 'futebol', 'Spain. LaLiga', 'Real Madrid', 'Barcelona', ?, 'scheduled', 'winhouse', ?, ?)`).run(ko.toISOString(), now, now);
+  const rm = 'https://media.goal-api.com/badges/logo_team/541_real-madrid.png';
+  const fcb = 'https://media.goal-api.com/badges/logo_team/529_barcelona.png';
+  const fetchImpl = async (url) => {
+    const u = new URL(url);
+    const body = (data) => ({ ok: true, status: 200, json: async () => ({ success: true, data, pagination: { hasMore: false } }) });
+    if (u.pathname.startsWith('/v1/fixtures/date/') && u.pathname.endsWith(ko.toISOString().slice(0, 10))) {
+      return body([{ id: '99', leagueId: 'L1', leagueName: 'LaLiga', kickoffUtc: ko.toISOString(),
+        homeTeam: { id: 't-rm', name: 'Real Madrid CF', logo: rm }, awayTeam: { id: 't-fcb', name: 'FC Barcelona', logo: fcb } }]);
+    }
+    return body([]);
+  };
+  const goal = createGoalApi(db, { key: 'k', daily: 50, fetchImpl });
+  assert.equal(goal.badge({ id: 7, sport: 'futebol' }), null); // nothing before the link is made
+  await goal.syncBadges();
+  assert.deepEqual(goal.badge({ id: 7, sport: 'futebol' }), { home: rm, away: fcb });
+  assert.equal(goal.badge({ id: 7, sport: 'basquetebol' }), null); // badges are football-only
+});
+
 test('without a key nothing is asked', async () => {
   const goal = createGoalApi(openDb(':memory:'), { key: '', fetchImpl: async () => { throw new Error('no call'); } });
   assert.equal(goal.enabled, false);

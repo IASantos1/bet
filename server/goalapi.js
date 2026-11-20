@@ -127,7 +127,11 @@ const kickoff = (f) => {
   const t = /^(\d{1,2}):(\d{2})/.exec(String(f.matchTime || f.time || ''));
   return d && t ? Date.UTC(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]) : NaN;
 };
-const team = (t, name, id) => (t && typeof t === 'object' ? { id: t.id ?? id, name: t.name ?? name } : { id, name: typeof t === 'string' ? t : name });
+// A team's badge URL from the fixture's team object (GOAL API serves them at media.goal-api.com).
+const httpsLogo = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/.test(u.trim()) ? u.trim() : null);
+const team = (t, name, id) => (t && typeof t === 'object'
+  ? { id: t.id ?? id, name: t.name ?? name, logo: httpsLogo(t.logo ?? t.badge ?? t.crest ?? t.image ?? t.logoUrl) }
+  : { id, name: typeof t === 'string' ? t : name, logo: null });
 
 const compactFixture = (f) => {
   if (!f || typeof f !== 'object') return null;
@@ -140,8 +144,8 @@ const compactFixture = (f) => {
   return {
     id: String(id), ko, leagueId: leagueId ? String(leagueId) : null, league: f.leagueName || f.league?.name || f.league_name || null,
     country: f.countryName || f.country_name || null,
-    home: { id: home.id ? String(home.id) : null, name: String(home.name) },
-    away: { id: away.id ? String(away.id) : null, name: String(away.name) },
+    home: { id: home.id ? String(home.id) : null, name: String(home.name), logo: home.logo || null },
+    away: { id: away.id ? String(away.id) : null, name: String(away.name), logo: away.logo || null },
   };
 };
 
@@ -388,6 +392,36 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Whether this event gets GOAL API statistics at all (football, big or medium league). */
   const covers = (ev) => enabled && ev?.sport === 'futebol' && leagueTier('futebol', ev.competition) <= 2;
 
+  /** The GOAL API badges of a football event, from the kept link (no request): { home, away } URLs, or null. */
+  function badge(ev) {
+    if (!enabled || ev?.sport !== 'futebol' || !ev?.id) return null;
+    const row = cacheGet.get(`link:${ev.id}`);
+    if (!row) return null;
+    let fx; try { fx = JSON.parse(row.body); } catch { return null; }
+    const home = fx?.home?.logo || null;
+    const away = fx?.away?.logo || null;
+    return home || away ? { home, away } : null;
+  }
+
+  /**
+   * Links live and soon-to-start football games to their GOAL API fixture, so their team badges are kept
+   * for badge() to serve on the cards. ALL football (not only tier 1-2): matching an event against a day's
+   * fixture list — fetched once and kept 12 h — costs no request, so broad coverage is cheap.
+   */
+  async function syncBadges() {
+    if (!enabled) return { linked: 0 };
+    const until = new Date(Date.now() + 2 * 24 * HOUR).toISOString();
+    const evs = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+      WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time < ?))
+      ORDER BY status = 'live' DESC, start_time LIMIT 500`).all(until);
+    let linked = 0;
+    for (const ev of evs) {
+      try { const fx = await link(ev); if (fx && (fx.home?.logo || fx.away?.logo)) linked += 1; }
+      catch (err) { if (err.budget) break; }
+    }
+    return { linked };
+  }
+
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
   async function insights(ev) {
     const empty = { h2h: null, standings: null, form: null, venue: null };
@@ -480,5 +514,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, syncBadges, status, diagnose, refresh };
 }
