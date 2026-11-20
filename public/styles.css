@@ -211,7 +211,7 @@ img.cut-sponsor { clip-path: inset(0 0 26% 0); transform: translateY(13%) scale(
 .odds-state.bet-now { background: var(--bet-now); color: #1f1a08; text-decoration: none; }
 .odds-state.bet-now:hover { filter: brightness(1.08); }
 .panel.empty .odds-state { display: inline-block; width: auto; padding: 8px 22px; }
-.odd-btn { border: 1px solid transparent; background: var(--odd-cell); color: var(--odd-price); border-radius: var(--radius); padding: 9px 4px; font-weight: 800; font-size: 12px; min-width: 0; transition: border-color .15s, background .15s; }
+.odd-btn { border: 1px solid transparent; background: var(--odd-cell); color: var(--odd-price); border-radius: var(--radius); padding: 9px 4px; font-weight: 800; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; transition: border-color .15s, background .15s; }
 .odd-btn:hover:not(:disabled) { background: var(--odd-hover); }
 .odd-btn.selected, .odd-btn.selected:hover:not(:disabled) { background: var(--odd-selected); color: var(--odd-selected-price); }
 .odd-btn:disabled { background: var(--disabled); }
@@ -2592,7 +2592,7 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .bp-out { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid transparent; background: var(--odd-cell); color: var(--text-2); border-radius: var(--radius); padding: 9px 11px; cursor: pointer; font-size: 13px; transition: border-color .15s, background .15s; }
 .bp-out:hover { background: var(--odd-hover); }
 .bp-out span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bp-out b { color: var(--odd-price); font-weight: 900; }
+.bp-out b { color: var(--odd-price); font-weight: 800; font-variant-numeric: tabular-nums; }
 .bp-out.on, .bp-out.on:hover { background: var(--odd-selected); color: var(--odd-selected-price); }
 .bp-out.on b { color: var(--odd-selected-price); }
 
