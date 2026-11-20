@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { nowIso } from './db.js';
+import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { legOutcome, resultCode, PERIOD_MARKETS, specialOutcome, splitSpecial, splitPeriod, TENNIS_AUTO, tennisOutcome, statOutcome, lockedGoalOutcome } from './markets.js';
 import { builderConflict, impliedLeg } from './featured.js';
@@ -7,6 +7,7 @@ import { fundBet, protects, settleFunds, boostPct, boostFor, promoConfig } from 
 import { postTransaction } from './wallet.js';
 import { checkBet } from './limits.js';
 import { checkRisk, stakeCeiling } from './risk.js';
+import { MARKET_KINDS } from './playermarkets.js';
 
 export { resultCode };
 
@@ -44,7 +45,10 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
     throw new HttpError(403, 'A sua conta está em autoexclusão. Não é possível apostar.');
   }
 
-  const ids = picks.map((p) => Number(p.selectionId));
+  // A pick is a WinHouse selection ({ selectionId }) or a BETBY player market ({ betby: {...} }).
+  const bbPicks = picks.filter((p) => p && p.betby);
+  const whPicks = picks.filter((p) => p && !p.betby);
+  const ids = whPicks.map((p) => Number(p.selectionId));
   if (ids.some((id) => !Number.isInteger(id) || id <= 0)) throw new HttpError(400, 'Seleção inválida.');
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Seleção repetida no boletim.');
 
@@ -55,7 +59,7 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
   const now = nowIso();
   const legs = [];
   const changes = [];
-  for (const pick of picks) {
+  for (const pick of whPicks) {
     const sel = getSel.get(Number(pick.selectionId));
     if (!sel) throw new HttpError(400, 'Esta seleção já não está disponível (a linha ou a odd mudou). Remova-a do boletim e, se quiser, volte a escolhê-la.', { closed: [Number(pick.selectionId)] });
     // Feed matches in play need a recent live price; manual events are the operator's call.
@@ -74,41 +78,78 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
   }
   if (changes.length) throw new HttpError(409, 'As odds foram alteradas. Confirme as novas odds.', { changes });
 
+  // BETBY player legs: the route has already confirmed the odd/player against the live BETBY market; here
+  // we re-check the game is a football game still open and the market kind is one we can settle.
+  const getEv = db.prepare('SELECT id, sport, home, away, status, start_time FROM events WHERE id = ?');
+  const bbLegs = [];
+  for (const p of bbPicks) {
+    const b = p.betby || {};
+    if (!MARKET_KINDS[b.kind]) throw new HttpError(400, 'Mercado de jogador inválido.');
+    if (!b.player) throw new HttpError(400, 'Jogador em falta.');
+    const ev = getEv.get(Number(b.eventId));
+    if (!ev || ev.sport !== 'futebol') throw new HttpError(400, 'Mercados de jogador só no futebol.');
+    if (ev.status !== 'scheduled' && ev.status !== 'live') throw new HttpError(409, `Mercado fechado: ${ev.home} vs ${ev.away}.`);
+    const oddsX100 = Math.round(Number(p.odds) * 100);
+    if (!Number.isFinite(oddsX100) || oddsX100 <= 100) throw new HttpError(400, 'Odd inválida.');
+    bbLegs.push({ event_id: ev.id, home: ev.home, away: ev.away, betby_event_id: b.betbyEventId || null,
+      market_id: String(b.marketId || ''), market_kind: b.kind, market_name: b.marketName || MARKET_KINDS[b.kind].label,
+      player: String(b.player).slice(0, 80), side: b.side || null, odds_x100: oddsX100 });
+  }
+  const bbKey = (l) => `${l.event_id}|${l.market_kind}|${l.player}`;
+  if (new Set(bbLegs.map(bbKey)).size !== bbLegs.length) throw new HttpError(400, 'Mercado de jogador repetido no boletim.');
+
+  const total = legs.length + bbLegs.length;
+  if (total === 0) throw new HttpError(400, 'O boletim está vazio.');
+  const allEventIds = [...legs.map((l) => l.event_id), ...bbLegs.map((l) => l.event_id)];
+
   if (mode === 'multiple') {
-    if (legs.length < 2) throw new HttpError(400, 'Uma múltipla precisa de pelo menos 2 seleções.');
-    if (new Set(legs.map((l) => l.event_id)).size !== legs.length) {
+    if (total < 2) throw new HttpError(400, 'Uma múltipla precisa de pelo menos 2 seleções.');
+    if (new Set(allEventIds).size !== allEventIds.length) {
       throw new HttpError(400, 'Múltipla: apenas uma seleção por jogo.');
     }
   }
 
   if (mode === 'builder') {
-    // Several picks on one match, priced together.
+    // Several picks on one match, priced together. BETBY player legs are not part of a builder.
+    if (bbLegs.length) throw new HttpError(400, 'O criador de apostas não aceita mercados de jogador BETBY.');
     if (legs.length < 2 || legs.length > 4) throw new HttpError(400, 'O criador de apostas leva 2 a 4 seleções.');
     if (new Set(legs.map((l) => l.event_id)).size !== 1) throw new HttpError(400, 'Criador de apostas: todas as seleções do mesmo jogo.');
     if (legs[0].status !== 'scheduled') throw new HttpError(409, 'O criador de apostas é só antes do jogo.');
     const conflict = builderConflict(legs);
     if (conflict) throw new HttpError(400, conflict);
   }
+  // A free bet is one selection only.
+  if (freebetId && total > 1) throw new HttpError(400, 'Uma free bet vale para uma só aposta.');
 
   // A builder from the match page's "Melhores escolhas" (picks.js) carries its card's boost.
   const boost = mode === 'builder' && pick?.pct > 0 ? pick : null;
   const factor = mode === 'builder' ? config.builderFactor * (boost ? 1 + boost.pct / 100 : 1) : 1;
-  const slips = mode === 'single' ? legs.map((l) => [l]) : [legs];
+  // Each slip is one ticket: { wh: [selection rows], bb: [player legs] }. Singles split every leg into its own.
+  const slips = mode === 'single'
+    ? [...legs.map((l) => ({ wh: [l], bb: [] })), ...bbLegs.map((l) => ({ wh: [], bb: [l] }))]
+    : [{ wh: legs, bb: bbLegs }];
   const insertBet = db.prepare(
     `INSERT INTO bets (user_id, type, stake_cents, total_odds, potential_cents, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   );
   const setFunding = db.prepare('UPDATE bets SET real_stake_cents = ?, bonus_stake_cents = ?, freebet_stake_cents = ?, bonus_id = ?, freebet_id = ?, protected = ? WHERE id = ?');
-  const label = mode === 'multiple' ? `Aposta múltipla (${legs.length} seleções)` : mode === 'builder' ? (boost ? `Melhor escolha +${boost.pct}% (${legs.length} seleções)` : `Criador de apostas (${legs.length} seleções)`) : 'Aposta simples';
+  const label = mode === 'multiple' ? `Aposta múltipla (${total} seleções)` : mode === 'builder' ? (boost ? `Melhor escolha +${boost.pct}% (${legs.length} seleções)` : `Criador de apostas (${legs.length} seleções)`) : 'Aposta simples';
   const insertLeg = db.prepare(
     `INSERT INTO bet_legs (bet_id, event_id, selection_id, market, code, odds_x100) VALUES (?, ?, ?, ?, ?, ?)`
   );
+  const insertBetbyLeg = db.prepare(
+    `INSERT INTO betby_legs (bet_id, event_id, betby_event_id, market_id, market_kind, market_name, player, side, odds_x100) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
   const betIds = [];
-  for (const slipLegs of slips) {
+  for (const slip of slips) {
     // A builder leg another leg makes certain (double chance covering the result) counts as 1.00.
-    const prices = slipLegs.map((l) => (mode === 'builder' && impliedLeg(l, slipLegs) ? 100 : l.odds_x100));
+    const prices = [
+      ...slip.wh.map((l) => (mode === 'builder' && impliedLeg(l, slip.wh) ? 100 : l.odds_x100)),
+      ...slip.bb.map((l) => l.odds_x100),
+    ];
     const { totalOdds, payoutCents } = payoutFor(stakeCents, prices, factor);
     // The house's own limits: the player's risk profile and what each selection / game can still cost.
-    checkRisk(db, user, { stakeCents, payoutCents, legs: slipLegs });
+    // (BETBY legs carry no per-selection house liability of their own; the stake / payout caps still apply.)
+    checkRisk(db, user, { stakeCents, payoutCents, legs: slip.wh });
     // The player's own limits (stake, weekly loss), on the real money this bet would spend.
     if (!freebetId) {
       const balance = db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(user.id).balance_cents;
@@ -116,7 +157,8 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
     }
     const { lastInsertRowid } = insertBet.run(user.id, mode, stakeCents, totalOdds, payoutCents, now);
     const betId = Number(lastInsertRowid);
-    for (const l of slipLegs) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
+    for (const l of slip.wh) insertLeg.run(betId, l.event_id, l.id, l.market, l.code, l.odds_x100);
+    for (const l of slip.bb) insertBetbyLeg.run(betId, l.event_id, l.betby_event_id, l.market_id, l.market_kind, l.market_name, l.player, l.side, l.odds_x100);
     if (boost) db.prepare('UPDATE bets SET pick_key = ?, pick_pct = ? WHERE id = ?').run(boost.key, boost.pct || 0, betId);
     // Paid with a free bet, or real money first and the bonus for the rest (a short balance rolls everything back).
     const fund = fundBet(db, user, { betId, stakeCents, totalOdds, freebetId, label });
@@ -132,6 +174,42 @@ export function placeBets(db, user, { mode, stakeCents, picks, freebetId = null,
   return betIds;
 }
 
+/**
+ * Decides open BETBY player legs whose game has finished, from the GOAL API report + grader, then closes
+ * each affected ticket (settleBet waits for the WinHouse legs too). Safety: no GOAL data within the grace
+ * voids the leg (the ticket refunds it). `grade(kind, player, side, report, finished)` returns the verdict.
+ */
+export async function settleBetbyLegs(db, { goalApi, grade, graceMs = 3 * 3600_000 }) {
+  const open = db.prepare(`SELECT bl.*, e.sport, e.home, e.away, e.status AS event_status, e.updated_at
+    FROM betby_legs bl JOIN events e ON e.id = bl.event_id
+    WHERE bl.status = 'open' AND e.status IN ('finished', 'cancelled')`).all();
+  const tally = { won: 0, lost: 0, void: 0, wait: 0 };
+  for (const leg of open) {
+    let status = null; let note = null;
+    if (leg.event_status === 'cancelled') { status = 'void'; note = 'Jogo cancelado'; }
+    else {
+      const report = goalApi ? await goalApi.matchReport({ id: leg.event_id, sport: leg.sport, home: leg.home, away: leg.away }).catch(() => null) : null;
+      const g = grade({ kind: leg.market_kind, player: leg.player, side: leg.side }, report, { finished: true });
+      if (g.result === 'WON' || g.result === 'LOST') { status = g.result.toLowerCase(); note = g.reason; }
+      else if (g.result === 'VOID') { status = 'void'; note = g.reason; }
+      else {
+        // PENDING: no GOAL data yet. Wait out the grace, then void rather than settle blind.
+        const finishedFor = Date.now() - Date.parse(leg.updated_at || '');
+        if (Number.isFinite(finishedFor) && finishedFor > graceMs) { status = 'void'; note = 'GOAL API sem dados do jogo'; }
+      }
+    }
+    if (!status) { tally.wait += 1; continue; }
+    tx(db, () => {
+      const cur = db.prepare("SELECT status FROM betby_legs WHERE id = ?").get(leg.id);
+      if (!cur || cur.status !== 'open') return;
+      db.prepare("UPDATE betby_legs SET status = ?, note = ?, settled_at = ? WHERE id = ?").run(status, note || null, nowIso(), leg.id);
+      settleBet(db, leg.bet_id);
+    });
+    tally[status] += 1;
+  }
+  return tally;
+}
+
 /** The margin a builder bet was priced with: its total odds over the product of its legs (implied legs included). */
 function builderFactorOf(bet, legs) {
   const product = legs.reduce((a, l) => a * (l.odds_x100 / 100), 1);
@@ -145,7 +223,11 @@ function builderFactorOf(bet, legs) {
 export function settleBet(db, betId) {
   const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(betId);
   if (!bet || bet.status !== 'open') return 0;
-  const legs = db.prepare('SELECT status, odds_x100 FROM bet_legs WHERE bet_id = ?').all(betId);
+  // A ticket's legs are its WinHouse selections and its BETBY player legs together (a mixed multiple):
+  // the bet waits for all of them and its odds multiply all of them.
+  const whLegs = db.prepare('SELECT status, odds_x100 FROM bet_legs WHERE bet_id = ?').all(betId);
+  const bbLegs = db.prepare('SELECT status, odds_x100 FROM betby_legs WHERE bet_id = ?').all(betId);
+  const legs = [...whLegs, ...bbLegs];
   const now = nowIso();
 
   // Paid from (and back to) where the stake came from: real money, bonus or free bet (promotions.js).

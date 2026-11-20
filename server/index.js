@@ -26,6 +26,8 @@ import { createTeamLogos, NAMED_PACKS } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
 import { createBetby } from './betby.js';
 import { createBetbyBets } from './betbybets.js';
+import { settleBetbyLegs } from './betting.js';
+import { gradePlayerMarket } from './playermarkets.js';
 import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026 } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -243,7 +245,10 @@ if (betbyCollector.on) {
 // BETBY player bets we settle ourselves from GOAL API when the game ends (opt-in with the collector).
 const betbyBets = createBetbyBets(db, { goalApi, betby: betbyCollector, limits: config.limits, log: (m) => console.log(`[betby-bets] ${m}`) });
 if (betbyCollector.on && goalApi.enabled) {
-  const runSettle = () => betbyBets.settleOpen().catch((err) => console.warn(`[betby-bets] ${err.message}`));
+  const runSettle = () => Promise.all([
+    settleBetbyLegs(db, { goalApi, grade: gradePlayerMarket }).catch((err) => console.warn(`[betby-bets] legs: ${err.message}`)),
+    betbyBets.settleOpen().catch((err) => console.warn(`[betby-bets] ${err.message}`)), // legacy single bets
+  ]);
   setInterval(runSettle, 3 * 60_000).unref();
 }
 const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, betbyCollector, betbyBets, boardCacheMs: 2000 });

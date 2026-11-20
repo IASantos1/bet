@@ -2596,3 +2596,5 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .bp-row { display: flex; gap: 8px; }
 .bp-row input { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius); padding: 9px 11px; }
 .bp-ret { color: var(--text-3); font-size: 12px; margin-top: 6px; min-height: 16px; }
+.bp-out.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, var(--panel2)); color: var(--text); }
+.bp-out.on b { color: var(--text); }

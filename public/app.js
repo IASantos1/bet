@@ -287,6 +287,9 @@ function renderSearch(q) {
 
 const isOpen = (e) => e.status === 'live' || (e.status === 'scheduled' && new Date(e.startTime) > new Date());
 const inSlip = (selId) => state.slip.some((s) => s.selectionId === selId);
+// A slip item's stable id: a WinHouse selection, or a BETBY player market (event + market + player).
+const itemKey = (s) => (s.betby ? `bb:${s.eventId}:${s.betby.marketId}:${s.betby.player}` : `sel:${s.selectionId}`);
+const BETBY_KIND_LABEL = { anytime_scorer: 'Marca a qualquer momento', scorer_2plus: 'Marca 2 ou mais', hattrick: 'Hat-trick', anytime_assist: 'Assistência', to_be_carded: 'Recebe cartão', to_be_sent_off: 'Expulso' };
 
 // In play, a favourite this short means the main market is as good as gone: the other markets are the bet.
 const SHORT_FAVOURITE = 1.05;
@@ -3149,23 +3152,10 @@ function myBetsHtml() {
       : `<div class="mb-empty"><div>🎟️</div><p>${empty}</p>${tab === 'abertas' ? '<a class="outline-btn" href="#/desporto">Escolher um jogo</a>' : ''}</div>`}`;
 }
 
-// A BETBY player bet shown as a ticket (single selection, no cash out / share).
-function betbyTicket(r) {
-  const open = r.status === 'open';
-  return {
-    status: r.status, type: 'single', origin: 'betby', stake: r.stake, totalOdds: r.odds,
-    potential: Math.floor(r.stake * r.odds * 100) / 100, payout: r.payout, ref: `BB${r.id}`,
-    createdAt: r.createdAt, settledAt: r.settledAt,
-    legs: [{ label: r.player, code: null, market: 'betby', marketName: r.market, match: r.event,
-      eventId: r.eventId, status: open ? 'open' : r.status, odds: r.odds, eventStatus: r.eventStatus, startTime: r.startTime, score: r.score }],
-  };
-}
-
 async function loadBets({ quiet = false } = {}) {
   try {
-    const [{ bets }, bb] = await Promise.all([api('/api/bets'), api('/api/betby-bets').catch(() => ({ bets: [] }))]);
-    const merged = [...bets, ...(bb.bets || []).map(betbyTicket)].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    state.myBets = merged;
+    const { bets } = await api('/api/bets'); // BETBY legs come inside each ticket now
+    state.myBets = bets;
     updateHeader();
     // Don't redraw while the player confirms a cash out.
     if (state.cashoutConfirm) return;
@@ -3325,6 +3315,7 @@ function syncSelectedButtons() {
 /** Refreshes slip entries against the latest event data (price moves, closed markets). */
 function reconcileSlip() {
   for (const item of state.slip) {
+    if (item.betby) { item.closed = false; continue; } // confirmed server-side at placement
     const found = findSelection(item.selectionId);
     const ev = found?.ev || state.events.find((e) => e.id === item.eventId);
     const sel = found?.sel;
@@ -3496,7 +3487,7 @@ function renderSlip() {
   $$('.bet-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.mode));
   $('#betItems').innerHTML = n
     ? state.slip.map((s) => `<div class="bet-item${s.closed ? ' closed' : ''}">
-        <div class="bet-item-top"><span>${esc(s.competition)}</span><span><span class="odd">${fmtOdds(s.odds)}</span><button class="remove-bet" data-remove="${s.selectionId}" aria-label="Remover">×</button></span></div>
+        <div class="bet-item-top"><span>${esc(s.competition)}</span><span><span class="odd">${fmtOdds(s.odds)}</span><button class="remove-bet" data-remove="${esc(itemKey(s))}" aria-label="Remover">×</button></span></div>
         <strong>${esc(s.match)}</strong><div class="selection">${esc(s.label || CODE_LABEL[s.code])}${s.marketName && s.market !== '1x2' ? ` <small class="muted">· ${esc(s.marketName)}</small>` : ''}</div>
         ${s.closed ? '<div class="note red">Indisponível de momento — remova ou aguarde.</div>' : ''}
       </div>`).join('')
@@ -3539,7 +3530,7 @@ async function placeBet(retry = 0) {
       method: 'POST',
       body: b
         ? { mode: 'builder', stake, freebetId: freebet?.id, pickKey: b.boost?.key, origin: b.combo && b.combo === legKey(b.legs) ? 'combo' : undefined, selections: b.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds })) }
-        : { mode: state.mode, stake, freebetId: freebet?.id, origin: slipOrigin(), selections: state.slip.map((s) => ({ selectionId: s.selectionId, odds: s.odds })) },
+        : { mode: state.mode, stake, freebetId: freebet?.id, origin: slipOrigin(), selections: state.slip.map((s) => (s.betby ? { betby: s.betby, odds: s.odds } : { selectionId: s.selectionId, odds: s.odds })) },
     });
     if (res.user) state.user = res.user; else state.user.balance = res.balance;
     if (freebet) { state.freebetId = null; loadPromos(); }
@@ -3550,6 +3541,7 @@ async function placeBet(retry = 0) {
     toast('Aposta registada', `${res.betIds.length > 1 ? `${res.betIds.length} apostas` : `Aposta #${res.betIds[0]}`} · saldo ${money(res.balance)}`);
     updateHeader();
     syncSelectedButtons();
+    syncBetbySelected();
     setSlipOpen(false);
   } catch (err) {
     if (err.data?.closed) {
@@ -4230,8 +4222,8 @@ document.addEventListener('click', async (e) => {
 
   const remove = e.target.closest('[data-remove]');
   if (remove) {
-    state.slip = state.slip.filter((s) => s.selectionId !== Number(remove.dataset.remove));
-    saveSlip(); autoMode(); syncSelectedButtons(); renderSlip();
+    state.slip = state.slip.filter((s) => itemKey(s) !== remove.dataset.remove);
+    saveSlip(); autoMode(); syncSelectedButtons(); syncBetbySelected(); renderSlip();
     return;
   }
 
@@ -5240,40 +5232,38 @@ async function loadBetbyPlayer(id) {
   if (state.match.id !== id || !$('#betbyPlayer')) return;
   const markets = data?.markets || [];
   if (!markets.length) { mount.replaceChildren(); return; }
-  mount.innerHTML = `<div class="bp-head"><span>Mercados de jogador</span><small>BET62 · liquidado por nós</small></div>
+  mount.innerHTML = `<div class="bp-head"><span>Mercados de jogador</span><small>BET62 · combina no mesmo boletim</small></div>
     ${markets.map((mk) => `<div class="bp-market"><div class="bp-name">${esc(mk.name)}</div><div class="bp-outs">
       ${mk.outcomes.slice(0, 20).map((o) => `<button class="bp-out" data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`).join('')}
-    </div></div>`).join('')}
-    <div class="bp-slip" id="bpSlip" hidden></div>`;
-  mount.querySelectorAll('.bp-out').forEach((btn) => btn.addEventListener('click', () => openBetbySlip(id, btn.dataset)));
+    </div></div>`).join('')}`;
+  mount.querySelectorAll('.bp-out').forEach((btn) => btn.addEventListener('click', () => addBetbyPick(btn.dataset)));
+  syncBetbySelected();
 }
 
-// The small bet form for a chosen player outcome.
-function openBetbySlip(eventId, pick) {
-  const slip = $('#bpSlip');
-  if (!slip) return;
-  if (!state.user) { toast('Entre primeiro', 'Inicie sessão para apostar.', 'error'); location.hash = '#/entrar'; return; }
-  const odds = Number(pick.o);
-  slip.hidden = false;
-  slip.innerHTML = `<div class="bp-pick"><b>${esc(pick.p)}</b> <span>${esc(pick.k === 'anytime_scorer' ? 'Marca a qualquer momento' : pick.k === 'scorer_2plus' ? 'Marca 2+' : pick.k === 'hattrick' ? 'Hat-trick' : pick.k)}</span> <em>@${odds.toFixed(2)}</em></div>
-    <div class="bp-row"><input id="bpStake" type="number" min="0.20" step="0.50" inputmode="decimal" placeholder="Valor €"><button class="primary-btn" id="bpPlace">Apostar</button></div>
-    <div class="bp-ret" id="bpRet"></div>`;
-  const stakeEl = $('#bpStake');
-  const ret = $('#bpRet');
-  const showRet = () => { const s = Number(stakeEl.value); ret.textContent = s > 0 ? `Ganho possível: ${money(Math.floor(s * odds * 100) / 100)}` : ''; };
-  stakeEl.addEventListener('input', showRet);
-  stakeEl.focus();
-  $('#bpPlace').addEventListener('click', async () => {
-    const stake = Number(stakeEl.value);
-    if (!(stake >= 0.2)) { toast('Valor inválido', 'Aposta mínima €0,20.', 'error'); return; }
-    const btn = $('#bpPlace'); btn.disabled = true;
-    try {
-      const r = await api('/api/betby-bets', { method: 'POST', body: { eventId, marketId: pick.m, kind: pick.k, player: pick.p, odds, stake } });
-      if (r.user) state.user = r.user; else state.user.balance = r.balance;
-      updateHeader();
-      toast('Aposta registada', `${pick.p} @${odds.toFixed(2)} — ${money(stake)}`, 'ok');
-      slip.hidden = true; slip.innerHTML = '';
-    } catch (err) { toast('Não foi possível apostar', err.message, 'error'); btn.disabled = false; }
+// Add (or remove) a BETBY player pick to the MAIN betslip, so it combines with WinHouse picks in one ticket.
+function addBetbyPick(ds) {
+  const e = state.match.data;
+  if (!e) return;
+  const key = `bb:${e.id}:${ds.m}:${ds.p}`;
+  const i = state.slip.findIndex((s) => itemKey(s) === key);
+  if (i >= 0) state.slip.splice(i, 1);
+  else state.slip.push({
+    betby: { eventId: e.id, marketId: ds.m, kind: ds.k, player: ds.p }, odds: Number(ds.o),
+    label: ds.p, market: 'betby', marketName: BETBY_KIND_LABEL[ds.k] || ds.k,
+    match: `${e.home} vs ${e.away}`, competition: 'Mercado de jogador', eventId: e.id,
+  });
+  autoMode(); saveSlip(); renderSlip(); syncBetbySelected();
+  if (i < 0) setSlipOpen(true);
+}
+
+// Highlight the player buttons that are in the slip.
+function syncBetbySelected() {
+  const mount = $('#betbyPlayer');
+  if (!mount) return;
+  const e = state.match.data;
+  mount.querySelectorAll('.bp-out').forEach((btn) => {
+    const key = `bb:${e?.id}:${btn.dataset.m}:${btn.dataset.p}`;
+    btn.classList.toggle('on', state.slip.some((s) => itemKey(s) === key));
   });
 }
 

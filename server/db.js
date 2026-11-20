@@ -170,6 +170,26 @@ CREATE TABLE IF NOT EXISTS bet_legs (
 CREATE INDEX IF NOT EXISTS idx_bet_legs_event ON bet_legs(event_id, status);
 CREATE INDEX IF NOT EXISTS idx_bet_legs_bet ON bet_legs(bet_id);
 
+-- BETBY player legs of a bet (markets WinHouse has no, settled by us from GOAL API). They belong to the
+-- same bets row as any WinHouse legs, so one ticket can mix both; combined odds multiply all legs.
+CREATE TABLE IF NOT EXISTS betby_legs (
+  id             INTEGER PRIMARY KEY,
+  bet_id         INTEGER NOT NULL REFERENCES bets(id) ON DELETE CASCADE,
+  event_id       INTEGER NOT NULL REFERENCES events(id),
+  betby_event_id TEXT,
+  market_id      TEXT,
+  market_kind    TEXT    NOT NULL,
+  market_name    TEXT,
+  player         TEXT    NOT NULL,
+  side           TEXT,
+  odds_x100      INTEGER NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'won', 'lost', 'void')),
+  note           TEXT,
+  settled_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_betby_legs_event ON betby_legs(event_id, status);
+CREATE INDEX IF NOT EXISTS idx_betby_legs_bet ON betby_legs(bet_id);
+
 -- Promotions (server/promotions.js). A bonus is promotional money kept apart from the real balance
 -- (never withdrawable) until its rollover is met; ref makes each grant unique (deposit / week).
 CREATE TABLE IF NOT EXISTS bonuses (

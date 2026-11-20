@@ -1834,11 +1834,35 @@ export function createApp(db, {
 
   // ---------- bets ----------
 
-  app.post('/api/bets', requireUser, maintenanceGuard(), reclaimCasino, (req, res) => {
+  app.post('/api/bets', requireUser, maintenanceGuard(), reclaimCasino, wrap(async (req, res) => {
     const stakeCents = parseEuros(req.body.stake, 'Valor da aposta');
-    const picks = Array.isArray(req.body.selections)
-      ? req.body.selections.map((s) => ({ selectionId: s?.selectionId, odds: s?.odds }))
-      : [];
+    const raw = Array.isArray(req.body.selections) ? req.body.selections : [];
+    // Each pick is a WinHouse selection or a BETBY player market; the latter is confirmed against the live
+    // BETBY market here (async) so a tampered odd/player is rejected before the bet is placed.
+    const picks = [];
+    for (const s of raw) {
+      if (s && s.betby) {
+        const b = s.betby;
+        const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ?").get(Number(b.eventId));
+        if (!ev) throw new HttpError(404, 'Jogo não encontrado.');
+        let odds = Number(s.odds); let side = b.side || null; let betbyEventId = null; let marketName = b.marketName || null;
+        if (betbyCollector?.on) {
+          const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
+          if (!m) throw new HttpError(409, 'Jogo sem correspondência na BETBY.');
+          const live = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
+          const market = live.find((x) => String(x.marketId) === String(b.marketId) && x.kind === b.kind);
+          const outcome = market?.outcomes.find((o) => o.name === b.player);
+          if (!market || !outcome) throw new HttpError(409, 'Mercado/jogador já não disponível na BETBY.');
+          if (outcome.blocked || !(outcome.odd > 1)) throw new HttpError(409, 'Seleção suspensa.');
+          odds = Math.min(odds > 1 ? odds : outcome.odd, outcome.odd); // never above the current BETBY odd
+          side = side || (m.swapped ? 'away' : 'home');
+          betbyEventId = m.event.id; marketName = market.marketName;
+        }
+        picks.push({ betby: { eventId: ev.id, marketId: b.marketId, kind: b.kind, player: String(b.player || '').slice(0, 80), side, betbyEventId, marketName }, odds });
+      } else {
+        picks.push({ selectionId: s?.selectionId, odds: s?.odds });
+      }
+    }
     const freebetId = req.body.freebetId ? Number(req.body.freebetId) : null;
     // A card of "Melhores escolhas": its boost, while the card is still offered with these picks.
     let pick = null;
@@ -1863,12 +1887,14 @@ export function createApp(db, {
     if (origin && !pick) for (const id of betIds) db.prepare('UPDATE bets SET origin = ? WHERE id = ?').run(origin, id);
     const u = userById(req.user.id);
     res.status(201).json({ betIds, balance: cents(u.balance_cents), user: userOut(u) });
-  });
+  }));
 
   // The player's tickets; open ones carry their cash-out offer (worked out here, on current prices).
   app.get('/api/bets', requireUser, (req, res) => {
     const rows = db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(req.user.id);
-    const offers = new Map(rows.filter((b) => b.status === 'open').map((b) => [b.id, offerView(cashoutOffer(db, b))]));
+    // Tickets with a BETBY player leg have no cash out (we settle those ourselves, not on a live price).
+    const hasBetby = new Set(db.prepare(`SELECT DISTINCT bet_id FROM betby_legs WHERE bet_id IN (${rows.map(() => '?').join(',') || 'NULL'})`).all(...rows.map((b) => b.id)).map((r) => r.bet_id));
+    const offers = new Map(rows.filter((b) => b.status === 'open' && !hasBetby.has(b.id)).map((b) => [b.id, offerView(cashoutOffer(db, b))]));
     res.json({ bets: withLegs(rows).map((b) => (offers.has(b.id) ? { ...b, cashout: offers.get(b.id) } : b)) });
   });
   // BETBY player markets of one of our football games (what WinHouse does not offer), with player names
@@ -1972,6 +1998,19 @@ export function createApp(db, {
               e.status AS event_status, e.start_time, e.clock, e.source
          FROM bet_legs l JOIN events e ON e.id = l.event_id WHERE l.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY l.id`
     ).all(...ids);
+    // BETBY player legs of the same tickets (we settle them ourselves), shaped like a leg for the UI.
+    const blegs = db.prepare(
+      `SELECT bl.id, bl.bet_id, bl.event_id, bl.market_name, bl.player, bl.odds_x100, bl.status, e.sport, e.home, e.away, e.competition,
+              e.home_score, e.away_score, e.status AS event_status, e.start_time, e.clock
+         FROM betby_legs bl JOIN events e ON e.id = bl.event_id WHERE bl.bet_id IN (${ids.map(() => '?').join(',')}) ORDER BY bl.id`
+    ).all(...ids);
+    const betbyLegsOf = (betId) => blegs.filter((l) => l.bet_id === betId).map((l) => ({
+      id: `bb${l.id}`, match: `${shortTeam(l.home, l.sport) || l.home} vs ${shortTeam(l.away, l.sport) || l.away}`,
+      competition: l.competition, market: 'betby', marketName: l.market_name, code: null, label: l.player, odds: l.odds_x100 / 100,
+      status: l.status, score: l.home_score === null ? null : `${l.home_score} - ${l.away_score}`, eventStatus: l.event_status,
+      eventId: l.event_id, sport: l.sport, startTime: l.start_time, source: 'betby',
+      clock: l.event_status === 'live' ? cappedClock(l.sport, l.clock || null, l.start_time) : null,
+    }));
     // A pick whose game the feed is playing as a second listing (another id, its own row): the ticket
     // shows that copy's clock and score, and links to it, until the two are joined or it is settled.
     for (const l of legs) {
@@ -2000,7 +2039,7 @@ export function createApp(db, {
         eventId: l.shown_id || l.event_id, sport: l.sport, startTime: l.start_time,
         // In play: the clock as the match pages show it (the WinHouse tracker knows "Intervalo", "45+2'").
         clock: l.event_status === 'live' ? cappedClock(l.sport, (l.source === 'winhouse' && winhouseTracker?.clockOf?.(l.shown_id || l.event_id)) || l.clock || null, l.start_time) : null,
-      })),
+      })).concat(betbyLegsOf(b.id)),
     }));
   }
 
