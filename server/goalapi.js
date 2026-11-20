@@ -156,47 +156,69 @@ const listOf = (data) => (Array.isArray(data) ? data : ['fixtures', 'items', 'da
 
 const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
+// A scorer / booked name without its annotation: "S. Solans (pen.)" -> "S. Solans".
+const cleanPlayer = (s) => String(s || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+// An own-goal line names the player who put it in their own net — not a "to score" hit for them.
+const isOwnGoal = (s) => /\(\s*(?:o\.?g\.?|own)/i.test(String(s || ''));
+
 /**
- * Per-player goals, assists, yellow and red cards of a match, from GOAL API match events. The feed's
- * field names vary by endpoint, so every likely spelling is tried. `fx` (our linked fixture) lets a
- * team named in an event be placed on the home or away side. Returns a list of player stat lines.
+ * Per-player goals, assists, yellow and red cards of a match, from GOAL API match events. GOAL API's
+ * events carry the side in the field name (homeScorer / awayScorer, homeAssist / awayAssist, and the
+ * same home/away prefix for cards), so the player's team comes from which field held the name; a flat
+ * player/team shape from another endpoint is still handled as a fallback. Returns player stat lines.
  */
 export function normalizeMatchEvents(raw, fx = null) {
   const list = Array.isArray(raw) ? raw : ['events', 'incidents', 'timeline', 'data', 'items', 'goals'].map((k) => raw?.[k]).find(Array.isArray) || [];
   const by = new Map();
   const line = (id, name, team) => {
-    const key = id ? `#${id}` : slug(name);
+    const cn = cleanPlayer(name);
+    const key = id != null && id !== '' ? `#${id}` : slug(cn);
     if (!key) return null;
-    if (!by.has(key)) by.set(key, { id: id != null ? String(id) : null, name: String(name || '').trim(), team: team || null, goals: 0, assists: 0, yellow: 0, red: 0 });
+    if (!by.has(key)) by.set(key, { id: id != null && id !== '' ? String(id) : null, name: cn, team: team || null, goals: 0, assists: 0, yellow: 0, red: 0 });
     const l = by.get(key);
-    if (!l.name && name) l.name = String(name).trim();
+    if (!l.name && cn) l.name = cn;
     if (!l.team && team) l.team = team;
     return l;
   };
-  const sideOf = (ev) => {
-    const t = ev.team || ev.side || ev.teamName || ev.team_name || ev.teamSide;
-    if (t === 'home' || t === 'away') return t;
-    if (!fx) return null;
-    const tn = slug(t);
-    const tid = ev.teamId ?? ev.team_id ?? ev.team?.id;
-    if ((tn && tn === slug(fx.home?.name)) || (tid != null && String(tid) === String(fx.home?.id))) return 'home';
-    if ((tn && tn === slug(fx.away?.name)) || (tid != null && String(tid) === String(fx.away?.id))) return 'away';
-    return null;
-  };
+  // Pick the first field that is present among several spellings, with its side prefix.
+  const pick = (ev, side, ...names) => { for (const n of names) { const v = ev[`${side}${n}`] ?? ev[`${side}${n[0].toLowerCase()}${n.slice(1)}`]; if (v != null && v !== '') return v; } return null; };
   for (const ev of list) {
     if (!ev || typeof ev !== 'object') continue;
     const type = slug(ev.type || ev.eventType || ev.event_type || ev.incident || ev.incidentType || ev.kind || ev.detail);
-    const team = sideOf(ev);
+    let sidePrefixed = false;
+    for (const side of ['home', 'away']) {
+      const scorer = pick(ev, side, 'Scorer');
+      const scorerId = pick(ev, side, 'ScorerId');
+      const assist = pick(ev, side, 'Assist');
+      const assistId = pick(ev, side, 'AssistId');
+      const yellow = pick(ev, side, 'YellowCard', 'Yellow', 'Booking');
+      const yellowId = pick(ev, side, 'YellowCardId', 'YellowId', 'BookingId');
+      const red = pick(ev, side, 'RedCard', 'Red', 'Sending');
+      const redId = pick(ev, side, 'RedCardId', 'RedId', 'SendingId');
+      if (scorer != null || scorerId != null || assist != null || yellow != null || red != null) sidePrefixed = true;
+      if (/goal/.test(type) && (scorer != null || scorerId != null) && !isOwnGoal(scorer)) { const l = line(scorerId, scorer, side); if (l) l.goals += 1; }
+      if (/goal/.test(type) && (assist != null || assistId != null)) { const a = line(assistId, assist, side); if (a) a.assists += 1; }
+      if (red != null || redId != null) { const l = line(redId, red, side); if (l) l.red += 1; }
+      else if (yellow != null || yellowId != null) { const l = line(yellowId, yellow, side); if (l) l.yellow += 1; }
+    }
+    if (sidePrefixed) continue;
+    // Fallback: a flat player/team shape (player + team/side on the event itself).
+    const team = (() => {
+      const t = ev.team || ev.side || ev.teamName || ev.team_name;
+      if (t === 'home' || t === 'away') return t;
+      if (!fx) return null;
+      const tn = slug(t); const tid = ev.teamId ?? ev.team_id ?? ev.team?.id;
+      if ((tn && tn === slug(fx.home?.name)) || (tid != null && String(tid) === String(fx.home?.id))) return 'home';
+      if ((tn && tn === slug(fx.away?.name)) || (tid != null && String(tid) === String(fx.away?.id))) return 'away';
+      return null;
+    })();
     const pName = ev.player?.name || ev.playerName || ev.player_name || (typeof ev.player === 'string' ? ev.player : null);
     const pId = ev.player?.id ?? ev.playerId ?? ev.player_id ?? null;
-    const isGoal = /goal/.test(type) || type === 'score';
-    if (isGoal && !/own|cancel|disallow|no goal|miss|penalty miss|saved/.test(type)) {
+    if (/goal/.test(type) && !isOwnGoal(pName) && !/own/.test(type)) {
       const l = line(pId, pName, team); if (l) l.goals += 1;
-      const aName = ev.assist?.name || ev.assistName || ev.assist_player || ev.assistPlayer?.name || ev.assist_name || (typeof ev.assist === 'string' ? ev.assist : null);
-      const aId = ev.assist?.id ?? ev.assistId ?? ev.assist_id ?? ev.assistPlayer?.id ?? null;
+      const aName = ev.assist?.name || ev.assistName || (typeof ev.assist === 'string' ? ev.assist : null);
+      const aId = ev.assist?.id ?? ev.assistId ?? null;
       if (aName || aId != null) { const a = line(aId, aName, team); if (a) a.assists += 1; }
-    } else if (/own.?goal/.test(type)) {
-      // own goal: raises the opponent's score but is not a "to score" hit for the player — skipped
     } else if (/red/.test(type) || /second.?yellow|two.?yellow/.test(type)) {
       const l = line(pId, pName, team); if (l) l.red += 1;
     } else if (/yellow|booking|caution|card/.test(type)) {
@@ -621,10 +643,15 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       const cards = m.players.filter((p) => p.yellow || p.red).map((p) => `${p.name} ${p.red ? '🟥' : '🟨'}`);
       steps.push({ name: `Eventos: ${ev.home} - ${ev.away}`, ok: m.players.length > 0,
         detail: m.players.length ? `Marcadores: ${scorers.join(' · ') || 'nenhum'} · Cartões: ${cards.join(' · ') || 'nenhum'}` : 'GOAL API sem eventos para este jogo' });
-      // Raw shape of the first event, so the normalizer can be matched to the real field names.
+      // One raw event per distinct type, so the normalizer can be matched to the real field names (cards included).
       const arr = Array.isArray(m.raw) ? m.raw : ['events', 'incidents', 'timeline', 'data', 'items', 'goals'].map((k) => m.raw?.[k]).find(Array.isArray) || [];
-      steps.push({ name: 'Forma crua de /fixtures/{id}/events', ok: arr.length > 0,
-        detail: arr.length ? JSON.stringify(arr[0]).slice(0, 500) : `sem lista de eventos · chaves: ${m.raw ? Object.keys(m.raw).slice(0, 15).join(', ') : 'resposta vazia'}` });
+      const perType = new Map();
+      for (const e of arr) { const t = String(e?.type || e?.eventType || '?'); if (!perType.has(t)) perType.set(t, e); }
+      if (!arr.length) {
+        steps.push({ name: 'Forma crua de /fixtures/{id}/events', ok: false, detail: `sem lista de eventos · chaves: ${m.raw ? Object.keys(m.raw).slice(0, 15).join(', ') : 'resposta vazia'}` });
+      } else {
+        for (const [t, e] of [...perType].slice(0, 4)) steps.push({ name: `Evento cru (${t})`, ok: true, detail: JSON.stringify(e).slice(0, 500) });
+      }
     }
     return steps;
   }

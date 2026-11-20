@@ -189,23 +189,38 @@ test('league table: each team\'s home and away split when the table has one', as
   assert.equal(t.rows[0].home, null); // no split for this team
 });
 
-test('match events: per-player goals, assists and cards, teams placed by side', () => {
+test('match events: GOAL API side-prefixed shape (homeScorer / awayScorer), annotations stripped', () => {
   const linked = { home: { id: 'H', name: 'Benfica' }, away: { id: 'A', name: 'Porto' } };
-  const raw = { events: [
-    { type: 'goal', team: 'home', player: { id: 'p1', name: 'Di María' }, assist: { id: 'p2', name: 'Rafa' } },
-    { type: 'goal', teamId: 'A', player: { name: 'Galeno' } },
-    { type: 'own-goal', team: 'home', player: { id: 'p3', name: 'Otamendi' } },
-    { type: 'yellowcard', team: 'away', player: { id: 'p4', name: 'Pepe' } },
-    { type: 'redcard', teamName: 'Benfica', player: { id: 'p1', name: 'Di María' } },
-    { type: 'goal', team: 'home', player: { id: 'p1', name: 'Di María' } },
-  ] };
+  // The real feed: side in the field name, name carries "(pen.)" / "(og)" annotations.
+  const raw = [
+    { type: 'GOAL', homeScorer: 'Di María', homeScorerId: 'p1', homeAssist: 'Rafa', homeAssistId: 'p2' },
+    { type: 'GOAL', awayScorer: 'S. Solans (pen.)', awayScorerId: 'p5' },
+    { type: 'GOAL', homeScorer: 'Otamendi (og)', homeScorerId: 'p3' },
+    { type: 'YELLOWCARD', awayYellowCard: 'Pepe', awayYellowCardId: 'p4' },
+    { type: 'REDCARD', homeRedCard: 'Di María', homeRedCardId: 'p1' },
+    { type: 'GOAL', homeScorer: 'Di María', homeScorerId: 'p1' },
+  ];
   const players = normalizeMatchEvents(raw, linked);
   const dm = players.find((p) => p.id === 'p1');
-  assert.equal(dm.goals, 2); // two goals, own-goal not counted for the player
+  assert.equal(dm.goals, 2); // two goals; own-goal line (p3) not credited
   assert.equal(dm.red, 1);
   assert.equal(dm.team, 'home');
   assert.equal(players.find((p) => p.id === 'p2').assists, 1);
-  assert.equal(players.find((p) => p.name === 'Galeno').team, 'away');
+  const solans = players.find((p) => p.id === 'p5');
+  assert.equal(solans.name, 'S. Solans'); // "(pen.)" stripped
+  assert.equal(solans.goals, 1);
+  assert.equal(solans.team, 'away');
   assert.equal(players.find((p) => p.id === 'p4').yellow, 1);
-  assert.equal(players.find((p) => p.id === 'p3')?.goals ?? 0, 0); // own goal: no scorer line credited
+  assert.equal(players.find((p) => p.id === 'p3')?.goals ?? 0, 0); // own goal: not a scorer hit
+});
+
+test('match events: flat player/team fallback still works', () => {
+  const linked = { home: { id: 'H', name: 'Benfica' }, away: { id: 'A', name: 'Porto' } };
+  const players = normalizeMatchEvents({ events: [
+    { type: 'goal', team: 'away', player: { id: 'q1', name: 'Galeno' } },
+    { type: 'yellowcard', teamName: 'Benfica', player: { id: 'q2', name: 'Otamendi' } },
+  ] }, linked);
+  assert.equal(players.find((p) => p.id === 'q1').team, 'away');
+  assert.equal(players.find((p) => p.id === 'q1').goals, 1);
+  assert.equal(players.find((p) => p.id === 'q2').yellow, 1);
 });
