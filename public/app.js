@@ -5910,7 +5910,7 @@ function venueView(e, v) {
 /** Starting XI and bench of each team (GOAL API lineups). */
 function lineupsView(e, lu) {
   if (!lu) return '<div class="panel empty">Sem formações para este jogo.</div>';
-  const row = (p) => `<div class="lu-row"><span class="lu-num">${p.number != null && p.number !== '' ? esc(String(p.number)) : ''}</span><span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`;
+  const row = (p) => `<div class="lu-row"><span class="lu-num">${p.number != null && p.number !== '' ? esc(String(p.number)) : ''}</span>${p.image ? `<img class="lu-img" src="${esc(p.image)}" alt="" loading="lazy">` : ''}<span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`;
   const col = (side, name) => {
     const t = lu[side] || {};
     return `<div class="lu-col"><h4>${esc(name)}</h4>

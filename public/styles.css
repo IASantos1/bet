@@ -2609,3 +2609,4 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .ps-name small { color: var(--text-3); }
 .ps-marks { display: flex; gap: 10px; white-space: nowrap; }
 .ps-marks b { font-weight: 800; }
+.lu-img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: var(--panel2); flex: 0 0 auto; }

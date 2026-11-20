@@ -581,19 +581,21 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const raw = await lineupsRaw(fx.id).catch(() => null);
     if (!raw) return null;
     const player = (p) => (typeof p === 'string' ? { name: p } : {
-      name: p?.name || p?.player?.name || p?.playerName || p?.player_name || null,
-      number: p?.number ?? p?.shirt ?? p?.shirtNumber ?? p?.shirt_number ?? p?.jersey ?? null,
-      position: p?.position || p?.pos || p?.role || p?.player?.position || null,
+      // GOAL API: lineupPlayer / lineupNumber / playerPosition / playerImage (other shapes kept as fallback).
+      name: p?.lineupPlayer || p?.name || p?.player?.name || p?.playerName || p?.player_name || null,
+      number: p?.lineupNumber ?? p?.number ?? p?.shirt ?? p?.shirtNumber ?? p?.shirt_number ?? p?.jersey ?? null,
+      position: p?.playerPosition || p?.position || p?.pos || p?.role || p?.player?.position || null,
+      image: httpsLogo(p?.playerImage || p?.image || p?.photo) || null,
     });
     const side = (s) => {
       const block = raw[`${s}`] ?? raw[`${s}Team`] ?? raw[`${s}_team`] ?? raw[`team_${s}`]
         ?? (Array.isArray(raw.teams) ? raw.teams.find((t) => String(t?.side || t?.type).toLowerCase() === s
           || String(t?.id) === String(s === 'home' ? fx.home?.id : fx.away?.id)) : null) ?? null;
       const src = block || raw;
-      // Starters and bench under their many spellings.
-      const starters = (['startingXI', 'starting_xi', 'lineup', 'players', 'formation', `${s}Lineup`, `${s}StartingXI`, `${s}Players`, `${s}_players`]
+      // Starters and bench under their many spellings (GOAL API: startingLineups / substituteLineups).
+      const starters = (['startingLineups', 'startingXI', 'starting_xi', 'lineup', 'players', 'formation', `${s}Lineup`, `${s}StartingXI`, `${s}Players`, `${s}_players`]
         .map((k) => src?.[k]).find(Array.isArray) || []).map(player).filter((p) => p.name);
-      const bench = (['substitutes', 'subs', 'bench', 'substitutions', `${s}Substitutes`, `${s}Bench`, `${s}_substitutes`]
+      const bench = (['substituteLineups', 'benchLineups', 'substitutes', 'subs', 'bench', 'substitutions', `${s}Substitutes`, `${s}Bench`, `${s}_substitutes`]
         .map((k) => src?.[k]).find(Array.isArray) || []).map(player).filter((p) => p.name);
       return { starters, bench };
     };
