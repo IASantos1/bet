@@ -1915,7 +1915,12 @@ export function createApp(db, {
   // The player's own BETBY bets.
   app.get('/api/betby-bets', requireUser, (req, res) => {
     const rows = betbyBets ? betbyBets.listForUser(req.user.id, 100) : [];
-    res.json({ bets: rows.map((r) => ({ id: r.id, event: r.event_name, market: r.market_name, player: r.player, odds: r.odds_x100 / 100, stake: cents(r.stake_cents), status: r.status, payout: cents(r.payout_cents), note: r.note, createdAt: r.created_at })) });
+    res.json({ bets: rows.map((r) => ({
+      id: r.id, eventId: r.event_id, event: r.event_name, eventStatus: r.event_status, startTime: r.start_time,
+      score: r.home_score != null && r.away_score != null ? `${r.home_score}-${r.away_score}` : null,
+      market: r.market_name, player: r.player, odds: r.odds_x100 / 100, stake: cents(r.stake_cents),
+      status: r.status, payout: cents(r.payout_cents), note: r.note, createdAt: r.created_at, settledAt: r.settled_at,
+    })) });
   });
 
   // Sharing a ticket: a link anyone can open (#/b/<token>) with its picks, odds and result.

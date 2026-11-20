@@ -128,7 +128,8 @@ export function createBetbyBets(db, { goalApi = null, betby = null, limits = {},
     return tally;
   }
 
-  const listForUser = (userId, limit = 50) => db.prepare('SELECT * FROM betby_bets WHERE user_id = ? ORDER BY id DESC LIMIT ?').all(userId, limit);
+  const listForUser = (userId, limit = 50) => db.prepare(`SELECT b.*, e.status AS event_status, e.start_time, e.home_score, e.away_score
+    FROM betby_bets b LEFT JOIN events e ON e.id = b.event_id WHERE b.user_id = ? ORDER BY b.id DESC LIMIT ?`).all(userId, limit);
   const status = () => {
     const row = db.prepare("SELECT COUNT(*) n, SUM(status='open') open, SUM(status='won') won, SUM(status='lost') lost, SUM(status='void') v FROM betby_bets").get();
     return { total: row.n, open: row.open || 0, won: row.won || 0, lost: row.lost || 0, void: row.v || 0 };

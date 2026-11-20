@@ -3149,10 +3149,23 @@ function myBetsHtml() {
       : `<div class="mb-empty"><div>🎟️</div><p>${empty}</p>${tab === 'abertas' ? '<a class="outline-btn" href="#/desporto">Escolher um jogo</a>' : ''}</div>`}`;
 }
 
+// A BETBY player bet shown as a ticket (single selection, no cash out / share).
+function betbyTicket(r) {
+  const open = r.status === 'open';
+  return {
+    status: r.status, type: 'single', origin: 'betby', stake: r.stake, totalOdds: r.odds,
+    potential: Math.floor(r.stake * r.odds * 100) / 100, payout: r.payout, ref: `BB${r.id}`,
+    createdAt: r.createdAt, settledAt: r.settledAt,
+    legs: [{ label: r.player, code: null, market: 'betby', marketName: r.market, match: r.event,
+      eventId: r.eventId, status: open ? 'open' : r.status, odds: r.odds, eventStatus: r.eventStatus, startTime: r.startTime, score: r.score }],
+  };
+}
+
 async function loadBets({ quiet = false } = {}) {
   try {
-    const { bets } = await api('/api/bets');
-    state.myBets = bets;
+    const [{ bets }, bb] = await Promise.all([api('/api/bets'), api('/api/betby-bets').catch(() => ({ bets: [] }))]);
+    const merged = [...bets, ...(bb.bets || []).map(betbyTicket)].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    state.myBets = merged;
     updateHeader();
     // Don't redraw while the player confirms a cash out.
     if (state.cashoutConfirm) return;
@@ -3165,6 +3178,7 @@ const TICKET_BADGE = { open: ['Em aberto', 'pending'], won: ['Ganha', 'won'], lo
 // What the ticket is: the player's own picks, a bet builder, or one of the ready-made bets (its colour and icon).
 const TICKET_KIND = {
   single: ['Simples', '🎯', 'own'], multiple: ['Múltipla', '🔗', 'own'], builder: ['Criador de apostas', '🧩', 'builder'],
+  betby: ['Mercado de jogador', '⚽', 'own'],
   combo: ['Construa o seu ganho', '🧩', 'builder'], pick: ['Melhores escolhas', '🔥', 'pick'], acca: ['Apostas vencedoras', '🏆', 'acca'],
 };
 const LEG_MARK = { won: '✓', lost: '✕', void: '—' };
