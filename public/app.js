@@ -5615,9 +5615,9 @@ function marketsView(e) {
   let chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
     .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
   if (betbyMk.length) chips += `<button class="${m.cat === 'marcador' ? 'active' : ''}" data-market-cat="marcador">Marcador<small>${betbyCount}</small></button>`;
-  if (m.cat === 'marcador') return `<div class="market-cats">${chips}</div>${betbyMarketsHtml(e)}`;
+  if (m.cat === 'marcador') return `<div class="market-cats" data-hscroll="market-cats">${chips}</div>${betbyMarketsHtml(e)}`;
   const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk, e.sport) === m.cat);
-  return `${m.cat === 'todos' && e.status === 'scheduled' ? picksSection() : ''}<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
+  return `${m.cat === 'todos' && e.status === 'scheduled' ? picksSection() : ''}<div class="market-cats" data-hscroll="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
 }
 
 function marketBlocks(e, markets) {
