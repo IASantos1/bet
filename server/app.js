@@ -2905,7 +2905,7 @@ export function createApp(db, {
 
   // BETBY market collector: does the server reach BETBY (or 503 bc), store sizes, raw market/catalog shapes.
   admin.post('/betby/check', async (_req, res, next) => {
-    try { if (betbyCollector?.on) await betbyCollector.poll().catch(() => {}); res.json({ steps: betbyCollector ? betbyCollector.diagnose() : [{ name: 'Coletor BETBY', ok: false, detail: 'não iniciado' }] }); }
+    try { if (betbyCollector?.on) await betbyCollector.poll().catch(() => {}); res.json({ steps: betbyCollector ? await betbyCollector.diagnose() : [{ name: 'Coletor BETBY', ok: false, detail: 'não iniciado' }] }); }
     catch (err) { next(err); }
   });
 

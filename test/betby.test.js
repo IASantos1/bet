@@ -55,6 +55,22 @@ test('eventPlayerMarkets names outcomes from the catalog and keeps only player m
   assert.deepEqual(b.teamsOf(ev), { home: 'Benfica', away: 'Porto' });
 });
 
+test('per-event descriptions resolve real player names (catalog only has generic markets)', () => {
+  const b = make();
+  // Static catalog: knows the market is a player market, but outcomes are generic (no players).
+  b._internal.setCatalog({ at: Date.now(), markets: new Map([
+    ['40', { id: '40', name: 'Marcador a qualquer momento', market_type: 'PlayerProps', variants: { '': [{ outcomes: [{ id: '100', name: 'Jogador' }] }] } }],
+  ]) });
+  // Per-event descriptions: the real players for THIS match.
+  b._internal.setEventDesc('e1', new Map([
+    ['40', { name: 'Marcador a qualquer momento', variants: { '': [{ outcomes: [{ id: '100', name: 'Di María' }, { id: '101', name: 'J. Félix' }] }] } }],
+  ]));
+  const ev = { id: 'e1', desc: { competitors: [{ name: 'Benfica' }, { name: 'Porto' }] }, markets: { 40: { '': { 100: { k: 2.5 }, 101: { k: 3.1 } } } } };
+  const pm = b.eventPlayerMarkets(ev);
+  assert.equal(pm[0].outcomes.find((o) => o.id === '100').name, 'Di María'); // from per-event, not catalog's "Jogador"
+  assert.equal(pm[0].outcomes.find((o) => o.id === '101').name, 'J. Félix');
+});
+
 test('off when collect is false', () => {
   assert.equal(createBetby({ collect: false, brandId: 'B1' }).on, false);
   assert.equal(createBetby({ collect: true, brandId: '' }).on, false);
