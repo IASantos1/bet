@@ -3541,7 +3541,7 @@ async function placeBet(retry = 0) {
     toast('Aposta registada', `${res.betIds.length > 1 ? `${res.betIds.length} apostas` : `Aposta #${res.betIds[0]}`} · saldo ${money(res.balance)}`);
     updateHeader();
     syncSelectedButtons();
-    syncBetbySelected();
+    if (currentRoute().page === 'jogo') render({ keepScroll: true });
     setSlipOpen(false);
   } catch (err) {
     if (err.data?.closed) {
@@ -4223,10 +4223,13 @@ document.addEventListener('click', async (e) => {
   const remove = e.target.closest('[data-remove]');
   if (remove) {
     state.slip = state.slip.filter((s) => itemKey(s) !== remove.dataset.remove);
-    saveSlip(); autoMode(); syncSelectedButtons(); syncBetbySelected(); renderSlip();
+    saveSlip(); autoMode(); syncSelectedButtons(); renderSlip();
+    if (currentRoute().page === 'jogo') render({ keepScroll: true });
     return;
   }
 
+  const bpBtn = e.target.closest('[data-bp]');
+  if (bpBtn) { addBetbyPick(bpBtn.dataset); return; }
   const pickBtn = e.target.closest('[data-pick]');
   if (pickBtn) { addPick(Number(pickBtn.dataset.pick)); return; }
   const builderBtn = e.target.closest('[data-builder]');
@@ -4926,7 +4929,6 @@ function leaveMatch() {
   // the match is left or swapped — otherwise the previous game's field would linger until the new one mounts.
   $('#sideTracker')?.replaceChildren();
   $('#content #trackerInline')?.replaceChildren();
-  $('#content #betbyPlayer')?.replaceChildren();
 }
 
 // A match page read ahead: when the finger touches a game (or the mouse rests on it), its page is
@@ -5166,8 +5168,9 @@ function matchPage(sub) {
     leaveMatch();
     m.id = id;
     m.data = matchFromList(id);
+    m.betby = null;
     setTimeout(() => loadMatch(id));
-    setTimeout(() => loadBetbyPlayer(id));
+    setTimeout(() => loadBetbyMarkets(id));
     // Markets and score keep refreshing while the page is open (the stream adds real time on top).
     m.timer = setInterval(() => {
       if (document.hidden || state.match.id !== id) return;
@@ -5218,40 +5221,40 @@ function matchPage(sub) {
     </div>
     ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
     <div class="match-body">${body}</div>
-    ${football && e.status !== 'finished' && e.status !== 'cancelled' ? '<div id="betbyPlayer" class="betby-player" data-keep></div>' : ''}
     ${footer()}`;
 }
 
 // BETBY player markets (marcador, 2+, 3+…) that WinHouse does not have, settled by us from GOAL API.
-// Loaded on its own (not part of the morphed market body) and mounted in #betbyPlayer (data-keep).
-async function loadBetbyPlayer(id) {
-  const mount = $('#betbyPlayer');
-  if (!mount || state.match.id !== id) return;
+// Kept in state.match.betby and shown under the "Marcador" tab of the match page's market menu.
+async function loadBetbyMarkets(id) {
   let data;
   try { data = await api(`/api/events/${id}/betby-markets`); } catch { return; }
-  if (state.match.id !== id || !$('#betbyPlayer')) return;
-  const markets = data?.markets || [];
-  if (!markets.length) { mount.replaceChildren(); return; }
+  if (state.match.id !== id) return;
+  state.match.betby = data?.markets?.length ? data : { markets: [] };
+  if (currentRoute().page === 'jogo') render({ keepScroll: true });
+}
+
+// The "Marcador" tab body: each player market, split into the two teams (lineups) and ordered by odds.
+function betbyMarketsHtml(e) {
+  const data = state.match.betby;
+  if (!data?.markets?.length) return '';
   const teams = data.teams || {};
   const byOdds = (a, b) => a.odds - b.odds;
-  const btnHtml = (mk, o) => `<button class="bp-out" data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}" data-side="${esc(o.side || '')}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`;
+  const inSlipBetby = (marketId, player) => state.slip.some((s) => s.betby && s.eventId === e.id && String(s.betby.marketId) === String(marketId) && s.betby.player === player);
+  const btn = (mk, o) => `<button class="bp-out${inSlipBetby(mk.marketId, o.player) ? ' on' : ''}" data-bp data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}" data-side="${esc(o.side || '')}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`;
   const marketHtml = (mk) => {
     const home = mk.outcomes.filter((o) => o.side === 'home').sort(byOdds);
     const away = mk.outcomes.filter((o) => o.side === 'away').sort(byOdds);
     const rest = mk.outcomes.filter((o) => !o.side).sort(byOdds);
-    // Two team columns when we know the sides (lineups), home on the left and away on the right.
     const cols = (home.length || away.length)
       ? `<div class="bp-cols">
-          <div class="bp-col"><div class="bp-team">${esc(teams.home || '')}</div>${home.map((o) => btnHtml(mk, o)).join('')}</div>
-          <div class="bp-col"><div class="bp-team">${esc(teams.away || '')}</div>${away.map((o) => btnHtml(mk, o)).join('')}</div>
-        </div>${rest.length ? `<div class="bp-outs">${rest.map((o) => btnHtml(mk, o)).join('')}</div>` : ''}`
-      : `<div class="bp-outs">${rest.map((o) => btnHtml(mk, o)).join('')}</div>`;
+          <div class="bp-col"><div class="bp-team">${esc(teams.home || '')}</div>${home.map((o) => btn(mk, o)).join('')}</div>
+          <div class="bp-col"><div class="bp-team">${esc(teams.away || '')}</div>${away.map((o) => btn(mk, o)).join('')}</div>
+        </div>${rest.length ? `<div class="bp-outs">${rest.map((o) => btn(mk, o)).join('')}</div>` : ''}`
+      : `<div class="bp-outs">${rest.map((o) => btn(mk, o)).join('')}</div>`;
     return `<div class="bp-market"><div class="bp-name">${esc(mk.name)}</div>${cols}</div>`;
   };
-  mount.innerHTML = `<div class="bp-head"><span>Mercados de jogador</span><small>BET62 · combina no mesmo boletim</small></div>
-    ${markets.map(marketHtml).join('')}`;
-  mount.querySelectorAll('.bp-out').forEach((btn) => btn.addEventListener('click', () => addBetbyPick(btn.dataset)));
-  syncBetbySelected();
+  return `<div class="betby-player"><div class="bp-head"><span>Mercados de jogador</span><small>BET62 · combina no mesmo boletim</small></div>${data.markets.map(marketHtml).join('')}</div>`;
 }
 
 // Add (or remove) a BETBY player pick to the MAIN betslip, so it combines with WinHouse picks in one ticket.
@@ -5266,19 +5269,9 @@ function addBetbyPick(ds) {
     label: ds.p, market: 'betby', marketName: BETBY_KIND_LABEL[ds.k] || ds.k,
     match: `${e.home} vs ${e.away}`, competition: 'Mercado de jogador', eventId: e.id,
   });
-  autoMode(); saveSlip(); renderSlip(); syncBetbySelected();
+  autoMode(); saveSlip(); renderSlip();
+  if (currentRoute().page === 'jogo') render({ keepScroll: true });
   if (i < 0) setSlipOpen(true);
-}
-
-// Highlight the player buttons that are in the slip.
-function syncBetbySelected() {
-  const mount = $('#betbyPlayer');
-  if (!mount) return;
-  const e = state.match.data;
-  mount.querySelectorAll('.bp-out').forEach((btn) => {
-    const key = `bb:${e?.id}:${btn.dataset.m}:${btn.dataset.p}`;
-    btn.classList.toggle('on', state.slip.some((s) => itemKey(s) === key));
-  });
 }
 
 // Market menu of the match page, in this order. Our own markets by type; the provider's ('x') by name.
@@ -5599,9 +5592,15 @@ function marketsView(e) {
   const m = state.match;
   const counts = new Map();
   for (const mk of e.markets) counts.set(marketCat(mk, e.sport), (counts.get(marketCat(mk, e.sport)) || 0) + 1);
-  if (m.cat !== 'todos' && !counts.has(m.cat)) m.cat = 'todos';
-  const chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
+  // BETBY player markets (Marcador): their own tab, not mixed into the WinHouse categories.
+  const betbyMk = state.match.betby?.markets || [];
+  const betbyCount = betbyMk.reduce((n, mk) => n + mk.outcomes.length, 0);
+  if (m.cat !== 'todos' && m.cat !== 'marcador' && !counts.has(m.cat)) m.cat = 'todos';
+  if (m.cat === 'marcador' && !betbyMk.length) m.cat = 'todos';
+  let chips = marketCatsFor(e.sport).filter(([k]) => k === 'todos' || counts.has(k))
     .map(([k, l]) => `<button class="${m.cat === k ? 'active' : ''}" data-market-cat="${k}">${l}<small>${k === 'todos' ? e.markets.length : counts.get(k)}</small></button>`).join('');
+  if (betbyMk.length) chips += `<button class="${m.cat === 'marcador' ? 'active' : ''}" data-market-cat="marcador">Marcador<small>${betbyCount}</small></button>`;
+  if (m.cat === 'marcador') return `<div class="market-cats">${chips}</div>${betbyMarketsHtml(e)}`;
   const shown = m.cat === 'todos' ? e.markets : e.markets.filter((mk) => marketCat(mk, e.sport) === m.cat);
   return `${m.cat === 'todos' && e.status === 'scheduled' ? picksSection() : ''}<div class="market-cats">${chips}</div>${marketBlocks(e, shown)}`;
 }
