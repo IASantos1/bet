@@ -527,8 +527,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .immersive .layout { grid-template-columns: minmax(0, 1fr); max-width: none; }
 .immersive .left-sidebar, .immersive .betslip, .immersive .slip-fab { display: none !important; }
 .immersive .content { padding: 0; }
-.casino-player { display: flex; flex-direction: column; height: calc(100vh - 68px); }
+.casino-player { position: relative; display: flex; flex-direction: column; height: calc(100vh - 68px); }
 .casino-stage { position: relative; flex: 1; display: flex; }
+.fs-note-slot:empty { display: none; }
 .casino-frame { flex: 1; width: 100%; border: 0; background: #0d1114; }
 /* Cover over a game's "buy free spins" panel: the game keeps the proportion the cover was made for
    (centred, black around), so the cover lands exactly on the panel. Computer in landscape; phone upright. */

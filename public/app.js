@@ -2100,12 +2100,27 @@ function casinoPlayPage() {
     : g.fsWarn ? `<div class="fs-bet-note warn" role="alert">⚠️ As Free Spins usam a aposta fixa de <b>${bet}</b> por rodada. ${g.fsPalace
       ? `Uma aposta maior gasta várias Free Spins de uma vez (cada ${bet} conta como 1).` : 'A rodada não foi aceite e nenhuma Free Spin foi gasta.'} ${how} para continuar.</div>`
       : `<div class="fs-bet-note">⚠️ Ajuste a aposta para <b>${bet}</b> antes de girar: ${how}. Cada rodada usa 1 Free Spin.</div>`;
+  // The game iframe lives in #casinoStage, a fixed data-keep mount filled by JS (mountCasinoFrame) only
+  // when the URL changes. Safari reloads an iframe on ANY DOM move, and the provider's launch link is
+  // single-use, so the bar / bet note / cover / end overlay must never shift or rebuild the iframe.
   return `<div class="casino-player">
-    ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}${fsNote}
-    <div class="casino-stage">${g.loaded ? '' : cover}${fsDone}
-    ${skinned(g, `<iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
-      allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>`)}</div>
+    ${g.gameId ? `<div class="casino-bar"><a href="#/casino/jogo/${g.gameId}" class="cbar-back">‹ Sair</a><strong>${esc(g.name)}</strong>${mode}</div>` : ''}
+    <div class="fs-note-slot">${fsNote}</div>
+    <div id="casinoStage" class="casino-stage" data-keep></div>
+    ${g.loaded ? '' : cover}${fsDone}
   </div>`;
+}
+
+// Mount (or replace) the game iframe in the fixed stage, only when the launch URL actually changes.
+// Never called by morph — so the single-use link never reloads on a routine re-render.
+function mountCasinoFrame() {
+  const g = state.casinoSession;
+  const stage = $('#casinoStage');
+  if (!stage || !g?.url) return;
+  if (stage.dataset.url === g.url && stage.querySelector('#casinoFrame')) return;
+  stage.dataset.url = g.url;
+  stage.innerHTML = skinned(g, `<iframe id="casinoFrame" class="casino-frame" src="${esc(g.url)}" title="${esc(g.name)}"
+    allow="fullscreen; autoplay; clipboard-write; encrypted-media" allowfullscreen referrerpolicy="origin"></iframe>`);
 }
 
 // ---------- promotions (terms and amounts always come from the server) ----------
@@ -3734,7 +3749,7 @@ function render({ keepScroll = false } = {}) {
   $('#content').dataset.page = page;
   for (const [key, left] of carScroll) { const t = $(`#content [data-hscroll="${key}"]`); if (t) t.scrollLeft = left; }
   if (page === 'jogo') afterMatchRender();
-  if (immersive) placeSkins();
+  if (immersive) { mountCasinoFrame(); placeSkins(); }
   applyBannerStyles();
   watchCasinoMore();
   watchSportsMore();
