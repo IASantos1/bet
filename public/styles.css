@@ -2574,3 +2574,25 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .trk-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 150px; color: var(--text-3); font-size: 13px; }
 .trk-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--viva); animation: trkSpin .8s linear infinite; }
 @keyframes trkSpin { to { transform: rotate(360deg); } }
+
+/* BETBY player markets on the match page (settled by us from GOAL API) */
+.betby-player { margin-top: 14px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 12px; }
+.betby-player:empty { display: none; }
+.bp-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.bp-head span { font-weight: 800; }
+.bp-head small { color: var(--text-3); font-size: 11px; }
+.bp-market { border-top: 1px solid var(--line); padding: 9px 0; }
+.bp-market:first-of-type { border-top: 0; }
+.bp-name { font-size: 12px; color: var(--text-2); font-weight: 700; margin-bottom: 7px; }
+.bp-outs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.bp-out { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text-2); border-radius: var(--radius); padding: 8px 10px; cursor: pointer; font-size: 13px; }
+.bp-out:hover { border-color: var(--gold); }
+.bp-out span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-out b { color: var(--gold); font-weight: 900; }
+.bp-slip { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.bp-pick { font-size: 13px; margin-bottom: 8px; }
+.bp-pick em { color: var(--gold); font-style: normal; font-weight: 900; }
+.bp-pick span { color: var(--text-3); }
+.bp-row { display: flex; gap: 8px; }
+.bp-row input { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius); padding: 9px 11px; }
+.bp-ret { color: var(--text-3); font-size: 12px; margin-top: 6px; min-height: 16px; }

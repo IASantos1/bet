@@ -4920,6 +4920,7 @@ function leaveMatch() {
   // the match is left or swapped — otherwise the previous game's field would linger until the new one mounts.
   $('#sideTracker')?.replaceChildren();
   $('#content #trackerInline')?.replaceChildren();
+  $('#content #betbyPlayer')?.replaceChildren();
 }
 
 // A match page read ahead: when the finger touches a game (or the mouse rests on it), its page is
@@ -5160,6 +5161,7 @@ function matchPage(sub) {
     m.id = id;
     m.data = matchFromList(id);
     setTimeout(() => loadMatch(id));
+    setTimeout(() => loadBetbyPlayer(id));
     // Markets and score keep refreshing while the page is open (the stream adds real time on top).
     m.timer = setInterval(() => {
       if (document.hidden || state.match.id !== id) return;
@@ -5210,7 +5212,55 @@ function matchPage(sub) {
     </div>
     ${m.tab === 'estatisticas' ? '<button class="stats-back" data-match-tab="mercados">‹ Voltar aos mercados</button>' : ''}
     <div class="match-body">${body}</div>
+    ${football && e.status !== 'finished' && e.status !== 'cancelled' ? '<div id="betbyPlayer" class="betby-player" data-keep></div>' : ''}
     ${footer()}`;
+}
+
+// BETBY player markets (marcador, 2+, 3+…) that WinHouse does not have, settled by us from GOAL API.
+// Loaded on its own (not part of the morphed market body) and mounted in #betbyPlayer (data-keep).
+async function loadBetbyPlayer(id) {
+  const mount = $('#betbyPlayer');
+  if (!mount || state.match.id !== id) return;
+  let data;
+  try { data = await api(`/api/events/${id}/betby-markets`); } catch { return; }
+  if (state.match.id !== id || !$('#betbyPlayer')) return;
+  const markets = data?.markets || [];
+  if (!markets.length) { mount.replaceChildren(); return; }
+  mount.innerHTML = `<div class="bp-head"><span>Mercados de jogador</span><small>BET62 · liquidado por nós</small></div>
+    ${markets.map((mk) => `<div class="bp-market"><div class="bp-name">${esc(mk.name)}</div><div class="bp-outs">
+      ${mk.outcomes.slice(0, 20).map((o) => `<button class="bp-out" data-k="${esc(mk.kind)}" data-m="${esc(mk.marketId)}" data-p="${esc(o.player)}" data-o="${o.odds}"><span>${esc(o.player)}</span><b>${o.odds.toFixed(2)}</b></button>`).join('')}
+    </div></div>`).join('')}
+    <div class="bp-slip" id="bpSlip" hidden></div>`;
+  mount.querySelectorAll('.bp-out').forEach((btn) => btn.addEventListener('click', () => openBetbySlip(id, btn.dataset)));
+}
+
+// The small bet form for a chosen player outcome.
+function openBetbySlip(eventId, pick) {
+  const slip = $('#bpSlip');
+  if (!slip) return;
+  if (!state.user) { toast('Entre primeiro', 'Inicie sessão para apostar.', 'error'); location.hash = '#/entrar'; return; }
+  const odds = Number(pick.o);
+  slip.hidden = false;
+  slip.innerHTML = `<div class="bp-pick"><b>${esc(pick.p)}</b> <span>${esc(pick.k === 'anytime_scorer' ? 'Marca a qualquer momento' : pick.k === 'scorer_2plus' ? 'Marca 2+' : pick.k === 'hattrick' ? 'Hat-trick' : pick.k)}</span> <em>@${odds.toFixed(2)}</em></div>
+    <div class="bp-row"><input id="bpStake" type="number" min="0.20" step="0.50" inputmode="decimal" placeholder="Valor €"><button class="primary-btn" id="bpPlace">Apostar</button></div>
+    <div class="bp-ret" id="bpRet"></div>`;
+  const stakeEl = $('#bpStake');
+  const ret = $('#bpRet');
+  const showRet = () => { const s = Number(stakeEl.value); ret.textContent = s > 0 ? `Ganho possível: ${money(Math.floor(s * odds * 100) / 100)}` : ''; };
+  stakeEl.addEventListener('input', showRet);
+  stakeEl.focus();
+  $('#bpPlace').addEventListener('click', async () => {
+    const stake = Number(stakeEl.value);
+    if (!(stake >= 0.2)) { toast('Valor inválido', 'Aposta mínima €0,20.', 'error'); return; }
+    const btn = $('#bpPlace'); btn.disabled = true;
+    try {
+      const r = await api('/api/betby-bets', { method: 'POST', body: { eventId, marketId: pick.m, kind: pick.k, player: pick.p, odds, stake } });
+      if (r.user) state.user = r.user; else state.user.balance = r.balance;
+      updateHeader();
+      toast('Aposta registada', `${pick.p} @${odds.toFixed(2)} — ${money(stake)}`, 'ok');
+      slip.hidden = true; slip.innerHTML = '';
+    } catch (err) { toast('Não foi possível apostar', err.message, 'error'); btn.disabled = false; }
+  });
 }
 
 // Market menu of the match page, in this order. Our own markets by type; the provider's ('x') by name.
