@@ -63,6 +63,7 @@ import {
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
 import { createBetbyEngine } from './betby-engine.js';
+import { gradePlayerMarket } from './playermarkets.js';
 import { decodeJwt, maskTokens } from './jwtpeek.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -2927,6 +2928,35 @@ export function createApp(db, {
         if (example) {
           const lines = example.pm.slice(0, 3).map((m) => `${m.marketName} →${m.kind}: ${m.outcomes.filter((o) => o.name).slice(0, 3).map((o) => `${o.name}${o.odd ? ` @${o.odd}` : ''}`).join(', ')}`);
           steps.push({ name: `Mercados no nosso jogo: ${example.e.home} - ${example.e.away}`, ok: true, detail: lines.join(' · ') });
+        }
+        // Shadow settlement proof: take a LIVE matched football game, read GOAL API's who-scored, and show
+        // what the grader would settle for each scorer market — no bets, no money, just validation.
+        if (goalApi?.enabled) {
+          const liveOurs = ours.filter((e) => e.status === 'live' || true); // scheduled too (grades as pending)
+          let graded = null;
+          for (const e of liveOurs) {
+            const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time });
+            if (!m) continue;
+            const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
+            const scorer = pm.find((x) => x.kind === 'anytime_scorer');
+            if (!scorer) continue;
+            const report = await goalApi.matchReport(e).catch(() => null);
+            if (!report) { graded = { e, note: 'GOAL API ainda sem relatório deste jogo' }; continue; }
+            const finished = e.status === 'finished';
+            const rows = scorer.outcomes.filter((o) => o.name && !/sem golo|no goal/i.test(o.name)).slice(0, 6).map((o) => {
+              const g = gradePlayerMarket({ kind: 'anytime_scorer', player: o.name, side: m.swapped ? 'away' : 'home' }, report, { finished });
+              return `${o.name}: ${g.result}${g.confidence && g.confidence !== 'none' ? ` (${g.confidence})` : ''}`;
+            });
+            graded = { e, rows, players: report.players.length };
+            break;
+          }
+          if (graded?.rows) {
+            steps.push({ name: `Liquidação-sombra (GOAL API): ${graded.e.home} - ${graded.e.away}`, ok: true, detail: `${graded.players} jogadores no relatório · ${graded.rows.join(' · ')}` });
+          } else if (graded?.note) {
+            steps.push({ name: 'Liquidação-sombra (GOAL API)', ok: false, detail: graded.note });
+          } else {
+            steps.push({ name: 'Liquidação-sombra (GOAL API)', ok: false, detail: 'nenhum jogo ao vivo casado com mercado de marcador agora' });
+          }
         }
       }
       res.json({ steps });
