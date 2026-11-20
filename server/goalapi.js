@@ -25,7 +25,7 @@ import { leagueTier } from './leagues.js';
 import { closeName, nameVariants, teamKey } from './teamlogos.js';
 
 const HOUR = 3_600_000;
-const TTL = { fixtures: 12 * HOUR, standings: 6 * HOUR, form: 12 * HOUR, h2h: 12 * HOUR };
+const TTL = { fixtures: 12 * HOUR, standings: 6 * HOUR, form: 12 * HOUR, h2h: 12 * HOUR, events: 5 * 60_000 };
 const WINDOW = 3 * HOUR; // kick-off difference allowed between our event and the GOAL API fixture
 const MAX_PAGES = 30;
 const AHEAD = 8 * 24 * HOUR; // games are looked up up to 8 days ahead
@@ -153,6 +153,58 @@ const compactFixture = (f) => {
 
 // The list in an answer: data itself, or data.fixtures / data.items / data.data.
 const listOf = (data) => (Array.isArray(data) ? data : ['fixtures', 'items', 'data', 'results'].map((k) => data?.[k]).find(Array.isArray) || []);
+
+const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Per-player goals, assists, yellow and red cards of a match, from GOAL API match events. The feed's
+ * field names vary by endpoint, so every likely spelling is tried. `fx` (our linked fixture) lets a
+ * team named in an event be placed on the home or away side. Returns a list of player stat lines.
+ */
+export function normalizeMatchEvents(raw, fx = null) {
+  const list = Array.isArray(raw) ? raw : ['events', 'incidents', 'timeline', 'data', 'items', 'goals'].map((k) => raw?.[k]).find(Array.isArray) || [];
+  const by = new Map();
+  const line = (id, name, team) => {
+    const key = id ? `#${id}` : slug(name);
+    if (!key) return null;
+    if (!by.has(key)) by.set(key, { id: id != null ? String(id) : null, name: String(name || '').trim(), team: team || null, goals: 0, assists: 0, yellow: 0, red: 0 });
+    const l = by.get(key);
+    if (!l.name && name) l.name = String(name).trim();
+    if (!l.team && team) l.team = team;
+    return l;
+  };
+  const sideOf = (ev) => {
+    const t = ev.team || ev.side || ev.teamName || ev.team_name || ev.teamSide;
+    if (t === 'home' || t === 'away') return t;
+    if (!fx) return null;
+    const tn = slug(t);
+    const tid = ev.teamId ?? ev.team_id ?? ev.team?.id;
+    if ((tn && tn === slug(fx.home?.name)) || (tid != null && String(tid) === String(fx.home?.id))) return 'home';
+    if ((tn && tn === slug(fx.away?.name)) || (tid != null && String(tid) === String(fx.away?.id))) return 'away';
+    return null;
+  };
+  for (const ev of list) {
+    if (!ev || typeof ev !== 'object') continue;
+    const type = slug(ev.type || ev.eventType || ev.event_type || ev.incident || ev.incidentType || ev.kind || ev.detail);
+    const team = sideOf(ev);
+    const pName = ev.player?.name || ev.playerName || ev.player_name || (typeof ev.player === 'string' ? ev.player : null);
+    const pId = ev.player?.id ?? ev.playerId ?? ev.player_id ?? null;
+    const isGoal = /goal/.test(type) || type === 'score';
+    if (isGoal && !/own|cancel|disallow|no goal|miss|penalty miss|saved/.test(type)) {
+      const l = line(pId, pName, team); if (l) l.goals += 1;
+      const aName = ev.assist?.name || ev.assistName || ev.assist_player || ev.assistPlayer?.name || ev.assist_name || (typeof ev.assist === 'string' ? ev.assist : null);
+      const aId = ev.assist?.id ?? ev.assistId ?? ev.assist_id ?? ev.assistPlayer?.id ?? null;
+      if (aName || aId != null) { const a = line(aId, aName, team); if (a) a.assists += 1; }
+    } else if (/own.?goal/.test(type)) {
+      // own goal: raises the opponent's score but is not a "to score" hit for the player — skipped
+    } else if (/red/.test(type) || /second.?yellow|two.?yellow/.test(type)) {
+      const l = line(pId, pName, team); if (l) l.red += 1;
+    } else if (/yellow|booking|caution|card/.test(type)) {
+      const l = line(pId, pName, team); if (l) l.yellow += 1;
+    }
+  }
+  return [...by.values()];
+}
 
 /** Head-to-head of our two teams, in the shape of the match page (home/away as in our event). */
 export function normalizeH2H(raw, ev) {
@@ -437,6 +489,27 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     return { linked };
   }
 
+  const matchEvents = (fxid) => cached(`events:${fxid}`, TTL.events, async () => (await request(`/fixtures/${encodeURIComponent(fxid)}/events`)).data);
+
+  /**
+   * What happened in a football match, from GOAL API: per-player goals, assists and cards, so we can
+   * settle player markets ourselves. Returns { linked, fixtureId, home, away, players }, or null when the
+   * game is not linked. `players` is empty when GOAL API has no events for it yet (not started / no feed).
+   */
+  async function matchReport(ev) {
+    if (!enabled || ev?.sport !== 'futebol') return null;
+    const fx = await link(ev).catch(() => null);
+    if (!fx) return null;
+    const raw = await matchEvents(fx.id).catch(() => null);
+    return {
+      fixtureId: fx.id,
+      home: { id: fx.home?.id || null, name: fx.home?.name || ev.home },
+      away: { id: fx.away?.id || null, name: fx.away?.name || ev.away },
+      players: normalizeMatchEvents(raw, fx),
+      raw: raw || null,
+    };
+  }
+
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
   async function insights(ev) {
     const empty = { h2h: null, standings: null, form: null, venue: null };
@@ -534,11 +607,30 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       steps.push({ name: `Exemplo: ${sample.home} - ${sample.away}`, ok: Boolean(r.h2h || r.standings || r.form),
         detail: `H2H: ${r.h2h ? `${r.h2h.total} jogos` : 'sem dados'} · Classificação: ${r.standings ? `${r.standings.rows.length} equipas` : 'sem dados'} · Últimos 5: ${r.form ? 'sim' : 'sem dados'}` });
     }
+    // Player markets: a live or just-finished football game, the per-player goals/cards GOAL API gives.
+    const recent = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+      WHERE sport = 'futebol' AND start_time >= ? AND start_time <= ? ORDER BY (status = 'live') DESC, start_time DESC LIMIT 400`)
+      .all(new Date(Date.now() - 6 * HOUR).toISOString(), new Date(Date.now() + HOUR).toISOString()).filter(covers);
+    let rep = null;
+    for (const ev of recent) { const m = await matchReport(ev).catch(() => null); if (m && (m.raw || m.players.length)) { rep = { ev, m }; if (m.players.length) break; } }
+    if (!rep) {
+      steps.push({ name: 'Eventos de jogo (mercados de jogador)', ok: false, detail: `nenhum jogo ao vivo / recente ligado nas últimas 6 h (de ${recent.length})` });
+    } else {
+      const { ev, m } = rep;
+      const scorers = m.players.filter((p) => p.goals > 0).map((p) => `${p.name} (${p.team || '?'}) ${p.goals}g${p.assists ? ` ${p.assists}a` : ''}`);
+      const cards = m.players.filter((p) => p.yellow || p.red).map((p) => `${p.name} ${p.red ? '🟥' : '🟨'}`);
+      steps.push({ name: `Eventos: ${ev.home} - ${ev.away}`, ok: m.players.length > 0,
+        detail: m.players.length ? `Marcadores: ${scorers.join(' · ') || 'nenhum'} · Cartões: ${cards.join(' · ') || 'nenhum'}` : 'GOAL API sem eventos para este jogo' });
+      // Raw shape of the first event, so the normalizer can be matched to the real field names.
+      const arr = Array.isArray(m.raw) ? m.raw : ['events', 'incidents', 'timeline', 'data', 'items', 'goals'].map((k) => m.raw?.[k]).find(Array.isArray) || [];
+      steps.push({ name: 'Forma crua de /fixtures/{id}/events', ok: arr.length > 0,
+        detail: arr.length ? JSON.stringify(arr[0]).slice(0, 500) : `sem lista de eventos · chaves: ${m.raw ? Object.keys(m.raw).slice(0, 15).join(', ') : 'resposta vazia'}` });
+    }
     return steps;
   }
 
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, syncBadges, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, syncBadges, matchReport, status, diagnose, refresh };
 }

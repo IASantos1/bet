@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createGoalApi, findFixture, normalizeForm, normalizeH2H, normalizeStandings } from '../server/goalapi.js';
+import { createGoalApi, findFixture, normalizeForm, normalizeH2H, normalizeStandings, normalizeMatchEvents } from '../server/goalapi.js';
 
 const HOUR = 3_600_000;
 const ko = new Date(Math.floor(Date.now() / HOUR) * HOUR + 5 * HOUR); // in 5 h, on the hour
@@ -187,4 +187,25 @@ test('league table: each team\'s home and away split when the table has one', as
   assert.deepEqual(t.rows[1].home, { played: 4, won: 3, drawn: 1, lost: 0, goalsFor: 7, goalsAgainst: 2, points: 10 });
   assert.equal(t.rows[1].away.points, 1);
   assert.equal(t.rows[0].home, null); // no split for this team
+});
+
+test('match events: per-player goals, assists and cards, teams placed by side', () => {
+  const linked = { home: { id: 'H', name: 'Benfica' }, away: { id: 'A', name: 'Porto' } };
+  const raw = { events: [
+    { type: 'goal', team: 'home', player: { id: 'p1', name: 'Di María' }, assist: { id: 'p2', name: 'Rafa' } },
+    { type: 'goal', teamId: 'A', player: { name: 'Galeno' } },
+    { type: 'own-goal', team: 'home', player: { id: 'p3', name: 'Otamendi' } },
+    { type: 'yellowcard', team: 'away', player: { id: 'p4', name: 'Pepe' } },
+    { type: 'redcard', teamName: 'Benfica', player: { id: 'p1', name: 'Di María' } },
+    { type: 'goal', team: 'home', player: { id: 'p1', name: 'Di María' } },
+  ] };
+  const players = normalizeMatchEvents(raw, linked);
+  const dm = players.find((p) => p.id === 'p1');
+  assert.equal(dm.goals, 2); // two goals, own-goal not counted for the player
+  assert.equal(dm.red, 1);
+  assert.equal(dm.team, 'home');
+  assert.equal(players.find((p) => p.id === 'p2').assists, 1);
+  assert.equal(players.find((p) => p.name === 'Galeno').team, 'away');
+  assert.equal(players.find((p) => p.id === 'p4').yellow, 1);
+  assert.equal(players.find((p) => p.id === 'p3')?.goals ?? 0, 0); // own goal: no scorer line credited
 });
