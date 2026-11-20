@@ -242,6 +242,26 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     }
     steps.push({ name: 'Catálogo de nomes', ok: Boolean(catalog?.markets?.size), detail: catalog ? `${catalog.markets.size} mercados com nome` : 'não carregado' });
     if (catalogRaw) steps.push({ name: 'Catálogo cru (forma)', ok: true, detail: catalogRaw });
+    // Probe a real football game's markets: dump each market's id + catalog name + market_type, so we
+    // see how the football scorer / card markets are actually typed (not only the PlayerProps system).
+    {
+      const isFoot = (ev) => /soccer|football|futebol/i.test(sportName(ev?.desc?.sport) || '');
+      const foot = [...stores.live.values(), ...stores.prematch.values()].filter((e) => isFoot(e) && Object.keys(e.markets || {}).length)
+        .sort((a, b) => Object.keys(b.markets).length - Object.keys(a.markets).length)[0];
+      if (!foot) {
+        steps.push({ name: 'Jogo de futebol (mercados)', ok: false, detail: 'nenhum jogo de futebol com mercados no feed agora' });
+      } else {
+        const t = teamsOf(foot);
+        const mids = Object.keys(foot.markets);
+        const describe = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return `${mid}:${e?.name || '?'}${e?.market_type ? `[${e.market_type}]` : ''}`; };
+        // Highlight the ones that look like scorer / card / player markets by name or type.
+        const looksPlayer = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return isPlayerType(e?.market_type) || /scorer|goal ?scorer|marcador|card|booking|cart[aã]o|player|jogador|assist/i.test(e?.name || '') || /scorer|player|card|booking/i.test(e?.market_type || ''); };
+        const players = mids.filter(looksPlayer);
+        steps.push({ name: `Jogo de futebol: ${t.home || '?'} - ${t.away || '?'}`, ok: true, detail: `${mids.length} mercados · possíveis de jogador: ${players.length}` });
+        steps.push({ name: 'Mercados de jogador (candidatos)', ok: players.length > 0, detail: players.slice(0, 12).map(describe).join(' · ') || 'nenhum pelo nome/tipo' });
+        steps.push({ name: 'Todos os mercados do jogo', ok: true, detail: mids.slice(0, 25).map(describe).join(' · ').slice(0, 800) });
+      }
+    }
     // Player markets across the live + prematch stores. Player NAMES live in the per-event descriptions
     // (not the static catalog), so fetch those for the first few player-market games before resolving.
     const pmEvents = [];
