@@ -51,6 +51,9 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
   };
   const stores = { live: new Map(), prematch: new Map() };
   const feeds = { live: {}, prematch: {} };
+  const dict = { sports: {}, categories: {}, tournaments: {} }; // names from the feed payloads
+  const sportName = (id) => dict.sports[String(id)]?.name || null;
+  const mergeDict = (payload) => { for (const k of ['sports', 'categories', 'tournaments']) if (payload?.[k] && typeof payload[k] === 'object') Object.assign(dict[k], payload[k]); };
   let catalog = null; // { at, markets: Map(marketId -> { name, kind, outcomes: Map(outcomeId -> name) }) }
   let catalogRaw = null; // first slice of the raw catalog, for the diagnostic
   let lastError = null;
@@ -111,10 +114,11 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     const indexUrl = baseUrl + paths[feed];
     const index = await requestJson(feed, indexUrl);
     const store = stores[feed];
+    mergeDict(index);
     applyDeltas(store, index);
     const base = indexUrl.slice(0, indexUrl.lastIndexOf('/'));
     let versions = versionsOf(index);
-    for (const version of versions) { const payload = await requestJson(feed, `${base}/${version}`).catch(() => null); if (payload) applyDeltas(store, payload); }
+    for (const version of versions) { const payload = await requestJson(feed, `${base}/${version}`).catch(() => null); if (payload) { mergeDict(payload); applyDeltas(store, payload); } }
     feeds[feed] = { ...feeds[feed], ok: true, error: null, events: store.size, indexKeys: Object.keys(index || {}).slice(0, 12), versions: versions.length };
   }
 
@@ -242,18 +246,27 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     // (not the static catalog), so fetch those for the first few player-market games before resolving.
     const pmEvents = [];
     for (const store of [stores.live, stores.prematch]) for (const ev of store.values()) if (eventPlayerMarkets(ev).length) pmEvents.push(ev);
-    for (const ev of pmEvents.slice(0, 6)) await fetchEventDescriptions(ev.id).catch(() => {});
+    // Count player-market games per sport (named when the dictionary has it) so we see if football is there.
+    const bySport = new Map();
+    const isFootball = (ev) => /soccer|football|futebol/i.test(sportName(ev?.desc?.sport) || '');
+    for (const ev of pmEvents) { const key = sportName(ev?.desc?.sport) || `#${ev?.desc?.sport ?? '?'}`; bySport.set(key, (bySport.get(key) || 0) + 1); }
+    steps.push({ name: 'Mercados de jogador por desporto', ok: pmEvents.length > 0, detail: [...bySport].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} (${c})`).join(' · ') || 'nenhum' });
+    // Prefer football events for the examples (that is what we can settle); fetch their player names.
+    const ordered = [...pmEvents].sort((a, b) => Number(isFootball(b)) - Number(isFootball(a)));
+    for (const ev of ordered.slice(0, 6)) await fetchEventDescriptions(ev.id).catch(() => {});
+    const footballPm = pmEvents.filter(isFootball);
+    steps.push({ name: 'Futebol com mercados de jogador', ok: footballPm.length > 0, detail: footballPm.length ? `${footballPm.length} jogos de futebol` : 'nenhum jogo de futebol com mercados de jogador agora' });
     let named = 0; const examples = [];
-    for (const ev of pmEvents) {
+    for (const ev of ordered) {
       const withName = eventPlayerMarkets(ev).find((m) => m.outcomes.some((o) => o.name));
       if (!withName) continue;
       named += 1;
-      if (examples.length < 3) { const t = teamsOf(ev); examples.push({ t, sport: ev?.desc?.sport ?? '?', m: withName }); }
+      if (examples.length < 3) { const t = teamsOf(ev); examples.push({ t, sport: sportName(ev?.desc?.sport) || ev?.desc?.sport || '?', m: withName }); }
     }
-    steps.push({ name: 'Mercados de jogador encontrados', ok: named > 0, detail: `${pmEvents.length} jogos · ${named} com nomes resolvidos (nos ${Math.min(6, pmEvents.length)} buscados)` });
+    steps.push({ name: 'Nomes resolvidos', ok: named > 0, detail: `${named} de ${pmEvents.length} jogos (nos buscados)` });
     for (const ex of examples) {
       const sel = ex.m.outcomes.slice(0, 4).map((o) => `${o.name || `#${o.id}`}${o.odd ? ` @${o.odd}` : ''}`).join(' · ');
-      steps.push({ name: `Exemplo (desporto ${ex.sport}): ${ex.t.home || '?'} - ${ex.t.away || '?'}`, ok: true, detail: `${ex.m.marketName} [${ex.m.marketType}]: ${sel}` });
+      steps.push({ name: `Exemplo (${ex.sport}): ${ex.t.home || '?'} - ${ex.t.away || '?'}`, ok: true, detail: `${ex.m.marketName} [${ex.m.marketType}]: ${sel}` });
     }
     return steps;
   }
