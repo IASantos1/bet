@@ -323,6 +323,11 @@ export const config = {
     // do futebol WinHouse, court do ténis/críquete) ficam só como reserva, quando a BETBY não tem o jogo.
     // BETBY_ALL=0 volta ao modo anterior: a BETBY só preenche os desportos que não têm widget nativo.
     all: env.BETBY_ALL !== '0',
+    // Coletor de mercados no servidor (betby.js): lê os feeds live/prematch da BETBY e o catálogo de
+    // nomes, para oferecermos e liquidarmos nós os mercados de jogador que a WinHouse não tem. Opt-in
+    // (BETBY_COLLECT=1), pois só funciona se a BETBY tiver autorizado o IP do servidor (senão: 503 bc).
+    collect: env.BETBY_COLLECT === '1' && !!unquote(env.BETBY_BRAND_ID),
+    pollMs: Math.max(5000, int(env.BETBY_POLL_MS, 15000)),
   },
   // Telegram channel (telegram.js): the bot (@BotFather) and the channel it posts to, as an
   // administrator. Automatic posts only in Railway's production environment (a PR preview has the

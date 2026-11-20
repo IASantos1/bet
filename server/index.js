@@ -24,6 +24,7 @@ import { createRevolutPay } from './revolutpay.js';
 import { createBrevo } from './brevo.js';
 import { createTeamLogos, NAMED_PACKS } from './teamlogos.js';
 import { createGoalApi } from './goalapi.js';
+import { createBetby } from './betby.js';
 import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026 } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
@@ -230,7 +231,15 @@ const push = createPush(db, { ...config.push, log: (m) => console.warn(`[push] $
 const stopPush = push.start();
 const betby = config.betby.enabled ? config.betby : null;
 if (betby) console.log(`BETBY tracker (minicampo): ligado · marca ${betby.brandId} · ${betby.baseUrl}`);
-const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, boardCacheMs: 2000 });
+// Server-side BETBY market collector (player markets WinHouse does not have): opt-in, polls on a timer.
+const betbyCollector = createBetby(config.betby, { log: (m) => console.warn(`[betby] ${m}`) });
+if (betbyCollector.on) {
+  console.log(`[betby] coletor de mercados ligado · marca ${config.betby.brandId} · a cada ${config.betby.pollMs} ms`);
+  const runPoll = () => betbyCollector.poll().catch((err) => console.warn(`[betby] ${err.message}`));
+  setTimeout(runPoll, 15_000).unref();
+  setInterval(runPoll, config.betby.pollMs).unref();
+}
+const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket, settlement, propline, winhouse, winhouseFeed, winhouseTracker, winhouseLive, rapidStream, sportscore, thesportsLive, stripe, eupago, revolutPay, bigbang, telegram, revolut, brevo, teamLogos, goalApi, backups, sanctions, push, betby, betbyCollector, boardCacheMs: 2000 });
 // Free spins played on the Palace casino that ran out of time: their money there is taken back first.
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.

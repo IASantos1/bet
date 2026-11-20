@@ -194,7 +194,7 @@ const parseJson = (v) => { try { return v ? JSON.parse(v) : null; } catch { retu
 // ---------- app ----------
 
 export function createApp(db, {
-  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, betby = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
+  loginAttempts = 10, registrations = 10, feed = null, tennis = null, sports = {}, tennisLive = null, casino = null, liveSocket = null, propline = null, winhouse = null, winhouseFeed = null, winhouseTracker = null, winhouseLive = null, rapidStream = null, sportscore = null, thesportsLive = null, stripe = null, eupago = null, revolutPay = null, bigbang = null, telegram = null, revolut = null, brevo = null, teamLogos = null, goalApi = null, backups = null, sanctions = null, push = null, betby = null, betbyCollector = null, boardCacheMs = 0, settlement = createSettlementEngine(db),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -2900,6 +2900,12 @@ export function createApp(db, {
   admin.post('/goal-api/refresh', (_req, res) => res.json({ cleared: goalApi?.refresh() || 0 }));
   admin.post('/goal-api/check', async (_req, res, next) => {
     try { res.json({ steps: goalApi ? await goalApi.diagnose() : [{ name: 'GOAL API', ok: false, detail: 'não iniciada' }] }); }
+    catch (err) { next(err); }
+  });
+
+  // BETBY market collector: does the server reach BETBY (or 503 bc), store sizes, raw market/catalog shapes.
+  admin.post('/betby/check', async (_req, res, next) => {
+    try { if (betbyCollector?.on) await betbyCollector.poll().catch(() => {}); res.json({ steps: betbyCollector ? betbyCollector.diagnose() : [{ name: 'Coletor BETBY', ok: false, detail: 'não iniciado' }] }); }
     catch (err) { next(err); }
   });
 

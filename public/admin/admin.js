@@ -1664,6 +1664,9 @@ function adminFeed(f) {
     <p class="muted">H2H, classificação e últimos 5 jogos no separador Estatísticas dos jogos de futebol das ligas grandes e médias (só estatísticas, sem odds). Chave <strong>GOAL_API_KEY</strong> nas Variables do Railway; no máximo <strong>GOAL_API_DAILY</strong> pedidos por dia (900 por omissão; o plano grátis dá 1000). Os jogos ligam-se pelo nome das equipas e pela hora.</p>
     <div class="form-actions"><button class="ghost-btn btn-sm" data-action="ga-check">Verificar GOAL API</button>
       <button class="ghost-btn btn-sm" data-action="ga-refresh">Pedir de novo a lista de jogos</button></div><div id="gaCheck"></div></div>
+  <div class="panel"><h3>Coletor de mercados BETBY</h3>
+    <p class="muted">Lê os mercados de jogador da BETBY no servidor (que a WinHouse não tem) para os oferecermos e liquidarmos nós, com a GOAL API a dizer quem marcou. Opt-in: <strong>BETBY_COLLECT=1</strong> + <strong>BETBY_BRAND_ID</strong> nas Variables. Só funciona se a BETBY tiver autorizado o IP do servidor (senão: HTTP 503 <code>bb-rsn: bc</code>). A verificação mostra se o servidor alcança a BETBY e a forma crua dos mercados e do catálogo de nomes.</p>
+    <div class="form-actions"><button class="ghost-btn btn-sm" data-action="bb-check">Verificar coletor BETBY</button></div><div id="bbCheck"></div></div>
   <div class="panel"><h3>Transmissões RapidAPI (teste) <span class="pill ${f.rapidStream ? 'won' : ''}">${f.rapidStream ? 'Ligado' : 'Desligado'}</span></h3>
     <p class="muted">${f.rapidStream ? 'Segunda fonte de vídeo do futebol ao vivo, em teste ao lado da TV da WinHouse (que não é alterada). Mostra que jogos a API tem agora, que servidores dá e quais dos nossos jogos ao vivo cobre. Só servidores HLS diretos em HTTPS tocam no browser.'
       : 'Defina nas Variables do Railway <strong>RAPIDAPI_KEY</strong> (a chave do RapidAPI), <strong>RAPIDAPI_STREAM_LIST_PATH</strong> (a rota da lista de jogos) e <strong>RAPIDAPI_STREAM_PATH</strong> (a rota de um jogo, com {id}) e faça redeploy. O host por omissão é football-live-stream-api.p.rapidapi.com (RAPIDAPI_STREAM_HOST para outro).'}</p>
@@ -2480,6 +2483,15 @@ document.addEventListener('click', async (e) => {
       if (action === 'ga-refresh') await api('/api/admin/goal-api/refresh', { method: 'POST', body: {} });
       const { steps } = await api('/api/admin/goal-api/check', { method: 'POST', body: {} });
       $('#gaCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
+  if (action === 'bb-check') {
+    actionEl.disabled = true;
+    try {
+      const { steps } = await api('/api/admin/betby/check', { method: 'POST', body: {} });
+      $('#bbCheck').innerHTML = `<div class="table-wrap"><table><tbody>${steps.map((x) => `<tr><td>${x.ok ? '✅' : '❌'} ${esc(x.name)}</td><td>${esc(x.detail || '')}</td></tr>`).join('')}</tbody></table></div>`;
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     return;
