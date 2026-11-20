@@ -288,28 +288,40 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     }
     steps.push({ name: 'Catálogo de nomes', ok: Boolean(catalog?.markets?.size), detail: catalog ? `${catalog.markets.size} mercados com nome` : 'não carregado' });
     if (catalogRaw) steps.push({ name: 'Catálogo cru (forma)', ok: true, detail: catalogRaw });
-    // Probe a REAL football match (has the 1x2 market id "1", two teams — not an outright). The feed only
-    // carries top markets, so fetch the full per-event markets (scorer, cards) and dump id:name[type].
+    // Probe SEVERAL real football matches (1x2 present, two teams — not outrights). The feed carries only
+    // top markets, so fetch each one's full per-event markets and look for scorer / card / player markets.
+    // Small leagues often have none; the big leagues do — so scan up to 8 and report which have them.
     {
       const isFoot = (ev) => /soccer|football|futebol/i.test(sportName(ev?.desc?.sport) || '');
       const isMatch = (ev) => ev.markets && ('1' in ev.markets) && Array.isArray(ev?.desc?.competitors) && ev.desc.competitors.length === 2;
-      const pick = (feed) => [...stores[feed].values()].filter((e) => isFoot(e) && isMatch(e)).sort((a, b) => Object.keys(b.markets).length - Object.keys(a.markets).length)[0];
-      const foot = pick('live') || pick('prematch');
-      if (!foot) {
-        steps.push({ name: 'Jogo de futebol (mercados)', ok: false, detail: 'nenhum jogo de futebol real (com 1x2) no feed agora' });
+      const describe = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return `${mid}:${e?.name || '?'}${e?.market_type ? `[${e.market_type}]` : ''}`; };
+      const looksPlayer = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return isPlayerType(e?.market_type) || /scorer|goal ?scorer|marcador|golo|card|booking|cart[aã]o|player|jogador|assist/i.test(e?.name || '') || /scorer|player|card|booking|goal/i.test(e?.market_type || ''); };
+      const matches = [...stores.live.values(), ...stores.prematch.values()].filter((e) => isFoot(e) && isMatch(e))
+        .sort((a, b) => Object.keys(b.markets).length - Object.keys(a.markets).length).slice(0, 8);
+      if (!matches.length) {
+        steps.push({ name: 'Jogos de futebol (mercados)', ok: false, detail: 'nenhum jogo de futebol real (com 1x2) no feed agora' });
       } else {
-        const feed = stores.live.has(foot.id) ? 'live' : 'prematch';
-        const t = teamsOf(foot);
-        const full = await fetchEventMarkets(feed, foot.id).catch(() => null);
-        steps.push({ name: 'Endpoint de mercados por evento', ok: Boolean(full), detail: full ? `funciona: ${eventTpl}` : `nenhum dos ${EVENT_CANDIDATES.length} candidatos respondeu com mercados` });
-        const all = { ...foot.markets, ...(full || {}) };
-        const mids = Object.keys(all);
-        const describe = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return `${mid}:${e?.name || '?'}${e?.market_type ? `[${e.market_type}]` : ''}`; };
-        const looksPlayer = (mid) => { const e = catalog?.markets?.get(String(mid)) || catalog?.markets?.get(String(Number(mid))); return isPlayerType(e?.market_type) || /scorer|goal ?scorer|marcador|card|booking|cart[aã]o|player|jogador|assist/i.test(e?.name || '') || /scorer|player|card|booking/i.test(e?.market_type || ''); };
-        const players = mids.filter(looksPlayer);
-        steps.push({ name: `Jogo de futebol: ${t.home || '?'} - ${t.away || '?'}`, ok: true, detail: `${Object.keys(foot.markets).length} mercados no feed · ${mids.length} com os completos` });
-        steps.push({ name: 'Mercados de jogador (candidatos)', ok: players.length > 0, detail: players.slice(0, 14).map(describe).join(' · ') || 'nenhum pelo nome/tipo' });
-        steps.push({ name: 'Todos os mercados do jogo', ok: true, detail: mids.slice(0, 30).map(describe).join(' · ').slice(0, 900) });
+        let withPlayers = 0; let maxMarkets = 0; let best = null;
+        for (const ev of matches) {
+          const feed = stores.live.has(ev.id) ? 'live' : 'prematch';
+          const full = await fetchEventMarkets(feed, ev.id).catch(() => null);
+          const mids = Object.keys({ ...ev.markets, ...(full || {}) });
+          maxMarkets = Math.max(maxMarkets, mids.length);
+          const players = mids.filter(looksPlayer);
+          if (players.length) { withPlayers += 1; if (!best) best = { ev, mids, players }; }
+        }
+        steps.push({ name: 'Endpoint de mercados por evento', ok: Boolean(eventTpl), detail: eventTpl ? `funciona: ${eventTpl}` : `nenhum dos ${EVENT_CANDIDATES.length} candidatos respondeu` });
+        steps.push({ name: 'Futebol com mercados de jogador (completos)', ok: withPlayers > 0, detail: `${withPlayers} de ${matches.length} jogos sondados têm · até ${maxMarkets} mercados por jogo` });
+        if (best) {
+          const t = teamsOf(best.ev);
+          steps.push({ name: `Exemplo: ${t.home || '?'} - ${t.away || '?'}`, ok: true, detail: best.players.slice(0, 14).map(describe).join(' · ') });
+          steps.push({ name: 'Todos os mercados desse jogo', ok: true, detail: best.mids.slice(0, 30).map(describe).join(' · ').slice(0, 900) });
+        } else {
+          const ex = matches[0]; const feed = stores.live.has(ex.id) ? 'live' : 'prematch';
+          const full = await fetchEventMarkets(feed, ex.id).catch(() => null);
+          const mids = Object.keys({ ...ex.markets, ...(full || {}) });
+          steps.push({ name: 'Mercados do maior jogo sondado', ok: true, detail: mids.slice(0, 30).map(describe).join(' · ').slice(0, 900) });
+        }
       }
     }
     // Player markets across the live + prematch stores. Player NAMES live in the per-event descriptions
