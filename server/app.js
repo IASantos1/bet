@@ -2905,8 +2905,32 @@ export function createApp(db, {
 
   // BETBY market collector: does the server reach BETBY (or 503 bc), store sizes, raw market/catalog shapes.
   admin.post('/betby/check', async (_req, res, next) => {
-    try { if (betbyCollector?.on) await betbyCollector.poll().catch(() => {}); res.json({ steps: betbyCollector ? await betbyCollector.diagnose() : [{ name: 'Coletor BETBY', ok: false, detail: 'não iniciado' }] }); }
-    catch (err) { next(err); }
+    try {
+      if (betbyCollector?.on) await betbyCollector.poll().catch(() => {});
+      const steps = betbyCollector ? await betbyCollector.diagnose() : [{ name: 'Coletor BETBY', ok: false, detail: 'não iniciado' }];
+      // End-to-end: match our live/upcoming football games to a BETBY event and read its player markets.
+      if (betbyCollector?.on) {
+        const ours = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+          WHERE sport = 'futebol' AND status IN ('live', 'scheduled') AND start_time <= ? ORDER BY status = 'live' DESC, start_time LIMIT 60`)
+          .all(new Date(Date.now() + 2 * 24 * 3600_000).toISOString());
+        let matched = 0; let withMarkets = 0; let example = null;
+        for (const e of ours) {
+          const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time });
+          if (!m) continue;
+          matched += 1;
+          if (withMarkets < 1) {
+            const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
+            if (pm.length) { withMarkets += 1; example = { e, pm }; }
+          }
+        }
+        steps.push({ name: 'Casamento com os nossos jogos (futebol)', ok: matched > 0, detail: `${matched} de ${ours.length} jogos nossos casados com a BETBY` });
+        if (example) {
+          const lines = example.pm.slice(0, 3).map((m) => `${m.marketName} →${m.kind}: ${m.outcomes.filter((o) => o.name).slice(0, 3).map((o) => `${o.name}${o.odd ? ` @${o.odd}` : ''}`).join(', ')}`);
+          steps.push({ name: `Mercados no nosso jogo: ${example.e.home} - ${example.e.away}`, ok: true, detail: lines.join(' · ') });
+        }
+      }
+      res.json({ steps });
+    } catch (err) { next(err); }
   });
 
   admin.get('/campaigns', (_req, res) => {

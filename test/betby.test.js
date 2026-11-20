@@ -87,6 +87,24 @@ test('eventPlayerMarkets maps real BETBY market ids to grader kinds', () => {
   assert.equal(byId['899'], 'hattrick');
 });
 
+test('matchEvent finds our football game in the BETBY store, either orientation', () => {
+  const b = make();
+  // Two BETBY football events in the live store.
+  b.stores.live.set('bb1', { id: 'bb1', desc: { sport: '1', scheduled: Math.floor(Date.now() / 1000), competitors: [{ name: 'SL Benfica' }, { name: 'FC Porto' }] }, markets: {} });
+  b.stores.live.set('bb2', { id: 'bb2', desc: { sport: '1', scheduled: Math.floor(Date.now() / 1000), competitors: [{ name: 'Sporting CP' }, { name: 'SC Braga' }] }, markets: {} });
+  // Our event names differ a little; still matches Benfica/Porto.
+  const m = b.matchEvent({ sport: 'futebol', home: 'Benfica', away: 'Porto', start: new Date().toISOString() });
+  assert.equal(m.event.id, 'bb1');
+  // Swapped orientation (we have them reversed) still matches the same BETBY event.
+  const m2 = b.matchEvent({ sport: 'futebol', home: 'Porto', away: 'Benfica', start: new Date().toISOString() });
+  assert.equal(m2.event.id, 'bb1');
+  assert.equal(m2.swapped, true);
+  // A different sport gate rejects it.
+  assert.equal(b.matchEvent({ sport: 'basquetebol', home: 'Benfica', away: 'Porto' }), null);
+  // Unknown teams: no match.
+  assert.equal(b.matchEvent({ sport: 'futebol', home: 'Real Madrid', away: 'Barcelona' }), null);
+});
+
 test('off when collect is false', () => {
   assert.equal(createBetby({ collect: false, brandId: 'B1' }).on, false);
   assert.equal(createBetby({ collect: true, brandId: '' }).on, false);

@@ -38,7 +38,7 @@ export function scoreTeams(a, b) {
 export function sameTeam(a, b) { return scoreTeams(a, b) >= 0.5; }
 
 // Our sport slug → BETBY/Betradar sport id (for the tracker's sportId and the soft sport gate).
-const SPORT_ID = { futebol: '1', basquetebol: '2', tenis: '5', hoquei: '4', andebol: '6', voleibol: '23', basebol: '3', criquete: '21', futamericano: '16', raguebi: '12', dardos: '22', tenismesa: '20', badminton: '31', futsal: '29', boxe: '10', mma: '117' };
+export const SPORT_ID = { futebol: '1', basquetebol: '2', tenis: '5', hoquei: '4', andebol: '6', voleibol: '23', basebol: '3', criquete: '21', futamericano: '16', raguebi: '12', dardos: '22', tenismesa: '20', badminton: '31', futsal: '29', boxe: '10', mma: '117' };
 const SPORT_BY_ID = Object.fromEntries(Object.entries(SPORT_ID).map(([slug, id]) => [id, slug]));
 
 const TRACKER_PROVIDERS = new Set(['statscore', 'oddin', 'betgenius']);

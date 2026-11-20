@@ -11,6 +11,12 @@
 //   delta = { state, score, markets: { marketId: { variant: { outcomeId: { k: odd, b: 1=blocked } } } } }
 // Team / competition names are NOT in the feed; the descriptions catalog carries market and player names.
 
+import { scoreTeams, SPORT_ID } from './betby-engine.js';
+
+const SPORT_BY_ID = Object.fromEntries(Object.entries(SPORT_ID).map(([slug, id]) => [id, slug]));
+const PAIR_MIN = 0.5;  // each side must score at least this in the chosen orientation
+const PAIR_GOOD = 0.6; // the pair's average score to accept the match (same thresholds as the mini-field)
+
 const digestField = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 // Market types (catalog field market_type) that are player markets — the ones WinHouse does not have
@@ -281,6 +287,37 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
     return eventPlayerMarkets(ev, full || ev.markets).filter((m) => m.kind);
   }
 
+  /**
+   * The BETBY event that is our game, or null. Same evaluation as the mini-field engine: both team names
+   * scored in either orientation (the stronger orientation wins), a soft sport gate, and kick-off within
+   * 12 h. `our` = { sport, home, away, start }. Returns { event, feed, score, swapped } for the best match.
+   */
+  function matchEvent(our) {
+    if (!on || !our?.home || !our?.away) return null;
+    const ourStart = our.start ? Date.parse(our.start) : NaN;
+    let best = null;
+    for (const feed of ['live', 'prematch']) {
+      for (const be of stores[feed].values()) {
+        const beSport = be?.desc?.sport != null ? SPORT_BY_ID[String(be.desc.sport)] : undefined;
+        if (beSport && our.sport && beSport !== our.sport) continue; // soft sport gate
+        const t = teamsOf(be);
+        if (!t.home || !t.away) continue;
+        const sh = scoreTeams(our.home, t.home), sa = scoreTeams(our.away, t.away);
+        const xh = scoreTeams(our.home, t.away), xa = scoreTeams(our.away, t.home);
+        const straightMin = Math.min(sh, sa), swapMin = Math.min(xh, xa);
+        const swapped = swapMin > straightMin;
+        const minSide = swapped ? swapMin : straightMin;
+        const avg = swapped ? (xh + xa) / 2 : (sh + sa) / 2;
+        if (minSide < PAIR_MIN || avg < PAIR_GOOD) continue;
+        const bbStart = be?.desc?.scheduled ? be.desc.scheduled * 1000 : NaN;
+        const gap = Number.isFinite(ourStart) && Number.isFinite(bbStart) ? Math.abs(ourStart - bbStart) : 0;
+        if (gap > 12 * 3600_000) continue; // same teams, different fixture
+        if (!best || avg > best.score + 1e-6 || (Math.abs(avg - best.score) <= 1e-6 && gap < best.gap)) best = { event: be, feed, score: avg, swapped, gap };
+      }
+    }
+    return best;
+  }
+
   async function poll() {
     if (!on || running) return;
     running = true;
@@ -389,5 +426,5 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
 
   const status = () => ({ on, lastRunAt, lastOkAt, lastError, live: stores.live.size, prematch: stores.prematch.size, markets: catalog?.markets?.size || 0 });
 
-  return { on, poll, diagnose, status, stores, eventPlayerMarkets, footballPlayerMarkets, teamsOf, fetchEventDescriptions, fetchEventMarkets, _internal: { applyDeltas, versionsOf, fillTemplate, isPlayerType, catalogOutcomes, setCatalog: (c) => { catalog = c; }, setEventDesc: (id, markets) => eventDescs.set(id, { at: Date.now(), markets }) } };
+  return { on, poll, diagnose, status, stores, eventPlayerMarkets, footballPlayerMarkets, matchEvent, teamsOf, fetchEventDescriptions, fetchEventMarkets, _internal: { applyDeltas, versionsOf, fillTemplate, isPlayerType, catalogOutcomes, setCatalog: (c) => { catalog = c; }, setEventDesc: (id, markets) => eventDescs.set(id, { at: Date.now(), markets }) } };
 }
