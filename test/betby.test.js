@@ -105,6 +105,17 @@ test('matchEvent finds our football game in the BETBY store, either orientation'
   assert.equal(b.matchEvent({ sport: 'futebol', home: 'Real Madrid', away: 'Barcelona' }), null);
 });
 
+test('matchEvent uses GOAL API alt names as a second key', () => {
+  const b = make();
+  // BETBY names the game like the GOAL API fixture (full names), not like WinHouse (nicknames).
+  b.stores.live.set('bb1', { id: 'bb1', desc: { sport: '1', scheduled: Math.floor(Date.now() / 1000), competitors: [{ name: 'Tottenham Hotspur' }, { name: 'Wolverhampton' }] }, markets: {} });
+  // WinHouse nicknames: no match on their own.
+  assert.equal(b.matchEvent({ sport: 'futebol', home: 'Spurs', away: 'Wolves', start: new Date().toISOString() }), null);
+  // With the GOAL API names as alternatives, it matches.
+  const m = b.matchEvent({ sport: 'futebol', home: 'Spurs', away: 'Wolves', start: new Date().toISOString(), altNames: [{ home: 'Tottenham Hotspur', away: 'Wolverhampton' }] });
+  assert.equal(m?.event.id, 'bb1');
+});
+
 test('off when collect is false', () => {
   assert.equal(createBetby({ collect: false, brandId: 'B1' }).on, false);
   assert.equal(createBetby({ collect: true, brandId: '' }).on, false);

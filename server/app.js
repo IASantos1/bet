@@ -1847,7 +1847,9 @@ export function createApp(db, {
         if (!ev) throw new HttpError(404, 'Jogo não encontrado.');
         let odds = Number(s.odds); let side = b.side || null; let betbyEventId = null; let marketName = b.marketName || null;
         if (betbyCollector?.on) {
-          const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
+          const gf = await goalApi?.link?.(ev).catch(() => null);
+          const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
+          const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time, altNames });
           if (!m) throw new HttpError(409, 'Jogo sem correspondência na BETBY.');
           const live = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
           const market = live.find((x) => String(x.marketId) === String(b.marketId) && x.kind === b.kind);
@@ -1903,7 +1905,10 @@ export function createApp(db, {
     if (!betbyCollector?.on) return res.json({ markets: [] });
     const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ? AND sport = 'futebol'").get(Number(req.params.id));
     if (!ev || (ev.status !== 'scheduled' && ev.status !== 'live')) return res.json({ markets: [] });
-    const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time });
+    // The GOAL API fixture of our game (its team names align with WinHouse) is a second match key for BETBY.
+    const gf = await goalApi?.link?.(ev).catch(() => null);
+    const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
+    const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time, altNames });
     if (!m) return res.json({ markets: [] });
     const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
     // Which players are on each team, so the UI can put team A on the left and team B on the right.
@@ -3019,9 +3024,10 @@ export function createApp(db, {
         const ours = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
           WHERE sport = 'futebol' AND status IN ('live', 'scheduled') AND start_time <= ? ORDER BY status = 'live' DESC, start_time LIMIT 60`)
           .all(new Date(Date.now() + 2 * 24 * 3600_000).toISOString());
+        const altOf = async (e) => { const gf = await goalApi?.link?.(e).catch(() => null); return gf ? [{ home: gf.home?.name, away: gf.away?.name }] : []; };
         let matched = 0; let withMarkets = 0; let example = null;
         for (const e of ours) {
-          const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time });
+          const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time, altNames: await altOf(e) });
           if (!m) continue;
           matched += 1;
           if (withMarkets < 1) {
@@ -3040,7 +3046,7 @@ export function createApp(db, {
           const liveOurs = ours.filter((e) => e.status === 'live' || true); // scheduled too (grades as pending)
           let graded = null;
           for (const e of liveOurs) {
-            const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time });
+            const m = betbyCollector.matchEvent({ sport: e.sport, home: e.home, away: e.away, start: e.start_time, altNames: await altOf(e) });
             if (!m) continue;
             const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
             const scorer = pm.find((x) => x.kind === 'anytime_scorer');

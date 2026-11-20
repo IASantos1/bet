@@ -294,6 +294,11 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
    */
   function matchEvent(our) {
     if (!on || !our?.home || !our?.away) return null;
+    // The team names to match the BETBY event against: our WinHouse names, plus any alternatives (the GOAL
+    // API names of the same game). WinHouse and BETBY name teams differently; the GOAL API names align with
+    // WinHouse and are a second key, so a game BETBY names its own way still links through GOAL.
+    const pairs = [{ home: our.home, away: our.away }, ...(Array.isArray(our.altNames) ? our.altNames : [])]
+      .filter((p) => p && p.home && p.away);
     const ourStart = our.start ? Date.parse(our.start) : NaN;
     let best = null;
     for (const feed of ['live', 'prematch']) {
@@ -302,17 +307,20 @@ export function createBetby(cfg = {}, { fetchImpl = globalThis.fetch, log = () =
         if (beSport && our.sport && beSport !== our.sport) continue; // soft sport gate
         const t = teamsOf(be);
         if (!t.home || !t.away) continue;
-        const sh = scoreTeams(our.home, t.home), sa = scoreTeams(our.away, t.away);
-        const xh = scoreTeams(our.home, t.away), xa = scoreTeams(our.away, t.home);
-        const straightMin = Math.min(sh, sa), swapMin = Math.min(xh, xa);
-        const swapped = swapMin > straightMin;
-        const minSide = swapped ? swapMin : straightMin;
-        const avg = swapped ? (xh + xa) / 2 : (sh + sa) / 2;
-        if (minSide < PAIR_MIN || avg < PAIR_GOOD) continue;
         const bbStart = be?.desc?.scheduled ? be.desc.scheduled * 1000 : NaN;
         const gap = Number.isFinite(ourStart) && Number.isFinite(bbStart) ? Math.abs(ourStart - bbStart) : 0;
         if (gap > 12 * 3600_000) continue; // same teams, different fixture
-        if (!best || avg > best.score + 1e-6 || (Math.abs(avg - best.score) <= 1e-6 && gap < best.gap)) best = { event: be, feed, score: avg, swapped, gap };
+        // Best score across every name pair (our names and the GOAL API names), either orientation.
+        for (const p of pairs) {
+          const sh = scoreTeams(p.home, t.home), sa = scoreTeams(p.away, t.away);
+          const xh = scoreTeams(p.home, t.away), xa = scoreTeams(p.away, t.home);
+          const straightMin = Math.min(sh, sa), swapMin = Math.min(xh, xa);
+          const swapped = swapMin > straightMin;
+          const minSide = swapped ? swapMin : straightMin;
+          const avg = swapped ? (xh + xa) / 2 : (sh + sa) / 2;
+          if (minSide < PAIR_MIN || avg < PAIR_GOOD) continue;
+          if (!best || avg > best.score + 1e-6 || (Math.abs(avg - best.score) <= 1e-6 && gap < best.gap)) best = { event: be, feed, score: avg, swapped, gap };
+        }
       }
     }
     return best;
