@@ -3076,6 +3076,13 @@ export function createApp(db, {
           } else {
             steps.push({ name: 'Liquidação-sombra (GOAL API)', ok: false, detail: 'nenhum jogo ao vivo casado com mercado de marcador agora' });
           }
+          // Lineups raw shape for that same live game, so the starters/bench parser can be matched to reality.
+          if (graded?.e && goalApi.lineups) {
+            const lu = await goalApi.lineups(graded.e).catch(() => null);
+            steps.push({ name: `Formações: ${graded.e.home} - ${graded.e.away}`, ok: Boolean(lu && (lu.home.starters.length || lu.away.starters.length)),
+              detail: lu ? `titulares ${lu.home.starters.length}/${lu.away.starters.length} · suplentes ${lu.home.bench.length}/${lu.away.bench.length}` : 'sem resposta de /fixtures/{id}/lineups' });
+            if (lu) steps.push({ name: 'Formações cruas (forma real)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 900) });
+          }
         }
       }
       res.json({ steps });
