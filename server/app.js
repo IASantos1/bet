@@ -1185,12 +1185,17 @@ export function createApp(db, {
       // Football from big and medium leagues: GOAL API (head-to-head, table, last five games, lineups and
       // the players' match stats — goals / assists / cards so far).
       if (goalApi?.covers(ev)) {
+        // Fetch sparingly (the GOAL API has a daily request budget): lineups only near kick-off / in play
+        // (they do not exist earlier), the players' goals only once the game is live or finished.
+        const started = ev.status === 'live' || ev.status === 'finished';
+        const nearKO = ev.start_time && (Date.parse(ev.start_time) - Date.now() < 75 * 60_000);
         const [base, lu, report] = await Promise.all([
-          goalApi.insights(ev),
-          goalApi.lineups(ev).catch(() => null),
-          goalApi.matchReport(ev).catch(() => null),
+          goalApi.insights(ev).catch(() => ({})),
+          (started || nearKO) ? goalApi.lineups(ev).catch(() => null) : Promise.resolve(null),
+          started ? goalApi.matchReport(ev).catch(() => null) : Promise.resolve(null),
         ]);
-        return res.json({ ...base, lineups: lu ? { home: lu.home, away: lu.away } : null, players: report?.players?.length ? report.players : null });
+        return res.json({ h2h: null, standings: null, form: null, venue: null, ...base,
+          lineups: lu ? { home: lu.home, away: lu.away } : null, players: report?.players?.length ? report.players : null });
       }
       const provider = providerFor(ev);
       if (!provider) return res.json({ h2h: null, prediction: null, standings: null, rankings: null });
@@ -1920,7 +1925,9 @@ export function createApp(db, {
     if (!m) return res.json({ markets: [] });
     const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
     // Which players are on each team, so the UI can put team A on the left and team B on the right.
-    const lu = await goalApi?.lineups?.(ev).catch(() => null);
+    // Lineups only exist near kick-off / in play, so skip the request (GOAL API budget) when far out.
+    const nearKO = ev.status === 'live' || (ev.start_time && Date.parse(ev.start_time) - Date.now() < 75 * 60_000);
+    const lu = nearKO ? await goalApi?.lineups?.(ev).catch(() => null) : null;
     const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
     const surname = (s) => { const t = slug(s).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
     const homeSet = new Set((lu?.names?.home || []).map(slug));
