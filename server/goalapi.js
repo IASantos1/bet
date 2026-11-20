@@ -330,6 +330,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   // Every page (100 a page). When the answer does not say whether there is more, a full page means
   // there may be; a page that repeats the previous one (offset ignored) ends it.
   let lastPaging = null;
+  let lastBadgeSync = null; // { at, evs, linked } from the periodic syncBadges run
   async function fetchAll(path) {
     const out = [];
     let prevFirst = null;
@@ -421,6 +422,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       try { const fx = await link(ev); if (fx && (fx.home?.logo || fx.away?.logo)) linked += 1; }
       catch (err) { if (err.budget) break; }
     }
+    lastBadgeSync = { at: new Date().toISOString(), evs: evs.length, linked };
     return { linked };
   }
 
@@ -459,6 +461,17 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const steps = [{ name: 'Chave GOAL_API_KEY', ok: enabled, detail: enabled ? 'definida' : 'em falta nas Variables do Railway' }];
     if (!enabled) return steps;
     steps.push({ name: 'Pedidos hoje', ok: used() < daily, detail: `${used()} de ${daily}` });
+    // Emblemas de futebol: quantos jogos ao vivo / a começar têm emblema pronto (via badge()), e o último sync.
+    {
+      const until = new Date(Date.now() + 2 * 24 * HOUR).toISOString();
+      const fb = db.prepare(`SELECT id, sport, competition, home, away FROM events
+        WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time < ?)) LIMIT 500`).all(until);
+      const withBadge = fb.filter((e) => badge(e)).length;
+      steps.push({ name: 'Emblemas de futebol (GOAL API)', ok: withBadge > 0,
+        detail: `${withBadge} de ${fb.length} jogos com emblema · último sync: ${lastBadgeSync
+          ? `${lastBadgeSync.at.slice(11, 19)} UTC (${lastBadgeSync.linked}/${lastBadgeSync.evs} ligados)`
+          : 'ainda não correu'}` });
+    }
     try {
       const list = await fixturesOn(day(Date.now()));
       steps.push({ name: 'Jogos de hoje na GOAL API', ok: list.length > 0, detail: `${list.length} jogos` });
