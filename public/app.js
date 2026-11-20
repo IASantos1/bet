@@ -4227,7 +4227,7 @@ document.addEventListener('click', async (e) => {
   const expand = e.target.closest('[data-expand]');
   if (expand) { toggleExpand(expand.closest('.trk, .stream-box')); return; }
   const marketCatBtn = e.target.closest('[data-market-cat]');
-  if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); return; }
+  if (marketCatBtn) { state.match.cat = marketCatBtn.dataset.marketCat; render({ keepScroll: true }); centerActiveCat(); return; }
   const statTabBtn = e.target.closest('[data-stat-tab]');
   if (statTabBtn) { state.match.statTab = statTabBtn.dataset.statTab; render({ keepScroll: true }); return; }
   const momHalfBtn = e.target.closest('[data-mom-half]');
@@ -6506,10 +6506,16 @@ function afterMatchRender() {
   // Bar widths are data, set through the CSSOM (the CSP forbids inline styles).
   if (state.match.data?.sport === 'tenis') updateServe(state.match.data);
   $$('#content [data-w]').forEach((el) => { el.style.width = `${Math.max(0, Math.min(100, Number(el.dataset.w) || 0))}%`; });
-  // The chosen market menu entry stays in view (the row scrolls sideways on phones).
+  // NOTE: the market category bar is NOT auto-scrolled here. Doing it on every refresh (every few seconds)
+  // dragged the bar back to the active chip ("Todos") and the player could never reach the ones further
+  // right. The bar is centred on the active chip only when the player taps one (centerActiveCat).
+  mountLiveWidget();
+}
+
+// Bring the active market-category chip into view — called only on a tap, never on a refresh.
+function centerActiveCat() {
   const cat = $('.market-cats .active');
   if (cat) cat.parentElement.scrollLeft = cat.offsetLeft - (cat.parentElement.clientWidth - cat.offsetWidth) / 2;
-  mountLiveWidget();
 }
 
 function updateTracker({ instant = false } = {}) {
