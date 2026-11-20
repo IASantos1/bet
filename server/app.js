@@ -1182,8 +1182,16 @@ export function createApp(db, {
     try {
       const ev = eventRow(req.params.id);
       if (!ev) throw new HttpError(404, 'Evento não encontrado.');
-      // Football from big and medium leagues: GOAL API (head-to-head, table, last five games).
-      if (goalApi?.covers(ev)) return res.json(await goalApi.insights(ev));
+      // Football from big and medium leagues: GOAL API (head-to-head, table, last five games, lineups and
+      // the players' match stats — goals / assists / cards so far).
+      if (goalApi?.covers(ev)) {
+        const [base, lu, report] = await Promise.all([
+          goalApi.insights(ev),
+          goalApi.lineups(ev).catch(() => null),
+          goalApi.matchReport(ev).catch(() => null),
+        ]);
+        return res.json({ ...base, lineups: lu ? { home: lu.home, away: lu.away } : null, players: report?.players?.length ? report.players : null });
+      }
       const provider = providerFor(ev);
       if (!provider) return res.json({ h2h: null, prediction: null, standings: null, rankings: null });
       res.json(await provider.matchInsights(ev));
@@ -1915,10 +1923,10 @@ export function createApp(db, {
     const lu = await goalApi?.lineups?.(ev).catch(() => null);
     const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
     const surname = (s) => { const t = slug(s).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
-    const homeSet = new Set((lu?.home || []).map(slug));
-    const awaySet = new Set((lu?.away || []).map(slug));
-    const homeSur = new Set((lu?.home || []).map(surname));
-    const awaySur = new Set((lu?.away || []).map(surname));
+    const homeSet = new Set((lu?.names?.home || []).map(slug));
+    const awaySet = new Set((lu?.names?.away || []).map(slug));
+    const homeSur = new Set((lu?.names?.home || []).map(surname));
+    const awaySur = new Set((lu?.names?.away || []).map(surname));
     const sideOf = (name) => {
       const s = slug(name); const sur = surname(name);
       if (homeSet.has(s) || homeSur.has(sur)) { if (!(awaySet.has(s) || awaySur.has(sur))) return 'home'; }
@@ -1930,7 +1938,7 @@ export function createApp(db, {
       outcomes: mk.outcomes.filter((o) => o.name && o.odd > 1 && !o.blocked).map((o) => ({ player: o.name, odds: o.odd, side: sideOf(o.name) })),
     })).filter((mk) => mk.outcomes.length);
     // Sides are GOAL-API-relative (= our event's home/away), the same basis settlement uses.
-    res.json({ markets, betbyEventId: m.event.id, teams: { home: ev.home, away: ev.away }, haveLineups: Boolean(lu && (lu.home.length || lu.away.length)) });
+    res.json({ markets, betbyEventId: m.event.id, teams: { home: ev.home, away: ev.away }, haveLineups: Boolean(lu && (lu.names.home.length || lu.names.away.length)) });
   }));
 
   // Place a BETBY player bet (we settle it ourselves from GOAL API). Single selection, own wallet.

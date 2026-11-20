@@ -5852,14 +5852,19 @@ function matchStatsView(e) {
   const ins = m.insights || {};
   const tabs = [];
   if (e.status !== 'scheduled') tabs.push(['aovivo', e.status === 'live' ? 'Ao vivo' : 'Jogo']);
+  const hasLineups = (ins.lineups?.home?.starters?.length || ins.lineups?.away?.starters?.length);
+  const hasPlayers = Array.isArray(ins.players) && ins.players.some((p) => p.goals || p.assists || p.yellow || p.red);
+  if (hasLineups) tabs.push(['equipas', 'Titulares']);
+  if (hasPlayers) tabs.push(['jogadores', 'Jogadores']);
   if (ins.h2h || ins.form?.home || ins.form?.away || ins.venue) tabs.push(['h2h', 'H2H']);
   if (ins.standings?.rows?.length) tabs.push(['classificacao', 'Classificação']);
   if (!tabs.length) {
     return ins.loading ? '<div class="loading">A carregar estatísticas…</div>' : '<div class="panel empty">As estatísticas aparecem quando o jogo começar.</div>';
   }
   if (!tabs.some(([k]) => k === m.statTab)) m.statTab = tabs[0][0];
-  const menu = tabs.length > 1 ? `<div class="market-cats stat-tabs">${tabs.map(([k, l]) => `<button class="${m.statTab === k ? 'active' : ''}" data-stat-tab="${k}">${l}</button>`).join('')}</div>` : '';
-  const body = m.statTab === 'h2h' ? h2hView(e, ins) : m.statTab === 'classificacao' ? standingsView(e, ins.standings) : liveStatsView(e);
+  const menu = tabs.length > 1 ? `<div class="market-cats stat-tabs" data-hscroll="stat-tabs">${tabs.map(([k, l]) => `<button class="${m.statTab === k ? 'active' : ''}" data-stat-tab="${k}">${l}</button>`).join('')}</div>` : '';
+  const body = m.statTab === 'h2h' ? h2hView(e, ins) : m.statTab === 'classificacao' ? standingsView(e, ins.standings)
+    : m.statTab === 'equipas' ? lineupsView(e, ins.lineups) : m.statTab === 'jogadores' ? playerStatsView(e, ins.players) : liveStatsView(e);
   return menu + body;
 }
 
@@ -5900,6 +5905,30 @@ function venueView(e, v) {
     </div>`;
   };
   return `<div class="panel"><h3>Em casa e fora</h3><div class="venue-grid">${side(v.home, tname(e, 'home'), 'em casa')}${side(v.away, tname(e, 'away'), 'fora')}</div></div>`;
+}
+
+/** Starting XI and bench of each team (GOAL API lineups). */
+function lineupsView(e, lu) {
+  if (!lu) return '<div class="panel empty">Sem formações para este jogo.</div>';
+  const row = (p) => `<div class="lu-row"><span class="lu-num">${p.number != null && p.number !== '' ? esc(String(p.number)) : ''}</span><span class="lu-name">${esc(p.name)}</span>${p.position ? `<span class="lu-pos">${esc(String(p.position))}</span>` : ''}</div>`;
+  const col = (side, name) => {
+    const t = lu[side] || {};
+    return `<div class="lu-col"><h4>${esc(name)}</h4>
+      ${t.starters?.length ? `<div class="lu-sec">Titulares</div>${t.starters.map(row).join('')}` : '<p class="muted">Sem titulares.</p>'}
+      ${t.bench?.length ? `<div class="lu-sec">Suplentes</div>${t.bench.map(row).join('')}` : ''}</div>`;
+  };
+  return `<div class="panel"><h3>Formações</h3><div class="lu-grid">${col('home', tname(e, 'home'))}${col('away', tname(e, 'away'))}</div></div>`;
+}
+
+/** Player match stats (goals, assists, cards) from the GOAL API report. */
+function playerStatsView(e, players) {
+  if (!Array.isArray(players) || !players.length) return '<div class="panel empty">Sem estatísticas de jogadores.</div>';
+  const active = players.filter((p) => p.goals || p.assists || p.yellow || p.red)
+    .sort((a, b) => (b.goals * 3 + b.assists * 2 + b.yellow + b.red) - (a.goals * 3 + a.assists * 2 + a.yellow + a.red));
+  const side = (s) => s === 'home' ? tname(e, 'home') : s === 'away' ? tname(e, 'away') : '';
+  const row = (p) => `<div class="ps-row"><span class="ps-name">${esc(p.name)}${p.team ? `<small> · ${esc(side(p.team))}</small>` : ''}</span>
+    <span class="ps-marks">${p.goals ? `<b class="ps-g" title="Golos">⚽ ${p.goals}</b>` : ''}${p.assists ? `<b class="ps-a" title="Assistências">🅰 ${p.assists}</b>` : ''}${p.yellow ? `<b class="ps-y" title="Amarelos">🟨 ${p.yellow}</b>` : ''}${p.red ? `<b class="ps-r" title="Vermelhos">🟥 ${p.red}</b>` : ''}</span></div>`;
+  return `<div class="panel"><h3>Jogadores</h3>${active.map(row).join('')}</div>`;
 }
 
 function standingsView(e, t) {

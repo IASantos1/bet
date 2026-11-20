@@ -580,21 +580,30 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     if (!fx) return null;
     const raw = await lineupsRaw(fx.id).catch(() => null);
     if (!raw) return null;
-    const names = (side) => {
-      // home / away block, under many possible keys; then its players list; then each player's name.
-      const block = raw[`${side}`] ?? raw[`${side}Team`] ?? raw[`${side}_team`] ?? raw[`team_${side}`]
-        ?? (Array.isArray(raw.teams) ? raw.teams.find((t) => String(t?.side || t?.type).toLowerCase() === side
-          || String(t?.id) === String(side === 'home' ? fx.home?.id : fx.away?.id)) : null) ?? null;
+    const player = (p) => (typeof p === 'string' ? { name: p } : {
+      name: p?.name || p?.player?.name || p?.playerName || p?.player_name || null,
+      number: p?.number ?? p?.shirt ?? p?.shirtNumber ?? p?.shirt_number ?? p?.jersey ?? null,
+      position: p?.position || p?.pos || p?.role || p?.player?.position || null,
+    });
+    const side = (s) => {
+      const block = raw[`${s}`] ?? raw[`${s}Team`] ?? raw[`${s}_team`] ?? raw[`team_${s}`]
+        ?? (Array.isArray(raw.teams) ? raw.teams.find((t) => String(t?.side || t?.type).toLowerCase() === s
+          || String(t?.id) === String(s === 'home' ? fx.home?.id : fx.away?.id)) : null) ?? null;
       const src = block || raw;
-      const arr = ['players', 'lineup', 'startingXI', 'starting_xi', 'formation', 'squad', `${side}Players`, `${side}_players`]
-        .map((k) => src?.[k]).find(Array.isArray) || [];
-      const bench = ['substitutes', 'subs', 'bench', `${side}Substitutes`].map((k) => src?.[k]).find(Array.isArray) || [];
-      return [...arr, ...bench].map((p) => (typeof p === 'string' ? p : p?.name || p?.player?.name || p?.playerName || p?.player_name)).filter(Boolean);
+      // Starters and bench under their many spellings.
+      const starters = (['startingXI', 'starting_xi', 'lineup', 'players', 'formation', `${s}Lineup`, `${s}StartingXI`, `${s}Players`, `${s}_players`]
+        .map((k) => src?.[k]).find(Array.isArray) || []).map(player).filter((p) => p.name);
+      const bench = (['substitutes', 'subs', 'bench', 'substitutions', `${s}Substitutes`, `${s}Bench`, `${s}_substitutes`]
+        .map((k) => src?.[k]).find(Array.isArray) || []).map(player).filter((p) => p.name);
+      return { starters, bench };
     };
-    const home = names('home');
-    const away = names('away');
-    if (!home.length && !away.length) return { home: [], away: [], homeId: fx.home?.id || null, awayId: fx.away?.id || null, raw };
-    return { home, away, homeId: fx.home?.id || null, awayId: fx.away?.id || null, raw };
+    const home = side('home');
+    const away = side('away');
+    const flat = (t) => [...t.starters, ...t.bench].map((p) => p.name);
+    return {
+      homeId: fx.home?.id || null, awayId: fx.away?.id || null,
+      home, away, names: { home: flat(home), away: flat(away) }, raw,
+    };
   }
 
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
@@ -693,6 +702,13 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       if (!r.form) steps.push({ name: 'Resposta de /teams/{id}/results', ok: false, detail: shape(raw).slice(0, 600) });
       steps.push({ name: `Exemplo: ${sample.home} - ${sample.away}`, ok: Boolean(r.h2h || r.standings || r.form),
         detail: `H2H: ${r.h2h ? `${r.h2h.total} jogos` : 'sem dados'} · Classificação: ${r.standings ? `${r.standings.rows.length} equipas` : 'sem dados'} · Últimos 5: ${r.form ? 'sim' : 'sem dados'}` });
+      // Lineups: parsed starters/bench count, and the raw shape so the parser can be matched to reality.
+      const lu = await lineups(sample).catch(() => null);
+      steps.push({ name: 'Formações (titulares/suplentes)', ok: Boolean(lu && (lu.home.starters.length || lu.away.starters.length)),
+        detail: lu ? `${sample.home}: ${lu.home.starters.length} tit / ${lu.home.bench.length} supl · ${sample.away}: ${lu.away.starters.length} tit / ${lu.away.bench.length} supl` : 'sem resposta' });
+      if (lu && !lu.home.starters.length && !lu.away.starters.length) {
+        steps.push({ name: 'Formações cruas (forma)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 600) });
+      }
     }
     // Player markets: a live or just-finished football game, the per-player goals/cards GOAL API gives.
     const recent = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events

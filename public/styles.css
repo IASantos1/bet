@@ -2595,3 +2595,17 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .bp-out b { color: var(--odd-price); font-weight: 900; }
 .bp-out.on, .bp-out.on:hover { background: var(--odd-selected); color: var(--odd-selected-price); }
 .bp-out.on b { color: var(--odd-selected-price); }
+
+/* Lineups (titulares/reservas) and player match stats in the stats tab */
+.lu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lu-col h4 { margin: 0 0 6px; font-size: 13px; }
+.lu-sec { font-size: 11px; font-weight: 800; color: var(--text-3); text-transform: uppercase; letter-spacing: .03em; margin: 8px 0 4px; }
+.lu-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.lu-num { min-width: 20px; text-align: center; color: var(--text-3); font-weight: 800; font-size: 11px; }
+.lu-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lu-pos { color: var(--text-3); font-size: 11px; }
+.ps-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.ps-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-name small { color: var(--text-3); }
+.ps-marks { display: flex; gap: 10px; white-space: nowrap; }
+.ps-marks b { font-weight: 800; }
