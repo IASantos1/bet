@@ -702,12 +702,20 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
       if (!r.form) steps.push({ name: 'Resposta de /teams/{id}/results', ok: false, detail: shape(raw).slice(0, 600) });
       steps.push({ name: `Exemplo: ${sample.home} - ${sample.away}`, ok: Boolean(r.h2h || r.standings || r.form),
         detail: `H2H: ${r.h2h ? `${r.h2h.total} jogos` : 'sem dados'} · Classificação: ${r.standings ? `${r.standings.rows.length} equipas` : 'sem dados'} · Últimos 5: ${r.form ? 'sim' : 'sem dados'}` });
-      // Lineups: parsed starters/bench count, and the raw shape so the parser can be matched to reality.
-      const lu = await lineups(sample).catch(() => null);
-      steps.push({ name: 'Formações (titulares/suplentes)', ok: Boolean(lu && (lu.home.starters.length || lu.away.starters.length)),
-        detail: lu ? `${sample.home}: ${lu.home.starters.length} tit / ${lu.home.bench.length} supl · ${sample.away}: ${lu.away.starters.length} tit / ${lu.away.bench.length} supl` : 'sem resposta' });
-      if (lu && !lu.home.starters.length && !lu.away.starters.length) {
-        steps.push({ name: 'Formações cruas (forma)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 600) });
+    }
+    // Lineups: prefer a LIVE football game (starters are confirmed then). Always dump the raw shape so the
+    // parser can be matched to the real GOAL API /lineups format.
+    {
+      const liveFoot = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+        WHERE sport = 'futebol' AND status = 'live' ORDER BY start_time DESC LIMIT 40`).all().filter(covers);
+      const luEv = liveFoot[0] || sample;
+      if (luEv) {
+        const lu = await lineups(luEv).catch(() => null);
+        steps.push({ name: `Formações: ${luEv.home} - ${luEv.away}`, ok: Boolean(lu && (lu.home.starters.length || lu.away.starters.length)),
+          detail: lu ? `titulares ${lu.home.starters.length}/${lu.away.starters.length} · suplentes ${lu.home.bench.length}/${lu.away.bench.length}` : 'sem resposta do endpoint /fixtures/{id}/lineups' });
+        if (lu) steps.push({ name: 'Formações cruas (forma real)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 800) });
+      } else {
+        steps.push({ name: 'Formações', ok: false, detail: 'nenhum jogo de futebol ligado para testar' });
       }
     }
     // Player markets: a live or just-finished football game, the per-player goals/cards GOAL API gives.
