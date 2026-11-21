@@ -263,6 +263,11 @@ if (betbyCollector?.on) {
   app.locals.computeFeaturedScorers().catch((err) => console.warn(`[destaque-marcadores] ${err.message}`));
   setInterval(() => app.locals.computeFeaturedScorers().catch((err) => console.warn(`[destaque-marcadores] ${err.message}`)), 5 * 60_000).unref();
 }
+// Fill the scorer cards' photos from live / soon games' lineups (where the lineup is already published).
+if (goalApi.enabled) {
+  app.locals.harvestPlayerPhotos().catch((err) => console.warn(`[destaque-fotos] ${err.message}`));
+  setInterval(() => app.locals.harvestPlayerPhotos().catch((err) => console.warn(`[destaque-fotos] ${err.message}`)), 3 * 60_000).unref();
+}
 // BigBang (seamless wallet): a round the game took a bet on but crashed before closing — put the stake back.
 if (bigbang.enabled) setInterval(() => { try { bigbang.refundStuckRounds(); } catch (err) { console.warn(`[bigbang] rondas falhadas: ${err.message}`); } }, 5 * 60_000).unref();
 const server = app.listen(config.port, () => {

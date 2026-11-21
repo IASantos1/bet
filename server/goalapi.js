@@ -767,6 +767,12 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
         const lu = await lineups(luEv).catch(() => null);
         steps.push({ name: `Formações: ${luEv.home} - ${luEv.away}`, ok: Boolean(lu && (lu.home.starters.length || lu.away.starters.length)),
           detail: lu ? `titulares ${lu.home.starters.length}/${lu.away.starters.length} · suplentes ${lu.home.bench.length}/${lu.away.bench.length}` : 'sem resposta do endpoint /fixtures/{id}/lineups' });
+        if (lu) {
+          const withImg = [...lu.home.starters, ...lu.home.bench, ...lu.away.starters, ...lu.away.bench].filter((p) => p.image).length;
+          const cachedN = db.prepare("SELECT COUNT(*) AS n FROM goal_cache WHERE key LIKE 'pimg:%'").get().n;
+          steps.push({ name: 'Fotos dos jogadores', ok: withImg > 0,
+            detail: `esta formação: ${withImg} jogadores com foto · fotos em cache (destaques): ${cachedN}${withImg ? '' : ' — a GOAL API não devolveu fotos nesta escalação'}` });
+        }
         if (lu) steps.push({ name: 'Formações cruas (forma real)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 800) });
       } else {
         steps.push({ name: 'Formações', ok: false, detail: 'nenhum jogo de futebol ligado para testar' });

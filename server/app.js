@@ -1079,6 +1079,29 @@ export function createApp(db, {
     } finally { scorersBusy = false; }
   }
   app.locals.computeFeaturedScorers = computeFeaturedScorers;
+
+  // Fill the player-photo cache from games whose lineup is already published (live, or starting soon),
+  // so the featured-scorer cards get faces quickly instead of waiting for someone to open each match.
+  // goalApi.lineups() harvests the photos; bounded and throttled per game to spare the GOAL API quota.
+  const photoSeedAt = new Map();
+  async function harvestPlayerPhotos() {
+    if (!goalApi?.enabled) return;
+    const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time, status FROM events
+      WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time > ? AND start_time < ?))
+      ORDER BY status = 'live' DESC, start_time LIMIT 50`).all(nowIso(), new Date(Date.now() + 3 * 3600_000).toISOString());
+    let n = 0;
+    for (const ev of rows) {
+      if (n >= 8) break;
+      if (leagueTier('futebol', ev.competition) > 2) continue;
+      if (Date.now() - (photoSeedAt.get(ev.id) || 0) < 20 * 60_000) continue;
+      photoSeedAt.set(ev.id, Date.now());
+      n += 1;
+      await goalApi.lineups(ev).catch(() => {});
+    }
+    return n;
+  }
+  app.locals.harvestPlayerPhotos = harvestPlayerPhotos;
+
   app.get('/api/featured-scorers', (_req, res) => {
     // Build it on the first ask (then the timer keeps it warm); serve what we have meanwhile.
     if (!scorersCache.at && !scorersBusy) computeFeaturedScorers().catch(() => {});
