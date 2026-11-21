@@ -3381,6 +3381,15 @@ export function createApp(db, {
     res.json({ steps: await casino.diagnose() });
   }));
 
+  // Put back the stakes of crashed casino rounds now, instead of waiting for the periodic sweep. An
+  // optional `graceMinutes` lets the admin reach rounds that have been stuck for less than the default.
+  admin.post('/casino/refund-stuck', (req, res) => {
+    if (!bb?.refundStuckRounds) return res.json({ refunded: 0, cents: 0, note: 'BigBang não está ativo.' });
+    const grace = Math.max(5, Math.min(1440, Number(req.body?.graceMinutes) || 30));
+    const out = bb.refundStuckRounds({ graceMinutes: grace });
+    res.json({ ...out, euros: cents(out.cents), graceMinutes: grace, stats: bb.stuckStats(grace) });
+  });
+
   admin.get('/casino', wrap(async (req, res) => {
     if (bb) {
       const all = await bb.games();
@@ -3389,6 +3398,7 @@ export function createApp(db, {
       return res.json({
         bigbang: true, enabled: true, sandbox: bb.sandbox, games: all.games.length, providers: all.providers.length, error: all.error,
         bets: -sum('casino_bet'), wins: sum('casino_win'), freeSpinWins: sum('free_spin_win'),
+        stuckRounds: bb.stuckStats ? bb.stuckStats() : null,
         callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
         serverDelay: loopDelay(),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).

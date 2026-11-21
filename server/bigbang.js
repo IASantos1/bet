@@ -589,6 +589,80 @@ export function createBigBang(db, {
     });
   }
 
+  // ---------- crashed-round refunds (seamless wallet) ----------
+  // When a game crashes (or the tab closes) right after a spin, the provider has already taken the bet
+  // but may never send the win or the rollback that closes the round — so the stake stays debited and the
+  // player is left down. We put it back ourselves: a real-money round the provider marked OPEN at least
+  // once (a move with round_end = 0) and NEVER closed (no move with round_end = 1), that has been silent
+  // past the grace, is a crashed round; the player gets back exactly what that round left them down (its
+  // net debit). Gating on round_end can never touch an ordinary loss — a settled round always carries a
+  // round_end = 1, and a round the provider never marked open is left alone — so only genuinely stuck
+  // rounds are refunded. BigBang has no round-status API, so this reads only our own ledger.
+  const STUCK_GRACE_MIN = 30;
+  function stuckRoundRows(graceMinutes = STUCK_GRACE_MIN) {
+    const cutoff = new Date(Date.now() - graceMinutes * 60_000).toISOString();
+    return db.prepare(`
+      SELECT user_id, round_id,
+             SUM(amount_cents) AS net,
+             MAX(created_at)   AS last_at,
+             MAX(game)         AS game,
+             MAX(game_id)      AS game_id
+        FROM casino_moves
+       WHERE spins_id IS NULL AND round_id IS NOT NULL
+       GROUP BY user_id, round_id
+      HAVING SUM(CASE WHEN round_end = 1 THEN 1 ELSE 0 END) = 0
+         AND SUM(CASE WHEN round_end = 0 THEN 1 ELSE 0 END) > 0
+         AND SUM(CASE WHEN type = 'refund_stuck' THEN 1 ELSE 0 END) = 0
+         AND SUM(amount_cents) < 0
+         AND MAX(created_at) < ?`).all(cutoff);
+  }
+
+  /** Refunds every crashed round past the grace. Idempotent (one refund move per round). */
+  function refundStuckRounds({ graceMinutes = STUCK_GRACE_MIN } = {}) {
+    if (!enabled) return { refunded: 0, cents: 0 };
+    let refunded = 0; let total = 0;
+    for (const r of stuckRoundRows(graceMinutes)) {
+      const refundCents = -r.net; // net was negative (a debit); give that back
+      if (refundCents <= 0) continue;
+      const refundTx = `refund-stuck:${r.round_id}`;
+      try {
+        tx(db, () => {
+          if (db.prepare('SELECT 1 FROM casino_moves WHERE transaction_id = ?').get(refundTx)) return;
+          const after = postTransaction(db, r.user_id, refundCents, 'refund',
+            `Casino · aposta devolvida (rodada falhada${r.game ? ` · ${r.game}` : ''})`, refundTx);
+          // The refunded bet no longer counts towards any Free Spins wagering rule.
+          undoCasinoWager(db, r.user_id, { txId: refundTx, round: r.round_id });
+          db.prepare(`INSERT INTO casino_moves
+            (transaction_id, user_id, spins_id, amount_cents, balance_after_cents, round_id, type, round_end, game, game_id, provider, created_at)
+            VALUES (?, ?, NULL, ?, ?, ?, 'refund_stuck', 1, ?, ?, NULL, ?)`)
+            .run(refundTx, r.user_id, refundCents, after, r.round_id, r.game || '', r.game_id || null, nowIso());
+        });
+        refunded += 1; total += refundCents;
+        log(`rodada falhada devolvida: ${(refundCents / 100).toFixed(2)} € ao utilizador ${r.user_id} (ronda ${r.round_id})`);
+      } catch (err) { log(`rodada falhada ${r.round_id}: ${err.message}`); }
+    }
+    return { refunded, cents: total };
+  }
+
+  /** Admin view: whether the provider marks round ends, how many rounds look stuck, and recent refunds. */
+  function stuckStats(graceMinutes = STUCK_GRACE_MIN) {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    const roundEnd = db.prepare(`SELECT
+        SUM(CASE WHEN round_end = 1 THEN 1 ELSE 0 END) AS ended,
+        SUM(CASE WHEN round_end = 0 THEN 1 ELSE 0 END) AS open,
+        SUM(CASE WHEN round_end IS NULL THEN 1 ELSE 0 END) AS unmarked,
+        COUNT(*) AS total
+      FROM casino_moves WHERE spins_id IS NULL AND created_at > ?`).get(since);
+    const pending = stuckRoundRows(graceMinutes);
+    const refunds = db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS cents
+      FROM casino_moves WHERE type = 'refund_stuck' AND created_at > ?`).get(since);
+    return {
+      graceMinutes, roundEnd,
+      pending: { rounds: pending.length, cents: pending.reduce((s, r) => s - r.net, 0) },
+      refundedLast7d: { rounds: refunds.n || 0, cents: refunds.cents || 0 },
+    };
+  }
+
   /** Admin: is the key working, what it sees. */
   async function diagnose() {
     const out = { enabled, sandbox, baseUrl: root, steps: [] };
@@ -607,5 +681,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
