@@ -1031,9 +1031,15 @@ export function createApp(db, {
     if (!betbyCollector?.on || scorersBusy) return;
     scorersBusy = true;
     try {
-      const evs = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+      // Big leagues only (Champions/Europa, Premier, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal,
+      // Brasileirão, World Cup/Euro…): tier 1 first, then tier 2 to fill. The nearest games, bounded.
+      const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
         WHERE sport = 'futebol' AND status = 'scheduled' AND start_time > ? AND start_time < ?
-        ORDER BY start_time LIMIT 24`).all(nowIso(), new Date(Date.now() + 2 * 86_400_000).toISOString());
+        ORDER BY start_time LIMIT 90`).all(nowIso(), new Date(Date.now() + 3 * 86_400_000).toISOString());
+      const evs = rows.map((e) => ({ ...e, tier: leagueTier('futebol', e.competition) }))
+        .filter((e) => e.tier <= 2)
+        .sort((a, b) => a.tier - b.tier || String(a.start_time).localeCompare(String(b.start_time)))
+        .slice(0, 24);
       const out = [];
       for (const ev of evs) {
         const gf = await goalApi?.link?.(ev).catch(() => null);
@@ -1046,12 +1052,20 @@ export function createApp(db, {
         for (const o of scorer.outcomes || []) {
           if (!o.name || !(o.odd > 1) || o.blocked) continue;
           out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
-            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time });
+            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier });
         }
       }
-      out.sort((a, b) => a.odds - b.odds);
-      const seen = new Set(); const list = [];
-      for (const s of out) { const k = `${s.eventId}|${s.player.toLowerCase()}`; if (seen.has(k)) continue; seen.add(k); list.push(s); if (list.length >= 12) break; }
+      // The surest scorers of the biggest leagues first (a big-league favourite is the household name).
+      out.sort((a, b) => a.tier - b.tier || a.odds - b.odds);
+      const seen = new Set(); const perEvent = new Map(); const list = [];
+      for (const s of out) {
+        const k = `${s.eventId}|${s.player.toLowerCase()}`;
+        if (seen.has(k)) continue;
+        const n = perEvent.get(s.eventId) || 0;
+        if (n >= 2) continue; // at most two featured scorers per match, for variety across games
+        seen.add(k); perEvent.set(s.eventId, n + 1); list.push(s);
+        if (list.length >= 12) break;
+      }
       scorersCache = { at: Date.now(), list };
     } finally { scorersBusy = false; }
   }

@@ -977,7 +977,7 @@ async function loadScorers() {
 function scorersSection() {
   const list = state.scorers?.list;
   if (!list?.length) return '';
-  return `<section class="section scorers-sec"><div class="section-head"><h2>Jogadores em destaque</h2><small>Marca a qualquer momento</small></div>
+  return `<section class="section scorers-sec"><div class="section-head"><h2>Jogadores em destaque</h2><small>Ligas grandes · marca a qualquer momento</small></div>
     ${carousel('scorerCar', list.map(scorerCard))}</section>`;
 }
 
