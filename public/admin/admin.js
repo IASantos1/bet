@@ -1424,11 +1424,7 @@ function adminCasino(c) {
         <button class="ghost-btn btn-sm" data-action="launch-inspect">Ver endereço de um jogo</button>
         <button class="ghost-btn btn-sm" data-action="launch-open">Abrir jogo</button>
         <button class="ghost-btn btn-sm" data-action="launch-copy">Copiar resultado</button></div>
-      <pre class="raw-odds hidden" id="liOut"></pre>
-      <p class="muted">Depois de confirmar com <strong>Abrir jogo</strong> que o botão desaparece <strong>e</strong> que o jogo roda (gira e o saldo mexe), escreva aqui a mesma jurisdição e grave — passa a valer para <strong>todos</strong> os jogos e Free Spins. Deixe vazio para desligar (volta ao normal).</p>
-      <div class="form-actions"><label class="field adm-inline">Jurisdição para todos os jogos <input id="juAll" value="${esc(c.jurisdiction || '')}" placeholder="ex.: PT (vazio = desligado)" maxlength="12" size="8"></label>
-        <button class="ghost-btn btn-sm" data-action="casino-jurisdiction">Gravar</button>
-        <span class="muted">Agora: <strong>${c.jurisdiction ? esc(c.jurisdiction) : 'desligado (sem alteração)'}</strong></span></div>` : ''}
+      <pre class="raw-odds hidden" id="liOut"></pre>` : ''}
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
       <p class="muted">Quando o mesmo jogo existe nas duas versões: <b>Standard</b> é o motor próprio da BigBang (cópia, funciona em qualquer plano); <b>Premium</b> é o jogo original do fornecedor (precisa de saldo pré-pago na conta BigBang e paga uma % de GGR mais alta). Os Premium não têm modo demonstração.</p>
       <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
@@ -2923,14 +2919,6 @@ document.addEventListener('click', async (e) => {
   } else if (action === 'launch-copy') {
     const t = $('#liOut')?.textContent || '';
     if (t) { try { await navigator.clipboard.writeText(t); toast('Copiado', 'Cole aqui na conversa.'); } catch { toast('Erro', 'Selecione o texto e copie à mão.', 'error'); } }
-  } else if (action === 'casino-jurisdiction') {
-    actionEl.disabled = true;
-    try {
-      const r = await api('/api/admin/casino/jurisdiction', { method: 'POST', body: { jurisdiction: $('#juAll').value } });
-      toast('Gravado', r.jurisdiction ? `Todos os jogos abrem com jurisdição ${r.jurisdiction}.` : 'Jurisdição desligada (sem alteração).');
-    } catch (err) { toast('Erro', err.message, 'error'); }
-    actionEl.disabled = false;
-    loadTab();
   } else if (action === 'palace-test') {
     actionEl.disabled = true;
     try {

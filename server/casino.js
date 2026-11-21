@@ -10,7 +10,7 @@
 // Deliberately NOT used: /v4/agent/rtp, the per-launch `rtp` / `win_ratio` overrides and the
 // "bonus call" endpoints. Games always run at the provider's default return-to-player.
 
-import { nowIso, tx, getSetting } from './db.js';
+import { nowIso, tx } from './db.js';
 import { HttpError } from './security.js';
 import { postTransaction } from './wallet.js';
 
@@ -221,39 +221,7 @@ export function createCasino(db, {
     return { amountCents: cents };
   }
 
-  // The jurisdiction the games open in. Pragmatic shows "buy free spins" and turbo only where no
-  // regulation applies (jurisdiction "99"); a regulated one (e.g. PT) hides them at the source.
-  // Admin setting, '' = leave it as the aggregator sets it (no change, no extra work per launch).
-  const jurisdictionCfg = () => String(getSetting(db, 'casino.jurisdiction', '') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
-
-  /**
-   * Follows the aggregator's launch to the Pragmatic game page and rebuilds the game address with the
-   * jurisdiction forced to `jur`, so the regulated build (no "buy free spins", no turbo) loads with the
-   * same live session. Returns the new address, or null if the page didn't carry one (caller keeps the
-   * original address: the game always opens, the button just stays). Never throws.
-   */
-  async function forceJurisdiction(gameUrl, jur) {
-    if (!jur) return null;
-    let url = gameUrl;
-    for (let i = 0; i < 4 && url; i += 1) {
-      let res;
-      try { res = await fetchImpl(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) }); } catch { return null; }
-      const loc = res.headers.get('location');
-      if (loc && res.status >= 300 && res.status < 400) { url = new URL(loc, url).toString(); continue; }
-      const text = (await res.text().catch(() => '')).slice(0, 200_000);
-      const inner = text.match(/["']([^"'\s]*jurisdictionID=[^"'\s]*)["']/i);
-      if (!inner) return null;
-      try {
-        const g = new URL(inner[1].replace(/&amp;/g, '&'), url);
-        g.searchParams.set('jurisdictionID', jur);
-        g.searchParams.set('jurisdiction', jur);
-        return g.toString();
-      } catch { return null; }
-    }
-    return null;
-  }
-
-  async function launch(user, { providerId, gameCode, returnUrl, jurisdiction }) {
+  async function launch(user, { providerId, gameCode, returnUrl }) {
     assertCanPlay(user);
     const code = await userCode(user);
     // No rtp / win_ratio: the provider's default return-to-player always applies.
@@ -261,9 +229,6 @@ export function createCasino(db, {
       user_code: code, provider_id: Number(providerId), game_symbol: String(gameCode), lang, return_url: returnUrl || '',
     });
     if (!data?.game_url) throw new CasinoError(-1, 'O fornecedor não devolveu o endereço do jogo.');
-    // `jurisdiction` passed in (admin test) wins — including '' to force the raw address; otherwise the setting.
-    const jur = jurisdiction !== undefined ? String(jurisdiction || '') : jurisdictionCfg();
-    if (jur) { const forced = await forceJurisdiction(data.game_url, jur); if (forced) return forced; }
     return data.game_url;
   }
 
@@ -279,16 +244,7 @@ export function createCasino(db, {
     const game = list.find((g) => g.name.toLowerCase() === want && isPragmatic(g)) || list.find((g) => g.name.toLowerCase().includes(want))
       || list.find(isPragmatic);
     if (!game) throw new HttpError(404, 'Jogo não encontrado no catálogo.');
-    const g = { name: game.name, provider: game.provider, code: game.code };
-    // Always start from the raw address (jurisdiction: '' ignores the setting), so the test shows what
-    // the aggregator really opens and the forcing below is what we measure.
-    const first = await launch(user, { providerId: game.providerId, gameCode: game.code, returnUrl: '', jurisdiction: '' });
-    // "Abrir jogo": hand back the real game address with the jurisdiction forced, for the admin to open.
-    if (open) {
-      const forced = jurisdiction ? await forceJurisdiction(first, jurisdiction) : null;
-      return forced ? { game: g, openUrl: forced, tried: jurisdiction }
-        : { game: g, tried: jurisdiction || null, error: 'A página da Pragmatic não trouxe o endereço do jogo com jurisdictionID.' };
-    }
+    const first = await launch(user, { providerId: game.providerId, gameCode: game.code, returnUrl: '' });
     const hops = [];
     const found = new Set();
     let url = first;
@@ -310,15 +266,19 @@ export function createCasino(db, {
         if (!around.some((a) => a.includes(m[0]) && a.slice(0, 40) === bit.slice(0, 40))) around.push(bit);
       }
       hops.push({ status: res.status, note: 'página final (não redireciona)', around });
+      // Trial: the page loads the game itself at an address with jurisdictionID=…; the same address
+      // with another jurisdiction (e.g. UK), for the admin's browser to open.
       const inner = text.match(/["']([^"'\s]*jurisdictionID=[^"'\s]*)["']/i);
       if (jurisdiction && inner) {
-        const built = new URL(inner[1].replace(/&amp;/g, '&'), url);
-        built.searchParams.set('jurisdictionID', jurisdiction);
-        hops.push({ note: `endereço do jogo com jurisdição ${jurisdiction}`, ...maskUrl(built.toString()) });
+        const g = new URL(inner[1].replace(/&amp;/g, '&'), url);
+        g.searchParams.set('jurisdictionID', jurisdiction);
+        if (open) return { game: { name: game.name, provider: game.provider, code: game.code }, openUrl: g.toString(), tried: jurisdiction };
+        hops.push({ note: `endereço do jogo com jurisdição ${jurisdiction}`, ...maskUrl(g.toString()) });
       }
       break;
     }
-    return { game: g, hops, jurisdiction: [...found], tried: jurisdiction || null };
+    return { game: { name: game.name, provider: game.provider, code: game.code }, hops, jurisdiction: [...found], tried: jurisdiction || null,
+      ...(open ? { error: 'A página da Pragmatic não trouxe o endereço do jogo com jurisdictionID.' } : {}) };
   }
 
   // ---------- single wallet ----------
@@ -430,11 +390,7 @@ export function createCasino(db, {
         ...(fsBetParam && spinBetCents > 0 ? { [fsBetParam]: spinBetCents / 100 } : {}),
       });
       if (!data?.game_url) throw new CasinoError(-1, 'O fornecedor não devolveu o endereço do jogo.');
-      // Same jurisdiction as the normal games (hides "buy free spins" at the source where regulated).
-      const jur = jurisdictionCfg();
-      let url = data.game_url;
-      if (jur) { const forced = await forceJurisdiction(url, jur); if (forced) url = forced; }
-      return { url, fsCents: await fsBalanceCents(u) };
+      return { url: data.game_url, fsCents: await fsBalanceCents(u) };
     });
   }
 
