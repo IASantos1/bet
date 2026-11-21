@@ -2380,29 +2380,8 @@ export function createApp(db, {
           let fs = spinsRow(db, Number(req.body.freeSpins), req.user.id);
           if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
           fs = chooseSpinsGame(db, req.user.id, fs.id, g.id); // the Palace slot the player picked
-          // Free spins play on BigBang's own copy of the slot (seamless wallet): there a bet above the
-          // fixed one is REFUSED before it is taken, so the player can never burn several spins at once
-          // (at Palace, in Transfer mode, the bet can't be refused, so a €1 bet eats ten €0.10 spins).
-          // The money never leaves Bet62; each spin is counted by our own ledger. We only do this for a
-          // grant not already in play on Palace (palace_cents still null), so a half-played grant stays put.
-          const twin = fs.palace_cents === null ? await bb.twin(g).catch(() => null) : null;
-          if (twin) {
-            // Some slots don't accept the €0.10 fixed bet (Big Bass's minimum is €0.20). BigBang refuses a
-            // bet below the game's minimum, so every spin would fail: lift this game's free-spin bet to the
-            // game minimum (kept in game_bets, keyed by the chosen game) so the player's spins are accepted.
-            const minBet = twin.minBetCents || 0;
-            if (minBet > (spinBet(fs, g.id) || 0)) {
-              let bets = {}; try { bets = JSON.parse(fs.game_bets || '{}') || {}; } catch { bets = {}; }
-              bets[g.id] = minBet;
-              db.prepare('UPDATE casino_spins SET game_bets = ? WHERE id = ?').run(JSON.stringify(bets), fs.id);
-            }
-            db.prepare('UPDATE casino_spins SET play_game = ? WHERE id = ?').run(twin.id, fs.id);
-            const url = await bb.launch({ gameId: twin.id, token: playerToken(req.user.id, fs.id), returnUrl });
-            notePlayed(req.user.id, g.id);
-            return res.json({ url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left ?? fs.spins, spins: fs.spins }, balance: cents(userById(req.user.id).balance_cents) });
-          }
-          // No BigBang copy of this slot: fall back to Palace (Transfer mode). The value goes to the
-          // player's free-spins account there (first launch); only the picked game opens.
+          // Free spins play directly on the Palace game (Transfer mode): the value goes to the player's
+          // free-spins account there (first launch); only the picked game opens.
           const fund = fs.palace_cents === null ? fs.value_cents : 0;
           if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
           let out;
@@ -2947,15 +2926,13 @@ export function createApp(db, {
     for (const id of [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))]) {
       const g = bb ? await bb.game(id).catch(() => null) : null;
       if (bb && !g) throw new HttpError(400, `Jogo ${id} não encontrado no catálogo.`);
-      // A Palace slot only through BigBang's copy of it (that casino cannot refuse a bet before taking it).
-      if (g?.source === 'palace' && !(await bb.twin(g))) throw new HttpError(400, `${g.name}: incompatível com Free Spins de aposta fixa (o fornecedor não permite recusar a aposta antes de a debitar).`);
       out.push(id);
     }
     return out;
   };
   const promoView = async (p) => ({ ...p, gameList: await Promise.all(p.games.map(async (id) => {
     const g = bb ? await bb.game(id).catch(() => null) : null;
-    return { id, name: g?.name || `Jogo ${id}`, provider: g?.provider || '', compatible: !!g && (g.source !== 'palace' || !!(await bb.twin(g))) };
+    return { id, name: g?.name || `Jogo ${id}`, provider: g?.provider || '', compatible: !!g };
   })) });
   admin.get('/fs-promotions', wrap(async (_req, res) => {
     res.json({ promotions: await Promise.all(promoList(db).map(promoView)) });
