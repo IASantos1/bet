@@ -1427,6 +1427,13 @@ function adminCasino(c) {
       <pre class="raw-odds hidden" id="liOut"></pre>` : ''}
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
       <p class="muted">Quando o mesmo jogo existe nas duas versões: <b>Standard</b> é o motor próprio da BigBang (cópia, funciona em qualquer plano); <b>Premium</b> é o jogo original do fornecedor (precisa de saldo pré-pago na conta BigBang e paga uma % de GGR mais alta). Os Premium não têm modo demonstração.</p>
+      <h4>Jurisdição BigBang (tentar esconder "Comprar Rodadas Grátis")</h4>
+      <p class="muted">Enviado em cada lançamento BigBang. Se a BigBang aceitar, abre a versão regulada (sem comprar bónus); se não reconhecer, o jogo abre na mesma (volta a lançar sem a jurisdição). Como não sabemos o nome exato do parâmetro da BigBang, defina o <strong>nome</strong> e o <strong>valor</strong> — experimente nome <code>jurisdiction</code> e valor <code>PT</code>. Depois abra um slot e veja se o botão desaparece. Valor vazio = desligado.</p>
+      <div class="form-actions">
+        <label class="field adm-inline">Nome do parâmetro <input id="bbJurKey" value="${esc(c.bbJurisdictionKey || '')}" placeholder="jurisdiction" maxlength="40" size="14"></label>
+        <label class="field adm-inline">Valor <input id="bbJurVal" value="${esc(c.bbJurisdiction || '')}" placeholder="ex.: PT (vazio = desligado)" maxlength="20" size="10"></label>
+        <button class="ghost-btn btn-sm" data-action="bb-jurisdiction">Gravar</button>
+        <span class="muted">Agora: <strong>${c.bbJurisdiction ? `${esc(c.bbJurisdictionKey || 'jurisdiction')}=${esc(c.bbJurisdiction)}` : 'desligado'}</strong></span></div>
       <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
       <div class="table-wrap"><table><tbody>
         <tr><td><strong>user_data</strong> (GET)</td><td><code>${esc(c.callbacks.userData)}</code></td></tr>
@@ -2897,6 +2904,14 @@ document.addEventListener('click', async (e) => {
       const r = await api('/api/admin/casino/premium', { method: 'POST', body: { on: actionEl.checked } });
       toast(r.premium ? 'Versões Premium (originais)' : 'Versões Standard', `${r.premiumGames} jogos Premium de ${r.games}`);
     } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'bb-jurisdiction') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/bb-jurisdiction', { method: 'POST', body: { key: $('#bbJurKey').value, value: $('#bbJurVal').value } });
+      toast('Gravado', r.bbJurisdiction ? `Lançamentos BigBang com ${r.bbJurisdictionKey}=${r.bbJurisdiction}. Abra um slot e veja o botão.` : 'Jurisdição BigBang desligada.');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
     loadTab();
   } else if (action === 'launch-inspect') {
     actionEl.disabled = true;

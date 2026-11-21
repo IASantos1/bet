@@ -3551,6 +3551,17 @@ export function createApp(db, {
     res.json({ hidden: list });
   });
 
+  // The jurisdiction sent with every BigBang launch (to try to hide "Comprar Rodadas Grátis" where
+  // BigBang supports it). Both the parameter name and value are set here, since we don't know BigBang's
+  // exact name. Empty value = send nothing. If BigBang rejects it, the launch retries without it.
+  admin.post('/casino/bb-jurisdiction', (req, res) => {
+    const value = String(req.body?.value || '').trim().slice(0, 20);
+    const keyName = String(req.body?.key || '').trim().replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+    setSetting(db, 'casino.bbJurisdiction', value);
+    setSetting(db, 'casino.bbJurisdictionKey', value ? keyName : '');
+    res.json({ bbJurisdiction: value, bbJurisdictionKey: value ? (keyName || 'jurisdiction') : '' });
+  });
+
   // The sportsbooks plugged into BigBang (Betby, BTi, SABA…): hidden from the public casino, opened
   // only here so the admin can see how each works and how its data comes through the API.
   admin.get('/casino/sportsbooks', wrap(async (_req, res) => {
@@ -3597,6 +3608,7 @@ export function createApp(db, {
         stuckRounds: bb.stuckStats ? bb.stuckStats() : null,
         callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
         serverDelay: loopDelay(),
+        bbJurisdiction: getSetting(db, 'casino.bbJurisdiction', ''), bbJurisdictionKey: getSetting(db, 'casino.bbJurisdictionKey', ''),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
         split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },

@@ -395,6 +395,49 @@ test('launch speed: the demo URL is reused, a player created once is remembered 
   assert.deepEqual(api.calls.slice(before).map((c) => c.path.split('/').pop()), ['launch']);
 });
 
+test('bigbang jurisdiction: sent on launch when set; retries without it if BigBang rejects it', async () => {
+  const db = openDb(':memory:');
+  const launches = [];
+  let rejectJur = false;
+  const fetchImpl = async (url, opts) => {
+    const u = new URL(url);
+    const body = opts.body ? JSON.parse(opts.body) : null;
+    const json = (data) => ({ ok: true, status: 200, json: async () => data });
+    if (u.pathname.endsWith('/games')) return json({ success: true, data: [{ id: 4821, name: 'SGHotHotFruit', title: 'Hot Hot Fruit', provider: 'Habanero', category: 'Habanero', category_title: 'Habanero', game_type: 'slot', is_premium: false }], pagination: { total: 1, limit: 5000, offset: 0 } });
+    if (u.pathname.endsWith('/categories')) return json({ success: true, data: [{ id: 1, name: 'Habanero', slug: 'Habanero', premium: false }] });
+    if (u.pathname.endsWith('/users/create')) return json({ success: true, data: { user_token: body.user_token } });
+    if (u.pathname.endsWith('/games/launch')) {
+      launches.push(body);
+      if (rejectJur && body.regulation) return { ok: false, status: 400, json: async () => ({ success: false, error: { code: 400, message: 'unknown parameter regulation' } }) };
+      return json({ success: true, game_url: `https://g/real/${body.game_id}` });
+    }
+    return { ok: false, status: 404, json: async () => ({ success: false, error: { code: 404, message: 'nope' } }) };
+  };
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl });
+  await bb.games();
+  // Off: nothing extra on the launch body.
+  await bb.launch({ gameId: 4821, token: 'b62_7' });
+  assert.equal(launches.at(-1).jurisdiction, undefined);
+
+  // On, with a custom parameter name: it is sent.
+  setSetting(db, 'casino.bbJurisdiction', 'PT');
+  setSetting(db, 'casino.bbJurisdictionKey', 'regulation');
+  launches.length = 0;
+  const url = await bb.launch({ gameId: 4821, token: 'b62_8' });
+  assert.equal(launches[0].regulation, 'PT');
+  assert.ok(url.startsWith('https://g/real/'));
+
+  // BigBang rejects the parameter: the launch retries without it and still opens the game.
+  rejectJur = true;
+  launches.length = 0;
+  const url2 = await bb.launch({ gameId: 4821, token: 'b62_9' });
+  assert.equal(launches.length, 2);
+  assert.equal(launches[0].regulation, 'PT');
+  assert.equal(launches[1].regulation, undefined);
+  assert.ok(url2.startsWith('https://g/real/'));
+  db.close();
+});
+
 test('demo: live tables and Premium games are real-money only (no "Testar")', async () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });

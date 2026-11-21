@@ -494,9 +494,20 @@ export function createBigBang(db, {
   const demoUrls = new Map(); // `${gameId}|${returnUrl}` → { url, at }
   const DEMO_URL_MS = 30 * 60_000;
 
+  // An optional regulated jurisdiction sent with every launch. Where BigBang supports it, the regulated
+  // build loads (no "buy free spins"); the name of the parameter and its value are both set in the admin
+  // (we don't know BigBang's exact name, so it's configurable). '' = don't send anything.
+  const bbJurisdiction = () => {
+    const value = String(getSetting(db, 'casino.bbJurisdiction', '') || '').trim().slice(0, 20);
+    if (!value) return null;
+    const keyName = (String(getSetting(db, 'casino.bbJurisdictionKey', '') || '').trim() || 'jurisdiction').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40) || 'jurisdiction';
+    return { keyName, value };
+  };
+
   /** A game URL: demo (no account, virtual money) or real (the player's token: account or free spins). */
   async function launch({ gameId, token = null, demo = false, returnUrl = '' }) {
-    const dk = `${Number(gameId)}|${returnUrl}`;
+    const jur = bbJurisdiction();
+    const dk = `${Number(gameId)}|${returnUrl}|${jur ? `${jur.keyName}=${jur.value}` : ''}`;
     if (demo) {
       const hit = demoUrls.get(dk);
       if (hit && Date.now() - hit.at < DEMO_URL_MS) return hit.url;
@@ -507,7 +518,14 @@ export function createBigBang(db, {
       await ensurePlayer(token);
       body.user_token = token;
     }
-    const r = await call('POST', '/games/launch', body);
+    // Safe: if BigBang rejects the extra parameter, launch again without it so a player is never blocked.
+    let r;
+    if (jur) {
+      try { r = await call('POST', '/games/launch', { ...body, [jur.keyName]: jur.value }); }
+      catch (err) { log(`bigbang: lançamento com ${jur.keyName}=${jur.value} falhou (${err.message}); a repetir sem jurisdição`); r = await call('POST', '/games/launch', body); }
+    } else {
+      r = await call('POST', '/games/launch', body);
+    }
     if (!r.game_url) throw new HttpError(502, 'O servidor de jogos não devolveu o endereço do jogo.');
     if (demo) {
       if (demoUrls.size > 2000) demoUrls.clear();
