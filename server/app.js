@@ -788,9 +788,6 @@ export function createApp(db, {
     }
     const events = drop.size ? kept.filter((e) => !drop.has(e.id)) : kept;
     if (!events.length) return [];
-    // Link the football games shown so their GOAL API badges are ready on the cards (background, cheap:
-    // only against day lists already cached, never a new request — so it cannot slow the board).
-    goalApi?.prelinkBadges?.(events.filter((e) => e.sport === 'futebol'));
     const ids = events.map((e) => e.id);
     const sels = db.prepare(
       `SELECT id, event_id, market, code, odds_x100, active, src FROM selections WHERE event_id IN (${ids.map(() => '?').join(',')})

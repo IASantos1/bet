@@ -525,37 +525,29 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     return home || away ? { home, away } : null;
   }
 
-  // Links the given football games whose badge is not kept yet, in the background and WITHOUT fetching new
-  // day lists (only matches against lists already cached, so it never storms the GOAL API). Call it after
-  // the board is built with the games it showed; the badges are ready on the next render.
+  // Links the football games shown on the board whose badge is not kept yet, WITHOUT any network request
+  // (only against day lists already cached by syncBadges). Bounded, in the background — never slows a page.
   const prelinking = new Map(); // ev.id -> last attempt (ms)
   function prelinkBadges(evs) {
     if (!enabled || !Array.isArray(evs)) return;
     const now = Date.now();
-    let budget = 12; // at most a handful of fresh links per call
+    let budget = 12;
     for (const ev of evs) {
       if (budget <= 0) break;
       if (ev?.sport !== 'futebol' || !ev?.id || !ev?.start_time) continue;
-      if (cacheGet.get(`link:${ev.id}`)) continue; // already linked
+      if (cacheGet.get(`link:${ev.id}`)) continue;
       const last = prelinking.get(ev.id);
       if (last && now - last < 5 * 60_000) continue;
+      const at = Date.parse(ev.start_time);
+      if (!Number.isFinite(at)) continue;
+      const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
+      const lists = [];
+      for (const d of dates) { const r = cacheGet.get(`fixtures:${d}`); if (r) { try { lists.push(...(JSON.parse(r.body) || [])); } catch { /* ignore */ } } }
+      if (!lists.length) continue; // no cached list for these days yet: leave it to syncBadges
       prelinking.set(ev.id, now);
       budget -= 1;
-      linkCheap(ev).catch(() => {});
+      try { const fx = findFixture(ev, lists); if (fx) cacheSet.run(`link:${ev.id}`, JSON.stringify(fx), Date.now()); } catch { /* ignore */ }
     }
-  }
-  // Like link(), but only against day lists already in cache — never triggers a network fetch.
-  async function linkCheap(ev) {
-    const name = `link:${ev.id}`;
-    if (cacheGet.get(name)) return;
-    const at = Date.parse(ev.start_time);
-    if (!Number.isFinite(at)) return;
-    const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
-    const lists = [];
-    for (const d of dates) { const r = cacheGet.get(`fixtures:${d}`); if (r) { try { lists.push(...(JSON.parse(r.body) || [])); } catch { /* ignore */ } } }
-    if (!lists.length) return; // no cached list for these days: leave it to syncBadges
-    const fx = findFixture(ev, lists);
-    if (fx) cacheSet.run(name, JSON.stringify(fx), Date.now());
   }
 
   /**
