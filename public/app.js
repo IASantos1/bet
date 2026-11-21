@@ -908,6 +908,11 @@ function sportsPage(sub, rest = '') {
   if (!state.featured || Date.now() - state.featured.at > 60_000) loadFeatured();
   // The big games' banners under the sports strip (football; all sports or football chosen).
   const banners = !state.sport || state.sport === 'futebol' ? bannerSection() : '';
+  // Featured scorers (football only): single "Marcador" bets, under "Construa o seu ganho". An empty
+  // list (still being built on the server) is retried sooner than a filled one.
+  const football = !state.sport || state.sport === 'futebol';
+  const scAge = state.scorers ? Date.now() - state.scorers.at : Infinity;
+  if (football && scAge > (state.scorers?.list?.length ? 120_000 : 20_000)) loadScorers();
   return `<div class="page-title"><h1>Desporto</h1>${banners ? '' : '<p>Todos os eventos pré-jogo e ao vivo com odds disponíveis.</p>'}</div>
     <div class="sport-tiles" data-hscroll="sportStrip">
       <button class="sport-tile${!state.sport ? ' active' : ''}" data-sport="">${sportIcon('popular')}<span>Popular</span></button>
@@ -916,6 +921,7 @@ function sportsPage(sub, rest = '') {
     </div>
     ${banners}
     ${builderSection()}
+    ${football ? scorersSection() : ''}
     <section class="section">${list.length ? groupByCompetition(list, { after: 4, insert: accaSection(), limit: shown }) : emptyEvents()}
       ${blocks > shown ? `<div class="sports-more" id="sportsMore"><div class="loading">A carregar mais jogos…</div></div>` : ''}</section>
     ${blocks > shown ? '' : footer()}`;
@@ -954,6 +960,57 @@ async function loadFeatured() {
 }
 
 const shortWhen = (iso) => fmtWhen(iso).replace(' ', ', ');
+
+let scorersLoading = false;
+async function loadScorers() {
+  if (scorersLoading) return;
+  scorersLoading = true;
+  try {
+    const r = await api('/api/featured-scorers');
+    state.scorers = { list: r.scorers || [], at: Date.now() };
+    const { page, sub } = currentRoute();
+    if ((page === 'desporto' && !sub) || page === 'home') render({ keepScroll: true });
+  } catch { /* the board works without it */ } finally { scorersLoading = false; }
+}
+
+// "Jogadores em destaque": the surest anytime scorers across the next games, each a single "Marcador" bet.
+function scorersSection() {
+  const list = state.scorers?.list;
+  if (!list?.length) return '';
+  return `<section class="section scorers-sec"><div class="section-head"><h2>Jogadores em destaque</h2><small>Marca a qualquer momento</small></div>
+    ${carousel('scorerCar', list.map(scorerCard))}</section>`;
+}
+
+function scorerCard(s, i) {
+  const ev = state.events.find((x) => x.id === s.eventId);
+  const inSlip = state.slip.some((x) => x.betby && x.eventId === s.eventId && String(x.betby.marketId) === String(s.marketId) && x.betby.player === s.player);
+  const badge = (side, name) => (ev ? sideBadge(ev, side, 'sm') : `<span class="sc-dot">${esc((name || '?').slice(0, 1))}</span>`);
+  return `<div class="scorer-card">
+    <span class="sc-rank">#${i + 1}</span>
+    <div class="sc-emblem" aria-hidden="true">⚽</div>
+    <div class="sc-name">${esc(s.player)}</div>
+    <div class="sc-match">${badge('home', s.home)}<span>${esc(s.home)} <i>v</i> ${esc(s.away)}</span>${badge('away', s.away)}</div>
+    <div class="sc-when">${esc(shortWhen(s.startTime))}</div>
+    <button class="sc-odd${inSlip ? ' on' : ''}" data-scorer="${i}"><small>Marcador</small><strong>${fmtOdds(s.odds)}</strong></button>
+  </div>`;
+}
+
+// A featured scorer added as a single BETBY "Marcador" pick (combines in the slip like any other).
+function addScorerPick(i) {
+  const s = state.scorers?.list?.[i];
+  if (!s) return;
+  const key = `bb:${s.eventId}:${s.marketId}:${s.player}`;
+  const idx = state.slip.findIndex((x) => itemKey(x) === key);
+  if (idx >= 0) state.slip.splice(idx, 1);
+  else state.slip.push({
+    betby: { eventId: s.eventId, marketId: s.marketId, kind: s.kind, player: s.player, side: null }, odds: Number(s.odds),
+    label: s.player, market: 'betby', marketName: BETBY_KIND_LABEL[s.kind] || 'Marcador',
+    match: `${s.home} vs ${s.away}`, competition: 'Marcador', eventId: s.eventId,
+  });
+  autoMode(); saveSlip(); renderSlip();
+  render({ keepScroll: true });
+  if (idx < 0) setSlipOpen(true);
+}
 
 function builderCard(b, i) {
   return `<div class="combo-card builder" data-ball="${esc(b.legs[0]?.sport || 'futebol')}">
@@ -4256,6 +4313,8 @@ document.addEventListener('click', async (e) => {
 
   const bpBtn = e.target.closest('[data-bp]');
   if (bpBtn) { addBetbyPick(bpBtn.dataset); return; }
+  const scorerBtn = e.target.closest('[data-scorer]');
+  if (scorerBtn) { addScorerPick(Number(scorerBtn.dataset.scorer)); return; }
   const pickBtn = e.target.closest('[data-pick]');
   if (pickBtn) { addPick(Number(pickBtn.dataset.pick)); return; }
   const builderBtn = e.target.closest('[data-builder]');

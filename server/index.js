@@ -258,6 +258,11 @@ setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`fr
 setInterval(() => app.locals.returnIdleCasino().catch((err) => console.warn(`casino: ${err.message}`)), 60_000).unref();
 // A Palace round that crashed mid-spin settles on the provider a little later: bring that stake back too.
 setInterval(() => app.locals.recoverStrandedCasino().catch((err) => console.warn(`casino: ${err.message}`)), 60_000).unref();
+// "Jogadores em destaque": the surest anytime scorers across the next games, refreshed in the background.
+if (betbyCollector?.on) {
+  app.locals.computeFeaturedScorers().catch((err) => console.warn(`[destaque-marcadores] ${err.message}`));
+  setInterval(() => app.locals.computeFeaturedScorers().catch((err) => console.warn(`[destaque-marcadores] ${err.message}`)), 5 * 60_000).unref();
+}
 // BigBang (seamless wallet): a round the game took a bet on but crashed before closing — put the stake back.
 if (bigbang.enabled) setInterval(() => { try { bigbang.refundStuckRounds(); } catch (err) { console.warn(`[bigbang] rondas falhadas: ${err.message}`); } }, 5 * 60_000).unref();
 const server = app.listen(config.port, () => {

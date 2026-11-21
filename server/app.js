@@ -1020,6 +1020,47 @@ export function createApp(db, {
     prefetch: winhouseFeed?.readPageNow ? (ids) => { for (const id of ids) winhouseFeed.readPageNow(id).catch(() => {}); } : null,
   });
   app.get('/api/featured', (_req, res) => res.json(featured.get()));
+
+  // "Jogadores em destaque": the most-likely anytime scorers across the next football games, each a
+  // single "Marcador" bet (BETBY player markets via the GOAL API bridge). Built in the background and
+  // cached, since it reads several events' markets; the card odds are confirmed again when the bet is
+  // placed. One entry per player, the shortest odds first (the surest scorers), at most twelve.
+  let scorersCache = { at: 0, list: [] };
+  let scorersBusy = false;
+  async function computeFeaturedScorers() {
+    if (!betbyCollector?.on || scorersBusy) return;
+    scorersBusy = true;
+    try {
+      const evs = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
+        WHERE sport = 'futebol' AND status = 'scheduled' AND start_time > ? AND start_time < ?
+        ORDER BY start_time LIMIT 24`).all(nowIso(), new Date(Date.now() + 2 * 86_400_000).toISOString());
+      const out = [];
+      for (const ev of evs) {
+        const gf = await goalApi?.link?.(ev).catch(() => null);
+        const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
+        const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time, altNames });
+        if (!m) continue;
+        const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
+        const scorer = pm.find((x) => x.kind === 'anytime_scorer');
+        if (!scorer) continue;
+        for (const o of scorer.outcomes || []) {
+          if (!o.name || !(o.odd > 1) || o.blocked) continue;
+          out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
+            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time });
+        }
+      }
+      out.sort((a, b) => a.odds - b.odds);
+      const seen = new Set(); const list = [];
+      for (const s of out) { const k = `${s.eventId}|${s.player.toLowerCase()}`; if (seen.has(k)) continue; seen.add(k); list.push(s); if (list.length >= 12) break; }
+      scorersCache = { at: Date.now(), list };
+    } finally { scorersBusy = false; }
+  }
+  app.locals.computeFeaturedScorers = computeFeaturedScorers;
+  app.get('/api/featured-scorers', (_req, res) => {
+    // Build it on the first ask (then the timer keeps it warm); serve what we have meanwhile.
+    if (!scorersCache.at && !scorersBusy) computeFeaturedScorers().catch(() => {});
+    res.json({ scorers: scorersCache.list, at: scorersCache.at });
+  });
   // "Melhores escolhas" of a football match (picks.js): boosted ready-made builders.
   const matchPicks = createMatchPicks(db);
   app.get('/api/events/:id/picks', (req, res) => res.json({ picks: matchPicks.forEvent(req.params.id) }));
