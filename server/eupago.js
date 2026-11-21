@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { postTransaction } from './wallet.js';
 import { onDeposit } from './promotions.js';
+import { grantDepositPromos } from './fspromos.js';
 import { onReferredDeposit } from './affiliates.js';
 
 const PROMO_CODE = { none: 0, sport: 1, casino: 2, freebet: 3 };
@@ -176,6 +177,8 @@ export function createEupago(db, {
       postTransaction(db, row.user_id, row.amount_cents, 'deposit', `Depósito ${label}`, ref);
       const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
       onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref, method: row.method, choice: PROMO_CHOICE[row.promo_opt] || 'none' });
+      try { grantDepositPromos(db, { userId: row.user_id, amountCents: row.amount_cents, ref }); }
+      catch (err) { log(`Eupago ${identifier}: free spins de depósito (${err.message})`); }
       try { onReferredDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, txId, ref }); }
       catch (err) { log(`Eupago ${identifier}: comissão de afiliado pendente de recuperação (${err.message})`); }
       return { accepted: true, credited: true };

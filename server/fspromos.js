@@ -70,7 +70,12 @@ export function promoFields(input, prev = null) {
     startsAt, endsAt, validityDays: intIn(v.validityDays ?? 7, 1, 365, 'Validade após atribuição (dias)'),
     maxUses: v.maxUses === null || v.maxUses === undefined || v.maxUses === '' ? null : intIn(v.maxUses, 1, 1_000_000, 'Utilizações máximas'),
     maxPerUser: intIn(v.maxPerUser ?? 1, 1, 100, 'Utilizações por jogador'),
-    eligibility: { kyc: !!elig.kyc, newOnly: !!elig.newOnly, minDeposits: elig.minDeposits ? intIn(elig.minDeposits, 0, 1000, 'Depósitos mínimos') : 0 },
+    eligibility: {
+      kyc: !!elig.kyc, newOnly: !!elig.newOnly, minDeposits: elig.minDeposits ? intIn(elig.minDeposits, 0, 1000, 'Depósitos mínimos') : 0,
+      // Give it automatically when a deposit of at least this many euros is credited (0 = any deposit).
+      autoDeposit: !!elig.autoDeposit,
+      autoDepositMinCents: elig.autoDeposit ? Math.max(0, Math.round(Number(elig.autoDepositMin ?? 0) * 100)) : 0,
+    },
     conversion,
   };
 }
@@ -202,6 +207,28 @@ export function grantPromo(db, promoId, userId, { adminId = null, ref = null } =
   fsAudit(db, { spinsId: id, userId: user.id, action: 'grant', cents: value, spinsLeft: p.spins, detail: `promoção #${p.id}${adminId ? ` por admin #${adminId}` : ''}` });
   log(db, user.id, 'casinoFs', key, 'granted', p.name);
   return db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(id);
+}
+
+/**
+ * Automatically grants every AVAILABLE promotion set to fire on a deposit (eligibility.autoDeposit),
+ * when the credited deposit reaches its minimum. Idempotent per deposit (ref), and each grant still
+ * goes through grantRefusal (dates, limits, one active grant per player, KYC…), so a player never gets
+ * two at once and a retried webhook never grants twice. Never throws — a refusal just skips that one.
+ * `ref` is the deposit's own reference (e.g. "stripe:<session>"). Returns the grants made.
+ */
+export function grantDepositPromos(db, { userId, amountCents, ref, now = nowIso() }) {
+  const out = [];
+  const rows = db.prepare("SELECT * FROM fs_promotions WHERE status = 'available' ORDER BY id").all();
+  for (const p of rows) {
+    const e = json(p.eligibility, {});
+    if (!e.autoDeposit) continue;
+    if (amountCents < (e.autoDepositMinCents || 0)) continue;
+    try {
+      const s = grantPromo(db, p.id, userId, { ref: `fspdep:${p.id}:${ref}` });
+      if (s) out.push({ promotionId: p.id, name: p.name, spinsId: s.id });
+    } catch { /* not eligible, already given, or limit reached — skip this promotion */ }
+  }
+  return out;
 }
 
 /** Admin list: each promotion with its use (grants, spins played, winnings paid / pending). */

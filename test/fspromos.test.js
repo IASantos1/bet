@@ -6,7 +6,7 @@ import { openDb, nowIso, tx } from '../server/db.js';
 import { postTransaction } from '../server/wallet.js';
 import { createBigBang, signMove, playerToken } from '../server/bigbang.js';
 import { expireDue } from '../server/promotions.js';
-import { createPromo, updatePromo, setPromoStatus, grantPromo, promoHistory, spinsAudit, walletBreakdown } from '../server/fspromos.js';
+import { createPromo, updatePromo, setPromoStatus, grantPromo, grantDepositPromos, promoHistory, spinsAudit, walletBreakdown } from '../server/fspromos.js';
 
 const KEY = 'live_key_123';
 const fetchImpl = async () => ({ ok: false, status: 404, json: async () => ({}) });
@@ -151,4 +151,26 @@ test('J: normal casino bets, deposits and the real balance work as before', () =
   assert.equal(t.bb.walletChange(move(real, 10, 'n2')).body.balance, '57.50');
   assert.equal(t.bb.walletChange(move(real, -100, 'n3')).body.error, 'insufficient balance');
   assert.equal(t.row().spins_left, 5); // free spins untouched
+});
+
+test('auto-grant on deposit: fires only on an available promotion, respects the minimum, and never doubles', () => {
+  const db = openDb(':memory:');
+  const admin = Number(db.prepare("INSERT INTO users (email, name, birthdate, password_hash, role, created_at) VALUES ('a2@x', 'Admin', '1980-01-01', 'x', 'admin', ?)").run(nowIso()).lastInsertRowid);
+  const u = Number(db.prepare("INSERT INTO users (email, name, birthdate, password_hash, created_at) VALUES ('p2@x', 'Rui', '1990-01-01', 'x', ?)").run(nowIso()).lastInsertRowid);
+  const p = tx(db, () => createPromo(db, { name: 'Depósito 20€', spins: 10, spinValue: 0.2, games: [4821], validityDays: 7,
+    eligibility: { autoDeposit: true, autoDepositMin: 20 } }, admin));
+  // Still a draft: nothing is granted.
+  assert.deepEqual(grantDepositPromos(db, { userId: u, amountCents: 5000, ref: 'dep:1' }), []);
+  tx(db, () => setPromoStatus(db, p.id, 'available', admin));
+  // Below the €20 minimum: nothing.
+  assert.deepEqual(grantDepositPromos(db, { userId: u, amountCents: 1000, ref: 'dep:2' }), []);
+  // €20 deposit: granted once.
+  const first = grantDepositPromos(db, { userId: u, amountCents: 2000, ref: 'dep:3' });
+  assert.equal(first.length, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM casino_spins WHERE user_id = ? AND status = 'active'").get(u).n, 1);
+  // Same deposit reference again (retried webhook): no second grant.
+  assert.deepEqual(grantDepositPromos(db, { userId: u, amountCents: 2000, ref: 'dep:3' }), []);
+  // A new deposit while the first grant is still active: refused (one active grant per player).
+  assert.deepEqual(grantDepositPromos(db, { userId: u, amountCents: 2000, ref: 'dep:4' }), []);
+  db.close();
 });

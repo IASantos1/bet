@@ -343,6 +343,10 @@ function fsPromosPanel(list) {
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="elig.kyc"${p.eligibility?.kyc ? ' checked' : ''}> Identidade verificada (KYC)</label>
         <label class="adm-switch"><input type="checkbox" name="elig.newOnly"${p.eligibility?.newOnly ? ' checked' : ''}> Só quem nunca recebeu Free Spins</label>
         <label class="field">Depósitos mínimos feitos<input name="elig.minDeposits" type="number" min="0" value="${esc(p.eligibility?.minDeposits ?? 0)}"></label></div>
+      <h4>Atribuição automática</h4>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="elig.autoDeposit"${p.eligibility?.autoDeposit ? ' checked' : ''}> Dar automaticamente quando entra um depósito</label>
+        <label class="field">Depósito mínimo (€)<input name="elig.autoDepositMin" type="number" min="0" step="0.01" value="${esc(p.eligibility?.autoDepositMinCents != null ? (p.eligibility.autoDepositMinCents / 100) : 20)}"></label></div>
+      <p class="muted">Ligado: assim que um depósito ≥ este valor for creditado, a promoção é atribuída sozinha (sem passo manual). A promoção tem de estar <strong>Disponível</strong>, e respeita os limites acima (um jogador não recebe duas ao mesmo tempo). 0 € = qualquer depósito.</p>
       <h4>Ganhos</h4>
       <div class="form-actions"><label class="adm-switch"><input type="radio" name="conv.type" value="none"${conv.type !== 'wagering' ? ' checked' : ''}> Pagos em saldo real quando as rodadas terminam (sem requisito)</label>
         <label class="adm-switch"><input type="radio" name="conv.type" value="wagering"${conv.type === 'wagering' ? ' checked' : ''}> Requisito de aposta aprovado</label></div>
@@ -639,10 +643,11 @@ function freeSpinsPanel(list) {
   if (!fs.length) return '<div class="panel"><h3>Free Spins</h3><p class="muted">Este jogador ainda não recebeu Free Spins.</p></div>';
   const left = fs.filter((s) => s.status === 'active').reduce((a, s) => a + s.spinsLeft, 0);
   return `<div class="panel"><div class="section-head"><h3>Free Spins</h3>${left ? `<span class="pill won">${left} por jogar</span>` : ''}</div>
-    <div class="table-wrap"><table><thead><tr><th>#</th><th>Estado</th><th class="num">Rodadas</th><th class="num">Por jogar</th><th class="num">Valor/rodada</th><th class="num">Ganho</th><th>Expira</th><th>Recebida</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Estado</th><th class="num">Rodadas</th><th class="num">Por jogar</th><th class="num">Valor/rodada</th><th class="num">Ganho</th><th>Expira</th><th>Recebida</th><th></th></tr></thead><tbody>
       ${fs.map((s) => `<tr><td>${s.id}</td><td><span class="pill ${FS_PILL[s.status] ?? ''}">${FS_LABEL[s.status] || s.status}</span></td>
         <td class="num">${s.spins}</td><td class="num">${s.status === 'active' ? s.spinsLeft : 0}</td><td class="num">${money(s.value)}</td><td class="num">${money(s.won)}</td>
-        <td>${esc(fmtDateTime(s.expiresAt))}</td><td>${esc(fmtDateTime(s.createdAt))}</td></tr>`).join('')}
+        <td>${esc(fmtDateTime(s.expiresAt))}</td><td>${esc(fmtDateTime(s.createdAt))}</td>
+        <td>${s.status === 'active' ? `<button class="ghost-btn btn-sm danger" data-action="fs-cancel" data-id="${s.id}">Remover</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div></div>`;
 }
 
@@ -2022,7 +2027,8 @@ const handlers = {
       name: d.name, description: d.description, terms: d.terms, spins: Number(d.spins), spinValue: Number(d.spinValue), validityDays: Number(d.validityDays),
       startsAt: iso(d.startsAt), endsAt: iso(d.endsAt), maxUses: d.maxUses === '' ? null : Number(d.maxUses), maxPerUser: Number(d.maxPerUser) || 1,
       games: String(d.games || '').split(/[\s,;]+/).map(Number).filter(Boolean),
-      eligibility: { kyc: form['elig.kyc'].checked, newOnly: form['elig.newOnly'].checked, minDeposits: Number(d['elig.minDeposits']) || 0 },
+      eligibility: { kyc: form['elig.kyc'].checked, newOnly: form['elig.newOnly'].checked, minDeposits: Number(d['elig.minDeposits']) || 0,
+        autoDeposit: form['elig.autoDeposit'].checked, autoDepositMin: Number(d['elig.autoDepositMin']) || 0 },
       conversion: form.querySelector('[name="conv.type"]:checked')?.value === 'wagering'
         ? { type: 'wagering', multiplier: Number(d['conv.multiplier']), days: Number(d['conv.days']), games: d['conv.games'], maxCount: d['conv.maxCount'] === '' ? null : Number(d['conv.maxCount']), approved: form['conv.approved'].checked }
         : { type: 'none' },
@@ -2638,6 +2644,15 @@ document.addEventListener('click', async (e) => {
     try {
       await api(`/api/admin/freebets/${actionEl.dataset.id}/cancel`, { method: 'POST', body: {} });
       toast('Feito', 'Free bet cancelada.');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    return;
+  }
+  if (action === 'fs-cancel') {
+    if (!confirm('Remover estas Free Spins? A atribuição termina (se já jogou, os ganhos são liquidados pela regra). Serve para voltar a testar.')) return;
+    try {
+      await api(`/api/admin/free-spins/${actionEl.dataset.id}/cancel`, { method: 'POST', body: {} });
+      toast('Feito', 'Free Spins removidas.');
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
     return;

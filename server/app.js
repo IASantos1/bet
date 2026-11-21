@@ -33,11 +33,11 @@ import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
-  casinoOffer, freebetOffer, firstDeposit, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins,
+  casinoOffer, freebetOffer, firstDeposit, claimSpins, spinsRow, spinsView, spinsBalance, spinBet, playableGames, chooseSpinsGame, palaceSpinsBalance, grantAdminSpins, closeSpins,
 } from './promotions.js';
 import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
-import { createPromo, updatePromo, setPromoStatus, grantPromo, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
+import { createPromo, updatePromo, setPromoStatus, grantPromo, grantDepositPromos, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
@@ -1902,6 +1902,7 @@ export function createApp(db, {
       postTransaction(db, req.user.id, amount, 'deposit', `Depósito ${label} (modo demonstração)`);
       const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
       const bonus = onDeposit(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}`, method: 'demo', choice: promo });
+      grantDepositPromos(db, { userId: req.user.id, amountCents: amount, ref: `demo:${txId}` });
       // Demonstration money never earns a commission unless the operator counts it (test servers).
       onReferredDeposit(db, { userId: req.user.id, amountCents: amount, txId, ref: `demo:${txId}`, demo: true });
       return bonus;
@@ -2937,6 +2938,15 @@ export function createApp(db, {
       ref: `admin:${req.user.id}:${Date.now()}:${u.id}:fs`, note: req.body?.note ? str(req.body.note, 120) : null, games: req.body?.games,
     }));
     res.json({ ok: true, freeSpins: spinsView(s) });
+  });
+  // Cancel/remove a free-spins grant (e.g. a test one): the grant ends; if it was played, the winnings
+  // are settled by its own rule. An already-ended grant just returns ok.
+  admin.post('/free-spins/:id/cancel', (req, res) => {
+    const s = db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(Number(req.params.id));
+    if (!s) throw new HttpError(404, 'Free Spins não encontradas.');
+    if (s.status !== 'active') return res.json({ ok: true, freeSpins: spinsView(s) });
+    tx(db, () => closeSpins(db, s, 'cancelled', req.body?.reason ? str(req.body.reason, 200) : 'cancelada pelo administrador'));
+    res.json({ ok: true, freeSpins: spinsView(db.prepare('SELECT * FROM casino_spins WHERE id = ?').get(s.id)) });
   });
   admin.post('/freebets/:id/cancel', (req, res) => {
     const f = db.prepare('SELECT * FROM freebets WHERE id = ?').get(Number(req.params.id));

@@ -8,6 +8,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { nowIso, tx } from './db.js';
 import { postTransaction } from './wallet.js';
 import { onDeposit, onChargeback } from './promotions.js';
+import { grantDepositPromos } from './fspromos.js';
 import { onReferredDeposit, onDepositReversed } from './affiliates.js';
 
 export const METHODS = {
@@ -166,6 +167,9 @@ export function createStripe(db, {
         const txId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
         // The deposit bonus it earns, if any (once per deposit, decided by the server).
         const bonus = onDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}`, method: row.method, choice: PROMO_CHOICE[row.promo_opt] || 'sport' });
+        // Free-spins promotions set to fire automatically on a deposit (never holds the deposit back).
+        try { grantDepositPromos(db, { userId: row.user_id, amountCents: row.amount_cents, ref: `stripe:${row.session_id}` }); }
+        catch (err) { log(`free spins depósito ${row.session_id}: ${err.message}`); }
         // The referring affiliate's commission, when this is the player's first eligible deposit (once).
         // A failure there never holds the deposit back: affiliates.recover() picks it up later.
         try { onReferredDeposit(db, { userId: row.user_id, amountCents: row.amount_cents, txId, ref: `stripe:${row.session_id}` }); }
