@@ -1086,12 +1086,18 @@ export function createApp(db, {
   const photoSeedAt = new Map();
   async function harvestPlayerPhotos() {
     if (!goalApi?.enabled) return;
+    // Games whose lineup is published: live, kicking off within 90 min, or finished in the last 3 h.
+    // Fetching those harvests the players' photos; empty fetches far from kick-off are avoided.
+    const soon = new Date(Date.now() + 90 * 60_000).toISOString();
+    const recent = new Date(Date.now() - 3 * 3600_000).toISOString();
     const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time, status FROM events
-      WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time > ? AND start_time < ?))
-      ORDER BY status = 'live' DESC, start_time LIMIT 50`).all(nowIso(), new Date(Date.now() + 3 * 3600_000).toISOString());
+      WHERE sport = 'futebol' AND (status = 'live'
+        OR (status = 'scheduled' AND start_time > ? AND start_time < ?)
+        OR (status = 'finished' AND start_time > ?))
+      ORDER BY status = 'live' DESC, start_time LIMIT 80`).all(nowIso(), soon, recent);
     let n = 0;
     for (const ev of rows) {
-      if (n >= 8) break;
+      if (n >= 12) break;
       if (leagueTier('futebol', ev.competition) > 2) continue;
       if (Date.now() - (photoSeedAt.get(ev.id) || 0) < 20 * 60_000) continue;
       photoSeedAt.set(ev.id, Date.now());
