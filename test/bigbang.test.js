@@ -699,3 +699,34 @@ test('free spins on a Palace slot now open on BigBang\'s own copy (over-bet refu
     assert.deepEqual([s.palace_cents, s.chosen_game, s.play_game], [null, bass, 7777]); // played on the BigBang copy
   } finally { server.close(); }
 });
+
+test('free spins: a €0.10 grant on a €0.20-minimum slot (Big Bass) is lifted to €0.20 so spins are accepted', async () => {
+  const { palaceId } = await import('../server/bigbang.js');
+  const db = openDb(':memory:');
+  const palaceGames = [{ providerId: 7, provider: 'Pragmatic Play', code: 'bigbass', name: 'Big Bass Bonanza', image: null, category: 'Slots' }];
+  const copy = { id: 7777, name: 'BigBassBonanzaBB', title: 'Big Bass Bonanza', provider: 'Pragmatic Play', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: null, game_type: 'slot', is_premium: false };
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi([copy]).fetchImpl, palace: async () => palaceGames, split: () => true });
+  const bass = palaceId(7, 'bigbass');
+  const casino = { enabled: true, casinoBalanceCents: async () => 0, syncBack: async () => 0, leaveGame: async () => 0,
+    fsEnterGame: async () => ({ url: 'https://palace/fs', fsCents: 0 }), fsBalanceCents: async () => 0, fsWithdrawAll: async () => 0 };
+  const uid = player(db, 5);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run((await import('../server/security.js')).hashPassword('segredo123'), uid);
+  const email = db.prepare('SELECT email FROM users WHERE id = ?').get(uid).email;
+  // A €0.10 grant (spin_value_cents = 10).
+  const fsId = Number(db.prepare(`INSERT INTO casino_spins (user_id, ref, spins, spins_left, spin_value_cents, value_cents, balance_cents, games, game_bets, won_cents, expires_at, created_at)
+    VALUES (?, 'fs1', 5, 5, 10, 50, 50, ?, '{}', 0, ?, ?)`).run(uid, JSON.stringify([bass]), new Date(Date.now() + 86_400_000).toISOString(), nowIso()).lastInsertRowid);
+  const server = createApp(db, { bigbang: bb, casino, loginAttempts: 100 }).listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'segredo123' }) });
+    const cookie = login.headers.get('set-cookie')?.split(';')[0];
+    await fetch(`${base}/api/casino/launch`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ gameId: bass, freeSpins: fsId }) }).then((x) => x.json());
+    const s = db.prepare('SELECT play_game, game_bets FROM casino_spins WHERE id = ?').get(fsId);
+    assert.equal(s.play_game, 7777);
+    assert.deepEqual(JSON.parse(s.game_bets), { [bass]: 20 }); // lifted to the €0.20 minimum
+    const fs = playerToken(uid, fsId);
+    // A €0.10 spin is refused (below the game minimum); a €0.20 spin is accepted.
+    assert.match(bb.walletChange(move(fs, -0.1, 'b1', { game_id: 7777 })).body.error, /aposta fixa de 0,20 €/);
+    assert.equal(bb.walletChange(move(fs, -0.2, 'b2', { game_id: 7777 })).body.status, 'ok');
+  } finally { server.close(); }
+});

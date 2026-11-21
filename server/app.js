@@ -2379,6 +2379,15 @@ export function createApp(db, {
           // grant not already in play on Palace (palace_cents still null), so a half-played grant stays put.
           const twin = fs.palace_cents === null ? await bb.twin(g).catch(() => null) : null;
           if (twin) {
+            // Some slots don't accept the €0.10 fixed bet (Big Bass's minimum is €0.20). BigBang refuses a
+            // bet below the game's minimum, so every spin would fail: lift this game's free-spin bet to the
+            // game minimum (kept in game_bets, keyed by the chosen game) so the player's spins are accepted.
+            const minBet = twin.minBetCents || 0;
+            if (minBet > (spinBet(fs, g.id) || 0)) {
+              let bets = {}; try { bets = JSON.parse(fs.game_bets || '{}') || {}; } catch { bets = {}; }
+              bets[g.id] = minBet;
+              db.prepare('UPDATE casino_spins SET game_bets = ? WHERE id = ?').run(JSON.stringify(bets), fs.id);
+            }
             db.prepare('UPDATE casino_spins SET play_game = ? WHERE id = ?').run(twin.id, fs.id);
             const url = await bb.launch({ gameId: twin.id, token: playerToken(req.user.id, fs.id), returnUrl });
             notePlayed(req.user.id, g.id);

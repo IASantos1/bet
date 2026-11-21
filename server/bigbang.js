@@ -142,10 +142,15 @@ export function createBigBang(db, {
 
   // ---------- catalogue ----------
 
+  // Slots whose smallest bet is above €0.10, so free spins must play them at that minimum (BigBang
+  // refuses a bet below the game's minimum, which would leave the free spins unusable). Extend as needed.
+  const FS_MIN_BET = [[/big bass/i, 20]];
+  const fsMinBetCents = (name) => { for (const [re, c] of FS_MIN_BET) if (re.test(String(name || ''))) return c; return null; };
   const gameOut = (g) => ({
     id: g.id, code: g.name, name: g.title || g.name, provider: g.category_title || g.provider || g.category || '',
     providerId: providerKey(g.category_title || g.provider || g.category), image: g.thumbnail || null,
     category: TYPE_LABEL[g.game_type] || 'Slots', type: g.game_type || 'slot', premium: !!g.is_premium,
+    minBetCents: fsMinBetCents(g.title || g.name),
     // BigBang: live tables and Premium games are real-money only ("Demo not available").
     demo: !g.is_premium && g.game_type !== 'live',
   });
