@@ -2253,13 +2253,23 @@ export function createApp(db, {
         if (!req.user) throw new HttpError(401, 'Inicie sessão para jogar com dinheiro real.');
         if (!casino?.enabled) throw new HttpError(503, 'Casino Palace não configurado.');
         if (req.body.freeSpins) {
-          // Free spins: their value goes to the player's free-spins account there (the first time),
-          // the player's own balance stays here; only the picked game opens.
           let fs = spinsRow(db, Number(req.body.freeSpins), req.user.id);
           if (!fs || fs.status !== 'active' || fs.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
-          // Free spins play directly on the Palace game (same slot the player knows), at the fixed bet
-          // the Palace enforces (CASINO_FS_BET_PARAM). BigBang is used only for the live tables.
-          fs = chooseSpinsGame(db, req.user.id, fs.id, g.id);
+          fs = chooseSpinsGame(db, req.user.id, fs.id, g.id); // the Palace slot the player picked
+          // Free spins play on BigBang's own copy of the slot (seamless wallet): there a bet above the
+          // fixed one is REFUSED before it is taken, so the player can never burn several spins at once
+          // (at Palace, in Transfer mode, the bet can't be refused, so a €1 bet eats ten €0.10 spins).
+          // The money never leaves Bet62; each spin is counted by our own ledger. We only do this for a
+          // grant not already in play on Palace (palace_cents still null), so a half-played grant stays put.
+          const twin = fs.palace_cents === null ? await bb.twin(g).catch(() => null) : null;
+          if (twin) {
+            db.prepare('UPDATE casino_spins SET play_game = ? WHERE id = ?').run(twin.id, fs.id);
+            const url = await bb.launch({ gameId: twin.id, token: playerToken(req.user.id, fs.id), returnUrl });
+            notePlayed(req.user.id, g.id);
+            return res.json({ url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left ?? fs.spins, spins: fs.spins }, balance: cents(userById(req.user.id).balance_cents) });
+          }
+          // No BigBang copy of this slot: fall back to Palace (Transfer mode). The value goes to the
+          // player's free-spins account there (first launch); only the picked game opens.
           const fund = fs.palace_cents === null ? fs.value_cents : 0;
           if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
           let out;
