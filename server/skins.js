@@ -42,23 +42,26 @@ export function createSkins(db, { seedDir = null } = {}) {
   if (!cols.has('delay')) db.exec('ALTER TABLE casino_skins ADD COLUMN delay REAL NOT NULL DEFAULT 8');
   if (!cols.has('touch')) db.exec('ALTER TABLE casino_skins ADD COLUMN touch INTEGER NOT NULL DEFAULT 1');
   if (!cols.has('after')) db.exec('ALTER TABLE casino_skins ADD COLUMN after REAL NOT NULL DEFAULT 0.5');
+  // block: the cover also takes the clicks on its zone (blocks the panel underneath, e.g. "buy free
+  // spins"). Off: the cover is only visual and lets clicks through, so it can never freeze the game.
+  if (!cols.has('block')) db.exec('ALTER TABLE casino_skins ADD COLUMN block INTEGER NOT NULL DEFAULT 1');
 
   const row = (r) => ({
     id: r.id, code: r.code, name: r.name || r.code, side: r.side, ratio: r.ratio, box: JSON.parse(r.box), enabled: !!r.enabled,
-    delay: r.delay, touch: !!r.touch, after: r.after,
+    delay: r.delay, touch: !!r.touch, after: r.after, block: !!r.block,
     align: r.align ? JSON.parse(r.align) : null, updatedAt: r.updated_at,
     img: `/api/casino/skin/${r.id}?v=${encodeURIComponent(r.updated_at)}`,
     ref: r.has_ref ? `/api/admin/skins/${r.id}/ref?v=${encodeURIComponent(r.updated_at)}` : null,
     clean: r.has_clean ? `/api/admin/skins/${r.id}/clean?v=${encodeURIComponent(r.updated_at)}` : null,
   });
-  const COLS = 'id, code, name, side, ratio, box, enabled, delay, touch, after, align, updated_at, ref_image IS NOT NULL AS has_ref, clean_image IS NOT NULL AS has_clean';
+  const COLS = 'id, code, name, side, ratio, box, enabled, delay, touch, after, block, align, updated_at, ref_image IS NOT NULL AS has_ref, clean_image IS NOT NULL AS has_clean';
 
   /** Every cover, for the editor. */
   const all = () => db.prepare(`SELECT ${COLS} FROM casino_skins ORDER BY name, side, id`).all().map(row);
 
   /** The covers switched on, as the site uses them: { code, side, ratio, box, img }. */
   const live = () => db.prepare(`SELECT ${COLS} FROM casino_skins WHERE enabled = 1 ORDER BY id`).all().map(row)
-    .map(({ code, side, ratio, box, img, delay, touch, after }) => ({ code, side, ratio, box, img, delay, touch, after }));
+    .map(({ code, side, ratio, box, img, delay, touch, after, block }) => ({ code, side, ratio, box, img, delay, touch, after, block }));
 
   function image(id, which = 'image') {
     const col = { image: ['image', 'mime'], ref: ['ref_image', 'ref_mime'], clean: ['clean_image', 'clean_mime'] }[which];
@@ -88,6 +91,7 @@ export function createSkins(db, { seedDir = null } = {}) {
     if (input.delay !== undefined) fields.delay = Math.round(num(input.delay, 0, 60) * 10) / 10;
     if (input.touch !== undefined) fields.touch = input.touch ? 1 : 0;
     if (input.after !== undefined) fields.after = Math.round(num(input.after, 0, 30) * 10) / 10;
+    if (input.block !== undefined) fields.block = input.block ? 1 : 0;
     if (img) Object.assign(fields, { image: img.buf, mime: img.mime });
     if (ref) Object.assign(fields, { ref_image: ref.buf, ref_mime: ref.mime });
     if (clean) Object.assign(fields, { clean_image: clean.buf, clean_mime: clean.mime });

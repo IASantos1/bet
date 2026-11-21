@@ -2005,7 +2005,7 @@ function skinSoon(ms) {
   const g = state.casinoSession;
   if (!g?.frameAt || g.skinReady) return;
   clearTimeout(skinTimer);
-  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 2000 - Date.now()));
+  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 400 - Date.now()));
 }
 // A touch inside the game moves the focus into its frame: this page loses it. That first touch is the one
 // that closes the game's intro video and enters the slot — so it marks that we are past the intro.
@@ -2148,7 +2148,8 @@ function skinned(g, frame) {
   if (!s) return frame;
   const covers = (side) => (s[side]?.covers || []).map((c) => {
     const [l, t, w, h] = c.box;
-    return `<img class="skin-${side}" src="${esc(c.img)}" alt="" draggable="false" data-box="${[l, t, w, h].join(',')}">`;
+    // block === false → only visual, lets clicks through (never freezes the game).
+    return `<img class="skin-${side}${c.block === false ? ' sk-pass' : ''}" src="${esc(c.img)}" alt="" draggable="false" data-box="${[l, t, w, h].join(',')}">`;
   }).join('');
   const vars = [s.land ? s.land.ratio : '', s.port ? s.port.ratio : ''].join(',');
   const cls = ['skin-wrap', s.land && 'sk-land', s.port && 'sk-port', !g.skinReady && 'skin-wait'].filter(Boolean).join(' ');
