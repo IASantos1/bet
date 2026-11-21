@@ -655,9 +655,12 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const k = photoKey(name);
     const hit = k && cacheGet.get(`pimg:${k}`);
     if (hit?.body) return httpsLogo(hit.body);
-    const sur = photoSur(name);
-    const h2 = sur.length > 2 && cacheGet.get(`psur:${sur}`);
-    return h2 && h2.body ? httpsLogo(h2.body) : null;
+    // Surname match, trying the last token and the first (BETBY may give "Surname Name" or "Name Surname").
+    const toks = k.split(' ').filter(Boolean);
+    for (const cand of [...new Set([toks[toks.length - 1], toks[0]])]) {
+      if (cand && cand.length > 2) { const h = cacheGet.get(`psur:${cand}`); if (h?.body) return httpsLogo(h.body); }
+    }
+    return null;
   }
 
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */

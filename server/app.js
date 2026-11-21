@@ -1102,9 +1102,15 @@ export function createApp(db, {
   }
   app.locals.harvestPlayerPhotos = harvestPlayerPhotos;
 
-  app.get('/api/featured-scorers', (_req, res) => {
+  app.get('/api/featured-scorers', (req, res) => {
     // Build it on the first ask (then the timer keeps it warm); serve what we have meanwhile.
     if (!scorersCache.at && !scorersBusy) computeFeaturedScorers().catch(() => {});
+    if (req.query.debug) {
+      const sample = goalApi?.enabled ? db.prepare("SELECT key FROM goal_cache WHERE key LIKE 'pimg:%' LIMIT 25").all().map((r) => r.key.slice(5)) : [];
+      const photos = goalApi?.enabled ? db.prepare("SELECT COUNT(*) AS n FROM goal_cache WHERE key LIKE 'pimg:%'").get().n : 0;
+      return res.json({ at: scorersCache.at, total: scorersCache.list.length, comPhoto: scorersCache.list.filter((s) => s.photo).length, cacheFotos: photos,
+        jogadores: scorersCache.list.map((s) => ({ nome: s.player, foto: s.photo ? 'sim' : 'não' })), amostraCache: sample });
+    }
     res.json({ scorers: scorersCache.list, at: scorersCache.at });
   });
   // "Melhores escolhas" of a football match (picks.js): boosted ready-made builders.
