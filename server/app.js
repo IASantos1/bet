@@ -1062,13 +1062,17 @@ export function createApp(db, {
       }
       // The surest scorers of the biggest leagues first (a big-league favourite is the household name).
       out.sort((a, b) => a.tier - b.tier || a.odds - b.odds);
-      const seen = new Set(); const perEvent = new Map(); const list = [];
+      // One card per player (the same match can exist as more than one event, and a name can repeat):
+      // dedupe by the player's normalised name across ALL games, keeping the best-ranked one. Also at
+      // most two players per match, for variety across games.
+      const nameKey = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+      const seenPlayer = new Set(); const perEvent = new Map(); const list = [];
       for (const s of out) {
-        const k = `${s.eventId}|${s.player.toLowerCase()}`;
-        if (seen.has(k)) continue;
+        const pk = nameKey(s.player);
+        if (!pk || seenPlayer.has(pk)) continue;
         const n = perEvent.get(s.eventId) || 0;
-        if (n >= 2) continue; // at most two featured scorers per match, for variety across games
-        seen.add(k); perEvent.set(s.eventId, n + 1); list.push(s);
+        if (n >= 2) continue;
+        seenPlayer.add(pk); perEvent.set(s.eventId, n + 1); list.push(s);
         if (list.length >= 12) break;
       }
       scorersCache = { at: Date.now(), list };
