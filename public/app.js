@@ -2004,18 +2004,23 @@ function skinSoon(ms) {
   clearTimeout(skinTimer);
   skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 2000 - Date.now()));
 }
-// A touch inside the game moves the focus into its frame: this page loses it.
+// A touch inside the game moves the focus into its frame: this page loses it. That first touch is the one
+// that closes the game's intro video and enters the slot — so it marks that we are past the intro.
 window.addEventListener('blur', () => setTimeout(() => {
   const g = state.casinoSession;
   const side = skinSide(gameSkin(g || {}));
-  if (document.activeElement?.id === 'casinoFrame' && side?.touch) skinSoon(side.after * 1000);
+  if (document.activeElement?.id === 'casinoFrame' && side?.touch) { g.touched = true; skinSoon(side.after * 1000); }
 }));
 window.addEventListener('message', (e) => {
   const f = $('#casinoFrame');
   if (!f || e.source !== f.contentWindow) return;
   const text = typeof e.data === 'string' ? e.data : (() => { try { return JSON.stringify(e.data); } catch { return ''; } })();
   if (state.user?.role === 'admin') console.info('[jogo → site]', String(text).slice(0, 300));
-  if (/game.?ready|loaded|load.?(end|complete)|game.?start/i.test(text)) skinSoon(300);
+  // A "ready / loaded" message fires while the INTRO is loading too, which would cover the intro video.
+  // In touch mode, only honour it once the player has touched in (past the intro), so the cover never
+  // cuts the intro; without touch mode the admin's own delay rules, so ignore the message there as well.
+  const g = state.casinoSession; const side = skinSide(gameSkin(g || {}));
+  if (/game.?ready|loaded|load.?(end|complete)|game.?start/i.test(text) && side?.touch && g?.touched) skinSoon(300);
 });
 
 const warmOrigins = new Set();
