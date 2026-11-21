@@ -1385,8 +1385,9 @@ function casinoGameCard(g, i) {
 }
 
 const CASINO_PAGE = 48;
-// A provider, a tab or a search: all its games in one go (e.g. every Pragmatic game).
-const CASINO_ALL = 1000;
+// A provider, a tab or a search: the first page, then more load by themselves as the list is scrolled
+// (infinite scroll). With thousands of games, loading them all at once froze the page.
+const CASINO_ALL = 72;
 
 /** A lobby card (BigBang): opens the game's page. */
 const isExclusive = (id) => !!state.casinoLobby?.exclusive?.includes(id);
