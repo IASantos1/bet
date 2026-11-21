@@ -3539,6 +3539,14 @@ export function createApp(db, {
       open: req.body?.open === true,
     }));
   }));
+  // The jurisdiction every Palace game opens in ('' = leave as the aggregator sets it). A regulated
+  // one (e.g. PT) hides "Comprar Rodadas Grátis" and the turbo at the source. Test with "Abrir jogo"
+  // before turning it on for everyone.
+  admin.post('/casino/jurisdiction', (req, res) => {
+    const jur = String(req.body?.jurisdiction || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+    setSetting(db, 'casino.jurisdiction', jur);
+    res.json({ jurisdiction: jur });
+  });
   admin.post('/casino/palace-test', wrap(async (_req, res) => {
     if (!casino?.enabled) return res.json({ steps: [{ name: 'Configuração', ok: false, detail: 'Defina CASINO_API_URL e CASINO_API_TOKEN no Railway.' }] });
     res.json({ steps: await casino.diagnose() });
@@ -3599,7 +3607,7 @@ export function createApp(db, {
         serverDelay: loopDelay(),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
-        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },
+        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), jurisdiction: getSetting(db, 'casino.jurisdiction', ''), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },
       });
     }
     if (!casinoOn()) {

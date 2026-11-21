@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb, nowIso, tx } from '../server/db.js';
+import { openDb, nowIso, tx, setSetting } from '../server/db.js';
 import { createCasino } from '../server/casino.js';
 import { postTransaction } from '../server/wallet.js';
 import { createApp } from '../server/app.js';
@@ -318,7 +318,32 @@ test('launch inspect: follows the game address, hides secrets, finds the jurisdi
   const uk = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK' });
   assert.deepEqual(uk.hops.at(-1).params.find(([k]) => k === 'jurisdictionID'), ['jurisdictionID', 'UK']);
   const open = await casino.inspectLaunch(player(db), { name: 'The Dog House', jurisdiction: 'UK', open: true });
-  assert.equal(open.openUrl, 'https://aes-pragmatic.com/gs2c/html5Game.do?symbol=vs20doghouse&jurisdictionID=UK&lang=pt&mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH');
+  assert.equal(open.openUrl, 'https://aes-pragmatic.com/gs2c/html5Game.do?symbol=vs20doghouse&jurisdictionID=UK&lang=pt&mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH&jurisdiction=UK');
+  db.close();
+});
+
+test('launch: the casino.jurisdiction setting rewrites the real game address; off = untouched', async () => {
+  const db = openDb(':memory:');
+  const fetchImpl = async (url, opts = {}) => {
+    const u = new URL(url);
+    if (u.host === 'agent.example') {
+      if (u.pathname === '/v4/game/game-url') return new Response(JSON.stringify({ code: 0, data: { game_url: 'https://launch.example/go?token=abcdefghijklmnopqrstuvwxyz123&symbol=vs20doghouse' } }), { status: 200 });
+      if (u.pathname === '/v4/user/create') return new Response(JSON.stringify({ code: 0, data: { user_code: '400000001' } }), { status: 200 });
+      return new Response(JSON.stringify({ code: 0, data: {} }), { status: 200 });
+    }
+    assert.equal(opts.redirect, 'manual');
+    if (u.host === 'launch.example') return new Response('', { status: 302, headers: { location: 'https://aes-pragmatic.com/gs2c/playGame.do?symbol=vs20doghouse' } });
+    if (u.pathname.endsWith('playGame.do')) return new Response('', { status: 302, headers: { location: 'https://aes-pragmatic.com/gs2c/game/load?ssid=abc' } });
+    return new Response('<script>go("/gs2c/html5Game.do?symbol=vs20doghouse&amp;jurisdictionID=99&amp;mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH")</script>', { status: 200 });
+  };
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl });
+  // Off (default): the aggregator address is returned unchanged — no redirect-following.
+  const off = await casino.launch(player(db), { providerId: 1, gameCode: 'vs20doghouse', returnUrl: '' });
+  assert.equal(off, 'https://launch.example/go?token=abcdefghijklmnopqrstuvwxyz123&symbol=vs20doghouse');
+  // On: every launch opens on the regulated build (buy-feature and turbo hidden at the source).
+  setSetting(db, 'casino.jurisdiction', 'PT');
+  const on = await casino.launch(player(db), { providerId: 1, gameCode: 'vs20doghouse', returnUrl: '' });
+  assert.equal(on, 'https://aes-pragmatic.com/gs2c/html5Game.do?symbol=vs20doghouse&jurisdictionID=PT&mgckey=AUTHTOKENAUTHTOKENAUTHTOKENAUTH&jurisdiction=PT');
   db.close();
 });
 
