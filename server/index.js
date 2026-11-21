@@ -161,12 +161,12 @@ if (revolutPay) {
   setInterval(sweep, 60_000).unref();
 }
 
-const eupago = config.paymentsMode === 'eupago' && config.eupago.apiKey
+// Eupago (MB WAY / Multibanco) runs whenever its key is set — alongside Revolut (card / Apple / Google
+// Pay), so both can be offered at once, not only when PAYMENTS_MODE is "eupago".
+const eupago = config.eupago.apiKey
   ? createEupago(db, { ...config.eupago, log: (m) => console.warn(`[eupago] ${m}`) })
   : null;
-if (config.paymentsMode === 'eupago') {
-  console.log(`Eupago: ${eupago ? config.eupago.environment : 'não configurada'}`);
-}
+console.log(`Eupago (MB WAY / Multibanco): ${eupago ? config.eupago.environment : 'não configurada (defina EUPAGO_API_KEY)'}`);
 
 // Promotions: expired bonuses / free bets removed, and the weekly cashback credited (once per week).
 const promoJobs = () => {

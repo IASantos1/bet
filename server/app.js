@@ -963,9 +963,13 @@ export function createApp(db, {
     const m = maintenance();
     res.json({
       paymentsMode: config.paymentsMode,
-      // The deposit methods offered, in order: MB WAY and Multibanco (Stripe / Eupago / demo), then
-      // card, Apple Pay and Google Pay (Revolut's checkout page when it is set, else the card as before).
-      payMethods: [...(config.paymentsMode === 'disabled' ? [] : ['mbway', 'multibanco']), ...(revolutPay ? ['cartao', 'applepay', 'googlepay'] : config.paymentsMode === 'disabled' ? [] : ['cartao'])],
+      // The deposit methods offered, in order: MB WAY, Multibanco (Eupago / Stripe / demo), then Apple Pay
+      // and Google Pay (Revolut's checkout page), then card. A method is listed only when it can be paid.
+      payMethods: config.paymentsMode === 'disabled' ? [] : [
+        ...((eupago || config.paymentsMode === 'demo' || (config.paymentsMode === 'stripe' && stripe)) ? ['mbway', 'multibanco'] : []),
+        ...(revolutPay ? ['applepay', 'googlepay'] : []),
+        'cartao',
+      ],
       // Shown as "Indisponível" and not clickable (PAY_METHODS_OFF).
       payMethodsOff: config.payMethodsOff,
       // Card, Apple Pay and Google Pay paid inside our page (Revolut's widget), with the public key.
@@ -1776,14 +1780,26 @@ export function createApp(db, {
       const stripeMode = config.paymentsMode === 'stripe';
       const eupagoMode = config.paymentsMode === 'eupago';
       const method = String(req.body.method || '');
-      // Card, Apple Pay and Google Pay: Revolut's checkout page, whatever provider MB WAY / Multibanco use.
+      // Card, Apple Pay and Google Pay: Revolut's checkout page. MB WAY and Multibanco: Eupago, whenever
+      // it is configured — so both providers can be offered together, not only in one payments mode.
       const viaRevolut = !!revolutPay && !!REVOLUT_METHODS[method];
+      const viaEupago = !!eupago && ['mbway', 'multibanco'].includes(method);
       if (!viaRevolut && ['applepay', 'googlepay'].includes(method)) throw new HttpError(503, 'Apple Pay e Google Pay ainda não estão disponíveis.');
-      if (!viaRevolut && config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
+      if (!viaRevolut && !viaEupago && config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
       }
       if (config.payMethodsOff.includes(method)) throw new HttpError(503, 'Este método de pagamento está temporariamente indisponível.');
       const { amount, promo } = depositAsked(req);
+
+      if (viaEupago) {
+        let r;
+        try {
+          r = await eupago.createDeposit(req.user, amount, { method, phone: req.body.phone, promo });
+        } catch (err) {
+          throw err.ours ? new HttpError(400, err.message) : new HttpError(502, `Não foi possível iniciar o pagamento Eupago: ${err.message}`);
+        }
+        return res.status(201).json({ payment: depositOut(r), balance: cents(userById(req.user.id).balance_cents) });
+      }
 
       if (viaRevolut) {
         let r;
@@ -1830,9 +1846,11 @@ export function createApp(db, {
         ? revolutPay?.refresh(sessionId, req.user.id)
         : sessionId.startsWith('pi_')
         ? stripe?.refresh(sessionId, req.user.id)
-        : config.paymentsMode === 'eupago'
-          ? eupago?.refresh(sessionId, req.user.id)
-          : stripe?.refresh(sessionId, req.user.id);
+        : sessionId.startsWith('B62-') && eupago
+          ? eupago.refresh(sessionId, req.user.id)
+          : config.paymentsMode === 'eupago'
+            ? eupago?.refresh(sessionId, req.user.id)
+            : stripe?.refresh(sessionId, req.user.id);
       const refreshed = r instanceof Promise ? await r : r;
       if (!refreshed) throw new HttpError(404, 'Depósito não encontrado.');
       res.json({ ...depositOut(refreshed), balance: cents(userById(req.user.id).balance_cents) });
