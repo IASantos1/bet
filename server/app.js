@@ -19,6 +19,7 @@ import { createSeasonal } from './seasonal.js';
 import { createSpotlights, SpotlightError, AFTER as SPOT_AFTER } from './spotlights.js';
 import { createFeatured, isBigTeam } from './featured.js';
 import { houseKit } from './kits.js';
+import { matchClub } from './bigclubs.js';
 import { shortTeam } from './shortnames.js';
 import { nationalSides } from './nations.js';
 import { rawForAdmin } from './sportscore.js';
@@ -1035,16 +1036,20 @@ export function createApp(db, {
       const tkn = (s) => new Set(nameKey(s).split(' ').filter((w) => w.length > 2));
       const overlap = (a, b) => { const A = tkn(a); const B = tkn(b); let n = 0; for (const w of A) if (B.has(w)) n += 1; return n; };
       const sideOfTeam = (team, home, away) => { if (!team) return null; const h = overlap(team, home); const a = overlap(team, away); return h > a ? 'home' : a > h ? 'away' : null; };
-      // Big leagues only (Champions/Europa, Premier, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal,
-      // Brasileirão, World Cup/Euro…): tier 1 first, then tier 2 to fill. Live games stay (in-play), plus the
-      // nearest upcoming ones. Bounded.
+      // Only the chosen big clubs (server/bigclubs.js): a game counts if one of its teams is on the list.
+      // One card per club, tier 1 first (the giants), then tier 2, then the Brazilian sides. Live games
+      // stay up; otherwise the games of this day and week. Bounded.
       const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time, status FROM events
         WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time > ? AND start_time < ?))
-        ORDER BY status = 'live' DESC, start_time LIMIT 100`).all(nowIso(), new Date(Date.now() + 3 * 86_400_000).toISOString());
-      const evs = rows.map((e) => ({ ...e, tier: leagueTier('futebol', e.competition), live: e.status === 'live' }))
-        .filter((e) => e.tier <= 2)
+        ORDER BY status = 'live' DESC, start_time LIMIT 400`).all(nowIso(), new Date(Date.now() + 7 * 86_400_000).toISOString());
+      const evs = rows.map((e) => {
+        const homeClub = matchClub(e.home); const awayClub = matchClub(e.away);
+        const club = (homeClub && awayClub) ? (homeClub.tier <= awayClub.tier ? homeClub : awayClub) : (homeClub || awayClub);
+        return { ...e, live: e.status === 'live', homeClub, awayClub, tier: club ? club.tier : 9 };
+      })
+        .filter((e) => e.homeClub || e.awayClub)
         .sort((a, b) => Number(b.live) - Number(a.live) || a.tier - b.tier || String(a.start_time).localeCompare(String(b.start_time)))
-        .slice(0, 26);
+        .slice(0, 40);
       const out = [];
       let seeded = 0;
       for (const ev of evs) {
@@ -1065,30 +1070,30 @@ export function createApp(db, {
           const rep = await goalApi?.matchReport?.(ev).catch(() => null);
           for (const p of (rep?.players || [])) if (p.goals > 0 && p.name) scored.add(nameKey(p.name));
         }
+        // The whitelisted side(s) of this game — a scorer is attached to the club he plays for.
+        const sides = [['home', ev.homeClub], ['away', ev.awayClub]].filter(([, c]) => c);
         for (const o of scorer.outcomes || []) {
           if (!o.name || !(o.odd > 1) || o.blocked) continue;
-          if (scored.has(nameKey(o.name))) continue; // already scored in play → bet won, show someone else
-          const team = goalApi?.playerTeam?.(o.name) || null;
-          const side = sideOfTeam(team, ev.home, ev.away);
-          const kit = side ? houseKit('futebol', ev[side]) : null;
-          out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
-            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier, live: ev.live,
-            side, kitBody: kit?.[0] || null, kitTrim: kit?.[1] || null,
-            photo: goalApi?.playerPhoto?.(o.name) || null });
+          if (scored.has(nameKey(o.name))) continue;
+          const known = sideOfTeam(goalApi?.playerTeam?.(o.name) || null, ev.home, ev.away); // from a lineup, if seen
+          for (const [side, club] of sides) {
+            if (known && known !== side) continue; // we know he plays for the other team → not this club's card
+            const kit = houseKit('futebol', ev[side]);
+            out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
+              home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, live: ev.live,
+              club: club.key, tier: club.tier, side, kitBody: kit?.[0] || null, kitTrim: kit?.[1] || null,
+              photo: goalApi?.playerPhoto?.(o.name) || null });
+          }
         }
       }
-      // In-play first (keep those cards up), then the surest scorers of the biggest leagues.
+      // In-play first, then club tier (giants first), then the surest scorer. One card per club and one
+      // per player, so each chosen club shows a single scorer and no player is repeated.
       out.sort((a, b) => Number(b.live) - Number(a.live) || a.tier - b.tier || a.odds - b.odds);
-      // One card per player (a match can exist as more than one event, and a name can repeat); and one
-      // scorer per team (so a big game shows a card for each side), at most two per game in all.
-      const seenPlayer = new Set(); const perEvent = new Map(); const sideUsed = new Set(); const list = [];
+      const seenPlayer = new Set(); const seenClub = new Set(); const list = [];
       for (const s of out) {
         const pk = nameKey(s.player);
-        if (!pk || seenPlayer.has(pk)) continue;
-        if (s.side && sideUsed.has(`${s.eventId}|${s.side}`)) continue; // already a scorer from this team
-        if ((perEvent.get(s.eventId) || 0) >= 2) continue;
-        seenPlayer.add(pk); perEvent.set(s.eventId, (perEvent.get(s.eventId) || 0) + 1);
-        if (s.side) sideUsed.add(`${s.eventId}|${s.side}`);
+        if (!pk || seenPlayer.has(pk) || seenClub.has(s.club)) continue;
+        seenPlayer.add(pk); seenClub.add(s.club);
         list.push(s);
         if (list.length >= 12) break;
       }
