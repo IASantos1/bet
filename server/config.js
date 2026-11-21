@@ -55,7 +55,7 @@ export const config = {
   // "stripe": payments through Stripe. "eupago": card, MB WAY and Multibanco via Eupago.
   paymentsMode: (env.PAYMENTS_MODE || ((env.STRIPE_SECRET_KEY || '').trim() ? 'stripe' : 'demo')).trim().toLowerCase(),
   eupago: {
-    apiKey: unquote(env.EUPAGO_API_KEY),
+    apiKey: unquote(env.EUPAGO_API_KEY || env.EUPAGO_KEY || env.EUPAGO_APIKEY || env.EUPAGO_CHAVE),
     // Use "production" only after the channel is approved and tested in Eupago's live environment.
     environment: (env.EUPAGO_ENVIRONMENT || 'sandbox').trim().toLowerCase(),
   },
@@ -76,7 +76,7 @@ export const config = {
   // Deposit methods shown as "Indisponível" (temporarily off), comma separated: "mbway,multibanco".
   // Default: MB WAY / Multibanco are off only when Revolut Merchant is on AND Eupago is not configured
   // (so there is no provider for them). With an Eupago key set, they stay on. PAY_METHODS_OFF overrides.
-  payMethodsOff: (env.PAY_METHODS_OFF ?? ((unquote(env.REVOLUT_MERCHANT_SECRET_KEY) && !unquote(env.EUPAGO_API_KEY)) ? 'mbway,multibanco' : '')).split(',').map((m) => m.trim().toLowerCase()).filter(Boolean),
+  payMethodsOff: (env.PAY_METHODS_OFF ?? ((unquote(env.REVOLUT_MERCHANT_SECRET_KEY) && !unquote(env.EUPAGO_API_KEY || env.EUPAGO_KEY || env.EUPAGO_APIKEY || env.EUPAGO_CHAVE)) ? 'mbway,multibanco' : '')).split(',').map((m) => m.trim().toLowerCase()).filter(Boolean),
   revolutPay: {
     secretKey: unquote(env.REVOLUT_MERCHANT_SECRET_KEY),
     // The public key ("pk_…"): the card form, Apple Pay and Google Pay inside our page need it.

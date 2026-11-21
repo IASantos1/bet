@@ -2780,6 +2780,7 @@ export function createApp(db, {
         payout: w.payout_status || null, payoutRef: w.payout_ref || null, payoutError: w.payout_error || null, paidAt: w.paid_at || null,
       })),
       revolut: revolut ? { configured: revolut.configured, environment: revolut.environment, autoMin: cents(revolut.autoMinCents), autoMax: cents(revolut.autoMaxCents), webhook: revolut.webhookSet, diagnostics: revolut.diagnostics?.() } : null,
+      eupago: { configured: !!eupago, environment: eupago?.environment || null, paymentsMode: config.paymentsMode, methodsOff: config.payMethodsOff, webhook: `${req.protocol}://${req.get('host')}/api/eupago/webhook` },
     });
   });
   // "Testar ligação": asks Revolut for a token now; the answer (and what to check) for the admin.
