@@ -1078,6 +1078,9 @@ export function createApp(db, {
           const known = sideOfTeam(goalApi?.playerTeam?.(o.name) || null, ev.home, ev.away); // from a lineup, if seen
           for (const [side, club] of sides) {
             if (known && known !== side) continue; // we know he plays for the other team → not this club's card
+            // Lone big club in the game and no lineup yet: only a likely scorer (short odds) is taken, so a
+            // non-listed opponent's longshot is never shown under the big club. Two listed clubs: allow both.
+            if (!known && sides.length === 1 && o.odd > 4.5) continue;
             const kit = houseKit('futebol', ev[side]);
             out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
               home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, live: ev.live,
