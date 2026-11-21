@@ -968,7 +968,10 @@ html:not(.light) .acca-badge { color: #f3c64a; }
 @media (max-width: 700px) { .scorers-sec .car-track { grid-auto-columns: 45%; } }
 .scorer-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 15px 10px 10px; border: 1px solid var(--line); border-top: 3px solid var(--register); border-radius: 12px; background: linear-gradient(180deg, var(--row-hover) -40%, var(--panel) 42%); min-height: 100%; text-align: center; overflow: hidden; }
 .sc-rank { position: absolute; top: 8px; right: 10px; font-size: 13px; font-weight: 900; color: var(--green); }
-.sc-emblem { width: 50px; height: 50px; margin-top: 2px; display: grid; place-items: center; border-radius: 50%; background: var(--panel2); border: 1px solid var(--line); font-size: 24px; }
+.sc-emblem { position: relative; width: 54px; height: 54px; margin-top: 2px; display: grid; place-items: center; border-radius: 50%; background: var(--panel2); border: 1px solid var(--line); font-size: 24px; overflow: hidden; }
+.sc-emblem.has-photo { border-color: var(--register); background: #0d1116; }
+.sc-face { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.sc-emblem.has-photo .sc-ball { display: none; }
 .sc-name { font-weight: 900; font-size: 13px; line-height: 1.15; min-height: 2.3em; display: flex; align-items: center; text-transform: uppercase; letter-spacing: .01em; color: var(--strong); }
 .sc-match { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-3); max-width: 100%; }
 .sc-match img { width: 15px; height: 15px; object-fit: contain; flex: 0 0 auto; }

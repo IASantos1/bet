@@ -985,9 +985,10 @@ function scorerCard(s, i) {
   const ev = state.events.find((x) => x.id === s.eventId);
   const inSlip = state.slip.some((x) => x.betby && x.eventId === s.eventId && String(x.betby.marketId) === String(s.marketId) && x.betby.player === s.player);
   const badge = (side, name) => (ev ? sideBadge(ev, side, 'sm') : `<span class="sc-dot">${esc((name || '?').slice(0, 1))}</span>`);
+  const face = `<div class="sc-emblem${s.photo ? ' has-photo' : ''}">${s.photo ? `<img class="sc-face" src="${esc(s.photo)}" alt="" loading="lazy">` : ''}<span class="sc-ball" aria-hidden="true">⚽</span></div>`;
   return `<div class="scorer-card">
     <span class="sc-rank">#${i + 1}</span>
-    <div class="sc-emblem" aria-hidden="true">⚽</div>
+    ${face}
     <div class="sc-name">${esc(s.player)}</div>
     <div class="sc-match">${badge('home', s.home)}<span>${esc(s.home)} <i>v</i> ${esc(s.away)}</span>${badge('away', s.away)}</div>
     <div class="sc-when">${esc(shortWhen(s.startTime))}</div>
@@ -1907,6 +1908,12 @@ document.addEventListener('load', (e) => {
   if (e.target?.id !== 'casinoFrame') return;
   setTimeout(uncoverGame, 300);
   armSkin();
+}, true);
+
+// A featured-scorer photo that fails to load: drop it so the ⚽ emblem shows instead of a broken image.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (img?.classList?.contains('sc-face')) { img.closest('.sc-emblem')?.classList.remove('has-photo'); img.remove(); }
 }, true);
 
 // A cover waits for the game itself: Pragmatic first shows its loading bar and an intro screen, which the

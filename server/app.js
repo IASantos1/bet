@@ -1041,6 +1041,7 @@ export function createApp(db, {
         .sort((a, b) => a.tier - b.tier || String(a.start_time).localeCompare(String(b.start_time)))
         .slice(0, 24);
       const out = [];
+      let seeded = 0;
       for (const ev of evs) {
         const gf = await goalApi?.link?.(ev).catch(() => null);
         const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
@@ -1049,10 +1050,14 @@ export function createApp(db, {
         const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
         const scorer = pm.find((x) => x.kind === 'anytime_scorer');
         if (!scorer) continue;
+        // Close to kick-off the lineup is published: read it once (it harvests the players' photos, so the
+        // cards can show a face). Bounded, and only near KO where a lineup actually exists.
+        if (seeded < 6 && Date.parse(ev.start_time) - Date.now() < 4 * 3600_000) { seeded += 1; await goalApi?.lineups?.(ev).catch(() => {}); }
         for (const o of scorer.outcomes || []) {
           if (!o.name || !(o.odd > 1) || o.blocked) continue;
           out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
-            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier });
+            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier,
+            photo: goalApi?.playerPhoto?.(o.name) || null });
         }
       }
       // The surest scorers of the biggest leagues first (a big-league favourite is the household name).

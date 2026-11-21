@@ -627,10 +627,37 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const home = side('home');
     const away = side('away');
     const flat = (t) => [...t.starters, ...t.bench].map((p) => p.name);
+    harvestPhotos(home, away); // keep each player's photo by name, for the featured-scorer cards
     return {
       homeId: fx.home?.id || null, awayId: fx.away?.id || null,
       home, away, names: { home: flat(home), away: flat(away) }, raw,
     };
+  }
+
+  // Player photos (from any lineup seen) kept by name, so a star's picture shows on the "Jogadores em
+  // destaque" cards — even for a game days away, once we have seen that player in a lineup before.
+  const photoKey = (name) => slug(name).replace(/\s+/g, ' ').trim();
+  const photoSur = (name) => { const t = photoKey(name).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
+  function harvestPhotos(home, away) {
+    const now = Date.now();
+    for (const t of [home, away]) {
+      for (const p of [...(t?.starters || []), ...(t?.bench || [])]) {
+        if (!p?.name || !p.image) continue;
+        const k = photoKey(p.name); const sur = photoSur(p.name);
+        if (k) cacheSet.run(`pimg:${k}`, p.image, now);
+        if (sur.length > 2) cacheSet.run(`psur:${sur}`, p.image, now);
+      }
+    }
+  }
+  /** A player's photo by name (from a lineup seen before), or null. */
+  function playerPhoto(name) {
+    if (!enabled || !name) return null;
+    const k = photoKey(name);
+    const hit = k && cacheGet.get(`pimg:${k}`);
+    if (hit?.body) return httpsLogo(hit.body);
+    const sur = photoSur(name);
+    const h2 = sur.length > 2 && cacheGet.get(`psur:${sur}`);
+    return h2 && h2.body ? httpsLogo(h2.body) : null;
   }
 
   /** Head-to-head, league table and last five games of each team; only what GOAL API has. */
@@ -775,5 +802,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, playerPhoto, status, diagnose, refresh };
 }
