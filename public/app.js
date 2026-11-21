@@ -1937,6 +1937,9 @@ document.addEventListener('error', (e) => {
 // loaded), with \`delay\` s after loading as a fallback when nobody touches (0 = none); or \`delay\` s
 // after the page loaded. A message from the game saying it is ready also shows it.
 let skinTimer = null;
+// The game's intro / loading bar (Pragmatic) runs for about this long after the frame loads; the cover
+// never appears before it, so it never sits on the intro video. After it, the cover comes right away.
+const SKIN_INTRO_MS = 2500;
 /**
  * A game's cover filling its card edge to edge (object-fit: fill): its whole width always shows (the
  * name is never cut) and a lower cover is stretched to the card's height, so no border is left.
@@ -1997,16 +2000,17 @@ function armSkin() {
   clearTimeout(skinTimer);
   if (!side || g.skinReady) return;
   g.frameAt = Date.now();
-  // Always schedule a fall-back from load, so the cover never fails to appear: the admin's delay, or a
-  // safe default when it is 0 (a touch inside the game, if detected, just makes it appear sooner).
-  const d = side.delay > 0 ? side.delay : (side.touch ? 10 : 8);
-  skinTimer = setTimeout(showSkin, d * 1000);
+  // Always schedule a fall-back from load, so the cover never fails to appear: the admin's delay, or,
+  // when it is 0, right after the intro. A "loaded" message from the game (or a touch) shows it sooner.
+  const d = side.delay > 0 ? side.delay * 1000 : SKIN_INTRO_MS;
+  skinTimer = setTimeout(showSkin, d);
 }
 function skinSoon(ms) {
   const g = state.casinoSession;
   if (!g?.frameAt || g.skinReady) return;
   clearTimeout(skinTimer);
-  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + 400 - Date.now()));
+  // Never before the intro is done (SKIN_INTRO_MS), so the cover is never placed over the intro video.
+  skinTimer = setTimeout(showSkin, Math.max(ms, g.frameAt + SKIN_INTRO_MS - Date.now()));
 }
 // A touch inside the game moves the focus into its frame: this page loses it. That first touch is the one
 // that closes the game's intro video and enters the slot — so it marks that we are past the intro.
@@ -2020,11 +2024,10 @@ window.addEventListener('message', (e) => {
   if (!f || e.source !== f.contentWindow) return;
   const text = typeof e.data === 'string' ? e.data : (() => { try { return JSON.stringify(e.data); } catch { return ''; } })();
   if (state.user?.role === 'admin') console.info('[jogo → site]', String(text).slice(0, 300));
-  // A "ready / loaded" message fires while the INTRO is loading too, which would cover the intro video.
-  // In touch mode, only honour it once the player has touched in (past the intro), so the cover never
-  // cuts the intro; without touch mode the admin's own delay rules, so ignore the message there as well.
+  // A "ready / loaded" message means the game finished loading: show the cover as soon as it arrives.
+  // The SKIN_INTRO_MS floor in skinSoon keeps it off the intro video even if the message fires early.
   const g = state.casinoSession; const side = skinSide(gameSkin(g || {}));
-  if (/game.?ready|loaded|load.?(end|complete)|game.?start/i.test(text) && side?.touch && g?.touched) skinSoon(300);
+  if (side && /game.?ready|loaded|load.?(end|complete)|game.?start|spin|balance|init/i.test(text)) skinSoon(0);
 });
 
 const warmOrigins = new Set();
