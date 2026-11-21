@@ -3265,7 +3265,7 @@ function skinEditorHtml() {
           <option value="time"${e.touch ? '' : ' selected'}>um tempo fixo depois de o jogo carregar</option></select></label>
         <label class="field adm-inline sk-touch-only${e.touch ? '' : ' hidden'}">Atraso depois do toque <input type="number" id="skAfter" min="0" max="30" step="0.1" value="${e.after}" class="sk-num"> s</label>
         <label class="field adm-inline"><span id="skDelayLabel">${e.touch ? 'Se ninguém tocar, aparece na mesma depois de' : 'Aparece'}</span>
-          <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s <small class="muted" id="skDelayHint">${e.touch ? '(0 = nunca)' : 'depois de o jogo carregar'}</small></label>
+          <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s <small class="muted" id="skDelayHint">${e.touch ? '(0 = aparece ~10 s depois de carregar)' : 'depois de o jogo carregar'}</small></label>
         <button type="button" class="ghost-btn btn-sm" data-action="skin-measure">⏱ Medir: carregue quando o jogo começar</button>
         <small class="muted" id="skMeasure">Abra o jogo aqui: o cronómetro conta desde que o jogo carregou.</small>
       </div>
@@ -3582,7 +3582,7 @@ async function skinChange(t) {
     const touch = t.value === 'touch';
     document.querySelectorAll('.sk-touch-only').forEach((n) => n.classList.toggle('hidden', !touch));
     $('#skDelayLabel').textContent = touch ? 'Se ninguém tocar, aparece na mesma depois de' : 'Aparece';
-    $('#skDelayHint').textContent = touch ? '(0 = nunca)' : 'depois de o jogo carregar';
+    $('#skDelayHint').textContent = touch ? '(0 = aparece ~10 s depois de carregar)' : 'depois de o jogo carregar';
     return;
   }
   if (t.id === 'skSide') {

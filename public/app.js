@@ -1996,7 +1996,10 @@ function armSkin() {
   clearTimeout(skinTimer);
   if (!side || g.skinReady) return;
   g.frameAt = Date.now();
-  if (!side.touch || side.delay > 0) skinTimer = setTimeout(showSkin, side.delay * 1000);
+  // Always schedule a fall-back from load, so the cover never fails to appear: the admin's delay, or a
+  // safe default when it is 0 (a touch inside the game, if detected, just makes it appear sooner).
+  const d = side.delay > 0 ? side.delay : (side.touch ? 10 : 8);
+  skinTimer = setTimeout(showSkin, d * 1000);
 }
 function skinSoon(ms) {
   const g = state.casinoSession;
