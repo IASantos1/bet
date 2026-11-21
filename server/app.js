@@ -1914,15 +1914,28 @@ export function createApp(db, {
   });
   // BETBY player markets of one of our football games (what WinHouse does not offer), with player names
   // and odds, each mapped to the settle-able market kind. Public (odds), used by the match page.
+  // The player-market answer is the same for everyone opening a game and is costly to build (one GOAL
+  // link + one BETBY per-event fetch + one GOAL lineups). Keep it a few seconds so the pre-fetch that
+  // fires on tap warms it and the real open reads it at once. Live games change faster, so a shorter hold.
+  const betbyMktCache = new Map(); // eventId -> { at, body, ttl }
   app.get('/api/events/:id/betby-markets', wrap(async (req, res) => {
-    if (!betbyCollector?.on) return res.json({ markets: [] });
-    const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ? AND sport = 'futebol'").get(Number(req.params.id));
-    if (!ev || (ev.status !== 'scheduled' && ev.status !== 'live')) return res.json({ markets: [] });
+    const id = Number(req.params.id);
+    const cached = betbyMktCache.get(id);
+    if (cached && Date.now() - cached.at < cached.ttl) return res.type('json').send(cached.body);
+    const send = (payload, ttl = 12_000) => {
+      const body = JSON.stringify(payload);
+      if (betbyMktCache.size > 300) betbyMktCache.clear();
+      betbyMktCache.set(id, { at: Date.now(), body, ttl });
+      return res.type('json').send(body);
+    };
+    if (!betbyCollector?.on) return send({ markets: [] });
+    const ev = db.prepare("SELECT id, sport, home, away, start_time, status FROM events WHERE id = ? AND sport = 'futebol'").get(id);
+    if (!ev || (ev.status !== 'scheduled' && ev.status !== 'live')) return send({ markets: [] });
     // The GOAL API fixture of our game (its team names align with WinHouse) is a second match key for BETBY.
     const gf = await goalApi?.link?.(ev).catch(() => null);
     const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
     const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time, altNames });
-    if (!m) return res.json({ markets: [] });
+    if (!m) return send({ markets: [] });
     const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
     // Which players are on each team, so the UI can put team A on the left and team B on the right.
     // Lineups only exist near kick-off / in play, so skip the request (GOAL API budget) when far out.
@@ -1945,7 +1958,11 @@ export function createApp(db, {
       outcomes: mk.outcomes.filter((o) => o.name && o.odd > 1 && !o.blocked).map((o) => ({ player: o.name, odds: o.odd, side: sideOf(o.name) })),
     })).filter((mk) => mk.outcomes.length);
     // Sides are GOAL-API-relative (= our event's home/away), the same basis settlement uses.
-    res.json({ markets, betbyEventId: m.event.id, teams: { home: ev.home, away: ev.away }, haveLineups: Boolean(lu && (lu.names.home.length || lu.names.away.length)) });
+    // Live odds move quickly, so hold a live game's answer only briefly; a scheduled one can rest longer.
+    return send(
+      { markets, betbyEventId: m.event.id, teams: { home: ev.home, away: ev.away }, haveLineups: Boolean(lu && (lu.names.home.length || lu.names.away.length)) },
+      ev.status === 'live' ? 8_000 : 20_000,
+    );
   }));
 
   // Place a BETBY player bet (we settle it ourselves from GOAL API). Single selection, own wallet.

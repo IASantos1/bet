@@ -4949,7 +4949,19 @@ function leaveMatch() {
 // A match page read ahead: when the finger touches a game (or the mouse rests on it), its page is
 // already on its way, so opening it shows everything at once. Kept a few seconds only.
 const prefetched = new Map(); // id → { at, promise }
+const betbyWarm = new Map(); // id → last warm (ms): throttle the player-market pre-fetch
 function prefetchMatch(id) {
+  // Football player markets too: warm them on tap/hover so the "Marcador" tab is already filled on open.
+  // The server holds the answer ~12 s and api() de-dupes in-flight GETs, so the real load reads it at once.
+  const ev = state.events.find((x) => x.id === id);
+  if (!ev || ev.sport === 'futebol') {
+    const last = betbyWarm.get(id);
+    if (!last || Date.now() - last > 8_000) {
+      betbyWarm.set(id, Date.now());
+      api(`/api/events/${id}/betby-markets`).catch(() => {});
+      if (betbyWarm.size > 40) betbyWarm.delete(betbyWarm.keys().next().value);
+    }
+  }
   const hit = prefetched.get(id);
   if (hit && Date.now() - hit.at < 8_000) return;
   const promise = api(`/api/events/${id}`);
