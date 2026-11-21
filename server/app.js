@@ -2768,7 +2768,7 @@ export function createApp(db, {
     res.json({ result: settlement.runOnce(), summary: settlement.summary() });
   });
 
-  admin.get('/withdrawals', (_req, res) => {
+  admin.get('/withdrawals', (req, res) => {
     const rows = db.prepare(
       `SELECT w.*, u.email, u.name FROM withdrawals w JOIN users u ON u.id = w.user_id
         ORDER BY CASE w.status WHEN 'pending' THEN 0 ELSE 1 END, w.id DESC LIMIT 100`
