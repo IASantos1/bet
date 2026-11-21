@@ -76,7 +76,7 @@ export const config = {
   // Deposit methods shown as "Indisponível" (temporarily off), comma separated: "mbway,multibanco".
   // Default: MB WAY / Multibanco are off only when Revolut Merchant is on AND Eupago is not configured
   // (so there is no provider for them). With an Eupago key set, they stay on. PAY_METHODS_OFF overrides.
-  payMethodsOff: (env.PAY_METHODS_OFF ?? ((unquote(env.REVOLUT_MERCHANT_SECRET_KEY) && !unquote(env.EUPAGO_API_KEY || env.EUPAGO_KEY || env.EUPAGO_APIKEY || env.EUPAGO_CHAVE)) ? 'mbway,multibanco' : '')).split(',').map((m) => m.trim().toLowerCase()).filter(Boolean),
+  payMethodsOff: (env.PAY_METHODS_OFF ?? ((unquote(env.REVOLUT_MERCHANT_SECRET_KEY) && !unquote(env.EUPAGO_API_KEY || env.EUPAGO_KEY || env.EUPAGO_APIKEY || env.EUPAGO_CHAVE) && !unquote(env.STRIPE_SECRET_KEY)) ? 'mbway,multibanco' : '')).split(',').map((m) => m.trim().toLowerCase()).filter(Boolean),
   revolutPay: {
     secretKey: unquote(env.REVOLUT_MERCHANT_SECRET_KEY),
     // The public key ("pk_…"): the card form, Apple Pay and Google Pay inside our page need it.

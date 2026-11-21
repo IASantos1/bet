@@ -1783,9 +1783,10 @@ export function createApp(db, {
       // Card, Apple Pay and Google Pay: Revolut's checkout page. MB WAY and Multibanco: Eupago, whenever
       // it is configured — so both providers can be offered together, not only in one payments mode.
       const viaRevolut = !!revolutPay && !!REVOLUT_METHODS[method];
-      // MB WAY and Multibanco always go through Eupago; the card too when there is no Revolut (a
-      // full-Eupago site), so nothing ever falls back to Stripe unless Stripe is the chosen provider.
-      const viaEupago = !!eupago && (['mbway', 'multibanco'].includes(method) || (method === 'cartao' && !viaRevolut));
+      // Stripe mode wins when it is the chosen provider: MB WAY, Multibanco and card all go through Stripe
+      // then. Otherwise Eupago handles MB WAY / Multibanco (and card without Revolut), so a non-Stripe site
+      // never falls back to Stripe.
+      const viaEupago = !!eupago && !(stripeMode && stripe) && (['mbway', 'multibanco'].includes(method) || (method === 'cartao' && !viaRevolut));
       if (!viaRevolut && ['applepay', 'googlepay'].includes(method)) throw new HttpError(503, 'Apple Pay e Google Pay ainda não estão disponíveis.');
       if (!viaRevolut && !viaEupago && config.paymentsMode !== 'demo' && !(stripeMode && stripe) && !(eupagoMode && eupago)) {
         throw new HttpError(503, 'Os depósitos ainda não estão disponíveis: o fornecedor de pagamentos selecionado não está configurado.');
