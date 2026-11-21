@@ -534,6 +534,43 @@ export function createBigBang(db, {
     return r.game_url;
   }
 
+  const maskSecret = (s) => (String(s).length > 10 ? `${String(s).slice(0, 4)}…(${String(s).length})` : String(s));
+  function maskUrl(u) {
+    try {
+      const url = new URL(u);
+      for (const [k, v] of [...url.searchParams]) {
+        if (/token|key|sig|hash|sess|auth|secret|jwt/i.test(k) || /^[A-Za-z0-9+/=_.-]{20,}$/.test(v)) url.searchParams.set(k, maskSecret(v));
+      }
+      return url.toString();
+    } catch { return u; }
+  }
+
+  /**
+   * Admin test: launches one game in demo (no account, no money) with an optional jurisdiction parameter
+   * (name + value given ad-hoc, not the saved setting), to see whether BigBang hides "Comprar Rodadas
+   * Grátis". `open` returns the real address to open; otherwise the masked address and response.
+   */
+  async function inspectLaunch({ name = '', jurisdictionKey = '', jurisdictionValue = '', open = false } = {}) {
+    const list = (await games()).games;
+    const want = String(name || '').toLowerCase().trim();
+    const demoable = (x) => x.demo !== false;
+    const g = list.find((x) => x.name.toLowerCase() === want && demoable(x))
+      || list.find((x) => x.name.toLowerCase().includes(want) && demoable(x))
+      || list.find(demoable) || list[0];
+    if (!g) throw new HttpError(404, 'Jogo não encontrado no catálogo.');
+    const game = { id: g.id, name: g.name, provider: g.provider, premium: !!g.premium };
+    const key = (String(jurisdictionKey || '').trim().replace(/[^A-Za-z0-9_]/g, '') || 'jurisdiction');
+    const val = String(jurisdictionValue || '').trim().slice(0, 40);
+    const body = { game_id: Number(g.id), language: 'pt', demo: true, ...(val ? { [key]: val } : {}) };
+    let response = null; let error = null;
+    try { response = await call('POST', '/games/launch', body); }
+    catch (err) { error = err.message; }
+    const url = response?.game_url || null;
+    const sent = val ? `${key}=${val}` : '(sem jurisdição)';
+    if (open) return { game, sent, openUrl: url, error: url ? null : (error || 'A BigBang não devolveu o endereço do jogo.') };
+    return { game, sent, request: body, response: response ? { ...response, game_url: url ? maskUrl(url) : null } : null, error };
+  }
+
   // ---------- seamless wallet (callbacks from BigBang) ----------
 
   const userRow = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
@@ -704,5 +741,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, inspectLaunch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }

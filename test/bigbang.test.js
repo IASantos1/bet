@@ -438,6 +438,23 @@ test('bigbang jurisdiction: sent on launch when set; retries without it if BigBa
   db.close();
 });
 
+test('bigbang inspectLaunch: demo launch with an ad-hoc jurisdiction; masks the address; open returns it raw', async () => {
+  const db = openDb(':memory:');
+  const api = fakeApi();
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl });
+  await bb.games();
+  const r = await bb.inspectLaunch({ name: 'Hot Hot Fruit', key: 'regulation', jurisdictionKey: 'regulation', jurisdictionValue: 'PT' });
+  assert.equal(r.game.name, 'Hot Hot Fruit');
+  assert.equal(r.sent, 'regulation=PT');
+  // The parameter was sent on the demo launch.
+  assert.equal(api.calls.at(-1).body.regulation, 'PT');
+  assert.equal(api.calls.at(-1).body.demo, true);
+  // open mode returns the real address to open.
+  const open = await bb.inspectLaunch({ name: 'Hot Hot Fruit', jurisdictionValue: '', open: true });
+  assert.ok(open.openUrl.startsWith('https://g/demo/'));
+  db.close();
+});
+
 test('demo: live tables and Premium games are real-money only (no "Testar")', async () => {
   const db = openDb(':memory:');
   const bb = createBigBang(db, { apiKey: KEY, fetchImpl: fakeApi().fetchImpl });

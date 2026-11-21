@@ -3571,6 +3571,17 @@ export function createApp(db, {
     setSetting(db, 'casino.bbJurisdictionKey', value ? keyName : '');
     res.json({ bbJurisdiction: value, bbJurisdictionKey: value ? (keyName || 'jurisdiction') : '' });
   });
+  // Test launch on BigBang (demo, no money) with an ad-hoc jurisdiction parameter: see the address/response
+  // and open the game to check whether "Comprar Rodadas Grátis" is hidden — like the Palace tool.
+  admin.post('/casino/bb-launch-inspect', wrap(async (req, res) => {
+    if (!bb) throw new HttpError(503, 'Big Bang não configurado.');
+    res.json(await bb.inspectLaunch({
+      name: String(req.body?.name || '').slice(0, 80),
+      jurisdictionKey: String(req.body?.key || '').slice(0, 40),
+      jurisdictionValue: String(req.body?.value || '').slice(0, 40),
+      open: req.body?.open === true,
+    }));
+  }));
 
   // The sportsbooks plugged into BigBang (Betby, BTi, SABA…): hidden from the public casino, opened
   // only here so the admin can see how each works and how its data comes through the API.

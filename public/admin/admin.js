@@ -1439,6 +1439,12 @@ function adminCasino(c) {
         <label class="field adm-inline">Valor <input id="bbJurVal" value="${esc(c.bbJurisdiction || '')}" placeholder="ex.: PT (vazio = desligado)" maxlength="20" size="10"></label>
         <button class="ghost-btn btn-sm" data-action="bb-jurisdiction">Gravar</button>
         <span class="muted">Agora: <strong>${c.bbJurisdiction ? `${esc(c.bbJurisdictionKey || 'jurisdiction')}=${esc(c.bbJurisdiction)}` : 'desligado'}</strong></span></div>
+      <p class="muted">Testar sem gravar: escreva o jogo e (opcional) o nome/valor acima, e use os botões. Abre em modo demonstração (sem dinheiro) para ver se o botão de comprar bónus desaparece.</p>
+      <div class="form-actions"><label class="field adm-inline">Jogo <input id="bbLiName" value="Gates of Olympus" maxlength="80"></label>
+        <button class="ghost-btn btn-sm" data-action="bb-launch-inspect">Ver endereço de um jogo</button>
+        <button class="ghost-btn btn-sm" data-action="bb-launch-open">Abrir jogo</button>
+        <button class="ghost-btn btn-sm" data-action="bb-launch-copy">Copiar resultado</button></div>
+      <pre class="raw-odds hidden" id="bbLiOut"></pre>
       <h3>Carteira integrada — URLs a configurar na chave (Painel BigBang)</h3>
       <div class="table-wrap"><table><tbody>
         <tr><td><strong>user_data</strong> (GET)</td><td><code>${esc(c.callbacks.userData)}</code></td></tr>
@@ -2928,6 +2934,26 @@ document.addEventListener('click', async (e) => {
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     loadTab();
+  } else if (action === 'bb-launch-inspect') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/bb-launch-inspect', { method: 'POST', body: { name: $('#bbLiName').value, key: $('#bbJurKey').value, value: $('#bbJurVal').value } });
+      const out = $('#bbLiOut');
+      out.textContent = JSON.stringify(r, null, 2);
+      out.classList.remove('hidden');
+      toast(r.error ? 'BigBang recusou' : 'Endereço obtido', `${r.game?.name || ''} · enviado: ${r.sent}`, r.error ? 'error' : 'success');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'bb-launch-open') {
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const r = await api('/api/admin/casino/bb-launch-inspect', { method: 'POST', body: { name: $('#bbLiName').value, key: $('#bbJurKey').value, value: $('#bbJurVal').value, open: true } });
+      if (!r.openUrl) throw new Error(r.error || 'A BigBang não devolveu o endereço do jogo.');
+      if (tab) tab.location = r.openUrl; else window.location.assign(r.openUrl);
+    } catch (err) { tab?.close(); toast('Erro', err.message, 'error'); }
+  } else if (action === 'bb-launch-copy') {
+    const t = $('#bbLiOut')?.textContent || '';
+    if (t) { try { await navigator.clipboard.writeText(t); toast('Copiado', 'Cole aqui na conversa.'); } catch { toast('Erro', 'Selecione o texto e copie à mão.', 'error'); } }
   } else if (action === 'launch-inspect') {
     actionEl.disabled = true;
     try {
