@@ -6952,4 +6952,9 @@ async function init() {
   window.addEventListener('online', resume);
 }
 
-init();
+// Rede de segurança: se o arranque falhar a meio (um pedido que rebenta, config em falta), a página
+// renderiza na mesma em vez de ficar presa no "A carregar…". O caminho normal não muda.
+init().catch((err) => {
+  console.error('Arranque falhou:', err);
+  try { render(); } catch { /* shell mínimo já está visível */ }
+});
