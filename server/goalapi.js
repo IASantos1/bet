@@ -627,7 +627,7 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const home = side('home');
     const away = side('away');
     const flat = (t) => [...t.starters, ...t.bench].map((p) => p.name);
-    harvestPhotos(home, away); // keep each player's photo by name, for the featured-scorer cards
+    harvestPhotos(home, away, fx.home?.name, fx.away?.name); // keep each player's photo + team, for the cards
     return {
       homeId: fx.home?.id || null, awayId: fx.away?.id || null,
       home, away, names: { home: flat(home), away: flat(away) }, raw,
@@ -638,14 +638,20 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   // destaque" cards — even for a game days away, once we have seen that player in a lineup before.
   const photoKey = (name) => slug(name).replace(/\s+/g, ' ').trim();
   const photoSur = (name) => { const t = photoKey(name).split(' ').filter(Boolean); return t[t.length - 1] || ''; };
-  function harvestPhotos(home, away) {
+  function harvestPhotos(home, away, homeTeam, awayTeam) {
     const now = Date.now();
-    for (const t of [home, away]) {
+    for (const [t, team] of [[home, homeTeam], [away, awayTeam]]) {
       for (const p of [...(t?.starters || []), ...(t?.bench || [])]) {
-        if (!p?.name || !p.image) continue;
+        if (!p?.name) continue;
         const k = photoKey(p.name); const sur = photoSur(p.name);
-        if (k) cacheSet.run(`pimg:${k}`, p.image, now);
-        if (sur.length > 2) cacheSet.run(`psur:${sur}`, p.image, now);
+        if (p.image) {
+          if (k) cacheSet.run(`pimg:${k}`, p.image, now);
+          if (sur.length > 2) cacheSet.run(`psur:${sur}`, p.image, now);
+        }
+        if (team) { // the player's team, so a featured-scorer card can take that club's badge and kit colour
+          if (k) cacheSet.run(`ptm:${k}`, team, now);
+          if (sur.length > 2) cacheSet.run(`ptms:${sur}`, team, now);
+        }
       }
     }
   }
@@ -659,6 +665,18 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     const toks = k.split(' ').filter(Boolean);
     for (const cand of [...new Set([toks[toks.length - 1], toks[0]])]) {
       if (cand && cand.length > 2) { const h = cacheGet.get(`psur:${cand}`); if (h?.body) return httpsLogo(h.body); }
+    }
+    return null;
+  }
+  /** A player's club name (from a lineup seen before), so a card can show that team's badge and kit. */
+  function playerTeam(name) {
+    if (!enabled || !name) return null;
+    const k = photoKey(name);
+    const hit = k && cacheGet.get(`ptm:${k}`);
+    if (hit?.body) return hit.body;
+    const toks = k.split(' ').filter(Boolean);
+    for (const cand of [...new Set([toks[toks.length - 1], toks[0]])]) {
+      if (cand && cand.length > 2) { const h = cacheGet.get(`ptms:${cand}`); if (h?.body) return h.body; }
     }
     return null;
   }
@@ -811,5 +829,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, playerPhoto, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, playerPhoto, playerTeam, status, diagnose, refresh };
 }

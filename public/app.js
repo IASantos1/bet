@@ -986,14 +986,28 @@ function scorerCard(s, i) {
   const inSlip = state.slip.some((x) => x.betby && x.eventId === s.eventId && String(x.betby.marketId) === String(s.marketId) && x.betby.player === s.player);
   const badge = (side, name) => (ev ? sideBadge(ev, side, 'sm') : `<span class="sc-dot">${esc((name || '?').slice(0, 1))}</span>`);
   const face = `<div class="sc-emblem${s.photo ? ' has-photo' : ''}">${s.photo ? `<img class="sc-face" src="${esc(s.photo)}" alt="" loading="lazy">` : ''}<span class="sc-ball" aria-hidden="true">⚽</span></div>`;
-  return `<div class="scorer-card">
-    <span class="sc-rank">#${i + 1}</span>
+  // The player's own team (badge + name) when we know which side he is on; otherwise the fixture.
+  const team = s.side === 'home' ? s.home : s.side === 'away' ? s.away : null;
+  const clubLine = s.side
+    ? `<div class="sc-club">${badge(s.side, team)}<span>${esc(team)}</span></div>`
+    : `<div class="sc-club"><span class="sc-vs">${esc(s.home)} <i>v</i> ${esc(s.away)}</span></div>`;
+  const kit = [s.kitBody ? `data-kit="${esc(s.kitBody)}"` : '', s.kitTrim ? `data-kit2="${esc(s.kitTrim)}"` : ''].filter(Boolean).join(' ');
+  return `<div class="scorer-card${s.live ? ' is-live' : ''}" ${kit}>
+    <span class="sc-rank">${s.live ? '<i class="sc-livedot"></i>AO VIVO' : `#${i + 1}`}</span>
     ${face}
     <div class="sc-name">${esc(s.player)}</div>
-    <div class="sc-match">${badge('home', s.home)}<span>${esc(s.home)} <i>v</i> ${esc(s.away)}</span>${badge('away', s.away)}</div>
-    <div class="sc-when">${esc(shortWhen(s.startTime))}</div>
+    ${clubLine}
+    <div class="sc-when">${s.live ? 'A decorrer' : esc(shortWhen(s.startTime))}</div>
     <button class="sc-odd${inSlip ? ' on' : ''}" data-scorer="${i}"><small>Marcador</small><strong>${fmtOdds(s.odds)}</strong></button>
   </div>`;
+}
+
+// Kit colours can't go in an inline style (the CSP forbids it), so they are set here after each render.
+function applyScorerKits() {
+  for (const el of $$('.scorer-card[data-kit]')) {
+    el.style.setProperty('--kit', el.dataset.kit);
+    if (el.dataset.kit2) el.style.setProperty('--kit2', el.dataset.kit2);
+  }
 }
 
 // A featured scorer added as a single BETBY "Marcador" pick (combines in the slip like any other).
@@ -3826,6 +3840,7 @@ function render({ keepScroll = false } = {}) {
   if (page === 'jogo') afterMatchRender();
   if (immersive) { mountCasinoFrame(); placeSkins(); }
   applyBannerStyles();
+  applyScorerKits();
   watchCasinoMore();
   watchSportsMore();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));

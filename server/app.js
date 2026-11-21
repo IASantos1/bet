@@ -1031,15 +1031,20 @@ export function createApp(db, {
     if (!betbyCollector?.on || scorersBusy) return;
     scorersBusy = true;
     try {
+      const nameKey = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+      const tkn = (s) => new Set(nameKey(s).split(' ').filter((w) => w.length > 2));
+      const overlap = (a, b) => { const A = tkn(a); const B = tkn(b); let n = 0; for (const w of A) if (B.has(w)) n += 1; return n; };
+      const sideOfTeam = (team, home, away) => { if (!team) return null; const h = overlap(team, home); const a = overlap(team, away); return h > a ? 'home' : a > h ? 'away' : null; };
       // Big leagues only (Champions/Europa, Premier, La Liga, Serie A, Bundesliga, Ligue 1, Liga Portugal,
-      // Brasileirão, World Cup/Euro…): tier 1 first, then tier 2 to fill. The nearest games, bounded.
-      const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time FROM events
-        WHERE sport = 'futebol' AND status = 'scheduled' AND start_time > ? AND start_time < ?
-        ORDER BY start_time LIMIT 90`).all(nowIso(), new Date(Date.now() + 3 * 86_400_000).toISOString());
-      const evs = rows.map((e) => ({ ...e, tier: leagueTier('futebol', e.competition) }))
+      // Brasileirão, World Cup/Euro…): tier 1 first, then tier 2 to fill. Live games stay (in-play), plus the
+      // nearest upcoming ones. Bounded.
+      const rows = db.prepare(`SELECT id, sport, competition, home, away, start_time, status FROM events
+        WHERE sport = 'futebol' AND (status = 'live' OR (status = 'scheduled' AND start_time > ? AND start_time < ?))
+        ORDER BY status = 'live' DESC, start_time LIMIT 100`).all(nowIso(), new Date(Date.now() + 3 * 86_400_000).toISOString());
+      const evs = rows.map((e) => ({ ...e, tier: leagueTier('futebol', e.competition), live: e.status === 'live' }))
         .filter((e) => e.tier <= 2)
-        .sort((a, b) => a.tier - b.tier || String(a.start_time).localeCompare(String(b.start_time)))
-        .slice(0, 24);
+        .sort((a, b) => Number(b.live) - Number(a.live) || a.tier - b.tier || String(a.start_time).localeCompare(String(b.start_time)))
+        .slice(0, 26);
       const out = [];
       let seeded = 0;
       for (const ev of evs) {
@@ -1050,29 +1055,41 @@ export function createApp(db, {
         const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
         const scorer = pm.find((x) => x.kind === 'anytime_scorer');
         if (!scorer) continue;
-        // Close to kick-off the lineup is published: read it once (it harvests the players' photos, so the
-        // cards can show a face). Bounded, and only near KO where a lineup actually exists.
-        if (seeded < 6 && Date.parse(ev.start_time) - Date.now() < 4 * 3600_000) { seeded += 1; await goalApi?.lineups?.(ev).catch(() => {}); }
+        // Close to kick-off / in play the lineup is published: read it once (harvests the players' photos
+        // and teams, so the cards get a face, the club badge and the kit colour). Bounded.
+        if (seeded < 8 && (ev.live || Date.parse(ev.start_time) - Date.now() < 4 * 3600_000)) { seeded += 1; await goalApi?.lineups?.(ev).catch(() => {}); }
+        // In play: who has already scored — their "Marcador" bet is settled, so drop the card (the next
+        // player takes its place). A game that has ended is simply not in the pool (only live / upcoming).
+        const scored = new Set();
+        if (ev.live) {
+          const rep = await goalApi?.matchReport?.(ev).catch(() => null);
+          for (const p of (rep?.players || [])) if (p.goals > 0 && p.name) scored.add(nameKey(p.name));
+        }
         for (const o of scorer.outcomes || []) {
           if (!o.name || !(o.odd > 1) || o.blocked) continue;
+          if (scored.has(nameKey(o.name))) continue; // already scored in play → bet won, show someone else
+          const team = goalApi?.playerTeam?.(o.name) || null;
+          const side = sideOfTeam(team, ev.home, ev.away);
+          const kit = side ? houseKit('futebol', ev[side]) : null;
           out.push({ eventId: ev.id, marketId: scorer.marketId, kind: 'anytime_scorer', player: o.name, odds: o.odd,
-            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier,
+            home: ev.home, away: ev.away, competition: ev.competition, startTime: ev.start_time, tier: ev.tier, live: ev.live,
+            side, kitBody: kit?.[0] || null, kitTrim: kit?.[1] || null,
             photo: goalApi?.playerPhoto?.(o.name) || null });
         }
       }
-      // The surest scorers of the biggest leagues first (a big-league favourite is the household name).
-      out.sort((a, b) => a.tier - b.tier || a.odds - b.odds);
-      // One card per player (the same match can exist as more than one event, and a name can repeat):
-      // dedupe by the player's normalised name across ALL games, keeping the best-ranked one. Also at
-      // most two players per match, for variety across games.
-      const nameKey = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-      const seenPlayer = new Set(); const perEvent = new Map(); const list = [];
+      // In-play first (keep those cards up), then the surest scorers of the biggest leagues.
+      out.sort((a, b) => Number(b.live) - Number(a.live) || a.tier - b.tier || a.odds - b.odds);
+      // One card per player (a match can exist as more than one event, and a name can repeat); and one
+      // scorer per team (so a big game shows a card for each side), at most two per game in all.
+      const seenPlayer = new Set(); const perEvent = new Map(); const sideUsed = new Set(); const list = [];
       for (const s of out) {
         const pk = nameKey(s.player);
         if (!pk || seenPlayer.has(pk)) continue;
-        const n = perEvent.get(s.eventId) || 0;
-        if (n >= 2) continue;
-        seenPlayer.add(pk); perEvent.set(s.eventId, n + 1); list.push(s);
+        if (s.side && sideUsed.has(`${s.eventId}|${s.side}`)) continue; // already a scorer from this team
+        if ((perEvent.get(s.eventId) || 0) >= 2) continue;
+        seenPlayer.add(pk); perEvent.set(s.eventId, (perEvent.get(s.eventId) || 0) + 1);
+        if (s.side) sideUsed.add(`${s.eventId}|${s.side}`);
+        list.push(s);
         if (list.length >= 12) break;
       }
       scorersCache = { at: Date.now(), list };
