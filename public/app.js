@@ -7032,6 +7032,11 @@ async function init() {
         state.config = { ...state.config, liveDown: !!c.liveDown };
         if (currentRoute().page === 'ao-vivo') render({ keepScroll: true });
       }
+      // Casino covers (películas) turned on/off or edited in the admin: reflect within a minute, so the
+      // operator does not have to reload the whole app to see a new cover on a game.
+      if (c.casinoSkins !== state.config?.casinoSkins || JSON.stringify(c.skins || []) !== JSON.stringify(state.config?.skins || [])) {
+        state.config = { ...state.config, casinoSkins: c.casinoSkins, skins: c.skins || [] };
+      }
     } catch { /* offline for a moment */ }
   }, 60_000);
   if (config) $('#stake').min = config.minStake;
