@@ -515,26 +515,47 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   const covers = (ev) => enabled && ev?.sport === 'futebol' && leagueTier('futebol', ev.competition) <= 2;
 
   /** The GOAL API badges of a football event, from the kept link (no request): { home, away } URLs, or null. */
-  // Games the board asked for but that are not linked yet: link them in the background (once a minute each)
-  // so their badges are ready on the very next render — matching against the kept day lists costs no request.
-  const prelinking = new Map(); // ev.id -> last attempt (ms)
-  function prelink(ev) {
-    if (!enabled || ev?.sport !== 'futebol' || !ev?.id || !ev?.start_time) return;
-    const last = prelinking.get(ev.id);
-    if (last && Date.now() - last < 60_000) return;
-    prelinking.set(ev.id, Date.now());
-    link(ev).catch(() => {});
-  }
-
   function badge(ev) {
     if (!enabled || ev?.sport !== 'futebol' || !ev?.id) return null;
     const row = cacheGet.get(`link:${ev.id}`);
-    if (!row) { prelink(ev); return null; } // not linked yet: link in the background for the next render
+    if (!row) return null;
     let fx; try { fx = JSON.parse(row.body); } catch { return null; }
     const home = fx?.home?.logo || null;
     const away = fx?.away?.logo || null;
-    if (!home && !away) prelink(ev); // linked but without a badge: retry in case a later list has it
     return home || away ? { home, away } : null;
+  }
+
+  // Links the given football games whose badge is not kept yet, in the background and WITHOUT fetching new
+  // day lists (only matches against lists already cached, so it never storms the GOAL API). Call it after
+  // the board is built with the games it showed; the badges are ready on the next render.
+  const prelinking = new Map(); // ev.id -> last attempt (ms)
+  function prelinkBadges(evs) {
+    if (!enabled || !Array.isArray(evs)) return;
+    const now = Date.now();
+    let budget = 12; // at most a handful of fresh links per call
+    for (const ev of evs) {
+      if (budget <= 0) break;
+      if (ev?.sport !== 'futebol' || !ev?.id || !ev?.start_time) continue;
+      if (cacheGet.get(`link:${ev.id}`)) continue; // already linked
+      const last = prelinking.get(ev.id);
+      if (last && now - last < 5 * 60_000) continue;
+      prelinking.set(ev.id, now);
+      budget -= 1;
+      linkCheap(ev).catch(() => {});
+    }
+  }
+  // Like link(), but only against day lists already in cache — never triggers a network fetch.
+  async function linkCheap(ev) {
+    const name = `link:${ev.id}`;
+    if (cacheGet.get(name)) return;
+    const at = Date.parse(ev.start_time);
+    if (!Number.isFinite(at)) return;
+    const dates = [...new Set([day(at - WINDOW), day(at), day(at + WINDOW)])];
+    const lists = [];
+    for (const d of dates) { const r = cacheGet.get(`fixtures:${d}`); if (r) { try { lists.push(...(JSON.parse(r.body) || [])); } catch { /* ignore */ } } }
+    if (!lists.length) return; // no cached list for these days: leave it to syncBadges
+    const fx = findFixture(ev, lists);
+    if (fx) cacheSet.run(name, JSON.stringify(fx), Date.now());
   }
 
   /**
@@ -762,5 +783,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, syncBadges, matchReport, lineups, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, status, diagnose, refresh };
 }
