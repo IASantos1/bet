@@ -515,13 +515,25 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   const covers = (ev) => enabled && ev?.sport === 'futebol' && leagueTier('futebol', ev.competition) <= 2;
 
   /** The GOAL API badges of a football event, from the kept link (no request): { home, away } URLs, or null. */
+  // Games the board asked for but that are not linked yet: link them in the background (once a minute each)
+  // so their badges are ready on the very next render — matching against the kept day lists costs no request.
+  const prelinking = new Map(); // ev.id -> last attempt (ms)
+  function prelink(ev) {
+    if (!enabled || ev?.sport !== 'futebol' || !ev?.id || !ev?.start_time) return;
+    const last = prelinking.get(ev.id);
+    if (last && Date.now() - last < 60_000) return;
+    prelinking.set(ev.id, Date.now());
+    link(ev).catch(() => {});
+  }
+
   function badge(ev) {
     if (!enabled || ev?.sport !== 'futebol' || !ev?.id) return null;
     const row = cacheGet.get(`link:${ev.id}`);
-    if (!row) return null;
+    if (!row) { prelink(ev); return null; } // not linked yet: link in the background for the next render
     let fx; try { fx = JSON.parse(row.body); } catch { return null; }
     const home = fx?.home?.logo || null;
     const away = fx?.away?.logo || null;
+    if (!home && !away) prelink(ev); // linked but without a badge: retry in case a later list has it
     return home || away ? { home, away } : null;
   }
 
