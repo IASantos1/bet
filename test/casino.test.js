@@ -383,3 +383,39 @@ test('coleções: o admin escolhe os jogos e onde a fila aparece; só no ar entr
   col.setEnabled(a.id, false);
   assert.ok(!(await col.intoLobby(lobby, async (id) => games.get(id))).rows.some((r) => r.title === 'Halloween'));
 });
+
+test('recoverStranded: brings back a bugged-round stake the provider releases after the player left', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl: api.fetchImpl });
+  const u = player(db, 10_000);
+  await casino.enterGame(u, { providerId: 1, gameCode: 'vs20doghouse', returnUrl: '' });
+  const code = db.prepare('SELECT casino_user_code FROM users WHERE id = ?').get(u.id).casino_user_code;
+  // The player lost some; a €20 round bugged and stayed open, so withdraw-all on leaving returned only
+  // what was available (€30 of the €50 the wallet then held).
+  api.wallets.set(code, 30);
+  await casino.leaveGame(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id));
+  assert.equal(balance(db, u.id), 3000);
+  assert.equal(db.prepare('SELECT casino_active FROM users WHERE id = ?').get(u.id).casino_active, 0);
+  // The provider settles/voids the stuck round later, releasing the €20 back into the casino wallet.
+  api.wallets.set(code, 20);
+  const back = await casino.recoverStranded(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id));
+  assert.equal(back, 2000);
+  assert.equal(balance(db, u.id), 5000); // €30 + €20 recovered
+  // Nothing left to recover on a second pass.
+  assert.equal(await casino.recoverStranded(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id)), 0);
+  assert.equal(balance(db, u.id), 5000);
+});
+
+test('recoverStranded: does nothing while the player is still in a game', async () => {
+  const db = openDb(':memory:');
+  const api = fakeAgentApi();
+  const casino = createCasino(db, { baseUrl: 'https://agent.example', token: 'tok', fetchImpl: api.fetchImpl });
+  const u = player(db, 10_000);
+  await casino.enterGame(u, { providerId: 1, gameCode: 'vs20doghouse', returnUrl: '' });
+  // Active player: their whole balance is legitimately in the casino — never yank it out from under them.
+  const back = await casino.recoverStranded(db.prepare('SELECT * FROM users WHERE id = ?').get(u.id));
+  assert.equal(back, 0);
+  assert.equal(balance(db, u.id), 0); // untouched (still in play)
+  assert.equal(db.prepare('SELECT casino_active FROM users WHERE id = ?').get(u.id).casino_active, 1);
+});

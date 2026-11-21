@@ -691,12 +691,48 @@ export function createApp(db, {
         const back = await casino.leaveGame(u);
         casinoSeen.delete(u.id);
         n += 1;
+        app.locals.watchStranded?.(u.id); // a round may still settle on the provider: re-check for a while
         console.log(`casino: jogo fechado sem sair — ${(back / 100).toFixed(2)} € devolvidos à carteira do utilizador ${u.id}`);
       } catch (err) { console.error(`casino: devolver saldo do utilizador ${u.id}: ${err.message}`); }
     }
     return n;
   }
   app.locals.returnIdleCasino = returnIdleCasino;
+
+  // After a player leaves a Palace (Transfer-mode) game, a round that crashed mid-spin can stay open on
+  // the provider for a few minutes before it is settled or voided; only then is its stake available to
+  // withdraw. We re-check such players for a while and bring any released money back to their wallet, so
+  // the stake of a bugged round is never left stranded in the casino. Bounded: a handful of checks over
+  // ~2 h per player, with backoff, and dropped once nothing more comes back.
+  const strandedWatch = new Map(); // user id → { until, nextAt, tries }
+  const watchStranded = (userId, now = Date.now()) => {
+    if (!casino?.enabled) return;
+    strandedWatch.set(userId, { until: now + 2 * 60 * 60_000, nextAt: now + 90_000, tries: 0 });
+  };
+  async function recoverStrandedCasino(now = Date.now()) {
+    if (!casino?.enabled) return 0;
+    let n = 0;
+    for (const [userId, w] of strandedWatch) {
+      if (now >= w.until) { strandedWatch.delete(userId); continue; }
+      if (now < w.nextAt) continue;
+      const u = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+      if (!u) { strandedWatch.delete(userId); continue; }
+      if (u.casino_active) { w.nextAt = now + 90_000; continue; } // back in a game: leaveGame handles it
+      try {
+        const back = await casino.recoverStranded(u);
+        if (back > 0) {
+          n += 1;
+          console.log(`casino: ${(back / 100).toFixed(2)} € de uma rodada falhada devolvidos à carteira do utilizador ${userId}`);
+          notifyPhone(userId, { title: 'Saldo devolvido', body: `Devolvemos ${(back / 100).toFixed(2)} € de uma rodada do casino que falhou.`, url: '/#/perfil/dinheiro' });
+        }
+      } catch (err) { console.warn(`casino: recuperar saldo preso do utilizador ${userId}: ${err.message}`); }
+      w.tries += 1;
+      w.nextAt = now + Math.min(20, 2 ** w.tries) * 60_000; // 2, 4, 8, 16, 20… minutes
+    }
+    return n;
+  }
+  app.locals.recoverStrandedCasino = recoverStrandedCasino;
+  app.locals.watchStranded = watchStranded;
 
   // ---------- events ----------
 
@@ -1415,6 +1451,12 @@ export function createApp(db, {
       throw new HttpError(401, req.body.code ? 'Código de verificação incorreto.' : 'Introduza o código de 6 dígitos da sua app de autenticação.', { need2fa: true });
     }
     startSession(res, user.id, req);
+    // Bring back any stake left stranded in the casino by a round that crashed in a past session: recover
+    // this player's now (one call), and keep an eye out in case the provider releases more shortly after.
+    if (casino?.enabled && !user.casino_active) {
+      casino.recoverStranded(user).then((back) => { if (back > 0) console.log(`casino: ${(back / 100).toFixed(2)} € presos devolvidos ao utilizador ${user.id} (login)`); }).catch(() => {});
+      app.locals.watchStranded?.(user.id);
+    }
     res.json({ user: userOut(user) });
   });
 
@@ -2270,6 +2312,7 @@ export function createApp(db, {
     // BigBang never holds the balance; a Palace game (alone, or in split mode) does while open.
     if (!casino?.enabled || !userById(req.user.id).casino_active) return res.json({ amount: 0, balance: cents(userById(req.user.id).balance_cents) });
     const amountCents = await casino.leaveGame(req.user);
+    app.locals.watchStranded?.(req.user.id); // a round that crashed mid-spin may settle shortly after: re-check
     res.json({ amount: cents(amountCents), balance: cents(userById(req.user.id).balance_cents) });
   }));
 

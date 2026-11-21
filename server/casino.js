@@ -334,6 +334,26 @@ export function createCasino(db, {
     return leaveGame(u);
   }
 
+  /**
+   * Reclaims money sitting in the casino wallet of a player who is NOT in a game — the stake of a round
+   * that the provider only settled or voided AFTER the player had already left (a game that crashed or a
+   * tab that closed mid-spin). leaveGame could not bring it back then, because the round was still open
+   * and the session was already over; once the provider releases it, this puts it back in the wallet.
+   * Safe: withdraw-all returns only what the provider holds as available, never money locked in a round
+   * still in progress. Returns the cents recovered.
+   */
+  function recoverStranded(user) {
+    return withLock(user.id, async () => {
+      const u = freshUser(user.id);
+      if (!u?.casino_user_code || u.casino_active) return 0;
+      let bal = 0;
+      try { bal = await casinoBalanceCents(u); } catch { return 0; }
+      if (bal <= 0) return 0;
+      const { amountCents } = await transferOut(u);
+      return amountCents;
+    });
+  }
+
   // ---------- free spins (a separate casino account per player) ----------
   // The free-spins money never mixes with the player's own: it goes to a second casino account
   // (cb<id>fs), only the chosen game is opened on it, and what is left there is settled by us.
@@ -402,6 +422,6 @@ export function createCasino(db, {
 
   return {
     enabled, games, gamesPage, diagnose, casinoBalanceCents, transferIn, transferOut, launch, agentInfo, inspectLaunch,
-    enterGame, leaveGame, syncBack, fsEnterGame, fsBalanceCents, fsWithdrawAll,
+    enterGame, leaveGame, syncBack, recoverStranded, fsEnterGame, fsBalanceCents, fsWithdrawAll,
   };
 }

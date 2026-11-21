@@ -256,6 +256,8 @@ const app = createApp(db, { feed, tennis, tennisLive, sports, casino, liveSocket
 setInterval(() => app.locals.expirePalaceSpins().catch((err) => console.warn(`free spins palace: ${err.message}`)), 5 * 60_000).unref();
 // A Palace game closed without leaving it (tab closed): its balance comes back to the wallet.
 setInterval(() => app.locals.returnIdleCasino().catch((err) => console.warn(`casino: ${err.message}`)), 60_000).unref();
+// A Palace round that crashed mid-spin settles on the provider a little later: bring that stake back too.
+setInterval(() => app.locals.recoverStrandedCasino().catch((err) => console.warn(`casino: ${err.message}`)), 60_000).unref();
 // BigBang (seamless wallet): a round the game took a bet on but crashed before closing — put the stake back.
 if (bigbang.enabled) setInterval(() => { try { bigbang.refundStuckRounds(); } catch (err) { console.warn(`[bigbang] rondas falhadas: ${err.message}`); } }, 5 * 60_000).unref();
 const server = app.listen(config.port, () => {
