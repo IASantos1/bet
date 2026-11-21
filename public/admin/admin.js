@@ -1411,6 +1411,10 @@ function adminCasino(c) {
       <p class="muted">${c.palace?.configured
     ? (c.split ? 'Ativo: os slots vêm da Palace (o saldo passa para a Palace enquanto o jogo está aberto e volta ao sair) e a BigBang fica só com as mesas ao vivo.' : 'Desligado: todos os jogos vêm da BigBang.')
     : `A Palace não está configurada: defina <strong>CASINO_API_URL</strong> ${c.palace?.urlSet ? '✔' : '✘'} e <strong>CASINO_API_TOKEN</strong> ${c.palace?.tokenSet ? '✔' : '✘'} no Railway.`}</p>
+      ${c.palace?.configured ? `<h4>Aposta fixa das Free Spins</h4>
+      <p class="muted">As Free Spins jogam-se a uma aposta fixa por rodada (ex.: 0,10 €). Na Palace, só se consegue <strong>impedir</strong> o jogador de apostar mais se esse valor for travado no próprio jogo, no lançamento — caso contrário a Palace executa a aposta que ele puser e uma aposta grande gasta várias Free Spins de uma vez.</p>
+      <p class="muted">Travão da aposta: <strong>${c.palace?.fsBetLocked ? '✔ ligado' : '✘ desligado'}</strong>.
+        ${c.palace?.fsBetLocked ? '' : 'Para ligar, peça à Palace o nome do parâmetro do endereço de jogo que fixa a aposta das rodadas e defina <strong>CASINO_FS_BET_PARAM</strong> com esse nome no Railway.'}</p>` : ''}
       <div id="palaceTest"></div>
       ${c.palace?.configured ? `<h4>Endereço de um jogo</h4>
       <p class="muted">Abre um jogo na Palace com a sua conta de administrador e mostra o endereço por onde ele abre (os códigos secretos ficam tapados). Serve para ver se o endereço traz a "jurisdição" que esconde "Comprar Rodadas Grátis" e o turbo.
