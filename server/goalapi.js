@@ -668,6 +668,45 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
     }
     return null;
   }
+  // A team's squad (players with photos), so a scorer's picture is available WITHOUT waiting for the
+  // lineup — the same way the team badges come from the fixtures list. The GOAL API path is discovered
+  // once (kept in the cache) and the squad kept 24 h; harvesting stores each player's photo by name.
+  let squadTpl = cacheGet.get('meta:squadtpl')?.body || null;
+  const SQUAD_TPLS = ['/teams/{id}/squad', '/teams/{id}/players', '/teams/{id}/squads', '/squads/{id}', '/players/team/{id}', '/team/{id}/squad'];
+  const squadPlayer = (p) => (typeof p === 'string' ? { name: p, image: null } : {
+    name: p?.playerName || p?.name || p?.player?.name || p?.lineupPlayer || p?.fullName || p?.player_name || null,
+    image: httpsLogo(p?.playerImage || p?.image || p?.photo || p?.player?.image || p?.player?.playerImage) || null,
+  });
+  const squadList = (d) => {
+    const arr = Array.isArray(d) ? d : (d?.squad || d?.players || d?.data || d?.result || d?.playersList || []);
+    return (Array.isArray(arr) ? arr : []).map(squadPlayer).filter((p) => p.name);
+  };
+  let squadNone = false; // the probed paths all failed this run: stop probing until the next restart
+  async function squadRaw(teamId) {
+    if (squadNone && !squadTpl) return { list: [], raw: null, tpl: null };
+    for (const tpl of (squadTpl ? [squadTpl] : SQUAD_TPLS)) {
+      const body = await request(tpl.replace('{id}', encodeURIComponent(teamId))).catch(() => null);
+      const list = body ? squadList(body.data ?? body) : [];
+      if (list.length) { if (!squadTpl) { squadTpl = tpl; cacheSet.run('meta:squadtpl', tpl, Date.now()); } return { list, raw: body?.data ?? body, tpl }; }
+    }
+    if (!squadTpl) squadNone = true; // only persist a path that works; retry the probe after a restart
+    return { list: [], raw: null, tpl: null };
+  }
+  const squadReady = () => Boolean(squadTpl) && squadTpl !== 'none';
+  const squad = (teamId) => (enabled && teamId ? cached(`squad:${teamId}`, 24 * HOUR, async () => (await squadRaw(teamId)).list) : Promise.resolve([]));
+  /** Reads a club's squad once and keeps every player's photo (and team) by name, for the cards. */
+  async function harvestSquad(teamId, teamName) {
+    const list = await squad(teamId).catch(() => []);
+    const now = Date.now();
+    for (const p of list) {
+      if (!p.name) continue;
+      const k = photoKey(p.name); const sur = photoSur(p.name);
+      if (p.image) { if (k) cacheSet.run(`pimg:${k}`, p.image, now); if (sur.length > 2) cacheSet.run(`psur:${sur}`, p.image, now); }
+      if (teamName) { if (k) cacheSet.run(`ptm:${k}`, teamName, now); if (sur.length > 2) cacheSet.run(`ptms:${sur}`, teamName, now); }
+    }
+    return list.filter((p) => p.image).length;
+  }
+
   /** A player's club name (from a lineup seen before), so a card can show that team's badge and kit. */
   function playerTeam(name) {
     if (!enabled || !name) return null;
@@ -795,6 +834,15 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
             detail: `esta formação: ${withImg} jogadores com foto · fotos em cache (destaques): ${cachedN}${withImg ? '' : ' — a GOAL API não devolveu fotos nesta escalação'}` });
         }
         if (lu) steps.push({ name: 'Formações cruas (forma real)', ok: false, detail: JSON.stringify(lu.raw).slice(0, 800) });
+        // Squad: player photos WITHOUT the lineup (by team, like the badges). Probe the GOAL API path.
+        const tid = (await link(luEv).catch(() => null))?.home?.id;
+        if (tid) {
+          const sq = await squadRaw(tid).catch(() => ({ list: [], raw: null, tpl: null }));
+          const withImg = sq.list.filter((p) => p.image).length;
+          steps.push({ name: 'Plantel (fotos sem escalação)', ok: sq.list.length > 0,
+            detail: sq.list.length ? `endpoint ${sq.tpl || squadTpl}: ${sq.list.length} jogadores, ${withImg} com foto` : 'nenhum endpoint de plantel respondeu (tentados: ' + SQUAD_TPLS.join(', ') + ')' });
+          if (sq.raw) steps.push({ name: 'Plantel cru (forma real)', ok: false, detail: JSON.stringify(sq.raw).slice(0, 700) });
+        }
       } else {
         steps.push({ name: 'Formações', ok: false, detail: 'nenhum jogo de futebol ligado para testar' });
       }
@@ -829,5 +877,5 @@ export function createGoalApi(db, { key = '', baseUrl = 'https://api.goal-api.co
   /** Forgets the kept day lists (the next look asks GOAL API again). */
   const refresh = () => db.prepare("DELETE FROM goal_cache WHERE key LIKE 'fixtures:%'").run().changes;
 
-  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, playerPhoto, playerTeam, status, diagnose, refresh };
+  return { enabled, covers, insights, link, badge, prelinkBadges, syncBadges, matchReport, lineups, playerPhoto, playerTeam, squad, harvestSquad, status, diagnose, refresh };
 }

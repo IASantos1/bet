@@ -1055,6 +1055,12 @@ export function createApp(db, {
       for (const ev of evs) {
         const gf = await goalApi?.link?.(ev).catch(() => null);
         const altNames = gf ? [{ home: gf.home?.name, away: gf.away?.name }] : [];
+        // Player photos straight from the club's squad (no need to wait for the lineup) — the same way the
+        // team badges come by team. Cached 24 h per team; only the whitelisted club(s) of this game.
+        if (gf) {
+          if (ev.homeClub && gf.home?.id) await goalApi?.harvestSquad?.(gf.home.id, ev.home).catch(() => {});
+          if (ev.awayClub && gf.away?.id) await goalApi?.harvestSquad?.(gf.away.id, ev.away).catch(() => {});
+        }
         const m = betbyCollector.matchEvent({ sport: ev.sport, home: ev.home, away: ev.away, start: ev.start_time, altNames });
         if (!m) continue;
         const pm = await betbyCollector.footballPlayerMarkets(m.event).catch(() => []);
