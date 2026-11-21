@@ -1818,6 +1818,14 @@ async function refreshCasinoBalance() {
       const el = $('#fsBal');
       if (el) el.textContent = fsRounds(sess);
       updateHeader();
+      // The last Free Spin just played: let it finish on screen (the win animation) before the game is
+      // covered. We mark the moment the count hit zero and hold the "used up" cover back ~3 s, then
+      // redraw so it appears once the last round has shown.
+      if (was[0] > 0 && sess.fsLeft === 0 && !sess.fsEnded && !sess.fsZeroAt) {
+        sess.fsZeroAt = Date.now();
+        setTimeout(() => { if (state.casinoSession === sess && currentRoute().page === 'casino') render({ keepScroll: true }); }, 3100);
+      }
+      if (sess.fsLeft > 0) sess.fsZeroAt = null; // more spins arrived (e.g. a bugged round came back)
       // The last round played: the game is covered (no more spins) until the free spins end.
       if ((was[0] > 0) !== (sess.fsLeft > 0) || was[1] !== sess.fsEnded) {
         render({ keepScroll: true });
@@ -2086,7 +2094,10 @@ function casinoPlayPage() {
   const mode = g.demo ? '<span class="cbar-tag">DEMO · saldo virtual</span>'
     : g.fs ? `<span class="cbar-tag fs">FREE SPINS · <b id="fsBal">${fsRounds(g)}</b></span>` : '';
   // Every round played: the game is covered; when they end, what they won is already real balance.
-  const fsDone = !g.fs || (g.fsLeft > 0 && !g.fsEnded) || g.fsLeft === null ? ''
+  // The last round is given ~3 s to play out on screen first (fsZeroAt), so its win animation is not
+  // cut off by the cover — only after that (or once it has truly ended) does the overlay come up.
+  const fsSettling = g.fsLeft === 0 && !g.fsEnded && g.fsZeroAt && Date.now() - g.fsZeroAt < 3000;
+  const fsDone = !g.fs || (g.fsLeft > 0 && !g.fsEnded) || g.fsLeft === null || fsSettling ? ''
     : `<div class="fs-done"><div class="fs-done-box">${g.fsEnded
       ? `<strong>Free Spins terminadas</strong><span>${g.fsWon > 0 ? `Ganhou <b>${money(g.fsWon)}</b>: já está no seu saldo real.` : 'Desta vez não houve ganhos.'}</span>
         <a class="cg-btn play" href="#/casino">Voltar ao casino</a>`

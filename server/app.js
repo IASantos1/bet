@@ -725,6 +725,11 @@ export function createApp(db, {
           console.log(`casino: ${(back / 100).toFixed(2)} € de uma rodada falhada devolvidos à carteira do utilizador ${userId}`);
           notifyPhone(userId, { title: 'Saldo devolvido', body: `Devolvemos ${(back / 100).toFixed(2)} € de uma rodada do casino que falhou.`, url: '/#/perfil/dinheiro' });
         }
+        // Free Spins played on Palace: reconcile an abandoned grant too, so its winnings (and any round
+        // that crashed mid-spin and settled afterwards) reach the player. Never force-closes a grant that
+        // still has spins left — settlePalaceSpins only finalizes one that is genuinely done.
+        const grant = activeSpinsOf(userId);
+        if (grant) await settlePalaceSpins(grant).catch(() => {});
       } catch (err) { console.warn(`casino: recuperar saldo preso do utilizador ${userId}: ${err.message}`); }
       w.tries += 1;
       w.nextAt = now + Math.min(20, 2 ** w.tries) * 60_000; // 2, 4, 8, 16, 20… minutes
@@ -3446,7 +3451,7 @@ export function createApp(db, {
         serverDelay: loopDelay(),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
-        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token },
+        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },
       });
     }
     if (!casinoOn()) {
