@@ -4043,7 +4043,8 @@ export function createApp(db, {
       const effectiveDate = String(req.body?.effectiveFrom || '');
       if (!Number.isSafeInteger(affiliateUserId) || affiliateUserId <= 0) throw new HttpError(400, 'Escolha um afiliado válido.');
       if (!userIds.length || userIds.length > 100 || userIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new HttpError(400, 'Selecione entre 1 e 100 jogadores.');
-      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveDate) || Number.isNaN(Date.parse(`${effectiveDate}T00:00:00Z`))) throw new HttpError(400, 'Data de início inválida.');
+      const parsedEffectiveDate = new Date(`${effectiveDate}T00:00:00.000Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) || Number.isNaN(parsedEffectiveDate.getTime()) || parsedEffectiveDate.toISOString().slice(0, 10) !== effectiveDate) throw new HttpError(400, 'Data de início inválida.');
       const affiliate = db.prepare("SELECT id, role, banned_at FROM users WHERE id = ?").get(affiliateUserId);
       if (!affiliate || affiliate.role !== 'user' || affiliate.banned_at) throw new HttpError(400, 'O afiliado escolhido não é válido ou está bloqueado.');
       if (userIds.includes(affiliateUserId)) throw new HttpError(400, 'Um afiliado não pode ser associado a si próprio.');
