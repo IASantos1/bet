@@ -59,7 +59,7 @@ import { createMatchPicks } from './picks.js';
 import { newSecret, verifyCode, otpauthUrl } from './totp.js';
 import { playableServers, createVideoProxy, createStreamRelay } from './rapidstream.js';
 import {
-  CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats,
+  CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats, ensureProfile,
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
@@ -4021,6 +4021,55 @@ export function createApp(db, {
   admin.get('/affiliates', (req, res) => {
     res.json({ config: affiliateConfig(db), affiliates: adminAffiliates(db, { q: str(req.query.q, 80) }), reconciliation: reconcile(db), revshareReconciliation: reconcileRevshare(db) });
   });
+  admin.get('/affiliates/manual-users', (req, res) => {
+    const q = String(req.query.q || '').trim().slice(0, 100);
+    const term = `%${q}%`;
+    const users = db.prepare(`SELECT u.id, u.name, u.email, u.created_at, p.referral_code, p.status AS affiliate_status,
+        a.affiliate_user_id, au.name AS affiliate_name, au.email AS affiliate_email
+      FROM users u
+      LEFT JOIN affiliate_profiles p ON p.user_id = u.id
+      LEFT JOIN referral_attributions a ON a.referred_user_id = u.id
+      LEFT JOIN users au ON au.id = a.affiliate_user_id
+      WHERE u.role = 'user' AND (? = '%%' OR u.name LIKE ? OR u.email LIKE ? OR CAST(u.id AS TEXT) LIKE ?)
+      ORDER BY u.id DESC LIMIT 100`).all(term, term, term, term);
+    res.json({ users: users.map((u) => ({ id: u.id, name: u.name, email: u.email, createdAt: u.created_at,
+      affiliateCode: u.referral_code, affiliateStatus: u.affiliate_status,
+      assignedAffiliate: u.affiliate_user_id ? { id: u.affiliate_user_id, name: u.affiliate_name, email: u.affiliate_email } : null })) });
+  });
+  admin.post('/affiliates/manual-assign', (req, res, next) => {
+    try {
+      const affiliateUserId = Number(req.body?.affiliateUserId);
+      const userIds = [...new Set((Array.isArray(req.body?.userIds) ? req.body.userIds : []).map(Number))];
+      const effectiveDate = String(req.body?.effectiveFrom || '');
+      if (!Number.isSafeInteger(affiliateUserId) || affiliateUserId <= 0) throw new HttpError(400, 'Escolha um afiliado válido.');
+      if (!userIds.length || userIds.length > 100 || userIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new HttpError(400, 'Selecione entre 1 e 100 jogadores.');
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(effectiveDate) || Number.isNaN(Date.parse(`${effectiveDate}T00:00:00Z`))) throw new HttpError(400, 'Data de início inválida.');
+      const affiliate = db.prepare("SELECT id, role, banned_at FROM users WHERE id = ?").get(affiliateUserId);
+      if (!affiliate || affiliate.role !== 'user' || affiliate.banned_at) throw new HttpError(400, 'O afiliado escolhido não é válido ou está bloqueado.');
+      if (userIds.includes(affiliateUserId)) throw new HttpError(400, 'Um afiliado não pode ser associado a si próprio.');
+      const found = db.prepare(`SELECT id FROM users WHERE role = 'user' AND id IN (${userIds.map(() => '?').join(',')})`).all(...userIds);
+      if (found.length !== userIds.length) throw new HttpError(400, 'Um ou mais jogadores não existem.');
+      const already = db.prepare(`SELECT referred_user_id FROM referral_attributions WHERE referred_user_id IN (${userIds.map(() => '?').join(',')})`).all(...userIds).map((x) => x.referred_user_id);
+      if (already.length) throw new HttpError(409, `Já têm afiliado associado: ${already.join(', ')}. Nenhuma alteração foi feita.`);
+      const profile = ensureProfile(db, affiliateUserId);
+      const effectiveFrom = new Date(`${effectiveDate}T00:00:00.000Z`).toISOString();
+      const at = nowIso();
+      tx(db, () => {
+        const insert = db.prepare(`INSERT INTO referral_attributions
+          (affiliate_user_id, referred_user_id, referral_code, source, status, attributed_at, effective_from)
+          VALUES (?, ?, ?, 'admin', 'pending', ?, ?)`);
+        for (const userId of userIds) {
+          insert.run(affiliateUserId, userId, profile.referral_code, at, effectiveFrom);
+          affiliateAudit(db, { actor: req.user.id, action: 'attribution.manual', entityType: 'user', entityId: userId,
+            result: 'assigned', meta: { affiliateUserId, referralCode: profile.referral_code, effectiveFrom } });
+        }
+        affiliateAudit(db, { actor: req.user.id, action: 'attribution.manual.batch', entityType: 'affiliate', entityId: affiliateUserId,
+          result: 'assigned', meta: { userIds, effectiveFrom, count: userIds.length } });
+      });
+      res.json({ ok: true, count: userIds.length, affiliate: { userId: affiliateUserId, code: profile.referral_code }, effectiveFrom });
+    } catch (err) { next(err instanceof HttpError ? err : new HttpError(400, err.message)); }
+  });
+
   admin.put('/affiliates/config', (req, res) => {
     res.json({ config: saveAffiliateConfig(db, req.body?.config || {}, { actor: req.user.id, reason: reasonOf(req) }) });
   });
