@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDb } from '../server/db.js';
+import { openDb, setSetting } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { config } from '../server/config.js';
 import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit } from '../server/affiliates.js';
-import { previewRevshare, simulateRevshare, saveRevshareCost } from '../server/affiliate-revshare.js';
+import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, saveRevshareCost } from '../server/affiliate-revshare.js';
 
 function setup() {
   const db = openDb(':memory:');
@@ -144,4 +144,26 @@ test('API administrativa disponibiliza simulação apenas em modo de teste e man
     server.close();
     config.paymentsMode = previous;
   }
+});
+
+test('período real exige aprovação manual e o pagamento é idempotente', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado');
+  const code = ensureProfile(s.db, affiliate).referral_code;
+  const referred = s.user('Convidado');
+  attribute(s.db, { referredUserId: referred, code });
+  addBet(s.db, referred, { stake: 10000, payout: 0, status: 'lost', at: '2026-03-15T12:00:00.000Z' });
+  setSetting(s.db, 'affiliate.config', { ...affiliateConfig(s.db), revshareMode: 'live' });
+  const closed = closeRevsharePeriod(s.db, { period: '2026-03', actor: s.admin });
+  const period = s.db.prepare("SELECT * FROM affiliate_revshare_periods WHERE affiliate_user_id=? AND period='2026-03' AND mode='live'").get(affiliate);
+  assert.equal(period.status, 'pending');
+  assert.equal(period.commission_cents, 2000);
+  assert.throws(() => payRevsharePeriod(s.db, period.id, { actor: s.admin }), /aprovados/);
+  approveRevsharePeriod(s.db, period.id, { actor: s.admin, reason: 'reconciliação confirmada' });
+  const paid = payRevsharePeriod(s.db, period.id, { actor: s.admin });
+  assert.equal(paid.status, 'paid');
+  payRevsharePeriod(s.db, period.id, { actor: s.admin });
+  assert.equal(s.db.prepare("SELECT balance_cents FROM users WHERE id=?").get(affiliate).balance_cents, 2000);
+  assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE ref=?").get(`affiliate-revshare:${period.id}`).n, 1);
+  assert.equal(closed[0].status, 'pending');
 });
