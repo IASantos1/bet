@@ -1407,6 +1407,9 @@ function adminCasino(c) {
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-split"${c.split ? ' checked' : ''}${c.palace?.configured ? '' : ' disabled'}>
         Slots pela Palace · jogos ao vivo pela BigBang</label>
         ${c.palace?.configured ? '<button class="ghost-btn btn-sm" data-action="palace-test">Testar Palace</button>' : ''}</div>
+      <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-fs-palace"${c.fsPalace ? ' checked' : ''}${c.palace?.configured ? '' : ' disabled'}>
+        Free Spins pela Palace (trava a aposta / recusa aposta a mais) — o resto do casino fica na BigBang</label></div>
+      <p class="muted">Ligado: as Free Spins abrem o jogo equivalente na Palace, onde a aposta pode ser travada no valor da rodada (ex.: €0,10) e uma aposta a mais é recusada. Se um jogo não existir na Palace, essa Free Spin abre na BigBang.${c.palace?.fsBetLocked ? '' : ' <strong>Travão da aposta: ✘ desligado</strong> — peça à Palace o nome do parâmetro e defina CASINO_FS_BET_PARAM no Railway para abrir já a €0,10.'}</p>
       <h4>Película "Comprar Rodadas Grátis"</h4>
       <p class="muted">Tapa o painel de compra de rodadas (e o de aposta dupla) com a arte original do jogo, como na Betclic. Por agora: Gates of Olympus, no computador.
         Experimente primeiro só para administradores (abra o jogo, o menu, as rodadas grátis) antes de ligar para todos.</p>
@@ -2923,6 +2926,15 @@ document.addEventListener('click', async (e) => {
       const r = await api('/api/admin/casino/mode', { method: 'POST', body: { split: on } });
       toast(on ? 'Slots pela Palace' : 'Tudo pela BigBang', `${r.games} jogos no casino${r.error ? ` · ${r.error}` : ''}`);
     } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+  } else if (action === 'casino-fs-palace') {
+    const on = actionEl.checked;
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/fs-palace', { method: 'POST', body: { on } });
+      toast(r.fsPalace ? 'Free Spins pela Palace' : 'Free Spins pela BigBang', r.fsPalace ? 'As Free Spins abrem o jogo na Palace (aposta travável).' : 'As Free Spins voltam à BigBang.');
+    } catch (err) { actionEl.checked = !on; toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
     loadTab();
   } else if (action === 'casino-premium') {
     actionEl.disabled = true;

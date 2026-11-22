@@ -438,6 +438,24 @@ test('bigbang jurisdiction: sent on launch when set; retries without it if BigBa
   db.close();
 });
 
+test('bigbang palaceTwin: finds the Palace copy of a BigBang game by title', async () => {
+  const db = openDb(':memory:');
+  const palaceGames = [
+    { providerId: 7, provider: 'Pragmatic Play', code: 'vs10bbbonanza', name: 'Big Bass Bonanza', category: 'Slots' },
+    { providerId: 7, provider: 'Pragmatic Play', code: 'vs20olympgate', name: 'Gates of Olympus', category: 'Slots' },
+    { providerId: 9, provider: 'Evolution', code: 'roul', name: 'Roleta', category: 'Ao Vivo' },
+  ];
+  const api = fakeApi([{ id: 55, name: 'SGBass', title: 'Big Bass Bonanza', provider: 'Pragmatic Play', category: 'Pragmatic', category_title: 'Pragmatic', game_type: 'slot', is_premium: false }]);
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl, palace: async () => palaceGames, split: () => false });
+  await bb.games();
+  // 4821 = "Hot Hot Fruit" → not on Palace → null.
+  assert.equal(await bb.palaceTwin(4821), null);
+  // A BigBang game whose title matches a Palace one resolves to the Palace provider+code.
+  const twin = await bb.palaceTwin(55);
+  assert.deepEqual(twin, { providerId: 7, code: 'vs10bbbonanza', name: 'Big Bass Bonanza' });
+  db.close();
+});
+
 test('bigbang bet lock: the free-spin bet is sent on launch when the parameter name is set', async () => {
   const db = openDb(':memory:');
   const api = fakeApi();

@@ -2440,6 +2440,23 @@ export function createApp(db, {
       if (req.body.freeSpins) {
         const s = spinsRow(db, Number(req.body.freeSpins), u.id);
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
+        // Free spins play on Palace when enabled (it locks the bet and refuses an over-bet); the main
+        // casino stays on BigBang. Falls back to BigBang only if the game is not on Palace.
+        const twin = getSetting(db, 'casino.fsPalace', false) === true && casino?.enabled ? await bb.palaceTwin(g.id).catch(() => null) : null;
+        if (twin) {
+          const fs = chooseSpinsGame(db, u.id, s.id, g.id);
+          const fund = fs.palace_cents === null ? fs.value_cents : 0;
+          if (fund) db.prepare('UPDATE casino_spins SET palace_cents = ?, palace_pending = 0, palace_at = ? WHERE id = ? AND palace_cents IS NULL').run(fund, nowIso(), fs.id);
+          let out;
+          try {
+            out = await casino.fsEnterGame(userById(u.id), { providerId: twin.providerId, gameCode: twin.code, returnUrl, fundCents: fund, spinBetCents: spinBet(fs, g.id) });
+          } catch (err) {
+            if (fund) db.prepare('UPDATE casino_spins SET palace_cents = NULL WHERE id = ?').run(fs.id);
+            throw err;
+          }
+          notePlayed(u.id, g.id);
+          return res.json({ url: out.url, freeSpins: { id: fs.id, spinsLeft: fs.spins_left, spins: fs.spins }, balance: cents(userById(u.id).balance_cents), transfer: true });
+        }
         chooseSpinsGame(db, u.id, s.id, g.id); // the picked game is the only one from now on
         // Open the game already at the free-spin bet (e.g. €0.10) where BigBang's bet-lock param is set.
         const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl, betCents: spinBet(s, g.id) });
@@ -3534,6 +3551,13 @@ export function createApp(db, {
     const all = bb ? await bb.games() : null;
     res.json({ split: on, games: all?.games.length ?? 0, error: all?.error || null });
   }));
+  /** Free spins on Palace (locks the bet / refuses over-bets) while the main casino stays on BigBang. */
+  admin.post('/casino/fs-palace', (req, res) => {
+    const on = req.body?.on === true;
+    if (on && !casino?.enabled) throw new HttpError(409, 'A Palace não está configurada: defina CASINO_API_URL e CASINO_API_TOKEN no Railway.');
+    setSetting(db, 'casino.fsPalace', on);
+    res.json({ fsPalace: on });
+  });
   /** Standard (BigBang's own engines) or Premium (the providers' original games) when both exist. */
   admin.post('/casino/premium', wrap(async (req, res) => {
     setSetting(db, 'casino.premium', req.body?.on === true);
@@ -3640,7 +3664,7 @@ export function createApp(db, {
         bbJurisdiction: getSetting(db, 'casino.bbJurisdiction', ''), bbJurisdictionKey: getSetting(db, 'casino.bbJurisdictionKey', ''), bbBetParam: getSetting(db, 'casino.bbBetParam', ''),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
-        split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },
+        split: !!getSetting(db, 'casino.split', false), fsPalace: !!getSetting(db, 'casino.fsPalace', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },
       });
     }
     if (!casinoOn()) {

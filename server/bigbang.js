@@ -442,6 +442,23 @@ export function createBigBang(db, {
     return pick(copies.filter((x) => titleKey(x) === titleKey(g))) || pick(copies.filter((x) => nameKey(x.name) === nameKey(g.name)));
   }
 
+  /**
+   * The Palace copy of a BigBang game, matched by normalized title — used to play Free Spins on Palace
+   * (which can lock the bet / refuse an over-bet) while the main casino stays on BigBang. Returns
+   * { providerId, code, name } from the Palace catalogue, or null when the game is not on Palace.
+   */
+  async function palaceTwin(gameId) {
+    if (!palace) return null;
+    const g = await game(gameId);
+    if (!g || g.source === 'palace') return g?.palace ? { ...g.palace, name: g.name } : null;
+    const key = nameKey(g.name);
+    if (!key) return null;
+    let list;
+    try { list = await palace(); } catch { return null; }
+    const hit = (list || []).find((p) => p.category !== 'Ao Vivo' && nameKey(p.name) === key);
+    return hit ? { providerId: hit.providerId, code: hit.code, name: hit.name } : null;
+  }
+
   /** Games of the same provider (the detail page's "Do mesmo estilo"). */
   /**
    * Games like `g` ("Do mesmo estilo", "Porque jogaste …"): its own family first (at most two: other Big Bass
@@ -757,5 +774,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, related, forYou, launch, inspectLaunch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, palaceTwin, related, forYou, launch, inspectLaunch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
