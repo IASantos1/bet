@@ -1,5 +1,6 @@
 import { nowIso, tx } from './db.js';
 import { affiliateConfig, audit } from './affiliates.js';
+import { postTransaction } from './wallet.js';
 
 const RATE_BPS = 2000;
 const money = (c) => (Number(c || 0) / 100).toFixed(2);
@@ -92,10 +93,74 @@ export function simulateRevshare(db, { period, actor }) {
   return previewRevshare(db, { period, mode: 'test' });
 }
 
+
+export function closeRevsharePeriod(db, { period, actor }) {
+  const cfg = affiliateConfig(db);
+  if (cfg.revshareMode !== 'live') throw new Error('O Revenue Share tem de estar em Produção para fechar um período real.');
+  const { end } = periodBounds(period);
+  if (end > nowIso()) throw new Error('Só é possível fechar meses completos.');
+  const pending = db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE mode='live' AND period < ? AND status='pending' LIMIT 1").get(period);
+  if (pending) throw new Error('Existe um período anterior à espera de aprovação.');
+  const report = previewRevshare(db, { period, mode: 'live' });
+  tx(db, () => {
+    for (const r of report.rows) {
+      db.prepare(`INSERT INTO affiliate_revshare_periods
+        (affiliate_user_id, period, mode, sports_stake_cents, sports_payout_cents, casino_stake_cents, casino_payout_cents,
+         cost_cents, ggr_cents, ngr_cents, opening_carry_cents, closing_carry_cents, commission_cents, status, snapshot, created_at, updated_at)
+        VALUES (?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        ON CONFLICT(affiliate_user_id, period, mode) DO NOTHING`).run(
+          r.affiliateUserId, period, r.sportsStake, r.sportsPayout, r.casinoStake, r.casinoPayout, r.costs,
+          r.ggr, r.ngr, r.openingCarry, r.closingCarry, r.commission, JSON.stringify(r), nowIso(), nowIso());
+    }
+    audit(db, { actor, action: 'revshare.period.close', entityType: 'period', entityId: period, result: 'pending',
+      meta: { rateBps: RATE_BPS, affiliates: report.rows.length, commissionCents: report.rows.reduce((n,r) => n+r.commission,0) } });
+  });
+  return revshareHistory(db, { limit: 500 }).filter((r) => r.period === period && r.mode === 'live');
+}
+
+export function approveRevsharePeriod(db, id, { actor, reason }) {
+  if (affiliateConfig(db).revshareMode !== 'live') throw new Error('Aprovação disponível apenas em Produção.');
+  const why = String(reason || '').trim();
+  if (why.length < 5) throw new Error('Indique a justificação da aprovação (mínimo 5 caracteres).');
+  return tx(db, () => {
+    const row = db.prepare("SELECT * FROM affiliate_revshare_periods WHERE id = ? AND mode = 'live'").get(Number(id));
+    if (!row) throw new Error('Período de Revenue Share não encontrado.');
+    if (row.status !== 'pending') throw new Error('Este período já foi decidido.');
+    db.prepare("UPDATE affiliate_revshare_periods SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=? AND status='pending'")
+      .run(actor, nowIso(), nowIso(), row.id);
+    audit(db, { actor, action: 'revshare.period.approve', entityType: 'period', entityId: row.id, result: 'approved', meta: { period: row.period, reason: why } });
+    return db.prepare('SELECT * FROM affiliate_revshare_periods WHERE id = ?').get(row.id);
+  });
+}
+
+export function payRevsharePeriod(db, id, { actor }) {
+  if (affiliateConfig(db).revshareMode !== 'live') throw new Error('Pagamentos disponíveis apenas em Produção.');
+  return tx(db, () => {
+    const row = db.prepare("SELECT * FROM affiliate_revshare_periods WHERE id = ? AND mode = 'live'").get(Number(id));
+    if (!row) throw new Error('Período de Revenue Share não encontrado.');
+    if (row.status === 'paid') return row;
+    if (row.status !== 'approved') throw new Error('Só períodos aprovados podem ser pagos.');
+    const profile = db.prepare('SELECT admin_status FROM affiliate_profiles WHERE user_id = ?').get(row.affiliate_user_id);
+    const user = db.prepare('SELECT banned_at FROM users WHERE id = ?').get(row.affiliate_user_id);
+    if (!user || user.banned_at || ['blocked','suspended'].includes(profile?.admin_status)) throw new Error('O afiliado está suspenso ou bloqueado.');
+    let payoutTxId = null;
+    if (row.commission_cents > 0) {
+      postTransaction(db, row.affiliate_user_id, row.commission_cents, 'affiliate_commission',
+        `Revenue Share ${row.period} · 20% do NGR`, `affiliate-revshare:${row.id}`);
+      payoutTxId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
+    }
+    db.prepare("UPDATE affiliate_revshare_periods SET status='paid', paid_by=?, paid_at=?, payout_tx_id=?, updated_at=? WHERE id=? AND status='approved'")
+      .run(actor, nowIso(), payoutTxId, nowIso(), row.id);
+    audit(db, { actor, action: 'revshare.period.pay', entityType: 'period', entityId: row.id, result: 'paid',
+      meta: { affiliateUserId: row.affiliate_user_id, amountCents: row.commission_cents, payoutTxId } });
+    return db.prepare('SELECT * FROM affiliate_revshare_periods WHERE id = ?').get(row.id);
+  });
+}
+
 export function revshareHistory(db, { limit = 24 } = {}) {
   return db.prepare(`SELECT p.*, u.name, u.email, u.id AS affiliate_user_id FROM affiliate_revshare_periods p
     JOIN users u ON u.id = p.affiliate_user_id ORDER BY p.period DESC, u.name LIMIT ?`).all(Math.min(500, Math.max(1, Number(limit)||24)))
-    .map((r) => ({ affiliateUserId:r.affiliate_user_id, name:r.name, email:r.email, period:r.period, mode:r.mode, status:r.status,
+    .map((r) => ({ id:r.id, affiliateUserId:r.affiliate_user_id, name:r.name, email:r.email, period:r.period, mode:r.mode, status:r.status,
       sportsStake:money(r.sports_stake_cents), sportsPayout:money(r.sports_payout_cents), casinoStake:money(r.casino_stake_cents),
       casinoPayout:money(r.casino_payout_cents), costs:money(r.cost_cents), ggr:money(r.ggr_cents), ngr:money(r.ngr_cents),
       openingCarry:money(r.opening_carry_cents), closingCarry:money(r.closing_carry_cents), commission:money(r.commission_cents) }));
