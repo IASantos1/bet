@@ -7,7 +7,16 @@ const money = (c) => (Number(c || 0) / 100).toFixed(2);
 const periodBounds = (period) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) throw new Error('Período inválido. Use AAAA-MM.');
   const [y, m] = period.split('-').map(Number);
-  return { start: new Date(Date.UTC(y, m - 1, 1)).toISOString(), end: new Date(Date.UTC(y, m, 1)).toISOString() };
+  const lisbonOffsetMinutes = (year, monthIndex) => {
+    const probe = new Date(Date.UTC(year, monthIndex, 1, 12));
+    const zone = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Lisbon', timeZoneName: 'shortOffset' })
+      .formatToParts(probe).find((part) => part.type === 'timeZoneName')?.value || 'GMT';
+    const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zone);
+    return match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] || 0)) : 0;
+  };
+  const startMs = Date.UTC(y, m - 1, 1) - lisbonOffsetMinutes(y, m - 1) * 60_000;
+  const endMs = Date.UTC(y, m, 1) - lisbonOffsetMinutes(y, m) * 60_000;
+  return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 };
 function priorCarry(db, affiliateId, period, mode) {
   const row = db.prepare(`SELECT closing_carry_cents FROM affiliate_revshare_periods
@@ -196,6 +205,9 @@ export function saveRevshareCost(db, { affiliateUserId, period, costCents, reaso
   if (!Number.isSafeInteger(costCents) || costCents < 0 || costCents > 100000000000) throw new Error('Custo inválido.');
   if (String(reason || '').trim().length < 5) throw new Error('Indique a justificação do custo (mínimo 5 caracteres).');
   if (!db.prepare('SELECT 1 FROM affiliate_profiles WHERE user_id = ?').get(affiliateUserId)) throw new Error('Afiliado não encontrado.');
+  if (db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE affiliate_user_id = ? AND period = ? AND mode = 'live' AND status <> 'cancelled'").get(affiliateUserId, period)) {
+    throw new Error('O período real já foi fechado; os custos não podem ser alterados.');
+  }
   tx(db, () => {
     db.prepare(`INSERT INTO affiliate_revshare_costs (affiliate_user_id, period, cost_cents, reason, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
