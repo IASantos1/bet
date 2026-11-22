@@ -173,7 +173,7 @@ export function refreshProfile(db, userId, { actor = null, cfg = affiliateConfig
 export function attribute(db, { referredUserId, code, ip = null, source = 'link' }) {
   const cfg = affiliateConfig(db);
   const c = normalizeCode(code);
-  if (!cfg.enabled || !CODE_RE.test(c)) return null;
+  if (!(cfg.enabled || ['test', 'live'].includes(cfg.revshareMode)) || !CODE_RE.test(c)) return null;
   const profile = profileByCode(db, c);
   const result = (r, meta = {}) => { audit(db, { action: 'attribution', entityType: 'user', entityId: referredUserId, result: r, meta: { code: c, ...meta } }); return null; };
   if (!profile) return result('unknown_code');
