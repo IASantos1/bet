@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { seed } from '../server/seed.js';
+import { createApp } from '../server/app.js';
+import { config } from '../server/config.js';
 import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit } from '../server/affiliates.js';
-import { previewRevshare, simulateRevshare } from '../server/affiliate-revshare.js';
+import { previewRevshare, simulateRevshare, saveRevshareCost } from '../server/affiliate-revshare.js';
 
 function setup() {
   const db = openDb(':memory:');
@@ -93,4 +95,53 @@ test('produção não pode ser ativada antes da validação', () => {
   const s = setup();
   assert.throws(() => saveAffiliateConfig(s.db, { revshareMode: 'live' }, { actor: s.admin, reason: 'tentar produção' }), /bloqueada/);
   assert.equal(affiliateConfig(s.db).revshareMode, 'test');
+});
+
+test('ajustes de custos são auditados e deduzidos do NGR antes dos 20%', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado');
+  const code = ensureProfile(s.db, affiliate).referral_code;
+  const referred = s.user('Convidado');
+  attribute(s.db, { referredUserId: referred, code });
+  addBet(s.db, referred, { stake: 10000, payout: 0, status: 'lost' });
+  saveRevshareCost(s.db, { affiliateUserId: affiliate, period: '2026-03', costCents: 2500, reason: 'custo contratual do fornecedor', actor: s.admin });
+  const report = simulateRevshare(s.db, { period: '2026-03', actor: s.admin });
+  const row = report.rows.find((x) => x.affiliateUserId === affiliate);
+  assert.equal(row.ggr, 10000);
+  assert.equal(row.ngr, 7500);
+  assert.equal(row.commission, 1500);
+  assert.ok(s.db.prepare("SELECT 1 FROM affiliate_audit WHERE action='revshare.cost.update' AND entity_id=?").get(String(affiliate)));
+});
+
+test('API administrativa disponibiliza simulação apenas em modo de teste e mantém produção bloqueada', async () => {
+  const s = setup();
+  const previous = config.paymentsMode;
+  config.paymentsMode = 'demo';
+  const server = createApp(s.db, { loginAttempts: 1000, registrations: 1000 }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  let cookie = '';
+  const call = async (method, path, body) => {
+    const response = await fetch(base + path, { method, headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}),
+    }, body: body ? JSON.stringify(body) : undefined });
+    const setCookies = response.headers.getSetCookie?.() || [];
+    if (setCookies.length) cookie = setCookies.map((x) => x.split(';')[0]).join('; ');
+    return { status: response.status, body: await response.json().catch(() => null) };
+  };
+  try {
+    const login = await call('POST', '/api/auth/login', { email: config.adminEmail || 'admin@classicbet.local', password: config.adminPassword || 'admin12345' });
+    assert.equal(login.status, 200);
+    const configResponse = await call('GET', '/api/admin/affiliates');
+    assert.equal(configResponse.body.config.revshareMode, 'test');
+    const simulation = await call('POST', '/api/admin/affiliates/revshare/simulate', { period: '2026-03' });
+    assert.equal(simulation.status, 200);
+    assert.equal(simulation.body.mode, 'test');
+    const production = await call('PUT', '/api/admin/affiliates/config', { config: { revshareMode: 'live' }, reason: 'ainda sem validação' });
+    assert.equal(production.status, 409);
+    assert.equal(affiliateConfig(s.db).revshareMode, 'test');
+  } finally {
+    server.close();
+    config.paymentsMode = previous;
+  }
 });
