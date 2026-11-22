@@ -167,7 +167,7 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   setSetting(s.db, 'affiliate.config', { ...affiliateConfig(s.db), revshareMode: 'live' });
   const closed = closeRevsharePeriod(s.db, { period: '2026-03', actor: s.admin });
   const period = s.db.prepare("SELECT * FROM affiliate_revshare_periods WHERE affiliate_user_id=? AND period='2026-03' AND mode='live'").get(affiliate);
-  assert.equal(period.status, 'pending');
+  assert.equal(period.status, 'pending_approval');
   assert.equal(period.commission_cents, 2000);
   assert.throws(() => payRevsharePeriod(s.db, period.id, { actor: s.admin }), /aprovados/);
   approveRevsharePeriod(s.db, period.id, { actor: s.admin, reason: 'reconciliação confirmada' });
@@ -177,5 +177,5 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   assert.equal(s.db.prepare("SELECT balance_cents FROM users WHERE id=?").get(affiliate).balance_cents, 2000);
   assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE ref=?").get(`affiliate-revshare:${period.id}`).n, 1);
   assert.equal(reconcileRevshare(s.db).ok, true);
-  assert.equal(closed[0].status, 'pending');
+  assert.equal(closed[0].status, 'pending_approval');
 });
