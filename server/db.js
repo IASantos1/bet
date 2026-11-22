@@ -381,6 +381,43 @@ CREATE TABLE IF NOT EXISTS affiliate_commissions (
 CREATE INDEX IF NOT EXISTS idx_aff_comm_affiliate ON affiliate_commissions(affiliate_user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_aff_comm_status ON affiliate_commissions(status, created_at);
 
+-- Monthly affiliate Revenue Share snapshots. Test rows never touch wallet balances.
+CREATE TABLE IF NOT EXISTS affiliate_revshare_periods (
+  id                    INTEGER PRIMARY KEY,
+  affiliate_user_id     INTEGER NOT NULL REFERENCES users(id),
+  period                TEXT NOT NULL CHECK (period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
+  mode                  TEXT NOT NULL CHECK (mode IN ('test','live')),
+  sports_stake_cents    INTEGER NOT NULL DEFAULT 0,
+  sports_payout_cents   INTEGER NOT NULL DEFAULT 0,
+  casino_stake_cents    INTEGER NOT NULL DEFAULT 0,
+  casino_payout_cents   INTEGER NOT NULL DEFAULT 0,
+  cost_cents            INTEGER NOT NULL DEFAULT 0,
+  ggr_cents             INTEGER NOT NULL DEFAULT 0,
+  ngr_cents             INTEGER NOT NULL DEFAULT 0,
+  opening_carry_cents   INTEGER NOT NULL DEFAULT 0,
+  closing_carry_cents   INTEGER NOT NULL DEFAULT 0,
+  commission_cents      INTEGER NOT NULL DEFAULT 0 CHECK (commission_cents >= 0),
+  status                TEXT NOT NULL CHECK (status IN ('simulated','pending_approval','approved','paid','cancelled')),
+  snapshot              TEXT NOT NULL DEFAULT '{}',
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  UNIQUE (affiliate_user_id, period, mode)
+);
+CREATE INDEX IF NOT EXISTS idx_aff_revshare_period ON affiliate_revshare_periods(period, mode, status);
+
+-- Contractual deductions are explicit and auditable; no unknown supplier cost is guessed.
+CREATE TABLE IF NOT EXISTS affiliate_revshare_costs (
+  id                INTEGER PRIMARY KEY,
+  affiliate_user_id INTEGER NOT NULL REFERENCES users(id),
+  period            TEXT NOT NULL,
+  cost_cents        INTEGER NOT NULL CHECK (cost_cents >= 0),
+  reason            TEXT NOT NULL,
+  created_by        INTEGER REFERENCES users(id),
+  created_at        TEXT NOT NULL,
+  UNIQUE (affiliate_user_id, period)
+);
+CREATE INDEX IF NOT EXISTS idx_aff_revshare_costs_period ON affiliate_revshare_costs(period, affiliate_user_id);
+
 -- Promotional campaigns (campaigns.js): one email or SMS sent to the players who asked for promotions.
 CREATE TABLE IF NOT EXISTS campaigns (
   id            INTEGER PRIMARY KEY,
