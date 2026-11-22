@@ -11,9 +11,9 @@ function setup() {
   const admin = db.prepare("SELECT id FROM users WHERE role = 'admin'").get().id;
   saveAffiliateConfig(db, { revshareMode: 'test', rateBps: 2000 }, { actor: admin, reason: 'ativar testes de Revenue Share' });
   let n = 0;
-  const user = (name = `Jogador ${++n}`) => Number(db.prepare(
+  const user = (name = null) => { n += 1; return Number(db.prepare(
     "INSERT INTO users (email,name,birthdate,password_hash,created_at) VALUES (?,?,'1990-01-01','x',?)"
-  ).run(`revshare${n}@example.test`, name, new Date().toISOString()).lastInsertRowid);
+  ).run(`revshare${n}@example.test`, name || `Jogador ${n}`, new Date().toISOString()).lastInsertRowid); };
   return { db, admin, user };
 }
 
@@ -49,7 +49,7 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
   attribute(s.db, { referredUserId: referred, code });
-  addBet(s.db, referred, { stake: 10000, payout: 3000, status: 'lost' });
+  addBet(s.db, referred, { stake: 10000, payout: 3000, status: 'won' });
   addBet(s.db, referred, { stake: 5000, payout: 2000, realStake: 3000, realPayout: 1200, bonus: 2000, status: 'won' });
   addBet(s.db, referred, { stake: 9000, payout: 9000, status: 'void' });
   addCasinoMove(s.db, referred, 'casino-real-bet', -5000);
