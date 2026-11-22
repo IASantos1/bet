@@ -394,6 +394,20 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
     <div id="affRevshareResult"></div>
     ${historyRows ? `<h4>Simulações guardadas</h4><div class="table-wrap"><table><thead><tr><th>Período</th><th>Afiliado</th><th>GGR</th><th>Custos</th><th>NGR</th><th>Carryover</th><th>Comissão</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${historyRows}</tbody></table></div>` : '<p class="muted">Ainda não existem simulações guardadas.</p>'}
     </div>`;
+  const manualAssign = `<div class="panel"><h3>Associar jogadores manualmente</h3>
+    <p class="muted">Escolha o afiliado, procure os jogadores e selecione vários de uma vez. A associação fica registada na auditoria e não substitui atribuições existentes.</p>
+    <div class="adm-grid">
+      <label class="field">Procurar afiliado (nome, email ou ID)<input id="affManualAffiliateQ" placeholder="Nome ou email"></label>
+      <div class="form-actions"><button class="ghost-btn" type="button" data-action="aff-manual-affiliate-search">Procurar afiliado</button></div>
+      <label class="field wide">Afiliado selecionado<select id="affManualAffiliate"><option value="">Procure e selecione um afiliado</option></select></label>
+      <label class="field">Procurar jogadores (nome, email ou ID)<input id="affManualPlayerQ" placeholder="Nome ou email"></label>
+      <div class="form-actions"><button class="ghost-btn" type="button" data-action="aff-manual-player-search">Procurar jogadores</button></div>
+      <label class="field">Aplicar desde<input id="affManualFrom" type="date" value="2026-11-01"></label>
+    </div>
+    <div id="affManualPlayers"><p class="muted">Procure os jogadores que pretende associar.</p></div>
+    <div class="form-actions"><button class="primary-btn" type="button" data-action="aff-manual-assign">Associar jogadores selecionados</button></div>
+    <p class="muted">A data inicial predefinida é 01/11/2026. Jogadores já associados a outro afiliado não são alterados; o sistema apresenta conflito para evitar substituições acidentais.</p>
+  </div>`;
   const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th></th></tr></thead><tbody>
     ${affiliates.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">${esc(a.email)}</small></td><td><b>${esc(a.code)}</b></td>
       <td><span class="pill ${a.status === 'active' ? 'won' : a.status === 'pending' ? 'pending' : 'lost'}">${AFF_STATUS[a.status] || a.status}</span>${a.adminReason ? `<br><small class="muted">${esc(a.adminReason)}</small>` : ''}</td>
@@ -419,7 +433,7 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
     ${auditLog.map((l) => `<tr><td>${esc(fmtDateTime(l.created_at))}</td><td>${l.actor_user_id ?? '—'}</td><td>${esc(l.action)}</td><td>${esc(l.entity_type)} ${esc(l.entity_id ?? '')}</td><td>${esc(l.result)}</td>
       <td><small class="muted">${esc(l.metadata ? JSON.stringify(l.metadata) : '')}</small></td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Sem registos.</p>';
-  return `${rec}${cfg}${revshare}
+  return `${rec}${cfg}${revshare}${manualAssign}
     <div class="panel"><h3>Afiliados</h3><form class="form-actions" data-form="aff-search"><input name="q" value="${esc(state.affQ || '')}" placeholder="Código, nome ou email"><button class="ghost-btn">Procurar</button></form>${affs}</div>
     <div class="panel"><h3>Comissões históricas de primeiro depósito</h3>${comms}</div>
     <div class="panel"><h3>Auditoria (só de leitura)</h3>${log}</div>`;
@@ -2290,6 +2304,43 @@ document.addEventListener('click', async (e) => {
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
+  if (action === 'aff-manual-affiliate-search' || action === 'aff-manual-player-search') {
+    const affiliateSearch = action === 'aff-manual-affiliate-search';
+    const q = (affiliateSearch ? $('#affManualAffiliateQ')?.value : $('#affManualPlayerQ')?.value || '').trim();
+    if (q.length < 2) return toast('Pesquisa', 'Escreva pelo menos 2 caracteres.', 'error');
+    actionEl.disabled = true;
+    try {
+      const r = await api(`/api/admin/affiliates/manual-users?q=${encodeURIComponent(q)}`);
+      if (affiliateSearch) {
+        const select = $('#affManualAffiliate');
+        select.innerHTML = '<option value="">Selecione o afiliado</option>' + r.users.map((u) =>
+          `<option value="${u.id}">${esc(u.name)} · ${esc(u.email)} · #${u.id}${u.affiliateCode ? ` · ${esc(u.affiliateCode)}` : ' · perfil será criado ao associar'}${u.assignedAffiliate ? ' · já associado a afiliado' : ''}</option>`).join('');
+        if (!r.users.length) toast('Sem resultados', 'Não encontrei utilizadores com essa pesquisa.', 'error');
+      } else {
+        const box = $('#affManualPlayers');
+        box.innerHTML = r.users.length ? `<div class="table-wrap"><table><thead><tr><th></th><th>Jogador</th><th>Registo</th><th>Afiliado atual</th></tr></thead><tbody>${r.users.map((u) =>
+          `<tr><td><input type="checkbox" class="aff-manual-player" value="${u.id}" ${u.assignedAffiliate ? 'disabled' : ''}></td><td>${esc(u.name)}<br><small class="muted">${esc(u.email)} · #${u.id}</small></td><td>${esc(fmtDateTime(u.createdAt))}</td><td>${u.assignedAffiliate ? `${esc(u.assignedAffiliate.name)} · ${esc(u.assignedAffiliate.email)}` : '<span class="muted">Sem afiliado</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nenhum jogador encontrado.</p>';
+      }
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
+  if (action === 'aff-manual-assign') {
+    const affiliateUserId = Number($('#affManualAffiliate')?.value);
+    const userIds = $('.aff-manual-player:checked').map((el) => Number(el.value));
+    const effectiveFrom = $('#affManualFrom')?.value;
+    if (!affiliateUserId) return toast('Afiliado', 'Procure e selecione um afiliado.', 'error');
+    if (!userIds.length) return toast('Jogadores', 'Selecione pelo menos um jogador sem afiliado.', 'error');
+    if (!confirm(`Associar ${userIds.length} jogador(es) a este afiliado desde ${effectiveFrom}? Esta ação fica registada e não pode substituir associações existentes.`)) return;
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/affiliates/manual-assign', { method: 'POST', body: { affiliateUserId, userIds, effectiveFrom } });
+      toast('Associação concluída', `${r.count} jogador(es) associado(s) ao código ${r.affiliate.code}, com efeitos desde ${r.effectiveFrom.slice(0,10)}.`);
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    return;
+  }
   if (action === 'open-menu') { $('.adm')?.classList.add('menu-open'); return; }
   if (action === 'ts-court') {
     tsCourtId = actionEl.dataset.id;
