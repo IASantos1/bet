@@ -4053,6 +4053,7 @@ export function createApp(db, {
       const already = db.prepare(`SELECT referred_user_id FROM referral_attributions WHERE referred_user_id IN (${userIds.map(() => '?').join(',')})`).all(...userIds).map((x) => x.referred_user_id);
       if (already.length) throw new HttpError(409, `Já têm afiliado associado: ${already.join(', ')}. Nenhuma alteração foi feita.`);
       const profile = ensureProfile(db, affiliateUserId);
+      if (['blocked', 'suspended'].includes(profile.admin_status)) throw new HttpError(409, 'O perfil de afiliado está suspenso ou bloqueado.');
       const effectiveFrom = new Date(`${effectiveDate}T00:00:00.000Z`).toISOString();
       const at = nowIso();
       tx(db, () => {
