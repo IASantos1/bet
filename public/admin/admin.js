@@ -366,12 +366,13 @@ const COMM_STATUS = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga'
 const COMM_PILL = { pending: 'pending', approved: 'open', paid: 'won', reversed: 'lost', rejected: 'void' };
 const AFF_FIELDS = [['rateBps', 'Revenue Share (pontos base; 2000 = 20%)']];
 
-function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: commissions }, { items: auditLog }, history = { items: [] }) {
+function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareReconciliation: rr }, { items: commissions }, { items: auditLog }, history = { items: [] }) {
   const rec = `<div class="adm-cards">
     <div class="adm-card"><small>Comissões pagas</small><strong>${money(r.commissionsPaid)}</strong><em>${r.paidCount} pagamentos</em></div>
     <div class="adm-card"><small>Créditos na carteira</small><strong>${money(r.ledgerCredits)}</strong><em>${r.ledgerCount} movimentos</em></div>
     <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
-    <div class="adm-card"><small>Reconciliação</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões em falta</button></em></div></div>`;
+    <div class="adm-card"><small>Reconciliação histórica</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões antigas</button></em></div>
+    <div class="adm-card"><small>Reconciliação RevShare</small><strong>${rr?.ok ? '✔ Certa' : '⚠ A verificar'}</strong><em>${rr ? `${rr.paidCount} pagamentos · ${money(rr.paid)} pagos / ${money(rr.ledger)} no ledger` : 'Sem dados'}</em></div></div>`;;
   const cfg = `<form class="panel" data-form="aff-config"><h3>Revenue Share · 20% do NGR</h3>
     <p class="muted">O modo de teste calcula o GGR/NGR mensal dos jogadores referenciados. Não credita carteiras nem gera pagamentos. A produção permanece bloqueada até validação jurídica e financeira.</p>
     <label class="field">Modo do Revenue Share<select name="revshareMode">
