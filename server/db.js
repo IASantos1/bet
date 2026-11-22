@@ -398,6 +398,11 @@ CREATE TABLE IF NOT EXISTS affiliate_revshare_periods (
   closing_carry_cents   INTEGER NOT NULL DEFAULT 0,
   commission_cents      INTEGER NOT NULL DEFAULT 0 CHECK (commission_cents >= 0),
   status                TEXT NOT NULL CHECK (status IN ('simulated','pending_approval','approved','paid','cancelled')),
+  approved_by           INTEGER REFERENCES users(id),
+  approved_at           TEXT,
+  paid_by               INTEGER REFERENCES users(id),
+  paid_at               TEXT,
+  payout_tx_id          INTEGER REFERENCES transactions(id),
   snapshot              TEXT NOT NULL DEFAULT '{}',
   created_at            TEXT NOT NULL,
   updated_at            TEXT NOT NULL,
@@ -769,6 +774,10 @@ function migrate(db) {
   if (revshareSql && (!revshareSql.includes("'pending_approval'") || !revshareSql.includes("'cancelled'"))) {
     rebuildKeeping(db, 'affiliate_revshare_periods');
   }
+  const revshareCols = new Set(db.prepare('PRAGMA table_info(affiliate_revshare_periods)').all().map((c) => c.name));
+  for (const [c, type] of [['approved_by', 'INTEGER REFERENCES users(id)'], ['approved_at', 'TEXT'], ['paid_by', 'INTEGER REFERENCES users(id)'], ['paid_at', 'TEXT'], ['payout_tx_id', 'INTEGER REFERENCES transactions(id)']]) {
+    if (!revshareCols.has(c)) db.exec(`ALTER TABLE affiliate_revshare_periods ADD COLUMN ${c} ${type}`);
+  }
 
   // Monthly affiliate Revenue Share: immutable financial snapshots by affiliate / month / mode.
   db.exec(`
@@ -788,6 +797,8 @@ function migrate(db) {
       closing_carry_cents INTEGER NOT NULL DEFAULT 0,
       commission_cents INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL CHECK (status IN ('simulated','pending_approval','approved','paid','cancelled')),
+      approved_by INTEGER REFERENCES users(id), approved_at TEXT, paid_by INTEGER REFERENCES users(id), paid_at TEXT,
+      payout_tx_id INTEGER REFERENCES transactions(id),
       snapshot TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
