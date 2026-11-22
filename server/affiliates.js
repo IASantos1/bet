@@ -355,18 +355,17 @@ export const maskName = (n) => { const [a = '', b = ''] = String(n || '').trim()
 
 export function affiliateView(db, userId, { baseUrl }) {
   const cfg = affiliateConfig(db);
-  const { profile, eligibility: e } = refreshProfile(db, userId, { cfg });
+  const profile = ensureProfile(db, userId);
+  const user = db.prepare('SELECT banned_at, excluded_until FROM users WHERE id = ?').get(userId);
+  const status = !user || user.banned_at || profile.admin_status === 'blocked' ? 'blocked'
+    : profile.admin_status === 'suspended' || (user.excluded_until && user.excluded_until > nowIso()) ? 'suspended' : 'active';
   return {
-    enabled: cfg.enabled,
+    enabled: cfg.revshareMode === 'live',
     referralCode: profile.referral_code,
     referralUrl: `${baseUrl}/${profile.referral_code}`,
-    status: e.state,
-    reason: e.reason,
-    activation: {
-      hasQualifyingDeposit: e.hasQualifyingDeposit, minimumDeposit: eur(cfg.minDepositCents),
-      eligibleBalance: eur(e.eligibleBalance ?? 0), minimumBalance: eur(cfg.minBalanceCents), canEarnCommission: e.canEarn,
-    },
-    commission: { rate: cfg.rateBps / 100, basis: 'first_eligible_deposit', currency: 'EUR' },
+    status,
+    reason: profile.admin_reason || null,
+    commission: { rate: RATE_BPS / 100, basis: 'monthly_ngr', currency: 'EUR' },
   };
 }
 
