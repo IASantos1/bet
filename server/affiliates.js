@@ -51,6 +51,7 @@ export function saveAffiliateConfig(db, input, { actor, reason }) {
     if (k === 'revshareMode') {
       const mode = String(input[k]);
       if (!['off', 'test', 'live'].includes(mode)) throw new HttpError(400, 'Modo de Revenue Share inválido.');
+      if (mode === 'live') throw new HttpError(409, 'Produção ainda bloqueada: falta concluir e validar o motor de NGR e a reconciliação.');
       next[k] = mode;
       continue;
     }
