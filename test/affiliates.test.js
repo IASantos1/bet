@@ -5,7 +5,7 @@ import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { config } from '../server/config.js';
 import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit } from '../server/affiliates.js';
-import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, saveRevshareCost } from '../server/affiliate-revshare.js';
+import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, saveRevshareCost, reconcileRevshare } from '../server/affiliate-revshare.js';
 
 function setup() {
   const db = openDb(':memory:');
@@ -165,5 +165,6 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   payRevsharePeriod(s.db, period.id, { actor: s.admin });
   assert.equal(s.db.prepare("SELECT balance_cents FROM users WHERE id=?").get(affiliate).balance_cents, 2000);
   assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE ref=?").get(`affiliate-revshare:${period.id}`).n, 1);
+  assert.equal(reconcileRevshare(s.db).ok, true);
   assert.equal(closed[0].status, 'pending');
 });
