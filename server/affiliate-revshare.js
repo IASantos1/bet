@@ -1,7 +1,6 @@
 import { nowIso, tx } from './db.js';
 import { affiliateConfig, audit } from './affiliates.js';
 import { postTransaction } from './wallet.js';
-import { postTransaction } from './wallet.js';
 
 const RATE_BPS = 2000;
 const money = (c) => (Number(c || 0) / 100).toFixed(2);
