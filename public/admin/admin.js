@@ -365,7 +365,7 @@ const AFF_STATUS = { pending: 'Pendente', active: 'Ativo', suspended: 'Suspenso'
 const COMM_STATUS = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga', reversed: 'Revertida', rejected: 'Rejeitada' };
 const COMM_PILL = { pending: 'pending', approved: 'open', paid: 'won', reversed: 'lost', rejected: 'void' };
 const AFF_FIELDS = [
-  ['rateBps', 'Comissão (pontos base; 1000 = 10%)'], ['minDepositCents', 'Depósito próprio mínimo (cêntimos)'],
+  ['rateBps', 'Revenue Share (pontos base; 2000 = 20%)'], ['minDepositCents', 'Depósito próprio mínimo (cêntimos)'],
   ['minBalanceCents', 'Saldo elegível mínimo (cêntimos)'], ['dualApprovalCents', 'Dupla aprovação a partir de (cêntimos; 0 = desligada)'],
   ['velocityPerDay', 'Registos por código em 24 h antes de rever'],
 ];
@@ -376,12 +376,16 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: 
     <div class="adm-card"><small>Créditos na carteira</small><strong>${money(r.ledgerCredits)}</strong><em>${r.ledgerCount} movimentos</em></div>
     <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
     <div class="adm-card"><small>Reconciliação</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões em falta</button></em></div></div>`;
-  const cfg = `<form class="panel" data-form="aff-config"><h3><label class="adm-switch"><input type="checkbox" name="enabled"${c.enabled ? ' checked' : ''}> Programa de afiliados ativo</label>
-      <span class="pill ${c.enabled ? 'won' : 'void'}">${c.enabled ? 'ATIVO' : 'DESLIGADO'}</span></h3>
-    <p class="muted">⚖️ Antes de ativar, confirme com o jurista a conformidade com o SRIJ / Regime Jurídico dos Jogos e Apostas Online e com as regras de publicidade a jogo em Portugal.</p>
-    <div class="adm-grid">${AFF_FIELDS.map(([k, l]) => `<label class="field">${esc(l)}<input name="${k}" type="number" step="1" min="0" value="${c[k]}" required></label>`).join('')}</div>
-    <div class="form-actions"><label class="adm-switch"><input type="checkbox" name="autoPayout"${c.autoPayout ? ' checked' : ''}> Pagar automaticamente as comissões aprovadas</label>
-      <label class="adm-switch"><input type="checkbox" name="countDemoDeposits"${c.countDemoDeposits ? ' checked' : ''}> Contar depósitos de demonstração (só servidores de teste)</label></div>
+  const cfg = `<form class="panel" data-form="aff-config"><h3>Revenue Share · 20% do NGR</h3>
+    <p class="muted">Estado independente do deploy. O seletor fica guardado no painel. O motor de apuramento e a simulação ainda estão em implementação; por segurança, a ativação em produção permanece bloqueada até à validação.</p>
+    <label class="field">Modo do Revenue Share<select name="revshareMode">
+      <option value="off"${(c.revshareMode || 'off') === 'off' ? ' selected' : ''}>Desativado</option>
+      <option value="test"${c.revshareMode === 'test' ? ' selected' : ''}>Modo de teste (sem pagamentos)</option>
+      <option value="live"${c.revshareMode === 'live' ? ' selected' : ''}>Produção (comissões reais, aprovação manual)</option>
+    </select></label>
+    <p class="muted">⚖️ A ativação em produção exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino.</p>
+    <div class="adm-grid">${AFF_FIELDS.filter(([k]) => k !== 'rateBps').map(([k, l]) => `<label class="field">${esc(l)}<input name="${k}" type="number" step="1" min="0" value="${c[k]}" required></label>`).join('')}</div>
+    <p class="muted">Taxa fixa configurada: <b>20% (2000 pontos base)</b>. Pagamentos automáticos desativados.</p>
     <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
     <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div></form>`;
   const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th class="num">Qualif.</th><th class="num">Saldo eleg.</th><th class="num">Pago</th><th class="num">Em aberto</th><th></th></tr></thead><tbody>
@@ -2064,10 +2068,11 @@ const handlers = {
   },
   async 'aff-config'(form) {
     const d = formData(form);
-    const config = { enabled: !!form.enabled.checked, autoPayout: !!form.autoPayout.checked, countDemoDeposits: !!form.countDemoDeposits.checked };
-    for (const [k] of AFF_FIELDS) config[k] = Number(d[k]);
+    const config = { revshareMode: d.revshareMode, autoPayout: false, countDemoDeposits: false };
+    for (const [k] of AFF_FIELDS) if (k !== 'rateBps') config[k] = Number(d[k]);
+    config.rateBps = 2000;
     await api('/api/admin/affiliates/config', { method: 'PUT', body: { config, reason: d.reason } });
-    toast('Feito', 'Configuração dos afiliados guardada (registada na auditoria).');
+    toast('Feito', 'Modo Revenue Share guardado na auditoria.');
     loadTab();
   },
   async 'aff-search'(form) { state.affQ = formData(form).q || ''; loadTab(); },

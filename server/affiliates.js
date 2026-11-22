@@ -20,7 +20,8 @@ import { config } from './config.js';
 export const AFFILIATE_DEFAULTS = {
   // Off until the operator switches it on (legal review first: see the admin panel).
   enabled: false,
-  rateBps: 1000, // 10%
+  revshareMode: 'off', // off | test | live; production starts safely disabled
+  rateBps: 2000, // 20% of eligible NGR
   minDepositCents: 1000, // own confirmed deposit to qualify
   minBalanceCents: 1000, // eligible balance to keep earning
   autoPayout: false, // approved commissions wait for the operator's payout
@@ -47,6 +48,13 @@ export function saveAffiliateConfig(db, input, { actor, reason }) {
   const next = { ...before };
   for (const k of Object.keys(AFFILIATE_DEFAULTS)) {
     if (input?.[k] === undefined) continue;
+    if (k === 'revshareMode') {
+      const mode = String(input[k]);
+      if (!['off', 'test', 'live'].includes(mode)) throw new HttpError(400, 'Modo de Revenue Share inválido.');
+      if (mode === 'live') throw new HttpError(409, 'Produção ainda bloqueada: falta concluir e validar o motor de NGR e a reconciliação.');
+      next[k] = mode;
+      continue;
+    }
     if (typeof AFFILIATE_DEFAULTS[k] === 'boolean') { next[k] = !!input[k]; continue; }
     const n = Math.round(Number(input[k]));
     const [lo, hi] = LIMITS[k];
@@ -213,36 +221,13 @@ function fraudSignals(db, affiliateId, referred, attribution, cfg) {
  * referred player (UNIQUE) and per deposit (UNIQUE); a repeated webhook finds it and does nothing.
  * `demo`: a demonstration-mode deposit (counted only with countDemoDeposits).
  */
-export function onReferredDeposit(db, { userId, amountCents, txId, ref, demo = false }) {
-  const cfg = affiliateConfig(db);
-  if (!cfg.enabled || amountCents <= 0 || !txId || !ref) return null;
-  if (demo && !cfg.countDemoDeposits) return null;
-  const att = db.prepare('SELECT * FROM referral_attributions WHERE referred_user_id = ?').get(userId);
-  if (!att || att.status !== 'pending') return null;
-  if (db.prepare('SELECT 1 FROM affiliate_commissions WHERE referred_user_id = ? OR deposit_tx_id = ? OR deposit_ref = ?').get(userId, txId, ref)) return null;
-  // Only the first eligible deposit counts: an earlier confirmed one (made before the programme was on) closes it.
-  const earlier = confirmedDeposits(db, userId, cfg).filter((d) => d.id < txId);
-  const referred = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
-  const now = nowIso();
-  const commission = Math.floor((amountCents * cfg.rateBps) / 10_000);
-  let status = 'approved';
-  let reason = null;
-  if (earlier.length) { status = 'rejected'; reason = 'não é o primeiro depósito do convidado'; }
-  else {
-    const e = eligibility(db, att.affiliate_user_id, cfg);
-    const f = fraudSignals(db, att.affiliate_user_id, referred, att, cfg);
-    if (e.state === 'blocked') { status = 'rejected'; reason = `afiliado bloqueado (${e.reason})`; }
-    else if (f.reject) { status = 'rejected'; reason = f.reject; }
-    else if (!e.canEarn || f.review.length) { status = 'pending'; reason = [!e.canEarn ? `afiliado inelegível no momento do depósito: ${e.reason}` : null, ...f.review].filter(Boolean).join('; '); }
-  }
-  db.prepare(`INSERT INTO affiliate_commissions (affiliate_user_id, referred_user_id, deposit_tx_id, deposit_ref, deposit_cents, rate_bps, commission_cents,
-      status, review_reason, approved_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(att.affiliate_user_id, userId, txId, ref, amountCents, cfg.rateBps, commission, status, reason, status === 'approved' ? now : null, now, now);
-  const id = db.prepare('SELECT id FROM affiliate_commissions WHERE deposit_tx_id = ?').get(txId).id;
-  db.prepare('UPDATE referral_attributions SET status = ?, reason = ? WHERE id = ?').run(status === 'rejected' ? 'rejected' : 'qualified', reason, att.id);
-  audit(db, { action: 'commission.create', entityType: 'commission', entityId: id, result: status, meta: { affiliate: att.affiliate_user_id, referred: userId, deposit: amountCents, rateBps: cfg.rateBps, commission, reason } });
-  if (status === 'approved' && cfg.autoPayout && !(cfg.dualApprovalCents && commission >= cfg.dualApprovalCents)) payCommission(db, id, { actor: null, inTx: true });
-  return db.prepare('SELECT * FROM affiliate_commissions WHERE id = ?').get(id);
+/**
+ * Legacy first-deposit commissions are intentionally disabled.
+ * Historical rows remain available for audit and reconciliation. New earnings
+ * are handled only by the monthly NGR revenue-share ledger.
+ */
+export function onReferredDeposit(_db, _event) {
+  return null;
 }
 
 const commissionRow = (db, id) => {
