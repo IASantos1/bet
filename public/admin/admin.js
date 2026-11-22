@@ -2069,7 +2069,8 @@ const handlers = {
   async 'aff-config'(form) {
     const d = formData(form);
     const config = { revshareMode: d.revshareMode, autoPayout: false, countDemoDeposits: false };
-    for (const [k] of AFF_FIELDS) config[k] = Number(d[k]);
+    for (const [k] of AFF_FIELDS) if (k !== 'rateBps') config[k] = Number(d[k]);
+    config.rateBps = 2000;
     await api('/api/admin/affiliates/config', { method: 'PUT', body: { config, reason: d.reason } });
     toast('Feito', 'Modo Revenue Share guardado na auditoria.');
     loadTab();
