@@ -29,14 +29,14 @@ function affiliatePeriod(db, affiliate, period, mode) {
         WHEN real_stake_cents IS NULL AND COALESCE(bonus_stake_cents,0)=0 AND COALESCE(freebet_stake_cents,0)=0 THEN payout_cents ELSE 0 END),0) AS payouts
     FROM bets WHERE user_id IN (${marks}) AND status IN ('won','lost','cashout') AND settled_at >= ? AND settled_at < ?`).get(...refs, start, end);
   const casino = db.prepare(`WITH closed_rounds AS (
-      SELECT user_id, round_id, MAX(created_at) AS closed_at
+      SELECT user_id, COALESCE(provider,'') AS provider_key, round_id, MAX(created_at) AS closed_at
       FROM casino_moves
       WHERE user_id IN (${marks}) AND spins_id IS NULL AND round_id IS NOT NULL AND round_end = 1
-      GROUP BY user_id, round_id
+      GROUP BY user_id, COALESCE(provider,''), round_id
       HAVING closed_at >= ? AND closed_at < ?
     ), settled_moves AS (
       SELECT cm.amount_cents FROM casino_moves cm
-      JOIN closed_rounds cr ON cr.user_id = cm.user_id AND cr.round_id = cm.round_id
+      JOIN closed_rounds cr ON cr.user_id = cm.user_id AND cr.round_id = cm.round_id AND cr.provider_key = COALESCE(cm.provider,'')
       WHERE cm.spins_id IS NULL
       UNION ALL
       SELECT amount_cents FROM casino_moves
