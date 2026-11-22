@@ -58,14 +58,25 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   addCasinoMove(s.db, referred, 'casino-real-win', 1000);
   addCasinoMove(s.db, referred, 'casino-free-spin-bet', -2000, 77);
   addCasinoMove(s.db, referred, 'casino-free-spin-win', 6000, 77);
+  // An open round is not a settled casino result and must not count as a loss.
+  s.db.prepare(`INSERT INTO casino_moves
+    (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
+    VALUES ('casino-open-round',?,NULL,-9000,0,'open-round','bet',0,'Demo Slot','2026-03-20T12:00:00.000Z')`).run(referred);
+  // A round opened in February but closed in March belongs to the March settlement period.
+  s.db.prepare(`INSERT INTO casino_moves
+    (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
+    VALUES ('casino-cross-month-bet',?,NULL,-4000,0,'cross-month','bet',0,'Demo Slot','2026-02-28T23:59:00.000Z')`).run(referred);
+  s.db.prepare(`INSERT INTO casino_moves
+    (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
+    VALUES ('casino-cross-month-win',?,NULL,500,0,'cross-month','win',1,'Demo Slot','2026-03-01T00:01:00.000Z')`).run(referred);
   const before = s.db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(affiliate).balance_cents;
   const report = simulateRevshare(s.db, { period: '2026-03', actor: s.admin });
   const row = report.rows.find((x) => x.affiliateUserId === affiliate);
   // Sports: €100 stake - €30 payout + €30 real stake - €12 real payout (real-money slice).
-  // Casino: €50 stake - €10 payout. Free Spins and void tickets do not count.
-  assert.equal(row.ggr, 12800);
-  assert.equal(row.ngr, 12800);
-  assert.equal(row.commission, 2560);
+  // Casino: €50 stake - €10 payout, plus a €40/€5 round closed in March. Open rounds and Free Spins are excluded.
+  assert.equal(row.ggr, 16300);
+  assert.equal(row.ngr, 16300);
+  assert.equal(row.commission, 3260);
   assert.equal(report.rateBps, 2000);
   assert.equal(s.db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(affiliate).balance_cents, before);
   assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE type = \'affiliate_commission\'').get().n, 0);
