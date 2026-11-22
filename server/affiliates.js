@@ -365,7 +365,7 @@ export function affiliateView(db, userId, { baseUrl }) {
     referralUrl: `${baseUrl}/${profile.referral_code}`,
     status,
     reason: profile.admin_reason || null,
-    commission: { rate: RATE_BPS / 100, basis: 'monthly_ngr', currency: 'EUR' },
+    commission: { rate: 20, basis: 'monthly_ngr', currency: 'EUR' },
   };
 }
 
