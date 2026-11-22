@@ -94,7 +94,7 @@ test('carryover negativo reduz a comissão do mês seguinte e a simulação é i
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 1000, payout: 6000, status: 'won', at: '2026-01-15T12:00:00.000Z' });
   const jan = simulateRevshare(s.db, { period: '2026-01', actor: s.admin });
   assert.equal(jan.rows.find((x) => x.affiliateUserId === affiliate).closingCarry, -5000);
