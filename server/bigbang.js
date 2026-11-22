@@ -205,8 +205,12 @@ export function createBigBang(db, {
     // engine, plays on any plan) — or, when the admin prefers them, the Premium one (the provider's
     // original game; needs BigBang's prepaid balance, higher GGR rate).
     const premiumFirst = preferPremium();
+    // Standard preferred: leave the Premium games out of the public lists entirely (they can't hide the
+    // buy-bonus / turbo, and the Premium copy would otherwise win the pick when it has nicer artwork).
+    // They stay reachable by id below (free spins, old links). Premium preferred: keep them all.
+    const pool = premiumFirst ? games : games.filter((g) => !g.premium);
     const best = new Map();
-    for (const g of games) {
+    for (const g of pool) {
       const k = titleKey(g);
       const cur = best.get(k);
       const better = !cur || (!!g.image && !cur.image) || (!!g.image === !!cur.image && !!cur.fit && !g.fit)
@@ -215,12 +219,12 @@ export function createBigBang(db, {
     }
     // Only providers that have games here, under their fullest name: the house order first
     // (Pragmatic Play, Evolution, Playtech…), then the others alphabetically.
-    const withGames = new Set(games.filter((g) => best.get(titleKey(g)) === g).map((g) => g.providerId));
+    const withGames = new Set(pool.filter((g) => best.get(titleKey(g)) === g).map((g) => g.providerId));
     const providers = sortProviders(houseNames([...withGames].map((id) => ({ id, name: displayName(names.get(id) || [id]), maintenance: false }))));
     const nameOf = new Map(providers.map((p) => [p.id, p.name]));
     for (const g of games) g.provider = nameOf.get(g.providerId) || g.provider;
     // Then one copy of a slot across providers too (a studio's games listed under its parent as well).
-    const unique = dropCrossDuplicates(games.filter((g) => best.get(titleKey(g)) === g));
+    const unique = dropCrossDuplicates(pool.filter((g) => best.get(titleKey(g)) === g));
     // Every copy stays reachable by id (a free-spins game, an old link); the lists show one.
     const shown = new Set(unique.flatMap((g) => [g.providerId, ...(g.also || [])]));
     catalog = { at: Date.now(), games: unique, byId: new Map([...hidden, ...games].map((g) => [g.id, g])), providers: providers.filter((p) => shown.has(p.id)) };

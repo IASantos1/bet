@@ -438,6 +438,25 @@ test('bigbang jurisdiction: sent on launch when set; retries without it if BigBa
   db.close();
 });
 
+test('premium off (default): Premium games are hidden from the lists but still reachable by id', async () => {
+  const db = openDb(':memory:');
+  // Same game in two versions, plus a Premium-only game.
+  const api = fakeApi([
+    { id: 701, name: 'SGBassStd', title: 'Big Bass Reel', provider: 'Pragmatic Play', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: 'https://x/a.webp', game_type: 'slot', is_premium: false },
+    { id: 702, name: 'SGBassPrem', title: 'Big Bass Reel', provider: 'Pragmatic Play', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: 'https://x/b.webp', game_type: 'slot', is_premium: true },
+    { id: 703, name: 'SGOnlyPrem', title: 'Only Premium', provider: 'Pragmatic Play', category: 'Pragmatic', category_title: 'Pragmatic', thumbnail: 'https://x/c.webp', game_type: 'slot', is_premium: true },
+  ]);
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl });
+  const { games } = await bb.games();
+  const ids = games.map((g) => g.id);
+  assert.ok(!ids.includes(702), 'the Premium twin is not listed');
+  assert.ok(!ids.includes(703), 'the Premium-only game is not listed');
+  assert.ok(ids.includes(701), 'the Standard version is listed');
+  // Still openable by id (free spins / old links).
+  assert.equal((await bb.game(703))?.id, 703);
+  db.close();
+});
+
 test('bigbang palaceTwin: finds the Palace copy of a BigBang game by title', async () => {
   const db = openDb(':memory:');
   const palaceGames = [

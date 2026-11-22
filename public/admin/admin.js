@@ -1435,6 +1435,7 @@ function adminCasino(c) {
       <pre class="raw-odds hidden" id="liOut"></pre>` : ''}
       <div class="form-actions"><label class="adm-switch"><input type="checkbox" data-action="casino-premium"${c.premium ? ' checked' : ''}> Preferir as versões Premium (jogos originais do fornecedor)</label></div>
       <p class="muted">Quando o mesmo jogo existe nas duas versões: <b>Standard</b> é o motor próprio da BigBang (cópia, funciona em qualquer plano); <b>Premium</b> é o jogo original do fornecedor (precisa de saldo pré-pago na conta BigBang e paga uma % de GGR mais alta). Os Premium não têm modo demonstração.</p>
+      <p class="muted"><b>Desligado</b> (recomendado): os jogos <b>Premium são escondidos</b> do casino — ficam só os Standard, onde o "Comprar Rodadas Grátis" e o turbo podem ser escondidos (jurisdição PT). <b>Ligado</b>: mostra também os Premium, mas nesses o botão de comprar bónus <b>não</b> se consegue esconder (correm no lado do fornecedor).</p>
       <h4>Jurisdição BigBang (tentar esconder "Comprar Rodadas Grátis")</h4>
       <p class="muted">Enviado em cada lançamento BigBang. Se a BigBang aceitar, abre a versão regulada (sem comprar bónus); se não reconhecer, o jogo abre na mesma (volta a lançar sem a jurisdição). Como não sabemos o nome exato do parâmetro da BigBang, defina o <strong>nome</strong> e o <strong>valor</strong> — experimente nome <code>jurisdiction</code> e valor <code>PT</code>. Depois abra um slot e veja se o botão desaparece. Valor vazio = desligado.</p>
       <div class="form-actions">
