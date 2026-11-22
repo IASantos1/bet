@@ -20,7 +20,8 @@ import { config } from './config.js';
 export const AFFILIATE_DEFAULTS = {
   // Off until the operator switches it on (legal review first: see the admin panel).
   enabled: false,
-  rateBps: 1000, // 10%
+  revshareMode: 'off', // off | test | live; production starts safely disabled
+  rateBps: 2000, // 20% of eligible NGR
   minDepositCents: 1000, // own confirmed deposit to qualify
   minBalanceCents: 1000, // eligible balance to keep earning
   autoPayout: false, // approved commissions wait for the operator's payout
@@ -47,6 +48,12 @@ export function saveAffiliateConfig(db, input, { actor, reason }) {
   const next = { ...before };
   for (const k of Object.keys(AFFILIATE_DEFAULTS)) {
     if (input?.[k] === undefined) continue;
+    if (k === 'revshareMode') {
+      const mode = String(input[k]);
+      if (!['off', 'test', 'live'].includes(mode)) throw new HttpError(400, 'Modo de Revenue Share inválido.');
+      next[k] = mode;
+      continue;
+    }
     if (typeof AFFILIATE_DEFAULTS[k] === 'boolean') { next[k] = !!input[k]; continue; }
     const n = Math.round(Number(input[k]));
     const [lo, hi] = LIMITS[k];
