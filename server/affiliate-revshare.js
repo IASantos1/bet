@@ -31,9 +31,6 @@ function affiliatePeriod(db, affiliate, period, mode) {
     FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'`).all(affiliate.user_id);
   if (!attributions.length) return { referredPlayers: 0, sportsStake: 0, sportsPayout: 0, casinoStake: 0, casinoPayout: 0, costs: 0, ggr: 0, ngr: 0, openingCarry: priorCarry(db, affiliate.user_id, period, mode), closingCarry: priorCarry(db, affiliate.user_id, period, mode), commission: 0 };
 
-  const marks = attributions.map(() => '?').join(',');
-  const refs = attributions.map((r) => r.referred_user_id);
-  const attributionStart = new Map(attributions.map((r) => [r.referred_user_id, r.effective_from]));
   const sports = db.prepare(`SELECT
       COALESCE(SUM(CASE WHEN COALESCE(b.real_stake_cents, 0) > 0 THEN b.real_stake_cents
         WHEN b.real_stake_cents IS NULL AND COALESCE(b.bonus_stake_cents,0)=0 AND COALESCE(b.freebet_stake_cents,0)=0 THEN b.stake_cents ELSE 0 END),0) AS stakes,
@@ -41,13 +38,14 @@ function affiliatePeriod(db, affiliate, period, mode) {
         WHEN b.real_stake_cents IS NULL AND COALESCE(b.bonus_stake_cents,0)=0 AND COALESCE(b.freebet_stake_cents,0)=0 THEN b.payout_cents ELSE 0 END),0) AS payouts
     FROM bets b JOIN referral_attributions ra ON ra.referred_user_id = b.user_id
     WHERE ra.affiliate_user_id = ? AND ra.status <> 'rejected' AND b.status IN ('won','lost','cashout')
+      AND b.created_at >= COALESCE(ra.effective_from, ra.attributed_at)
       AND b.settled_at >= CASE WHEN COALESCE(ra.effective_from, ra.attributed_at) > ? THEN COALESCE(ra.effective_from, ra.attributed_at) ELSE ? END
       AND b.settled_at < ?`).get(affiliate.user_id, start, start, end);
   const casino = db.prepare(`WITH attributed_players AS (
       SELECT referred_user_id AS user_id, COALESCE(effective_from, attributed_at) AS effective_from
       FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'
     ), closed_rounds AS (
-      SELECT cm.user_id, COALESCE(cm.provider,'') AS provider_key, cm.round_id, MAX(cm.created_at) AS closed_at
+      SELECT cm.user_id, COALESCE(cm.provider,'') AS provider_key, cm.round_id, ap.effective_from, MAX(cm.created_at) AS closed_at
       FROM casino_moves cm JOIN attributed_players ap ON ap.user_id = cm.user_id
       WHERE cm.spins_id IS NULL AND cm.round_id IS NOT NULL AND cm.round_end = 1
       GROUP BY cm.user_id, COALESCE(cm.provider,''), cm.round_id, ap.effective_from
@@ -55,7 +53,7 @@ function affiliatePeriod(db, affiliate, period, mode) {
     ), settled_moves AS (
       SELECT cm.amount_cents FROM casino_moves cm
       JOIN closed_rounds cr ON cr.user_id = cm.user_id AND cr.round_id = cm.round_id AND cr.provider_key = COALESCE(cm.provider,'')
-      WHERE cm.spins_id IS NULL
+      WHERE cm.spins_id IS NULL AND cm.created_at >= cr.effective_from
       UNION ALL
       SELECT cm.amount_cents FROM casino_moves cm JOIN attributed_players ap ON ap.user_id = cm.user_id
       WHERE cm.spins_id IS NULL AND cm.round_id IS NULL AND cm.round_end = 1
