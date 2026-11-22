@@ -157,6 +157,24 @@ test('API administrativa disponibiliza simulação apenas em modo de teste e man
   }
 });
 
+test('Revenue Share usa o mês civil de Portugal e inclui rondas fechadas após a meia-noite local', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado');
+  const code = ensureProfile(s.db, affiliate).referral_code;
+  const referred = s.user('Convidado');
+  attribute(s.db, { referredUserId: referred, code });
+  s.db.prepare(`INSERT INTO casino_moves
+    (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
+    VALUES ('lisbon-boundary-bet',?,NULL,-4000,0,'lisbon-boundary','bet',0,'Demo Slot','2026-03-31T23:30:00.000Z')`).run(referred);
+  s.db.prepare(`INSERT INTO casino_moves
+    (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
+    VALUES ('lisbon-boundary-win',?,NULL,500,0,'lisbon-boundary','win',1,'Demo Slot','2026-03-31T23:40:00.000Z')`).run(referred);
+  const report = simulateRevshare(s.db, { period: '2026-04', actor: s.admin });
+  const row = report.rows.find((x) => x.affiliateUserId === affiliate);
+  assert.equal(row.ggr, 3500);
+  assert.equal(row.commission, 700);
+});
+
 test('período real exige aprovação manual e o pagamento é idempotente', () => {
   const s = setup();
   const affiliate = s.user('Afiliado');
@@ -166,6 +184,7 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   addBet(s.db, referred, { stake: 10000, payout: 0, status: 'lost', at: '2026-03-15T12:00:00.000Z' });
   setSetting(s.db, 'affiliate.config', { ...affiliateConfig(s.db), revshareMode: 'live' });
   const closed = closeRevsharePeriod(s.db, { period: '2026-03', actor: s.admin });
+  assert.throws(() => saveRevshareCost(s.db, { affiliateUserId: affiliate, period: '2026-03', costCents: 100, reason: 'alterar após fecho', actor: s.admin }), /já foi fechado/);
   const period = s.db.prepare("SELECT * FROM affiliate_revshare_periods WHERE affiliate_user_id=? AND period='2026-03' AND mode='live'").get(affiliate);
   assert.equal(period.status, 'pending_approval');
   assert.equal(period.commission_cents, 2000);
