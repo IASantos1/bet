@@ -59,11 +59,11 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   const before = s.db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(affiliate).balance_cents;
   const report = simulateRevshare(s.db, { period: '2026-03', actor: s.admin });
   const row = report.rows.find((x) => x.affiliateUserId === affiliate);
-  // Sports: €100 stake - €30 payout + €30 real stake - €12 real payout.
+  // Sports: €100 stake - €30 payout + €30 real stake - €12 real payout (real-money slice).
   // Casino: €50 stake - €10 payout. Free Spins and void tickets do not count.
-  assert.equal(row.ggr, 13800);
-  assert.equal(row.ngr, 13800);
-  assert.equal(row.commission, 2760);
+  assert.equal(row.ggr, 12800);
+  assert.equal(row.ngr, 12800);
+  assert.equal(row.commission, 2560);
   assert.equal(report.rateBps, 2000);
   assert.equal(s.db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(affiliate).balance_cents, before);
   assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE type = \'affiliate_commission\'').get().n, 0);
