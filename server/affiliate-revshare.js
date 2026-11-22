@@ -17,7 +17,7 @@ function priorCarry(db, affiliateId, period, mode) {
 
 function affiliatePeriod(db, affiliate, period, mode) {
   const { start, end } = periodBounds(period);
-  const refs = db.prepare('SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'').all(affiliate.user_id).map((r) => r.referred_user_id);
+  const refs = db.prepare("SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'").all(affiliate.user_id).map((r) => r.referred_user_id);
   if (!refs.length) return { referredPlayers: 0, sportsStake: 0, sportsPayout: 0, casinoStake: 0, casinoPayout: 0, costs: 0, ggr: 0, ngr: 0, openingCarry: priorCarry(db, affiliate.user_id, period, mode), closingCarry: priorCarry(db, affiliate.user_id, period, mode), commission: 0 };
 
   const marks = refs.map(() => '?').join(',');
