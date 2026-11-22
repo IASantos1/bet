@@ -27,6 +27,12 @@ function addBet(db, userId, { stake, payout, status = 'lost', realStake = stake,
       userId, stake, payout, status, payout, at, at, realStake, bonus, free, realPayout);
 }
 
+function attributeForHistoricalRevshareTest(db, referredUserId, code) {
+  const result = attribute(db, { referredUserId, code });
+  db.prepare("UPDATE referral_attributions SET effective_from = '2026-01-01T00:00:00.000Z' WHERE referred_user_id = ?").run(referredUserId);
+  return result;
+}
+
 function addCasinoMove(db, userId, txId, amount, spinsId = null, at = '2026-03-15T12:00:00.000Z') {
   db.prepare(`INSERT INTO casino_moves
     (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
@@ -50,7 +56,7 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 10000, payout: 3000, status: 'won' });
   addBet(s.db, referred, { stake: 5000, payout: 2000, realStake: 3000, realPayout: 1200, bonus: 2000, status: 'won' });
   addBet(s.db, referred, { stake: 9000, payout: 9000, status: 'void' });
