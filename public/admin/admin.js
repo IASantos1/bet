@@ -372,7 +372,7 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
     <div class="adm-card"><small>Créditos na carteira</small><strong>${money(r.ledgerCredits)}</strong><em>${r.ledgerCount} movimentos</em></div>
     <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
     <div class="adm-card"><small>Reconciliação histórica</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões antigas</button></em></div>
-    <div class="adm-card"><small>Reconciliação RevShare</small><strong>${rr?.ok ? '✔ Certa' : '⚠ A verificar'}</strong><em>${rr ? `${rr.paidCount} pagamentos · ${money(rr.paid)} pagos / ${money(rr.ledger)} no ledger` : 'Sem dados'}</em></div></div>`;;
+    <div class="adm-card"><small>Reconciliação RevShare</small><strong>${rr?.ok ? '✔ Certa' : '⚠ A verificar'}</strong><em>${rr ? `${rr.paidCount} pagamentos · ${money(rr.paid)} pagos / ${money(rr.ledger)} no ledger` : 'Sem dados'}</em></div></div>`;
   const cfg = `<form class="panel" data-form="aff-config"><h3>Revenue Share · 20% do NGR</h3>
     <p class="muted">O modo de teste calcula o GGR/NGR mensal dos jogadores referenciados. Não credita carteiras nem gera pagamentos. A produção permanece bloqueada até validação jurídica e financeira.</p>
     <label class="field">Modo do Revenue Share<select name="revshareMode">
