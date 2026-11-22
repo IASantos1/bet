@@ -728,6 +728,42 @@ function migrate(db) {
   }
 }
 
+  // Monthly affiliate Revenue Share: immutable financial snapshots by affiliate / month / mode.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS affiliate_revshare_periods (
+      id INTEGER PRIMARY KEY,
+      affiliate_user_id INTEGER NOT NULL REFERENCES users(id),
+      period TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK (mode IN ('test','live')),
+      sports_stake_cents INTEGER NOT NULL DEFAULT 0,
+      sports_payout_cents INTEGER NOT NULL DEFAULT 0,
+      casino_stake_cents INTEGER NOT NULL DEFAULT 0,
+      casino_payout_cents INTEGER NOT NULL DEFAULT 0,
+      cost_cents INTEGER NOT NULL DEFAULT 0,
+      ggr_cents INTEGER NOT NULL DEFAULT 0,
+      ngr_cents INTEGER NOT NULL DEFAULT 0,
+      opening_carry_cents INTEGER NOT NULL DEFAULT 0,
+      closing_carry_cents INTEGER NOT NULL DEFAULT 0,
+      commission_cents INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL CHECK (status IN ('simulated','approved','paid')),
+      snapshot TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (affiliate_user_id, period, mode)
+    );
+    CREATE INDEX IF NOT EXISTS idx_aff_revshare_period ON affiliate_revshare_periods(mode, period, status);
+    CREATE TABLE IF NOT EXISTS affiliate_revshare_costs (
+      id INTEGER PRIMARY KEY,
+      affiliate_user_id INTEGER NOT NULL REFERENCES users(id),
+      period TEXT NOT NULL,
+      cost_cents INTEGER NOT NULL CHECK (cost_cents >= 0),
+      reason TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      UNIQUE (affiliate_user_id, period)
+    );
+  `);
+  
 /** rebuild() copying every column the old table and the new definition have in common. */
 function rebuildKeeping(db, table) {
   const before = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
