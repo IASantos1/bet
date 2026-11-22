@@ -74,7 +74,7 @@ function affiliatePeriod(db, affiliate, period, mode) {
   const netAfterCarry = ngr + openingCarry;
   const closingCarry = Math.min(0, netAfterCarry);
   const commission = Math.floor(Math.max(0, netAfterCarry) * RATE_BPS / 10000);
-  return { referredPlayers: refs.length, sportsStake, sportsPayout, casinoStake, casinoPayout, costs: cost, ggr, ngr, openingCarry, closingCarry, commission };
+  return { referredPlayers: attributions.length, sportsStake, sportsPayout, casinoStake, casinoPayout, costs: cost, ggr, ngr, openingCarry, closingCarry, commission };
 }
 
 export function previewRevshare(db, { period, mode = 'test' } = {}) {
