@@ -410,7 +410,7 @@ export function adminAffiliates(db, { q = '', limit = 100 } = {}) {
     WHERE (? = '%%' OR p.referral_code LIKE ? OR u.email LIKE ? OR u.name LIKE ?)
     ORDER BY referrals DESC, p.id DESC LIMIT ?`).all(term, term, term, term, Math.min(500, Number(limit) || 100))
     .map((r) => ({
-      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, status: r.status, adminStatus: r.admin_status, adminReason: r.admin_reason,
+      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, status: r.admin_status === 'blocked' ? 'blocked' : r.admin_status === 'suspended' ? 'suspended' : 'active', adminStatus: r.admin_status, adminReason: r.admin_reason,
       activatedAt: r.first_qualifying_deposit_at, clicks: r.clicks, referrals: r.referrals, qualified: r.qualified,
       eligibleBalance: eur(eligibleBalance(db, { id: r.user_id, balance_cents: r.balance_cents })), paid: eur(r.paid_cents), open: eur(r.open_cents),
     }));
