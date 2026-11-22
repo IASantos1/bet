@@ -764,6 +764,12 @@ function migrate(db) {
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }
 
+  // Upgrade earlier Revenue Share tables to the full approval lifecycle without losing snapshots.
+  const revshareSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'affiliate_revshare_periods'").get()?.sql || '';
+  if (revshareSql && (!revshareSql.includes("'pending_approval'") || !revshareSql.includes("'cancelled'"))) {
+    rebuildKeeping(db, 'affiliate_revshare_periods');
+  }
+
   // Monthly affiliate Revenue Share: immutable financial snapshots by affiliate / month / mode.
   db.exec(`
     CREATE TABLE IF NOT EXISTS affiliate_revshare_periods (
@@ -781,8 +787,8 @@ function migrate(db) {
       opening_carry_cents INTEGER NOT NULL DEFAULT 0,
       closing_carry_cents INTEGER NOT NULL DEFAULT 0,
       commission_cents INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL CHECK (status IN ('simulated','approved','paid')),
-      snapshot TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('simulated','pending_approval','approved','paid','cancelled')),
+      snapshot TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE (affiliate_user_id, period, mode)
