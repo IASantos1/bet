@@ -385,13 +385,13 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: 
     <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
     <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div></form>`;
   const periodNow = new Date().toISOString().slice(0, 7);
-  const historyRows = (history.items || []).map((h) => `<tr><td>${esc(h.period)}</td><td>${esc(h.name)}</td><td>${money(h.ggr)}</td><td>${money(h.costs)}</td><td>${money(h.ngr)}</td><td>${money(h.closingCarry)}</td><td>${money(h.commission)}</td><td>${esc(h.status)}</td></tr>`).join('');
+  const historyRows = (history.items || []).map((h) => `<tr><td>${esc(h.period)}</td><td>${esc(h.name)}</td><td>${money(h.ggr)}</td><td>${money(h.costs)}</td><td>${money(h.ngr)}</td><td>${money(h.closingCarry)}</td><td>${money(h.commission)}</td><td>${esc(h.status)}</td><td>${h.mode === 'live' && h.status === 'pending' ? `<button class="primary-btn btn-sm" data-action="aff-revshare-approve" data-id="${h.id}">Aprovar</button>` : h.mode === 'live' && h.status === 'approved' ? `<button class="primary-btn btn-sm" data-action="aff-revshare-pay" data-id="${h.id}">Pagar</button>` : ''}</td></tr>`).join('');
   const revshare = `<div class="panel"><h3>Simulação mensal · Revenue Share 20%</h3>
     <p class="muted">O cálculo usa apostas desportivas liquidadas e movimentos de dinheiro real do casino. Free Spins são excluídas. Custos só são deduzidos quando registados; custos externos ainda não integrados aparecem como zero e têm de ser conferidos antes de qualquer produção.</p>
     <div class="form-actions"><label class="field">Período (AAAA-MM)<input id="affRevPeriod" type="month" value="${periodNow}"></label>
-      <button class="primary-btn" type="button" data-action="aff-revshare-simulate">Executar simulação (sem pagamentos)</button></div>
+      <button class="primary-btn" type="button" data-action="aff-revshare-simulate">Executar simulação (sem pagamentos)</button>${c.revshareMode === 'live' ? '<button class="danger-btn" type="button" data-action="aff-revshare-close">Fechar período real</button>' : ''}</div>
     <div id="affRevshareResult"></div>
-    ${historyRows ? `<h4>Simulações guardadas</h4><div class="table-wrap"><table><thead><tr><th>Período</th><th>Afiliado</th><th>GGR</th><th>Custos</th><th>NGR</th><th>Carryover</th><th>Comissão</th><th>Estado</th></tr></thead><tbody>${historyRows}</tbody></table></div>` : '<p class="muted">Ainda não existem simulações guardadas.</p>'}
+    ${historyRows ? `<h4>Simulações guardadas</h4><div class="table-wrap"><table><thead><tr><th>Período</th><th>Afiliado</th><th>GGR</th><th>Custos</th><th>NGR</th><th>Carryover</th><th>Comissão</th><th>Estado</th><th>Ação</th></tr></thead><tbody>${historyRows}</tbody></table></div>` : '<p class="muted">Ainda não existem simulações guardadas.</p>'}
     </div>`;
   const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th></th></tr></thead><tbody>
     ${affiliates.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">${esc(a.email)}</small></td><td><b>${esc(a.code)}</b></td>
@@ -2584,7 +2584,24 @@ document.addEventListener('click', async (e) => {
   if (action.startsWith('aff-')) {
     const id = actionEl.dataset.id;
     try {
-      if (action === 'aff-revshare-cost') {
+      if (action === 'aff-revshare-approve') {
+        const reason = prompt('Justificação da aprovação do período (mínimo 5 caracteres):');
+        if (!reason?.trim()) return;
+        await api(`/api/admin/affiliates/revshare/${id}/approve`, { method: 'POST', body: { reason } });
+        toast('Período aprovado', 'O pagamento continua pendente de uma ação manual.');
+        loadTab();
+      } else if (action === 'aff-revshare-pay') {
+        if (!confirm('Creditar a comissão aprovada na carteira do afiliado?')) return;
+        await api(`/api/admin/affiliates/revshare/${id}/pay`, { method: 'POST', body: {} });
+        toast('Pagamento registado', 'O crédito ficou no extrato da carteira.');
+        loadTab();
+      } else if (action === 'aff-revshare-close') {
+        const period = document.getElementById('affRevPeriod')?.value;
+        if (!period || !confirm(`Fechar o período ${period} para apuramento real? As comissões ficam pendentes de aprovação.`)) return;
+        await api('/api/admin/affiliates/revshare/close', { method: 'POST', body: { period } });
+        toast('Período fechado', 'As comissões aguardam aprovação manual.');
+        loadTab();
+      } else if (action === 'aff-revshare-cost') {
         const period = actionEl.dataset.period;
         const cost = prompt('Custo elegível do afiliado neste mês, em euros (ex.: 12,50):');
         if (cost === null) return;
