@@ -729,7 +729,7 @@ function affSideHtml() {
   const url = esc(a.referralUrl);
   return `<section class="aff-side">
     <div class="aff-side-top"><span class="aff-side-badge"><b>${a.commission.rate}%</b></span>
-      <div><small>🎁 Programa de convites</small><b>Convide amigos e ganhe ${a.commission.rate}% do 1.º depósito</b></div></div>
+      <div><small>🎁 Programa de convites</small><b>Convide amigos e receba ${a.commission.rate}% do NGR mensal</b></div></div>
     <div class="aff-side-link">${url.replace(/^https?:\/\//, '')}</div>
     <div class="aff-side-btns"><button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
       ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : ''}</div>
@@ -2434,7 +2434,7 @@ const PROFILE_SECTIONS = [
   { id: 'carteira', label: 'Carteira', title: 'Carteira', text: 'Depósitos por MB WAY, Multibanco ou cartão, levantamentos por IBAN e todos os movimentos da conta.' },
   { id: 'apostas', label: 'As minhas apostas', title: 'As Minhas Apostas', text: 'Todas as suas apostas, em aberto e resolvidas.' },
   { id: 'promocoes', label: 'Promoções e bónus', title: 'Promoções Ativas', text: 'Saldo de bónus, progresso do rollover (calculado pelo servidor) e free bets.' },
-  { id: 'afiliados', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 10% do primeiro depósito elegível de cada convidado, quando cumpre as condições.' },
+  { id: 'afiliados', label: 'Programa de Afiliados', title: 'Programa de Afiliados', text: 'Convide amigos com o seu link: recebe 20% do NGR mensal gerado pelos jogadores referenciados.' },
   { id: 'verificacao', label: 'Verificação de identidade', title: 'Verificação de Identidade (KYC)', text: 'Complete a verificação para desbloquear levantamentos. A verificação demora normalmente entre 24 e 72 horas.' },
   { id: 'seguranca', label: 'Definições de segurança', title: 'Definições de Segurança', text: 'Proteção da conta: palavra-passe e controlo dos acessos.' },
   { id: 'preferencias', label: 'Preferências de conta', title: 'Preferências de Conta', text: 'Definições gerais da conta.' },
@@ -2786,12 +2786,11 @@ async function loadAffiliates() {
   } catch (err) { toast('Erro', err.message, 'error'); return; }
   const box = $('#affBox');
   if (!box) return;
-  if (!me.enabled) { box.innerHTML = '<div class="notice">O programa de afiliados ainda não está disponível. Avisaremos quando abrir.</div>'; return; }
+  if (!me.enabled) { box.innerHTML = '<div class="notice">O programa de Revenue Share ainda não está ativo. O modelo prevê 20% do NGR mensal dos convidados.</div>'; return; }
   const [cls, label] = AFF_STATE[me.status] || ['', me.status];
-  const a = me.activation;
-  const check = (ok, text) => `<li class="${ok ? 'ok' : ''}">${ok ? '✔' : '○'} ${text}</li>`;
-  // Each status apart: what is under review is not money the player has.
-  const sums = ['pending', 'approved', 'paid', 'reversed'].map((k) => `<div class="aff-sum"><small>${COMMISSION_LABEL[k]}</small><b>${money(Number(stats.commissions[k].amount))}</b><span>${stats.commissions[k].count}</span></div>`).join('');
+  const sums = [
+    ['Visitas ao link', stats.clicks], ['Convidados', stats.referrals], ['Taxa RevShare', '20%'],
+  ].map(([name, value]) => `<div class="aff-sum"><small>${name}</small><b>${value}</b></div>`).join('');
   box.innerHTML = `
     <div class="aff-link">
       <small>O seu link de convite</small>
@@ -2799,28 +2798,21 @@ async function loadAffiliates() {
       <div class="aff-code">Código: <b>${esc(me.referralCode)}</b> <span class="pf-badge ${cls}">${label}</span></div>
       ${me.reason ? `<p class="muted small">${esc(me.reason)}</p>` : ''}
     </div>
-    <h4 class="aff-h">Ativação</h4>
-    <ul class="aff-checks">
-      ${check(a.hasQualifyingDeposit, `Depósito próprio confirmado de pelo menos ${money(Number(a.minimumDeposit))}`)}
-      ${check(Number(a.eligibleBalance) >= Number(a.minimumBalance), `Saldo elegível de pelo menos ${money(Number(a.minimumBalance))} (atual: ${money(Number(a.eligibleBalance))}; sem bónus nem comissões)`)}
-      ${check(!['suspended', 'blocked'].includes(me.status), 'Conta de afiliado sem suspensões')}
-    </ul>
-    <h4 class="aff-h">Resumo</h4>
+    <h4 class="aff-h">Resumo do programa</h4>
     <div class="aff-sums">${sums}</div>
-    <p class="muted small">${stats.clicks} visitas ao link · ${stats.referrals} registos · ${stats.qualified} qualificados</p>
+    <p class="muted small">A comissão é apurada mensalmente sobre o NGR real dos convidados. Não existe requisito de depósito próprio nem de saldo mínimo do afiliado.</p>
     <h4 class="aff-h">Convidados</h4>
     ${refs.items.length ? `<div class="pf-list">${refs.items.map((r) => `<div class="pf-row"><div><b>${esc(r.name)}</b><small>${esc(fmtDateTime(r.registeredAt))}</small></div>
-      <span class="pf-badge">${r.commissionStatus ? COMMISSION_LABEL[r.commissionStatus] : REFERRAL_LABEL[r.status] || r.status}</span></div>`).join('')}</div>
+      <span class="pf-badge">${REFERRAL_LABEL[r.status] || 'Registado'}</span></div>`).join('')}</div>
       ${refs.total > refs.items.length ? `<p class="muted small">A mostrar ${refs.items.length} de ${refs.total}.</p>` : ''}` : '<p class="muted small">Ainda não tem convidados.</p>'}
-    <h4 class="aff-h">Comissões</h4>
-    ${coms.items.length ? `<div class="pf-list">${coms.items.map((c) => `<div class="pf-row"><div><b>${money(Number(c.amount))} <small style="display:inline">(${c.rate}% de ${money(Number(c.deposit))})</small></b>
-      <small>${esc(fmtDateTime(c.createdAt))}${c.reason && c.status !== 'paid' ? ` · ${esc(c.reason)}` : ''}</small></div><span class="pf-badge ${c.status === 'paid' ? 'verified' : ''}">${COMMISSION_LABEL[c.status] || c.status}</span></div>`).join('')}</div>` : '<p class="muted small">Ainda sem comissões.</p>'}
+    <h4 class="aff-h">Histórico anterior</h4>
+    ${coms.items.length ? `<div class="pf-list">${coms.items.map((c) => `<div class="pf-row"><div><b>${money(Number(c.amount))}</b><small>${esc(fmtDateTime(c.createdAt))} · modelo anterior de primeiro depósito</small></div><span class="pf-badge ${c.status === 'paid' ? 'verified' : ''}">${COMMISSION_LABEL[c.status] || c.status}</span></div>`).join('')}</div>` : '<p class="muted small">Sem comissões históricas do modelo anterior.</p>'}
     <details class="aff-rules"><summary>Regras do programa</summary><ul>
-      <li>Recebe ${me.commission.rate}% do <b>primeiro depósito elegível e confirmado</b> de cada convidado, uma única vez por convidado.</li>
-      <li>Depósitos seguintes do mesmo convidado não geram comissão.</li>
-      <li>Para ganhar, precisa de um depósito próprio confirmado de ${money(Number(a.minimumDeposit))} e de manter ${money(Number(a.minimumBalance))} de saldo elegível (bónus, free bets e comissões não contam).</li>
-      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. As comissões podem ser analisadas, e são revertidas se o depósito de origem for reembolsado ou contestado.</li>
-      <li>Um convidado fica associado ao primeiro código com que se registou; isso não muda depois.</li>
+      <li>Recebe ${me.commission.rate}% do <b>NGR mensal positivo</b> gerado pelos jogadores que se registaram através do seu link.</li>
+      <li>O cálculo considera apenas dinheiro real no sportsbook e casino; bónus, apostas anuladas e Free Spins são excluídos.</li>
+      <li>Custos elegíveis são deduzidos ao GGR. Resultados negativos transitam para os períodos seguintes antes de voltar a gerar comissão.</li>
+      <li>O apuramento é mensal e as comissões ficam sujeitas a revisão e aprovação manual.</li>
+      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. Um convidado fica associado ao primeiro código com que se registou.</li>
     </ul></details>`;
 }
 
