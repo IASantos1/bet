@@ -166,6 +166,16 @@ export function revshareHistory(db, { limit = 24 } = {}) {
       openingCarry:money(r.opening_carry_cents), closingCarry:money(r.closing_carry_cents), commission:money(r.commission_cents) }));
 }
 
+
+export function reconcileRevshare(db) {
+  const paid = db.prepare(`SELECT COALESCE(SUM(commission_cents),0) AS cents, COUNT(*) AS n
+    FROM affiliate_revshare_periods WHERE mode='live' AND status='paid' AND commission_cents > 0`).get();
+  const ledger = db.prepare(`SELECT COALESCE(SUM(amount_cents),0) AS cents, COUNT(*) AS n
+    FROM transactions WHERE type='affiliate_commission' AND ref LIKE 'affiliate-revshare:%'`).get();
+  return { paid: money(paid.cents), ledger: money(ledger.cents), paidCount: paid.n, ledgerCount: ledger.n,
+    ok: paid.cents === ledger.cents && paid.n === ledger.n };
+}
+
 export function saveRevshareCost(db, { affiliateUserId, period, costCents, reason, actor }) {
   periodBounds(period);
   if (!Number.isSafeInteger(costCents) || costCents < 0 || costCents > 100000000000) throw new Error('Custo inválido.');
