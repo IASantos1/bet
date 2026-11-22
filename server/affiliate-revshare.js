@@ -1,19 +1,23 @@
 import { nowIso, tx } from './db.js';
 import { affiliateConfig, audit } from './affiliates.js';
+import { postTransaction } from './wallet.js';
 
 const RATE_BPS = 2000;
 const money = (c) => (Number(c || 0) / 100).toFixed(2);
 const periodBounds = (period) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(period || ''))) throw new Error('Período inválido. Use AAAA-MM.');
   const [y, m] = period.split('-').map(Number);
-  return { start: new Date(Date.UTC(y, m - 1, 1)).toISOString(), end: new Date(Date.UTC(y, m, 1)).toISOString() };
+  const lisbonOffsetMinutes = (year, monthIndex) => {
+    const probe = new Date(Date.UTC(year, monthIndex, 1, 12));
+    const zone = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Lisbon', timeZoneName: 'shortOffset' })
+      .formatToParts(probe).find((part) => part.type === 'timeZoneName')?.value || 'GMT';
+    const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zone);
+    return match ? (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] || 0)) : 0;
+  };
+  const startMs = Date.UTC(y, m - 1, 1) - lisbonOffsetMinutes(y, m - 1) * 60_000;
+  const endMs = Date.UTC(y, m, 1) - lisbonOffsetMinutes(y, m) * 60_000;
+  return { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
 };
-const previousPeriod = (period) => {
-  const [y, m] = period.split('-').map(Number);
-  const d = new Date(Date.UTC(y, m - 2, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
-
 function priorCarry(db, affiliateId, period, mode) {
   const row = db.prepare(`SELECT closing_carry_cents FROM affiliate_revshare_periods
     WHERE affiliate_user_id = ? AND period < ? AND mode = ? AND status IN ('simulated','approved','paid')
@@ -23,7 +27,7 @@ function priorCarry(db, affiliateId, period, mode) {
 
 function affiliatePeriod(db, affiliate, period, mode) {
   const { start, end } = periodBounds(period);
-  const refs = db.prepare('SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ?').all(affiliate.user_id).map((r) => r.referred_user_id);
+  const refs = db.prepare("SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'").all(affiliate.user_id).map((r) => r.referred_user_id);
   if (!refs.length) return { referredPlayers: 0, sportsStake: 0, sportsPayout: 0, casinoStake: 0, casinoPayout: 0, costs: 0, ggr: 0, ngr: 0, openingCarry: priorCarry(db, affiliate.user_id, period, mode), closingCarry: priorCarry(db, affiliate.user_id, period, mode), commission: 0 };
 
   const marks = refs.map(() => '?').join(',');
@@ -33,10 +37,25 @@ function affiliatePeriod(db, affiliate, period, mode) {
       COALESCE(SUM(CASE WHEN real_payout_cents IS NOT NULL THEN real_payout_cents
         WHEN real_stake_cents IS NULL AND COALESCE(bonus_stake_cents,0)=0 AND COALESCE(freebet_stake_cents,0)=0 THEN payout_cents ELSE 0 END),0) AS payouts
     FROM bets WHERE user_id IN (${marks}) AND status IN ('won','lost','cashout') AND settled_at >= ? AND settled_at < ?`).get(...refs, start, end);
-  const casino = db.prepare(`SELECT
+  const casino = db.prepare(`WITH closed_rounds AS (
+      SELECT user_id, COALESCE(provider,'') AS provider_key, round_id, MAX(created_at) AS closed_at
+      FROM casino_moves
+      WHERE user_id IN (${marks}) AND spins_id IS NULL AND round_id IS NOT NULL AND round_end = 1
+      GROUP BY user_id, COALESCE(provider,''), round_id
+      HAVING closed_at >= ? AND closed_at < ?
+    ), settled_moves AS (
+      SELECT cm.amount_cents FROM casino_moves cm
+      JOIN closed_rounds cr ON cr.user_id = cm.user_id AND cr.round_id = cm.round_id AND cr.provider_key = COALESCE(cm.provider,'')
+      WHERE cm.spins_id IS NULL
+      UNION ALL
+      SELECT amount_cents FROM casino_moves
+      WHERE user_id IN (${marks}) AND spins_id IS NULL AND round_id IS NULL AND round_end = 1
+        AND created_at >= ? AND created_at < ?
+    )
+    SELECT
       COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END),0) AS stakes,
       COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END),0) AS payouts
-    FROM casino_moves WHERE user_id IN (${marks}) AND spins_id IS NULL AND created_at >= ? AND created_at < ?`).get(...refs, start, end);
+    FROM settled_moves`).get(...refs, start, end, ...refs, start, end);
   const cost = db.prepare('SELECT COALESCE(SUM(cost_cents),0) AS cents FROM affiliate_revshare_costs WHERE affiliate_user_id = ? AND period = ?').get(affiliate.user_id, period).cents;
   const sportsStake = sports.stakes || 0;
   const sportsPayout = sports.payouts || 0;
@@ -54,12 +73,11 @@ function affiliatePeriod(db, affiliate, period, mode) {
 export function previewRevshare(db, { period, mode = 'test' } = {}) {
   periodBounds(period);
   if (!['test', 'live'].includes(mode)) throw new Error('Modo de apuramento inválido.');
-  const config = affiliateConfig(db);
   const affiliates = db.prepare(`SELECT p.user_id, p.referral_code, p.admin_status, u.name, u.email, u.banned_at
     FROM affiliate_profiles p JOIN users u ON u.id = p.user_id ORDER BY p.user_id`).all();
   const rows = affiliates.map((a) => {
     const calc = affiliatePeriod(db, a, period, mode);
-    const blocked = !!a.banned_at || a.admin_status === 'blocked';
+    const blocked = !!a.banned_at || ['suspended', 'blocked'].includes(a.admin_status);
     return { affiliateUserId: a.user_id, name: a.name, email: a.email, code: a.referral_code, blocked,
       ...calc, commission: blocked ? 0 : calc.commission,
       amounts: { sportsStake: money(calc.sportsStake), sportsPayout: money(calc.sportsPayout), casinoStake: money(calc.casinoStake),
@@ -99,13 +117,87 @@ export function simulateRevshare(db, { period, actor }) {
   return previewRevshare(db, { period, mode: 'test' });
 }
 
+
+export function closeRevsharePeriod(db, { period, actor }) {
+  const cfg = affiliateConfig(db);
+  if (cfg.revshareMode !== 'live') throw new Error('O Revenue Share tem de estar em Produção para fechar um período real.');
+  const { end } = periodBounds(period);
+  if (end > nowIso()) throw new Error('Só é possível fechar meses completos.');
+  const pending = db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE mode='live' AND period < ? AND status='pending_approval' LIMIT 1").get(period);
+  if (pending) throw new Error('Existe um período anterior à espera de aprovação.');
+  const report = previewRevshare(db, { period, mode: 'live' });
+  tx(db, () => {
+    for (const r of report.rows) {
+      db.prepare(`INSERT INTO affiliate_revshare_periods
+        (affiliate_user_id, period, mode, sports_stake_cents, sports_payout_cents, casino_stake_cents, casino_payout_cents,
+         cost_cents, ggr_cents, ngr_cents, opening_carry_cents, closing_carry_cents, commission_cents, status, snapshot, created_at, updated_at)
+        VALUES (?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?)
+        ON CONFLICT(affiliate_user_id, period, mode) DO NOTHING`).run(
+          r.affiliateUserId, period, r.sportsStake, r.sportsPayout, r.casinoStake, r.casinoPayout, r.costs,
+          r.ggr, r.ngr, r.openingCarry, r.closingCarry, r.commission, JSON.stringify(r), nowIso(), nowIso());
+    }
+    audit(db, { actor, action: 'revshare.period.close', entityType: 'period', entityId: period, result: 'pending_approval',
+      meta: { rateBps: RATE_BPS, affiliates: report.rows.length, commissionCents: report.rows.reduce((n,r) => n+r.commission,0) } });
+  });
+  return revshareHistory(db, { limit: 500 }).filter((r) => r.period === period && r.mode === 'live');
+}
+
+export function approveRevsharePeriod(db, id, { actor, reason }) {
+  if (affiliateConfig(db).revshareMode !== 'live') throw new Error('Aprovação disponível apenas em Produção.');
+  const why = String(reason || '').trim();
+  if (why.length < 5) throw new Error('Indique a justificação da aprovação (mínimo 5 caracteres).');
+  return tx(db, () => {
+    const row = db.prepare("SELECT * FROM affiliate_revshare_periods WHERE id = ? AND mode = 'live'").get(Number(id));
+    if (!row) throw new Error('Período de Revenue Share não encontrado.');
+    if (row.status !== 'pending_approval') throw new Error('Este período já foi decidido.');
+    db.prepare("UPDATE affiliate_revshare_periods SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=? AND status='pending_approval'")
+      .run(actor, nowIso(), nowIso(), row.id);
+    audit(db, { actor, action: 'revshare.period.approve', entityType: 'period', entityId: row.id, result: 'approved', meta: { period: row.period, reason: why } });
+    return db.prepare('SELECT * FROM affiliate_revshare_periods WHERE id = ?').get(row.id);
+  });
+}
+
+export function payRevsharePeriod(db, id, { actor }) {
+  if (affiliateConfig(db).revshareMode !== 'live') throw new Error('Pagamentos disponíveis apenas em Produção.');
+  return tx(db, () => {
+    const row = db.prepare("SELECT * FROM affiliate_revshare_periods WHERE id = ? AND mode = 'live'").get(Number(id));
+    if (!row) throw new Error('Período de Revenue Share não encontrado.');
+    if (row.status === 'paid') return row;
+    if (row.status !== 'approved') throw new Error('Só períodos aprovados podem ser pagos.');
+    const profile = db.prepare('SELECT admin_status FROM affiliate_profiles WHERE user_id = ?').get(row.affiliate_user_id);
+    const user = db.prepare('SELECT banned_at FROM users WHERE id = ?').get(row.affiliate_user_id);
+    if (!user || user.banned_at || ['blocked','suspended'].includes(profile?.admin_status)) throw new Error('O afiliado está suspenso ou bloqueado.');
+    let payoutTxId = null;
+    if (row.commission_cents > 0) {
+      postTransaction(db, row.affiliate_user_id, row.commission_cents, 'affiliate_commission',
+        `Revenue Share ${row.period} · 20% do NGR`, `affiliate-revshare:${row.id}`);
+      payoutTxId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
+    }
+    db.prepare("UPDATE affiliate_revshare_periods SET status='paid', paid_by=?, paid_at=?, payout_tx_id=?, updated_at=? WHERE id=? AND status='approved'")
+      .run(actor, nowIso(), payoutTxId, nowIso(), row.id);
+    audit(db, { actor, action: 'revshare.period.pay', entityType: 'period', entityId: row.id, result: 'paid',
+      meta: { affiliateUserId: row.affiliate_user_id, amountCents: row.commission_cents, payoutTxId } });
+    return db.prepare('SELECT * FROM affiliate_revshare_periods WHERE id = ?').get(row.id);
+  });
+}
+
 export function revshareHistory(db, { limit = 24 } = {}) {
   return db.prepare(`SELECT p.*, u.name, u.email, u.id AS affiliate_user_id FROM affiliate_revshare_periods p
     JOIN users u ON u.id = p.affiliate_user_id ORDER BY p.period DESC, u.name LIMIT ?`).all(Math.min(500, Math.max(1, Number(limit)||24)))
-    .map((r) => ({ affiliateUserId:r.affiliate_user_id, name:r.name, email:r.email, period:r.period, mode:r.mode, status:r.status,
+    .map((r) => ({ id:r.id, affiliateUserId:r.affiliate_user_id, name:r.name, email:r.email, period:r.period, mode:r.mode, status:r.status,
       sportsStake:money(r.sports_stake_cents), sportsPayout:money(r.sports_payout_cents), casinoStake:money(r.casino_stake_cents),
       casinoPayout:money(r.casino_payout_cents), costs:money(r.cost_cents), ggr:money(r.ggr_cents), ngr:money(r.ngr_cents),
       openingCarry:money(r.opening_carry_cents), closingCarry:money(r.closing_carry_cents), commission:money(r.commission_cents) }));
+}
+
+
+export function reconcileRevshare(db) {
+  const paid = db.prepare(`SELECT COALESCE(SUM(commission_cents),0) AS cents, COUNT(*) AS n
+    FROM affiliate_revshare_periods WHERE mode='live' AND status='paid' AND commission_cents > 0`).get();
+  const ledger = db.prepare(`SELECT COALESCE(SUM(amount_cents),0) AS cents, COUNT(*) AS n
+    FROM transactions WHERE type='affiliate_commission' AND ref LIKE 'affiliate-revshare:%'`).get();
+  return { paid: money(paid.cents), ledger: money(ledger.cents), paidCount: paid.n, ledgerCount: ledger.n,
+    ok: paid.cents === ledger.cents && paid.n === ledger.n };
 }
 
 export function saveRevshareCost(db, { affiliateUserId, period, costCents, reason, actor }) {
@@ -113,6 +205,9 @@ export function saveRevshareCost(db, { affiliateUserId, period, costCents, reaso
   if (!Number.isSafeInteger(costCents) || costCents < 0 || costCents > 100000000000) throw new Error('Custo inválido.');
   if (String(reason || '').trim().length < 5) throw new Error('Indique a justificação do custo (mínimo 5 caracteres).');
   if (!db.prepare('SELECT 1 FROM affiliate_profiles WHERE user_id = ?').get(affiliateUserId)) throw new Error('Afiliado não encontrado.');
+  if (db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE affiliate_user_id = ? AND period = ? AND mode = 'live' AND status <> 'cancelled'").get(affiliateUserId, period)) {
+    throw new Error('O período real já foi fechado; os custos não podem ser alterados.');
+  }
   tx(db, () => {
     db.prepare(`INSERT INTO affiliate_revshare_costs (affiliate_user_id, period, cost_cents, reason, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?)

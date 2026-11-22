@@ -51,7 +51,7 @@ export function saveAffiliateConfig(db, input, { actor, reason }) {
     if (k === 'revshareMode') {
       const mode = String(input[k]);
       if (!['off', 'test', 'live'].includes(mode)) throw new HttpError(400, 'Modo de Revenue Share inválido.');
-      if (mode === 'live') throw new HttpError(409, 'Produção ainda bloqueada: falta concluir e validar o motor de NGR e a reconciliação.');
+      if (mode === 'live') throw new HttpError(409, 'Produção ainda bloqueada: falta validação jurídica/licença aplicável e confirmação dos custos elegíveis e da reconciliação financeira.');
       next[k] = mode;
       continue;
     }
@@ -173,7 +173,7 @@ export function refreshProfile(db, userId, { actor = null, cfg = affiliateConfig
 export function attribute(db, { referredUserId, code, ip = null, source = 'link' }) {
   const cfg = affiliateConfig(db);
   const c = normalizeCode(code);
-  if (!cfg.enabled || !CODE_RE.test(c)) return null;
+  if (!(cfg.enabled || ['test', 'live'].includes(cfg.revshareMode)) || !CODE_RE.test(c)) return null;
   const profile = profileByCode(db, c);
   const result = (r, meta = {}) => { audit(db, { action: 'attribution', entityType: 'user', entityId: referredUserId, result: r, meta: { code: c, ...meta } }); return null; };
   if (!profile) return result('unknown_code');
@@ -355,18 +355,17 @@ export const maskName = (n) => { const [a = '', b = ''] = String(n || '').trim()
 
 export function affiliateView(db, userId, { baseUrl }) {
   const cfg = affiliateConfig(db);
-  const { profile, eligibility: e } = refreshProfile(db, userId, { cfg });
+  const profile = ensureProfile(db, userId);
+  const user = db.prepare('SELECT banned_at, excluded_until FROM users WHERE id = ?').get(userId);
+  const status = !user || user.banned_at || profile.admin_status === 'blocked' ? 'blocked'
+    : profile.admin_status === 'suspended' || (user.excluded_until && user.excluded_until > nowIso()) ? 'suspended' : 'active';
   return {
-    enabled: cfg.enabled,
+    enabled: cfg.revshareMode === 'live',
     referralCode: profile.referral_code,
     referralUrl: `${baseUrl}/${profile.referral_code}`,
-    status: e.state,
-    reason: e.reason,
-    activation: {
-      hasQualifyingDeposit: e.hasQualifyingDeposit, minimumDeposit: eur(cfg.minDepositCents),
-      eligibleBalance: eur(e.eligibleBalance ?? 0), minimumBalance: eur(cfg.minBalanceCents), canEarnCommission: e.canEarn,
-    },
-    commission: { rate: cfg.rateBps / 100, basis: 'first_eligible_deposit', currency: 'EUR' },
+    status,
+    reason: profile.admin_reason || null,
+    commission: { rate: 20, basis: 'monthly_ngr', currency: 'EUR' },
   };
 }
 
@@ -411,7 +410,7 @@ export function adminAffiliates(db, { q = '', limit = 100 } = {}) {
     WHERE (? = '%%' OR p.referral_code LIKE ? OR u.email LIKE ? OR u.name LIKE ?)
     ORDER BY referrals DESC, p.id DESC LIMIT ?`).all(term, term, term, term, Math.min(500, Number(limit) || 100))
     .map((r) => ({
-      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, status: r.status, adminStatus: r.admin_status, adminReason: r.admin_reason,
+      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, status: r.admin_status === 'blocked' ? 'blocked' : r.admin_status === 'suspended' ? 'suspended' : 'active', adminStatus: r.admin_status, adminReason: r.admin_reason,
       activatedAt: r.first_qualifying_deposit_at, clicks: r.clicks, referrals: r.referrals, qualified: r.qualified,
       eligibleBalance: eur(eligibleBalance(db, { id: r.user_id, balance_cents: r.balance_cents })), paid: eur(r.paid_cents), open: eur(r.open_cents),
     }));
