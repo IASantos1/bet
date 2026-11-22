@@ -438,6 +438,23 @@ test('bigbang jurisdiction: sent on launch when set; retries without it if BigBa
   db.close();
 });
 
+test('bigbang bet lock: the free-spin bet is sent on launch when the parameter name is set', async () => {
+  const db = openDb(':memory:');
+  const api = fakeApi();
+  const bb = createBigBang(db, { apiKey: KEY, fetchImpl: api.fetchImpl });
+  await bb.games();
+  // Off by default: no bet on the body.
+  await bb.launch({ gameId: 4821, token: 'b62_7', betCents: 10 });
+  assert.equal(api.calls.at(-1).body.bet, undefined);
+  // Name set: the bet value (euros) rides along; only when a bet is given.
+  setSetting(db, 'casino.bbBetParam', 'bet');
+  await bb.launch({ gameId: 4821, token: 'b62_7', betCents: 10 });
+  assert.equal(api.calls.at(-1).body.bet, 0.1);
+  await bb.launch({ gameId: 4821, token: 'b62_7' }); // no bet passed → nothing sent
+  assert.equal(api.calls.at(-1).body.bet, undefined);
+  db.close();
+});
+
 test('bigbang inspectLaunch: demo launch with an ad-hoc jurisdiction; masks the address; open returns it raw', async () => {
   const db = openDb(':memory:');
   const api = fakeApi();

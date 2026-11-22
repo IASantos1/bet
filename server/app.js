@@ -2441,7 +2441,8 @@ export function createApp(db, {
         const s = spinsRow(db, Number(req.body.freeSpins), u.id);
         if (!s || s.status !== 'active' || s.expires_at <= nowIso()) throw new HttpError(400, 'Estas Free Spins já não estão disponíveis.');
         chooseSpinsGame(db, u.id, s.id, g.id); // the picked game is the only one from now on
-        const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl });
+        // Open the game already at the free-spin bet (e.g. €0.10) where BigBang's bet-lock param is set.
+        const url = await bb.launch({ gameId: g.id, token: playerToken(u.id, s.id), returnUrl, betCents: spinBet(s, g.id) });
         notePlayed(u.id, g.id);
         return res.json({ url, freeSpins: { id: s.id, spinsLeft: s.spins_left ?? s.spins, spins: s.spins }, balance: cents(u.balance_cents) });
       }
@@ -3571,6 +3572,13 @@ export function createApp(db, {
     setSetting(db, 'casino.bbJurisdictionKey', value ? keyName : '');
     res.json({ bbJurisdiction: value, bbJurisdictionKey: value ? (keyName || 'jurisdiction') : '' });
   });
+  // The BigBang launch parameter that fixes the bet (free spins open already at €0.10). Name only — the
+  // value is the free-spin bet. Empty = don't send it. If BigBang rejects it, the launch retries without.
+  admin.post('/casino/bb-betparam', (req, res) => {
+    const name = String(req.body?.name || '').trim().replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+    setSetting(db, 'casino.bbBetParam', name);
+    res.json({ bbBetParam: name });
+  });
   // Test launch on BigBang (demo, no money) with an ad-hoc jurisdiction parameter: see the address/response
   // and open the game to check whether "Comprar Rodadas Grátis" is hidden — like the Palace tool.
   admin.post('/casino/bb-launch-inspect', wrap(async (req, res) => {
@@ -3629,7 +3637,7 @@ export function createApp(db, {
         stuckRounds: bb.stuckStats ? bb.stuckStats() : null,
         callbacks: { userData: `${origin}/api/casino/bb/user`, balanceChange: `${origin}/api/casino/bb/balance` }, calls: bb.callLog(), hidden: bb.hiddenList(),
         serverDelay: loopDelay(),
-        bbJurisdiction: getSetting(db, 'casino.bbJurisdiction', ''), bbJurisdictionKey: getSetting(db, 'casino.bbJurisdictionKey', ''),
+        bbJurisdiction: getSetting(db, 'casino.bbJurisdiction', ''), bbJurisdictionKey: getSetting(db, 'casino.bbJurisdictionKey', ''), bbBetParam: getSetting(db, 'casino.bbBetParam', ''),
         // Split: Palace for the slots, BigBang only for the live tables (setting casino.split).
         premium: getSetting(db, 'casino.premium', false) === true,
         split: !!getSetting(db, 'casino.split', false), skins: getSetting(db, 'casino.skins', 'off'), palace: { configured: !!casino?.enabled, urlSet: !!config.casino.baseUrl, tokenSet: !!config.casino.token, fsBetLocked: !!config.casino.fsBetParam },

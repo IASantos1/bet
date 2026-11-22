@@ -504,10 +504,26 @@ export function createBigBang(db, {
     return { keyName, value };
   };
 
-  /** A game URL: demo (no account, virtual money) or real (the player's token: account or free spins). */
-  async function launch({ gameId, token = null, demo = false, returnUrl = '' }) {
+  /**
+   * Optional extra launch parameters (we don't know BigBang's exact names, so they're configurable):
+   *  - jurisdiction: tries to hide "buy free spins" where BigBang supports it.
+   *  - bet lock (free spins only): opens the game with the bet fixed at the free-spin value (e.g. €0.10),
+   *    so the player enters already at that bet. `casino.bbBetParam` is the parameter name BigBang uses.
+   */
+  function launchExtras(betCents) {
+    const extra = {};
     const jur = bbJurisdiction();
-    const dk = `${Number(gameId)}|${returnUrl}|${jur ? `${jur.keyName}=${jur.value}` : ''}`;
+    if (jur) extra[jur.keyName] = jur.value;
+    const betParam = String(getSetting(db, 'casino.bbBetParam', '') || '').trim().replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+    if (betParam && betCents > 0) extra[betParam] = betCents / 100;
+    return extra;
+  }
+
+  /** A game URL: demo (no account, virtual money) or real (the player's token: account or free spins). */
+  async function launch({ gameId, token = null, demo = false, returnUrl = '', betCents = 0 }) {
+    const extra = launchExtras(betCents);
+    const extraKey = Object.entries(extra).map(([k, v]) => `${k}=${v}`).join('&');
+    const dk = `${Number(gameId)}|${returnUrl}|${extraKey}`;
     if (demo) {
       const hit = demoUrls.get(dk);
       if (hit && Date.now() - hit.at < DEMO_URL_MS) return hit.url;
@@ -518,11 +534,11 @@ export function createBigBang(db, {
       await ensurePlayer(token);
       body.user_token = token;
     }
-    // Safe: if BigBang rejects the extra parameter, launch again without it so a player is never blocked.
+    // Safe: if BigBang rejects the extra parameters, launch again without them so a player is never blocked.
     let r;
-    if (jur) {
-      try { r = await call('POST', '/games/launch', { ...body, [jur.keyName]: jur.value }); }
-      catch (err) { log(`bigbang: lançamento com ${jur.keyName}=${jur.value} falhou (${err.message}); a repetir sem jurisdição`); r = await call('POST', '/games/launch', body); }
+    if (extraKey) {
+      try { r = await call('POST', '/games/launch', { ...body, ...extra }); }
+      catch (err) { log(`bigbang: lançamento com ${extraKey} falhou (${err.message}); a repetir sem esses parâmetros`); r = await call('POST', '/games/launch', body); }
     } else {
       r = await call('POST', '/games/launch', body);
     }

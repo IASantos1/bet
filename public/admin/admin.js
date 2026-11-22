@@ -1439,6 +1439,11 @@ function adminCasino(c) {
         <label class="field adm-inline">Valor <input id="bbJurVal" value="${esc(c.bbJurisdiction || '')}" placeholder="ex.: PT (vazio = desligado)" maxlength="20" size="10"></label>
         <button class="ghost-btn btn-sm" data-action="bb-jurisdiction">Gravar</button>
         <span class="muted">Agora: <strong>${c.bbJurisdiction ? `${esc(c.bbJurisdictionKey || 'jurisdiction')}=${esc(c.bbJurisdiction)}` : 'desligado'}</strong></span></div>
+      <h4>Aposta fixa das Free Spins (abrir já a €0,10)</h4>
+      <p class="muted">Para o jogo de Free Spins abrir já com a aposta da rodada (ex.: €0,10), a BigBang precisa de um parâmetro no lançamento com o valor da aposta. Escreva aqui o <strong>nome</strong> desse parâmetro (ex.: <code>bet</code>, <code>default_bet</code>, <code>coin</code>). O valor é posto automaticamente (a aposta da Free Spin). Vazio = não envia. Se a BigBang recusar, o jogo abre à mesma.</p>
+      <div class="form-actions"><label class="field adm-inline">Nome do parâmetro da aposta <input id="bbBetParam" value="${esc(c.bbBetParam || '')}" placeholder="ex.: bet (vazio = desligado)" maxlength="40" size="14"></label>
+        <button class="ghost-btn btn-sm" data-action="bb-betparam">Gravar</button>
+        <span class="muted">Agora: <strong>${c.bbBetParam ? esc(c.bbBetParam) : 'desligado'}</strong></span></div>
       <p class="muted">Testar sem gravar: escreva o jogo e (opcional) o nome/valor acima, e use os botões. Abre em modo demonstração (sem dinheiro) para ver se o botão de comprar bónus desaparece.</p>
       <div class="form-actions"><label class="field adm-inline">Jogo <input id="bbLiName" value="Gates of Olympus" maxlength="80"></label>
         <button class="ghost-btn btn-sm" data-action="bb-launch-inspect">Ver endereço de um jogo</button>
@@ -2931,6 +2936,14 @@ document.addEventListener('click', async (e) => {
     try {
       const r = await api('/api/admin/casino/bb-jurisdiction', { method: 'POST', body: { key: $('#bbJurKey').value, value: $('#bbJurVal').value } });
       toast('Gravado', r.bbJurisdiction ? `Lançamentos BigBang com ${r.bbJurisdictionKey}=${r.bbJurisdiction}. Abra um slot e veja o botão.` : 'Jurisdição BigBang desligada.');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+    loadTab();
+  } else if (action === 'bb-betparam') {
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino/bb-betparam', { method: 'POST', body: { name: $('#bbBetParam').value } });
+      toast('Gravado', r.bbBetParam ? `Free Spins abrem com ${r.bbBetParam}=<aposta>. Entre numa Free Spin e veja se abre a €0,10.` : 'Aposta fixa BigBang desligada.');
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;
     loadTab();
