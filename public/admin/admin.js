@@ -3254,7 +3254,7 @@ function adminSkins(d) {
   const mode = d.mode || 'off';
   const cards = d.skins.map((s) => `<div class="skin-card">
       <div class="skin-thumb"><img src="${esc(s.img)}" alt=""></div>
-      <div class="grow"><strong>${esc(s.name)}</strong><small class="muted">${esc(SIDE_LABEL[s.side])} · ${esc(s.code)}</small>
+      <div class="grow"><strong>${esc(s.name)}</strong>${s.fs ? ' <span class="pill won">Free Spins</span>' : ''}<small class="muted">${esc(SIDE_LABEL[s.side])} · ${esc(s.code)}</small>
         <small class="muted">Proporção ${s.ratio.toFixed(3)} · zona ${s.box.map((v) => `${v.toFixed(1)}%`).join(' ')} · ${s.touch ? `aparece ${s.after} s depois de o jogo começar${s.delay ? ` (ou aos ${s.delay} s)` : ''}` : `aparece ${s.delay} s depois de carregar`}</small></div>
       <label class="adm-switch"><input type="checkbox" data-action="skin-enabled" data-id="${s.id}"${s.enabled ? ' checked' : ''}> Ativa</label>
       <button class="ghost-btn btn-sm" data-action="skin-edit" data-id="${s.id}">Editar</button>
@@ -3323,6 +3323,7 @@ function skinEditorHtml() {
         <label class="field adm-inline"><span id="skDelayLabel">${e.touch ? 'Se ninguém tocar, aparece na mesma depois de' : 'Aparece'}</span>
           <input type="number" id="skDelay" min="0" max="60" step="0.5" value="${e.delay}" class="sk-num"> s <small class="muted" id="skDelayHint">${e.touch ? '(0 = logo após a intro, ou quando o jogo carrega)' : 'depois de o jogo carregar (0 = logo após a intro / quando o jogo carrega)'}</small></label>
         <label class="adm-switch" title="Ligado: a película impede clicar no que está por baixo (ex.: comprar rodadas). Desligado: só tapa visualmente e deixa clicar — use se a película estiver a travar o jogo."><input type="checkbox" id="skBlock"${e.block ? ' checked' : ''}> Tapar os cliques (impedir comprar rodadas)</label>
+        <label class="adm-switch" title="Ligado: esta película só aparece quando o jogo é aberto pelas Free Spins. O jogo aberto normalmente não a mostra (e vice-versa)."><input type="checkbox" id="skFs"${e.fs ? ' checked' : ''}> Só nas Free Spins</label>
         <button type="button" class="ghost-btn btn-sm" data-action="skin-measure">⏱ Medir: carregue quando o jogo começar</button>
         <small class="muted" id="skMeasure">Abra o jogo aqui: o cronómetro conta desde que o jogo carregou.</small>
       </div>
@@ -3355,7 +3356,7 @@ async function openSkinEditor(skin = null) {
     id: skin?.id || null, code: skin?.code || '', name: skin?.name || '', side: skin?.side || 'land', enabled: skin ? skin.enabled : true,
     ref: null, clean: null, refNew: false, cleanNew: false, x: 0, y: 0, s: 1, zone: null, tool: 'move', op: 0.6, diff: false, preview: false,
     box: skin?.box || null, ratio: skin?.ratio || null, cover: skin?.img || null, gameUrl: null,
-    delay: skin?.delay ?? 8, touch: skin ? skin.touch : true, after: skin?.after ?? 0.5, block: skin ? skin.block !== false : true, loadedAt: null,
+    delay: skin?.delay ?? 8, touch: skin ? skin.touch : true, after: skin?.after ?? 0.5, block: skin ? skin.block !== false : true, fs: skin ? !!skin.fs : false, loadedAt: null,
   };
   try {
     if (skin?.ref) skinEd.ref = await loadImg(skin.ref);
@@ -3504,7 +3505,7 @@ async function saveSkin() {
   if (!e.zone) throw new Error('Marque a zona a tapar.');
   const { w, h } = skinSize();
   const body = { id: e.id, code: e.code, name: e.name, side: $('#skSide').value, enabled: $('#skEnabled').checked,
-    delay: Number($('#skDelay').value) || 0, touch: $('#skWhen').value === 'touch', after: Number($('#skAfter').value) || 0, block: $('#skBlock').checked,
+    delay: Number($('#skDelay').value) || 0, touch: $('#skWhen').value === 'touch', after: Number($('#skAfter').value) || 0, block: $('#skBlock').checked, fs: $('#skFs').checked,
     ratio: w / h, box: [e.zone.x / w * 100, e.zone.y / h * 100, e.zone.w / w * 100, e.zone.h / h * 100] };
   if (e.paint) {
     body.image = e.paint.output().toDataURL('image/png');

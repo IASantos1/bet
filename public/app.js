@@ -2167,7 +2167,9 @@ async function playCasino(mode) {
 function gameSkin(g) {
   const mode = state.config?.casinoSkins;
   if (g.demo || !g.code || !(mode === 'all' || (mode === 'admin' && state.user?.role === 'admin'))) return null;
-  const mine = (state.config?.skins || []).filter((s) => s.code === g.code);
+  // Free-spins launches use the covers marked for Free Spins; a normal launch uses the normal covers.
+  const inFs = !!g.fs;
+  const mine = (state.config?.skins || []).filter((s) => s.code === g.code && !!s.fs === inFs);
   if (!mine.length) return null;
   const side = (k) => {
     const list = mine.filter((s) => s.side === k);
