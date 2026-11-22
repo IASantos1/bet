@@ -537,6 +537,12 @@ function cacheStatements(db, max = 1000) {
 
 /** Additive migrations for databases created by earlier versions. */
 function migrate(db) {
+  // Manual affiliate attribution: preserve the original attribution date while allowing an audited effective date.
+  const attributionCols = new Set(db.prepare('PRAGMA table_info(referral_attributions)').all().map((c) => c.name));
+  if (!attributionCols.has('effective_from')) {
+    db.exec('ALTER TABLE referral_attributions ADD COLUMN effective_from TEXT');
+    db.exec('UPDATE referral_attributions SET effective_from = attributed_at WHERE effective_from IS NULL');
+  }
   // Credit-card support widens the CHECK constraint without losing existing deposits.
   const eupagoSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'eupago_payments'").get()?.sql || '';
   if (eupagoSql && !eupagoSql.includes("'cartao'")) rebuildKeeping(db, 'eupago_payments');

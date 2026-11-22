@@ -27,6 +27,12 @@ function addBet(db, userId, { stake, payout, status = 'lost', realStake = stake,
       userId, stake, payout, status, payout, at, at, realStake, bonus, free, realPayout);
 }
 
+function attributeForHistoricalRevshareTest(db, referredUserId, code) {
+  const result = attribute(db, { referredUserId, code });
+  db.prepare("UPDATE referral_attributions SET effective_from = '2026-01-01T00:00:00.000Z' WHERE referred_user_id = ?").run(referredUserId);
+  return result;
+}
+
 function addCasinoMove(db, userId, txId, amount, spinsId = null, at = '2026-03-15T12:00:00.000Z') {
   db.prepare(`INSERT INTO casino_moves
     (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
@@ -50,7 +56,7 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 10000, payout: 3000, status: 'won' });
   addBet(s.db, referred, { stake: 5000, payout: 2000, realStake: 3000, realPayout: 1200, bonus: 2000, status: 'won' });
   addBet(s.db, referred, { stake: 9000, payout: 9000, status: 'void' });
@@ -88,7 +94,7 @@ test('carryover negativo reduz a comissão do mês seguinte e a simulação é i
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 1000, payout: 6000, status: 'won', at: '2026-01-15T12:00:00.000Z' });
   const jan = simulateRevshare(s.db, { period: '2026-01', actor: s.admin });
   assert.equal(jan.rows.find((x) => x.affiliateUserId === affiliate).closingCarry, -5000);
@@ -113,7 +119,7 @@ test('ajustes de custos são auditados e deduzidos do NGR antes dos 20%', () => 
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 10000, payout: 0, status: 'lost' });
   saveRevshareCost(s.db, { affiliateUserId: affiliate, period: '2026-03', costCents: 2500, reason: 'custo contratual do fornecedor', actor: s.admin });
   const report = simulateRevshare(s.db, { period: '2026-03', actor: s.admin });
@@ -162,7 +168,7 @@ test('Revenue Share usa o mês civil de Portugal e inclui rondas fechadas após 
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   s.db.prepare(`INSERT INTO casino_moves
     (transaction_id,user_id,spins_id,amount_cents,balance_after_cents,round_id,type,round_end,game,created_at)
     VALUES ('lisbon-boundary-bet',?,NULL,-4000,0,'lisbon-boundary','bet',0,'Demo Slot','2026-03-31T23:30:00.000Z')`).run(referred);
@@ -180,7 +186,7 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
-  attribute(s.db, { referredUserId: referred, code });
+  attributeForHistoricalRevshareTest(s.db, referred, code);
   addBet(s.db, referred, { stake: 10000, payout: 0, status: 'lost', at: '2026-03-15T12:00:00.000Z' });
   setSetting(s.db, 'affiliate.config', { ...affiliateConfig(s.db), revshareMode: 'live' });
   const closed = closeRevsharePeriod(s.db, { period: '2026-03', actor: s.admin });
@@ -197,4 +203,30 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE ref=?").get(`affiliate-revshare:${period.id}`).n, 1);
   assert.equal(reconcileRevshare(s.db).ok, true);
   assert.equal(closed[0].status, 'pending_approval');
+});
+
+
+test('atribuição manual RevShare respeita a data efetiva e exclui atividade anterior', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado manual');
+  const profile = ensureProfile(s.db, affiliate);
+  const referred = s.user('Jogador associado manualmente');
+  const assignedAt = '2026-11-22T12:00:00.000Z';
+  const effectiveFrom = '2026-11-01T00:00:00.000Z';
+  s.db.prepare(`INSERT INTO referral_attributions
+    (affiliate_user_id, referred_user_id, referral_code, source, status, attributed_at, effective_from)
+    VALUES (?, ?, ?, 'admin', 'pending', ?, ?)`).run(affiliate, referred, profile.referral_code, assignedAt, effectiveFrom);
+
+  addBet(s.db, referred, { stake: 5000, payout: 0, at: '2026-10-31T23:59:00.000Z' });
+  addBet(s.db, referred, { stake: 1200, payout: 0, at: '2026-11-01T00:01:00.000Z' });
+  addCasinoMove(s.db, referred, 'manual-before-date', -3000, null, '2026-10-31T23:59:00.000Z');
+  addCasinoMove(s.db, referred, 'manual-after-date', -700, null, '2026-11-01T00:02:00.000Z');
+
+  const report = previewRevshare(s.db, { period: '2026-11', mode: 'test' });
+  const row = report.rows.find((x) => x.affiliateUserId === affiliate);
+  assert.equal(row.sportsStake, 1200);
+  assert.equal(row.sportsPayout, 0);
+  assert.equal(row.casinoStake, 700);
+  assert.equal(row.casinoPayout, 0);
+  assert.equal(row.referredPlayers, 1);
 });
