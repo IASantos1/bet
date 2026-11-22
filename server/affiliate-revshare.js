@@ -1,6 +1,7 @@
 import { nowIso, tx } from './db.js';
 import { affiliateConfig, audit } from './affiliates.js';
 import { postTransaction } from './wallet.js';
+import { postTransaction } from './wallet.js';
 
 const RATE_BPS = 2000;
 const money = (c) => (Number(c || 0) / 100).toFixed(2);
@@ -99,7 +100,7 @@ export function closeRevsharePeriod(db, { period, actor }) {
   if (cfg.revshareMode !== 'live') throw new Error('O Revenue Share tem de estar em Produção para fechar um período real.');
   const { end } = periodBounds(period);
   if (end > nowIso()) throw new Error('Só é possível fechar meses completos.');
-  const pending = db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE mode='live' AND period < ? AND status='pending' LIMIT 1").get(period);
+  const pending = db.prepare("SELECT 1 FROM affiliate_revshare_periods WHERE mode='live' AND period < ? AND status='pending_approval' LIMIT 1").get(period);
   if (pending) throw new Error('Existe um período anterior à espera de aprovação.');
   const report = previewRevshare(db, { period, mode: 'live' });
   tx(db, () => {
@@ -107,12 +108,12 @@ export function closeRevsharePeriod(db, { period, actor }) {
       db.prepare(`INSERT INTO affiliate_revshare_periods
         (affiliate_user_id, period, mode, sports_stake_cents, sports_payout_cents, casino_stake_cents, casino_payout_cents,
          cost_cents, ggr_cents, ngr_cents, opening_carry_cents, closing_carry_cents, commission_cents, status, snapshot, created_at, updated_at)
-        VALUES (?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        VALUES (?, ?, 'live', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?)
         ON CONFLICT(affiliate_user_id, period, mode) DO NOTHING`).run(
           r.affiliateUserId, period, r.sportsStake, r.sportsPayout, r.casinoStake, r.casinoPayout, r.costs,
           r.ggr, r.ngr, r.openingCarry, r.closingCarry, r.commission, JSON.stringify(r), nowIso(), nowIso());
     }
-    audit(db, { actor, action: 'revshare.period.close', entityType: 'period', entityId: period, result: 'pending',
+    audit(db, { actor, action: 'revshare.period.close', entityType: 'period', entityId: period, result: 'pending_approval',
       meta: { rateBps: RATE_BPS, affiliates: report.rows.length, commissionCents: report.rows.reduce((n,r) => n+r.commission,0) } });
   });
   return revshareHistory(db, { limit: 500 }).filter((r) => r.period === period && r.mode === 'live');
@@ -125,8 +126,8 @@ export function approveRevsharePeriod(db, id, { actor, reason }) {
   return tx(db, () => {
     const row = db.prepare("SELECT * FROM affiliate_revshare_periods WHERE id = ? AND mode = 'live'").get(Number(id));
     if (!row) throw new Error('Período de Revenue Share não encontrado.');
-    if (row.status !== 'pending') throw new Error('Este período já foi decidido.');
-    db.prepare("UPDATE affiliate_revshare_periods SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=? AND status='pending'")
+    if (row.status !== 'pending_approval') throw new Error('Este período já foi decidido.');
+    db.prepare("UPDATE affiliate_revshare_periods SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=? AND status='pending_approval'")
       .run(actor, nowIso(), nowIso(), row.id);
     audit(db, { actor, action: 'revshare.period.approve', entityType: 'period', entityId: row.id, result: 'approved', meta: { period: row.period, reason: why } });
     return db.prepare('SELECT * FROM affiliate_revshare_periods WHERE id = ?').get(row.id);
