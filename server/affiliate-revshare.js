@@ -23,7 +23,7 @@ function priorCarry(db, affiliateId, period, mode) {
 
 function affiliatePeriod(db, affiliate, period, mode) {
   const { start, end } = periodBounds(period);
-  const refs = db.prepare('SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ?').all(affiliate.user_id).map((r) => r.referred_user_id);
+  const refs = db.prepare('SELECT referred_user_id FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'').all(affiliate.user_id).map((r) => r.referred_user_id);
   if (!refs.length) return { referredPlayers: 0, sportsStake: 0, sportsPayout: 0, casinoStake: 0, casinoPayout: 0, costs: 0, ggr: 0, ngr: 0, openingCarry: priorCarry(db, affiliate.user_id, period, mode), closingCarry: priorCarry(db, affiliate.user_id, period, mode), commission: 0 };
 
   const marks = refs.map(() => '?').join(',');
@@ -59,7 +59,7 @@ export function previewRevshare(db, { period, mode = 'test' } = {}) {
     FROM affiliate_profiles p JOIN users u ON u.id = p.user_id ORDER BY p.user_id`).all();
   const rows = affiliates.map((a) => {
     const calc = affiliatePeriod(db, a, period, mode);
-    const blocked = !!a.banned_at || a.admin_status === 'blocked';
+    const blocked = !!a.banned_at || ['suspended', 'blocked'].includes(a.admin_status);
     return { affiliateUserId: a.user_id, name: a.name, email: a.email, code: a.referral_code, blocked,
       ...calc, commission: blocked ? 0 : calc.commission,
       amounts: { sportsStake: money(calc.sportsStake), sportsPayout: money(calc.sportsPayout), casinoStake: money(calc.casinoStake),
