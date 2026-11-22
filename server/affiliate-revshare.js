@@ -28,10 +28,25 @@ function affiliatePeriod(db, affiliate, period, mode) {
       COALESCE(SUM(CASE WHEN real_payout_cents IS NOT NULL THEN real_payout_cents
         WHEN real_stake_cents IS NULL AND COALESCE(bonus_stake_cents,0)=0 AND COALESCE(freebet_stake_cents,0)=0 THEN payout_cents ELSE 0 END),0) AS payouts
     FROM bets WHERE user_id IN (${marks}) AND status IN ('won','lost','cashout') AND settled_at >= ? AND settled_at < ?`).get(...refs, start, end);
-  const casino = db.prepare(`SELECT
+  const casino = db.prepare(`WITH closed_rounds AS (
+      SELECT user_id, round_id, MAX(created_at) AS closed_at
+      FROM casino_moves
+      WHERE user_id IN (${marks}) AND spins_id IS NULL AND round_id IS NOT NULL AND round_end = 1
+      GROUP BY user_id, round_id
+      HAVING closed_at >= ? AND closed_at < ?
+    ), settled_moves AS (
+      SELECT cm.amount_cents FROM casino_moves cm
+      JOIN closed_rounds cr ON cr.user_id = cm.user_id AND cr.round_id = cm.round_id
+      WHERE cm.spins_id IS NULL
+      UNION ALL
+      SELECT amount_cents FROM casino_moves
+      WHERE user_id IN (${marks}) AND spins_id IS NULL AND round_id IS NULL AND round_end = 1
+        AND created_at >= ? AND created_at < ?
+    )
+    SELECT
       COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END),0) AS stakes,
       COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END),0) AS payouts
-    FROM casino_moves WHERE user_id IN (${marks}) AND spins_id IS NULL AND created_at >= ? AND created_at < ?`).get(...refs, start, end);
+    FROM settled_moves`).get(...refs, start, end, ...refs, start, end);
   const cost = db.prepare('SELECT COALESCE(SUM(cost_cents),0) AS cents FROM affiliate_revshare_costs WHERE affiliate_user_id = ? AND period = ?').get(affiliate.user_id, period).cents;
   const sportsStake = sports.stakes || 0;
   const sportsPayout = sports.payouts || 0;
