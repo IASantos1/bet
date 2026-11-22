@@ -364,30 +364,35 @@ function fsPromosPanel(list) {
 const AFF_STATUS = { pending: 'Pendente', active: 'Ativo', suspended: 'Suspenso', blocked: 'Bloqueado' };
 const COMM_STATUS = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga', reversed: 'Revertida', rejected: 'Rejeitada' };
 const COMM_PILL = { pending: 'pending', approved: 'open', paid: 'won', reversed: 'lost', rejected: 'void' };
-const AFF_FIELDS = [
-  ['rateBps', 'Revenue Share (pontos base; 2000 = 20%)'], ['minDepositCents', 'Depósito próprio mínimo (cêntimos)'],
-  ['minBalanceCents', 'Saldo elegível mínimo (cêntimos)'], ['dualApprovalCents', 'Dupla aprovação a partir de (cêntimos; 0 = desligada)'],
-  ['velocityPerDay', 'Registos por código em 24 h antes de rever'],
-];
+const AFF_FIELDS = [['rateBps', 'Revenue Share (pontos base; 2000 = 20%)']];
 
-function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: commissions }, { items: auditLog }) {
+function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: commissions }, { items: auditLog }, history = { items: [] }) {
   const rec = `<div class="adm-cards">
     <div class="adm-card"><small>Comissões pagas</small><strong>${money(r.commissionsPaid)}</strong><em>${r.paidCount} pagamentos</em></div>
     <div class="adm-card"><small>Créditos na carteira</small><strong>${money(r.ledgerCredits)}</strong><em>${r.ledgerCount} movimentos</em></div>
     <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
     <div class="adm-card"><small>Reconciliação</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões em falta</button></em></div></div>`;
   const cfg = `<form class="panel" data-form="aff-config"><h3>Revenue Share · 20% do NGR</h3>
-    <p class="muted">Estado independente do deploy. O seletor fica guardado no painel. O motor de apuramento e a simulação ainda estão em implementação; por segurança, a ativação em produção permanece bloqueada até à validação.</p>
+    <p class="muted">O modo de teste calcula o GGR/NGR mensal dos jogadores referenciados. Não credita carteiras nem gera pagamentos. A produção permanece bloqueada até validação jurídica e financeira.</p>
     <label class="field">Modo do Revenue Share<select name="revshareMode">
       <option value="off"${(c.revshareMode || 'off') === 'off' ? ' selected' : ''}>Desativado</option>
       <option value="test"${c.revshareMode === 'test' ? ' selected' : ''}>Modo de teste (sem pagamentos)</option>
       <option value="live"${c.revshareMode === 'live' ? ' selected' : ''}>Produção (comissões reais, aprovação manual)</option>
     </select></label>
     <p class="muted">⚖️ A ativação em produção exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino.</p>
-    <div class="adm-grid">${AFF_FIELDS.filter(([k]) => k !== 'rateBps').map(([k, l]) => `<label class="field">${esc(l)}<input name="${k}" type="number" step="1" min="0" value="${c[k]}" required></label>`).join('')}</div>
+    <p class="muted">O modelo novo não exige depósito próprio mínimo nem saldo mínimo do afiliado. A taxa é fixa em 20%.</p>
     <p class="muted">Taxa fixa configurada: <b>20% (2000 pontos base)</b>. Pagamentos automáticos desativados.</p>
     <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
     <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div></form>`;
+  const periodNow = new Date().toISOString().slice(0, 7);
+  const historyRows = (history.items || []).map((h) => `<tr><td>${esc(h.period)}</td><td>${esc(h.name)}</td><td>${money(h.ggr)}</td><td>${money(h.costs)}</td><td>${money(h.ngr)}</td><td>${money(h.closingCarry)}</td><td>${money(h.commission)}</td><td>${esc(h.status)}</td></tr>`).join('');
+  const revshare = `<div class="panel"><h3>Simulação mensal · Revenue Share 20%</h3>
+    <p class="muted">O cálculo usa apostas desportivas liquidadas e movimentos de dinheiro real do casino. Free Spins são excluídas. Custos só são deduzidos quando registados; custos externos ainda não integrados aparecem como zero e têm de ser conferidos antes de qualquer produção.</p>
+    <div class="form-actions"><label class="field">Período (AAAA-MM)<input id="affRevPeriod" type="month" value="${periodNow}"></label>
+      <button class="primary-btn" type="button" data-action="aff-revshare-simulate">Executar simulação (sem pagamentos)</button></div>
+    <div id="affRevshareResult"></div>
+    ${historyRows ? `<h4>Simulações guardadas</h4><div class="table-wrap"><table><thead><tr><th>Período</th><th>Afiliado</th><th>GGR</th><th>Custos</th><th>NGR</th><th>Carryover</th><th>Comissão</th><th>Estado</th></tr></thead><tbody>${historyRows}</tbody></table></div>` : '<p class="muted">Ainda não existem simulações guardadas.</p>'}
+    </div>`;
   const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th class="num">Qualif.</th><th class="num">Saldo eleg.</th><th class="num">Pago</th><th class="num">Em aberto</th><th></th></tr></thead><tbody>
     ${affiliates.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">${esc(a.email)}</small></td><td><b>${esc(a.code)}</b></td>
       <td><span class="pill ${a.status === 'active' ? 'won' : a.status === 'pending' ? 'pending' : 'lost'}">${AFF_STATUS[a.status] || a.status}</span>${a.adminReason ? `<br><small class="muted">${esc(a.adminReason)}</small>` : ''}</td>
@@ -413,9 +418,9 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: 
     ${auditLog.map((l) => `<tr><td>${esc(fmtDateTime(l.created_at))}</td><td>${l.actor_user_id ?? '—'}</td><td>${esc(l.action)}</td><td>${esc(l.entity_type)} ${esc(l.entity_id ?? '')}</td><td>${esc(l.result)}</td>
       <td><small class="muted">${esc(l.metadata ? JSON.stringify(l.metadata) : '')}</small></td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted">Sem registos.</p>';
-  return `${rec}${cfg}
+  return `${rec}${cfg}${revshare}
     <div class="panel"><h3>Afiliados</h3><form class="form-actions" data-form="aff-search"><input name="q" value="${esc(state.affQ || '')}" placeholder="Código, nome ou email"><button class="ghost-btn">Procurar</button></form>${affs}</div>
-    <div class="panel"><h3>Comissões</h3>${comms}</div>
+    <div class="panel"><h3>Comissões históricas de primeiro depósito</h3>${comms}</div>
     <div class="panel"><h3>Auditoria (só de leitura)</h3>${log}</div>`;
 }
 
@@ -965,8 +970,8 @@ async function loadTab() {
     else if (tab === 'telegram') main.innerHTML = adminTelegram(await api('/api/admin/telegram'));
     else if (tab === 'campanhas') { main.innerHTML = adminCampaigns(await api('/api/admin/campaigns')); campaignCount(); }
     else if (tab === 'afiliados') {
-      const [a, c, l] = await Promise.all([api(`/api/admin/affiliates?q=${encodeURIComponent(state.affQ || '')}`), api('/api/admin/affiliates/commissions'), api('/api/admin/affiliates/audit')]);
-      main.innerHTML = adminAffiliates(a, c, l);
+      const [a, c, l, h] = await Promise.all([api(`/api/admin/affiliates?q=${encodeURIComponent(state.affQ || '')}`), api('/api/admin/affiliates/commissions'), api('/api/admin/affiliates/audit'), api('/api/admin/affiliates/revshare/history')]);
+      main.innerHTML = adminAffiliates(a, c, l, h);
     }
     else if (tab === 'levantamentos') {
       const [{ withdrawals, revolut: rv }, rm] = await Promise.all([api('/api/admin/withdrawals'), api('/api/admin/revolut-merchant').catch(() => null)]);
@@ -2579,7 +2584,16 @@ document.addEventListener('click', async (e) => {
   if (action.startsWith('aff-')) {
     const id = actionEl.dataset.id;
     try {
-      if (action === 'aff-recover') {
+      if (action === 'aff-revshare-simulate') {
+        const period = document.getElementById('affRevPeriod')?.value;
+        if (!period) throw new Error('Escolhe o mês a simular.');
+        actionEl.disabled = true;
+        const report = await api('/api/admin/affiliates/revshare/simulate', { method: 'POST', body: { period } });
+        const rows = report.rows.map((x) => `<tr><td>${esc(x.name)}<br><small class="muted">${esc(x.code)}</small></td><td class="num">${money(x.amounts.sportsStake)}</td><td class="num">${money(x.amounts.sportsPayout)}</td><td class="num">${money(x.amounts.casinoStake)}</td><td class="num">${money(x.amounts.casinoPayout)}</td><td class="num">${money(x.amounts.costs)}</td><td class="num">${money(x.amounts.ggr)}</td><td class="num">${money(x.amounts.ngr)}</td><td class="num">${money(x.amounts.openingCarry)}</td><td class="num"><b>${money(x.amounts.commission)}</b></td></tr>`).join('');
+        const t = report.totals;
+        document.getElementById('affRevshareResult').innerHTML = `<div class="notice"><b>Simulação concluída — ${esc(report.period)}</b><br>Taxa: 20% · Total de comissões simuladas: <b>${money(t.commission)} €</b><br>${esc(report.costsWarning)}</div><div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Apostas desportivas</th><th>Prémios desportivos</th><th>Casino apostado</th><th>Prémios casino</th><th>Custos</th><th>GGR</th><th>NGR</th><th>Carryover</th><th>Comissão</th></tr></thead><tbody>${rows || '<tr><td colspan="10">Sem afiliados.</td></tr>'}</tbody></table></div>`;
+        toast('Simulação concluída', 'Nenhuma carteira foi creditada e nenhum pagamento foi criado.');
+      } else if (action === 'aff-recover') {
         const r = await api('/api/admin/affiliates/recover', { method: 'POST', body: {} });
         toast('Feito', `${r.created} comissão(ões) recuperada(s).`);
       } else if (action === 'aff-status') {
@@ -2606,6 +2620,7 @@ document.addEventListener('click', async (e) => {
       }
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
     return;
   }
   if (action === 'am-game-add') {
