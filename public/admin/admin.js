@@ -2584,14 +2584,24 @@ document.addEventListener('click', async (e) => {
   if (action.startsWith('aff-')) {
     const id = actionEl.dataset.id;
     try {
-      if (action === 'aff-revshare-simulate') {
+      if (action === 'aff-revshare-cost') {
+        const period = actionEl.dataset.period;
+        const cost = prompt('Custo elegível do afiliado neste mês, em euros (ex.: 12,50):');
+        if (cost === null) return;
+        const reason = prompt('Justificação / referência do custo (mínimo 5 caracteres):');
+        if (!reason?.trim()) return;
+        await api('/api/admin/affiliates/revshare/cost', { method: 'POST', body: { affiliateUserId: Number(id), period, cost: Number(cost.replace(',', '.')), reason } });
+        await api('/api/admin/affiliates/revshare/simulate', { method: 'POST', body: { period } });
+        toast('Custo registado', 'A simulação foi recalculada com a dedução.');
+        loadTab();
+      } else if (action === 'aff-revshare-simulate') {
         const period = document.getElementById('affRevPeriod')?.value;
         if (!period) throw new Error('Escolhe o mês a simular.');
         actionEl.disabled = true;
         const report = await api('/api/admin/affiliates/revshare/simulate', { method: 'POST', body: { period } });
-        const rows = report.rows.map((x) => `<tr><td>${esc(x.name)}<br><small class="muted">${esc(x.code)}</small></td><td class="num">${money(x.amounts.sportsStake)}</td><td class="num">${money(x.amounts.sportsPayout)}</td><td class="num">${money(x.amounts.casinoStake)}</td><td class="num">${money(x.amounts.casinoPayout)}</td><td class="num">${money(x.amounts.costs)}</td><td class="num">${money(x.amounts.ggr)}</td><td class="num">${money(x.amounts.ngr)}</td><td class="num">${money(x.amounts.openingCarry)}</td><td class="num"><b>${money(x.amounts.commission)}</b></td></tr>`).join('');
+        const rows = report.rows.map((x) => `<tr><td>${esc(x.name)}<br><small class="muted">${esc(x.code)}</small></td><td class="num">${money(x.amounts.sportsStake)}</td><td class="num">${money(x.amounts.sportsPayout)}</td><td class="num">${money(x.amounts.casinoStake)}</td><td class="num">${money(x.amounts.casinoPayout)}</td><td class="num">${money(x.amounts.costs)}</td><td class="num">${money(x.amounts.ggr)}</td><td class="num">${money(x.amounts.ngr)}</td><td class="num">${money(x.amounts.openingCarry)}</td><td class="num"><b>${money(x.amounts.commission)}</b></td><td><button class="ghost-btn btn-sm" data-action="aff-revshare-cost" data-id="${x.affiliateUserId}" data-period="${esc(report.period)}">Registar custo</button></td></tr>`).join('');
         const t = report.totals;
-        document.getElementById('affRevshareResult').innerHTML = `<div class="notice"><b>Simulação concluída — ${esc(report.period)}</b><br>Taxa: 20% · Total de comissões simuladas: <b>${money(t.commission)} €</b><br>${esc(report.costsWarning)}</div><div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Apostas desportivas</th><th>Prémios desportivos</th><th>Casino apostado</th><th>Prémios casino</th><th>Custos</th><th>GGR</th><th>NGR</th><th>Carryover</th><th>Comissão</th></tr></thead><tbody>${rows || '<tr><td colspan="10">Sem afiliados.</td></tr>'}</tbody></table></div>`;
+        document.getElementById('affRevshareResult').innerHTML = `<div class="notice"><b>Simulação concluída — ${esc(report.period)}</b><br>Taxa: 20% · Total de comissões simuladas: <b>${money(t.commission)} €</b><br>${esc(report.costsWarning)}</div><div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Apostas desportivas</th><th>Prémios desportivos</th><th>Casino apostado</th><th>Prémios casino</th><th>Custos</th><th>GGR</th><th>NGR</th><th>Carryover</th><th>Comissão</th><th>Custos</th></tr></thead><tbody>${rows || '<tr><td colspan="11">Sem afiliados.</td></tr>'}</tbody></table></div>`;
         toast('Simulação concluída', 'Nenhuma carteira foi creditada e nenhum pagamento foi criado.');
       } else if (action === 'aff-recover') {
         const r = await api('/api/admin/affiliates/recover', { method: 'POST', body: {} });
