@@ -198,3 +198,29 @@ test('período real exige aprovação manual e o pagamento é idempotente', () =
   assert.equal(reconcileRevshare(s.db).ok, true);
   assert.equal(closed[0].status, 'pending_approval');
 });
+
+
+test('atribuição manual RevShare respeita a data efetiva e exclui atividade anterior', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado manual');
+  const profile = ensureProfile(s.db, affiliate);
+  const referred = s.user('Jogador associado manualmente');
+  const assignedAt = '2026-11-22T12:00:00.000Z';
+  const effectiveFrom = '2026-11-01T00:00:00.000Z';
+  s.db.prepare(`INSERT INTO referral_attributions
+    (affiliate_user_id, referred_user_id, referral_code, source, status, attributed_at, effective_from)
+    VALUES (?, ?, ?, 'admin', 'pending', ?, ?)`).run(affiliate, referred, profile.referral_code, assignedAt, effectiveFrom);
+
+  addBet(s.db, referred, { stake: 5000, payout: 0, at: '2026-10-31T23:59:00.000Z' });
+  addBet(s.db, referred, { stake: 1200, payout: 0, at: '2026-11-01T00:01:00.000Z' });
+  addCasinoMove(s.db, referred, 'manual-before-date', -3000, null, '2026-10-31T23:59:00.000Z');
+  addCasinoMove(s.db, referred, 'manual-after-date', -700, null, '2026-11-01T00:02:00.000Z');
+
+  const report = previewRevshare(s.db, { period: '2026-11', mode: 'test' });
+  const row = report.rows.find((x) => x.affiliateUserId === affiliate);
+  assert.equal(row.sportsStake, 1200);
+  assert.equal(row.sportsPayout, 0);
+  assert.equal(row.casinoStake, 700);
+  assert.equal(row.casinoPayout, 0);
+  assert.equal(row.referredPlayers, 1);
+});
