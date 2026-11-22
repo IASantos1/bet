@@ -64,7 +64,7 @@ import {
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
 import { createBetbyEngine } from './betby-engine.js';
-import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, revshareHistory, saveRevshareCost } from './affiliate-revshare.js';
+import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, revshareHistory, saveRevshareCost, reconcileRevshare } from './affiliate-revshare.js';
 import { gradePlayerMarket } from './playermarkets.js';
 import { decodeJwt, maskTokens } from './jwtpeek.js';
 
@@ -4019,7 +4019,7 @@ export function createApp(db, {
 
   const reasonOf = (req) => str(req.body?.reason, 300);
   admin.get('/affiliates', (req, res) => {
-    res.json({ config: affiliateConfig(db), affiliates: adminAffiliates(db, { q: str(req.query.q, 80) }), reconciliation: reconcile(db) });
+    res.json({ config: affiliateConfig(db), affiliates: adminAffiliates(db, { q: str(req.query.q, 80) }), reconciliation: reconcile(db), revshareReconciliation: reconcileRevshare(db) });
   });
   admin.put('/affiliates/config', (req, res) => {
     res.json({ config: saveAffiliateConfig(db, req.body?.config || {}, { actor: req.user.id, reason: reasonOf(req) }) });
