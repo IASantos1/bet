@@ -377,7 +377,7 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r }, { items: 
     <label class="field">Modo do Revenue Share<select name="revshareMode">
       <option value="off"${(c.revshareMode || 'off') === 'off' ? ' selected' : ''}>Desativado</option>
       <option value="test"${c.revshareMode === 'test' ? ' selected' : ''}>Modo de teste (sem pagamentos)</option>
-      <option value="live"${c.revshareMode === 'live' ? ' selected' : ''}>Produção (comissões reais, aprovação manual)</option>
+      <option value="live" disabled${c.revshareMode === 'live' ? ' selected' : ''}>Produção (bloqueada até validação)</option>
     </select></label>
     <p class="muted">⚖️ A ativação em produção exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino.</p>
     <p class="muted">O modelo novo não exige depósito próprio mínimo nem saldo mínimo do afiliado. A taxa é fixa em 20%.</p>
