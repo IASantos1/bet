@@ -82,7 +82,7 @@ const newCode = () => Array.from({ length: 3 }, () => LETTERS[randomInt(LETTERS.
 export const normalizeCode = (c) => String(c || '').trim().toUpperCase();
 
 /** The player's affiliate profile, created (with a fresh unique code) on first use. */
-export function ensureProfile(db, userId) {
+export export function ensureProfile(db, userId) {
   const found = db.prepare('SELECT * FROM affiliate_profiles WHERE user_id = ?').get(userId);
   if (found) return found;
   for (let i = 0; i < 20; i++) {
