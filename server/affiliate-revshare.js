@@ -8,12 +8,6 @@ const periodBounds = (period) => {
   const [y, m] = period.split('-').map(Number);
   return { start: new Date(Date.UTC(y, m - 1, 1)).toISOString(), end: new Date(Date.UTC(y, m, 1)).toISOString() };
 };
-const previousPeriod = (period) => {
-  const [y, m] = period.split('-').map(Number);
-  const d = new Date(Date.UTC(y, m - 2, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-};
-
 function priorCarry(db, affiliateId, period, mode) {
   const row = db.prepare(`SELECT closing_carry_cents FROM affiliate_revshare_periods
     WHERE affiliate_user_id = ? AND period < ? AND mode = ? AND status IN ('simulated','approved','paid')
@@ -54,7 +48,6 @@ function affiliatePeriod(db, affiliate, period, mode) {
 export function previewRevshare(db, { period, mode = 'test' } = {}) {
   periodBounds(period);
   if (!['test', 'live'].includes(mode)) throw new Error('Modo de apuramento inválido.');
-  const config = affiliateConfig(db);
   const affiliates = db.prepare(`SELECT p.user_id, p.referral_code, p.admin_status, u.name, u.email, u.banned_at
     FROM affiliate_profiles p JOIN users u ON u.id = p.user_id ORDER BY p.user_id`).all();
   const rows = affiliates.map((a) => {
