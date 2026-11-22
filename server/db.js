@@ -726,7 +726,6 @@ function migrate(db) {
     rebuild(db, 'transactions', `INSERT INTO transactions (id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
       SELECT id, user_id, type, amount_cents, balance_after_cents, description, ref, created_at FROM transactions_old`);
   }
-}
 
   // Monthly affiliate Revenue Share: immutable financial snapshots by affiliate / month / mode.
   db.exec(`
@@ -764,6 +763,8 @@ function migrate(db) {
     );
   `);
   
+}
+
 /** rebuild() copying every column the old table and the new definition have in common. */
 function rebuildKeeping(db, table) {
   const before = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
