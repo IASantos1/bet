@@ -64,7 +64,7 @@ import {
   payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
 import { createBetbyEngine } from './betby-engine.js';
-import { previewRevshare, simulateRevshare, revshareHistory, saveRevshareCost } from './affiliate-revshare.js';
+import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, revshareHistory, saveRevshareCost } from './affiliate-revshare.js';
 import { gradePlayerMarket } from './playermarkets.js';
 import { decodeJwt, maskTokens } from './jwtpeek.js';
 
@@ -4035,6 +4035,18 @@ export function createApp(db, {
       const period = str(req.body?.period, 7);
       res.json(simulateRevshare(db, { period, actor: req.user.id }));
     } catch (err) { next(new HttpError(400, err.message)); }
+  });
+  admin.post('/affiliates/revshare/close', (req, res, next) => {
+    try { res.json({ items: closeRevsharePeriod(db, { period: str(req.body?.period, 7), actor: req.user.id }) }); }
+    catch (err) { next(new HttpError(400, err.message)); }
+  });
+  admin.post('/affiliates/revshare/:id/approve', (req, res, next) => {
+    try { res.json({ period: approveRevsharePeriod(db, Number(req.params.id), { actor: req.user.id, reason: reasonOf(req) }) }); }
+    catch (err) { next(new HttpError(400, err.message)); }
+  });
+  admin.post('/affiliates/revshare/:id/pay', (req, res, next) => {
+    try { res.json({ period: payRevsharePeriod(db, Number(req.params.id), { actor: req.user.id }) }); }
+    catch (err) { next(new HttpError(400, err.message)); }
   });
   admin.get('/affiliates/revshare/history', (_req, res) => res.json({ items: revshareHistory(db) }));
   admin.post('/affiliates/revshare/cost', (req, res, next) => {
