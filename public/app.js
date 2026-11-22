@@ -85,6 +85,7 @@ const state = {
   eventsLoaded: false,
   casino: { enabled: false, games: [], providers: [], loaded: false },
   casinoFilter: { provider: '', category: '', q: '' },
+  casinoBlocks: 4, // how many lobby row-blocks are shown (CASINO_ROW_BLOCK); grows as the page scrolls
   casinoSession: null, casinoGame: null,
   fsExpanded: false,
   liveTv: false, liveSport: '',
@@ -1388,6 +1389,9 @@ const CASINO_PAGE = 48;
 // A provider, a tab or a search: the first page, then more load by themselves as the list is scrolled
 // (infinite scroll). With thousands of games, loading them all at once froze the page.
 const CASINO_ALL = 72;
+// The lobby (the home casino view) is drawn one block of rows at a time; more blocks render as the page
+// is scrolled, so the many provider rows never all hit the DOM at once.
+const CASINO_ROW_BLOCK = 4;
 
 /** A lobby card (BigBang): opens the game's page. */
 const isExclusive = (id) => !!state.casinoLobby?.exclusive?.includes(id);
@@ -1730,12 +1734,18 @@ function casinoPage() {
   // Destaques after the row they were set to follow (after the second row when that one is not shown).
   const spots = state.spotlights || [];
   const placed = new Set();
-  const lobby = order.map((r, i) => {
+  // Draw one block of rows at a time; the rest render as the page is scrolled (watchCasinoRowsMore).
+  const shown = order.slice(0, Math.max(CASINO_ROW_BLOCK, state.casinoBlocks || CASINO_ROW_BLOCK));
+  const lobbyRows = shown.map((r, i) => {
     const html = r.layout === 'top' ? row(r, i, r.games.map(topCard)) : r.key === 'recent' ? row(r, i, r.games.slice(0, ROW_MAX).map(recentCard)) : row(r, i);
     const here = spots.filter((x) => !placed.has(x.id) && (x.after === r.key || (i === 1 && !order.some((o) => o.key === x.after))));
     here.forEach((x) => placed.add(x.id));
     return html + here.map(spotlightCard).join('');
   }).join('');
+  const moreRows = order.length > shown.length;
+  const lobby = lobbyRows && moreRows
+    ? `${lobbyRows}<div class="load-more"><button class="outline-btn" data-action="casino-rows-more" id="casinoRowsMore">Mostrar mais jogos</button></div>`
+    : lobbyRows;
   state.casinoRows = order;
   // "Ver todos" of a row without a tab of its own (Sabemos que vais gostar, Porque jogaste…, Top 10…):
   // all its games in a grid.
@@ -1793,7 +1803,7 @@ async function loadCasino({ reset = false } = {}) {
   const offset = reset ? 0 : c.games.length;
   const mine = ++casinoReq;
   c.loading = true;
-  if (reset) c.games = [];
+  if (reset) { c.games = []; state.casinoBlocks = CASINO_ROW_BLOCK; }
   if (currentRoute().page === 'casino' && currentRoute().sub !== 'jogar') render({ keepScroll: true });
   try {
     const all = f.provider || f.category || f.q;
@@ -1824,6 +1834,24 @@ function watchCasinoMore() {
     if (entries.some((x) => x.isIntersecting) && !state.casino.loading) loadCasino();
   }, { rootMargin: '600px 0px' });
   moreObserver.observe(el);
+}
+
+// The lobby's rows render in blocks; the next block comes into the DOM as the page nears the sentinel.
+let rowsObserver = null;
+function showMoreRows() {
+  if (state.casinoRows && state.casinoBlocks < state.casinoRows.length) {
+    state.casinoBlocks += CASINO_ROW_BLOCK;
+    render({ keepScroll: true });
+  }
+}
+function watchCasinoRowsMore() {
+  const el = $('#casinoRowsMore');
+  rowsObserver?.disconnect();
+  if (!el || !('IntersectionObserver' in window)) return;
+  rowsObserver = new IntersectionObserver((entries) => {
+    if (entries.some((x) => x.isIntersecting)) showMoreRows();
+  }, { rootMargin: '800px 0px' });
+  rowsObserver.observe(el);
 }
 
 /** Opens a game inside Bet62. The balance follows the player into the casino automatically. */
@@ -3855,6 +3883,7 @@ function render({ keepScroll = false } = {}) {
   applyBannerStyles();
   applyScorerKits();
   watchCasinoMore();
+  watchCasinoRowsMore();
   watchSportsMore();
   $$('[data-route]').forEach((a) => a.classList.toggle('active', a.dataset.route === page));
   if (!keepScroll) window.scrollTo({ top: 0 });
@@ -4523,6 +4552,8 @@ document.addEventListener('click', async (e) => {
     if (track) track.scrollBy({ left: (action === 'car-next' ? 1 : -1) * Math.max(260, track.clientWidth * 0.85), behavior: 'smooth' });
   } else if (action === 'casino-more') {
     loadCasino();
+  } else if (action === 'casino-rows-more') {
+    showMoreRows();
   } else if (action === 'logout') {
     await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
     state.user = null;
