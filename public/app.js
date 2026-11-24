@@ -6418,6 +6418,7 @@ function footballWidget(e) {
       <div class="trk-trails" id="trkTrails"></div>
       <div class="trk-3d" id="trk3dHost"></div>
       <div class="trk-ball" id="trkBall">${BALL_SVG}</div>
+      <div class="trk-player" id="trkPlayer" hidden></div>
       <div class="trk-badge" id="trkBadge"><i class="trk-badge-bar"></i><div><b id="trkBadgeTeam"></b><small id="trkBadgeText"></small></div></div>
       <div class="trk-card" id="trkCard" aria-hidden="true"></div>
       <p class="trk-3d-off">Campo 3D indisponível neste aparelho.</p>
@@ -6667,6 +6668,7 @@ function ensure3D() {
     m.pitch3dLoading = false;
     if (m.widget !== w || m.pitch3d) return;
     const badge = $('#trkBadge', w);
+    const plabel = $('#trkPlayer', w);
     const quality = qualityTier({
       coarse: !!window.matchMedia?.('(pointer: coarse)').matches, width: window.innerWidth,
       cores: navigator.hardwareConcurrency || 4, saveData: !!navigator.connection?.saveData, memory: navigator.deviceMemory || 4,
@@ -6677,6 +6679,10 @@ function ensure3D() {
       onFrame: ({ x, y }) => {
         badge.style.left = `${Math.min(80, Math.max(20, x))}%`;
         badge.style.top = `${Math.min(96, Math.max(26, y))}%`;
+        if (plabel && !plabel.hidden) {
+          plabel.style.left = `${Math.min(80, Math.max(20, x))}%`;
+          plabel.style.top = `${Math.min(96, Math.max(26, y))}%`;
+        }
       },
     });
     if (!pitch) { pitch3dFailed = true; w.classList.add('no3d'); return; }
@@ -6757,11 +6763,13 @@ function updateTracker({ instant = false } = {}) {
   const ball = $('#trkBall', w);
   const arrow = $('#trkArrow', w);
   const badge = $('#trkBadge', w);
+  const plabel = $('#trkPlayer', w);
   const p3 = m.pitch3d;
   if (!b || b.x === undefined || b.x === null) {
     ball.classList.add('idle');
     arrow.style.clipPath = 'polygon(0 0, 0 0, 0 0)';
     badge.classList.remove('on');
+    plabel.hidden = true;
     p3?.setBall({ hidden: true });
     return;
   }
@@ -6781,6 +6789,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeText', w).textContent = 'Pontapé de saída';
     badge.style.left = '50%';
     badge.style.top = '92%';
+    plabel.hidden = true;
     p3?.setBall({ x: 50, y: 50, side: ko || 'home', resting: true, instant: true });
     m.prevBall = null;
     return;
@@ -6798,6 +6807,7 @@ function updateTracker({ instant = false } = {}) {
     $('#trkBadgeText', w).textContent = 'Intervalo';
     badge.style.left = '50%';
     badge.style.top = '92%';
+    plabel.hidden = true;
     p3?.setBall({ x: 50, y: 50, resting: true, instant: true });
     m.prevBall = null;
     return;
@@ -6806,6 +6816,15 @@ function updateTracker({ instant = false } = {}) {
   ball.classList.toggle('instant', instant);
   ball.style.left = `${b.x}%`;
   ball.style.top = `${b.y}%`;
+
+  // The name of the player on the ball (tracker's `ball_player`), hugging it. The 3D pitch's own
+  // frame callback (ensure3D) then keeps it on the 3D ball; here it already sits by the 2D ball.
+  if (b.player) {
+    plabel.textContent = b.player;
+    plabel.hidden = false;
+    plabel.style.left = `${b.x}%`;
+    plabel.style.top = `${b.y}%`;
+  } else plabel.hidden = true;
 
   // Momentum arrow: from the attacking side's own goal line to the ball, stronger when dangerous.
   const side = b.side === 'away' ? 'away' : 'home';

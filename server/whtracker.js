@@ -228,6 +228,8 @@ export function normalizeWidgetData(body) {
     }
   }
   const xy = Array.isArray(d.xy) ? d.xy : d.xy && typeof d.xy === 'object' ? [d.xy.x, d.xy.y] : null;
+  // The name of the player on the ball ("M Bilong"), carried by the tracker frames.
+  const ballPlayer = first(d.ball_player, d.ballPlayer, null);
   let ball = null;
   // xy is the real position, corners included: [1, 1] is the bottom-right corner flag (home corner).
   if (xy && num(xy[0]) !== null && num(xy[1]) !== null) {
@@ -236,6 +238,7 @@ export function normalizeWidgetData(body) {
   }
   let situation = normalizeSituation(d.situation);
   if (!ball) ball = estimatedBall(situation);
+  if (ball && ballPlayer) ball.player = ballPlayer;
   // Half time: no play, the ball waits on the centre spot.
   if (HALF_TIME.test(`${d.status ?? ''} ${d.period ?? ''}`)) {
     situation = { side: null, situation: 'halftime', text: 'Intervalo' };
@@ -498,10 +501,12 @@ export function createWinHouseTracker(db, {
       const side = s.situation?.side || 'home';
       // The page mirrors the away team's coordinates; send them pre-mirrored so the ball stays put.
       const spot = s.ball ? (side === 'away' ? { x: 100 - s.ball.x, y: 100 - s.ball.y } : s.ball) : { x: null, y: null };
-      const key = `${spot.x}|${spot.y}|${s.situation?.situation}|${side}`;
+      const player = s.ball?.player || null;
+      const key = `${spot.x}|${spot.y}|${s.situation?.situation}|${side}|${player || ''}`;
       if (key !== w.lastBall) {
         w.lastBall = key;
-        const d = { ...spot, side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
+        // The player on the ball ("M Bilong"), only when the tracker names one.
+        const d = { ...spot, ...(player ? { player } : {}), side, situation: s.situation?.situation || null, commentary: s.situation?.text || PERIOD_LABEL(s.period, s.status) || '' };
         w.livedata = d;
         publish(eventId, 'livedata', d);
         track(w, s, spot, side);

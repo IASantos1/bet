@@ -116,10 +116,15 @@ test('the tracker WebSocket moves the ball every frame; widget-data keeps the re
   assert.equal(sockets.length, 1);
   assert.equal(sockets[0].url, 'wss://iframe.example/ws-widget?api_key=AK&event_id=E1');
   got.length = 0;
-  sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.7, 0.24], situation: 'Home Dangerous Attack' });
+  sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.7, 0.24], situation: 'Home Dangerous Attack', ball_player: 'M Bilong' });
   sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.75, 0.05] });
   const balls = got.filter((m) => m.type === 'livedata').map((m) => [m.data.x, m.data.y, m.data.situation]);
   assert.deepEqual(balls, [[70, 24, 'dangerous_attack'], [75, 5, 'dangerous_attack']]);
+  // The player on the ball (ball_player) rides the fix, and a new name on the same spot still streams it.
+  assert.equal(got.filter((m) => m.type === 'livedata')[0].data.player, 'M Bilong');
+  got.length = 0;
+  sockets[0].frame({ type: 'tracker', event_id: 'E1', xy: [0.75, 0.05], ball_player: 'R Silva' });
+  assert.deepEqual(got.filter((m) => m.type === 'livedata').map((m) => m.data.player), ['R Silva']);
   // Never back in time: a newer frame (ts 200, 62'), then an older state (ts 100, 61') is dropped,
   // and a frame with an older timer in the same period keeps the clock where it was.
   got.length = 0;
@@ -164,6 +169,7 @@ test('without xy the situation places the ball; real timeline kinds get Portugue
   assert.deepEqual(normalizeWidgetData({ situation: 'Home Ball Safe' }).ball, { x: 30, y: 50, estimated: true });
   assert.deepEqual(normalizeWidgetData({ situation: 'Away Dangerous Attack' }).ball, { x: 17, y: 50, estimated: true });
   assert.deepEqual(normalizeWidgetData({ situation: 'Home Corner', xy: [0.97, 0.03] }).ball, { x: 97, y: 3 }); // real xy wins
+  assert.deepEqual(normalizeWidgetData({ xy: [0.3, 0.6], ball_player: 'M Bilong' }).ball, { x: 30, y: 60, player: 'M Bilong' }); // the name on the ball
   assert.equal(estimatedBall({ side: null, situation: 'attack' }), null);
   const t = normalizeWidgetData({ timeline: [
     { type: 'shot_on_target', min: 10, team: 'home' }, { type: 'shot_off_target', min: 12, team: 'away' },
