@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e2329">
+  <meta name="description" content="Protótipo visual isolado do BET62 Casino 2.0.">
+  <title>BET62 Casino 2.0 — Protótipo</title>
+<style>
+:root{
+  color-scheme:dark;
+  --brand:#67788c; --on-brand:#ffffff; --logo:#67788c; --register:#42946b;
+  --page:#1a1f24; --bg:#1a1f24; --card:#272c32; --panel:#282d34; --panel2:#20262c;
+  --dim:#20262c; --line:#3e444b; --border:#3e444b; --row-hover:#48515b;
+  --text:#e8eaed; --muted:#868e98; --text-2:#b0b7bf; --text-3:#868e98; --text-4:#676f79;
+  --green:#42946b; --green2:#51c580; --gold:#ff6890;
+  --nav:#1e2329; --nav-sep:#2a3037; --live:#e95a74; --win:#38e0a0;
+  --radius:6px;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 75% 0%,#14271b 0,transparent 36rem),var(--bg);color:var(--text);padding-bottom:0}.prototype-note{display:flex;justify-content:center;gap:10px;padding:7px 12px;background:#17241b;color:#c8d7cc;font-size:11px;letter-spacing:.04em}.prototype-note strong{color:var(--green)}.site-header{height:76px;padding:0 clamp(18px,5vw,76px);display:flex;align-items:center;gap:48px;border-bottom:1px solid #ffffff10;background:#090d0bdc;backdrop-filter:blur(16px);position:sticky;top:0;z-index:10}.brand{font:700 27px 'Space Grotesk',sans-serif;letter-spacing:-2px;color:white;text-decoration:none}.brand b{color:var(--green)}.desktop-nav{height:100%;display:flex;align-items:center;gap:30px;flex:1}.desktop-nav a{height:100%;display:flex;align-items:center;text-decoration:none;color:#a9b5ac;font-size:13px;position:relative}.desktop-nav a.active,.desktop-nav a:hover{color:white}.desktop-nav a.active:after{content:"";position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--green)}.header-actions{display:flex;gap:10px;align-items:center}.header-actions button{border:1px solid var(--line);border-radius:9px;padding:11px 16px;background:#111914;color:white;font-weight:700}.header-actions .search-button{border:0;background:transparent;color:#b9c6bd;font-size:18px}.search-button span{font-size:12px}.header-actions .deposit-button{background:var(--green);color:#07110a;border-color:var(--green)}.page-shell{max-width:1440px;margin:auto;padding:28px clamp(18px,5vw,76px) 70px}.mobile-shortcuts,.mobile-bottom{display:none}.hero{min-height:390px;border:1px solid #38513e;border-radius:20px;overflow:hidden;position:relative;display:flex;align-items:center;padding:54px 6%;background:radial-gradient(ellipse at 76% 52%,#2d784b 0,#173c29 25%,#102318 52%,#101712 100%);box-shadow:0 22px 80px #0006}.hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0d1711 0%,#0d1711df 36%,transparent 77%);z-index:1}.hero-copy{position:relative;z-index:2;max-width:490px}.eyebrow{font-size:10px;letter-spacing:.18em;color:var(--green);font-weight:800}.hero h1{font:700 clamp(38px,5vw,64px)/.98 'Space Grotesk',sans-serif;letter-spacing:-.055em;margin:18px 0}.hero h1 em{font-style:normal;color:var(--green2)}.hero p{max-width:380px;color:#c2d0c6;line-height:1.6;font-size:14px}.hero-cta{display:inline-flex;gap:24px;align-items:center;margin-top:18px;padding:14px 18px;border-radius:9px;background:var(--green);color:#07110a;text-decoration:none;font-size:13px;font-weight:800}.hero-art{position:absolute;inset:0 0 0 40%;overflow:hidden}.hero-ring{position:absolute;width:370px;height:370px;border:1px solid #a4ffc555;border-radius:50%;right:13%;top:8%;box-shadow:0 0 0 28px #a4ffc50b,0 0 0 68px #a4ffc508}.orb{position:absolute;border-radius:50%;filter:blur(1px)}.orb-one{width:210px;height:210px;right:25%;top:22%;background:radial-gradient(circle at 35% 28%,#d9ffe5,#47d77e 32%,#116238 70%);box-shadow:0 18px 80px #2bff7d55}.orb-two{width:90px;height:90px;right:12%;top:16%;background:radial-gradient(circle at 30% 25%,#fff2c6,#d2a64c 45%,#6b4819)}.coin{position:absolute;z-index:2;border-radius:50%;display:grid;place-items:center;color:#122217;font-weight:900;background:linear-gradient(135deg,#fff1bd,#c99a3b 55%,#fff0b4);box-shadow:0 10px 35px #0006}.coin-one{width:76px;height:76px;right:17%;bottom:18%;font:700 23px 'Space Grotesk'}.coin-two{width:48px;height:48px;right:55%;top:17%;font-size:25px}.hero-stamp{position:absolute;right:37%;top:36%;transform:rotate(-12deg);font:700 29px/.8 'Space Grotesk';letter-spacing:-3px;color:#effff3;text-shadow:0 4px 18px #000}.hero-stamp b{color:var(--green);font-size:44px}.hero-pagination{position:absolute;z-index:2;bottom:24px;left:6%;display:flex;align-items:center;gap:7px}.hero-pagination i{width:18px;height:3px;border-radius:5px;background:#ffffff55}.hero-pagination i.current{width:34px;background:var(--green)}.hero-pagination span{margin-left:10px;color:#b8c7bc;font-size:10px}.quick-stats{display:grid;grid-template-columns:repeat(3,1fr);margin:20px 0 52px;border:1px solid var(--line);border-radius:13px;background:#101712}.quick-stats>div{display:flex;align-items:center;gap:13px;padding:17px 22px}.quick-stats>div+div{border-left:1px solid var(--line)}.stat-icon{width:36px;height:36px;border-radius:10px;background:#1b3323;color:var(--green);display:grid;place-items:center}.quick-stats p{margin:0;display:grid;gap:4px}.quick-stats strong{font-size:12px}.quick-stats small{font-size:10px;color:var(--muted)}.content-section{margin:48px 0}.section-heading{display:flex;align-items:end;justify-content:space-between;margin-bottom:19px}.section-heading h2,.promo-strip h2{font:600 27px 'Space Grotesk',sans-serif;letter-spacing:-.04em;margin:7px 0 0}.section-heading>a{font-size:12px;color:#c0d0c4;text-decoration:none}.section-heading>a b{color:var(--green);padding-left:8px}.game-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:15px}.game-card{min-width:0}.game-art{height:190px;border:1px solid #ffffff18;border-radius:13px;position:relative;display:grid;place-items:center;overflow:hidden;box-shadow:inset 0 -50px 80px #0005;transition:transform .2s,border-color .2s}.game-card:hover .game-art{transform:translateY(-4px);border-color:#42e58b88}.game-symbol{font:700 78px 'Space Grotesk';color:#fff;text-shadow:0 5px 30px #0009}.game-tag{position:absolute;top:11px;left:11px;background:#0b1710c9;color:var(--green2);padding:5px 7px;border-radius:5px;font-size:8px;font-weight:800;letter-spacing:.1em}.art-gold .game-art{background:radial-gradient(circle at 50% 40%,#c58d34,#51351c 48%,#17120c)}.art-violet .game-art{background:radial-gradient(circle at 50% 40%,#a77bea,#43235e 52%,#171020)}.art-blue .game-art{background:radial-gradient(circle at 50% 40%,#3dabc1,#17425b 52%,#101a26)}.art-red .game-art{background:radial-gradient(circle at 50% 40%,#d45a48,#652322 52%,#1b1114)}.art-green .game-art{background:radial-gradient(circle at 50% 40%,#4dce84,#155b3b 52%,#101d16)}.game-card>strong{display:block;font-size:12px;margin:11px 2px 4px}.game-card>small{font-size:10px;color:var(--muted);margin-left:2px}.promo-strip{margin:56px 0;padding:32px 5%;border:1px solid #31563b;border-radius:16px;display:flex;align-items:center;justify-content:space-between;background:radial-gradient(ellipse at 85% 50%,#1b5934,#12271a 50%,#101712)}.promo-strip h2{font-size:clamp(22px,3vw,34px);max-width:580px}.promo-strip p{color:#b6c7ba;font-size:12px}.promo-mark{font:700 76px 'Space Grotesk';letter-spacing:-8px;color:#e8fff0}.promo-mark span{color:var(--green)}.category-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}.category-grid a{padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--panel);display:grid;gap:8px;text-decoration:none;color:white}.category-grid a>span{font-size:26px;color:var(--green)}.category-grid b{font-size:13px}.category-grid small{font-size:10px;color:var(--muted)}.provider-list{display:flex;flex-wrap:wrap;gap:10px}.provider-list span{padding:14px 18px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:#bdc9c0;font-size:10px;font-weight:800;letter-spacing:.06em}.catalog-toolbar{display:flex;align-items:center;justify-content:space-between;gap:15px}.catalog-search{display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:9px;background:var(--panel);width:min(420px,100%);color:var(--green)}.catalog-search input{width:100%;background:none;border:0;outline:0;color:white}.catalog-toolbar>span,.prototype-disclaimer{font-size:10px;color:var(--muted)}footer{border-top:1px solid var(--line);padding:25px clamp(18px,5vw,76px);display:flex;align-items:center;gap:24px;color:var(--muted);font-size:11px}footer>span{flex:1}footer>a:last-child{color:var(--green);text-decoration:none}
+@media(max-width:900px){.site-header{height:65px;padding:0 22px;gap:22px}.desktop-nav{gap:16px}.desktop-nav a{font-size:11px}.header-actions .search-button span,.header-actions .login-button{display:none}.page-shell{padding-top:18px}.hero{min-height:340px}.hero-art{left:35%;opacity:.85}.game-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.game-card:nth-child(n+4){display:none}.game-art{height:160px}}
+@media(max-width:620px){body{padding-bottom:65px}.prototype-note{font-size:9px}.site-header{height:58px;padding:0 16px;justify-content:space-between}.brand{font-size:25px}.desktop-nav{display:none}.header-actions{gap:7px}.header-actions button{padding:9px 11px;font-size:10px}.header-actions .search-button{font-size:17px;padding:6px}.header-actions .deposit-button{border-radius:8px}.page-shell{padding:0 14px 35px}.mobile-shortcuts{display:flex;justify-content:space-between;gap:4px;padding:12px 0 14px}.mobile-shortcuts a{display:grid;justify-items:center;gap:4px;min-width:48px;color:#aab8ae;text-decoration:none;font-size:16px}.mobile-shortcuts a span{font-size:9px}.mobile-shortcuts a.selected{color:var(--green)}.hero{min-height:390px;padding:30px 22px;align-items:flex-start;border-radius:14px}.hero:before{background:linear-gradient(180deg,#0c1711 0%,#0c1711e8 44%,#0c171177 100%)}.hero-copy{max-width:100%}.hero h1{font-size:43px;margin:14px 0}.hero p{max-width:270px;font-size:12px}.hero-art{inset:35% 0 0 0;opacity:.75}.hero-ring{width:250px;height:250px;right:7%;top:3%}.orb-one{width:140px;height:140px;right:24%;top:20%}.orb-two{width:65px;height:65px;right:8%;top:14%}.coin-one{width:56px;height:56px;right:13%;bottom:8%;font-size:17px}.coin-two{width:36px;height:36px;right:59%;top:18%;font-size:18px}.hero-stamp{right:43%;top:35%;font-size:22px}.hero-stamp b{font-size:34px}.hero-pagination{bottom:17px;left:22px}.quick-stats{margin:13px 0 36px;grid-template-columns:1fr;gap:0}.quick-stats>div{padding:11px 14px}.quick-stats>div+div{border-left:0;border-top:1px solid var(--line)}.stat-icon{width:31px;height:31px}.quick-stats strong{font-size:11px}.quick-stats small{font-size:9px}.content-section{margin:36px 0}.section-heading{margin-bottom:14px}.section-heading h2{font-size:22px}.section-heading>a{font-size:10px}.game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.game-card:nth-child(n+4){display:block}.game-card:nth-child(n+5){display:none}.game-art{height:155px}.game-symbol{font-size:65px}.promo-strip{margin:36px 0;padding:23px 19px;min-height:170px}.promo-strip h2{font-size:23px;max-width:270px}.promo-strip p{max-width:260px;font-size:10px;line-height:1.5}.promo-mark{font-size:49px;letter-spacing:-6px}.category-grid{grid-template-columns:repeat(2,1fr);gap:9px}.category-grid a{padding:15px}.provider-list{gap:7px}.provider-list span{font-size:8px;padding:11px}.catalog-toolbar{align-items:flex-start;flex-direction:column}.catalog-search{width:100%}.mobile-bottom{position:fixed;z-index:20;bottom:0;left:0;right:0;height:64px;padding:6px 12px max(6px,env(safe-area-inset-bottom));display:flex;justify-content:space-around;background:#0c120ef2;border-top:1px solid var(--line);backdrop-filter:blur(16px)}.mobile-bottom a{min-width:55px;display:grid;justify-items:center;align-content:center;gap:2px;text-decoration:none;color:#89988e;font-size:18px}.mobile-bottom a span{font-size:9px}.mobile-bottom a.active{color:var(--green)}footer{padding:20px 16px;gap:12px;flex-wrap:wrap}footer>span{order:3;flex-basis:100%}}
+
+
+/* BET62 brand alignment — tokens and component treatment shared with public/styles.css */
+html{background:var(--page);scrollbar-color:#48515b #1c2126}
+body{background:var(--page);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.site-header{background:#1e2329f2;border-bottom:1px solid #2a3037;backdrop-filter:blur(16px)}
+.brand{font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-weight:900;letter-spacing:-.8px}
+.brand b{color:#67788c}
+.desktop-nav a{color:#8b939c;font-weight:700}
+.desktop-nav a.active,.desktop-nav a:hover{color:#fff}
+.desktop-nav a.active:after{background:#67788c}
+.header-actions button{border:1px solid #3e444b;border-radius:6px;background:#20262c;color:#e8eaed;font-family:inherit}
+.header-actions .deposit-button,.hero-cta{background:#42946b;color:#fff;border-color:#42946b;border-radius:6px}
+.header-actions .deposit-button:hover,.hero-cta:hover{background:#4fa87c;border-color:#4fa87c}
+.header-actions .login-button{background:#67788c;border-color:#67788c;color:#fff}
+.page-shell{color:var(--text)}
+.hero{border-color:#3e444b;border-radius:10px;background:radial-gradient(circle at 80% 20%,#48515b 0,#2b3440 28%,#20262c 70%);box-shadow:none}
+.hero:before{background:linear-gradient(90deg,#1a1f24 0%,#1a1f24df 36%,transparent 77%)}
+.hero h1,.section-heading h2,.promo-strip h2{font-family:Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:-.04em}
+.hero h1 em{color:#b0b7bf}
+.eyebrow{color:#ff6890}
+.hero p{color:#b0b7bf}
+.hero-ring{border-color:#67788c55;box-shadow:0 0 0 28px #67788c0b,0 0 0 68px #67788c08}
+.orb-one{background:radial-gradient(circle at 35% 28%,#dce3ea,#8294a8 32%,#3d4b5b 70%);box-shadow:0 18px 80px #67788c55}
+.orb-two{background:radial-gradient(circle at 30% 25%,#fff2c6,#d2a64c 45%,#6b4819)}
+.coin{color:#20262c}
+.hero-stamp b{color:#67788c}
+.hero-pagination i.current{background:#67788c}
+.quick-stats{border-color:#3e444b;border-radius:6px;background:#282d34}
+.stat-icon{border-radius:6px;background:#374555;color:#51c580}
+.quick-stats small,.game-card>small,.category-grid small,.catalog-toolbar>span,footer{color:#868e98}
+.section-heading h2,.promo-strip h2{color:#e8eaed}
+.section-heading>a{color:#b0b7bf}
+.section-heading>a b{color:#67788c}
+.game-art{border-radius:6px}
+.game-card:hover .game-art{border-color:#67788c}
+.game-tag{color:#b0b7bf;background:#20262ce8}
+.promo-strip{border-color:#3e444b;border-radius:10px;background:radial-gradient(ellipse at 85% 50%,#48515b,#282d34 50%,#20262c)}
+.promo-strip p{color:#b0b7bf}
+.promo-mark span{color:#67788c}
+.category-grid a,.provider-list span,.catalog-search{border-color:#3e444b;border-radius:6px;background:#282d34}
+.category-grid a>span{color:#51c580}
+.category-grid a{color:#e8eaed}
+.catalog-search{color:#b0b7bf}
+.catalog-search input{color:#e8eaed}
+.mobile-bottom{background:#1e2329f5;border-color:#2a3037}
+.mobile-bottom a{color:#8b939c}
+.mobile-bottom a.active,.mobile-shortcuts a.selected{color:#51c580}
+.mobile-shortcuts a{color:#b0b7bf}
+footer{border-color:#3e444b}
+footer>a:last-child{color:#67788c}
+@media(max-width:620px){.hero:before{background:linear-gradient(180deg,#1a1f24 0%,#1a1f24e8 44%,#1a1f2477 100%)}}
+
+</style>
+<script defer>
+// Standalone visual prototype only. No production APIs, user data, game launches or persistence.
+const search = document.querySelector('#game-search');
+const count = document.querySelector('#result-count');
+const cards = [...document.querySelectorAll('.game-card')];
+if (search && count) {
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLocaleLowerCase('pt-PT');
+    let visible = 0;
+    for (const card of cards) {
+      const match = card.textContent.toLocaleLowerCase('pt-PT').includes(q);
+      card.hidden = !match;
+      if (match) visible++;
+    }
+    count.textContent = `${visible} títulos demonstrativos`;
+  });
+}
+
+</script>
+  <meta name="robots" content="noindex,nofollow">
+</head>
+<body>
+  <div class="prototype-note"><strong>PROTÓTIPO</strong><span>Conteúdo demonstrativo · sem ligação ao casino real</span></div>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="BET62"><span>BET</span><b>62</b></a>
+    <nav class="desktop-nav" aria-label="Navegação principal">
+      <a class="active" href="#para-ti">Destaques</a><a href="#populares">Desporto</a><a href="#novos">Ao Vivo</a><a href="#torneios">Casino</a><a href="#provedores">Promoções</a>
+    </nav>
+    <div class="header-actions"><button class="search-button" type="button" aria-label="Pesquisar">⌕ <span>Pesquisar</span></button><button class="login-button" type="button">Entrar</button><button class="deposit-button" type="button">Registar</button></div>
+  </header>
+  <main class="page-shell">
+    <div class="mobile-shortcuts" aria-label="Atalhos"><a class="selected" href="#para-ti">✦<span>Destaques</span></a><a href="#populares">⚽<span>Desporto</span></a><a href="#novos">●<span>Ao Vivo</span></a><a href="#torneios">♛<span>Casino</span></a><a href="#provedores">🎁<span>Promoções</span></a></div>
+    <section class="hero" id="para-ti" aria-label="Campanha em destaque">
+      <div class="hero-copy"><span class="eyebrow">BET62 · EXPERIÊNCIA CASINO</span><h1>O próximo jogo<br><em>começa aqui.</em></h1><p>Descobre novidades, clássicos e experiências selecionadas num só lugar.</p><a class="hero-cta" href="#populares">Explorar jogos <span>↗</span></a></div>
+      <div class="hero-art" aria-hidden="true"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="coin coin-one">62</div><div class="coin coin-two">✦</div><div class="hero-ring"></div><div class="hero-stamp">BET<br><b>62</b></div></div>
+      <div class="hero-pagination"><i class="current"></i><i></i><i></i><span>01 / 03</span></div>
+    </section>
+    <section class="quick-stats" aria-label="Informações"><div><span class="stat-icon">✦</span><p><strong>Seleção BET62</strong><small>Conteúdo em destaque</small></p></div><div><span class="stat-icon">◷</span><p><strong>Novidades</strong><small>Descobre novos títulos</small></p></div><div><span class="stat-icon">▤</span><p><strong>Catálogo</strong><small>Explora por categoria</small></p></div></section>
+    <section class="content-section" id="populares"><div class="section-heading"><div><span class="eyebrow">A ESCOLHA DA CASA</span><h2>Jogos em destaque</h2></div><a href="#catalogo">Ver catálogo <b>→</b></a></div><div class="game-grid featured-grid">
+      <article class="game-card art-gold"><div class="game-art"><span class="game-symbol">♛</span><span class="game-tag">DESTAQUE</span></div><strong>Golden Fortune</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-violet"><div class="game-art"><span class="game-symbol">✧</span><span class="game-tag">POPULAR</span></div><strong>Cosmic Reels</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-blue"><div class="game-art"><span class="game-symbol">◈</span></div><strong>Ocean Treasures</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-red"><div class="game-art"><span class="game-symbol">♜</span></div><strong>Royal Nights</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-green"><div class="game-art"><span class="game-symbol">❖</span></div><strong>Emerald Quest</strong><small>Estúdio demonstrativo</small></article>
+    </div></section>
+    <section class="promo-strip" id="novos"><div><span class="eyebrow">ATUALIZAÇÃO DO CATÁLOGO</span><h2>Há sempre algo novo para descobrir.</h2><p>Uma área editorial para apresentar novidades e informações verificadas.</p></div><span class="promo-mark">B<span>62</span></span></section>
+    <section class="content-section" id="torneios"><div class="section-heading"><div><span class="eyebrow">EXPLORA POR EXPERIÊNCIA</span><h2>Categorias</h2></div></div><div class="category-grid"><a href="#catalogo"><span>♧</span><b>Slots</b><small>Catálogo de slots</small></a><a href="#catalogo"><span>◉</span><b>Jogos ao vivo</b><small>Mesas e experiências</small></a><a href="#catalogo"><span>↗</span><b>Crash</b><small>Jogos de ritmo rápido</small></a><a href="#catalogo"><span>♛</span><b>Jackpots</b><small>Jogos com jackpot</small></a></div></section>
+    <section class="content-section" id="provedores"><div class="section-heading"><div><span class="eyebrow">O TEU CATÁLOGO</span><h2>Provedores</h2></div><a href="#catalogo">Ver todos <b>→</b></a></div><div class="provider-list"><span>PRAGMATIC PLAY</span><span>PLAY'N GO</span><span>EVOLUTION</span><span>HACKSAW</span><span>NETENT</span></div></section>
+    <section class="content-section" id="catalogo"><div class="section-heading"><div><span class="eyebrow">DESCOBRE</span><h2>Todo o catálogo</h2></div></div><div class="catalog-toolbar"><label class="catalog-search">⌕ <input id="game-search" type="search" placeholder="Pesquisar no protótipo…" aria-label="Pesquisar jogos"></label><span id="result-count">5 títulos demonstrativos</span></div><p class="prototype-disclaimer">Os nomes e imagens estilizadas desta página são fictícios e servem apenas para validar a estrutura visual. Não representam jogos disponíveis, prémios ou resultados reais.</p></section>
+  </main>
+  <footer><a class="brand" href="#"><span>BET</span><b>62</b></a><span>Protótipo interno de experiência e navegação.</span><a href="#para-ti">Voltar ao topo ↑</a></footer>
+  <nav class="mobile-bottom" aria-label="Menu inferior"><a class="active" href="#para-ti">⌂<span>Destaques</span></a><a href="#populares">⚽<span>Desporto</span></a><a href="#novos">●<span>Ao Vivo</span></a><a href="#torneios">♛<span>Casino</span></a><a href="#provedores">☻<span>Perfil</span></a></nav>
+</body>
+</html>
