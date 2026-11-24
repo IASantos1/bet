@@ -492,10 +492,12 @@ export function createWinHouseClient({
 
 export const SOURCE = 'winhouse';
 
-/** WinHouse sport_id → our sport (only the sports Bet62 shows and can settle). */
+/** WinHouse sport_id → our sport (every sport Bet62 shows; the videogame one is left out). */
 export const SPORTS = {
   1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
   3: 'basebol', 10: 'boxe', 12: 'raguebi', 16: 'futamericano', 21: 'criquete', 22: 'dardos', 117: 'mma',
+  9: 'golfe', 13: 'aussierules', 17: 'ciclismo', 19: 'snooker', 24: 'hoqueicampo', 26: 'polo', 37: 'squash', 39: 'lacrosse',
+  40: 'formula1', 190: 'motogp', 306: 'bowling', 312: 'rugbyunion',
 };
 /**
  * Sports whose markets WinHouse numbers differently from one game to the next: the match winner is
@@ -505,7 +507,8 @@ export const SPORTS = {
  * a 1X2 (fights), its home and away prices are taken as the winner (a draw voids the bet) and the
  * draw is left out.
  */
-export const NAMED_WINNER_SPORTS = new Set(['basebol', 'boxe', 'raguebi', 'futamericano', 'criquete', 'dardos', 'mma']);
+export const NAMED_WINNER_SPORTS = new Set(['basebol', 'boxe', 'raguebi', 'futamericano', 'criquete', 'dardos', 'mma',
+  'golfe', 'aussierules', 'ciclismo', 'snooker', 'hoqueicampo', 'polo', 'squash', 'lacrosse', 'formula1', 'motogp', 'bowling', 'rugbyunion']);
 const PERIOD_IN_NAME = /\b(half|quarter|period|set|inning|innings|round|over|leg|frame|map|1st|2nd|3rd|4th|5th|first|second|third|parte|tempo|quarto|per[ií]odo|entrada|entradas|assalto|pjes|çerek|cerek)\b|\d+\s*(st|nd|rd|th|º|ª)/i;
 // "(incl. overtime)", "(Prolongamento)", "(incl. entradas extra)": the whole match, said in brackets.
 const WHOLE_MATCH_NOTE = /\s*\((incl[^)]*|including[^)]*|prolongamento|overtime|ot|entradas? extras?|extra innings|super over)\)/gi;
@@ -625,6 +628,8 @@ export const LEAGUE_TREES = {
   futebol: FOOTBALL_TREE, basquetebol: BASKETBALL_TREE, tenis: TENNIS_TREE, hoquei: HOCKEY_TREE,
   voleibol: [], andebol: [], futsal: [], badminton: [], tenismesa: [], dardos: [],
   futamericano: [], basebol: [], raguebi: [], criquete: [], boxe: [], mma: [],
+  golfe: [], aussierules: [], ciclismo: [], snooker: [], hoqueicampo: [], polo: [], squash: [], lacrosse: [],
+  formula1: [], motogp: [], bowling: [], rugbyunion: [],
 };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -880,8 +885,8 @@ export function normalizeItem(ev, { tzOffsetMinutes = 0, block = null } = {}) {
     startTime: new Date(start).toISOString(), localStart: `${d[0]}T${t[1]}:${t[2]}`,
     homeScore: score ? Number(score[1]) : null, awayScore: score ? Number(score[2]) : null,
     minutes, clockRaw: ev.current_minute || null,
-    homeLogo: safeLogo(ev.home_logo, ev.home_team_logo, ev.home_image, ev.home_img, ev.team1_logo, ev.logo_home, ev.home?.logo),
-    awayLogo: safeLogo(ev.away_logo, ev.away_team_logo, ev.away_image, ev.away_img, ev.team2_logo, ev.logo_away, ev.away?.logo),
+    homeLogo: safeLogo(ev.home_icon, ev.home_logo, ev.home_team_logo, ev.home_image, ev.home_img, ev.team1_logo, ev.logo_home, ev.home?.logo),
+    awayLogo: safeLogo(ev.away_icon, ev.away_logo, ev.away_team_logo, ev.away_image, ev.away_img, ev.team2_logo, ev.logo_away, ev.away?.logo),
     // Every market of the list: the settleable ones mapped, the rest operator-settled ('x').
     ...bookOf(parseOdds(ev.odd), sport),
   };
@@ -934,7 +939,7 @@ const STALE_CLOSE_MS = 60 * 60_000;
 const LIVE_EARLY_MS = 0;
 /** A kick-off further ahead than this is a clock or time-zone slip, not an early listing: it goes live. */
 const LIVE_EARLY_LIMIT_MS = 30 * 60_000;
-const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal']);
+const CLOCK_SPORTS = new Set(['futebol', 'hoquei', 'andebol', 'futsal', 'raguebi', 'rugbyunion', 'aussierules', 'lacrosse', 'hoqueicampo', 'polo']);
 /** A clock this far on (or a goal) means the game is under way, whatever kick-off the live list gives. */
 const LIVE_STARTED_MIN = 20;
 /** Minutes since the kick-off shown on the site (null without one). */
@@ -961,9 +966,9 @@ export function cappedClock(sport, clock, startIso, now = Date.now()) {
 // Games WinHouse still lists after they ended: a clock stopped past full time (a stopped-clock sport
 // only when it stays stopped longer than its breaks), a clock past what a game can last, or live for
 // longer than a game lasts (counted from when we first saw it live: the listed kick-off can be wrong).
-const FULL_TIME = { futebol: 90, futsal: 40, andebol: 60, hoquei: 60 };
-const FROZEN_MS = { futebol: 10 * 60_000, futsal: 15 * 60_000, andebol: 10 * 60_000, hoquei: 15 * 60_000 };
-const MAX_MINUTE = { futebol: 125, futsal: 60, andebol: 80 };
+const FULL_TIME = { futebol: 90, futsal: 40, andebol: 60, hoquei: 60, rugbyunion: 80, aussierules: 80, lacrosse: 60, hoqueicampo: 60, polo: 32 };
+const FROZEN_MS = { futebol: 10 * 60_000, futsal: 15 * 60_000, andebol: 10 * 60_000, hoquei: 15 * 60_000, rugbyunion: 10 * 60_000, aussierules: 10 * 60_000, lacrosse: 10 * 60_000, hoqueicampo: 15 * 60_000, polo: 15 * 60_000 };
+const MAX_MINUTE = { futebol: 125, futsal: 60, andebol: 80, rugbyunion: 100, aussierules: 100, lacrosse: 75, hoqueicampo: 75, polo: 45 };
 // A knockout tie level at full time goes to extra time (prolongamento). The clock sits at 90' through the
 // break before it, so a level game in a cup / final / qualification keeps a longer grace there — otherwise
 // it is killed as "over" just as it should enter extra time. League draws (not knockout) still settle at 90'.
@@ -980,12 +985,13 @@ export function setsToWin(sport, competition = '', home = '', away = '') {
   if (sport === 'tenis') return GRAND_SLAM.test(competition) && !NOT_MEN_SINGLES.test(`${competition} ${home} ${away}`) ? 3 : 2;
   if (sport === 'badminton') return 2;
   if (sport === 'tenismesa') return 3;
+  if (sport === 'squash') return 3;
   if (sport === 'voleibol') return /beach|praia|4x4|duo/i.test(`${competition} ${home} ${away}`) ? 2 : 3;
   return null;
 }
 // Sets won stay unchanged this long after the winning set before a listed match counts as over
 // (table tennis longer: some events are best of seven).
-const SETS_DONE_MS = { tenis: 3 * 60_000, badminton: 3 * 60_000, voleibol: 5 * 60_000, tenismesa: 12 * 60_000 };
+const SETS_DONE_MS = { tenis: 3 * 60_000, badminton: 3 * 60_000, voleibol: 5 * 60_000, tenismesa: 12 * 60_000, squash: 3 * 60_000 };
 
 /** Why a game still in the live list is over (or null): `clock` is { minute, since } (the minute
  * shown and since when), `liveSince` when it was first seen live. */
@@ -1026,7 +1032,7 @@ const mmss = (secs) => `${String(Math.floor(secs / 60)).padStart(2, '0')}:${Stri
  */
 export const clockText = (sport, minutes, raw, competition = '') => {
   if (minutes === null) return raw ? String(raw).slice(0, 20) : null;
-  if (['futebol', 'andebol', 'futsal', 'raguebi'].includes(sport)) return `${Math.floor(minutes)}'`;
+  if (['futebol', 'andebol', 'futsal', 'raguebi', 'rugbyunion', 'aussierules', 'lacrosse', 'hoqueicampo', 'polo'].includes(sport)) return `${Math.floor(minutes)}'`;
   const secs = Math.max(0, Math.round(minutes * 60));
   if (sport === 'basquetebol') {
     const q = (/\bNBA\b/i.test(competition) ? 12 : 10) * 60;
@@ -1094,6 +1100,18 @@ export function finishVerdict(row, now = Date.now()) {
       return m >= 59 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
     case 'raguebi':
       return m >= 79 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'rugbyunion':
+      return m >= 78 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'aussierules':
+      return m >= 78 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'lacrosse':
+      return m >= 58 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'hoqueicampo':
+      return m >= 58 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'polo':
+      return m >= 30 ? { home: h, away: a } : { review: `saiu do ao vivo ao minuto ${Math.floor(m ?? 0)}` };
+    case 'squash':
+      return Math.max(h, a) >= 3 && h !== a ? { home: h, away: a } : { review: `sets ${h}-${a}: jogo incompleto` };
     case 'basebol': {
       // No clock and no draws: a winner once it has been going at least 2h15 (a game lasts about three).
       if (h === a) return { review: 'empate no último placar visto' };
@@ -1801,7 +1819,7 @@ export function createWinHouseFeed(db, {
 
   // Future games: each sport's full list, every `futureMinutes` (sooner than prices go stale).
   // `futureDays` may be a function (the admin setting, read on every run).
-  const futureDaysNow = () => Math.min(90, Math.max(0, Number(typeof futureDays === 'function' ? futureDays() : futureDays) || 0));
+  const futureDaysNow = () => Math.min(180, Math.max(0, Number(typeof futureDays === 'function' ? futureDays() : futureDays) || 0));
   let futureAt = 0;
   async function readFuture(days) {
     const until = Date.now() + days * 86_400_000;

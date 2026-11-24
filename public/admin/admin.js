@@ -4,11 +4,15 @@ import { createCourt3D } from '../court3d.js';
 
 const SPORT_META = {
   futebol: { name: 'Futebol', icon: '⚽' }, basquetebol: { name: 'Basquetebol', icon: '🏀' }, tenis: { name: 'Ténis', icon: '🎾' },
-  hoquei: { name: 'Hóquei no Gelo', icon: '🏒' }, dardos: { name: 'Dardos', icon: '🎯' }, esports: { name: 'CS2 (eSports)', icon: '🎮' },
+  hoquei: { name: 'Hóquei no Gelo', icon: '🏒' }, dardos: { name: 'Dardos', icon: '🎯' },
   voleibol: { name: 'Voleibol', icon: '🏐' }, andebol: { name: 'Andebol', icon: '🤾' },
   futsal: { name: 'Futsal', icon: '⚽' }, tenismesa: { name: 'Ténis de mesa', icon: '🏓' }, badminton: { name: 'Badminton', icon: '🏸' },
   futamericano: { name: 'Futebol Americano', icon: '🏈' }, basebol: { name: 'Basebol', icon: '⚾' }, raguebi: { name: 'Râguebi', icon: '🏉' },
   criquete: { name: 'Críquete', icon: '🏏' }, boxe: { name: 'Boxe', icon: '🥊' }, mma: { name: 'MMA', icon: '🥋' },
+  golfe: { name: 'Golfe', icon: '⛳' }, aussierules: { name: 'Futebol Australiano', icon: '🦘' }, ciclismo: { name: 'Ciclismo', icon: '🚴' },
+  snooker: { name: 'Snooker', icon: '🎱' }, hoqueicampo: { name: 'Hóquei em Campo', icon: '🏑' }, polo: { name: 'Polo Aquático', icon: '🤽' },
+  squash: { name: 'Squash', icon: '🎾' }, lacrosse: { name: 'Lacrosse', icon: '🥍' }, formula1: { name: 'Fórmula 1', icon: '🏎️' },
+  motogp: { name: 'MotoGP', icon: '🏍️' }, bowling: { name: 'Bowling', icon: '🎳' }, rugbyunion: { name: 'Rugby Union', icon: '🏉' },
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const STATUS_LABEL = {
@@ -1551,7 +1555,6 @@ function sportsAddonPanels(f) {
     basquetebol: 'Vencedor com prolongamento (pré-jogo e ao vivo), estatísticas por equipa e box score, previsões e classificação.',
     hoquei: 'Resultado em tempo regulamentar (1X2) ou vencedor com prolongamento, H2H, previsões e classificação.',
     dardos: 'Vencedor do encontro, legs por set, H2H com médias, previsões e ranking PDC.',
-    esports: 'Vencedor do encontro, mapas, comparação das equipas, H2H e previsões.',
   };
   for (const s of f.sports || []) panels.push(addonPanel(SPORT_META[s.sport]?.name || s.name, s, what[s.sport] || ''));
   return `<h3>Sports Addon</h3>${panels.map((p) => `<div class="addon-block">${p}</div>`).join('')}<br>`;
@@ -1819,7 +1822,7 @@ function winhousePanel(w) {
     ${winhouseFeedInfo(w?.feed)}
     <p class="muted">${w?.enabled ? 'Testar WinHouse: chama as 6 rotas e mostra o que respondem. Ver mercados do jogo / ao vivo: abre a página de um jogo (gameId, ou o 1.º da lista pré-jogo / ao vivo) e lista todos os mercados que oferece. Ver tracker: mostra o que o tracker do jogo devolve (gameId, ou o 1.º jogo de futebol ao vivo) — copie e envie para os ligarmos. Ver vídeo (HLS): o que a WinHouse responde ao pedido do vídeo (gameId, ou o 1.º jogo ao vivo com transmissão) e o endereço .m3u8 montado.'
       : 'Defina <strong>WINHOUSE_BASE_URL</strong> nas variáveis do servidor (Railway → Variables) e faça redeploy.'}</p>
-    ${w?.feed?.enabled ? `<div class="form-actions"><label class="field adm-inline">Jogos futuros (dias, 0–90) <input id="whFutureDays" type="number" min="0" max="90" step="1" value="${Number(w.feed.futureDays) || 0}"></label>
+    ${w?.feed?.enabled ? `<div class="form-actions"><label class="field adm-inline">Jogos futuros (dias, 0–180) <input id="whFutureDays" type="number" min="0" max="180" step="1" value="${Number(w.feed.futureDays) || 0}"></label>
       <button class="ghost-btn btn-sm" data-action="winhouse-future">Guardar</button>
       <button class="ghost-btn btn-sm" data-action="winhouse-future" data-now="1">Guardar e buscar agora</button></div>
       <p class="muted">Lê a lista completa de cada desporto na WinHouse (como o próprio livro) e importa os jogos até esse número de dias; o site mostra-os no Desporto e nas ligas. 0 = só as listas curtas (próximas 24 h, ligas principais).</p>` : ''}

@@ -11,7 +11,6 @@ const SPORT_META = {
   tenis: { name: 'Ténis', icon: '🎾' },
   hoquei: { name: 'Hóquei no Gelo', icon: '🏒' },
   dardos: { name: 'Dardos', icon: '🎯' },
-  esports: { name: 'CS2 (eSports)', icon: '🎮' },
   voleibol: { name: 'Voleibol', icon: '🏐' },
   andebol: { name: 'Andebol', icon: '🤾' },
   futsal: { name: 'Futsal', icon: '⚽' },
@@ -23,6 +22,18 @@ const SPORT_META = {
   criquete: { name: 'Críquete', icon: '🏏' },
   boxe: { name: 'Boxe', icon: '🥊' },
   mma: { name: 'MMA', icon: '🥋' },
+  golfe: { name: 'Golfe', icon: '⛳' },
+  aussierules: { name: 'Futebol Australiano', icon: '🦘' },
+  ciclismo: { name: 'Ciclismo', icon: '🚴' },
+  snooker: { name: 'Snooker', icon: '🎱' },
+  hoqueicampo: { name: 'Hóquei em Campo', icon: '🏑' },
+  polo: { name: 'Polo Aquático', icon: '🤽' },
+  squash: { name: 'Squash', icon: '🎾' },
+  lacrosse: { name: 'Lacrosse', icon: '🥍' },
+  formula1: { name: 'Fórmula 1', icon: '🏎️' },
+  motogp: { name: 'MotoGP', icon: '🏍️' },
+  bowling: { name: 'Bowling', icon: '🎳' },
+  rugbyunion: { name: 'Rugby Union', icon: '🏉' },
 };
 /** Sport icons (filter tiles): Phosphor Icons (bold, MIT) as "P:" paths on a 256 grid, "F:" the same
  * with a line under it (futsal), "S:" filled shapes and plain strings line drawings on a 24 grid. */
@@ -36,7 +47,6 @@ const SPORT_SVG = {
   tenis: '<circle cx="12" cy="12" r="9"/><path d="M6 5.3a9 9 0 0 1 0 13.4M18 5.3a9 9 0 0 0 0 13.4"/>',
   hoquei: '<path d="M18.5 3l-6.2 15.2a2 2 0 0 1-1.9 1.3H6.5a1.5 1.5 0 0 1 0-3h3l5.6-13.5"/><ellipse cx="5" cy="11" rx="2.4" ry="1.2"/>',
   dardos: 'P:M229.26,90.4a108,108,0,0,1-177.63,114A108,108,0,0,1,195.41,43.63l20.1-20.11a12,12,0,0,1,17,17l-96,96a12,12,0,1,1-17-17l24-24a36,36,0,1,0,19.76,39.65,12,12,0,0,1,23.53,4.74,60,60,0,1,1-25.73-62L178.3,60.74a84,84,0,1,0,28.46,38,12,12,0,1,1,22.5-8.35Z',
-  esports: 'P:M176,116H152a12,12,0,0,1,0-24h24a12,12,0,0,1,0,24ZM104,92h-4V88a12,12,0,0,0-24,0v4H72a12,12,0,0,0,0,24h4v4a12,12,0,0,0,24,0v-4h4a12,12,0,0,0,0-24ZM244.76,202.94a40,40,0,0,1-61,5.35,7,7,0,0,1-.53-.56L144.67,164H111.33L72.81,207.73c-.17.19-.35.38-.53.56A40,40,0,0,1,4.62,173.05a1.18,1.18,0,0,1,0-.2L21,88.79A63.88,63.88,0,0,1,83.88,36H172a64.08,64.08,0,0,1,62.93,52.48,1.8,1.8,0,0,1,0,.19l16.36,84.17a1.77,1.77,0,0,1,0,.2A39.74,39.74,0,0,1,244.76,202.94ZM172,140a40,40,0,0,0,0-80H83.89A39.9,39.9,0,0,0,44.62,93.06a1.55,1.55,0,0,0,0,.21l-16.34,84a16,16,0,0,0,13,18.44,16.07,16.07,0,0,0,13.86-4.21L96.9,144.07a12,12,0,0,1,9-4.07Zm55.76,37.31-7-35.95a63.84,63.84,0,0,1-44.27,22.46l24.41,27.72a16,16,0,0,0,26.85-14.23Z',
   tenismesa: 'P:M243.93,195.71a20,20,0,0,0-8-14.41L203,155.17l12.1-12.1a43.66,43.66,0,0,0,12.11-39.4,103.52,103.52,0,0,0-36.81-60.23A106.19,106.19,0,0,0,122.52,20,104.29,104.29,0,0,0,20,122.52a106.17,106.17,0,0,0,23.43,67.85,103.52,103.52,0,0,0,60.23,36.81,43.64,43.64,0,0,0,39.39-12.11L155.17,203l26.13,32.95a20,20,0,0,0,14.41,8c.55,0,1.1.07,1.66.07a20,20,0,0,0,14.13-5.86l26.64-26.64A19.94,19.94,0,0,0,243.93,195.71ZM44,122.86C44.6,80,80,44.6,122.86,44a81.92,81.92,0,0,1,65.2,31L75,188.06a81.92,81.92,0,0,1-31-65.2ZM197.71,218l-32.1-40.49A12,12,0,0,0,156.9,173l-.69,0a12,12,0,0,0-8.49,3.51L126.09,198.1h0a19.72,19.72,0,0,1-17.75,5.54,76.28,76.28,0,0,1-11.68-3.33L200.31,96.66a76.28,76.28,0,0,1,3.33,11.68,19.72,19.72,0,0,1-5.54,17.75l-21.63,21.63a12,12,0,0,0,1,17.89L218,197.71Z',
   badminton: '<path d="M8 14l-3-9 4 1 3-3 3 3 4-1-3 9z"/><path d="M8 14h8M9 14v2a3 3 0 0 0 6 0v-2"/>',
   futamericano: '<ellipse cx="12" cy="12" rx="10" ry="5.6" transform="rotate(-45 12 12)"/><path d="M9.5 14.5l5-5M10.3 11.7l2 2M12.3 9.7l2 2"/>',
@@ -50,7 +60,9 @@ const SPORT_SVG = {
 function sportIcon(k) {
   const colour = colourSportIcon(k);
   if (colour) return colour;
-  const v = SPORT_SVG[k] || SPORT_SVG.futebol;
+  const v = SPORT_SVG[k];
+  // Sports with no drawn icon of their own fall back to their emoji, not to the football.
+  if (!v) return `<span class="sport-emoji" aria-hidden="true">${SPORT_META[k]?.icon || '🏆'}</span>`;
   const kind = v.slice(0, 2);
   if (kind === 'P:' || kind === 'F:') {
     const paths = v.slice(2).split('|').map((d) => `<path d="${d}"/>`).join('');
@@ -686,7 +698,8 @@ function footer() {
 
 // Sports in the order the site shows them: football always first.
 const SPORT_ORDER = ['futebol', 'basquetebol', 'tenis', 'futamericano', 'hoquei', 'boxe', 'voleibol', 'andebol', 'dardos', 'mma', 'raguebi', 'futsal',
-  'basebol', 'criquete', 'tenismesa', 'badminton'];
+  'basebol', 'criquete', 'tenismesa', 'badminton', 'rugbyunion', 'golfe', 'aussierules', 'ciclismo', 'snooker', 'hoqueicampo', 'polo', 'squash',
+  'lacrosse', 'formula1', 'motogp', 'bowling'];
 const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
 
 /** Live: the operator's featured, then by league (big 1, medium 2, small 3, the rest), then the earliest. */
@@ -5880,7 +5893,7 @@ function marketBlocks(e, markets) {
       }).join('');
     } else if (mk.market === 'ou' || mk.market === 'gou' || mk.market === 'pou') {
       const unit = mk.market === 'gou' || (mk.market === 'pou' && e.sport === 'tenis') ? 'jogos'
-        : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs', esports: 'mapas' }[e.sport] || 'golos';
+        : { tenis: 'sets', basquetebol: 'pontos', dardos: 'legs' }[e.sport] || 'golos';
       const lines = [...new Set(mk.selections.map((s) => bare(s).slice(1)))].sort((a, b) => a - b);
       grid = lines.map((line) => {
         const over = mk.selections.find((s) => bare(s) === `O${line}`);

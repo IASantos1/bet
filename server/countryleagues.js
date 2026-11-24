@@ -90,9 +90,12 @@ const NOT = /^(russia)?(mhl|ohl|whl|qmjhl|ushl)/;
 
 /** The sports with a country → leagues tree built this way (the first ones are also filtered by it). */
 export const FILTERED_SPORTS = Object.keys(SPORTS);
-// American football, baseball, rugby, cricket, boxing and MMA: every competition, under the country its
-// name starts with ("USA. NFL", "Japan. NPB"), the big bare ones under theirs, else Internacional.
-const OPEN_SPORTS = new Set(['futamericano', 'basebol', 'raguebi', 'criquete', 'boxe', 'mma']);
+// American football, baseball, rugby, cricket, boxing, MMA and the other sports WinHouse lists with
+// no national-league tree of ours (golf, cycling, snooker, field hockey, water polo, squash, lacrosse,
+// F1, MotoGP, bowling, Aussie rules, rugby union): every competition, under the country its name
+// starts with ("USA. NFL", "Japan. NPB"), the big bare ones under theirs, else Internacional.
+const OPEN_SPORTS = new Set(['futamericano', 'basebol', 'raguebi', 'criquete', 'boxe', 'mma',
+  'golfe', 'aussierules', 'ciclismo', 'snooker', 'hoqueicampo', 'polo', 'squash', 'lacrosse', 'formula1', 'motogp', 'bowling', 'rugbyunion']);
 const OPEN_BARE = [
   [/^(nfl|ncaa|mlb|ufl|xfl|ufc)/, 'United States'], [/^(npb)/, 'Japan'], [/^(kbo)/, 'South Korea'], [/^(cfl)/, 'Canada'],
   [/^(ipl|ranjitrophy)/, 'India'], [/^(bbl|bigbash|sheffieldshield)/, 'Australia'], [/^(premiership|top14|prod2|superrugby|urc|unitedrugby|sixnations|championscup)/, 'Europe'],

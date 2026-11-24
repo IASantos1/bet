@@ -126,7 +126,7 @@ test('ice hockey: without a draw price the books quote the moneyline (overtime i
   assert.equal(t.betStatus(b), 'won');
 });
 
-test('darts: winner on sets, walkover void; CS2: a 1-1 in a best-of-two voids the winner market', async () => {
+test('darts: winner on sets, walkover void', async () => {
   const m = (id, f = {}) => ({ id, tournament: { id: 44, name: 'World Matchplay' }, player1: { id: 507, name: 'Luke Littler', country_code: 'GB' },
     player2: { id: 312, name: 'Luke Humphries', country_code: 'GB' }, match_date: iso(5 * H), status: 'scheduled', round_name: 'Final', ...f });
   const state = {};
@@ -148,23 +148,9 @@ test('darts: winner on sets, walkover void; CS2: a 1-1 in a best-of-two voids th
   await d.feed.syncResults();
   assert.equal(d.betStatus(b1), 'won');
   assert.equal(d.betStatus(b2), 'void');
-
-  let cs = { id: 5531, tournament: { id: 87, name: 'IEM Cologne' }, home_team: team(342, 'Team Vitality'), away_team: team(199, 'FaZe Clan'), start_time: iso(5 * H), status: 'notstarted', best_of: 2 };
-  const c = setup('esports', '/csgo/api/v2', {
-    '/matches/': () => ({ results: [cs] }),
-    '/matches/5531/odds/': { bookmakers: [{ odds_home: 1.47, odds_away: 2.59 }] },
-    '/matches/5531/': () => cs,
-  });
-  await c.feed.syncFixtures();
-  assert.equal(c.row(5531).competition, 'IEM Cologne · BO2');
-  const b3 = c.bet(5531, 'ml', '1');
-  c.kickoff(5531);
-  cs = { ...cs, status: 'finished', home_score: 1, away_score: 1 };
-  await c.feed.syncResults();
-  assert.equal(c.betStatus(b3), 'void');
 });
 
-test('insights per sport: hockey H2H + table, darts rankings, CS2 comparison, basketball standings', async () => {
+test('insights per sport: hockey H2H + table, darts rankings, basketball standings', async () => {
   const hk = setup('hoquei', '/hockey/api/v2', {
     '/matches/': { results: [{ id: 16264, league: { id: 3, name: 'NHL' }, home_team: team(118, 'Rangers'), away_team: team(121, 'Bruins'), match_date: iso(5 * H), status: 'scheduled' }] },
     '/matches/16264/odds/': { odds_home: 1.9, odds_away: 1.9 },
@@ -196,18 +182,6 @@ test('insights per sport: hockey H2H + table, darts rankings, CS2 comparison, ba
   assert.deepEqual(y.h2h.compare, [['Média de 3 dardos nos confrontos', 101.37, 100.94]]);
   assert.equal(y.rankings.away.position, 1);
   assert.equal(y.rankings.valueLabel, 'Prémios (£)');
-
-  const cs = setup('esports', '/csgo/api/v2', {
-    '/matches/': { results: [{ id: 9630, tournament: { id: 1, name: 'T' }, home_team: team(723, 'TLR'), away_team: team(486, 'OG'), start_time: iso(5 * H), status: 'notstarted' }] },
-    '/matches/9630/stats/': {
-      teams: [{ team: { id: 723 }, map_winrate: 41.4, round_winrate_all: 47, kd_ratio: 0.94, form_results: ['L', 'W'] }, { team: { id: 486 }, map_winrate: 55, round_winrate_all: 52, kd_ratio: 1.05, form_results: ['W'] }],
-      head_to_head: { total_matches: 4, home_wins: 3, away_wins: 1, recent_matches: [] },
-    },
-  });
-  await cs.feed.syncFixtures();
-  const z = await cs.feed.matchInsights(cs.row(9630));
-  assert.deepEqual(z.h2h.compare[0], ['Mapas ganhos (%)', 41.4, 55]);
-  assert.deepEqual(z.h2h.homeFormLetters, ['D', 'V']);
 
   const bk = setup('basquetebol', '/basketball/api/v2', {
     '/events/': { results: [{ id: 1, league: { id: 12, name: 'NBA' }, home_team: team(402, 'Lakers'), away_team: team(407, 'Nuggets'), event_date: iso(5 * H), status: 'scheduled' }] },

@@ -22,7 +22,7 @@ import { nowIso } from './db.js';
 
 const SPORT_NAME = {
   futebol: 'Soccer', futsal: 'Futsal', basquetebol: 'Basketball', hoquei: 'Ice Hockey', voleibol: 'Volleyball',
-  andebol: 'Handball', esports: 'ESports', futamericano: 'American Football', basebol: 'Baseball', raguebi: 'Rugby', mma: 'Fighting',
+  andebol: 'Handball', futamericano: 'American Football', basebol: 'Baseball', raguebi: 'Rugby', mma: 'Fighting',
 };
 const MISS_RETRY_MS = 30 * 86_400_000;
 const VERSION = 3; // entries saved by an older version are looked up again

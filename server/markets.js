@@ -215,7 +215,7 @@ const SECOND_WORD = /\b(segundo|segunda|2nd|second)\s+(set|tempo|parte|periodo|q
 // read from the score; corners, yellow cards and shots have their own reader (statOutcome).
 const NOT_SCORE = /(canto|corner|cartao|cartoes|card|booking|amarel|vermelh|remate|shot|falta|foul|fora de jogo|offside|penalt|substitu|lancamento|throw|livre|free.?kick|marcador|scorer|jogador|player|minuto|minute|primeiro golo|first goal|ultimo golo|last goal|proximo golo|next goal|golo de cabeca|header|metodo|method|corrida|race to|primeiro a|first to|\baces?\b|break|tie.?break|posse|possession|assist|defesa|\bsaves?\b|knock.?out|ronda|round|decisao|decision|kills?\b|torre|tower|dragao|dragon|baron|pistol|wicket|innings?|entrada|180|checkout|tempo de|time of|intervalo de|interval of|quando|when|qual|which|como|how|metade com mais|highest scoring|vence (ambas|as duas)|win both|vence a zero|win to nil|baliza inviolada|clean sheet|margem|margin|sem sofrer|to nil)/;
 /** Sports whose main score counts sets or maps; sports where only the winner is read from it. */
-const SET_SCORE = new Set(['tenis', 'voleibol', 'tenismesa', 'badminton', 'dardos', 'esports']);
+const SET_SCORE = new Set(['tenis', 'voleibol', 'tenismesa', 'badminton', 'dardos']);
 const WINNER_ONLY = new Set(['boxe', 'mma', 'criquete']);
 const HOME_WORDS = ['1', 'casa', 'home', 'equipa da casa', 'home team', 'w1', 'p1'];
 const DRAW_WORDS = ['x', 'empate', 'draw'];

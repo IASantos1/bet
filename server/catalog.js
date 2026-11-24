@@ -18,7 +18,6 @@ export const WIRED = {
   basquetebol: ['WINNER', 'odds_home', 'AH', 'OU'],
   hoquei: ['1X2', 'DNB', 'odds_home', 'AH', 'OU'],
   dardos: ['WINNER', 'odds_player1'],
-  esports: ['WINNER', 'odds_home'],
 };
 
 function entry(map, key, base) {

@@ -151,8 +151,8 @@ export const config = {
     days: int(env.TENNIS_DAYS, 3),
     liveWsUrl: env.BZZOIRO_MULTI_WS_URL || 'wss://sports.bzzoiro.com/ws/live/',
   },
-  // Sports Addon: basketball, ice hockey, darts and CS2 (same token). SPORTS_ADDON lists the ones
-  // to import; empty string turns them all off. Video games (CS2, "esports") are never imported.
+  // Sports Addon: basketball, ice hockey and darts (same token). SPORTS_ADDON lists the ones
+  // to import; empty string turns them all off. Video games ("esports") are never imported.
   sportsAddon: {
     sports: (env.SPORTS_ADDON ?? 'basquetebol,hoquei,dardos').split(',').map((s) => s.trim()).filter((s) => s && s !== 'esports'),
     days: int(env.SPORTS_DAYS, 3),
@@ -213,7 +213,7 @@ export const config = {
     prematchMs: Math.max(20_000, int(env.WINHOUSE_PREMATCH_INTERVAL_MS, 60_000)),
     // Future games: every sport's full fixture list (prematchgamesbysport), games up to this many
     // days ahead, read every WINHOUSE_FUTURE_MINUTES. Changed in the admin; 0 = only the short lists.
-    futureDays: Math.min(90, Math.max(0, int(env.WINHOUSE_FUTURE_DAYS, 30))),
+    futureDays: Math.min(180, Math.max(0, int(env.WINHOUSE_FUTURE_DAYS, 180))),
     futureMinutes: Math.max(5, int(env.WINHOUSE_FUTURE_MINUTES, 10)),
     tzOffsetMinutes: env.WINHOUSE_TZ_OFFSET_MINUTES !== undefined && env.WINHOUSE_TZ_OFFSET_MINUTES !== '' ? Number(env.WINHOUSE_TZ_OFFSET_MINUTES) : null,
     finishConfirmSeconds: int(env.WINHOUSE_FINISH_CONFIRM_SECONDS, 180),

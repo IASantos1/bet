@@ -1017,7 +1017,7 @@ export function createApp(db, {
   const unseenBefore = () => new Date(Date.now() - 150_000).toISOString();
 
   // How far ahead future games are imported and shown (admin setting; WINHOUSE_FUTURE_DAYS by default).
-  const futureDays = () => Math.min(90, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
+  const futureDays = () => Math.min(180, Math.max(0, Number(getSetting(db, 'winhouse.futureDays', config.winhouse.futureDays)) || 0));
   const horizonMs = (min) => Math.max(min, futureDays()) * 86_400_000;
 
   // Ready-made bets for the sports page: bet builders and four-leg multiples (featured.js).
@@ -3855,11 +3855,11 @@ export function createApp(db, {
     res.json(maintenance());
   });
 
-  // Future games: how many days ahead to import (0–90), saved and read at once; "now" reads the lists straight away.
+  // Future games: how many days ahead to import (0–180), saved and read at once; "now" reads the lists straight away.
   admin.post('/winhouse/future', async (req, res, next) => {
     try {
       const days = Number(req.body?.days);
-      if (!Number.isInteger(days) || days < 0 || days > 90) throw new HttpError(400, 'Dias inválidos (0 a 90).');
+      if (!Number.isInteger(days) || days < 0 || days > 180) throw new HttpError(400, 'Dias inválidos (0 a 180).');
       setSetting(db, 'winhouse.futureDays', days);
       let result = null;
       if (req.body?.now && winhouseFeed?.enabled) result = await winhouseFeed.syncPrematch({ force: true });

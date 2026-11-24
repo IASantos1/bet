@@ -82,10 +82,6 @@ const TIERS = {
     [1, /world (darts )?championship|premier league|world matchplay|world grand prix|grand slam|uk open|players championship finals|world masters|european championship/i],
     [2, /world series|masters|open\b/i],
   ],
-  esports: [
-    [1, /\bmajor\b|iem|blast|esl pro league|pgl/i],
-    [2, /esl|cct|epl|thunderpick|betboom|skyesports|perfect world/i],
-  ],
 };
 
 export function leagueTier(sport, competition) {

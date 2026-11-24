@@ -103,7 +103,7 @@ test('sidebar leagues: countries with open games per league; one league of the n
   };
   add('England. Premier League', 'live');
   const later = add('england premier league', 'scheduled', 20); // 20 days away: outside the board, inside the league page
-  add('England. Premier League', 'scheduled', 40); // beyond a month
+  add('England. Premier League', 'scheduled', 200); // beyond the import horizon (futureDays, up to 180)
   add('Spain. La Liga', 'scheduled', 2);
   add('Angola. Girabola', 'scheduled', 3); // a covered country's first division, not in the fixed tree
   add('Spain. Segunda Division', 'scheduled', 3);

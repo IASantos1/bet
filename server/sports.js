@@ -1,6 +1,6 @@
-// Sports Addon feeds from sports.bzzoiro.com: basketball, ice hockey, darts and CS2.
+// Sports Addon feeds from sports.bzzoiro.com: basketball, ice hockey and darts.
 //
-// The four APIs share one shape (a list of games, a live list, a detail, per-bookmaker odds,
+// The APIs share one shape (a list of games, a live list, a detail, per-bookmaker odds,
 // predictions), so one feed engine runs them, with a small spec per sport for what differs:
 //   - fixtures: games of the next N days; odds come from /{id}/odds/ (average of the bookmakers)
 //   - markets:  match winner (market `ml`, overtime included, a tie voids) — for ice hockey the
@@ -414,53 +414,6 @@ export const SPORT_SPECS = {
           home: rows.find((r) => r.playerId === ids.home) || null, away: rows.find((r) => r.playerId === ids.away) || null,
         } : null,
       };
-    },
-  },
-  esports: {
-    name: 'CS2', source: 'bzzoiro-csgo', path: '/csgo/api/v2', list: '/matches/', img: 'csgo/team',
-    marketName: { ml: 'Vencedor do encontro' },
-    normalize(m) {
-      const b = baseMatch(m, { compKey: 'tournament' });
-      if (!b) return null;
-      const home = toInt(m.home_score);
-      const away = toInt(m.away_score);
-      return {
-        ...b, competition: [b.competitionName || 'CS2', m.stage, m.best_of ? `BO${m.best_of}` : null].filter(Boolean).join(' · '),
-        homeScore: home, awayScore: away, clock: b.status === 'live' ? `Mapa ${(home ?? 0) + (away ?? 0) + 1}` : null,
-      };
-    },
-    prices: twoWay(['odds_home'], ['odds_away']),
-    async extras(get, id) {
-      const m = await get(`/matches/${id}/`);
-      const maps = Array.isArray(m?.maps) ? m.maps : [];
-      return {
-        groups: [],
-        tables: maps.length ? [{ title: 'Mapas', columns: [['map', 'Mapa'], ['h', 'Casa'], ['a', 'Fora']],
-          rows: maps.map((x) => ({ map: String(first(x.map, x.map_name, '')), h: first(x.home_rounds, ''), a: first(x.away_rounds, '') })) }] : [],
-        detail: m?.best_of ? `Melhor de ${m.best_of}` : null,
-      };
-    },
-    async insights(api, row, ids) {
-      const [st, pred] = await Promise.all([
-        api.get(`/matches/${ids.ext}/stats/`).catch(() => null),
-        api.cached('pred', 10 * 60_000, () => api.get('/predictions/', { upcoming: true, limit: 200 })).catch(() => null),
-      ]);
-      const teams = Array.isArray(st?.teams) ? st.teams : [];
-      const t = (id, i) => teams.find((x) => toInt(x.team?.id) === id) || teams[i] || null;
-      const [th, ta] = [t(ids.home, 0), t(ids.away, 1)];
-      const hh = st?.head_to_head;
-      const compare = [
-        ['Mapas ganhos (%)', th?.map_winrate, ta?.map_winrate], ['Rondas ganhas (%)', th?.round_winrate_all, ta?.round_winrate_all],
-        ['Rondas ganhas como T (%)', th?.round_winrate_t, ta?.round_winrate_t], ['Rondas ganhas como CT (%)', th?.round_winrate_ct, ta?.round_winrate_ct],
-        ['Pistol rounds (%)', th?.pistol_winrate, ta?.pistol_winrate], ['K/D', th?.kd_ratio, ta?.kd_ratio], ['Dano médio (ADR)', th?.avg_damage, ta?.avg_damage],
-      ].filter(([, a, b]) => num(a) !== null && num(b) !== null).map(([l, a, b]) => [l, num(a), num(b)]);
-      const h2h = hh || compare.length ? {
-        total: toInt(hh?.total_matches) ?? 0, homeWins: toInt(hh?.home_wins) ?? 0, awayWins: toInt(hh?.away_wins) ?? 0, draws: null,
-        meetings: streakRows(hh?.recent_matches, ids.home).slice(0, 10),
-        homeFormLetters: formLetters(th?.form_results), awayFormLetters: formLetters(ta?.form_results), compare,
-      } : null;
-      const p = listOf(pred).find((x) => String(first(x.match_id, x.match?.id)) === row.external_id);
-      return { h2h, prediction: predictionFrom(p, ids.home) };
     },
   },
 };
