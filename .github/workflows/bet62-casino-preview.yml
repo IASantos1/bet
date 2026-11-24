@@ -1,0 +1,51 @@
+name: Deploy BET62 Casino preview
+
+on:
+  push:
+    branches:
+      - feature/bet62-casino-v2
+    paths:
+      - 'prototypes/bet62-casino-v2/**'
+      - '.github/workflows/bet62-casino-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: bet62-casino-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated prototype
+        uses: actions/checkout@v4
+        with:
+          ref: feature/bet62-casino-v2
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Prepare preview site
+        run: |
+          mkdir -p _site
+          cp prototypes/bet62-casino-v2/preview.html _site/index.html
+          touch _site/.nojekyll
+
+      - name: Upload preview
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Publish preview
+        id: deployment
+        uses: actions/deploy-pages@v4
