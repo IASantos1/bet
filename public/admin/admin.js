@@ -48,29 +48,43 @@ const ADMIN_ICON_PATHS = {
 };
 const adminIcon = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ADMIN_ICON_PATHS[name] || ADMIN_ICON_PATHS.dashboard}</svg>`;
 
+// The panel's 22 pages, grouped by what the operator is doing (7 groups instead of the old
+// "Operações / Avançado" split, which put unrelated things together). Order here is the sidebar order.
 const TABS = [
-  { id: 'painel', label: 'Painel', icon: 'dashboard', section: 'Operações' },
-  { id: 'eventos', label: 'Eventos', icon: 'calendar', section: 'Operações' },
-  { id: 'liquidacao', label: 'Liquidação', icon: 'scale', section: 'Operações' },
-  { id: 'apostas', label: 'Apostas', icon: 'ticket', section: 'Operações' },
-  { id: 'levantamentos', label: 'Levantamentos', icon: 'wallet', section: 'Operações' },
-  { id: 'utilizadores', label: 'Utilizadores', icon: 'users', section: 'Operações' },
-  { id: 'promocoes', label: 'Promoções', icon: 'gift', section: 'Operações' },
-  { id: 'risco', label: 'Risco', icon: 'warning', section: 'Operações' },
-  { id: 'campanhas', label: 'Campanhas', icon: 'megaphone', section: 'Operações' },
-  { id: 'afiliados', label: 'Afiliados', icon: 'affiliate', section: 'Operações' },
-  { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Operações' },
-  { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Avançado' },
-  { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Avançado' },
-  { id: 'sportscore', label: 'SportScore', icon: 'radio', section: 'Avançado' },
-  { id: 'thesports', label: 'TheSports ao vivo', icon: 'radio', section: 'Avançado' },
-  { id: 'casino', label: 'Casino', icon: 'casino', section: 'Avançado' },
-  { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Avançado' },
-  { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Avançado' },
-  { id: 'colecoes', label: 'Coleções do casino', icon: 'casino', section: 'Avançado' },
-  { id: 'destaques', label: 'Destaques do casino', icon: 'megaphone', section: 'Avançado' },
-  { id: 'mercados', label: 'Catálogo de mercados', icon: 'catalog', section: 'Avançado' },
-  { id: 'ligas', label: 'Ligas (ligar/desligar)', icon: 'catalog', section: 'Avançado' },
+  { id: 'painel', label: 'Painel', icon: 'dashboard', section: 'Geral' },
+
+  // Sportsbook: the day-to-day of the betting side.
+  { id: 'eventos', label: 'Eventos', icon: 'calendar', section: 'Apostas' },
+  { id: 'novo', label: 'Novo evento', icon: 'plus', section: 'Apostas' },
+  { id: 'apostas', label: 'Apostas', icon: 'ticket', section: 'Apostas' },
+  { id: 'liquidacao', label: 'Liquidação', icon: 'scale', section: 'Apostas' },
+  { id: 'risco', label: 'Risco', icon: 'warning', section: 'Apostas' },
+  { id: 'mercados', label: 'Mercados', icon: 'catalog', section: 'Apostas' },
+  { id: 'ligas', label: 'Ligas', icon: 'catalog', section: 'Apostas' },
+
+  // Whoever signs up and plays.
+  { id: 'utilizadores', label: 'Utilizadores', icon: 'users', section: 'Jogadores' },
+
+  // Money going out.
+  { id: 'levantamentos', label: 'Levantamentos', icon: 'wallet', section: 'Finanças' },
+
+  // Promotions, bonuses, partners and channels.
+  { id: 'promocoes', label: 'Promoções', icon: 'gift', section: 'Marketing' },
+  { id: 'campanhas', label: 'Campanhas', icon: 'megaphone', section: 'Marketing' },
+  { id: 'afiliados', label: 'Afiliados', icon: 'affiliate', section: 'Marketing' },
+  { id: 'telegram', label: 'Telegram', icon: 'megaphone', section: 'Marketing' },
+
+  // Everything that shapes the casino lobby.
+  { id: 'casino', label: 'Casino', icon: 'casino', section: 'Casino' },
+  { id: 'peliculas', label: 'Películas', icon: 'casino', section: 'Casino' },
+  { id: 'banners', label: 'Banners do casino', icon: 'megaphone', section: 'Casino' },
+  { id: 'colecoes', label: 'Coleções do casino', icon: 'casino', section: 'Casino' },
+  { id: 'destaques', label: 'Destaques do casino', icon: 'megaphone', section: 'Casino' },
+
+  // Live data providers and engines.
+  { id: 'feed', label: 'Dados ao vivo', icon: 'radio', section: 'Integrações' },
+  { id: 'sportscore', label: 'SportScore', icon: 'radio', section: 'Integrações' },
+  { id: 'thesports', label: 'TheSports ao vivo', icon: 'radio', section: 'Integrações' },
 ];
 const MOBILE_TABS = ['painel', 'eventos', 'apostas', 'levantamentos'];
 
@@ -865,7 +879,7 @@ function dashboard(s, settle, backups = null, totp = null) {
     </div>
     ${securityPanel(totp)}
     ${backupsPanel(backups)}
-    <div class="panel adm-shortcut-panel"><div class="adm-panel-heading"><div><span class="adm-eyebrow">ACESSO RÁPIDO</span><h3>Atalhos de operação</h3></div><span class="adm-panel-count">${TABS.length - 1} secções</span></div><div class="adm-shortcuts">
+    <div class="panel adm-shortcut-panel"><div class="adm-panel-heading"><div><span class="adm-eyebrow">ACESSO RÁPIDO</span><h3>Atalhos de operação</h3></div><span class="adm-panel-count">${TABS.length - 1} atalhos</span></div><div class="adm-shortcuts">
       ${TABS.filter((t) => t.id !== 'painel').map((t) => `<button class="ghost-btn adm-shortcut" data-tab="${t.id}"><span>${adminIcon(t.icon, 16)}</span>${esc(t.label)}<i>${adminIcon('trend', 13)}</i></button>`).join('')}
     </div></div>`;
 }
