@@ -115,7 +115,7 @@ const shape = (v, depth = 0) => {
 const FOOTBALL_MARKETS = [1001, 1005, 1007, 1011, 1018, 1019, 1708, 1714, 1725];
 /** Market ids we settle ourselves, per sport; every other market goes to the operator ('x'). */
 export const SPORT_MARKETS = {
-  futebol: FOOTBALL_MARKETS, andebol: FOOTBALL_MARKETS, futsal: FOOTBALL_MARKETS,
+  futebol: FOOTBALL_MARKETS, andebol: FOOTBALL_MARKETS, futsal: FOOTBALL_MARKETS, floorball: FOOTBALL_MARKETS,
   basquetebol: [1022, 1672, 1011], hoquei: [1045, 1161, 1160, 1168, 1870], tenis: [1016],
   tenismesa: [1044, 1992], badminton: [1044, 1992], voleibol: [1001],
 };
@@ -494,7 +494,7 @@ export const SOURCE = 'winhouse';
 
 /** WinHouse sport_id → our sport (every sport Bet62 shows; the videogame one is left out). */
 export const SPORTS = {
-  1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
+  1: 'futebol', 2: 'basquetebol', 4: 'hoquei', 7: 'floorball', 5: 'tenis', 6: 'andebol', 20: 'tenismesa', 23: 'voleibol', 29: 'futsal', 31: 'badminton',
   3: 'basebol', 10: 'boxe', 12: 'raguebi', 16: 'futamericano', 21: 'criquete', 22: 'dardos', 117: 'mma',
   9: 'golfe', 13: 'aussierules', 17: 'ciclismo', 19: 'snooker', 24: 'hoqueicampo', 26: 'polo', 37: 'squash', 39: 'lacrosse',
   40: 'formula1', 190: 'motogp', 306: 'bowling', 312: 'rugbyunion',
@@ -629,7 +629,7 @@ export const LEAGUE_TREES = {
   voleibol: [], andebol: [], futsal: [], badminton: [], tenismesa: [], dardos: [],
   futamericano: [], basebol: [], raguebi: [], criquete: [], boxe: [], mma: [],
   golfe: [], aussierules: [], ciclismo: [], snooker: [], hoqueicampo: [], polo: [], squash: [], lacrosse: [],
-  formula1: [], motogp: [], bowling: [], rugbyunion: [],
+  formula1: [], motogp: [], bowling: [], rugbyunion: [], floorball: [],
 };
 /** A competition name compared loosely: case, accents, dots and spaces ignored. */
 export const leagueKey = (name) => String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -770,7 +770,7 @@ function ownKey(o, sport) {
   // Game pages carry the line apart (special_value): "over" + "2.5" → "over 2.5".
   const sel = o.special && !/\d/.test(raw) ? `${raw} ${o.special}` : raw;
   let c;
-  if (sport === 'futebol' || sport === 'andebol' || sport === 'futsal') {
+  if (sport === 'futebol' || sport === 'andebol' || sport === 'futsal' || sport === 'floorball') {
     if (o.marketId === 1001) return (c = { 1: '1', x: 'X', 2: '2' }[sel]) ? `1x2|${c}` : null;
     if (o.marketId === 1005) return (c = { '1x': '1X', 12: '12', x2: 'X2' }[sel]) ? `dc|${c}` : null;
     if (o.marketId === 1018) return (c = overUnder(sel)) ? `ou|${c[0]}${c[1]}` : null;

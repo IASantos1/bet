@@ -34,6 +34,7 @@ const SPORT_META = {
   motogp: { name: 'MotoGP', icon: '🏍️' },
   bowling: { name: 'Bowling', icon: '🎳' },
   rugbyunion: { name: 'Rugby Union', icon: '🏉' },
+  floorball: { name: 'Floorball', icon: '🏑' },
 };
 /** Sport icons (filter tiles): Phosphor Icons (bold, MIT) as "P:" paths on a 256 grid, "F:" the same
  * with a line under it (futsal), "S:" filled shapes and plain strings line drawings on a 24 grid. */
@@ -699,7 +700,7 @@ function footer() {
 // Sports in the order the site shows them: football always first.
 const SPORT_ORDER = ['futebol', 'basquetebol', 'tenis', 'futamericano', 'hoquei', 'boxe', 'voleibol', 'andebol', 'dardos', 'mma', 'raguebi', 'futsal',
   'basebol', 'criquete', 'tenismesa', 'badminton', 'rugbyunion', 'golfe', 'aussierules', 'ciclismo', 'snooker', 'hoqueicampo', 'polo', 'squash',
-  'lacrosse', 'formula1', 'motogp', 'bowling'];
+  'lacrosse', 'formula1', 'motogp', 'bowling', 'floorball'];
 const sportRank = (s) => { const i = SPORT_ORDER.indexOf(s); return i < 0 ? 99 : i; };
 
 /** Live: the operator's featured, then by league (big 1, medium 2, small 3, the rest), then the earliest. */

@@ -13,6 +13,7 @@ const SPORT_META = {
   snooker: { name: 'Snooker', icon: '🎱' }, hoqueicampo: { name: 'Hóquei em Campo', icon: '🏑' }, polo: { name: 'Polo Aquático', icon: '🤽' },
   squash: { name: 'Squash', icon: '🎾' }, lacrosse: { name: 'Lacrosse', icon: '🥍' }, formula1: { name: 'Fórmula 1', icon: '🏎️' },
   motogp: { name: 'MotoGP', icon: '🏍️' }, bowling: { name: 'Bowling', icon: '🎳' }, rugbyunion: { name: 'Rugby Union', icon: '🏉' },
+  floorball: { name: 'Floorball', icon: '🏑' },
 };
 const CODE_LABEL = { 1: 'Casa', X: 'Empate', 2: 'Fora' };
 const STATUS_LABEL = {

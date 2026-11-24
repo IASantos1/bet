@@ -1,5 +1,5 @@
 // Shared back-off for one provider account. Every feed that uses the same Bzzoiro token (football,
-// tennis, basketball, ice hockey, darts, CS2) goes through here: when the provider answers 429
+// tennis, basketball, ice hockey, darts) goes through here: when the provider answers 429
 // ("too many requests") all of them pause together until it allows requests again, instead of
 // each one hammering it every few seconds.
 

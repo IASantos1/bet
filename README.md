@@ -183,7 +183,7 @@ só traz **odds**, e só para mercados que o Bzzoiro não tem nesse jogo:
 - Admin → Feed mostra o estado, a quota, jogos associados e odds ativas, com "Ler PropLine agora", e cada
   evento tem "Ver odds PropLine".
 
-## Basquetebol, hóquei no gelo, dardos e CS2
+## Basquetebol, hóquei no gelo e dardos
 
 Também com o Sports Addon (`server/sports.js`, um motor comum com uma configuração por desporto):
 
@@ -192,7 +192,6 @@ Também com o Sports Addon (`server/sports.js`, um motor comum com uma configura
 | Basquetebol | Vencedor (incl. prolongamento) | resultado final | estatísticas por equipa, box score, previsão, classificação |
 | Hóquei no gelo | Resultado 1X2 **em tempo regulamentar** e empate anula; ou vencedor incl. prolongamento quando as casas só dão 2 odds | 1X2 pelos 3 períodos; vencedor pelo final | golos por período, H2H e forma, previsão, classificação (com VP/DP) |
 | Dardos | Vencedor do encontro | por sets/legs; walkover anula | legs por set, H2H com médias de 3 dardos, previsão, ranking PDC |
-| CS2 | Vencedor do encontro | por mapas; empate num BO2 anula | mapas, comparação das equipas (mapas, rondas T/CT, K/D), H2H, previsão |
 
 - As odds são a média das casas de apostas (`/{id}/odds/`), atualizadas a cada 10 min (3 min na
   última hora). **Ao vivo** (também no ténis), a cada 30 s: abre com as odds que as casas atualizaram
@@ -200,7 +199,7 @@ Também com o Sports Addon (`server/sports.js`, um motor comum com uma configura
   de consenso ou a odd da lista de jogos ao vivo), só abre enquanto se mexe — abre quando muda em
   relação à anterior e fecha se ficar parada mais de 180 s. Sem nada disto fica "Mercado ao vivo
   suspenso". Em *Administração → Eventos*, "Ver odds do fornecedor" mostra a resposta crua. No ténis, quando a lista de encontros não traz odds, vêm de `/matches/{id}/odds/`.
-- `SPORTS_ADDON=basquetebol,hoquei,dardos,esports` escolhe os desportos (vazio desliga todos) e
+- `SPORTS_ADDON=basquetebol,hoquei,dardos` escolhe os desportos (vazio desliga todos) e
   `SPORTS_DAYS` quantos dias importar.
 - Padel não tem odds na API (não dá para apostar) e as corridas de cavalos precisam de um modelo de
   corrida com vários participantes — ficaram de fora nesta versão.
@@ -238,10 +237,10 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
 
 ## Destaques e Ao Vivo
 
-- **Ordem**: futebol primeiro, depois ténis, basquetebol, hóquei, dardos e CS2; dentro de cada
+- **Ordem**: futebol primeiro, depois ténis, basquetebol, hóquei e dardos; dentro de cada
   desporto, as ligas grandes primeiro (`server/leagues.js`: Liga dos Campeões, Premier League, LaLiga,
   Serie A, Bundesliga, Ligue 1, Liga Portugal…; Grand Slams e Masters; NBA/EuroLeague; NHL; majors
-  de dardos e de CS2).
+  de dardos).
 - **Destaques** (página inicial): "Ao Vivo agora" e "Eventos em destaque" são carrosséis na
   horizontal. Entram primeiro os eventos destacados no painel, depois todo o futebol de ligas grandes
   e um evento de cada um dos outros desportos (o de liga maior). Sem futebol de liga grande, entram
@@ -382,7 +381,7 @@ server/
   feed.js       importação de futebol real (jogos, odds, ao vivo, resultados)
   livews.js     WebSocket ao vivo (odds e marcador em jogo)
   tennis.js     importação de ténis ATP/WTA (encontros, odds, resultados, H2H, previsões, ranking)
-  sports.js     basquetebol, hóquei no gelo, dardos e CS2 (Sports Addon)
+  sports.js     basquetebol, hóquei no gelo e dardos (Sports Addon)
   casino.js     casino (agregador Agent API v4, modo Transfer)
   wallet.js     movimentos de saldo (ledger)
   db.js         esquema SQLite
