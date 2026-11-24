@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BET62 · Casino — Modelo de página</title>
+<style>
+/* =====================================================================
+   MODELO DE PÁGINA DE CASINO — BET62
+   Cores retiradas diretamente do projeto (public/styles.css · :root).
+   Este ficheiro é só um modelo visual: não altera nada da aplicação.
+   ===================================================================== */
+:root {
+  /* Marca */
+  --brand: #67788c; --on-brand: #ffffff; --logo: #67788c; --register: #42946b; --login: #67788c;
+  /* Superfícies */
+  --page: #1a1f24; --card: #272c32; --panels: #282d34; --dim: #20262c; --row-hover: #48515b;
+  --border: #3e444b; --scrollbar: #1c2126; --disabled: #303336;
+  /* Estrutura */
+  --nav: #1e2329; --nav-sep: #2a3037; --nav-label: #ffffff; --nav-sub: #8b939c;
+  /* Texto */
+  --text: #e8eaed; --text-2: #b0b7bf; --text-3: #868e98; --text-4: #676f79;
+  /* Estado */
+  --live: #e95a74; --up: #51c580; --down: #e95a74; --win: #38e0a0; --highlight: #ff6890;
+  --suspended: #c0453f; --bet-now: #e2b33c;
+  /* Casino */
+  --casino-red: #ef3340; --gold: #ffc400; --gold-deep: #e2a800;
+  /* Layout */
+  --radius: 6px; --radius-lg: 14px; --sidebar-w: 260px;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--page); color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+}
+a { text-decoration: none; color: inherit; }
+button { font: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
+img { display: block; }
+h1, h2, h3 { margin: 0; }
+
+/* ---------------- top bar ---------------- */
+.topbar { position: sticky; top: 0; z-index: 50; height: 68px; background: var(--nav); border-bottom: 1px solid var(--nav-sep);
+  display: flex; align-items: center; gap: 26px; padding: 0 22px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 900; font-size: 21px; letter-spacing: -.8px; white-space: nowrap; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 12px var(--brand); }
+.brand em { font-style: normal; color: var(--brand); }
+.topnav { display: flex; align-items: center; gap: 4px; flex: 1; height: 100%; }
+.topnav a { height: 100%; display: flex; align-items: center; padding: 0 15px; color: var(--nav-sub); font-weight: 700; border-bottom: 3px solid transparent; }
+.topnav a:hover { color: var(--nav-label); }
+.topnav a.active { color: var(--nav-label); border-bottom-color: var(--brand); }
+.topnav a .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); margin-right: 7px; box-shadow: 0 0 10px var(--live); }
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.search { width: 230px; height: 40px; border-radius: 999px; border: 1px solid var(--border); background: var(--dim); color: var(--text); padding: 0 16px 0 38px; position: relative; }
+.search-wrap { position: relative; }
+.search-wrap::before { content: "⌕"; position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-3); font-size: 17px; }
+.icon-btn { width: 40px; height: 40px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--dim); color: var(--text-2); display: grid; place-items: center; font-weight: 800; }
+.balance { display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: var(--radius); background: var(--dim); border: 1px solid var(--border); font-weight: 800; }
+.balance b { color: var(--strong, #fff); }
+.btn { height: 40px; padding: 0 18px; border-radius: var(--radius); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+.btn-ghost { border: 1px solid var(--border); color: var(--text); }
+.btn-primary { background: var(--register); color: #fff; }
+.btn-brand { background: var(--brand); color: var(--on-brand); }
+
+/* ---------------- layout: casino rail + content ---------------- */
+.wrap { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); gap: 22px; max-width: 1600px; margin: 0 auto; padding: 18px 22px 60px; }
+.rail { position: sticky; top: 86px; align-self: start; background: var(--panels); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; }
+.rail h4 { margin: 4px 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-3); }
+.rail a { display: flex; align-items: center; gap: 10px; padding: 10px 10px; border-radius: 9px; color: var(--text-2); font-weight: 700; }
+.rail a:hover { background: var(--dim); color: var(--text); }
+.rail a.active { background: linear-gradient(90deg, rgba(103,120,140,.28), rgba(103,120,140,.05)); color: #fff; box-shadow: inset 3px 0 0 var(--brand); }
+.rail a span { font-size: 17px; width: 20px; text-align: center; }
+.rail hr { border: 0; border-top: 1px solid var(--border); margin: 12px 4px; }
+
+/* ---------------- category chips ---------------- */
+.chips { display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; height: 42px; padding: 0 17px; border-radius: 999px; border: 1px solid var(--border); background: var(--panels); color: var(--text-2);
+  font-weight: 800; display: inline-flex; align-items: center; gap: 8px; }
+.chip:hover { color: #fff; border-color: var(--text-4); }
+.chip.active { background: #fff; color: var(--page); border-color: #fff; }
+.chip span { font-size: 16px; }
+
+/* ---------------- hero banner carousel ---------------- */
+.hero { position: relative; border-radius: var(--radius-lg); overflow: hidden; background: #0d1114; box-shadow: 0 18px 46px rgba(0,0,0,.5); }
+.hero-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.hero-track::-webkit-scrollbar { display: none; }
+.slide { position: relative; flex: 0 0 100%; aspect-ratio: 1920 / 560; scroll-snap-align: start; }
+.slide img { width: 100%; height: 100%; object-fit: cover; }
+.slide::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(13,17,20,.92) 0%, rgba(13,17,20,.55) 42%, rgba(13,17,20,0) 72%); }
+.slide .copy { position: absolute; left: 42px; top: 50%; transform: translateY(-50%); z-index: 2; max-width: 46%; }
+.slide .kicker { display: inline-block; font-size: 11px; font-weight: 900; letter-spacing: 1.6px; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+.slide h1 { font-size: clamp(22px, 3.4vw, 42px); line-height: 1.04; font-weight: 900; letter-spacing: -.6px; text-shadow: 0 3px 16px rgba(0,0,0,.6); }
+.slide h1 em { font-style: normal; color: var(--gold); }
+.slide p { color: var(--text-2); font-weight: 700; margin: 12px 0 20px; max-width: 92%; }
+.cta { height: 48px; padding: 0 30px; border-radius: 999px; background: var(--gold); color: #111; font-weight: 900; display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 8px 24px rgba(255,196,0,.28); }
+.cta:hover { background: #ffd23a; }
+.hero-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(13,17,20,.62); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; font-size: 22px; }
+.hero-nav:hover { background: rgba(13,17,20,.85); }
+.hero-nav.prev { left: 14px; } .hero-nav.next { right: 14px; }
+.dots { position: absolute; left: 42px; bottom: 18px; z-index: 3; display: flex; gap: 7px; }
+.dots i { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.5); transition: width .2s; }
+.dots i.on { width: 22px; background: #fff; }
+
+/* ---------------- promo strip (small banners) ---------------- */
+.promo-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.promo { position: relative; display: flex; align-items: center; gap: 13px; padding: 14px; border-radius: var(--radius-lg); border: 1px solid var(--border);
+  background: linear-gradient(150deg, var(--card), var(--dim)); overflow: hidden; transition: transform .15s, border-color .15s; }
+.promo:hover { transform: translateY(-2px); border-color: var(--brand); }
+.promo .ic { flex: none; width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; font-size: 26px;
+  background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.22), rgba(0,0,0,0)); }
+.promo .tx { min-width: 0; }
+.promo .tx strong { display: block; font-size: 15px; font-weight: 900; line-height: 1.15; }
+.promo .tx small { display: block; color: var(--text-3); font-weight: 700; font-size: 12px; margin-top: 3px; line-height: 1.3; }
+.promo .tag { position: absolute; top: 10px; right: 10px; font-size: 9.5px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.promo.fs { background: radial-gradient(120% 130% at 0% 0%, rgba(66,148,107,.34), rgba(32,38,44,.9) 62%); }
+.promo.fs .ic { background: linear-gradient(145deg, #5cb88a, #347a57); }
+.promo.dep { background: radial-gradient(120% 130% at 0% 0%, rgba(255,196,0,.22), rgba(32,38,44,.9) 62%); }
+.promo.dep .ic { background: linear-gradient(145deg, #ffc400, #c98f00); }
+.promo.tour { background: radial-gradient(120% 130% at 0% 0%, rgba(239,51,64,.28), rgba(32,38,44,.9) 62%); }
+.promo.tour .ic { background: linear-gradient(145deg, #ef3340, #a5181f); }
+.promo.cash { background: radial-gradient(120% 130% at 0% 0%, rgba(81,197,128,.24), rgba(32,38,44,.9) 62%); }
+.promo.cash .ic { background: linear-gradient(145deg, #51c580, #2f7d56); }
+.promo .tag.hot { background: var(--casino-red); color: #fff; }
+.promo .tag.new { background: var(--gold); color: #111; }
+.promo .tag.soon { background: var(--brand); color: #fff; }
+
+/* ---------------- section rows ---------------- */
+.section { margin-top: 26px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.section-head h2 { font-size: 19px; font-weight: 900; letter-spacing: -.3px; display: flex; align-items: center; gap: 9px; }
+.section-head h2 .pill { font-size: 10px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--casino-red); color: #fff; }
+.see-all { color: var(--casino-red); font-weight: 800; font-size: 12.5px; }
+.see-all:hover { text-decoration: underline; }
+.track-wrap { position: relative; }
+.track { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 4 * 14px) / 5); gap: 14px;
+  overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 2px 8px; scrollbar-width: none; }
+.track::-webkit-scrollbar { display: none; }
+.track .card { scroll-snap-align: start; }
+.track-btn { position: absolute; top: calc(50% - 30px); z-index: 5; width: 38px; height: 38px; border-radius: 50%;
+  background: rgba(13,17,20,.72); border: 1px solid var(--border); color: #fff; display: grid; place-items: center; font-size: 19px; }
+.track-btn:hover { background: var(--nav); }
+.track-btn.prev { left: -12px; } .track-btn.next { right: -12px; }
+
+/* ---------------- game card ---------------- */
+.card { display: flex; flex-direction: column; gap: 8px; }
+.art { position: relative; aspect-ratio: 100 / 133; border-radius: var(--radius-lg); overflow: hidden;
+  background: linear-gradient(160deg, #2b3440, #171b22); box-shadow: 0 6px 18px rgba(0,0,0,.35); transition: transform .15s, box-shadow .15s; }
+.card:hover .art { transform: translateY(-3px); box-shadow: 0 12px 26px rgba(0,0,0,.5), 0 0 0 2px var(--brand); }
+.art img { width: 100%; height: 100%; object-fit: cover; }
+.art .badge { position: absolute; z-index: 2; font-size: 9px; font-weight: 900; letter-spacing: .6px; text-transform: uppercase; padding: 3px 7px; border-radius: 6px; }
+.art .badge.excl { left: 8px; bottom: 8px; background: var(--casino-red); color: #fff; }
+.art .badge.live { left: 8px; top: 8px; background: var(--live); color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+.art .badge.live::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+.art .rank { position: absolute; left: 8px; top: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 8px; background: var(--casino-red);
+  color: #fff; font-weight: 900; font-size: 13px; display: grid; place-items: center; }
+.art .play { position: absolute; inset: 0; margin: auto; width: 46px; height: 46px; border-radius: 50%; background: rgba(13,17,20,.72);
+  border: 2px solid rgba(255,255,255,.85); color: #fff; display: grid; place-items: center; font-size: 17px; opacity: 0; transition: opacity .15s; }
+.card:hover .art .play { opacity: 1; }
+.art .jack { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; text-align: center; padding: 4px 6px; border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255,196,0,.95), rgba(226,168,0,.95)); color: #111; font-weight: 900; font-size: 11.5px; letter-spacing: .3px; }
+.card .meta strong { display: block; font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta small { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- spotlight (wide) ---------------- */
+.spot { position: relative; border-radius: 16px; overflow: hidden; background: #0d1114; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.spot img { width: 100%; aspect-ratio: 1920 / 700; object-fit: cover; }
+.spot::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(13,17,20,.94) 0%, rgba(13,17,20,.5) 45%, rgba(13,17,20,0) 75%); }
+.spot .copy { position: absolute; left: 40px; top: 50%; transform: translateY(-50%); z-index: 2; max-width: 48%; }
+.spot .kicker { font-size: 11px; font-weight: 900; letter-spacing: 1.6px; text-transform: uppercase; color: var(--highlight); }
+.spot h2 { font-size: clamp(20px, 3vw, 36px); font-weight: 900; margin: 8px 0 10px; letter-spacing: -.5px; }
+.spot p { color: var(--text-2); font-weight: 700; margin: 0 0 18px; }
+.spot .cta { background: var(--casino-red); color: #fff; box-shadow: 0 8px 22px rgba(239,51,64,.32); }
+.spot .cta:hover { background: #ff4b57; }
+
+/* ---------------- footer ---------------- */
+.foot { border-top: 1px solid var(--border); background: var(--nav); margin-top: 46px; padding: 26px 22px; color: var(--text-3); }
+.foot .inner { max-width: 1600px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 26px; align-items: center; justify-content: space-between; }
+.foot .rg { display: flex; align-items: center; gap: 12px; font-weight: 800; }
+.foot .rg .b { width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--text-4); display: grid; place-items: center; color: var(--text-2); font-weight: 900; }
+.foot .links { display: flex; gap: 20px; flex-wrap: wrap; font-weight: 700; font-size: 12.5px; }
+.foot .links a:hover { color: var(--text-2); }
+
+/* ---------------- responsive ---------------- */
+@media (max-width: 1250px) { .track { grid-auto-columns: calc((100% - 3 * 14px) / 4); } }
+@media (max-width: 1100px) { .wrap { grid-template-columns: 1fr; } .rail { display: none; } .search { width: 160px; } }
+@media (max-width: 900px) { .track { grid-auto-columns: calc((100% - 2 * 12px) / 3); } .promo-strip { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px) {
+  .topnav { display: none; } .search-wrap { display: none; }
+  .slide { aspect-ratio: 3 / 4; } .slide::after { background: linear-gradient(0deg, rgba(13,17,20,.94) 20%, rgba(13,17,20,.1) 80%); }
+  .slide .copy { left: 20px; right: 20px; max-width: none; top: auto; bottom: 26px; transform: none; }
+  .dots { left: 20px; bottom: auto; top: 16px; }
+  .track { grid-auto-columns: 42%; }
+  .promo-strip { grid-template-columns: 1fr; }
+  .spot .copy { left: 20px; right: 20px; max-width: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>BET<em>62</em></div>
+  <nav class="topnav">
+    <a href="#">Desportos</a>
+    <a href="#"><span class="live-dot"></span>Ao Vivo</a>
+    <a href="#" class="active">Casino</a>
+    <a href="#">Promoções</a>
+    <a href="#">A minha conta</a>
+  </nav>
+  <div class="top-actions">
+    <div class="search-wrap"><input class="search" placeholder="Procurar jogo ou fornecedor…"></div>
+    <button class="icon-btn" title="Favoritos">★</button>
+    <div class="balance">Saldo <b>€ 128,40</b></div>
+    <button class="btn btn-primary">Depositar</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ CASINO RAIL ============ -->
+  <aside class="rail">
+    <h4>Casino</h4>
+    <a href="#" class="active"><span>⌂</span> Início</a>
+    <a href="#"><span>▦</span> Todos os jogos</a>
+    <a href="#"><span>✦</span> Novos</a>
+    <a href="#"><span>★</span> Populares</a>
+    <a href="#"><span>♛</span> Jackpots</a>
+    <hr>
+    <h4>Categorias</h4>
+    <a href="#"><span>◉</span> Slots</a>
+    <a href="#"><span>◴</span> Casino ao Vivo</a>
+    <a href="#"><span>⬤</span> Roleta</a>
+    <a href="#"><span>♠</span> Blackjack</a>
+    <a href="#"><span>✈</span> Crash</a>
+    <a href="#"><span>🎯</span> Dardos</a>
+    <hr>
+    <h4>Fornecedores</h4>
+    <a href="#"><span>▸</span> Pragmatic Play</a>
+    <a href="#"><span>▸</span> Play'n GO</a>
+    <a href="#"><span>▸</span> Evolution</a>
+    <a href="#"><span>▸</span> Hacksaw</a>
+  </aside>
+
+  <!-- ============ CONTENT ============ -->
+  <main>
+
+    <!-- category chips -->
+    <div class="chips">
+      <button class="chip active"><span>⌂</span> Início</button>
+      <button class="chip"><span>◉</span> Slots</button>
+      <button class="chip"><span>◴</span> Casino ao Vivo</button>
+      <button class="chip"><span>⬤</span> Roleta</button>
+      <button class="chip"><span>♠</span> Blackjack</button>
+      <button class="chip"><span>👑</span> Jackpots</button>
+      <button class="chip"><span>✈</span> Crash</button>
+      <button class="chip"><span>🔥</span> Populares</button>
+      <button class="chip"><span>✦</span> Novos</button>
+      <button class="chip"><span>⚡</span> Jogos instantâneos</button>
+    </div>
+
+    <!-- HERO BANNERS (grandes, cabem um jogo inteiro) -->
+    <section class="hero">
+      <div class="hero-track" id="heroTrack">
+        <div class="slide">
+          <img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=epic%20golden%20coins%20explosion%20jackpot%20slot%20machines%2C%20dark%20neon%20casino%2C%20cinematic%2C%20no%20text&image_size=landscape_16_9" alt="">
+          <div class="copy">
+            <span class="kicker">Jogo em destaque</span>
+            <h1>Gates of Olympus<br><em>Jackpot a subir</em></h1>
+            <p>Roda os multiplicadores e leva o jackpot progressivo. Prémio atual: <b>€ 214.980</b>.</p>
+            <button class="cta">Jogar agora ▸</button>
+          </div>
+        </div>
+        <div class="slide">
+          <img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=live%20casino%20roulette%20table%20glowing%20purple%20studio%20lights%2C%20premium%2C%20dark%20cinematic%2C%20no%20text&image_size=landscape_16_9" alt="">
+          <div class="copy">
+            <span class="kicker">Casino ao vivo</span>
+            <h1>Roleta ao Vivo<br><em>mesa aberta agora</em></h1>
+            <p>Dealers reais, mesas em português e limites desde € 0,50. 12 mesas disponíveis.</p>
+            <button class="cta">Entrar na mesa ▸</button>
+          </div>
+        </div>
+        <div class="slide">
+          <img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=red%20airplane%20crash%20game%20soaring%20over%20neon%20sky%2C%20multiplier%20curve%2C%20cinematic%20promo%2C%20no%20text&image_size=landscape_16_9" alt="">
+          <div class="copy">
+            <span class="kicker">Crash</span>
+            <h1>Decola com o Aviator<br><em>x1.000 jogados hoje</em></h1>
+            <p>Levanta antes da queda. Jogo instantâneo, resultados a cada 10 segundos.</p>
+            <button class="cta">Jogar instantâneo ▸</button>
+          </div>
+        </div>
+      </div>
+      <button class="hero-nav prev" data-hero="-1">‹</button>
+      <button class="hero-nav next" data-hero="1">›</button>
+      <div class="dots" id="heroDots"><i class="on"></i><i></i><i></i></div>
+    </section>
+
+    <!-- PROMO STRIP (banners pequenos de promoções) -->
+    <section class="promo-strip">
+      <a class="promo fs" href="#">
+        <div class="ic">🎁</div>
+        <div class="tx"><strong>Depósito €20 → 100 Free Spins</strong><small>No 1.º depósito · 1× rolamento</small></div>
+        <span class="tag hot">Hot</span>
+      </a>
+      <a class="promo dep" href="#">
+        <div class="ic">💰</div>
+        <div class="tx"><strong>Bónus 100% até €100</strong><small>No 1.º depósito até €100</small></div>
+        <span class="tag">Novo</span>
+      </a>
+      <a class="promo tour" href="#">
+        <div class="ic">🏆</div>
+        <div class="tx"><strong>Torneio de Slots €10.000</strong><small>Termina em 3 dias · 480 jogadores</small></div>
+        <span class="tag">Torneio</span>
+      </a>
+      <a class="promo cash" href="#">
+        <div class="ic">↩</div>
+        <div class="tx"><strong>Cashback semanal 15%</strong><small>Sobre as perdas líquidas da semana</small></div>
+        <span class="tag soon">Brevemente</span>
+      </a>
+    </section>
+
+    <!-- ROW: Escolhas da semana -->
+    <section class="section">
+      <div class="section-head"><h2>Escolhas da semana</h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track" data-cards="5">
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=greek%20god%20golden%20gates%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Exclusivo</span><span class="play">▶</span></div><div class="meta"><strong>Gates of Olympus</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=egyptian%20pharaoh%20gold%20treasure%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Book of Egypt</strong><small>Play'n GO</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20candy%20sweets%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Sweet Bonanza</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=asian%20dragon%20red%20gold%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Dragon Fortune</strong><small>Hacksaw</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=white%20wolf%20full%20moon%20night%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Wolf Gold</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=magic%20book%20adventure%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Book of Magic</strong><small>Play'n GO</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=safari%20jungle%20animals%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="play">▶</span></div><div class="meta"><strong>Safari King</strong><small>Hacksaw</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+    <!-- ROW: Top 10 -->
+    <section class="section">
+      <div class="section-head"><h2>Top 10 em Portugal 🇵🇹</h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track">
+          <div class="card"><div class="art"><span class="rank">1</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=fruit%20slot%20machine%20colorful%20gems%20dark%20red%20game%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Fruit Blast</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><span class="rank">2</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=greek%20god%20golden%20gates%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Gates of Olympus</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><span class="rank">3</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=red%20airplane%20crash%20game%20sky%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Aviator</strong><small>Spribe</small></div></div>
+          <div class="card"><div class="art"><span class="rank">4</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20candy%20sweets%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Sweet Bonanza</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><span class="rank">5</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=underwater%20fishing%20treasure%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Big Bass Bonanza</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><span class="rank">6</span><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=blackjack%20cards%20green%20table%20casino%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Blackjack VIP</strong><small>Evolution</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+    <!-- SPOTLIGHT (banner largo intercalado) -->
+    <section class="section">
+      <div class="spot">
+        <img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=mythical%20greek%20temple%20golden%20light%20slot%20game%20hero%20banner%2C%20cinematic%2C%20no%20text&image_size=landscape_16_9" alt="">
+        <div class="copy">
+          <span class="kicker">Apenas na BET62</span>
+          <h2>Torneio Gates of Olympus</h2>
+          <p>€25.000 em prémios, 3 semanas de rondas grátis e jackpots diários. Inscreve-te em segundos.</p>
+          <button class="cta">Participar ▸</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROW: Jackpots -->
+    <section class="section">
+      <div class="section-head"><h2>Jogos com Jackpot</h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track">
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=golden%20jackpot%20slot%20fruits%20dark%20cover%20art&image_size=portrait_4_3" alt=""><span class="jack">€ 214.980</span></div><div class="meta"><strong>Mega Fortune</strong><small>NetEnt</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=egyptian%20pharaoh%20gold%20treasure%20slot%20game%20cover%20art&image_size=portrait_4_3" alt=""><span class="jack">€ 88.120</span></div><div class="meta"><strong>Book of Egypt</strong><small>Play'n GO</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=dragon%20gold%20coins%20treasure%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="jack">€ 51.640</span></div><div class="meta"><strong>Dragon Fortune</strong><small>Hacksaw</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=white%20wolf%20full%20moon%20night%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="jack">€ 33.905</span></div><div class="meta"><strong>Wolf Gold</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=safari%20jungle%20animals%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="jack">€ 19.470</span></div><div class="meta"><strong>Safari King</strong><small>Hacksaw</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+    <!-- ROW: Casino ao Vivo -->
+    <section class="section">
+      <div class="section-head"><h2>Casino ao Vivo <span class="pill">Ao vivo</span></h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track">
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=live%20roulette%20wheel%20casino%20studio%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Roleta Lightning</strong><small>Evolution</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=blackjack%20table%20green%20felt%20live%20casino%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Blackjack VIP</strong><small>Evolution</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=baccarat%20cards%20elegant%20live%20casino%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Baccarat Speed</strong><small>Evolution</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=game%20show%20wheel%20colorful%20live%20casino%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Crazy Time</strong><small>Evolution</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=live%20roulette%20wheel%20casino%20studio%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge live">Ao vivo</span></div><div class="meta"><strong>Roleta Europeia</strong><small>Pragmatic Live</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+    <!-- ROW: Acabados de chegar -->
+    <section class="section">
+      <div class="section-head"><h2>Acabados de chegar</h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track">
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=magic%20book%20adventure%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Novo</span></div><div class="meta"><strong>Book of Magic</strong><small>Play'n GO</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=underwater%20fishing%20treasure%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Novo</span></div><div class="meta"><strong>Big Bass Bonanza</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=red%20airplane%20crash%20game%20sky%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Novo</span></div><div class="meta"><strong>Aviator</strong><small>Spribe</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20gem%20crystals%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Novo</span></div><div class="meta"><strong>Gem Blast</strong><small>Hacksaw</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=asian%20dragon%20red%20gold%20slot%20cover%20art&image_size=portrait_4_3" alt=""><span class="badge excl">Novo</span></div><div class="meta"><strong>Dragon Fortune</strong><small>Hacksaw</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+    <!-- ROW: fornecedor -->
+    <section class="section">
+      <div class="section-head"><h2>Jogos da Pragmatic Play</h2><a class="see-all" href="#">Ver tudo ›</a></div>
+      <div class="track-wrap"><button class="track-btn prev" data-track="-1">‹</button>
+        <div class="track">
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=greek%20god%20golden%20gates%20slot%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Gates of Olympus</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=colorful%20candy%20sweets%20slot%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Sweet Bonanza</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=white%20wolf%20full%20moon%20slot%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Wolf Gold</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=fruit%20slot%20gems%20dark%20red%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Fruit Blast</strong><small>Pragmatic Play</small></div></div>
+          <div class="card"><div class="art"><img src="https://core-normal.trae.ai/api/ide/v1/text_to_image?prompt=underwater%20fishing%20treasure%20slot%20cover%20art&image_size=portrait_4_3" alt=""></div><div class="meta"><strong>Big Bass Bonanza</strong><small>Pragmatic Play</small></div></div>
+        </div>
+      <button class="track-btn next" data-track="1">›</button></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<footer class="foot">
+  <div class="inner">
+    <div class="rg"><span class="b">18+</span> Jogue com responsabilidade · Apenas para maiores de 18 anos</div>
+    <div class="links">
+      <a href="#">Termos</a><a href="#">Privacidade</a><a href="#">Jogo responsável</a>
+      <a href="#">Autoexclusão</a><a href="#">Apoio</a><a href="#">Ajuda</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Carrossel de banners grandes
+(() => {
+  const track = document.getElementById('heroTrack');
+  const slides = [...track.children];
+  const dots = [...document.getElementById('heroDots').children];
+  const go = (i) => {
+    const n = (i + slides.length) % slides.length;
+    track.scrollTo({ left: n * track.clientWidth, behavior: 'smooth' });
+  };
+  document.querySelectorAll('[data-hero]').forEach((b) =>
+    b.addEventListener('click', () => go(slides.findIndex((s) => Math.abs(s.offsetLeft - track.scrollLeft) < 4) + Number(b.dataset.hero))));
+  let cur = 0;
+  track.addEventListener('scroll', () => {
+    const n = Math.round(track.scrollLeft / track.clientWidth);
+    if (n === cur) return;
+    cur = n;
+    dots.forEach((d, k) => d.classList.toggle('on', k === n));
+  });
+  dots.forEach((d, k) => d.addEventListener('click', () => go(k)));
+  // auto-rotação
+  let auto = setInterval(() => go(cur + 1), 7000);
+  track.addEventListener('pointerdown', () => clearInterval(auto));
+})();
+
+// Setas das filas de jogos
+document.querySelectorAll('.track-wrap').forEach((wrap) => {
+  const track = wrap.querySelector('.track');
+  wrap.querySelectorAll('[data-track]').forEach((b) =>
+    b.addEventListener('click', () => track.scrollBy({ left: Number(b.dataset.track) * track.clientWidth * 0.92, behavior: 'smooth' })));
+  const upd = () => {
+    wrap.querySelector('.prev').style.opacity = track.scrollLeft > 4 ? 1 : 0;
+    wrap.querySelector('.next').style.opacity = track.scrollLeft < track.scrollWidth - track.clientWidth - 4 ? 1 : 0;
+  };
+  track.addEventListener('scroll', upd); window.addEventListener('resize', upd); upd();
+});
+</script>
+</body>
+</html>
