@@ -253,22 +253,40 @@ function openAuth(mode) {
   if (mode === 'register') {
     const max = new Date();
     max.setFullYear(max.getFullYear() - 18);
+    // Two steps: personal data first, contact & access after, with a progress header on top.
     openModal('Criar conta', `
       <form data-form="register" novalidate>
         <div class="form-error hidden"></div>
-        <div class="field"><label>Nome completo</label><input name="name" required autocomplete="name" placeholder="Nome e apelido"></div>
-        <div class="form-grid">
-          <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
-          <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
+        <div class="reg-steps"><span class="reg-step on" data-reg-dot="1">1 · Dados pessoais</span><span class="reg-step" data-reg-dot="2">2 · Contacto e acesso</span></div>
+        <div class="reg-pane" data-reg-pane="1">
+          <div class="field"><label>Nome completo</label><input name="name" required autocomplete="name" placeholder="Nome e apelido"></div>
+          <div class="form-grid">
+            <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
+            <div class="field"><label>Nacionalidade</label><input name="nationality" required autocomplete="country-name" placeholder="Portuguesa"></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Profissão</label><input name="profession" required placeholder="Ex.: Professor(a)"></div>
+            <div class="field"><label>NIF</label><input name="nif" required inputmode="numeric" maxlength="11" placeholder="9 dígitos"></div>
+          </div>
+          <div class="field"><label>Número do Cartão de Cidadão ou passaporte</label><input name="idNumber" required placeholder="Ex.: 12345678 9 ZX4"></div>
+          <button type="button" class="primary-btn btn-block" data-action="reg-next">Continuar</button>
         </div>
-        <div class="form-grid">
-          <div class="field"><label>Telefone (opcional)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
-          <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
+        <div class="reg-pane hidden" data-reg-pane="2">
+          <div class="field"><label>E-mail</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
+          <div class="form-grid">
+            <div class="field"><label>Telefone (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
+            <div class="field"><label>País de residência</label><input name="country" required autocomplete="country-name" placeholder="Portugal"></div>
+          </div>
+          <div class="field"><label>Morada completa</label><input name="address" required placeholder="Rua, número, andar, freguesia, concelho"></div>
+          <div class="form-grid">
+            <div class="field"><label>Código postal</label><input name="postalCode" required placeholder="0000-000"></div>
+            <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
+          </div>
+          <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
+          <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
+          <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
+          <div class="reg-acts"><button type="button" class="ghost-btn" data-action="reg-back">Voltar</button><button class="primary-btn">CRIAR CONTA</button></div>
         </div>
-        <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
-        <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
-        <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
-        <button class="primary-btn btn-block">CRIAR CONTA</button>
       </form>
       <div class="modal-switch">Já tem conta? <button data-action="login">Entrar</button></div>`);
   } else {

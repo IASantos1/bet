@@ -726,6 +726,11 @@ function migrate(db) {
   if (!userCols.has('kyc_status')) db.exec("ALTER TABLE users ADD COLUMN kyc_status TEXT NOT NULL DEFAULT 'not_submitted'");
   // Profile: bank details for withdrawals, tax number, account preferences (JSON).
   for (const c of ['nif', 'iban', 'iban_name', 'prefs']) if (!userCols.has(c)) db.exec(`ALTER TABLE users ADD COLUMN ${c} TEXT`);
+  // Identity/address collected at sign-up (the two-step registration form): nationality, profession,
+  // country of residence, full address, postal code and the ID document (citizen card / passport).
+  for (const c of ['nationality', 'profession', 'country', 'address', 'postal_code', 'id_number']) {
+    if (!userCols.has(c)) db.exec(`ALTER TABLE users ADD COLUMN ${c} TEXT`);
+  }
   // Promotions: blocked by the administrator (abuse); responsible-gaming limits (JSON, see limits.js).
   if (!userCols.has('promo_blocked')) db.exec('ALTER TABLE users ADD COLUMN promo_blocked INTEGER NOT NULL DEFAULT 0');
   if (!userCols.has('limits')) db.exec('ALTER TABLE users ADD COLUMN limits TEXT');

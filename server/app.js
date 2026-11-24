@@ -142,6 +142,24 @@ function ageOn(birthdate, today = new Date()) {
   return age;
 }
 
+/**
+ * A Portuguese NIF: 9 digits, a valid first digit, not a run of the same digit (111111111) nor an
+ * obvious sequence (123456789 / 987654321), and with a matching mod-11 check digit. This throws out
+ * the placeholder numbers people type in ("123456789", "2222222"…) while letting real ones through.
+ */
+const NIF_FIRST = '1235689';
+function validNif(value) {
+  const nif = String(value ?? '').replace(/\D/g, '');
+  if (!/^\d{9}$/.test(nif) || !NIF_FIRST.includes(nif[0])) return false;
+  if (/^(\d)\1{8}$/.test(nif)) return false;
+  const run = (step) => { for (let i = 1; i < nif.length; i++) if (nif.charCodeAt(i) - nif.charCodeAt(i - 1) !== step) return false; return true; };
+  if (run(1) || run(-1)) return false;
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += Number(nif[i]) * (9 - i);
+  const check = 11 - (sum % 11);
+  return Number(nif[8]) === (check >= 10 ? 0 : check);
+}
+
 // Club badges from the data provider's public image proxy (no token needed).
 const providerImg = (type) => (source, id) => (source === 'bzzoiro' && /^\d+$/.test(String(id || '')) ? `https://sports.bzzoiro.com/img/${type}/${id}/?bg=transparent` : null);
 const footballLogo = providerImg('team');
@@ -1547,9 +1565,18 @@ export function createApp(db, {
     const phone = str(req.body.phone, 30) || null;
     const birthdate = str(req.body.birthdate, 10);
     const password = typeof req.body.password === 'string' ? req.body.password : '';
+    // Identity/address from the two-step registration form (kept for KYC and the operator's records).
+    const nationality = str(req.body.nationality, 60) || null;
+    const profession = str(req.body.profession, 80) || null;
+    const country = str(req.body.country, 60) || null;
+    const address = str(req.body.address, 200) || null;
+    const postalCode = str(req.body.postalCode, 20) || null;
+    const idNumber = str(req.body.idNumber, 40) || null;
+    const nif = str(req.body.nif, 20).replace(/\D/g, '');
     if (name.length < 2) throw new HttpError(400, 'Indique o seu nome.');
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email inválido.');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'A palavra-passe deve ter pelo menos 8 caracteres.');
+    if (nif && !validNif(nif)) throw new HttpError(400, 'NIF inválido. Indique um NIF português verdadeiro (9 dígitos).');
     const age = ageOn(birthdate);
     if (age < 0) throw new HttpError(400, 'Data de nascimento inválida.');
     if (age < config.minAge) throw new HttpError(403, `É necessário ter ${config.minAge} anos ou mais para criar conta.`);
@@ -1560,8 +1587,10 @@ export function createApp(db, {
     // The same box covers SMS when a phone number was given.
     const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0);
+      `INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared,
+        nationality, profession, country, address, postal_code, id_number, nif) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0,
+      nationality, profession, country, address, postalCode, idNumber, nif || null);
     // Compared with the sanctions lists at once (a failure never stops the registration).
     try { screenSanctions(db, Number(lastInsertRowid)); } catch (err) { console.warn(`[sanções] registo: ${err.message}`); }
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
@@ -1645,7 +1674,7 @@ export function createApp(db, {
     if (b.phone !== undefined) set.phone = str(b.phone, 30) || null;
     if (b.nif !== undefined) {
       const nif = str(b.nif, 20).replace(/\D/g, '');
-      if (nif && !/^\d{9}$/.test(nif)) throw new HttpError(400, 'NIF inválido: 9 dígitos.');
+      if (nif && !validNif(nif)) throw new HttpError(400, 'NIF inválido. Indique um NIF português verdadeiro (9 dígitos).');
       set.nif = nif || null;
     }
     if (b.iban !== undefined) {
