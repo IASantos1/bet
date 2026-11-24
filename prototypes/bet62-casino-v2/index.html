@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d0b">
+  <meta name="description" content="Protótipo visual isolado do BET62 Casino 2.0.">
+  <title>BET62 Casino 2.0 — Protótipo</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="prototype-note"><strong>PROTÓTIPO</strong><span>Conteúdo demonstrativo · sem ligação ao casino real</span></div>
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="BET62"><span>BET</span><b>62</b></a>
+    <nav class="desktop-nav" aria-label="Navegação principal">
+      <a class="active" href="#para-ti">Para ti</a><a href="#populares">Populares</a><a href="#novos">Novos jogos</a><a href="#torneios">Torneios</a><a href="#provedores">Provedores</a>
+    </nav>
+    <div class="header-actions"><button class="search-button" type="button" aria-label="Pesquisar">⌕ <span>Pesquisar</span></button><button class="login-button" type="button">Entrar</button><button class="deposit-button" type="button">Depositar</button></div>
+  </header>
+  <main class="page-shell">
+    <div class="mobile-shortcuts" aria-label="Atalhos"><a class="selected" href="#para-ti">✦<span>Para ti</span></a><a href="#populares">♨<span>Populares</span></a><a href="#novos">✧<span>Novos</span></a><a href="#torneios">♛<span>Torneios</span></a><a href="#provedores">▦<span>Provedores</span></a></div>
+    <section class="hero" id="para-ti" aria-label="Campanha em destaque">
+      <div class="hero-copy"><span class="eyebrow">BET62 · EXPERIÊNCIA CASINO</span><h1>O próximo jogo<br><em>começa aqui.</em></h1><p>Descobre novidades, clássicos e experiências selecionadas num só lugar.</p><a class="hero-cta" href="#populares">Explorar jogos <span>↗</span></a></div>
+      <div class="hero-art" aria-hidden="true"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="coin coin-one">62</div><div class="coin coin-two">✦</div><div class="hero-ring"></div><div class="hero-stamp">BET<br><b>62</b></div></div>
+      <div class="hero-pagination"><i class="current"></i><i></i><i></i><span>01 / 03</span></div>
+    </section>
+    <section class="quick-stats" aria-label="Informações"><div><span class="stat-icon">✦</span><p><strong>Seleção BET62</strong><small>Conteúdo em destaque</small></p></div><div><span class="stat-icon">◷</span><p><strong>Novidades</strong><small>Descobre novos títulos</small></p></div><div><span class="stat-icon">▤</span><p><strong>Catálogo</strong><small>Explora por categoria</small></p></div></section>
+    <section class="content-section" id="populares"><div class="section-heading"><div><span class="eyebrow">A ESCOLHA DA CASA</span><h2>Jogos em destaque</h2></div><a href="#catalogo">Ver catálogo <b>→</b></a></div><div class="game-grid featured-grid">
+      <article class="game-card art-gold"><div class="game-art"><span class="game-symbol">♛</span><span class="game-tag">DESTAQUE</span></div><strong>Golden Fortune</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-violet"><div class="game-art"><span class="game-symbol">✧</span><span class="game-tag">POPULAR</span></div><strong>Cosmic Reels</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-blue"><div class="game-art"><span class="game-symbol">◈</span></div><strong>Ocean Treasures</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-red"><div class="game-art"><span class="game-symbol">♜</span></div><strong>Royal Nights</strong><small>Estúdio demonstrativo</small></article>
+      <article class="game-card art-green"><div class="game-art"><span class="game-symbol">❖</span></div><strong>Emerald Quest</strong><small>Estúdio demonstrativo</small></article>
+    </div></section>
+    <section class="promo-strip" id="novos"><div><span class="eyebrow">ATUALIZAÇÃO DO CATÁLOGO</span><h2>Há sempre algo novo para descobrir.</h2><p>Uma área editorial para apresentar novidades e informações verificadas.</p></div><span class="promo-mark">B<span>62</span></span></section>
+    <section class="content-section" id="torneios"><div class="section-heading"><div><span class="eyebrow">EXPLORA POR EXPERIÊNCIA</span><h2>Categorias</h2></div></div><div class="category-grid"><a href="#catalogo"><span>♧</span><b>Slots</b><small>Catálogo de slots</small></a><a href="#catalogo"><span>◉</span><b>Jogos ao vivo</b><small>Mesas e experiências</small></a><a href="#catalogo"><span>↗</span><b>Crash</b><small>Jogos de ritmo rápido</small></a><a href="#catalogo"><span>♛</span><b>Jackpots</b><small>Jogos com jackpot</small></a></div></section>
+    <section class="content-section" id="provedores"><div class="section-heading"><div><span class="eyebrow">O TEU CATÁLOGO</span><h2>Provedores</h2></div><a href="#catalogo">Ver todos <b>→</b></a></div><div class="provider-list"><span>PRAGMATIC PLAY</span><span>PLAY'N GO</span><span>EVOLUTION</span><span>HACKSAW</span><span>NETENT</span></div></section>
+    <section class="content-section" id="catalogo"><div class="section-heading"><div><span class="eyebrow">DESCOBRE</span><h2>Todo o catálogo</h2></div></div><div class="catalog-toolbar"><label class="catalog-search">⌕ <input id="game-search" type="search" placeholder="Pesquisar no protótipo…" aria-label="Pesquisar jogos"></label><span id="result-count">5 títulos demonstrativos</span></div><p class="prototype-disclaimer">Os nomes e imagens estilizadas desta página são fictícios e servem apenas para validar a estrutura visual. Não representam jogos disponíveis, prémios ou resultados reais.</p></section>
+  </main>
+  <footer><a class="brand" href="#"><span>BET</span><b>62</b></a><span>Protótipo interno de experiência e navegação.</span><a href="#para-ti">Voltar ao topo ↑</a></footer>
+  <nav class="mobile-bottom" aria-label="Menu inferior"><a class="active" href="#para-ti">⌂<span>Início</span></a><a href="#populares">✦<span>Jogos</span></a><a href="#novos">✧<span>Novos</span></a><a href="#provedores">▦<span>Provedores</span></a></nav>
+</body>
+</html>
