@@ -4,14 +4,16 @@ import { openDb, setSetting } from '../server/db.js';
 import { seed } from '../server/seed.js';
 import { createApp } from '../server/app.js';
 import { config } from '../server/config.js';
-import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit } from '../server/affiliates.js';
+import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit, setAffiliateModel } from '../server/affiliates.js';
 import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, saveRevshareCost, reconcileRevshare } from '../server/affiliate-revshare.js';
 
 function setup() {
   const db = openDb(':memory:');
   seed(db);
   const admin = db.prepare("SELECT id FROM users WHERE role = 'admin'").get().id;
-  saveAffiliateConfig(db, { revshareMode: 'test', rateBps: 2000 }, { actor: admin, reason: 'ativar testes de Revenue Share' });
+  // This suite is about Revenue Share, so its affiliates are created on that model by default; the
+  // first-deposit tests switch an affiliate over explicitly with setAffiliateModel.
+  saveAffiliateConfig(db, { revshareMode: 'test', rateBps: 2000, model: 'revshare' }, { actor: admin, reason: 'ativar testes de Revenue Share' });
   let n = 0;
   const user = (name = null) => { n += 1; return Number(db.prepare(
     "INSERT INTO users (email,name,birthdate,password_hash,created_at) VALUES (?,?,'1990-01-01','x',?)"
@@ -39,16 +41,41 @@ function addCasinoMove(db, userId, txId, amount, spinsId = null, at = '2026-03-1
     VALUES (?,?,?, ?,0,'round-1','bet',1,'Demo Slot',?)`).run(txId, userId, spinsId, amount, at);
 }
 
-test('Revenue Share começa desativado, 20% fixos e o primeiro depósito já não cria comissão', () => {
+test('modelo 1.º depósito: 10% quando ligado, nada quando desligado, e afiliados em RevShare ficam de fora', () => {
   const s = setup();
   assert.equal(affiliateConfig(s.db).enabled, false);
   assert.equal(affiliateConfig(s.db).rateBps, 2000);
+  // The operator puts this affiliate on the first-deposit model (the suite defaults to Revenue Share).
   const affiliate = s.user('Afiliado');
-  const code = ensureProfile(s.db, affiliate).referral_code;
+  const { profile } = setAffiliateModel(s.db, affiliate, { actor: s.admin, model: 'first_deposit', reason: 'passar para o modelo de 1.º depósito' });
+  assert.equal(profile.model, 'first_deposit');
   const referred = s.user('Convidado');
-  assert.ok(attribute(s.db, { referredUserId: referred, code }));
+  assert.ok(attribute(s.db, { referredUserId: referred, code: profile.referral_code }));
+  // Programme off: no commission, whatever the model.
   assert.equal(onReferredDeposit(s.db, { userId: referred, amountCents: 5000, txId: 1, ref: 'demo:1' }), null);
   assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM affiliate_commissions').get().n, 0);
+  // Switched on: the first eligible deposit earns 10% of it, once per referred player.
+  saveAffiliateConfig(s.db, { enabled: true }, { actor: s.admin, reason: 'ligar o modelo de primeiro depósito' });
+  const deposit = (amount, ref) => Number(s.db.prepare(`INSERT INTO transactions
+    (user_id, type, amount_cents, balance_after_cents, description, ref, created_at)
+    VALUES (?, 'deposit', ?, ?, 'Depósito', ?, ?)`).run(referred, amount, amount, ref, new Date().toISOString()).lastInsertRowid);
+  const t1 = deposit(5000, 'demo:1');
+  const id = onReferredDeposit(s.db, { userId: referred, amountCents: 5000, txId: t1, ref: 'demo:1' });
+  assert.ok(id);
+  const row = s.db.prepare('SELECT * FROM affiliate_commissions WHERE id = ?').get(id);
+  assert.equal(row.rate_bps, 1000);
+  assert.equal(row.commission_cents, 500);
+  const t2 = deposit(9000, 'demo:2');
+  assert.equal(onReferredDeposit(s.db, { userId: referred, amountCents: 9000, txId: t2, ref: 'demo:2' }), null);
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM affiliate_commissions').get().n, 1);
+  // A second affiliate left on Revenue Share earns nothing through this path.
+  const revAff = s.user('Afiliado RevShare');
+  const revCode = ensureProfile(s.db, revAff).referral_code;
+  assert.equal(ensureProfile(s.db, revAff).model, 'revshare');
+  const revReferred = s.user('Convidado RevShare');
+  attribute(s.db, { referredUserId: revReferred, code: revCode });
+  assert.equal(onReferredDeposit(s.db, { userId: revReferred, amountCents: 5000, txId: 3, ref: 'demo:3' }), null);
+  assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM affiliate_commissions').get().n, 1);
 });
 
 test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credita carteiras', () => {
@@ -108,10 +135,23 @@ test('carryover negativo reduz a comissão do mês seguinte e a simulação é i
   assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM affiliate_revshare_periods WHERE affiliate_user_id=? AND period='2026-02' AND mode='test'").get(affiliate).n, 1);
 });
 
-test('produção não pode ser ativada antes da validação', () => {
+test('o operador pode ativar a produção do Revenue Share', () => {
   const s = setup();
-  assert.throws(() => saveAffiliateConfig(s.db, { revshareMode: 'live' }, { actor: s.admin, reason: 'tentar produção' }), /bloqueada/);
   assert.equal(affiliateConfig(s.db).revshareMode, 'test');
+  const next = saveAffiliateConfig(s.db, { revshareMode: 'live' }, { actor: s.admin, reason: 'validação concluída pelo operador' });
+  assert.equal(next.revshareMode, 'live');
+  assert.equal(affiliateConfig(s.db).revshareMode, 'live');
+});
+
+test('o modelo do afiliado é alterado pelo operador e fica na auditoria', () => {
+  const s = setup();
+  const affiliate = s.user('Afiliado');
+  assert.equal(ensureProfile(s.db, affiliate).model, 'revshare'); // suite default
+  const { profile } = setAffiliateModel(s.db, affiliate, { actor: s.admin, model: 'first_deposit', reason: 'passar para o modelo de 1.º depósito' });
+  assert.equal(profile.model, 'first_deposit');
+  assert.ok(s.db.prepare("SELECT 1 FROM affiliate_audit WHERE action='profile.model' AND entity_id=? AND result='first_deposit'").get(String(affiliate)));
+  assert.throws(() => setAffiliateModel(s.db, affiliate, { actor: s.admin, model: 'nonsense', reason: 'modelo inválido' }), /inválido/);
+  assert.throws(() => setAffiliateModel(s.db, affiliate, { actor: s.admin, model: 'revshare', reason: 'x' }), /motivo/);
 });
 
 test('ajustes de custos são auditados e deduzidos do NGR antes dos 20%', () => {
@@ -130,7 +170,7 @@ test('ajustes de custos são auditados e deduzidos do NGR antes dos 20%', () => 
   assert.ok(s.db.prepare("SELECT 1 FROM affiliate_audit WHERE action='revshare.cost.update' AND entity_id=?").get(String(affiliate)));
 });
 
-test('API administrativa disponibiliza simulação apenas em modo de teste e mantém produção bloqueada', async () => {
+test('API administrativa disponibiliza a simulação em modo de teste e permite ativar a produção', async () => {
   const s = setup();
   const previous = config.paymentsMode;
   config.paymentsMode = 'demo';
@@ -154,9 +194,9 @@ test('API administrativa disponibiliza simulação apenas em modo de teste e man
     const simulation = await call('POST', '/api/admin/affiliates/revshare/simulate', { period: '2026-03' });
     assert.equal(simulation.status, 200);
     assert.equal(simulation.body.mode, 'test');
-    const production = await call('PUT', '/api/admin/affiliates/config', { config: { revshareMode: 'live' }, reason: 'ainda sem validação' });
-    assert.equal(production.status, 409);
-    assert.equal(affiliateConfig(s.db).revshareMode, 'test');
+    const production = await call('PUT', '/api/admin/affiliates/config', { config: { revshareMode: 'live' }, reason: 'validação concluída pelo operador' });
+    assert.equal(production.status, 200);
+    assert.equal(affiliateConfig(s.db).revshareMode, 'live');
   } finally {
     server.close();
     config.paymentsMode = previous;

@@ -334,6 +334,9 @@ CREATE TABLE IF NOT EXISTS affiliate_profiles (
   user_id                     INTEGER NOT NULL UNIQUE REFERENCES users(id),
   referral_code               TEXT    NOT NULL UNIQUE,
   status                      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'suspended', 'blocked')),
+  -- Which commission model this affiliate is on: first_deposit (10% of a guest's first deposit) or
+  -- revshare (20% of the guests' monthly NGR). The two never run together for the same affiliate.
+  model                       TEXT    NOT NULL DEFAULT 'first_deposit' CHECK (model IN ('first_deposit', 'revshare')),
   admin_status                TEXT    CHECK (admin_status IN ('suspended', 'blocked')),
   admin_reason                TEXT,
   first_qualifying_deposit_at TEXT,
@@ -784,6 +787,11 @@ function migrate(db) {
   for (const [c, type] of [['approved_by', 'INTEGER REFERENCES users(id)'], ['approved_at', 'TEXT'], ['paid_by', 'INTEGER REFERENCES users(id)'], ['paid_at', 'TEXT'], ['payout_tx_id', 'INTEGER REFERENCES transactions(id)']]) {
     if (!revshareCols.has(c)) db.exec(`ALTER TABLE affiliate_revshare_periods ADD COLUMN ${c} ${type}`);
   }
+
+  // Per-affiliate commission model (first-deposit vs Revenue Share): existing profiles keep earning
+  // through the model they were already on.
+  const affProfileCols = new Set(db.prepare('PRAGMA table_info(affiliate_profiles)').all().map((c) => c.name));
+  if (!affProfileCols.has('model')) db.exec("ALTER TABLE affiliate_profiles ADD COLUMN model TEXT NOT NULL DEFAULT 'first_deposit'");
 
   // Monthly affiliate Revenue Share: immutable financial snapshots by affiliate / month / mode.
   db.exec(`

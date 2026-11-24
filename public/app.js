@@ -741,9 +741,12 @@ function affSideHtml() {
   const a = state.affHome;
   if (!a?.enabled || !a.referralUrl || a.uid !== state.user?.id) return '';
   const url = esc(a.referralUrl);
+  const pitch = a.model === 'revshare'
+    ? `Convide amigos e receba ${a.commission.rate}% do NGR mensal`
+    : `Convide amigos e receba ${a.commission.rate}% do 1.º depósito deles`;
   return `<section class="aff-side">
     <div class="aff-side-top"><span class="aff-side-badge"><b>${a.commission.rate}%</b></span>
-      <div><small>🎁 Programa de convites</small><b>Convide amigos e receba ${a.commission.rate}% do NGR mensal</b></div></div>
+      <div><small>🎁 Programa de convites</small><b>${pitch}</b></div></div>
     <div class="aff-side-link">${url.replace(/^https?:\/\//, '')}</div>
     <div class="aff-side-btns"><button class="aff-btn copy" data-aff-copy="${url}" data-aff-label="Link copiado">Copiar link</button>
       ${navigator.share ? `<button class="aff-btn share" data-aff-share="${url}">Partilhar</button>` : ''}</div>
@@ -2800,11 +2803,32 @@ async function loadAffiliates() {
   } catch (err) { toast('Erro', err.message, 'error'); return; }
   const box = $('#affBox');
   if (!box) return;
-  if (!me.enabled) { box.innerHTML = '<div class="notice">O programa de Revenue Share ainda não está ativo. O modelo prevê 20% do NGR mensal dos convidados.</div>'; return; }
+  const isRev = me.model === 'revshare';
+  if (!me.enabled) {
+    box.innerHTML = `<div class="notice">${isRev
+      ? 'O programa de Revenue Share ainda não está ativo. O modelo prevê 20% do NGR mensal dos convidados.'
+      : 'O programa de convites ainda não está ativo. O modelo prevê 10% do 1.º depósito de cada convidado.'}</div>`;
+    return;
+  }
   const [cls, label] = AFF_STATE[me.status] || ['', me.status];
   const sums = [
-    ['Visitas ao link', stats.clicks], ['Convidados', stats.referrals], ['Taxa RevShare', '20%'],
+    ['Visitas ao link', stats.clicks], ['Convidados', stats.referrals], ['Taxa', `${me.commission.rate}%`],
   ].map(([name, value]) => `<div class="aff-sum"><small>${name}</small><b>${value}</b></div>`).join('');
+  const summaryLine = isRev
+    ? 'A comissão é apurada mensalmente sobre o NGR real dos convidados. Não existe requisito de depósito próprio nem de saldo mínimo do afiliado.'
+    : `Recebe ${me.commission.rate}% do primeiro depósito elegível de cada convidado, creditado na sua carteira após aprovação.`;
+  const rules = isRev ? `<ul>
+      <li>Recebe ${me.commission.rate}% do <b>NGR mensal positivo</b> gerado pelos jogadores que se registaram através do seu link.</li>
+      <li>O cálculo considera apenas dinheiro real no sportsbook e casino; bónus, apostas anuladas e Free Spins são excluídos.</li>
+      <li>Custos elegíveis são deduzidos ao GGR. Resultados negativos transitam para os períodos seguintes antes de voltar a gerar comissão.</li>
+      <li>O apuramento é mensal e as comissões ficam sujeitas a revisão e aprovação manual.</li>
+      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. Um convidado fica associado ao primeiro código com que se registou.</li>
+    </ul>` : `<ul>
+      <li>Recebe ${me.commission.rate}% do <b>primeiro depósito elegível</b> de cada convidado que se registou através do seu link.</li>
+      <li>A comissão é aprovada e paga manualmente na sua carteira, depois de o depósito ser confirmado.</li>
+      <li>Para poder ganhar, precisa de um depósito próprio confirmado e de saldo elegível na sua conta.</li>
+      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. Um convidado fica associado ao primeiro código com que se registou.</li>
+    </ul>`;
   box.innerHTML = `
     <div class="aff-link">
       <small>O seu link de convite</small>
@@ -2814,20 +2838,14 @@ async function loadAffiliates() {
     </div>
     <h4 class="aff-h">Resumo do programa</h4>
     <div class="aff-sums">${sums}</div>
-    <p class="muted small">A comissão é apurada mensalmente sobre o NGR real dos convidados. Não existe requisito de depósito próprio nem de saldo mínimo do afiliado.</p>
+    <p class="muted small">${summaryLine}</p>
     <h4 class="aff-h">Convidados</h4>
     ${refs.items.length ? `<div class="pf-list">${refs.items.map((r) => `<div class="pf-row"><div><b>${esc(r.name)}</b><small>${esc(fmtDateTime(r.registeredAt))}</small></div>
       <span class="pf-badge">${REFERRAL_LABEL[r.status] || 'Registado'}</span></div>`).join('')}</div>
       ${refs.total > refs.items.length ? `<p class="muted small">A mostrar ${refs.items.length} de ${refs.total}.</p>` : ''}` : '<p class="muted small">Ainda não tem convidados.</p>'}
-    <h4 class="aff-h">Histórico anterior</h4>
-    ${coms.items.length ? `<div class="pf-list">${coms.items.map((c) => `<div class="pf-row"><div><b>${money(Number(c.amount))}</b><small>${esc(fmtDateTime(c.createdAt))} · modelo anterior de primeiro depósito</small></div><span class="pf-badge ${c.status === 'paid' ? 'verified' : ''}">${COMMISSION_LABEL[c.status] || c.status}</span></div>`).join('')}</div>` : '<p class="muted small">Sem comissões históricas do modelo anterior.</p>'}
-    <details class="aff-rules"><summary>Regras do programa</summary><ul>
-      <li>Recebe ${me.commission.rate}% do <b>NGR mensal positivo</b> gerado pelos jogadores que se registaram através do seu link.</li>
-      <li>O cálculo considera apenas dinheiro real no sportsbook e casino; bónus, apostas anuladas e Free Spins são excluídos.</li>
-      <li>Custos elegíveis são deduzidos ao GGR. Resultados negativos transitam para os períodos seguintes antes de voltar a gerar comissão.</li>
-      <li>O apuramento é mensal e as comissões ficam sujeitas a revisão e aprovação manual.</li>
-      <li>Não é permitido convidar-se a si próprio nem criar contas duplicadas. Um convidado fica associado ao primeiro código com que se registou.</li>
-    </ul></details>`;
+    <h4 class="aff-h">${isRev ? 'Histórico anterior' : 'Comissões de primeiro depósito'}</h4>
+    ${coms.items.length ? `<div class="pf-list">${coms.items.map((c) => `<div class="pf-row"><div><b>${money(Number(c.amount))}</b><small>${esc(fmtDateTime(c.createdAt))}${isRev ? ' · modelo anterior de primeiro depósito' : ''}</small></div><span class="pf-badge ${c.status === 'paid' ? 'verified' : ''}">${COMMISSION_LABEL[c.status] || c.status}</span></div>`).join('')}</div>` : `<p class="muted small">${isRev ? 'Sem comissões históricas do modelo anterior.' : 'Ainda não tem comissões.'}</p>`}
+    <details class="aff-rules"><summary>Regras do programa</summary>${rules}</details>`;
 }
 
 async function loadSessions() {

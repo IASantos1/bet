@@ -61,7 +61,7 @@ import { playableServers, createVideoProxy, createStreamRelay } from './rapidstr
 import {
   CODE_RE, normalizeCode, profileByCode, attribute, ipHash, affiliateConfig, saveAffiliateConfig, affiliateView, affiliateStats, ensureProfile,
   affiliateReferrals, affiliateCommissions, adminAffiliates, adminCommissions, adminAudit, reconcile, recover, reviewCommission,
-  payCommission, reverseCommission, setAffiliateStatus, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
+  payCommission, reverseCommission, setAffiliateStatus, setAffiliateModel, onReferredDeposit, refreshProfile, siteUrl, audit as affiliateAudit,
 } from './affiliates.js';
 import { createBetbyEngine } from './betby-engine.js';
 import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, revshareHistory, saveRevshareCost, reconcileRevshare } from './affiliate-revshare.js';
@@ -1290,7 +1290,9 @@ export function createApp(db, {
     clauses.push("(e.status = 'live' OR e.source = 'manual' OR EXISTS (SELECT 1 FROM selections s WHERE s.event_id = e.id AND s.active = 1))");
     clauses.push(NOT_GONE);
     params.push(goneBefore(), unseenBefore());
-    res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 1500), serverTime: now });
+    // Ordered by kick-off, so a small cap would cut off the farthest fixtures (games months ahead,
+    // e.g. next month). The window (`until`, up to futureDays) already bounds the list: return all of it.
+    res.json({ events: loadEvents(clauses.join(' AND '), params, 'e.start_time ASC', 6000), serverTime: now });
   });
 
   // Free club/team news for the help assistant, from Google News RSS (no key, no cost). Cached 10 min.
@@ -4111,6 +4113,10 @@ export function createApp(db, {
   admin.post('/affiliates/:userId/status', (req, res) => {
     const r = setAffiliateStatus(db, Number(req.params.userId), { actor: req.user.id, status: str(req.body?.status, 20), reason: reasonOf(req) });
     res.json({ profile: r.profile, eligibility: r.eligibility });
+  });
+  admin.post('/affiliates/:userId/model', (req, res) => {
+    const r = setAffiliateModel(db, Number(req.params.userId), { actor: req.user.id, model: str(req.body?.model, 20), reason: reasonOf(req) });
+    res.json({ profile: r.profile });
   });
   admin.get('/affiliates/commissions', (req, res) => {
     const status = COMMISSION_STATES.includes(req.query.status) ? req.query.status : '';

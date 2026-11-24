@@ -369,7 +369,7 @@ function fsPromosPanel(list) {
 const AFF_STATUS = { pending: 'Pendente', active: 'Ativo', suspended: 'Suspenso', blocked: 'Bloqueado' };
 const COMM_STATUS = { pending: 'Em análise', approved: 'Aprovada', paid: 'Paga', reversed: 'Revertida', rejected: 'Rejeitada' };
 const COMM_PILL = { pending: 'pending', approved: 'open', paid: 'won', reversed: 'lost', rejected: 'void' };
-const AFF_FIELDS = [['rateBps', 'Revenue Share (pontos base; 2000 = 20%)']];
+const AFF_MODEL_LABEL = { first_deposit: '1.º depósito · 10%', revshare: 'RevShare · 20% NGR' };
 
 function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareReconciliation: rr }, { items: commissions }, { items: auditLog }, history = { items: [] }) {
   const rec = `<div class="adm-cards">
@@ -378,16 +378,20 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
     <div class="adm-card"><small>Revertido</small><strong>${money(r.reversed)}</strong><em>movimentos: ${money(r.ledgerReversals)}</em></div>
     <div class="adm-card"><small>Reconciliação histórica</small><strong>${r.ok ? '✔ Certa' : '⚠ Diferença'}</strong><em><button class="ghost-btn btn-sm" data-action="aff-recover">Recuperar comissões antigas</button></em></div>
     <div class="adm-card"><small>Reconciliação RevShare</small><strong>${rr?.ok ? '✔ Certa' : '⚠ A verificar'}</strong><em>${rr ? `${rr.paidCount} pagamentos · ${money(rr.paid)} pagos / ${money(rr.ledger)} no ledger` : 'Sem dados'}</em></div></div>`;
-  const cfg = `<form class="panel" data-form="aff-config"><h3>Revenue Share · 20% do NGR</h3>
-    <p class="muted">O modo de teste calcula o GGR/NGR mensal dos jogadores referenciados. Não credita carteiras nem gera pagamentos. A produção permanece bloqueada até validação jurídica e financeira.</p>
+  const cfg = `<form class="panel" data-form="aff-config"><h3>Programa de afiliados · dois modelos</h3>
+    <p class="muted">Cada afiliado é atribuído a um modelo (na tabela de afiliados): <b>Primeiro depósito</b> (10% do 1.º depósito do convidado) ou <b>Revenue Share</b> (20% do NGR mensal dos convidados). Os dois modelos nunca se acumulam para o mesmo afiliado.</p>
+    <label class="adm-switch"><input type="checkbox" name="enabled"${c.enabled ? ' checked' : ''}> Ativar o modelo de primeiro depósito (10% a cada convidado que deposite)</label>
     <label class="field">Modo do Revenue Share<select name="revshareMode">
       <option value="off"${(c.revshareMode || 'off') === 'off' ? ' selected' : ''}>Desativado</option>
       <option value="test"${c.revshareMode === 'test' ? ' selected' : ''}>Modo de teste (sem pagamentos)</option>
-      <option value="live" disabled${c.revshareMode === 'live' ? ' selected' : ''}>Produção (bloqueada até validação)</option>
+      <option value="live"${c.revshareMode === 'live' ? ' selected' : ''}>Produção (paga após aprovação manual)</option>
     </select></label>
-    <p class="muted">⚖️ A ativação em produção exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino.</p>
-    <p class="muted">O modelo novo não exige depósito próprio mínimo nem saldo mínimo do afiliado. A taxa é fixa em 20%.</p>
-    <p class="muted">Taxa fixa configurada: <b>20% (2000 pontos base)</b>. Pagamentos automáticos desativados.</p>
+    <label class="field">Modelo predefinido para novos afiliados<select name="model">
+      <option value="first_deposit"${c.model !== 'revshare' ? ' selected' : ''}>Primeiro depósito · 10%</option>
+      <option value="revshare"${c.model === 'revshare' ? ' selected' : ''}>Revenue Share · 20% do NGR</option>
+    </select></label>
+    <p class="muted">⚖️ A produção (Revenue Share) exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino. O pagamento é sempre manual, após aprovação.</p>
+    <p class="muted">Taxas fixas: <b>20% (2000 pontos base)</b> no Revenue Share e <b>10% (1000 pontos base)</b> no primeiro depósito. Pagamentos automáticos desativados.</p>
     <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
     <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div></form>`;
   const periodNow = new Date().toISOString().slice(0, 7);
@@ -413,8 +417,12 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
     <div class="form-actions"><button class="primary-btn" type="button" data-action="aff-manual-assign">Associar jogadores selecionados</button></div>
     <p class="muted">A data inicial predefinida é 01/11/2026. Jogadores já associados a outro afiliado não são alterados; o sistema apresenta conflito para evitar substituições acidentais.</p>
   </div>`;
-  const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th></th></tr></thead><tbody>
+  const affs = affiliates.length ? `<div class="table-wrap"><table><thead><tr><th>Afiliado</th><th>Código</th><th>Modelo</th><th>Estado</th><th class="num">Visitas</th><th class="num">Registos</th><th></th></tr></thead><tbody>
     ${affiliates.map((a) => `<tr><td>${esc(a.name)}<br><small class="muted">${esc(a.email)}</small></td><td><b>${esc(a.code)}</b></td>
+      <td><select class="aff-model" data-action="aff-model" data-id="${a.userId}">
+        <option value="first_deposit"${a.model !== 'revshare' ? ' selected' : ''}>${AFF_MODEL_LABEL.first_deposit}</option>
+        <option value="revshare"${a.model === 'revshare' ? ' selected' : ''}>${AFF_MODEL_LABEL.revshare}</option>
+      </select></td>
       <td><span class="pill ${a.status === 'active' ? 'won' : a.status === 'pending' ? 'pending' : 'lost'}">${AFF_STATUS[a.status] || a.status}</span>${a.adminReason ? `<br><small class="muted">${esc(a.adminReason)}</small>` : ''}</td>
       <td class="num">${a.clicks}</td><td class="num">${a.referrals}</td>
       <td><div class="form-actions">${a.adminStatus ? `<button class="ghost-btn btn-sm" data-action="aff-status" data-status="active" data-id="${a.userId}">Reativar</button>` : `<button class="ghost-btn btn-sm" data-action="aff-status" data-status="suspended" data-id="${a.userId}">Suspender</button>`}
@@ -2092,11 +2100,9 @@ const handlers = {
   },
   async 'aff-config'(form) {
     const d = formData(form);
-    const config = { revshareMode: d.revshareMode, autoPayout: false, countDemoDeposits: false };
-    for (const [k] of AFF_FIELDS) if (k !== 'rateBps') config[k] = Number(d[k]);
-    config.rateBps = 2000;
+    const config = { enabled: form.enabled.checked, revshareMode: d.revshareMode, model: d.model, autoPayout: false, countDemoDeposits: false, rateBps: 2000 };
     await api('/api/admin/affiliates/config', { method: 'PUT', body: { config, reason: d.reason } });
-    toast('Feito', 'Modo Revenue Share guardado na auditoria.');
+    toast('Feito', 'Configuração de afiliados guardada na auditoria.');
     loadTab();
   },
   async 'aff-search'(form) { state.affQ = formData(form).q || ''; loadTab(); },
@@ -3266,6 +3272,17 @@ document.addEventListener('change', async (e) => {
     return;
   }
   // Markets on the site: show / hide one.
+  if (e.target.dataset?.action === 'aff-model') {
+    const select = e.target;
+    const reason = prompt('Motivo da alteração do modelo de comissão deste afiliado (fica na auditoria):');
+    if (!reason?.trim()) { loadTab(); return; }
+    try {
+      await api(`/api/admin/affiliates/${select.dataset.id}/model`, { method: 'POST', body: { model: select.value, reason } });
+      toast('Feito', 'Modelo do afiliado atualizado.');
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    loadTab();
+    return;
+  }
   if (e.target.dataset?.mvKey) {
     const { mvSport: sport, mvKey: key } = e.target.dataset;
     const hidden = !e.target.checked;

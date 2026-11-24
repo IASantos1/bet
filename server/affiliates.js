@@ -1,16 +1,23 @@
 // Affiliate programme. Every player can get a referral code (bet62.plus/GAB052); a new player who
-// signs up through it is attributed to that affiliate, once and for good. When that player's first
-// eligible deposit is confirmed, the affiliate earns 10% of it (1000 basis points, in cents), once
-// per referred player, if the affiliate is eligible at that moment:
-//   · an own confirmed deposit of at least €10 (minDepositCents),
-//   · at least €10 of eligible balance (minBalanceCents): the real wallet balance without promotional
-//     money (kept apart in bonuses / free bets) and without affiliate commissions received,
-//   · not suspended or blocked by the operator, not banned.
-// A commission is 'approved' when nothing calls for a look, otherwise 'pending' with the reason
-// (affiliate not eligible then, possible self-referral, shared address…); the operator reviews,
-// approves, pays (a wallet ledger entry, never a bare balance change) and reverses after a
-// chargeback. Everything is decided on the server, idempotently (UNIQUE referred player, UNIQUE
-// deposit), and audited in affiliate_audit (append-only).
+// signs up through it is attributed to that affiliate, once and for good.
+//
+// Each affiliate is assigned one of two commission models (affiliate_profiles.model), chosen by the
+// operator per affiliate — the two never run together, so a guest is never paid for twice:
+//   · 'first_deposit' (this file): when the referred player's first eligible deposit is confirmed,
+//     the affiliate earns 10% of it (1000 basis points, in cents), once per referred player, if the
+//     affiliate is eligible at that moment:
+//       – an own confirmed deposit of at least €10 (minDepositCents),
+//       – at least €10 of eligible balance (minBalanceCents): the real wallet balance without
+//         promotional money (kept apart in bonuses / free bets) and without affiliate commissions,
+//       – not suspended or blocked by the operator, not banned.
+//     A commission is 'approved' when nothing calls for a look, otherwise 'pending' with the reason
+//     (affiliate not eligible then, possible self-referral, shared address…); the operator reviews,
+//     approves, pays (a wallet ledger entry, never a bare balance change) and reverses after a
+//     chargeback.
+//   · 'revshare' (affiliate-revshare.js): 20% of the referred players' monthly NGR, in the monthly
+//     NGR ledger — that path ignores the hooks in this file entirely.
+// Everything is decided on the server, idempotently (UNIQUE referred player, UNIQUE deposit), and
+// audited in affiliate_audit (append-only).
 import { createHash, randomInt } from 'node:crypto';
 import { getSetting, nowIso, setSetting, tx } from './db.js';
 import { postTransaction } from './wallet.js';
@@ -20,8 +27,9 @@ import { config } from './config.js';
 export const AFFILIATE_DEFAULTS = {
   // Off until the operator switches it on (legal review first: see the admin panel).
   enabled: false,
+  model: 'first_deposit', // model given to new affiliates: first_deposit | revshare (the operator changes it per affiliate)
   revshareMode: 'off', // off | test | live; production starts safely disabled
-  rateBps: 2000, // 20% of eligible NGR
+  rateBps: 2000, // 20% of eligible NGR (Revenue Share)
   minDepositCents: 1000, // own confirmed deposit to qualify
   minBalanceCents: 1000, // eligible balance to keep earning
   autoPayout: false, // approved commissions wait for the operator's payout
@@ -51,8 +59,13 @@ export function saveAffiliateConfig(db, input, { actor, reason }) {
     if (k === 'revshareMode') {
       const mode = String(input[k]);
       if (!['off', 'test', 'live'].includes(mode)) throw new HttpError(400, 'Modo de Revenue Share inválido.');
-      if (mode === 'live') throw new HttpError(409, 'Produção ainda bloqueada: falta validação jurídica/licença aplicável e confirmação dos custos elegíveis e da reconciliação financeira.');
       next[k] = mode;
+      continue;
+    }
+    if (k === 'model') {
+      const model = String(input[k]);
+      if (!['first_deposit', 'revshare'].includes(model)) throw new HttpError(400, 'Modelo de afiliado inválido.');
+      next[k] = model;
       continue;
     }
     if (typeof AFFILIATE_DEFAULTS[k] === 'boolean') { next[k] = !!input[k]; continue; }
@@ -85,13 +98,14 @@ export const normalizeCode = (c) => String(c || '').trim().toUpperCase();
 export function ensureProfile(db, userId) {
   const found = db.prepare('SELECT * FROM affiliate_profiles WHERE user_id = ?').get(userId);
   if (found) return found;
+  const model = ['first_deposit', 'revshare'].includes(affiliateConfig(db).model) ? affiliateConfig(db).model : 'first_deposit';
   for (let i = 0; i < 20; i++) {
     const code = newCode();
     try {
       const ts = nowIso();
       tx(db, () => {
-        db.prepare('INSERT INTO affiliate_profiles (user_id, referral_code, created_at, updated_at) VALUES (?, ?, ?, ?)').run(userId, code, ts, ts);
-        audit(db, { action: 'code.create', entityType: 'profile', entityId: userId, meta: { code } });
+        db.prepare('INSERT INTO affiliate_profiles (user_id, referral_code, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(userId, code, model, ts, ts);
+        audit(db, { action: 'code.create', entityType: 'profile', entityId: userId, meta: { code, model } });
       });
       return db.prepare('SELECT * FROM affiliate_profiles WHERE user_id = ?').get(userId);
     } catch (err) {
@@ -215,19 +229,55 @@ function fraudSignals(db, affiliateId, referred, attribution, cfg) {
   return { reject: null, review };
 }
 
+// Model 'first_deposit': the affiliate earns 10% of the referred player's first eligible deposit.
+const FIRST_DEPOSIT_BPS = 1000;
+
 /**
- * A deposit was credited (inside the deposit's own transaction): when it is the referred player's
- * first eligible, confirmed deposit, the affiliate's commission is recorded. Idempotent: one per
- * referred player (UNIQUE) and per deposit (UNIQUE); a repeated webhook finds it and does nothing.
- * `demo`: a demonstration-mode deposit (counted only with countDemoDeposits).
+ * A deposit was credited (inside the deposit's own transaction): when the programme's first-deposit
+ * model is on and the affiliate is on that model, the referred player's first eligible deposit earns
+ * the affiliate 10% of it. Idempotent: one commission per referred player (UNIQUE) and per deposit
+ * (UNIQUE); a repeated webhook finds it and does nothing. Affiliates on the Revenue Share model earn
+ * through the monthly NGR ledger instead (affiliate-revshare.js), never here. `demo`: a
+ * demonstration-mode deposit (counted only with countDemoDeposits).
+ *
+ * Runs inside the caller's transaction, so it must not open one of its own (tx() is not reentrant).
  */
-/**
- * Legacy first-deposit commissions are intentionally disabled.
- * Historical rows remain available for audit and reconciliation. New earnings
- * are handled only by the monthly NGR revenue-share ledger.
- */
-export function onReferredDeposit(_db, _event) {
-  return null;
+export function onReferredDeposit(db, { userId, amountCents, txId, ref, demo = false }) {
+  const cfg = affiliateConfig(db);
+  if (!cfg.enabled) return null; // first-deposit model master switch (the admin panel turns it on)
+  if (demo && !cfg.countDemoDeposits) return null; // demonstration money never counts unless asked
+  if (txId == null || !ref) return null; // a commission needs the deposit it points at
+  const attribution = db.prepare('SELECT * FROM referral_attributions WHERE referred_user_id = ?').get(Number(userId));
+  if (!attribution) return null;
+  const profile = db.prepare('SELECT * FROM affiliate_profiles WHERE user_id = ?').get(attribution.affiliate_user_id);
+  if (!profile || profile.model !== 'first_deposit') return null; // this affiliate is on Revenue Share
+  if (!(amountCents >= cfg.minDepositCents)) return null; // only the first *eligible* deposit earns
+  // Idempotent: a repeated webhook (or a later deposit) finds the existing row and stops here.
+  if (db.prepare('SELECT 1 FROM affiliate_commissions WHERE referred_user_id = ?').get(Number(userId))) return null;
+  if (db.prepare('SELECT 1 FROM affiliate_commissions WHERE deposit_tx_id = ?').get(Number(txId))) return null;
+  if (db.prepare('SELECT 1 FROM affiliate_commissions WHERE deposit_ref = ?').get(String(ref))) return null;
+  const affiliate = db.prepare('SELECT * FROM users WHERE id = ?').get(attribution.affiliate_user_id);
+  const referred = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(userId));
+  if (!affiliate || !referred) return null;
+  const signals = fraudSignals(db, attribution.affiliate_user_id, referred, attribution, cfg);
+  const e = eligibility(db, attribution.affiliate_user_id, cfg);
+  let status = 'approved';
+  let reason = null;
+  if (signals.reject) { status = 'rejected'; reason = signals.reject; }
+  else if (!e.canEarn) { status = 'pending'; reason = e.reason; }
+  else if (signals.review.length) { status = 'pending'; reason = signals.review.join('; '); }
+  const commission = Math.floor(amountCents * FIRST_DEPOSIT_BPS / 10000);
+  const ts = nowIso();
+  db.prepare(`INSERT INTO affiliate_commissions
+      (affiliate_user_id, referred_user_id, deposit_tx_id, deposit_ref, deposit_cents, rate_bps, commission_cents, status, review_reason, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    attribution.affiliate_user_id, Number(userId), Number(txId), String(ref), amountCents, FIRST_DEPOSIT_BPS, commission, status, reason, ts, ts);
+  const id = db.prepare('SELECT last_insert_rowid() AS id').get().id;
+  db.prepare('UPDATE referral_attributions SET status = ?, reason = ? WHERE referred_user_id = ?')
+    .run(status === 'rejected' ? 'rejected' : 'qualified', reason, Number(userId));
+  audit(db, { action: 'commission.create', entityType: 'commission', entityId: id, result: status,
+    meta: { affiliate: attribution.affiliate_user_id, referred: Number(userId), deposit: amountCents, rateBps: FIRST_DEPOSIT_BPS, commission, reason } });
+  return id;
 }
 
 const commissionRow = (db, id) => {
@@ -327,6 +377,20 @@ export function setAffiliateStatus(db, userId, { actor, status, reason }) {
   return refreshProfile(db, p.user_id, { actor });
 }
 
+/** Operator changes which commission model an affiliate is on (first deposit or Revenue Share). */
+export function setAffiliateModel(db, userId, { actor, model, reason }) {
+  const why = String(reason || '').trim();
+  if (!['first_deposit', 'revshare'].includes(model)) throw new HttpError(400, 'Modelo de afiliado inválido.');
+  if (why.length < 3) throw new HttpError(400, 'Indique o motivo.');
+  const p = ensureProfile(db, Number(userId));
+  if (p.model === model) return { profile: p };
+  tx(db, () => {
+    db.prepare('UPDATE affiliate_profiles SET model = ?, updated_at = ? WHERE id = ?').run(model, nowIso(), p.id);
+    audit(db, { actor, action: 'profile.model', entityType: 'profile', entityId: p.user_id, result: model, meta: { reason: why, from: p.model } });
+  });
+  return { profile: db.prepare('SELECT * FROM affiliate_profiles WHERE id = ?').get(p.id) };
+}
+
 /**
  * Recovery: referred players whose first confirmed deposit has no commission yet (the hook failed,
  * the server stopped mid-way) get it now, through the same idempotent path. Returns how many.
@@ -335,7 +399,9 @@ export function recover(db) {
   const cfg = affiliateConfig(db);
   if (!cfg.enabled) return { created: 0 };
   const open = db.prepare(`SELECT a.referred_user_id FROM referral_attributions a
-    WHERE a.status = 'pending' AND NOT EXISTS (SELECT 1 FROM affiliate_commissions c WHERE c.referred_user_id = a.referred_user_id)`).all();
+    JOIN affiliate_profiles p ON p.user_id = a.affiliate_user_id
+    WHERE a.status = 'pending' AND p.model = 'first_deposit'
+      AND NOT EXISTS (SELECT 1 FROM affiliate_commissions c WHERE c.referred_user_id = a.referred_user_id)`).all();
   let created = 0;
   for (const { referred_user_id: userId } of open) {
     const first = confirmedDeposits(db, userId, cfg)[0];
@@ -359,13 +425,19 @@ export function affiliateView(db, userId, { baseUrl }) {
   const user = db.prepare('SELECT banned_at, excluded_until FROM users WHERE id = ?').get(userId);
   const status = !user || user.banned_at || profile.admin_status === 'blocked' ? 'blocked'
     : profile.admin_status === 'suspended' || (user.excluded_until && user.excluded_until > nowIso()) ? 'suspended' : 'active';
+  const model = profile.model === 'revshare' ? 'revshare' : 'first_deposit';
   return {
-    enabled: cfg.revshareMode === 'live',
+    // The programme is only "on" for this player when their model's own switch is on: the
+    // first-deposit model uses enabled, the Revenue Share model needs production (live).
+    enabled: model === 'first_deposit' ? !!cfg.enabled : cfg.revshareMode === 'live',
+    model,
     referralCode: profile.referral_code,
     referralUrl: `${baseUrl}/${profile.referral_code}`,
     status,
     reason: profile.admin_reason || null,
-    commission: { rate: 20, basis: 'monthly_ngr', currency: 'EUR' },
+    commission: model === 'first_deposit'
+      ? { rate: 10, basis: 'first_deposit', currency: 'EUR' }
+      : { rate: 20, basis: 'monthly_ngr', currency: 'EUR' },
   };
 }
 
@@ -410,7 +482,7 @@ export function adminAffiliates(db, { q = '', limit = 100 } = {}) {
     WHERE (? = '%%' OR p.referral_code LIKE ? OR u.email LIKE ? OR u.name LIKE ?)
     ORDER BY referrals DESC, p.id DESC LIMIT ?`).all(term, term, term, term, Math.min(500, Number(limit) || 100))
     .map((r) => ({
-      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, status: r.admin_status === 'blocked' ? 'blocked' : r.admin_status === 'suspended' ? 'suspended' : 'active', adminStatus: r.admin_status, adminReason: r.admin_reason,
+      userId: r.user_id, name: r.name, email: r.email, code: r.referral_code, model: r.model === 'revshare' ? 'revshare' : 'first_deposit', status: r.admin_status === 'blocked' ? 'blocked' : r.admin_status === 'suspended' ? 'suspended' : 'active', adminStatus: r.admin_status, adminReason: r.admin_reason,
       activatedAt: r.first_qualifying_deposit_at, clicks: r.clicks, referrals: r.referrals, qualified: r.qualified,
       eligibleBalance: eur(eligibleBalance(db, { id: r.user_id, balance_cents: r.balance_cents })), paid: eur(r.paid_cents), open: eur(r.open_cents),
     }));

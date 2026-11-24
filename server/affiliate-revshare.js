@@ -81,7 +81,8 @@ export function previewRevshare(db, { period, mode = 'test' } = {}) {
   periodBounds(period);
   if (!['test', 'live'].includes(mode)) throw new Error('Modo de apuramento inválido.');
   const affiliates = db.prepare(`SELECT p.user_id, p.referral_code, p.admin_status, u.name, u.email, u.banned_at
-    FROM affiliate_profiles p JOIN users u ON u.id = p.user_id ORDER BY p.user_id`).all();
+    FROM affiliate_profiles p JOIN users u ON u.id = p.user_id
+    WHERE p.model = 'revshare' ORDER BY p.user_id`).all();
   const rows = affiliates.map((a) => {
     const calc = affiliatePeriod(db, a, period, mode);
     const blocked = !!a.banned_at || ['suspended', 'blocked'].includes(a.admin_status);
