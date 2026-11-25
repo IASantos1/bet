@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Casino BET62 — Mobile Esboço</title>
+<style>
+  :root{
+    --bg:#0a0e14;
+    --bg2:#10161f;
+    --card:#141b26;
+    --line:#1f2a38;
+    --brand:#22c55e;
+    --brand2:#16a34a;
+    --accent:#a855f7;
+    --gold:#facc15;
+    --red:#ef4444;
+    --text:#e8eef5;
+    --muted:#8b96a7;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--text);
+    line-height:1.4;-webkit-font-smoothing:antialiased;
+    padding-bottom:80px; /* espaço para bottom nav */
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:480px;margin:0 auto;padding:0 12px}
+
+  /* ============ TOP BAR MOBILE ============ */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 12px;background:#070a0f;border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:30;
+  }
+  .logo{font-size:22px;font-weight:900;letter-spacing:-1px}
+  .logo b{color:var(--brand)}
+  .top-actions{display:flex;gap:8px;align-items:center}
+  .btn-dep{background:var(--brand);color:#04130a;font-weight:800;border:none;padding:8px 16px;border-radius:999px;cursor:pointer;font-size:13px}
+  .icon-btn{background:var(--bg2);border:1px solid var(--line);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:16px}
+
+  /* ============ PROMOÇÕES (3 cards horizontais deslizantes) ============ */
+  .promos{
+    display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;
+    padding:12px 0 4px;margin:0 -12px;padding-left:12px;padding-right:12px;
+  }
+  .promos::-webkit-scrollbar{display:none}
+  .promo{
+    flex:0 0 78%;scroll-snap-align:start;
+    border-radius:var(--radius);padding:14px 16px;min-height:92px;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    position:relative;overflow:hidden;border:1px solid var(--line);
+  }
+  .promo .p-title{font-size:15px;font-weight:900;line-height:1.1}
+  .promo .p-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .promo .p-btn{
+    background:var(--brand);color:#04130a;font-weight:800;font-size:11px;
+    padding:6px 12px;border-radius:999px;border:none;white-space:nowrap;
+  }
+  .promo .p-ic{font-size:30px}
+  .p1{background:linear-gradient(120deg,#0f2a1a,#0a1a12)}
+  .p2{background:linear-gradient(120deg,#1a1230,#120a22)}
+  .p3{background:linear-gradient(120deg,#2a1a0f,#22120a)}
+
+  /* ============ HERO BANNER MOBILE ============ */
+  .hero{
+    position:relative;border-radius:var(--radius);overflow:hidden;margin-top:10px;
+    min-height:180px;
+    background:
+      linear-gradient(110deg, rgba(10,14,20,.92) 0%, rgba(10,14,20,.55) 60%, rgba(10,14,20,.2) 100%),
+      url('https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=900&q=80');
+    background-size:cover;background-position:center;
+    border:1px solid var(--line);
+  }
+  .hero-inner{position:relative;padding:22px 18px;min-height:180px;display:flex;flex-direction:column;justify-content:center}
+  .hero h1{font-size:30px;font-weight:900;line-height:1;letter-spacing:-1px}
+  .hero h1 span{color:var(--brand)}
+  .hero p.sub{margin-top:6px;font-size:14px;font-weight:700;color:#fff}
+  .hero p.sub em{color:var(--brand);font-style:normal}
+  .hero .cta{
+    margin-top:12px;align-self:flex-start;background:var(--brand);color:#04130a;
+    font-weight:800;padding:9px 20px;border-radius:999px;font-size:13px;border:none;cursor:pointer;
+    box-shadow:0 8px 20px rgba(34,197,94,.35);
+  }
+  .hero-dots{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:5px}
+  .hero-dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4)}
+  .hero-dots i.on{background:var(--brand);width:14px;border-radius:3px}
+
+  /* ============ JACKPOT ANIMADO MOBILE ============ */
+  .jackpot-strip{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+  .jp{
+    background:linear-gradient(135deg,#161e2b,#0f1520);
+    border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
+  }
+  .jp::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 90% 10%,rgba(168,85,247,.18),transparent 55%)}
+  .jp .ic{font-size:22px}
+  .jp .lbl{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:1px}
+  .jp .val{font-size:20px;font-weight:900;color:var(--gold);font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .jp .val::before{content:"€ ";color:var(--gold)}
+  .jp.flip .val{animation:flick 1.6s infinite ease-in-out}
+  @keyframes flick{0%,100%{opacity:1}50%{opacity:.75}}
+
+  /* ============ CATEGORIAS MOBILE (scroll horizontal) ============ */
+  .cats{
+    display:flex;gap:8px;overflow-x:auto;padding:14px 0 6px;margin:0 -12px;padding-left:12px;padding-right:12px;
+  }
+  .cats::-webkit-scrollbar{display:none}
+  .cat{
+    flex:0 0 auto;min-width:72px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:10px 8px;text-align:center;cursor:pointer;transition:.2s;
+  }
+  .cat .ic{font-size:20px;margin-bottom:4px}
+  .cat .t{font-size:10px;font-weight:700;color:var(--muted)}
+  .cat.on{background:rgba(34,197,94,.12);border-color:var(--brand)}
+  .cat.on .t{color:var(--brand)}
+
+  /* ============ BLOCO DE JOGOS MOBILE ============ */
+  section.block{margin-top:20px}
+  .block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .block-head h2{font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .block-head h2 .ic{color:var(--brand)}
+  .block-head .seeall{color:var(--brand);font-size:12px;font-weight:700;cursor:pointer}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+
+  /* ============ CARD DE JOGO MOBILE ============ */
+  .game{
+    position:relative;border-radius:10px;overflow:hidden;aspect-ratio:3/4;
+    background:var(--card);border:1px solid var(--line);cursor:pointer;
+  }
+  .game .thumb{position:absolute;inset:0;background-size:cover;background-position:center}
+  .game .overlay{
+    position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,transparent 60%);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:8px;
+  }
+  .game .name{font-size:11px;font-weight:800;color:#fff;line-height:1.1}
+  .game .prov{font-size:9px;color:var(--brand);font-weight:700;text-transform:uppercase}
+
+  /* ============ CASINO AO VIVO MOBILE ============ */
+  .live-card{
+    margin-top:12px;border-radius:var(--radius);padding:18px;min-height:140px;
+    background-image:
+      linear-gradient(135deg,rgba(34,197,94,.18),rgba(168,85,247,.18)),
+      url('https://images.unsplash.com/photo-1511193311914-0346f16efe90?auto=format&fit=crop&w=900&q=80');
+    background-size:cover;background-position:center;
+    display:flex;flex-direction:column;justify-content:flex-end;
+  }
+  .live-card h3{font-size:18px;font-weight:900}
+  .live-card p{color:var(--muted);font-size:12px;margin:5px 0 12px}
+  .live-card button{background:var(--brand);color:#04130a;border:none;padding:9px 18px;border-radius:999px;font-weight:800;font-size:13px;cursor:pointer;align-self:flex-start}
+
+  /* ============ PROVEDORES MOBILE ============ */
+  .providers{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .prov{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;
+    color:var(--muted);font-weight:800;font-size:11px;letter-spacing:.5px;
+  }
+
+  /* ============ BANNER INFERIOR MOBILE ============ */
+  .bottom-banner{
+    margin:20px 0 20px;border-radius:var(--radius);padding:20px;
+    background-image:linear-gradient(110deg,rgba(10,14,20,.92),rgba(10,14,20,.4)),
+      url('https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=900&q=80');
+    background-size:cover;background-position:center;
+    display:flex;flex-direction:column;align-items:flex-start;gap:12px;
+  }
+  .bottom-banner h2{font-size:20px;font-weight:900;line-height:1.1}
+  .bottom-banner h2 em{color:var(--gold);font-style:normal}
+  .bottom-banner button{background:var(--brand);color:#04130a;border:none;padding:11px 24px;border-radius:999px;font-weight:800;font-size:13px;cursor:pointer}
+
+  /* ============ BOTTOM NAV MOBILE ============ */
+  .bottom-nav{
+    position:fixed;bottom:0;left:0;right:0;
+    background:#070a0f;border-top:1px solid var(--line);
+    display:flex;justify-content:space-around;padding:8px 0 10px;z-index:40;
+  }
+  .bn-item{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:10px;font-weight:600}
+  .bn-item.on{color:var(--brand)}
+  .bn-item .ic{font-size:18px}
+</style>
+</head>
+<body>
+
+<!-- ===== TOP BAR MOBILE ===== -->
+<header class="topbar">
+  <div class="logo">BET<b>62</b></div>
+  <div class="top-actions">
+    <div class="icon-btn">🔍</div>
+    <button class="btn-dep">Depositar</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ===== 3 PROMOÇÕES NO TOPO (scroll horizontal) ===== -->
+  <div class="promos">
+    <div class="promo p1">
+      <div>
+        <div class="p-title">🎁 100 FREE SPINS</div>
+        <div class="p-sub">1.º Depósito</div>
+      </div>
+      <button class="p-btn">Saber mais ›</button>
+    </div>
+    <div class="promo p2">
+      <div>
+        <div class="p-title">📅 BÓNUS</div>
+        <div class="p-sub">Semanal</div>
+      </div>
+      <button class="p-btn">Saber mais ›</button>
+    </div>
+    <div class="promo p3">
+      <div>
+        <div class="p-title">🍀 GIRO DA SORTE</div>
+        <div class="p-sub">Participe já!</div>
+      </div>
+      <button class="p-btn">Saber mais ›</button>
+    </div>
+  </div>
+
+  <!-- ===== HERO BANNER ===== -->
+  <section class="hero">
+    <div class="hero-inner">
+      <h1>CASINO BET<span>62</span></h1>
+      <p class="sub">JOGUE COM EMOÇÃO <em>E GANHE EM GRANDE!</em></p>
+      <button class="cta">JOGAR AGORA ›</button>
+    </div>
+    <div class="hero-dots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+  </section>
+
+  <!-- ===== NÚMEROS EM MOVIMENTO (jackpots animados) ===== -->
+  <div class="jackpot-strip">
+    <div class="jp flip">
+      <div class="ic">🏆</div>
+      <div><div class="lbl">Jackpot Diário</div><div class="val" data-jp="128430.55">128.430,55</div></div>
+    </div>
+    <div class="jp flip">
+      <div class="ic">👑</div>
+      <div><div class="lbl">Jackpot Mega</div><div class="val" data-jp="834670.24">834.670,24</div></div>
+    </div>
+    <div class="jp flip">
+      <div class="ic">💎</div>
+      <div><div class="lbl">Prémio da Sorte</div><div class="val" data-jp="45210.00">45.210,00</div></div>
+    </div>
+  </div>
+
+  <!-- ===== CATEGORIAS (scroll horizontal) ===== -->
+  <div class="cats" id="cats">
+    <div class="cat on"><div class="ic">🎰</div><div class="t">Todos</div></div>
+    <div class="cat"><div class="ic">🎲</div><div class="t">Slots</div></div>
+    <div class="cat"><div class="ic">💸</div><div class="t">Jackpot</div></div>
+    <div class="cat"><div class="ic">🎡</div><div class="t">Roleta</div></div>
+    <div class="cat"><div class="ic">🃏</div><div class="t">Blackjack</div></div>
+    <div class="cat"><div class="ic">♠️</div><div class="t">Poker</div></div>
+    <div class="cat"><div class="ic">🎥</div><div class="t">Live</div></div>
+    <div class="cat"><div class="ic">🌀</div><div class="t">Megaways</div></div>
+    <div class="cat"><div class="ic">🆕</div><div class="t">Novos</div></div>
+    <div class="cat"><div class="ic">🔥</div><div class="t">Popular</div></div>
+    <div class="cat"><div class="ic">❤️</div><div class="t">Fav.</div></div>
+  </div>
+
+  <!-- ===== JOGOS EM DESTAQUE ===== -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="ic">🔥</span> Jogos em Destaque</h2>
+      <span class="seeall">Ver todos ›</span>
+    </div>
+    <div class="grid" id="featured"></div>
+  </section>
+
+  <!-- ===== JOGOS POPULARES ===== -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="ic">⭐</span> Jogos Populares</h2>
+      <span class="seeall">Ver todos ›</span>
+    </div>
+    <div class="grid" id="popular"></div>
+  </section>
+
+  <!-- ===== CASINO AO VIVO ===== -->
+  <div class="live-card">
+    <h3>🎥 Casino ao Vivo</h3>
+    <p>Jogue em tempo real com os melhores dealers!</p>
+    <button>Aceder ›</button>
+  </div>
+
+  <!-- ===== NOSSOS PROVEDORES ===== -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="ic">🎰</span> Provedores</h2>
+      <span class="seeall">Ver todos ›</span>
+    </div>
+    <div class="providers">
+      <div class="prov">PRAGMATIC</div>
+      <div class="prov">EVOLUTION</div>
+      <div class="prov">PLAYTECH</div>
+      <div class="prov">HACKSAW</div>
+      <div class="prov">RED TIGER</div>
+      <div class="prov">NETENT</div>
+      <div class="prov">QUICKSPIN</div>
+      <div class="prov">RELAX</div>
+    </div>
+  </section>
+
+  <!-- ===== BANNER INFERIOR ===== -->
+  <section class="bottom-banner">
+    <h2>DESAFIE A SORTE<br><em>COM OS NOSSOS JOGOS DE CASINO!</em></h2>
+    <button>JOGAR AGORA ›</button>
+  </section>
+
+</main>
+
+<!-- ===== BOTTOM NAV ===== -->
+<nav class="bottom-nav">
+  <div class="bn-item"><div class="ic">🏠</div>Destaque</div>
+  <div class="bn-item"><div class="ic">⚽</div>Desporto</div>
+  <div class="bn-item on"><div class="ic">🎰</div>Casino</div>
+  <div class="bn-item"><div class="ic">🎁</div>Promoções</div>
+  <div class="bn-item"><div class="ic">👤</div>Perfil</div>
+</nav>
+
+<script>
+  const GAMES_FEATURED = [
+    ["Sweet Bonanza","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Big Bass Splash","Pragmatic","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Gates of Olympus","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Fortune Tiger","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Aviator","Spribe","https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=300&q=70"],
+    ["Book of Dead","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Starlight Princess","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["The Dog House","Pragmatic","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Wolf Gold","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+  ];
+
+  const GAMES_POPULAR = [
+    ["Sugar Rush","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Gonzo's Quest","Netent","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Reactoonz","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Rise of Olympus","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Money Train 4","Relax","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Tome of Madness","Play'n GO","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Razor Shark","Push","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Pompeii","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Sweet Bonanza 1000","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+  ];
+
+  function renderGames(targetId, games){
+    document.getElementById(targetId).innerHTML = games.map(([name, prov, img]) => `
+      <div class="game">
+        <div class="thumb" style="background-image:url('${img}')"></div>
+        <div class="overlay">
+          <div class="prov">${prov}</div>
+          <div class="name">${name}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+  renderGames("featured", GAMES_FEATURED);
+  renderGames("popular", GAMES_POPULAR);
+
+  /* Números em movimento */
+  const jpEls = document.querySelectorAll("[data-jp]");
+  const fmt = n => n.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+  jpEls.forEach(el=>{
+    let val = parseFloat(el.dataset.jp);
+    setInterval(()=>{
+      val += (Math.random()*30 - 5);
+      if(val < 1000) val = 1000 + Math.random()*5000;
+      el.textContent = fmt(val);
+    }, 1400);
+  });
+
+  /* Categorias */
+  document.querySelectorAll(".cat").forEach(c=>{
+    c.addEventListener("click",()=>{
+      document.querySelectorAll(".cat").forEach(x=>x.classList.remove("on"));
+      c.classList.add("on");
+    });
+  });
+</script>
+
+</body>
+</html>
