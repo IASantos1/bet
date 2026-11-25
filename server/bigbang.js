@@ -147,7 +147,7 @@ export function createBigBang(db, {
   const FS_MIN_BET = [[/big bass/i, 20]];
   const fsMinBetCents = (name) => { for (const [re, c] of FS_MIN_BET) if (re.test(String(name || ''))) return c; return null; };
   const gameOut = (g) => ({
-    id: g.id, code: g.name, name: g.title || g.name, provider: g.category_title || g.provider || g.category || '',
+    id: g.id, code: g.name, name: g.title || g.name, provider: g.category_title || g.provider || g.category || '', providerLogo: g.provider_logo || null,
     providerId: providerKey(g.category_title || g.provider || g.category), image: g.thumbnail || null,
     category: TYPE_LABEL[g.game_type] || 'Slots', type: g.game_type || 'slot', premium: !!g.is_premium,
     minBetCents: fsMinBetCents(g.title || g.name),
@@ -194,13 +194,23 @@ export function createBigBang(db, {
       } catch (err) { log(`palace catálogo: ${err.message}`); }
     }
     // Every spelling of each provider (its categories and the games' own names), grouped by providerKey.
-    const names = new Map(); // key → Set of spellings
+    const names = new Map(); // provider key to known spellings
+    const providerLogos = new Map();
     const addName = (n) => { if (!n) return; const k = providerKey(n); if (!names.has(k)) names.set(k, new Set()); names.get(k).add(String(n)); };
     try {
       const cats = await call('GET', '/categories');
-      for (const c of cats.data || []) addName(c.name);
-    } catch (err) { log(`bigbang categorias: ${err.message}`); }
-    for (const g of games) addName(g.provider);
+      for (const c of cats.data || []) {
+        addName(c.name);
+        const id = providerKey(c.name || c.slug);
+        if (c.logo && id) providerLogos.set(id, c.logo);
+      }
+    } catch (err) { log('bigbang categorias: ' + err.message); }
+    for (const g of games) {
+      addName(g.provider);
+      const logo = g.provider_logo || g.providerLogo;
+      const id = providerKey(g.provider);
+      if (logo && id && !providerLogos.has(id)) providerLogos.set(id, logo);
+    }
     // One copy of each game per provider: the one with artwork, then the Standard one (BigBang's own
     // engine, plays on any plan) — or, when the admin prefers them, the Premium one (the provider's
     // original game; needs BigBang's prepaid balance, higher GGR rate).
@@ -220,7 +230,9 @@ export function createBigBang(db, {
     // Only providers that have games here, under their fullest name: the house order first
     // (Pragmatic Play, Evolution, Playtech…), then the others alphabetically.
     const withGames = new Set(pool.filter((g) => best.get(titleKey(g)) === g).map((g) => g.providerId));
-    const providers = sortProviders(houseNames([...withGames].map((id) => ({ id, name: displayName(names.get(id) || [id]), maintenance: false }))));
+    const providers = sortProviders(houseNames([...withGames].map((id) => ({
+      id, name: displayName(names.get(id) || [id]), logo: providerLogos.get(id) || null, maintenance: false,
+    }))));
     const nameOf = new Map(providers.map((p) => [p.id, p.name]));
     for (const g of games) g.provider = nameOf.get(g.providerId) || g.provider;
     // Then one copy of a slot across providers too (a studio's games listed under its parent as well).

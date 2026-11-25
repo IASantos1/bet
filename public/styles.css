@@ -2667,3 +2667,10 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .pp-av.no b { position: static; background: none; color: #123; font-size: 13px; }
 .pp-goal { position: absolute; top: -7px; left: -7px; font-size: 11px; font-style: normal; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
 .pp-name { color: #fff; font-size: 10px; line-height: 1.1; text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,.6); max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* Logos served by the casino provider API. */
+.casino-provider-mark { width: 38px; height: 24px; object-fit: contain; flex: 0 0 auto; }
+.side-provider-logo { width: 22px; height: 22px; padding: 2px; }
+.casino-provider-fallback { display: inline-grid; place-items: center; color: var(--text-3); }
+.casino-row .section-head h2 { display: flex; align-items: center; gap: 9px; }
+@media (max-width: 700px) { .casino-row .section-head h2 .casino-provider-mark { width: 30px; height: 20px; } }

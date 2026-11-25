@@ -1486,6 +1486,12 @@ function casinoCats() {
   return state.casino.bigbang && cats.length ? [{ key: '', label: 'Início' }, ...cats]
     : [{ key: '', label: 'Todos' }, { key: 'Slots', label: 'Slots' }, { key: 'Ao Vivo', label: 'Ao Vivo' }];
 }
+function casinoProviderMark(provider, className = 'casino-provider-mark') {
+  const q = String.fromCharCode(34);
+  return provider && provider.logo
+    ? '<img class=' + q + className + q + ' src=' + q + esc(provider.logo) + q + ' alt=' + q + q + ' loading=' + q + 'lazy' + q + ' decoding=' + q + 'async' + q + '>'
+    : '<span class=' + q + className + ' casino-provider-fallback' + q + ' aria-hidden=' + q + 'true' + q + '>&#127922;</span>';
+}
 function casinoTabs(f) {
   return `<nav class="casino-chips" data-hscroll="casinoChips" aria-label="Tipos de jogo">${casinoCats().map((c) => `<button class="casino-chip${f.category === c.key && !f.provider && !f.q ? ' active' : ''}" data-casino-cat="${esc(c.key)}">
     <span aria-hidden="true">${CAT_ICON[c.key] || CAT_ICON[String(c.key).toLowerCase()] || '🎲'}</span>${esc(c.label)}</button>`).join('')}</nav>`;
@@ -1504,7 +1510,7 @@ function casinoSideMenu() {
     <div class="side-search"><input class="search-input" id="casinoSearch" type="search" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off" enterkeyhint="search"></div>
     ${casinoCats().map((x) => link('data-casino-cat', x.key, CAT_ICON[x.key] || '🎲', x.label, onLobby && f.category === x.key && !f.provider && !f.q)).join('')}
     ${c.providers?.length ? `<div class="side-divider"></div><div class="sidebar-head">FORNECEDORES</div>
-    ${c.providers.map((p) => link('data-casino-prov', p.id, '🎲', `${p.name}${p.maintenance ? ' (manutenção)' : ''}`, onLobby && f.provider === String(p.id), p.maintenance ? ' disabled' : '')).join('')}` : ''}
+    ${c.providers.map((p) => link('data-casino-prov', p.id, casinoProviderMark(p, 'casino-provider-mark side-provider-logo'), `${p.name}${p.maintenance ? ' (manutenção)' : ''}`, onLobby && f.provider === String(p.id), p.maintenance ? ' disabled' : '')).join('')}` : ''}
     <div class="side-divider"></div><div class="sidebar-head">EXPLORAR</div>
     <a class="side-link" href="#/desporto"><span>⚽</span> Desporto</a>
     <a class="side-link" href="#/ao-vivo"><span class="red-icon">●</span> Ao Vivo</a>
@@ -1754,8 +1760,12 @@ function casinoPage() {
     : `<button class="see-all" data-casino-list="${i}">Ver todos</button>`);
   // A row shows its first 12; "Ver todos" opens all of them.
   const ROW_MAX = 12;
-  const row = (r, i, cards = r.games.slice(0, ROW_MAX).map(lobbyCard)) => `<section class="section casino-row${r.layout === 'top' ? ' casino-top' : ''}${r.key === 'recent' ? ' casino-recent' : ''}">
-      <div class="section-head"><h2>${esc(r.title)}</h2>${seeAll(r, i)}</div>${carousel(`casinoRow${i}`, cards)}</section>`;
+  const row = (r, i, cards = r.games.slice(0, ROW_MAX).map(lobbyCard)) => {
+    const provider = r.key === 'provider' ? state.casino.providers.find((p) => String(p.id) === String(r.provider)) : null;
+    return '<section class=' + String.fromCharCode(34) + 'section casino-row' + (r.layout === 'top' ? ' casino-top' : '') + (r.key === 'recent' ? ' casino-recent' : '') + String.fromCharCode(34) + '>' +
+      '<div class=' + String.fromCharCode(34) + 'section-head' + String.fromCharCode(34) + '><h2>' + (provider ? casinoProviderMark(provider) : '') + esc(r.title) + '</h2>' + seeAll(r, i) + '</div>' +
+      carousel('casinoRow' + i, cards) + '</section>';
+  };
   // The order of the big operators: the week's picks, then the player's own (played recently, the
   // seasonal collection, "Sabemos que vais gostar", "Porque jogaste …", favourites), then the rest.
   const m = state.user ? state.casinoMine : null;
@@ -1809,7 +1819,7 @@ function casinoPage() {
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
   // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
   // Search and providers are in the casino menu (on the left; ☰ on phones).
-  return `${casinoTabs(f)}${filtered ? '' : casinoBanners()}${freeSpinsBar()}
+  return `${filtered ? '' : casinoBanners()}${casinoTabs(f)}${filtered ? '' : freeSpinsBar()}
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" id="casinoMore" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
