@@ -262,14 +262,14 @@ function openAuth(mode) {
             <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
             <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
           </div>
-          <div class="field"><label>Telemóvel (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
-          <button type="button" class="primary-btn btn-block" data-reg-next>SEGUINTE</button>
-        </div>
-        <div data-reg-step="2" class="hidden">
           <div class="form-grid">
             <div class="field"><label>Nacionalidade</label><input name="nationality" required placeholder="Portuguesa"></div>
             <div class="field"><label>Profissão</label><input name="profession" required placeholder="Ex.: Professor"></div>
           </div>
+          <div class="field"><label>Telemóvel (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
+          <button type="button" class="primary-btn btn-block" data-reg-next>SEGUINTE</button>
+        </div>
+        <div data-reg-step="2" class="hidden">
           <div class="form-grid">
             <div class="field"><label>País de residência</label><input name="country" required placeholder="Portugal"></div>
             <div class="field"><label>Código postal</label><input name="postalCode" required inputmode="numeric" placeholder="0000-000"></div>
