@@ -41,28 +41,41 @@
   .btn-dep{background:var(--brand);color:#04130a;font-weight:800;border:none;padding:8px 16px;border-radius:999px;cursor:pointer;font-size:13px}
   .icon-btn{background:var(--bg2);border:1px solid var(--line);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:16px}
 
-  /* ============ PROMOÇÕES (3 cards horizontais deslizantes) ============ */
+  /* ============ PROMOÇÕES (cards banner com imagem, scroll horizontal) ============ */
   .promos{
-    display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;
+    display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
     padding:12px 0 4px;margin:0 -12px;padding-left:12px;padding-right:12px;
   }
   .promos::-webkit-scrollbar{display:none}
   .promo{
-    flex:0 0 78%;scroll-snap-align:start;
-    border-radius:var(--radius);padding:14px 16px;min-height:92px;
+    flex:0 0 88%;scroll-snap-align:start;
+    border-radius:16px;overflow:hidden;min-height:150px;
+    position:relative;border:1px solid var(--line);
+    display:flex;align-items:flex-end;
+    background-size:cover;background-position:center;
+  }
+  .promo::after{
+    content:"";position:absolute;inset:0;
+    background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.4) 50%,rgba(0,0,0,.15) 100%);
+  }
+  .promo .p-body{
+    position:relative;z-index:2;padding:16px;width:100%;
     display:flex;align-items:center;justify-content:space-between;gap:10px;
-    position:relative;overflow:hidden;border:1px solid var(--line);
   }
-  .promo .p-title{font-size:15px;font-weight:900;line-height:1.1}
-  .promo .p-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .promo .p-title{font-size:18px;font-weight:900;line-height:1.1;text-shadow:0 2px 8px #000}
+  .promo .p-sub{font-size:12px;color:#cfd8e3;margin-top:4px;font-weight:600}
   .promo .p-btn{
-    background:var(--brand);color:#04130a;font-weight:800;font-size:11px;
-    padding:6px 12px;border-radius:999px;border:none;white-space:nowrap;
+    background:var(--brand);color:#04130a;font-weight:800;font-size:12px;
+    padding:8px 14px;border-radius:999px;border:none;white-space:nowrap;
+    box-shadow:0 6px 16px rgba(34,197,94,.4);
   }
-  .promo .p-ic{font-size:30px}
-  .p1{background:linear-gradient(120deg,#0f2a1a,#0a1a12)}
-  .p2{background:linear-gradient(120deg,#1a1230,#120a22)}
-  .p3{background:linear-gradient(120deg,#2a1a0f,#22120a)}
+  /* Placeholders bonitos para as imagens de cada promo */
+  .p1{background-image:linear-gradient(120deg,#06281a,#0a3d27),url('https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=800&q=70')}
+  .p2{background-image:linear-gradient(120deg,#1a0f33,#2d1b5c),url('https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=800&q=70')}
+  .p3{background-image:linear-gradient(120deg,#2a1a0a,#4a2e10),url('https://images.unsplash.com/photo-1511193311914-0346f16efe90?auto=format&fit=crop&w=800&q=70')}
+  .p1{background-size:cover;background-blend-mode:overlay}
+  .p2{background-size:cover;background-blend-mode:overlay}
+  .p3{background-size:cover;background-blend-mode:overlay}
 
   /* ============ HERO BANNER MOBILE ============ */
   .hero{
@@ -88,9 +101,14 @@
   .hero-dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4)}
   .hero-dots i.on{background:var(--brand);width:14px;border-radius:3px}
 
-  /* ============ JACKPOT ANIMADO MOBILE ============ */
-  .jackpot-strip{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+  /* ============ JACKPOT ANIMADO MOBILE (scroll horizontal) ============ */
+  .jackpot-strip{
+    margin-top:12px;display:flex;gap:10px;overflow-x:auto;
+    margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px;
+  }
+  .jackpot-strip::-webkit-scrollbar{display:none}
   .jp{
+    flex:0 0 72%;
     background:linear-gradient(135deg,#161e2b,#0f1520);
     border:1px solid var(--line);border-radius:12px;padding:12px 14px;
     display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;
@@ -151,11 +169,16 @@
   .live-card p{color:var(--muted);font-size:12px;margin:5px 0 12px}
   .live-card button{background:var(--brand);color:#04130a;border:none;padding:9px 18px;border-radius:999px;font-weight:800;font-size:13px;cursor:pointer;align-self:flex-start}
 
-  /* ============ PROVEDORES MOBILE ============ */
-  .providers{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  /* ============ PROVEDORES MOBILE (scroll horizontal) ============ */
+  .providers{
+    display:flex;gap:10px;overflow-x:auto;margin-top:10px;
+    margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px;
+  }
+  .providers::-webkit-scrollbar{display:none}
   .prov{
-    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;
-    color:var(--muted);font-weight:800;font-size:11px;letter-spacing:.5px;
+    flex:0 0 auto;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 18px;
+    color:var(--muted);font-weight:800;font-size:11px;letter-spacing:.5px;white-space:nowrap;
   }
 
   /* ============ BANNER INFERIOR MOBILE ============ */
@@ -197,25 +220,31 @@
   <!-- ===== 3 PROMOÇÕES NO TOPO (scroll horizontal) ===== -->
   <div class="promos">
     <div class="promo p1">
-      <div>
-        <div class="p-title">🎁 100 FREE SPINS</div>
-        <div class="p-sub">1.º Depósito</div>
+      <div class="p-body">
+        <div>
+          <div class="p-title">🎁 100 FREE SPINS</div>
+          <div class="p-sub">1.º Depósito</div>
+        </div>
+        <button class="p-btn">Saber mais ›</button>
       </div>
-      <button class="p-btn">Saber mais ›</button>
     </div>
     <div class="promo p2">
-      <div>
-        <div class="p-title">📅 BÓNUS</div>
-        <div class="p-sub">Semanal</div>
+      <div class="p-body">
+        <div>
+          <div class="p-title">📅 BÓNUS SEMANAL</div>
+          <div class="p-sub">Todos os dias há prémios</div>
+        </div>
+        <button class="p-btn">Saber mais ›</button>
       </div>
-      <button class="p-btn">Saber mais ›</button>
     </div>
     <div class="promo p3">
-      <div>
-        <div class="p-title">🍀 GIRO DA SORTE</div>
-        <div class="p-sub">Participe já!</div>
+      <div class="p-body">
+        <div>
+          <div class="p-title">🍀 GIRO DA SORTE</div>
+          <div class="p-sub">Participe já e ganhe!</div>
+        </div>
+        <button class="p-btn">Saber mais ›</button>
       </div>
-      <button class="p-btn">Saber mais ›</button>
     </div>
   </div>
 
