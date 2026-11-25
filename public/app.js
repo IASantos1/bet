@@ -1492,6 +1492,16 @@ function casinoProviderMark(provider, className = 'casino-provider-mark') {
     ? '<img class=' + q + className + q + ' src=' + q + esc(provider.logo) + q + ' alt=' + q + q + ' loading=' + q + 'lazy' + q + ' decoding=' + q + 'async' + q + '>'
     : '<span class=' + q + className + ' casino-provider-fallback' + q + ' aria-hidden=' + q + 'true' + q + '>&#127922;</span>';
 }
+function casinoBrowseTools(f) {
+  const providers = state.casino.providers || [];
+  const q = String.fromCharCode(34);
+  const search = '<label class=' + q + 'casino-search-field' + q + '><svg viewBox=' + q + '0 0 24 24' + q + ' aria-hidden=' + q + 'true' + q + '><circle cx=' + q + '11' + q + ' cy=' + q + '11' + q + ' r=' + q + '6.5' + q + '></circle><path d=' + q + 'm16 16 4 4' + q + '></path></svg><input id=' + q + 'casinoSearch' + q + ' type=' + q + 'search' + q + ' placeholder=' + q + 'Procurar jogo ou fornecedor' + q + ' value=' + q + esc(f.q || '') + q + ' autocomplete=' + q + 'off' + q + ' enterkeyhint=' + q + 'search' + q + '></label>';
+  const strip = providers.length ? '<nav class=' + q + 'casino-provider-strip' + q + ' aria-label=' + q + 'Fornecedores de casino' + q + '>' + providers.map((p) =>
+    '<button type=' + q + 'button' + q + ' class=' + q + 'casino-provider-tile' + (String(f.provider) === String(p.id) ? ' active' : '') + q + ' data-casino-prov=' + q + esc(p.id) + q + ' aria-label=' + q + 'Fornecedor ' + esc(p.name) + q + '>' +
+      casinoProviderMark(p) + '<span>' + esc(p.name) + '</span></button>'
+  ).join('') + '</nav>' : '';
+  return '<section class=' + q + 'casino-browse-tools' + q + ' aria-label=' + q + 'Pesquisar e escolher fornecedor' + q + '>' + search + strip + '</section>';
+}
 function casinoTabs(f) {
   return `<nav class="casino-chips" data-hscroll="casinoChips" aria-label="Tipos de jogo">${casinoCats().map((c) => `<button class="casino-chip${f.category === c.key && !f.provider && !f.q ? ' active' : ''}" data-casino-cat="${esc(c.key)}">
     <span aria-hidden="true">${CAT_ICON[c.key] || CAT_ICON[String(c.key).toLowerCase()] || '🎲'}</span>${esc(c.label)}</button>`).join('')}</nav>`;
@@ -1507,7 +1517,7 @@ function casinoSideMenu() {
   const onLobby = currentRoute().page === 'casino' && !currentRoute().sub;
   const link = (attr, val, icon, label, on, extra = '') => `<button class="side-link${on ? ' active' : ''}" ${attr}="${esc(val)}"${extra}><span>${icon}</span> ${esc(label)}</button>`;
   return `<div class="sidebar-head"><span>CASINO</span><button class="close-mobile" data-close-menu aria-label="Fechar">×</button></div>
-    <div class="side-search"><input class="search-input" id="casinoSearch" type="search" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off" enterkeyhint="search"></div>
+    <div class="side-search"><input class="search-input" id="casinoSearchSide" type="search" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off" enterkeyhint="search"></div>
     ${casinoCats().map((x) => link('data-casino-cat', x.key, CAT_ICON[x.key] || '🎲', x.label, onLobby && f.category === x.key && !f.provider && !f.q)).join('')}
     ${c.providers?.length ? `<div class="side-divider"></div><div class="sidebar-head">FORNECEDORES</div>
     ${c.providers.map((p) => link('data-casino-prov', p.id, casinoProviderMark(p, 'casino-provider-mark side-provider-logo'), `${p.name}${p.maintenance ? ' (manutenção)' : ''}`, onLobby && f.provider === String(p.id), p.maintenance ? ' disabled' : '')).join('')}` : ''}
@@ -1833,7 +1843,7 @@ function casinoPage() {
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
   // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
   // Search and providers are in the casino menu (on the left; ☰ on phones).
-  return `${filtered ? '' : casinoBanners()}${hero}${casinoTabs(f)}${filtered ? '' : freeSpinsBar()}
+  return `${filtered ? '' : casinoBanners()}${hero}${casinoTabs(f)}${casinoBrowseTools(f)}${filtered ? '' : freeSpinsBar()}
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" id="casinoMore" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
@@ -1885,9 +1895,9 @@ async function loadCasino({ reset = false } = {}) {
   }
   const { page, sub } = currentRoute();
   if (page === 'home' || (page === 'casino' && sub !== 'jogar')) {
-    const search = document.activeElement?.id === 'casinoSearch';
+    const searchId = ['casinoSearch', 'casinoSearchSide'].includes(document.activeElement?.id) ? document.activeElement.id : '';
     render({ keepScroll: true });
-    if (search) { const el = $('#casinoSearch'); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }
+    if (searchId) { const el = document.getElementById(searchId); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }
   }
 }
 
@@ -4538,7 +4548,7 @@ document.addEventListener('click', async (e) => {
   if (cat || prov) {
     state.casinoView = null;
     Object.assign(state.casinoFilter, cat ? { category: cat.dataset.casinoCat, provider: '', q: '' } : { provider: prov.dataset.casinoProv, category: '', q: '' });
-    const box = $('#casinoSearch');
+    const box = document.querySelector('.casino-search-field input, .side-search input');
     if (box) box.value = '';
     setSideMenu(false);
     if (location.hash !== '#/casino') location.hash = '#/casino';
@@ -4784,7 +4794,7 @@ document.addEventListener('toggle', (e) => {
 
 let casinoSearchTimer = null;
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'casinoSearch') {
+  if (['casinoSearch', 'casinoSearchSide'].includes(e.target.id)) {
     clearTimeout(casinoSearchTimer);
     casinoSearchTimer = setTimeout(() => {
       Object.assign(state.casinoFilter, { q: e.target.value.trim(), category: '', provider: '' });
@@ -5100,7 +5110,7 @@ function bindChrome() {
   });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   // Search typed in the phone menu: Enter puts the menu away to show the games found.
-  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'casinoSearch') { e.target.blur(); setSideMenu(false); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && ['casinoSearch', 'casinoSearchSide'].includes(e.target.id)) { e.target.blur(); setSideMenu(false); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
   // The bottom bar (and the top menu): the tab lights up and the page changes as soon as it is touched,
