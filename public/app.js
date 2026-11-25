@@ -262,10 +262,7 @@ function openAuth(mode) {
             <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
             <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
           </div>
-          <div class="form-grid">
-            <div class="field"><label>Telemóvel (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
-            <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
-          </div>
+          <div class="field"><label>Telemóvel (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
           <button type="button" class="primary-btn btn-block" data-reg-next>SEGUINTE</button>
         </div>
         <div data-reg-step="2" class="hidden">
@@ -282,9 +279,10 @@ function openAuth(mode) {
             <div class="field"><label>Nº Cartão de Cidadão / passaporte</label><input name="idNumber" required placeholder="00000000 0 ZX0"></div>
             <div class="field"><label>NIF</label><input name="nif" required inputmode="numeric" maxlength="9" placeholder="123456789"></div>
           </div>
+          <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
           <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
           <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
-          <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
+          <label class="check"><input name="bonus" type="checkbox" checked> <span>Deseja ativar o bónus de boas-vindas? (100 Free Spins no 1.º depósito de €20)</span></label>
           <div class="reg-actions">
             <button type="button" class="outline-btn" data-reg-back>Voltar</button>
             <button class="primary-btn">CRIAR CONTA</button>
@@ -4257,9 +4255,10 @@ const formHandlers = {
     const d = formData(form);
     const { user } = await api('/api/auth/register', {
       method: 'POST',
-      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, nationality: d.nationality, profession: d.profession, country: d.country, address: d.address, postalCode: d.postalCode, idNumber: d.idNumber, nif: d.nif, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, pep: form.pep.checked, ref: referralCode() || undefined },
+      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, nationality: d.nationality, profession: d.profession, country: d.country, address: d.address, postalCode: d.postalCode, idNumber: d.idNumber, nif: d.nif, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, ref: referralCode() || undefined },
     });
     state.user = user;
+    state.pendingBonus = form.bonus?.checked === true;
     closeModal();
     toast('Conta criada', 'Faça o seu primeiro depósito para começar a apostar.');
     updateHeader(); renderSlip();
@@ -4809,6 +4808,16 @@ async function withdrawGate() {
 }
 
 function depositOffer() {
+  // Coming straight from sign-up with the bonus opted in: switch it on and lock the amount to €20.
+  if (state.pendingBonus) {
+    const f = walletEl('form[data-form="deposit"]');
+    if (f) {
+      const sw = f.querySelector('#bonusSwitch');
+      if (sw) sw.checked = true;
+      applyBonus(f, true);
+    }
+    state.pendingBonus = false;
+  }
   cardSlotSync(walletEl('form[data-form="deposit"]'));
   clearTimeout(offerTimer);
   offerTimer = setTimeout(async () => {
