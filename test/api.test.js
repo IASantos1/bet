@@ -36,7 +36,8 @@ function client() {
   };
 }
 
-const adult = { name: 'Ana Silva', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true };
+const adult = { name: 'Ana Silva', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true,
+  nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' };
 let emailSeq = 0;
 async function newPlayer(deposit = 0) {
   const c = client();
@@ -440,10 +441,10 @@ test('API answers are never cached; the admin sees where the database lives', as
 
 test('profile: only the fields sent change; NIF, IBAN and preferences are checked', async () => {
   const c = await newPlayer();
-  let r = await c('PATCH', '/api/me', { iban: 'pt50 0002 0123 1234 5678 9015 4', ibanName: 'Ana Silva', nif: '123 456 789' });
+  let r = await c('PATCH', '/api/me', { iban: 'pt50 0002 0123 1234 5678 9015 4', ibanName: 'Ana Silva', nif: '210 000 009' });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.user.iban, 'PT50000201231234567890154');
-  assert.equal(r.body.user.nif, '123456789');
+  assert.equal(r.body.user.nif, '210000009');
   assert.equal(r.body.user.name, 'Ana Silva');
   r = await c('PATCH', '/api/me', { prefs: { notifyPromos: true, bogus: true, shareData: 'yes' } });
   assert.equal(r.body.user.prefs.notifyPromos, true);
@@ -452,6 +453,8 @@ test('profile: only the fields sent change; NIF, IBAN and preferences are checke
   assert.equal(r.body.user.prefs.bogus, undefined);
   assert.equal(r.body.user.iban, 'PT50000201231234567890154'); // untouched
   assert.equal((await c('PATCH', '/api/me', { nif: '12345' })).status, 400);
+  assert.equal((await c('PATCH', '/api/me', { nif: '123456789' })).status, 400); // sequential placeholder
+  assert.equal((await c('PATCH', '/api/me', { nif: '111111111' })).status, 400); // repeated digits
   assert.equal((await c('PATCH', '/api/me', { iban: 'nada' })).status, 400);
   assert.equal((await c('PATCH', '/api/me', { name: 'A' })).status, 400);
 });

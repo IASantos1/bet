@@ -256,21 +256,50 @@ function openAuth(mode) {
     openModal('Criar conta', `
       <form data-form="register" novalidate>
         <div class="form-error hidden"></div>
-        <div class="field"><label>Nome completo</label><input name="name" required autocomplete="name" placeholder="Nome e apelido"></div>
-        <div class="form-grid">
-          <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
-          <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
+        <div data-reg-step="1">
+          <div class="field"><label>Nome completo</label><input name="name" required autocomplete="name" placeholder="Nome e apelido"></div>
+          <div class="form-grid">
+            <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email" placeholder="nome@email.com"></div>
+            <div class="field"><label>Data de nascimento</label><input name="birthdate" type="date" required max="${max.toISOString().slice(0, 10)}"></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Telemóvel (recomendado)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
+            <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
+          </div>
+          <button type="button" class="primary-btn btn-block" data-reg-next>SEGUINTE</button>
         </div>
-        <div class="form-grid">
-          <div class="field"><label>Telefone (opcional)</label><input name="phone" autocomplete="tel" placeholder="+351 900 000 000"></div>
-          <div class="field"><label>Palavra-passe</label><input name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="mín. 8 caracteres"></div>
+        <div data-reg-step="2" class="hidden">
+          <div class="form-grid">
+            <div class="field"><label>Nacionalidade</label><input name="nationality" required placeholder="Portuguesa"></div>
+            <div class="field"><label>Profissão</label><input name="profession" required placeholder="Ex.: Professor"></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>País de residência</label><input name="country" required placeholder="Portugal"></div>
+            <div class="field"><label>Código postal</label><input name="postalCode" required inputmode="numeric" placeholder="0000-000"></div>
+          </div>
+          <div class="field"><label>Morada completa</label><input name="address" required placeholder="Rua, número, andar, localidade"></div>
+          <div class="form-grid">
+            <div class="field"><label>Nº Cartão de Cidadão / passaporte</label><input name="idNumber" required placeholder="00000000 0 ZX0"></div>
+            <div class="field"><label>NIF</label><input name="nif" required inputmode="numeric" maxlength="9" placeholder="123456789"></div>
+          </div>
+          <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
+          <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
+          <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
+          <div class="reg-actions">
+            <button type="button" class="outline-btn" data-reg-back>Voltar</button>
+            <button class="primary-btn">CRIAR CONTA</button>
+          </div>
         </div>
-        <label class="check"><input name="acceptTerms" type="checkbox" required> <span>Tenho 18 anos ou mais e aceito os termos e condições e a política de privacidade.</span></label>
-        <label class="check"><input name="promos" type="checkbox"> <span>Quero receber promoções e ofertas por email e SMS (pode desligar a qualquer momento).</span></label>
-        <label class="check"><input name="pep" type="checkbox"> <span>Sou pessoa politicamente exposta (PEP), familiar ou próximo de uma.</span></label>
-        <button class="primary-btn btn-block">CRIAR CONTA</button>
       </form>
       <div class="modal-switch">Já tem conta? <button data-action="login">Entrar</button></div>`);
+    // Two-step sign-up: the required fields of step 1 gate "Seguinte" before step 2 shows.
+    const regForm = $('#modal form[data-form="register"]');
+    const stepEls = $$('[data-reg-step]', regForm);
+    const showStep = (i) => stepEls.forEach((s, n) => s.classList.toggle('hidden', n !== i));
+    $('[data-reg-next]', regForm).addEventListener('click', () => {
+      if ($$('[required]', stepEls[0]).every((el) => el.checkValidity() && el.reportValidity())) showStep(1);
+    });
+    $('[data-reg-back]', regForm).addEventListener('click', () => showStep(0));
   } else {
     openModal('Entrar', `
       <form data-form="login" novalidate>
@@ -4228,7 +4257,7 @@ const formHandlers = {
     const d = formData(form);
     const { user } = await api('/api/auth/register', {
       method: 'POST',
-      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, pep: form.pep.checked, ref: referralCode() || undefined },
+      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, nationality: d.nationality, profession: d.profession, country: d.country, address: d.address, postalCode: d.postalCode, idNumber: d.idNumber, nif: d.nif, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, pep: form.pep.checked, ref: referralCode() || undefined },
     });
     state.user = user;
     closeModal();

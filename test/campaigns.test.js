@@ -98,7 +98,7 @@ test('campaigns: only opted-in, never excluded or banned; segments; unsubscribe;
     link.searchParams.set('u', String(e));
     assert.equal((await fetch(link, { method: 'POST' })).status, 400); // another player's id with this token
     // Sign-up: promotions only when the box is ticked.
-    const reg = (email, promos) => fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Novo', email, birthdate: '1990-01-01', password: 'segredo123', acceptTerms: true, promos }) });
+    const reg = (email, promos) => fetch(`${base}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Novo', email, birthdate: '1990-01-01', password: 'segredo123', acceptTerms: true, promos, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' }) });
     assert.equal((await reg('n1@x.com', true)).status, 201);
     assert.equal((await reg('n2@x.com', false)).status, 201);
     assert.deepEqual(audience(db, { segment: 'new' }).map((u) => u.email), ['e@x.com', 'n1@x.com']);

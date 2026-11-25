@@ -108,7 +108,7 @@ test('bet builder bet: one match, priced with the margin, settled with it', asyn
     return { status: res.status, body: await res.json() };
   };
   try {
-    assert.equal((await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'b@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true })).status, 201);
+    assert.equal((await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'b@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' })).status, 201);
     db.prepare("UPDATE users SET balance_cents = 10000 WHERE email = 'b@example.com'").run();
     const pick = (s) => ({ selectionId: s.id, odds: s.odds_x100 / 100 });
     const legs = [sel(ev, '1x2', '1'), sel(ev, 'btts', 'Y'), sel(ev, 'ou', 'O2.5')];

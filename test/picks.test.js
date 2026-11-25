@@ -90,7 +90,7 @@ test('a card placed from the match page is priced with its boost; a stale card i
     assert.equal(picks.filter((p) => p.super).length, 2);
     assert.ok(picks.every((p) => p.pct === (p.super ? SUPER_BOOST_PCT : BOOST_PCT) && p.legs.length === 3 && p.boosted > p.odds));
     assert.ok(picks.some((p) => p.legs.some((l) => /^Mais de \d/.test(l.label)))); // "Mais de (9.5)" shown as "Mais de 9.5"
-    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
     await call('POST', '/api/wallet/deposit', { amount: 100 });
     const p = picks[0];
     const selections = p.legs.map((l) => ({ selectionId: l.selectionId, odds: l.odds }));

@@ -266,7 +266,7 @@ test('API: deposit offer, withdrawal with an active bonus asks first, self-exclu
     return { status: res.status, body: await res.json() };
   };
   try {
-    assert.equal((await call('POST', '/api/auth/register', { name: 'Rui Sousa', email: 'rui@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true })).status, 201);
+    assert.equal((await call('POST', '/api/auth/register', { name: 'Rui Sousa', email: 'rui@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' })).status, 201);
     const offer = await call('GET', '/api/promotions/offer?amount=40');
     assert.equal(offer.body.campaign, 'welcome');
     assert.equal(offer.body.bonus, 40);

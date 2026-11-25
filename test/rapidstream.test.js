@@ -89,7 +89,7 @@ test('HTTP: /api/live2 needs a signed-in player with balance and a live football
     assert.match(cfg.csp, /connect-src 'self' https:\/\/api\.stripe\.com https:;/);
     assert.doesNotMatch(cfg.csp, /\$\{/);
     assert.equal((await call('GET', `/api/live2/${live.id}`)).status, 401);
-    await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true });
+    await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
     assert.equal((await call('GET', `/api/live2/${live.id}`)).body.reason, 'balance');
     db.prepare("UPDATE users SET balance_cents = 1000 WHERE email = 'ana@example.com'").run();
     const ok = await call('GET', `/api/live2/${live.id}`);

@@ -189,7 +189,7 @@ test('API: catalogue, game page, "Testar" without an account, "Jogar" needs bala
     assert.equal(demo.body.url, 'https://g/demo/4822');
     // Jogar: account and balance needed.
     assert.equal((await call('POST', '/api/casino/launch', { gameId: 4822 })).status, 401);
-    assert.equal((await call('POST', '/api/auth/register', { name: 'Rui Sousa', email: 'rui@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true })).status, 201);
+    assert.equal((await call('POST', '/api/auth/register', { name: 'Rui Sousa', email: 'rui@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' })).status, 201);
     const empty = await call('POST', '/api/casino/launch', { gameId: 4822 });
     assert.equal(empty.status, 400);
     assert.equal(empty.body.needsDeposit, true);

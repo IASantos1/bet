@@ -292,6 +292,8 @@ img.cut-sponsor { clip-path: inset(0 0 26% 0); transform: translateY(13%) scale(
 .check { display: flex; gap: 8px; align-items: flex-start; color: var(--text-2); font-size: 12px; margin: 4px 0 14px; line-height: 1.5; }
 .check input { margin-top: 2px; accent-color: var(--red); }
 .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.reg-actions { display: flex; gap: 8px; margin-top: 4px; }
+.reg-actions .primary-btn { flex: 1; }
 .methods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .method { border: 1px solid var(--line); background: var(--dim); border-radius: 6px; padding: 12px 8px; text-align: center; font-weight: 800; font-size: 12px; cursor: pointer; }
 .method input { display: none; }

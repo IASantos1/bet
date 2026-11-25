@@ -51,7 +51,7 @@ test('match page lists every market; bets on other markets settle on the final s
   const bttsNo = detail.markets.find((m) => m.market === 'btts').selections.find((s) => s.code === 'N');
   assert.equal(over25.label, 'Mais de 2.5');
 
-  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
   await call('POST', '/api/wallet/deposit', { amount: 100 });
   let r = await call('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: over25.id, odds: over25.odds }, { selectionId: bttsNo.id, odds: bttsNo.odds }] });
   assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -160,7 +160,7 @@ test('other provider markets: shown on the match page, bet like the rest, settle
   assert.deepEqual(corners.selections.map((s) => s.label), ['Mais de (8.5)', 'Menos de (8.5)']);
   assert.ok(detail.markets.some((m) => m.name === '1st Half / Fulltime'));
 
-  await call('POST', '/api/auth/register', { name: 'Ana', email: 'ana@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/auth/register', { name: 'Ana', email: 'ana@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
   await call('POST', '/api/wallet/deposit', { amount: 100 });
   const over = corners.selections[0];
   let r = await call('POST', '/api/bets', { mode: 'single', stake: 10, selections: [{ selectionId: over.id, odds: over.odds }] });
@@ -201,7 +201,7 @@ test('a market the operator hides leaves the match page and the slip; showing it
   assert.equal((await admin.call('POST', '/api/admin/market-visibility', { sport: 'futebol', key: 'btts', hidden: true })).status, 200);
   assert.ok(!(await call('GET', `/api/events/${ev.id}`)).body.event.markets.some((m) => m.market === 'btts'));
   assert.ok((await admin.call('GET', '/api/admin/market-visibility')).body.sports.futebol.find((m) => m.key === 'btts').hidden);
-  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+  await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
   await call('POST', '/api/wallet/deposit', { amount: 100 });
   const r = await call('POST', '/api/bets', { mode: 'single', stake: 5, selections: [{ selectionId: btts.id, odds: btts.odds }] });
   assert.equal(r.status, 409);

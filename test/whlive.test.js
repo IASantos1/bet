@@ -73,7 +73,7 @@ test('GET /api/live/:eventId: only WinHouse games in play here; our id or the Wi
     // Live TV: signed-in players with balance only.
     assert.deepEqual(await get('/api/live/2085793307'), { status: 401, body: { success: false, reason: 'login', error: 'Inicie sessão para ver a transmissão.' } });
     assert.equal((await get('/api/live')).status, 401);
-    const reg = await req('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ana Silva', email: 'tv@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true }) });
+    const reg = await req('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Ana Silva', email: 'tv@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' }) });
     assert.equal(reg.status, 201);
     const noMoney = await get('/api/live/2085793307');
     assert.deepEqual([noMoney.status, noMoney.body.reason], [403, 'balance']);

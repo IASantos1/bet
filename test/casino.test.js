@@ -145,7 +145,7 @@ test('single wallet: the balance follows the player into the game and back', asy
   try {
     assert.equal((await call('GET', '/api/casino/games')).body.games.length, 1);
     assert.equal((await call('POST', '/api/casino/launch', { providerId: 1, gameCode: 'vs20doghouse' })).status, 401);
-    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
     await call('POST', '/api/wallet/deposit', { amount: 50 });
 
     // Opening a game moves the whole balance; no amount is asked.
@@ -343,7 +343,7 @@ test('os meus jogos: o jogo aberto fica em "jogados recentemente" e o coração 
   };
   try {
     assert.deepEqual((await call('GET', '/api/casino/mine')).body, { recent: [], favorites: [], forYou: [], because: [] });
-    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui2@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true });
+    await call('POST', '/api/auth/register', { name: 'Rui', email: 'rui2@x.pt', password: 'segredo123', birthdate: '1990-01-01', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
     await call('POST', '/api/wallet/deposit', { amount: 50 });
     // A demo does not count; real money does (slot and live table), the last one first.
     assert.equal((await call('POST', '/api/casino/launch', { gameId: 11, demo: true })).status, 200);

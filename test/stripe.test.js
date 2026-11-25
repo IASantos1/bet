@@ -72,7 +72,7 @@ test('Stripe deposits inside the site: MB WAY, Multibanco, card; credited once b
       const body = JSON.stringify({ id: `evt_${obj.id}`, type, data: { object: obj } });
       return fetch(`${base}/api/stripe/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': sign(body, undefined, secret) }, body });
     };
-    assert.equal((await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true })).status, 201);
+    assert.equal((await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'ana@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' })).status, 201);
 
     // MB WAY: phone required; confirmed by the server with the phone.
     assert.equal((await call('POST', '/api/wallet/deposit', { amount: 25, method: 'mbway', phone: '12' })).status, 400);

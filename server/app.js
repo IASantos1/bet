@@ -96,6 +96,22 @@ const SPORTS = ['futebol', 'basquetebol', 'tenis', 'hoquei', 'dardos', 'voleibol
 const BETBY_SIZE_DEFAULTS = { tenis: 76, tenismesa: 80, badminton: 84, voleibol: 88 };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/**
+ * A NIF must be 9 digits and must not be an obvious placeholder: a single digit repeated
+ * (111111111, 222222222…) or a run of consecutive digits (123456789, 987654321).
+ */
+function validNif(nif) {
+  if (!/^\d{9}$/.test(nif)) return false;
+  if (/^(\d)\1{8}$/.test(nif)) return false;
+  let asc = true, desc = true;
+  for (let i = 1; i < nif.length; i++) {
+    const d = nif.charCodeAt(i) - nif.charCodeAt(i - 1);
+    if (d !== 1) asc = false;
+    if (d !== -1) desc = false;
+  }
+  return !asc && !desc;
+}
+
 // ---------- helpers ----------
 
 const cents = (c) => Math.round(c) / 100;
@@ -164,6 +180,8 @@ function publicUser(u) {
     casinoActive: !!u.casino_active,
     freebet: cents(u.freebet_cents || 0), kycStatus: u.kyc_status || 'not_submitted', banned: !!u.banned_at,
     nif: u.nif || null, iban: u.iban || null, ibanName: u.iban_name || null, prefs: parsePrefs(u.prefs),
+    nationality: u.nationality || null, profession: u.profession || null, country: u.country || null,
+    address: u.address || null, postalCode: u.postal_code || null, idNumber: u.id_number || null,
     promoAskedAt: u.promo_asked_at || null,
     // Accounts from before emblems keep one of the two by their number.
     avatar: AVATARS.includes(u.avatar) ? u.avatar : AVATARS[u.id % AVATARS.length],
@@ -1546,9 +1564,23 @@ export function createApp(db, {
     const email = str(req.body.email, 160).toLowerCase();
     const phone = str(req.body.phone, 30) || null;
     const birthdate = str(req.body.birthdate, 10);
+    const nationality = str(req.body.nationality, 60);
+    const profession = str(req.body.profession, 80);
+    const country = str(req.body.country, 60);
+    const address = str(req.body.address, 200);
+    const postalCode = str(req.body.postalCode, 20);
+    const idNumber = str(req.body.idNumber, 40);
+    const nif = str(req.body.nif, 20).replace(/\D/g, '');
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     if (name.length < 2) throw new HttpError(400, 'Indique o seu nome.');
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email inválido.');
+    if (nationality.length < 2) throw new HttpError(400, 'Indique a sua nacionalidade.');
+    if (profession.length < 2) throw new HttpError(400, 'Indique a sua profissão.');
+    if (country.length < 2) throw new HttpError(400, 'Indique o país de residência.');
+    if (address.length < 5) throw new HttpError(400, 'Indique a morada completa.');
+    if (postalCode.length < 3) throw new HttpError(400, 'Indique o código postal.');
+    if (idNumber.length < 5) throw new HttpError(400, 'Indique o número do Cartão de Cidadão ou passaporte.');
+    if (!validNif(nif)) throw new HttpError(400, 'NIF inválido: indique 9 dígitos válidos.');
     if (password.length < 8 || password.length > 200) throw new HttpError(400, 'A palavra-passe deve ter pelo menos 8 caracteres.');
     const age = ageOn(birthdate);
     if (age < 0) throw new HttpError(400, 'Data de nascimento inválida.');
@@ -1560,8 +1592,8 @@ export function createApp(db, {
     // The same box covers SMS when a phone number was given.
     const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (email, name, birthdate, phone, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(email, name, birthdate, phone, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0);
+      'INSERT INTO users (email, name, birthdate, phone, nationality, profession, country, address, postal_code, id_number, nif, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(email, name, birthdate, phone, nationality, profession, country, address, postalCode, idNumber, nif, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0);
     // Compared with the sanctions lists at once (a failure never stops the registration).
     try { screenSanctions(db, Number(lastInsertRowid)); } catch (err) { console.warn(`[sanções] registo: ${err.message}`); }
     // Signed up through a referral link (the code kept by the page, or the link's cookie): attributed
@@ -1645,7 +1677,7 @@ export function createApp(db, {
     if (b.phone !== undefined) set.phone = str(b.phone, 30) || null;
     if (b.nif !== undefined) {
       const nif = str(b.nif, 20).replace(/\D/g, '');
-      if (nif && !/^\d{9}$/.test(nif)) throw new HttpError(400, 'NIF inválido: 9 dígitos.');
+      if (nif && !validNif(nif)) throw new HttpError(400, 'NIF inválido: indique 9 dígitos válidos.');
       set.nif = nif || null;
     }
     if (b.iban !== undefined) {

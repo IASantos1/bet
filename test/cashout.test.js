@@ -134,7 +134,7 @@ test('cash out API: live requests wait the acceptance delay; a second request fo
     return { status: res.status, body: await res.json() };
   };
   try {
-    await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'co@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true });
+    await call('POST', '/api/auth/register', { name: 'Ana Silva', email: 'co@example.com', password: 'segredo123', birthdate: '1990-05-10', acceptTerms: true, nationality: 'Portuguesa', profession: 'Professor', country: 'Portugal', address: 'Rua de Teste 1', postalCode: '1000-100', idNumber: '12345678 9 ZZ1', nif: '210000009' });
     const uid = db.prepare("SELECT id FROM users WHERE email = 'co@example.com'").get().id;
     tx(db, () => postTransaction(db, uid, 5000, 'deposit', 'd'));
     const m = match(db, 200);
