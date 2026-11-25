@@ -1729,6 +1729,17 @@ function openFreeSpins() {
     <p class="muted fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))}. Os ganhos passam a saldo real quando as Free Spins terminam.</p>`);
 }
 
+function casinoHeroCard(g) {
+  if (!g) return '';
+  const q = String.fromCharCode(34);
+  const art = g.image ? '<img class=' + q + 'casino-hero-image' + q + ' src=' + q + esc(g.image) + q + ' alt=' + q + q + ' fetchpriority=' + q + 'high' + q + ' decoding=' + q + 'async' + q + '>' : '';
+  return '<button type=' + q + 'button' + q + ' class=' + q + 'casino-hero' + q + ' data-game-id=' + q + esc(g.id) + q + ' aria-label=' + q + esc('Abrir ' + g.name) + q + '>' +
+    '<span class=' + q + 'casino-hero-media' + q + '>' + art + '</span>' +
+    '<span class=' + q + 'casino-hero-shade' + q + '></span>' +
+    '<span class=' + q + 'casino-hero-copy' + q + '><small>DESTAQUE BET62</small><strong>' + esc(g.name) + '</strong><span>' + esc(g.provider) + ' - Disponivel no casino</span><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
+    '</button>';
+}
+
 function casinoPage() {
   const c = state.casino;
   ensureFreeSpins();
@@ -1751,6 +1762,9 @@ function casinoPage() {
   const more = c.games.length < c.total;
   // The lobby: rows of games that scroll sideways, each with "Ver todos".
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
+  const hero = !filtered && !state.casinoView
+    ? casinoHeroCard(rows.find((r) => r.key === 'destaques')?.games?.[0] || c.games[0])
+    : '';
   // Top 10: the place on the corner of each game.
   const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
   // "Ver todos": a tab, a provider or a collection's own page.
@@ -1819,7 +1833,7 @@ function casinoPage() {
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
   // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
   // Search and providers are in the casino menu (on the left; ☰ on phones).
-  return `${filtered ? '' : casinoBanners()}${casinoTabs(f)}${filtered ? '' : freeSpinsBar()}
+  return `${filtered ? '' : casinoBanners()}${hero}${casinoTabs(f)}${filtered ? '' : freeSpinsBar()}
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" id="casinoMore" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
