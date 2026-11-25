@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Casino BET62 — Esboço</title>
+<style>
+  :root{
+    --bg:#0a0e14;
+    --bg2:#10161f;
+    --card:#141b26;
+    --line:#1f2a38;
+    --brand:#22c55e;
+    --brand2:#16a34a;
+    --accent:#a855f7;
+    --gold:#facc15;
+    --text:#e8eef5;
+    --muted:#8b96a7;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--text);
+    line-height:1.4;-webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 18px}
+
+  /* ============ TOP BAR (fake header — só para enquadrar o esboço) ============ */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 18px;background:#070a0f;border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:30;
+  }
+  .logo{font-size:26px;font-weight:900;letter-spacing:-1px}
+  .logo b{color:var(--brand)}
+  .nav{display:flex;gap:6px}
+  .nav a{padding:8px 14px;border-radius:8px;color:var(--muted);font-size:14px;font-weight:600}
+  .nav a.active{color:var(--brand);background:rgba(34,197,94,.1)}
+  .top-actions{display:flex;gap:10px;align-items:center}
+  .search{background:var(--bg2);border:1px solid var(--line);color:var(--text);padding:9px 14px;border-radius:999px;width:220px;font-size:13px;outline:none}
+  .btn-dep{background:var(--brand);color:#04130a;font-weight:700;border:none;padding:10px 18px;border-radius:999px;cursor:pointer;font-size:14px}
+
+  /* ============ HERO BANNER ============ */
+  .hero{
+    position:relative;border-radius:20px;overflow:hidden;margin-top:18px;
+    min-height:340px;
+    background:
+      linear-gradient(110deg, rgba(10,14,20,.92) 0%, rgba(10,14,20,.6) 45%, rgba(10,14,20,.25) 100%),
+      url('https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=1600&q=80');
+    background-size:cover;background-position:center;
+    border:1px solid var(--line);
+  }
+  .hero-inner{
+    position:relative;padding:44px 44px;display:flex;flex-direction:column;justify-content:center;
+    min-height:340px;max-width:720px;
+  }
+  .hero h1{font-size:clamp(36px,5vw,64px);font-weight:900;line-height:1;letter-spacing:-2px}
+  .hero h1 span{color:var(--brand)}
+  .hero p.sub{margin-top:10px;font-size:clamp(18px,2.4vw,26px);font-weight:700;color:#fff}
+  .hero p.sub em{color:var(--brand);font-style:normal}
+  .hero .cta{
+    margin-top:22px;align-self:flex-start;background:var(--brand);color:#04130a;
+    font-weight:800;padding:14px 30px;border-radius:999px;font-size:16px;border:none;cursor:pointer;
+    box-shadow:0 10px 30px rgba(34,197,94,.35);
+  }
+  .hero-dots{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px}
+  .hero-dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.4)}
+  .hero-dots i.on{background:var(--brand);width:20px;border-radius:4px}
+
+  /* ============ JACKPOT ANIMADO (números em movimento) ============ */
+  .jackpot-strip{
+    margin-top:18px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+  }
+  .jp{
+    background:linear-gradient(135deg,#161e2b,#0f1520);
+    border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;
+    display:flex;align-items:center;gap:14px;position:relative;overflow:hidden;
+  }
+  .jp::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 90% 10%,rgba(168,85,247,.18),transparent 55%)}
+  .jp .ic{font-size:26px}
+  .jp .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+  .jp .val{font-size:26px;font-weight:900;color:var(--gold);font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .jp .val::before{content:"€ ";color:var(--gold)}
+  .jp.flip .val{display:inline-block;animation:flick 1.6s infinite ease-in-out}
+  @keyframes flick{0%,100%{opacity:1}50%{opacity:.75}}
+
+  /* ============ CATEGORIAS (ícones) ============ */
+  .cats{
+    margin-top:24px;display:grid;grid-template-columns:repeat(11,1fr);gap:10px;
+  }
+  .cat{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 6px;
+    text-align:center;cursor:pointer;transition:.2s;
+  }
+  .cat:hover{border-color:var(--brand);transform:translateY(-2px)}
+  .cat .ic{font-size:22px;margin-bottom:6px}
+  .cat .t{font-size:11px;font-weight:600;color:var(--muted)}
+  .cat.on{background:rgba(34,197,94,.1);border-color:var(--brand)}
+  .cat.on .t{color:var(--brand)}
+
+  /* ============ BLOCO DE JOGOS ============ */
+  section.block{margin-top:26px}
+  .block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .block-head h2{font-size:20px;font-weight:800;display:flex;align-items:center;gap:10px}
+  .block-head h2 .ic{color:var(--brand)}
+  .block-head .seeall{color:var(--brand);font-size:13px;font-weight:700;cursor:pointer}
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+
+  /* ============ CARD DE JOGO ============ */
+  .game{
+    position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/4;
+    background:var(--card);border:1px solid var(--line);cursor:pointer;transition:.25s;
+  }
+  .game:hover{transform:translateY(-4px);border-color:var(--brand);box-shadow:0 12px 24px rgba(0,0,0,.4)}
+  .game .thumb{
+    position:absolute;inset:0;background-size:cover;background-position:center;
+  }
+  .game .overlay{
+    position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.85) 0%,transparent 55%);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:10px;
+  }
+  .game .name{font-size:12px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000}
+  .game .prov{font-size:10px;color:var(--brand);font-weight:700;text-transform:uppercase}
+  .game .play{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);
+    background:var(--brand);color:#04130a;border:none;border-radius:50%;width:46px;height:46px;
+    font-size:18px;cursor:pointer;transition:.25s;display:flex;align-items:center;justify-content:center;
+  }
+  .game:hover .play{transform:translate(-50%,-50%) scale(1)}
+
+  /* ============ LAYOUT DUAS COLUNAS (populares + live) ============ */
+  .two-col{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-top:26px}
+  .live-card{
+    background:linear-gradient(135deg,#121a27,#0c1119);
+    border:1px solid var(--line);border-radius:var(--radius);padding:20px;
+    background-image:
+      linear-gradient(135deg,rgba(34,197,94,.12),rgba(168,85,247,.12)),
+      url('https://images.unsplash.com/photo-1511193311914-0346f16efe90?auto=format&fit=crop&w=900&q=80');
+    background-size:cover;background-position:center;
+    min-height:260px;display:flex;flex-direction:column;justify-content:flex-end;
+  }
+  .live-card h3{font-size:22px;font-weight:900}
+  .live-card p{color:var(--muted);font-size:13px;margin:6px 0 14px;max-width:80%}
+  .live-card button{background:var(--brand);color:#04130a;border:none;padding:10px 18px;border-radius:999px;font-weight:800;cursor:pointer;align-self:flex-start}
+
+  /* ============ PROVEDORES ============ */
+  .providers{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px}
+  .prov{
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 22px;
+    color:var(--muted);font-weight:800;font-size:13px;letter-spacing:.5px;
+  }
+
+  /* ============ BANNER INFERIOR ============ */
+  .bottom-banner{
+    margin:26px 0 40px;border-radius:var(--radius);padding:28px;
+    background:linear-gradient(120deg,#0c1119,#14211a);
+    border:1px solid var(--line);
+    background-image:linear-gradient(110deg,rgba(10,14,20,.92),rgba(10,14,20,.4)),
+      url('https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=1600&q=80');
+    background-size:cover;background-position:center;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .bottom-banner h2{font-size:28px;font-weight:900;line-height:1.1}
+  .bottom-banner h2 em{color:var(--gold);font-style:normal}
+  .bottom-banner button{background:var(--brand);color:#04130a;border:none;padding:14px 28px;border-radius:999px;font-weight:800;font-size:15px;cursor:pointer}
+
+  /* ============ RESPONSIVE ============ */
+  @media(max-width:1024px){
+    .grid{grid-template-columns:repeat(4,1fr)}
+    .cats{grid-template-columns:repeat(6,1fr)}
+    .two-col{grid-template-columns:1fr}
+    .jackpot-strip{grid-template-columns:1fr}
+    .search{display:none}
+  }
+  @media(max-width:560px){
+    .grid{grid-template-columns:repeat(3,1fr)}
+    .cats{grid-template-columns:repeat(4,1fr)}
+    .nav{display:none}
+    .hero-inner{padding:28px 22px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== FAKE HEADER (só para enquadrar o esboço da página casino) ===== -->
+<header class="topbar">
+  <div class="logo">BET<b>62</b></div>
+  <nav class="nav">
+    <a href="#">Destaque</a>
+    <a href="#">Desporto</a>
+    <a href="#" class="active">Casino</a>
+    <a href="#">Promoções</a>
+    <a href="#">Perfil</a>
+  </nav>
+  <div class="top-actions">
+    <input class="search" placeholder="Pesquisar jogos...">
+    <button class="btn-dep">Depositar</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ===== HERO BANNER (usa a imagem que enviaste — aqui com placeholder) ===== -->
+  <section class="hero">
+    <div class="hero-inner">
+      <h1>CASINO BET<span>62</span></h1>
+      <p class="sub">JOGUE COM EMOÇÃO <em>E GANHE EM GRANDE!</em></p>
+      <button class="cta">JOGAR AGORA ›</button>
+    </div>
+    <div class="hero-dots">
+      <i class="on"></i><i></i><i></i><i></i><i></i>
+    </div>
+  </section>
+
+  <!-- ===== NÚMEROS EM MOVIMENTO (jackpots animados) ===== -->
+  <div class="jackpot-strip">
+    <div class="jp flip">
+      <div class="ic">🏆</div>
+      <div><div class="lbl">Jackpot Diário</div><div class="val" data-jp="128430.55">128.430,55</div></div>
+    </div>
+    <div class="jp flip">
+      <div class="ic">👑</div>
+      <div><div class="lbl">Jackpot Mega</div><div class="val" data-jp="834670.24">834.670,24</div></div>
+    </div>
+    <div class="jp flip">
+      <div class="ic">💎</div>
+      <div><div class="lbl">Prémio da Sorte</div><div class="val" data-jp="45210.00">45.210,00</div></div>
+    </div>
+  </div>
+
+  <!-- ===== CATEGORIAS (ícones) ===== -->
+  <div class="cats" id="cats">
+    <div class="cat on"><div class="ic">🎰</div><div class="t">Todos</div></div>
+    <div class="cat"><div class="ic">🎲</div><div class="t">Slots</div></div>
+    <div class="cat"><div class="ic">💸</div><div class="t">Jackpot</div></div>
+    <div class="cat"><div class="ic">🎡</div><div class="t">Roleta</div></div>
+    <div class="cat"><div class="ic">🃏</div><div class="t">Blackjack</div></div>
+    <div class="cat"><div class="ic">♠️</div><div class="t">Poker</div></div>
+    <div class="cat"><div class="ic">🎥</div><div class="t">Live Casino</div></div>
+    <div class="cat"><div class="ic">🌀</div><div class="t">Megaways</div></div>
+    <div class="cat"><div class="ic">🆕</div><div class="t">Novos</div></div>
+    <div class="cat"><div class="ic">🔥</div><div class="t">Popular</div></div>
+    <div class="cat"><div class="ic">❤️</div><div class="t">Favoritos</div></div>
+  </div>
+
+  <!-- ===== JOGOS EM DESTAQUE ===== -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="ic">🔥</span> Jogos em Destaque</h2>
+      <span class="seeall">Ver todos ›</span>
+    </div>
+    <div class="grid" id="featured"></div>
+  </section>
+
+  <!-- ===== POPULARES + LIVE CASINO (2 colunas) ===== -->
+  <div class="two-col">
+    <section class="block" style="margin-top:0">
+      <div class="block-head">
+        <h2><span class="ic">⭐</span> Jogos Populares</h2>
+        <span class="seeall">Ver todos ›</span>
+      </div>
+      <div class="grid" id="popular"></div>
+    </section>
+    <div class="live-card">
+      <h3>🎥 Casino ao Vivo</h3>
+      <p>Jogue em tempo real com os melhores dealers!</p>
+      <button>Aceder ›</button>
+    </div>
+  </div>
+
+  <!-- ===== NOSSOS PROVEDORES ===== -->
+  <section class="block">
+    <div class="block-head">
+      <h2><span class="ic">🎰</span> Nossos Provedores</h2>
+      <span class="seeall">Ver todos ›</span>
+    </div>
+    <div class="providers">
+      <div class="prov">PRAGMATIC PLAY</div>
+      <div class="prov">EVOLUTION</div>
+      <div class="prov">PLAYTECH</div>
+      <div class="prov">HACKSAW</div>
+      <div class="prov">RED TIGER</div>
+      <div class="prov">NETENT</div>
+      <div class="prov">QUICKSPIN</div>
+      <div class="prov">RELAX GAMING</div>
+    </div>
+  </section>
+
+  <!-- ===== BANNER INFERIOR ===== -->
+  <section class="bottom-banner">
+    <div>
+      <h2>DESAFIE A SORTE<br><em>COM OS NOSSOS JOGOS DE CASINO!</em></h2>
+    </div>
+    <button>JOGAR AGORA ›</button>
+  </section>
+
+</main>
+
+<script>
+  /* ---------- Gerador de cartões de jogo de demonstração ---------- */
+  const GAMES_FEATURED = [
+    ["Sweet Bonanza","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Big Bass Splash","Pragmatic","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Gates of Olympus","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Fortune Tiger","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Aviator","Spribe","https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=300&q=70"],
+    ["Book of Dead","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Starlight Princess","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["The Dog House","Pragmatic","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Wolf Gold","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Dynamite Riches","Red Tiger","https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=300&q=70"],
+    ["Crazy Time","Evolution","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Money Train 4","Relax","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+  ];
+
+  const GAMES_POPULAR = [
+    ["Sugar Rush","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Gonzo's Quest","Netent","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Reactoonz","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Rise of Olympus","Play'n GO","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Money Train 4","Relax","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Tome of Madness","Play'n GO","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Razor Shark","Push Gaming","https://images.unsplash.com/photo-1551103782-8ab07afd45c1?auto=format&fit=crop&w=300&q=70"],
+    ["Pompeii Megaways","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+    ["Sweet Bonanza 1000","Pragmatic","https://images.unsplash.com/photo-1596838132731-3301c3fd4317?auto=format&fit=crop&w=300&q=70"],
+    ["Gates of Olympus","Pragmatic","https://images.unsplash.com/photo-1606167668584-78701c57f13d?auto=format&fit=crop&w=300&q=70"],
+  ];
+
+  function renderGames(targetId, games){
+    const el = document.getElementById(targetId);
+    el.innerHTML = games.map(([name, prov, img]) => `
+      <div class="game">
+        <div class="thumb" style="background-image:url('${img}')"></div>
+        <div class="overlay">
+          <div class="prov">${prov}</div>
+          <div class="name">${name}</div>
+        </div>
+        <button class="play" title="Jogar">▶</button>
+      </div>
+    `).join("");
+  }
+  renderGames("featured", GAMES_FEATURED);
+  renderGames("popular", GAMES_POPULAR);
+
+  /* ---------- Números em movimento (jackpots) ---------- */
+  const jpEls = document.querySelectorAll("[data-jp]");
+  const fmt = n => n.toLocaleString("pt-PT",{minimumFractionDigits:2,maximumFractionDigits:2});
+  jpEls.forEach(el=>{
+    let val = parseFloat(el.dataset.jp);
+    setInterval(()=>{
+      val += (Math.random()*30 - 5);
+      if(val < 1000) val = 1000 + Math.random()*5000;
+      el.textContent = fmt(val);
+    }, 1400);
+  });
+
+  /* ---------- Filtro de categorias (só visual no esboço) ---------- */
+  document.querySelectorAll(".cat").forEach(c=>{
+    c.addEventListener("click",()=>{
+      document.querySelectorAll(".cat").forEach(x=>x.classList.remove("on"));
+      c.classList.add("on");
+    });
+  });
+</script>
+
+</body>
+</html>
