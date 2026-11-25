@@ -143,7 +143,10 @@ export function createSettlementEngine(db, {
         WHERE (e.status IN ('scheduled', 'live') AND e.review_reason IS NOT NULL)
            OR (e.status = 'live' AND e.start_time <= ?)
            OR (e.status = 'scheduled' AND e.postponed_at IS NOT NULL)
-           OR (e.status = 'scheduled' AND e.start_time <= ?)
+           OR (e.status = 'scheduled' AND e.start_time <= ? AND EXISTS (
+             SELECT 1 FROM bet_legs overdue_leg
+              WHERE overdue_leg.event_id = e.id AND overdue_leg.status = 'open'
+           ))
            OR (e.status = 'finished' AND EXISTS (SELECT 1 FROM bet_legs x WHERE x.event_id = e.id AND x.market = 'x' AND x.status = 'open'))
         GROUP BY e.id
         ORDER BY e.start_time`
