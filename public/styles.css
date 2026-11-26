@@ -1441,8 +1441,7 @@ html[data-card-fit="contain"] .game-card .game-img { object-fit: contain; }
 .link-btn { border: 0; background: none; color: var(--text-2); font-weight: 800; font-size: 12px; padding: 4px 0; cursor: pointer; }
 .link-btn:hover { color: var(--text); }
 
-/* Casino pages: the casino menu on the left (search, tabs, providers; on phones behind ☰) and no bet
-   slip; the games use the rest of the width. */
+/* Casino pages use the full width without a bet slip. */
 .casino-mode #leftSidebar { display: none !important; }
 .casino-mode #menuBtn { display: none !important; }
 @media (min-width: 701px) {
@@ -1451,12 +1450,8 @@ html[data-card-fit="contain"] .game-card .game-img { object-fit: contain; }
 }
 @media (min-width: 701px) and (max-width: 1250px) { .casino-mode .layout { grid-template-columns: minmax(0, 1fr); } }
 .casino-mode .slip-fab { display: none !important; }
-.casino-side button.side-link { width: 100%; border: 0; background: none; font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
 .casino-prov-head .link-btn { white-space: nowrap; }
 @media (max-width: 700px) { .casino-chip { height: 38px; padding: 0 13px; font-size: 13px; gap: 6px; } .casino-chip span { font-size: 15px; } }
-.casino-side button.side-link:disabled { opacity: .5; cursor: default; }
-.side-search { padding: 0 2px 10px; }
-.side-search .search-input { width: 100%; margin: 0; height: 40px; }
 @media (min-width: 761px) {
   .casino-mode .casino-row .car-track { grid-auto-columns: calc((100% - 3 * 14px) / 4); }
   .casino-mode .game-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }

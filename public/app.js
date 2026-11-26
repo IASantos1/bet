@@ -1507,33 +1507,6 @@ function casinoTabs(f) {
     <span aria-hidden="true">${CAT_ICON[c.key] || CAT_ICON[String(c.key).toLowerCase()] || '🎲'}</span>${esc(c.label)}</button>`).join('')}</nav>`;
 }
 
-/**
- * The casino menu (on the left, like the sports one; on phones behind the ☰ button): search, the
- * tabs and every provider.
- */
-function casinoSideMenu() {
-  const c = state.casino;
-  const f = state.casinoFilter;
-  const onLobby = currentRoute().page === 'casino' && !currentRoute().sub;
-  const link = (attr, val, icon, label, on, extra = '') => `<button class="side-link${on ? ' active' : ''}" ${attr}="${esc(val)}"${extra}><span>${icon}</span> ${esc(label)}</button>`;
-  return `<div class="sidebar-head"><span>CASINO</span><button class="close-mobile" data-close-menu aria-label="Fechar">×</button></div>
-    <div class="side-search"><input class="search-input" id="casinoSearchSide" type="search" placeholder="Procurar jogo ou fornecedor…" value="${esc(f.q || '')}" autocomplete="off" enterkeyhint="search"></div>
-    ${casinoCats().map((x) => link('data-casino-cat', x.key, CAT_ICON[x.key] || '🎲', x.label, onLobby && f.category === x.key && !f.provider && !f.q)).join('')}
-    ${c.providers?.length ? `<div class="side-divider"></div><div class="sidebar-head">FORNECEDORES</div>
-    ${c.providers.map((p) => link('data-casino-prov', p.id, casinoProviderMark(p, 'casino-provider-mark side-provider-logo'), `${p.name}${p.maintenance ? ' (manutenção)' : ''}`, onLobby && f.provider === String(p.id), p.maintenance ? ' disabled' : '')).join('')}` : ''}
-    <div class="side-divider"></div><div class="sidebar-head">EXPLORAR</div>
-    <a class="side-link" href="#/desporto"><span>⚽</span> Desporto</a>
-    <a class="side-link" href="#/ao-vivo"><span class="red-icon">●</span> Ao Vivo</a>
-    <a class="side-link" href="#/promocoes"><span>🎁</span> Promoções</a>
-    <a class="side-link" href="#/perfil/jogo-responsavel"><span>🛡️</span> Jogo responsável</a>`;
-}
-function renderCasinoSide() {
-  const box = $('#casinoSide');
-  if (!box) return;
-  // Changed in place: the search box keeps its focus and what is being typed.
-  if (box.firstChild) morph(box, casinoSideMenu()); else box.innerHTML = casinoSideMenu();
-}
-
 async function loadCasinoLobby() {
   loadFreeSpins();
   try {
@@ -1895,7 +1868,7 @@ async function loadCasino({ reset = false } = {}) {
   }
   const { page, sub } = currentRoute();
   if (page === 'home' || (page === 'casino' && sub !== 'jogar')) {
-    const searchId = ['casinoSearch', 'casinoSearchSide'].includes(document.activeElement?.id) ? document.activeElement.id : '';
+    const searchId = document.activeElement?.id === 'casinoSearch' ? 'casinoSearch' : '';
     render({ keepScroll: true });
     if (searchId) { const el = document.getElementById(searchId); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }
   }
@@ -3952,7 +3925,6 @@ function render({ keepScroll = false } = {}) {
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
   document.body.classList.toggle('on-promos', page === 'promocoes');
-  if (page === 'casino' && !immersive) renderCasinoSide();
   // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
   // scores): only the person scrolling moves them, never the refresh.
   const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
@@ -4548,7 +4520,7 @@ document.addEventListener('click', async (e) => {
   if (cat || prov) {
     state.casinoView = null;
     Object.assign(state.casinoFilter, cat ? { category: cat.dataset.casinoCat, provider: '', q: '' } : { provider: prov.dataset.casinoProv, category: '', q: '' });
-    const box = document.querySelector('.casino-search-field input, .side-search input');
+    const box = document.querySelector('.casino-search-field input');
     if (box) box.value = '';
     setSideMenu(false);
     if (location.hash !== '#/casino') location.hash = '#/casino';
@@ -4794,7 +4766,7 @@ document.addEventListener('toggle', (e) => {
 
 let casinoSearchTimer = null;
 document.addEventListener('input', (e) => {
-  if (['casinoSearch', 'casinoSearchSide'].includes(e.target.id)) {
+  if (e.target.id === 'casinoSearch') {
     clearTimeout(casinoSearchTimer);
     casinoSearchTimer = setTimeout(() => {
       Object.assign(state.casinoFilter, { q: e.target.value.trim(), category: '', provider: '' });
@@ -5109,8 +5081,8 @@ function bindChrome() {
     renderSlip();
   });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
-  // Search typed in the phone menu: Enter puts the menu away to show the games found.
-  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && ['casinoSearch', 'casinoSearchSide'].includes(e.target.id)) { e.target.blur(); setSideMenu(false); } });
+  // Enter applies the casino search and closes the phone menu.
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'casinoSearch') { e.target.blur(); setSideMenu(false); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
   // The bottom bar (and the top menu): the tab lights up and the page changes as soon as it is touched,
