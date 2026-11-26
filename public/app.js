@@ -1717,9 +1717,9 @@ function casinoHeroCard(g, i = 0) {
     '</button>';
 }
 const CASINO_HERO_ART = [
-  { key: 'Gates of Olympus 2500', query: 'Olympus', image: '/casino/banners/hero-gates-of-olympus.jpg', match: (k) => /^gatesofolympus2500/.test(k) },
-  { key: 'Sweet Bonanza', query: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza.jpg', match: (k) => k.startsWith('sweetbonanza') },
-  { key: 'Big Bass Splash', query: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash.jpg', match: (k) => k.startsWith('bigbasssplash') },
+  { key: 'Gates of Olympus', query: 'Gates of Olympus', image: '/casino/banners/hero-gates-of-olympus.jpg', match: (k) => k === 'gatesofolympus' },
+  { key: 'Sweet Bonanza', query: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza.jpg', match: (k) => k === 'sweetbonanza' },
+  { key: 'Big Bass Splash', query: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash.jpg', match: (k) => k === 'bigbasssplash' },
 ];
 const casinoHeroGameKey = (name) => String(name || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -1755,7 +1755,7 @@ function casinoHeroCarousel(games) {
     chosen.add(String(game.id));
     return [{ ...game, image: art.image }];
   });
-  const list = [...artFirst, ...unique.filter((g) => !chosen.has(String(g.id)))].slice(0, 6);
+  const list = artFirst;
   if (!list.length) return '';
   const many = list.length > 1;
   return `<section class="casino-hero-carousel" aria-roledescription="carrossel" aria-label="Jogos em destaque">
