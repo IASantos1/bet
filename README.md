@@ -218,9 +218,11 @@ CASINO_API_URL=https://endereco-do-agregador CASINO_API_TOKEN=o-seu-token npm st
 - Se os jogos não aparecerem, use **Administração → Casino → Testar ligação**: verifica a configuração,
   o agente (token, IP autorizado), os fornecedores atribuídos e os jogos, e diz o que falta.
 - O catálogo (fornecedores e jogos) é lido da API e guardado em cache durante 1 hora. Fornecedores em
-  manutenção aparecem desativados.
-- A página do casino carrega os jogos **por blocos** de 24 (botão *Mostrar mais jogos*), com pesquisa,
+  manutenção e os respetivos jogos não aparecem no casino público até voltarem a estar ativos.
+- A página do casino carrega os jogos **por blocos** (botão *Mostrar mais jogos*), com pesquisa,
   categorias e fornecedores filtrados no servidor (`/api/casino/games?offset=&limit=&provider=&category=&q=`).
+- No BigBang, a lista **Novos Jogos** usa os IDs mais recentes do fornecedor como ordem, pois a API não
+  fornece uma data de lançamento.
 - Os jogos abrem **dentro da ClassicBet** (`#/casino/jogar`), só com o jogo em ecrã embutido; o botão
   "casa" do jogo volta ao casino sem sair da plataforma.
 - **Carteira única**: o jogador só tem a carteira ClassicBet. Ao abrir um jogo, o saldo inteiro passa

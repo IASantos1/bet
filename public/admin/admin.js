@@ -3903,7 +3903,7 @@ function adminBanners(d) {
   }).join('');
   state.banners = list;
   return `<div class="panel"><h3>Banners do casino</h3>
-    <p class="muted">O carrossel no topo da página do casino. Mudam sozinhos a cada 6 s; o jogador também os passa com as setas ou com o dedo.
+    <p class="muted">O carrossel no topo da página do casino não muda sozinho. O jogador pode passar os banners com as setas, os pontos ou com o dedo.
       Por baixo aparece sempre "18+ Jogue com responsabilidade" e as condições do banner (regras do SRIJ para ofertas).</p>
     <div class="form-actions"><button class="primary-btn btn-sm" data-action="ban-new">+ Novo banner</button>
       <a class="ghost-btn btn-sm" href="/#/casino" target="_blank" rel="noopener">Ver o casino ↗</a></div>

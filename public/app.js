@@ -1493,7 +1493,7 @@ function casinoProviderMark(provider, className = 'casino-provider-mark') {
     : '<span class=' + q + className + ' casino-provider-fallback' + q + ' aria-hidden=' + q + 'true' + q + '>&#127922;</span>';
 }
 function casinoBrowseTools(f) {
-  const providers = state.casino.providers || [];
+  const providers = (state.casino.providers || []).filter((p) => !p.maintenance);
   const q = String.fromCharCode(34);
   const search = '<label class=' + q + 'casino-search-field' + q + '><svg viewBox=' + q + '0 0 24 24' + q + ' aria-hidden=' + q + 'true' + q + '><circle cx=' + q + '11' + q + ' cy=' + q + '11' + q + ' r=' + q + '6.5' + q + '></circle><path d=' + q + 'm16 16 4 4' + q + '></path></svg><input id=' + q + 'casinoSearch' + q + ' type=' + q + 'search' + q + ' placeholder=' + q + 'Procurar jogo ou fornecedor' + q + ' value=' + q + esc(f.q || '') + q + ' autocomplete=' + q + 'off' + q + ' enterkeyhint=' + q + 'search' + q + '></label>';
   const strip = providers.length ? '<nav class=' + q + 'casino-provider-strip' + q + ' aria-label=' + q + 'Fornecedores de casino' + q + '>' + providers.map((p) =>
@@ -1643,7 +1643,7 @@ function cbanGo(i) {
   const n = t.children.length;
   t.scrollTo({ left: ((i % n) + n) % n * t.clientWidth, behavior: 'smooth' });
 }
-// The dots and the terms follow the slide on screen (by arrow, dot, swipe or the timer).
+// The dots and terms follow the slide on screen (by arrow, dot or swipe).
 document.addEventListener('scroll', (e) => {
   if (e.target?.id !== 'cbanTrack') return;
   const i = cbanIndex(e.target);
@@ -1652,13 +1652,6 @@ document.addEventListener('scroll', (e) => {
   const b = (state.casinoBanners || [])[i];
   if (terms && b) terms.innerHTML = cbanTerms(b);
 }, true);
-// Turns every 6 s, unless the pointer is on it or the tab is hidden.
-setInterval(() => {
-  const t = $('#cbanTrack');
-  if (!t || document.hidden || t.matches(':hover') || t.children.length < 2) return;
-  cbanGo(cbanIndex(t) + 1);
-}, 6000);
-
 /** A personal, expandable casino banner shown only while the player has active free spins. */
 function freeSpinsBar() {
   const d = state.fsActive;
@@ -1814,8 +1807,8 @@ function casinoPage() {
   const head = f.q ? `Resultados para “${f.q}”` : prov?.name || cat?.label || theme?.title;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  // As the big operators show it: the kinds of game on top, the banner below them, then the rows.
-  // Search and providers are in the casino menu (on the left; ☰ on phones).
+  // Promotions and the featured game lead into the in-page category, search and provider controls,
+  // followed by the lobby rows.
   return `${filtered ? '' : casinoBanners()}${hero}${casinoTabs(f)}${casinoBrowseTools(f)}${filtered ? '' : freeSpinsBar()}
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>

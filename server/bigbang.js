@@ -370,7 +370,7 @@ export function createBigBang(db, {
     // "Ver todos": the week's picks themselves (the row's games), not the whole casino.
     const rows = featured.length ? [{ key: 'destaques', title: 'Escolhas da semana', total: featured.length, games: diversify(featured) }] : [];
     const fresh = byNewest(all.games.filter((g) => g.type !== 'live'));
-    if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: diversify(fresh, n) });
+    if (fresh.length >= 5) rows.push({ key: 'novos', more: 'novos', title: 'Acabados de chegar', total: fresh.length, games: byNewest(diversify(fresh, n)) });
     const top = topWeek(all.games);
     if (top.length >= 5) rows.push({ key: 'top10', title: 'Top 10 em Portugal esta semana', layout: 'top', total: top.length, games: top });
     const jackpots = byPopularity(inCategory(all.games, 'jackpots'));
