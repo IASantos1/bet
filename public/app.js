@@ -1715,13 +1715,31 @@ function casinoHeroCard(g, i = 0) {
     '<span class=' + q + 'casino-hero-copy' + q + '><small>DESTAQUE BET62</small><strong>' + esc(g.name) + '</strong><span>' + esc(g.provider) + ' - Disponivel no casino</span><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
     '</button>';
 }
+const CASINO_HERO_ART = [
+  { key: 'Gates of Olympus', image: '/casino/banners/hero-gates-of-olympus.jpg', match: (k) => /^gates?ofolympus/.test(k) },
+  { key: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash.jpg', match: (k) => k.startsWith('bigbasssplash') },
+  { key: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza.jpg', match: (k) => k.startsWith('sweetbonanza') },
+  { key: 'X-Mas 1000', image: '/casino/banners/hero-xmas-1000.jpg', match: (k) => /^(?:xmas|christmas)1000/.test(k) },
+];
+const casinoHeroGameKey = (name) => String(name || '').toLowerCase().normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
 function casinoHeroCarousel(games) {
+  const pool = games || [];
   const seen = new Set();
-  const list = (games || []).filter((g) => {
+  const unique = pool.filter((g) => {
     if (!g?.id || seen.has(String(g.id))) return false;
     seen.add(String(g.id));
     return true;
-  }).slice(0, 6);
+  });
+  const chosen = new Set();
+  const artFirst = CASINO_HERO_ART.flatMap((art) => {
+    const matches = unique.filter((g) => !chosen.has(String(g.id)) && art.match(casinoHeroGameKey(g.name)));
+    const game = matches.find((g) => casinoHeroGameKey(g.name) === casinoHeroGameKey(art.key)) || matches[0];
+    if (!game) return [];
+    chosen.add(String(game.id));
+    return [{ ...game, image: art.image }];
+  });
+  const list = [...artFirst, ...unique.filter((g) => !chosen.has(String(g.id)))].slice(0, 6);
   if (!list.length) return '';
   const many = list.length > 1;
   return `<section class="casino-hero-carousel" aria-roledescription="carrossel" aria-label="Jogos em destaque">
@@ -1772,7 +1790,7 @@ function casinoPage() {
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
   const featured = rows.find((r) => r.key === 'destaques')?.games;
   const hero = !filtered && !state.casinoView && !state.casinoBanners?.length
-    ? casinoHeroCarousel([...(featured || []), ...c.games])
+    ? casinoHeroCarousel([...(featured || []), ...rows.flatMap((r) => r.games || []), ...c.games])
     : '';
   // Top 10: the place on the corner of each game.
   const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
