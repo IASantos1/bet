@@ -1705,16 +1705,48 @@ function openFreeSpins() {
     <p class="muted fs-note">Válidas até ${esc(fmtDateTime(s.expiresAt))}. Os ganhos passam a saldo real quando as Free Spins terminam.</p>`);
 }
 
-function casinoHeroCard(g) {
+function casinoHeroCard(g, i = 0) {
   if (!g) return '';
   const q = String.fromCharCode(34);
-  const art = g.image ? '<img class=' + q + 'casino-hero-image' + q + ' src=' + q + esc(g.image) + q + ' alt=' + q + q + ' fetchpriority=' + q + 'high' + q + ' decoding=' + q + 'async' + q + '>' : '';
+  const art = g.image ? '<img class=' + q + 'casino-hero-image' + q + ' src=' + q + esc(g.image) + q + ' alt=' + q + q + (i ? ' loading=' + q + 'lazy' + q : ' fetchpriority=' + q + 'high' + q) + ' decoding=' + q + 'async' + q + '>' : '';
   return '<button type=' + q + 'button' + q + ' class=' + q + 'casino-hero' + q + ' data-game-id=' + q + esc(g.id) + q + ' aria-label=' + q + esc('Abrir ' + g.name) + q + '>' +
     '<span class=' + q + 'casino-hero-media' + q + '>' + art + '</span>' +
     '<span class=' + q + 'casino-hero-shade' + q + '></span>' +
     '<span class=' + q + 'casino-hero-copy' + q + '><small>DESTAQUE BET62</small><strong>' + esc(g.name) + '</strong><span>' + esc(g.provider) + ' - Disponivel no casino</span><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
     '</button>';
 }
+function casinoHeroCarousel(games) {
+  const seen = new Set();
+  const list = (games || []).filter((g) => {
+    if (!g?.id || seen.has(String(g.id))) return false;
+    seen.add(String(g.id));
+    return true;
+  }).slice(0, 6);
+  if (!list.length) return '';
+  const many = list.length > 1;
+  return `<section class="casino-hero-carousel" aria-roledescription="carrossel" aria-label="Jogos em destaque">
+    <div class="casino-hero-track" id="casinoHeroTrack" data-hscroll="casinoHero">${list.map(casinoHeroCard).join('')}</div>
+    ${many ? `<button class="casino-hero-nav prev" data-action="casino-hero-go" data-dir="-1" aria-label="Jogo anterior">‹</button>
+      <button class="casino-hero-nav next" data-action="casino-hero-go" data-dir="1" aria-label="Jogo seguinte">›</button>
+      <div class="casino-hero-dots">${list.map((_, i) => `<button class="${i ? '' : 'on'}" data-action="casino-hero-dot" data-i="${i}" aria-label="Jogo em destaque ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}
+  </section>`;
+}
+const casinoHeroIndex = (track) => Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+function casinoHeroGo(i) {
+  const track = $('#casinoHeroTrack');
+  if (!track) return;
+  const count = track.children.length;
+  track.scrollTo({ left: ((i % count) + count) % count * track.clientWidth, behavior: 'smooth' });
+}
+document.addEventListener('scroll', (e) => {
+  if (e.target?.id !== 'casinoHeroTrack') return;
+  const active = casinoHeroIndex(e.target);
+  $$('.casino-hero-dots button').forEach((button, i) => {
+    const on = i === active;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-current', String(on));
+  });
+}, true);
 
 function casinoPage() {
   const c = state.casino;
@@ -1738,8 +1770,9 @@ function casinoPage() {
   const more = c.games.length < c.total;
   // The lobby: rows of games that scroll sideways, each with "Ver todos".
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
-  const hero = !filtered && !state.casinoView
-    ? casinoHeroCard(rows.find((r) => r.key === 'destaques')?.games?.[0] || c.games[0])
+  const featured = rows.find((r) => r.key === 'destaques')?.games;
+  const hero = !filtered && !state.casinoView && !state.casinoBanners?.length
+    ? casinoHeroCarousel([...(featured || []), ...c.games])
     : '';
   // Top 10: the place on the corner of each game.
   const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
@@ -4589,6 +4622,8 @@ document.addEventListener('click', async (e) => {
   else if (action === 'push-promos-no') { closeModal(); pushPromos(false); }
   else if (action === 'cban-go') { const t = $('#cbanTrack'); if (t) cbanGo(cbanIndex(t) + Number(actionEl.dataset.dir)); }
   else if (action === 'cban-dot') cbanGo(Number(actionEl.dataset.i));
+  else if (action === 'casino-hero-go') { const t = $('#casinoHeroTrack'); if (t) casinoHeroGo(casinoHeroIndex(t) + Number(actionEl.dataset.dir)); }
+  else if (action === 'casino-hero-dot') casinoHeroGo(Number(actionEl.dataset.i));
   else if (action === 'cg-fav') {
     const id = Number(actionEl.dataset.id), on = !isFavorite(id);
     const g = state.casinoGame?.id === id ? state.casinoGame.data?.game : null;
