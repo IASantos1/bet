@@ -97,6 +97,7 @@ const state = {
   events: [],
   eventsLoaded: false,
   casino: { enabled: false, games: [], providers: [], loaded: false },
+  casinoHeroGames: [], casinoHeroLoading: false, casinoHeroAt: 0,
   casinoFilter: { provider: '', category: '', q: '' },
   casinoBlocks: 4, // how many lobby row-blocks are shown (CASINO_ROW_BLOCK); grows as the page scrolls
   casinoSession: null, casinoGame: null,
@@ -1716,13 +1717,28 @@ function casinoHeroCard(g, i = 0) {
     '</button>';
 }
 const CASINO_HERO_ART = [
-  { key: 'Gates of Olympus', image: '/casino/banners/hero-gates-of-olympus.jpg', match: (k) => /^gates?ofolympus/.test(k) },
-  { key: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash.jpg', match: (k) => k.startsWith('bigbasssplash') },
-  { key: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza.jpg', match: (k) => k.startsWith('sweetbonanza') },
-  { key: 'X-Mas 1000', image: '/casino/banners/hero-xmas-1000.jpg', match: (k) => /^(?:xmas|christmas)1000/.test(k) },
+  { key: 'Gates of Olympus 2500', query: 'Olympus', image: '/casino/banners/hero-gates-of-olympus.jpg', match: (k) => /^gatesofolympus2500/.test(k) },
+  { key: 'Sweet Bonanza', query: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza.jpg', match: (k) => k.startsWith('sweetbonanza') },
+  { key: 'Big Bass Splash', query: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash.jpg', match: (k) => k.startsWith('bigbasssplash') },
 ];
 const casinoHeroGameKey = (name) => String(name || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+function ensureCasinoHeroGames() {
+  if (state.casinoHeroLoading || Date.now() - state.casinoHeroAt < 5 * 60_000) return;
+  state.casinoHeroLoading = true;
+  Promise.all(CASINO_HERO_ART.filter((art) => art.query).map(async (art) => {
+    const qs = new URLSearchParams({ offset: '0', limit: '100', q: art.query });
+    const result = await api(`/api/casino/games?${qs}`);
+    return (result.games || []).filter((g) => art.match(casinoHeroGameKey(g.name)));
+  })).then((groups) => {
+    state.casinoHeroGames = groups.flat();
+    state.casinoHeroAt = Date.now();
+    const r = currentRoute();
+    if (r.page === 'casino' && !r.sub && !state.casinoFilter.provider && !state.casinoFilter.category && !state.casinoFilter.q && !state.casinoView) render({ keepScroll: true });
+  }).catch(() => {
+    state.casinoHeroAt = Date.now() - 4 * 60_000;
+  }).finally(() => { state.casinoHeroLoading = false; });
+}
 function casinoHeroCarousel(games) {
   const pool = games || [];
   const seen = new Set();
@@ -1779,6 +1795,7 @@ function casinoPage() {
   }
   const f = state.casinoFilter;
   const filtered = f.provider || f.category || f.q;
+  if (!filtered && !state.casinoView) ensureCasinoHeroGames();
   if (!c.games.length && !filtered && !c.loading) {
     return `<div class="page-title"><h1>Casino</h1></div>
       <div class="notice"><strong>Casino sem jogos de momento.</strong> ${esc(c.error || '')}
@@ -1789,8 +1806,8 @@ function casinoPage() {
   // The lobby: rows of games that scroll sideways, each with "Ver todos".
   const rows = c.bigbang && !filtered ? state.casinoLobby?.rows || [] : [];
   const featured = rows.find((r) => r.key === 'destaques')?.games;
-  const hero = !filtered && !state.casinoView && !state.casinoBanners?.length
-    ? casinoHeroCarousel([...(featured || []), ...rows.flatMap((r) => r.games || []), ...c.games])
+  const hero = !filtered && !state.casinoView
+    ? casinoHeroCarousel([...(state.casinoHeroGames || []), ...(featured || []), ...rows.flatMap((r) => r.games || []), ...c.games])
     : '';
   // Top 10: the place on the corner of each game.
   const topCard = (g, k) => `<div class="top-card"><span class="top-n" aria-hidden="true">${k + 1}</span>${lobbyCard(g)}</div>`;
@@ -1858,9 +1875,9 @@ function casinoPage() {
   const head = f.q ? `Resultados para “${f.q}”` : prov?.name || cat?.label || theme?.title;
   const provHead = head ? `<div class="section-head casino-prov-head"><h2>${esc(head)} <small class="muted">· ${c.total} jogos</small></h2>
       <button class="link-btn" data-casino-cat="">‹ Voltar ao casino</button></div>` : '';
-  // Promotions and the featured game lead into the in-page category, search and provider controls,
+  // The featured games lead the page; promotions follow before the category and provider controls,
   // followed by the lobby rows.
-  return `${filtered ? '' : casinoBanners()}${hero}${casinoTabs(f)}${casinoBrowseTools(f)}${filtered ? '' : freeSpinsBar()}
+  return `${hero}${filtered ? '' : casinoBanners()}${casinoTabs(f)}${casinoBrowseTools(f)}${filtered ? '' : freeSpinsBar()}
     ${lobby || `${provHead}<section class="section">
       <div class="game-grid grid" id="casinoGrid">${c.games.length ? c.games.map(casinoGameCard).join('') : `<div class="empty">${c.loading ? 'A carregar…' : 'Sem jogos neste filtro.'}</div>`}</div>
       ${more ? `<div class="load-more"><button class="outline-btn" data-action="casino-more" id="casinoMore" ${c.loading ? 'disabled' : ''}>${c.loading ? 'A carregar…' : `Mostrar mais jogos (${c.games.length} de ${c.total})`}</button></div>` : ''}
