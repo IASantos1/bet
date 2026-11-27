@@ -103,7 +103,8 @@ const state = {
   casinoSession: null, casinoGame: null,
   fsExpanded: false,
   liveTv: false, liveSport: '',
-  leagueTree: null, sideOpen: {}, leagueView: null,
+  leagueTree: null, sideOpen: {}, leagueView: null, sportsSideQuery: '',
+  casinoRewards: null, casinoRewardsAt: 0, casinoRewardsLoading: false, casinoRewardsUserId: null,
   match: { id: null, data: null, extras: null, insights: null, picks: null, statTab: 'aovivo', tab: 'mercados', cat: 'todos', view: 'tracker', es: null, timer: null, ball: null, trail: [], actions: [], live: null, streaming: false, momHalf: 'auto', betbyUrl: null, betbyAsked: false, betbyRO: null, betbyMsg: null, betbySized: false, betbyAt: 0, betbyTries: 0, betbyDone: false, betbyGraceOver: false },
   slip: loadSlip(), builder: loadBuilder(), featured: null,
   promos: null, campaigns: null, freebetId: null,
@@ -314,6 +315,18 @@ function openAuth(mode) {
 function openSearch() {
   openModal('Pesquisar', `<input class="search-input" id="searchInput" placeholder="Equipa ou competição…" autocomplete="off"><div id="searchResults"></div>`, { wide: true });
   renderSearch('');
+}
+function toggleCasinoSearch(force) {
+  const panel = $('#casinoSearchPanel');
+  const input = $('#casinoHeaderSearch');
+  if (!panel || !input) return;
+  const open = force ?? panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !open);
+  $('#casinoSearchBtn')?.setAttribute('aria-expanded', String(open));
+  if (open) {
+    input.value = state.casinoFilter.q || '';
+    setTimeout(() => input.focus(), 0);
+  }
 }
 function renderSearch(q) {
   const box = $('#searchResults');
@@ -1493,6 +1506,34 @@ function casinoProviderMark(provider, className = 'casino-provider-mark') {
     ? '<img class=' + q + className + q + ' src=' + q + esc(provider.logo) + q + ' alt=' + q + q + ' loading=' + q + 'lazy' + q + ' decoding=' + q + 'async' + q + '>'
     : '<span class=' + q + className + ' casino-provider-fallback' + q + ' aria-hidden=' + q + 'true' + q + '>&#127922;</span>';
 }
+function casinoPromoCards() {
+  const r = state.casinoRewards || {};
+  const firstChecked = !state.user || !!r.firstDeposit;
+  const firstDone = !!state.user && firstChecked && (r.firstDeposit ? r.firstDeposit.hasDeposited : !state.user.firstDeposit);
+  const firstUnavailable = !!state.user && firstChecked && !firstDone && r.firstDeposit?.eligible === false;
+  const firstLabel = !state.user ? 'Iniciar sessão' : !firstChecked ? 'A verificar' : firstDone ? 'Indisponível' : firstUnavailable ? 'Indisponível' : 'Ativar bónus';
+  const firstCopy = !state.user ? 'Entre para consultar a oferta.' : !firstChecked ? 'A verificar a elegibilidade da conta…' : firstDone
+    ? 'Bónus indisponível: o primeiro depósito já foi realizado.'
+    : firstUnavailable ? `Oferta temporariamente indisponível: ${esc(r.firstDeposit.reason || 'elegibilidade não confirmada')}.`
+    : r.firstDeposit?.signupAccepted ? 'Oferta selecionada no registo. Deposite €20 para receber 100 Free Spins.'
+      : 'Segunda oportunidade: deposite €20 e receba 100 Free Spins no primeiro depósito.';
+  const deposited = Number(r.weeklyDepositCents || 0) / 100;
+  const scratch = r.scratch || {};
+  const scratchCopy = !state.user ? 'Inicie sessão para ver o seu progresso semanal.'
+    : scratch.used ? 'Já utilizou a raspadinha desta semana.'
+      : scratch.eligible ? 'O seu depósito semanal desbloqueou uma raspadinha.'
+        : deposited >= 10 && scratch.reason ? `Disponível após resolver: ${esc(scratch.reason)}.`
+        : `Deposite mais ${money(Math.max(0, 10 - deposited))} nesta semana para desbloquear.`;
+  const wheel = r.wheel || {};
+  const wheelCopy = !state.user ? 'Inicie sessão para ver o seu progresso semanal.'
+    : wheel.configured ? wheel.used ? 'Já utilizou o giro desta semana.' : wheel.eligible ? 'O giro desta semana está desbloqueado.'
+      : deposited >= 15 && wheel.reason ? `Disponível após resolver: ${esc(wheel.reason)}.`
+        : `Deposite mais ${money(Math.max(0, 15 - deposited))} nesta semana.`
+      : `Depósitos esta semana: ${money(deposited)}. Prémios em configuração.`;
+  return `<article class="casino-promo-card first-deposit"><div class="casino-promo-icon" aria-hidden="true">🎁</div><div class="casino-promo-copy"><small>BOAS-VINDAS</small><strong>Primeiro depósito</strong><p>${firstCopy}</p></div><button data-action="casino-first-deposit" ${!firstChecked || firstDone || firstUnavailable ? 'disabled' : ''}>${firstLabel}</button></article>
+    <article class="casino-promo-card weekly-scratch"><div class="casino-promo-icon" aria-hidden="true">✦</div><div class="casino-promo-copy"><small>BÓNUS SEMANAL · ${money(deposited)} / €10</small><strong>Raspadinha da semana</strong><p>${scratchCopy}</p></div><button data-action="casino-weekly-scratch" ${!scratch.eligible ? 'disabled' : ''}>${scratch.used ? 'Já utilizada' : 'Raspar'}</button></article>
+    <article class="casino-promo-card lucky-wheel"><div class="casino-promo-icon" aria-hidden="true">◉</div><div class="casino-promo-copy"><small>GIRO DA SORTE · ${money(deposited)} / €15</small><strong>Giro da sorte</strong><p>${wheelCopy}</p></div><button data-action="casino-weekly-wheel" ${!wheel.eligible ? 'disabled' : ''}>${wheel.used ? 'Já utilizado' : wheel.configured ? 'Girar' : 'Em breve'}</button></article>`;
+}
 function casinoBrowseTools(f) {
   const providers = (state.casino.providers || []).filter((p) => !p.maintenance);
   const q = String.fromCharCode(34);
@@ -1501,7 +1542,28 @@ function casinoBrowseTools(f) {
     '<button type=' + q + 'button' + q + ' class=' + q + 'casino-provider-tile' + (String(f.provider) === String(p.id) ? ' active' : '') + q + ' data-casino-prov=' + q + esc(p.id) + q + ' aria-label=' + q + 'Fornecedor ' + esc(p.name) + q + '>' +
       casinoProviderMark(p) + '<span>' + esc(p.name) + '</span></button>'
   ).join('') + '</nav>' : '';
-  return '<section class=' + q + 'casino-browse-tools' + q + ' aria-label=' + q + 'Pesquisar e escolher fornecedor' + q + '>' + search + strip + '</section>';
+  return '<section class=' + q + 'casino-browse-tools' + q + ' aria-label=' + q + 'Pesquisar e escolher fornecedor' + q + '>' + search +
+    '<div class=' + q + 'casino-mobile-promos' + q + '>' + casinoPromoCards() + '</div>' + strip + '</section>';
+}
+async function ensureCasinoRewards(force = false) {
+  if (!state.user) { state.casinoRewards = null; state.casinoRewardsUserId = null; return; }
+  if (state.casinoRewardsUserId !== state.user.id) {
+    state.casinoRewards = null;
+    state.casinoRewardsAt = 0;
+    state.casinoRewardsUserId = state.user.id;
+  }
+  if (state.casinoRewardsLoading || (!force && Date.now() - state.casinoRewardsAt < 30_000)) return;
+  state.casinoRewardsLoading = true;
+  const userId = state.user.id;
+  try {
+    const rewards = await api('/api/me/casino-rewards');
+    if (state.user?.id !== userId) return;
+    state.casinoRewards = rewards;
+    state.casinoRewardsUserId = userId;
+    state.casinoRewardsAt = Date.now();
+    if (currentRoute().page === 'casino' && currentRoute().sub !== 'jogo') render({ keepScroll: true });
+  } catch { /* reward cards keep their safe, locked state until the summary is available */ }
+  finally { state.casinoRewardsLoading = false; }
 }
 function casinoTabs(f) {
   return `<nav class="casino-chips" data-hscroll="casinoChips" aria-label="Tipos de jogo">${casinoCats().map((c) => `<button class="casino-chip${f.category === c.key && !f.provider && !f.q ? ' active' : ''}" data-casino-cat="${esc(c.key)}">
@@ -1793,6 +1855,7 @@ function casinoPage() {
   ensureCasinoBanners();
   ensureSpotlights();
   ensureCasinoMine();
+  ensureCasinoRewards();
   if (!c.enabled) {
     return `<div class="page-title"><h1>Casino</h1><p>Jogos, mesas e entretenimento num só espaço.</p></div>
       <div class="notice"><strong>${c.loaded ? 'Casino em integração.' : 'A carregar…'}</strong> ${c.loaded ? 'Os jogos ficam disponíveis assim que o fornecedor de casino for ligado à plataforma.' : ''}</div>
@@ -1934,7 +1997,7 @@ async function loadCasino({ reset = false } = {}) {
   }
   const { page, sub } = currentRoute();
   if (page === 'home' || (page === 'casino' && sub !== 'jogar')) {
-    const searchId = document.activeElement?.id === 'casinoSearch' ? 'casinoSearch' : '';
+    const searchId = ['casinoSearch', 'casinoHeaderSearch'].includes(document.activeElement?.id) ? document.activeElement.id : '';
     render({ keepScroll: true });
     if (searchId) { const el = document.getElementById(searchId); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }
   }
@@ -3092,6 +3155,8 @@ function depositPanel(html) {
 function depositDone(r) {
   state.depositWatch = null;
   state.user.balance = r.balance;
+  state.casinoRewards = null;
+  state.casinoRewardsAt = 0;
   depositPanel(`<div class="pay-box ok"><strong>Depósito confirmado</strong><span>${money(r.amount)} creditados na sua conta.</span></div>`);
   toast('Depósito confirmado', `Novo saldo: ${money(r.balance)}`);
   updateHeader(); loadWallet(); refreshMe();
@@ -3896,10 +3961,31 @@ function sideTree(sport) {
   }).join('')}</div>`;
 }
 
+function sideSearchResults(query) {
+  const key = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const q = key(query);
+  const countries = Object.entries(state.leagueTree || {}).flatMap(([sport, tree]) => tree
+    .filter((entry) => key(`${countryLabel(entry.country)} ${sport} ${SPORT_META[sport]?.name}`).includes(q))
+    .map((entry) => ({ sport, ...entry }))).slice(0, 8);
+  const leagues = Object.entries(state.leagueTree || {}).flatMap(([sport, tree]) => tree.flatMap((entry) =>
+    entry.leagues.filter((league) => key(`${league.label || leagueShort(league.name)} ${league.name} ${countryLabel(entry.country)} ${sport}`).includes(q))
+      .map((league) => ({ sport, country: entry.country, ...league })))).slice(0, 12);
+  const events = state.events.filter((event) => key(`${event.home} ${event.away} ${event.competition} ${SPORT_META[event.sport]?.name || event.sport}`).includes(q)).slice(0, 12);
+  if (!countries.length && !leagues.length && !events.length) return '<p class="side-search-empty">Nenhum jogo, liga ou país encontrado.</p>';
+  return `<div class="side-search-group">${countries.map((entry) => `<button class="side-search-country" data-side-search-country="${esc(`${entry.sport}|${entry.country}`)}">${sportBadge(entry.sport, 16)} ${esc(countryLabel(entry.country))}<span>${esc(SPORT_META[entry.sport]?.name || entry.sport)}</span></button>`).join('')}</div>
+    <div class="side-search-group">${leagues.map((entry) => `<a href="#/desporto/liga/${encodeURIComponent(entry.name)}" class="side-search-league">${sportBadge(entry.sport, 16)} ${esc(entry.label || leagueShort(entry.name))}<span>${esc(countryLabel(entry.country))}</span></a>`).join('')}</div>
+    <div class="side-search-group">${events.map((event) => `<a href="#/jogo/${event.id}" class="side-search-event">${sportBadge(event.sport, 16)} <b>${esc(event.home)} – ${esc(event.away)}</b><span>${esc(leagueShort(event.competition))}</span></a>`).join('')}</div>`;
+}
+
 function renderSidebar() {
   renderSideInvite();
   const counts = {};
   for (const e of state.events) counts[e.sport] = (counts[e.sport] || 0) + 1;
+  const query = state.sportsSideQuery.trim();
+  const links = $('#sportLinks');
+  const results = $('#sportSearchResults');
+  if (links) links.classList.toggle('hidden', !!query);
+  if (results) results.innerHTML = query ? sideSearchResults(query) : '';
   $('#sportLinks').innerHTML = Object.entries(SPORT_META)
     .map(([k, v]) => {
       const tree = !!state.leagueTree?.[k];
@@ -3991,6 +4077,7 @@ function render({ keepScroll = false } = {}) {
   // The casino has no sports menu nor bet slip: its pages take the whole width.
   document.body.classList.toggle('casino-mode', page === 'casino' && !immersive);
   document.body.classList.toggle('on-promos', page === 'promocoes');
+  if (page !== 'casino') toggleCasinoSearch(false);
   // Carousels (and the casino row) keep their position when the page refreshes itself (odds, live
   // scores): only the person scrolling moves them, never the refresh.
   const carScroll = keepScroll ? $$('#content [data-hscroll]').map((t) => [t.dataset.hscroll, t.scrollLeft]) : [];
@@ -4327,7 +4414,7 @@ const formHandlers = {
     const d = formData(form);
     const { user } = await api('/api/auth/register', {
       method: 'POST',
-      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, nationality: d.nationality, profession: d.profession, country: d.country, address: d.address, postalCode: d.postalCode, idNumber: d.idNumber, nif: d.nif, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, ref: referralCode() || undefined },
+      body: { name: d.name, email: d.email, birthdate: d.birthdate, phone: d.phone, nationality: d.nationality, profession: d.profession, country: d.country, address: d.address, postalCode: d.postalCode, idNumber: d.idNumber, nif: d.nif, password: d.password, acceptTerms: form.acceptTerms.checked, promos: form.promos.checked, welcomeBonusAccepted: form.bonus?.checked === true, ref: referralCode() || undefined },
     });
     state.user = user;
     state.pendingBonus = form.bonus?.checked === true;
@@ -4468,6 +4555,44 @@ document.addEventListener('submit', async (e) => {
   }
 });
 
+function casinoRewardMessage(reward) {
+  if (reward.type === 'free_spins') {
+    const spins = reward.details?.spins || reward.details?.grant?.spins || '';
+    return `<strong>${spins} Free Spins</strong><p>Valor promocional: ${money((reward.amountCents || 0) / 100)}. As rodadas ficam sujeitas às regras do casino.</p>`;
+  }
+  if (reward.type === 'freebet') return `<strong>Ganhaste uma Free Bet de ${money((reward.amountCents || 0) / 100)}.</strong>`;
+  if (reward.type === 'scratch') return `<strong>Ganhaste uma raspadinha extra.</strong><p>Revela o prémio agora.</p><button class="primary-btn" data-action="casino-wheel-scratch">Raspar prémio</button>`;
+  return '<p>Prémio registado.</p>';
+}
+function casinoWheelMarkup(reward = null) {
+  const prizes = reward?.details?.prizes || [];
+  const colors = ['#7663bd', '#c75e7b', '#df9d42', '#568d73', '#4688aa', '#9a5d9f', '#b76e4e', '#5c78ae', '#a18c43', '#4b9b9a', '#9a5368', '#71844d'];
+  let edge = 0;
+  const stops = prizes.map((prize, index) => {
+    const start = edge;
+    edge += Number(prize.weight) || 0;
+    return `${colors[index % colors.length]} ${start}% ${edge}%`;
+  });
+  const background = stops.length ? `conic-gradient(${stops.join(',')})` : 'repeating-conic-gradient(#7663bd 0 45deg, #c75e7b 45deg 90deg, #df9d42 90deg 135deg, #568d73 135deg 180deg)';
+  const roll = Number(reward?.details?.roll);
+  const turn = Number.isInteger(roll) ? `${360 * 7 + ((360 - (roll + 0.5) * 3.6 + 360) % 360)}deg` : '0deg';
+  return `<div class="casino-wheel-wrap"><span class="casino-wheel-pointer" aria-hidden="true"></span>
+      <div class="casino-wheel-face${reward ? ' spinning' : ''}" style="--wheel-turn:${turn};background:${background}"><strong>${reward ? '62' : 'BÓNUS'}</strong></div>
+      ${reward ? '' : '<button class="casino-wheel-center" type="button" data-action="casino-wheel-spin-center">GIRAR</button>'}</div>
+    ${reward ? `<div class="casino-wheel-outcome"><strong>${esc(reward.details?.name || 'Prémio atribuído')}</strong>${casinoRewardMessage(reward)}</div>` : '<p class="muted casino-wheel-help">Toque no centro para sortear o prémio.</p>'}`;
+}
+async function revealCasinoScratch(source = 'weekly') {
+  try {
+    const result = await api('/api/me/casino-rewards/scratch', { method: 'POST', body: { source } });
+    state.casinoRewards = result.summary;
+    state.user = result.user;
+    updateHeader();
+    loadFreeSpins();
+    render({ keepScroll: true });
+    openModal(source === 'wheel' ? 'Prémio da raspadinha' : 'Raspadinha semanal', `<div class="casino-reward-result">${casinoRewardMessage(result.reward)}</div>`);
+  } catch (err) { toast('Não foi possível raspar', err.message, 'error'); }
+}
+
 document.addEventListener('click', async (e) => {
   const odd = e.target.closest('.odd-btn[data-sel]');
   if (odd) { toggleSelection(Number(odd.dataset.sel)); return; }
@@ -4521,6 +4646,17 @@ document.addEventListener('click', async (e) => {
     if (sportLink.dataset.sideOpen) { state.sideOpen[sportLink.dataset.sideOpen] = !state.sideOpen[sportLink.dataset.sideOpen]; renderSidebar(); }
     state.sport = sportLink.dataset.sportLink;
     if (location.hash === '#/desporto') render();
+    return;
+  }
+  const sideSearchCountry = e.target.closest('[data-side-search-country]');
+  if (sideSearchCountry) {
+    const [sport, country] = sideSearchCountry.dataset.sideSearchCountry.split('|');
+    state.sideOpen[sport] = true;
+    state.sideOpen[`${sport}|${country}`] = true;
+    state.sportsSideQuery = '';
+    $('#sportsSideSearch').value = '';
+    state.sport = sport;
+    renderSidebar();
     return;
   }
   const sideCountry = e.target.closest('[data-side-country]');
@@ -4654,6 +4790,33 @@ document.addEventListener('click', async (e) => {
   if (action === 'close-modal') closeModal();
   else if (action === 'login') openAuth('login');
   else if (action === 'register') openAuth('register');
+  else if (action === 'casino-first-deposit') {
+    if (!state.user) { openAuth('login'); return; }
+    state.pendingBonus = true;
+    location.hash = '#/perfil/carteira';
+  }
+  else if (action === 'casino-weekly-scratch') {
+    if (!state.user) { openAuth('login'); return; }
+    await revealCasinoScratch('weekly');
+  }
+  else if (action === 'casino-weekly-wheel') {
+    if (!state.user) { openAuth('login'); return; }
+    openModal('Giro da sorte', casinoWheelMarkup());
+  }
+  else if (action === 'casino-wheel-spin-center') {
+    actionEl.disabled = true;
+    actionEl.textContent = '…';
+    try {
+      const result = await api('/api/me/casino-rewards/wheel', { method: 'POST', body: {} });
+      state.casinoRewards = result.summary;
+      state.user = result.user;
+      updateHeader();
+      loadFreeSpins();
+      render({ keepScroll: true });
+      openModal('Giro da sorte', casinoWheelMarkup(result.reward));
+    } catch (err) { toast('Não foi possível girar', err.message, 'error'); }
+  }
+  else if (action === 'casino-wheel-scratch') await revealCasinoScratch('wheel');
   else if (action === 'push-yes') pushYes(actionEl.dataset.promos === '1');
   else if (action === 'install-guide') window.bet62InstallGuide?.();
   else if (action === 'push-install') { markAsked(PUSH_ASKED); closeModal(); window.bet62InstallGuide?.(); }
@@ -4834,10 +4997,16 @@ document.addEventListener('toggle', (e) => {
 
 let casinoSearchTimer = null;
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'casinoSearch') {
+  if (e.target.id === 'sportsSideSearch') {
+    state.sportsSideQuery = e.target.value;
+    renderSidebar();
+  }
+  if (['casinoSearch', 'casinoHeaderSearch'].includes(e.target.id)) {
+    const query = e.target.value;
+    for (const input of $$('#casinoSearch, #casinoHeaderSearch')) if (input !== e.target) input.value = query;
     clearTimeout(casinoSearchTimer);
     casinoSearchTimer = setTimeout(() => {
-      Object.assign(state.casinoFilter, { q: e.target.value.trim(), category: '', provider: '' });
+      Object.assign(state.casinoFilter, { q: query.trim(), category: '', provider: '' });
       state.casinoView = null;
       if (location.hash !== '#/casino') location.hash = '#/casino';
       loadCasino({ reset: true });
@@ -5105,6 +5274,8 @@ function bindChrome() {
   $('#loginBtn').addEventListener('click', () => openAuth('login'));
   $('#registerBtn').addEventListener('click', () => openAuth('register'));
   $('#searchBtn').addEventListener('click', openSearch);
+  $('#casinoSearchBtn').addEventListener('click', () => toggleCasinoSearch());
+  $('#casinoSearchClose').addEventListener('click', () => toggleCasinoSearch(false));
   $('#menuBtn').addEventListener('click', () => setSideMenu(!$('#leftSidebar').classList.contains('open')));
   $('#closeMenu').addEventListener('click', () => setSideMenu(false));
   // Computer: the left menu sticks once its end is in view (see .side-sticky): its top is the top bar's
@@ -5150,7 +5321,12 @@ function bindChrome() {
   });
   $('#modalBackdrop').addEventListener('click', (e) => { if (e.target.id === 'modalBackdrop') closeModal(); });
   // Enter applies the casino search and closes the phone menu.
-  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'casinoSearch') { e.target.blur(); setSideMenu(false); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && ['casinoSearch', 'casinoHeaderSearch'].includes(e.target.id)) {
+      e.target.blur();
+      if (e.target.id === 'casinoSearch') setSideMenu(false);
+    }
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); setSlipOpen(false); const big = $('.expanded'); if (big) toggleExpand(big); } });
   window.addEventListener('hashchange', () => { state.profileCollapsed = false; render(); });
   // The bottom bar (and the top menu): the tab lights up and the page changes as soon as it is touched,

@@ -261,6 +261,11 @@ async function amLoadGames() {
 
 function adminPromos(d) {
   const c = d.config;
+  const wheel = d.casinoRewards?.wheel || { active: false, prizes: [] };
+  const rewardAudit = d.casinoRewardAudit?.length ? `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Jogador</th><th>Prémio</th><th>Semana</th><th>Peso</th><th>Sorteio</th><th>Estado</th></tr></thead><tbody>
+    ${d.casinoRewardAudit.map((r) => `<tr><td>${esc(fmtDateTime(r.created_at))}</td><td>${esc(r.name)}<br><small class="muted">${esc(r.email)}</small></td>
+      <td>${esc(r.reward_type)}${r.reward_cents ? ` · ${money(r.reward_cents / 100)}` : ''}</td><td>${esc(r.period)}</td><td class="num">${r.weight}%</td><td class="num">${r.roll}</td><td>${esc(r.status)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Ainda não há sorteios registados.</p>';
   const field = (camp, [k, label, type]) => {
     const v = c[camp][k];
     if (type === 'tiers') return `<label class="field">${esc(label)}<input name="${camp}.${k}" value="${esc(v.map(([d, n]) => `${d}:${n}`).join(', '))}" required></label>`;
@@ -309,6 +314,15 @@ function adminPromos(d) {
       ${['welcome', 'firstBet', 'reload', 'cashback', 'accaBoost', 'casinoFs', 'depositFb'].map(campaign).join('')}
       <div class="form-actions"><button class="primary-btn">Guardar configuração</button></div>
     </form>
+    <form class="panel" data-form="casino-reward-config">
+      <h3>Giro da sorte semanal</h3>
+      <p class="muted">Exige €15 em depósitos confirmados na semana de Lisboa. A roleta fica desligada até os prémios estarem configurados; os pesos ativos têm de somar exatamente 100%. Tipos aceites: <code>free_spins</code>, <code>freebet</code> e <code>scratch</code>. Valores em cêntimos.</p>
+      <label class="adm-switch"><input type="checkbox" name="active"${wheel.active ? ' checked' : ''}> Ativar roleta para os jogadores elegíveis</label>
+      <label class="field wide">Prémios JSON<textarea name="prizes" rows="9" spellcheck="false" required>${esc(JSON.stringify(wheel.prizes || [], null, 2))}</textarea></label>
+      <small class="muted">Exemplo: [{"type":"free_spins","name":"50 Free Spins","amountCents":500,"weight":50},{"type":"freebet","name":"Free Bet de €5","amountCents":500,"weight":30},{"type":"scratch","name":"Raspadinha","weight":20}]</small>
+      <div class="form-actions"><button class="primary-btn">Guardar roleta</button></div>
+    </form>
+    <div class="panel"><h3>Auditoria dos prémios semanais</h3>${rewardAudit}</div>
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>
     <div class="panel"><h3>Free bets</h3>${freebets}</div>
     <div class="panel"><h3>Free Spins casino</h3>${d.spins?.length ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Jogador</th><th>Rodadas</th><th class="num">Valor</th><th class="num">Ganhos</th><th class="num">Ganhos pagos</th><th>Expira</th><th>Estado</th></tr></thead><tbody>
@@ -2157,6 +2171,14 @@ const handlers = {
     }
     await api('/api/admin/promotions/config', { method: 'PUT', body });
     toast('Guardado', 'Configuração das promoções atualizada.');
+    loadTab();
+  },
+  async 'casino-reward-config'(form) {
+    let prizes;
+    try { prizes = JSON.parse(form.prizes.value); }
+    catch { throw new Error('O JSON dos prémios não é válido.'); }
+    await api('/api/admin/casino-rewards/config', { method: 'PUT', body: { wheel: { active: form.active.checked, prizes } } });
+    toast('Guardado', 'Configuração da roleta atualizada.');
     loadTab();
   },
   async login(form) {

@@ -257,6 +257,24 @@ CREATE TABLE IF NOT EXISTS promo_log (
 );
 CREATE INDEX IF NOT EXISTS idx_promo_log_user ON promo_log(user_id, id);
 
+-- Weekly casino rewards: one immutable, audited result per player, reward kind and Lisbon week.
+CREATE TABLE IF NOT EXISTS casino_weekly_rewards (
+  id             INTEGER PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id),
+  kind           TEXT    NOT NULL CHECK (kind IN ('scratch', 'wheel', 'wheel_scratch')),
+  period         TEXT    NOT NULL,
+  deposits_cents INTEGER NOT NULL DEFAULT 0,
+  reward_type    TEXT    NOT NULL,
+  reward_cents   INTEGER NOT NULL DEFAULT 0,
+  weight         INTEGER NOT NULL DEFAULT 0,
+  roll           INTEGER NOT NULL DEFAULT 0,
+  status         TEXT    NOT NULL DEFAULT 'revealed' CHECK (status IN ('issued', 'revealed')),
+  details_json   TEXT    NOT NULL DEFAULT '{}',
+  created_at     TEXT    NOT NULL,
+  UNIQUE (user_id, kind, period)
+);
+CREATE INDEX IF NOT EXISTS idx_casino_weekly_rewards_period ON casino_weekly_rewards(period, kind);
+
 -- Casino (BigBang, seamless wallet): every balance move the provider sends, once per transaction_id.
 -- Players already created at BigBang (users/create): kept across restarts, so a real game opens
 -- with one call to BigBang, not two.

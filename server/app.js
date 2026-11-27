@@ -38,6 +38,7 @@ import {
 import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
 import { createPromo, updatePromo, setPromoStatus, grantPromo, grantDepositPromos, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
+import { casinoRewardSummary, casinoRewardsConfig, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel } from './casinorewards.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
@@ -1590,7 +1591,10 @@ export function createApp(db, {
 
     // Promotions by email only when the box was ticked at sign-up (off by default); asked either way.
     // The same box covers SMS when a phone number was given.
-    const prefs = JSON.stringify({ notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true });
+    const prefs = JSON.stringify({
+      notifyPromos: req.body.promos === true, notifySms: req.body.promos === true && !!phone, promoAsked: true,
+      welcomeBonusAcceptedAtSignup: req.body.welcomeBonusAccepted === true,
+    });
     const { lastInsertRowid } = db.prepare(
       'INSERT INTO users (email, name, birthdate, phone, nationality, profession, country, address, postal_code, id_number, nif, password_hash, prefs, created_at, promo_asked_at, avatar, pep_declared) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(email, name, birthdate, phone, nationality, profession, country, address, postalCode, idNumber, nif, hashPassword(password), prefs, nowIso(), nowIso(), AVATARS[Math.floor(Math.random() * AVATARS.length)], req.body.pep === true ? 1 : 0);
@@ -2015,6 +2019,18 @@ export function createApp(db, {
     const o = depositOffer(db, req.user.id, value, { method });
     res.json({ campaign: o.campaign, name: o.name, bonus: o.bonusCents ? cents(o.bonusCents) : 0, reason: o.reason || null, minDeposit: o.minDeposit ?? null });
   });
+  app.get('/api/me/casino-rewards', requireUser, (req, res) => {
+    res.json(casinoRewardSummary(db, req.user.id));
+  });
+  app.post('/api/me/casino-rewards/scratch', requireUser, wrap(async (req, res) => {
+    const source = req.body?.source === 'wheel' ? 'wheel' : 'weekly';
+    const reward = tx(db, () => scratchWeekly(db, req.user.id, { source }));
+    res.json({ reward, summary: casinoRewardSummary(db, req.user.id), user: userOut(userById(req.user.id)) });
+  }));
+  app.post('/api/me/casino-rewards/wheel', requireUser, wrap(async (req, res) => {
+    const reward = tx(db, () => spinWeeklyWheel(db, req.user.id));
+    res.json({ reward, summary: casinoRewardSummary(db, req.user.id), user: userOut(userById(req.user.id)) });
+  }));
   // The player ends the free spins now: winnings above the value given are paid as real money.
   app.post('/api/me/free-spins/:id/claim', requireUser, wrap(async (req, res) => {
     const s = spinsRow(db, Number(req.params.id), req.user.id);
@@ -3108,6 +3124,9 @@ export function createApp(db, {
     }
     res.json({
       config, fsGames,
+      casinoRewards: casinoRewardsConfig(db),
+      casinoRewardAudit: db.prepare(`SELECT r.id, r.kind, r.period, r.reward_type, r.reward_cents, r.weight, r.roll, r.status, r.created_at,
+        u.name, u.email FROM casino_weekly_rewards r JOIN users u ON u.id = r.user_id ORDER BY r.id DESC LIMIT 100`).all(),
       bonuses: db.prepare('SELECT b.*, u.name, u.email FROM bonuses b JOIN users u ON u.id = b.user_id ORDER BY b.id DESC LIMIT 200').all()
         .map((b) => ({ ...bonusView(b), ...who(b) })),
       freebets: db.prepare('SELECT f.*, u.name, u.email FROM freebets f JOIN users u ON u.id = f.user_id ORDER BY f.id DESC LIMIT 100').all()
@@ -3121,6 +3140,7 @@ export function createApp(db, {
     });
   }));
   admin.put('/promotions/config', (req, res) => res.json({ config: savePromoConfig(db, req.body || {}) }));
+  admin.put('/casino-rewards/config', (req, res) => res.json({ casinoRewards: saveCasinoRewardsConfig(db, req.body || {}) }));
   admin.post('/bonuses/:id/cancel', (req, res) => {
     const reason = str(req.body?.reason, 200);
     if (reason.length < 3) throw new HttpError(400, 'Indique o motivo do cancelamento.');
