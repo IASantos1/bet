@@ -1710,21 +1710,21 @@ function casinoHeroCard(g, i = 0) {
   if (!g) return '';
   const q = String.fromCharCode(34);
   const art = g.image ? '<img class=' + q + 'casino-hero-image' + q + ' src=' + q + esc(g.image) + q + ' alt=' + q + q + (i ? ' loading=' + q + 'lazy' + q : ' fetchpriority=' + q + 'high' + q) + ' decoding=' + q + 'async' + q + '>' : '';
-  return '<button type=' + q + 'button' + q + ' class=' + q + 'casino-hero' + q + ' data-game-id=' + q + esc(g.id) + q + ' aria-label=' + q + esc('Abrir ' + g.name) + q + '>' +
+  return '<button type=' + q + 'button' + q + ' class=' + q + 'casino-hero' + (g.heroAspectRatio === '3 / 2' ? ' casino-hero-tall' : '') + q + ' data-game-id=' + q + esc(g.id) + q + ' aria-label=' + q + esc('Abrir ' + g.name) + q + '>' +
     '<span class=' + q + 'casino-hero-media' + q + '>' + art + '</span>' +
-    '<span class=' + q + 'casino-hero-copy' + q + '><small>DESTAQUE BET62</small><strong>' + esc(g.name) + '</strong><span>' + esc(g.provider) + ' - Disponivel no casino</span><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
+    '<span class=' + q + 'casino-hero-copy' + q + '><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
     '</button>';
 }
 // Require every token to appear in the game's compact name, in any order: the catalogue may spell a
 // title "Gates of Olympus Xmas 1000" while the operator writes "Gates of Olympus 1000 Xmas".
 const heroArtHas = (...tokens) => (k) => tokens.every((t) => k.includes(t));
 const CASINO_HERO_ART = [
-  { key: 'Gates of Olympus Xmas 1000', query: 'Gates of Olympus', image: '/casino/banners/hero-gates-of-olympus-1000-xmas.jpg', match: heroArtHas('gatesofolympus', 'xmas', '1000') },
-  { key: 'Zeus vs Hades - Gods of War 250', query: 'Zeus vs Hades', image: '/casino/banners/hero-zeus-vs-hades-250.jpg', match: heroArtHas('zeusvshades', 'godsofwar', '250') },
-  { key: 'Le Zeus', query: 'Le Zeus', image: '/casino/banners/hero-le-zeus.jpg', match: heroArtHas('lezeus') },
-  { key: 'Sweet Bonanza 2500', query: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza-2500.jpg', match: heroArtHas('sweetbonanza', '2500') },
-  { key: 'The Dog House - No Dog Left Behind', query: 'Dog House', image: '/casino/banners/hero-the-dog-house.jpg', match: heroArtHas('doghouse', 'nodogleftbehind') },
-  { key: 'Big Bass Splash 1000', query: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash-1000.jpg', match: heroArtHas('bigbasssplash', '1000') },
+  { key: 'Gates of Olympus Xmas 1000', query: 'Gates of Olympus', image: '/casino/banners/hero-gates-of-olympus-1000-xmas.jpg', aspectRatio: '2 / 1', match: heroArtHas('gatesofolympus', 'xmas', '1000') },
+  { key: 'Zeus vs Hades - Gods of War 250', query: 'Zeus vs Hades', image: '/casino/banners/hero-zeus-vs-hades-250.jpg', aspectRatio: '3 / 2', match: heroArtHas('zeusvshades', 'godsofwar', '250') },
+  { key: 'Le Zeus', query: 'Le Zeus', image: '/casino/banners/hero-le-zeus.jpg', aspectRatio: '2 / 1', match: heroArtHas('lezeus') },
+  { key: 'Sweet Bonanza 2500', query: 'Sweet Bonanza', image: '/casino/banners/hero-sweet-bonanza-2500.jpg', aspectRatio: '2 / 1', match: heroArtHas('sweetbonanza', '2500') },
+  { key: 'The Dog House - No Dog Left Behind', query: 'Dog House', image: '/casino/banners/hero-the-dog-house.jpg', aspectRatio: '2 / 1', match: heroArtHas('doghouse', 'nodogleftbehind') },
+  { key: 'Big Bass Splash 1000', query: 'Big Bass Splash', image: '/casino/banners/hero-big-bass-splash-1000.jpg', aspectRatio: '3 / 2', match: heroArtHas('bigbasssplash', '1000') },
 ];
 const casinoHeroGameKey = (name) => String(name || '').toLowerCase().normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -1758,7 +1758,7 @@ function casinoHeroCarousel(games) {
     const game = matches.find((g) => casinoHeroGameKey(g.name) === casinoHeroGameKey(art.key)) || matches[0];
     if (!game) return [];
     chosen.add(String(game.id));
-    return [{ ...game, image: art.image }];
+    return [{ ...game, image: art.image, heroAspectRatio: art.aspectRatio }];
   });
   const list = artFirst;
   if (!list.length) return '';

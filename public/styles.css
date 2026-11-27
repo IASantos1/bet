@@ -2675,13 +2675,11 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .casino-hero-carousel { position: relative; margin: 0 0 18px; overflow: hidden; border-radius: 16px; }
 .casino-hero-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .casino-hero-track::-webkit-scrollbar { display: none; }
-.casino-hero { position: relative; isolation: isolate; display: block; flex: 0 0 100%; width: 100%; min-height: 240px; aspect-ratio: 16 / 9; margin: 0; padding: 0; overflow: hidden; scroll-snap-align: start; text-align: left; color: #fff; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: #111820; cursor: pointer; box-shadow: 0 12px 28px rgba(0,0,0,.28); }
+.casino-hero { position: relative; isolation: isolate; display: block; flex: 0 0 100%; width: 100%; aspect-ratio: 2 / 1; margin: 0; padding: 0; overflow: hidden; scroll-snap-align: start; text-align: left; color: #fff; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: #111820; cursor: pointer; box-shadow: 0 12px 28px rgba(0,0,0,.28); }
+.casino-hero-tall { aspect-ratio: 3 / 2; }
 .casino-hero-media { position: absolute; inset: 0; z-index: -1; }
-.casino-hero-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; }
-.casino-hero-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 8px; min-height: inherit; max-width: 100%; padding: 22px 28px; text-shadow: 0 2px 8px rgba(0,0,0,.62), 0 1px 3px rgba(0,0,0,.62); }
-.casino-hero-copy small { color: #ffc400; font-size: 11px; font-weight: 900; letter-spacing: .16em; }
-.casino-hero-copy strong { max-width: 100%; overflow: hidden; color: #fff; font-size: clamp(24px,3vw,42px); font-weight: 950; line-height: 1.02; text-overflow: ellipsis; }
-.casino-hero-copy > span { color: rgba(255,255,255,.78); font-size: 13px; font-weight: 650; }
+.casino-hero-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.casino-hero-copy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; max-width: 100%; padding: 22px 28px; text-shadow: 0 2px 8px rgba(0,0,0,.62), 0 1px 3px rgba(0,0,0,.62); }
 .casino-hero-copy em { display: inline-flex; align-items: center; gap: 12px; margin-top: 6px; padding: 10px 17px; border-radius: 999px; background: var(--casino-red); color: #fff; font-size: 13px; font-style: normal; font-weight: 900; box-shadow: 0 6px 18px rgba(239,51,64,.28); }
 .casino-hero:hover { border-color: rgba(255,196,0,.55); transform: translateY(-1px); }
 .casino-hero-nav { position: absolute; z-index: 4; top: 50%; display: grid; width: 42px; height: 42px; padding: 0; place-items: center; transform: translateY(-50%); border: 1px solid rgba(255,255,255,.28); border-radius: 50%; background: rgba(0,0,0,.52); color: #fff; font-size: 28px; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .16s,background .16s; }
@@ -2706,11 +2704,9 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .casino-mode .casino-row:not(.casino-recent) .excl-badge { z-index: 3; }
 @media (max-width: 700px) {
   .casino-hero-carousel { margin-bottom: 14px; border-radius: 14px; }
-  .casino-hero { min-height: 230px; aspect-ratio: 3 / 2; border-radius: 14px; }
+  .casino-hero { border-radius: 14px; }
   .casino-hero-image { opacity: 1; }
   .casino-hero-copy { padding: 18px 16px 36px; gap: 7px; }
-  .casino-hero-copy strong { font-size: clamp(22px,7vw,32px); }
-  .casino-hero-copy > span { max-width: 100%; font-size: 11px; }
   .casino-hero-copy em { padding: 9px 14px; font-size: 12px; }
   .casino-hero-nav { display: none; }
   .casino-hero-dots { bottom: 9px; }
