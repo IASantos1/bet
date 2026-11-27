@@ -1712,7 +1712,6 @@ function casinoHeroCard(g, i = 0) {
   const art = g.image ? '<img class=' + q + 'casino-hero-image' + q + ' src=' + q + esc(g.image) + q + ' alt=' + q + q + (i ? ' loading=' + q + 'lazy' + q : ' fetchpriority=' + q + 'high' + q) + ' decoding=' + q + 'async' + q + '>' : '';
   return '<button type=' + q + 'button' + q + ' class=' + q + 'casino-hero' + q + ' data-game-id=' + q + esc(g.id) + q + ' aria-label=' + q + esc('Abrir ' + g.name) + q + '>' +
     '<span class=' + q + 'casino-hero-media' + q + '>' + art + '</span>' +
-    '<span class=' + q + 'casino-hero-shade' + q + '></span>' +
     '<span class=' + q + 'casino-hero-copy' + q + '><small>DESTAQUE BET62</small><strong>' + esc(g.name) + '</strong><span>' + esc(g.provider) + ' - Disponivel no casino</span><em>Ver jogo <i aria-hidden=' + q + 'true' + q + '>></i></em></span>' +
     '</button>';
 }
