@@ -418,6 +418,8 @@ function adminAffiliates({ config: c, affiliates, reconciliation: r, revshareRec
       <option value="first_deposit"${c.model !== 'revshare' ? ' selected' : ''}>Primeiro depósito · 10%</option>
       <option value="revshare"${c.model === 'revshare' ? ' selected' : ''}>Revenue Share · 20% do NGR</option>
     </select></label>
+    <label class="adm-switch"><input type="checkbox" name="revshareCasino"${c.revshareCasino ? ' checked' : ''}> Incluir o casino no NGR do afiliado</label>
+    <p class="muted">Por omissão, a comissão do Revenue Share é só sobre a <b>perda no desporto (futebol/apostas)</b>; o casino <b>não entra</b>. Ligue esta opção apenas se quiser que as perdas no casino também contem para a comissão.</p>
     <p class="muted">⚖️ A produção (Revenue Share) exige validação jurídica e reconciliação financeira dos dados de sportsbook e casino. O pagamento é sempre manual, após aprovação.</p>
     <p class="muted">Taxas fixas: <b>20% (2000 pontos base)</b> no Revenue Share e <b>10% (1000 pontos base)</b> no primeiro depósito. Pagamentos automáticos desativados.</p>
     <label class="field wide">Justificação da alteração (obrigatória, fica na auditoria)<input name="reason" required minlength="5" placeholder="ex.: aprovação jurídica de 09/10"></label>
@@ -2128,7 +2130,7 @@ const handlers = {
   },
   async 'aff-config'(form) {
     const d = formData(form);
-    const config = { enabled: form.enabled.checked, revshareMode: d.revshareMode, model: d.model, autoPayout: false, countDemoDeposits: false, rateBps: 2000 };
+    const config = { enabled: form.enabled.checked, revshareMode: d.revshareMode, model: d.model, revshareCasino: form.revshareCasino.checked, autoPayout: false, countDemoDeposits: false, rateBps: 2000 };
     await api('/api/admin/affiliates/config', { method: 'PUT', body: { config, reason: d.reason } });
     toast('Feito', 'Configuração de afiliados guardada na auditoria.');
     loadTab();

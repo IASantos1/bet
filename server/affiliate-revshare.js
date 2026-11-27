@@ -25,7 +25,7 @@ function priorCarry(db, affiliateId, period, mode) {
   return row?.closing_carry_cents || 0;
 }
 
-function affiliatePeriod(db, affiliate, period, mode) {
+function affiliatePeriod(db, affiliate, period, mode, includeCasino = false) {
   const { start, end } = periodBounds(period);
   const attributions = db.prepare(`SELECT referred_user_id, COALESCE(effective_from, attributed_at) AS effective_from
     FROM referral_attributions WHERE affiliate_user_id = ? AND status <> 'rejected'`).all(affiliate.user_id);
@@ -68,7 +68,8 @@ function affiliatePeriod(db, affiliate, period, mode) {
   const sportsPayout = sports.payouts || 0;
   const casinoStake = casino.stakes || 0;
   const casinoPayout = casino.payouts || 0;
-  const ggr = sportsStake - sportsPayout + casinoStake - casinoPayout;
+  // Affiliate commission is on sports (football) losses; casino only counts when the operator enables it.
+  const ggr = (sportsStake - sportsPayout) + (includeCasino ? casinoStake - casinoPayout : 0);
   const ngr = ggr - cost;
   const openingCarry = priorCarry(db, affiliate.user_id, period, mode);
   const netAfterCarry = ngr + openingCarry;
@@ -80,11 +81,12 @@ function affiliatePeriod(db, affiliate, period, mode) {
 export function previewRevshare(db, { period, mode = 'test' } = {}) {
   periodBounds(period);
   if (!['test', 'live'].includes(mode)) throw new Error('Modo de apuramento inválido.');
+  const includeCasino = affiliateConfig(db).revshareCasino === true;
   const affiliates = db.prepare(`SELECT p.user_id, p.referral_code, p.admin_status, u.name, u.email, u.banned_at
     FROM affiliate_profiles p JOIN users u ON u.id = p.user_id
     WHERE p.model = 'revshare' ORDER BY p.user_id`).all();
   const rows = affiliates.map((a) => {
-    const calc = affiliatePeriod(db, a, period, mode);
+    const calc = affiliatePeriod(db, a, period, mode, includeCasino);
     const blocked = !!a.banned_at || ['suspended', 'blocked'].includes(a.admin_status);
     return { affiliateUserId: a.user_id, name: a.name, email: a.email, code: a.referral_code, blocked,
       ...calc, commission: blocked ? 0 : calc.commission,
@@ -96,7 +98,7 @@ export function previewRevshare(db, { period, mode = 'test' } = {}) {
     for (const k of ['sportsStake','sportsPayout','casinoStake','casinoPayout','costs','ggr','ngr','commission']) t[k] += r[k];
     return t;
   }, { sportsStake:0, sportsPayout:0, casinoStake:0, casinoPayout:0, costs:0, ggr:0, ngr:0, commission:0 });
-  return { period, mode, rateBps: RATE_BPS, costsSource: 'manual', costsWarning: 'Só são deduzidos custos registados em Ajustes de NGR. Custos de fornecedores ainda não integrados não são estimados.', totals: Object.fromEntries(Object.entries(totals).map(([k,v]) => [k, money(v)])), rows };
+  return { period, mode, rateBps: RATE_BPS, base: includeCasino ? 'sports_casino' : 'sports', costsSource: 'manual', costsWarning: 'Só são deduzidos custos registados em Ajustes de NGR. Custos de fornecedores ainda não integrados não são estimados.', totals: Object.fromEntries(Object.entries(totals).map(([k,v]) => [k, money(v)])), rows };
 }
 
 export function simulateRevshare(db, { period, actor }) {

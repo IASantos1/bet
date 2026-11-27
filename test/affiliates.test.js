@@ -7,13 +7,14 @@ import { config } from '../server/config.js';
 import { saveAffiliateConfig, affiliateConfig, ensureProfile, attribute, onReferredDeposit, setAffiliateModel } from '../server/affiliates.js';
 import { previewRevshare, simulateRevshare, closeRevsharePeriod, approveRevsharePeriod, payRevsharePeriod, saveRevshareCost, reconcileRevshare } from '../server/affiliate-revshare.js';
 
-function setup() {
+function setup({ casino = false } = {}) {
   const db = openDb(':memory:');
   seed(db);
   const admin = db.prepare("SELECT id FROM users WHERE role = 'admin'").get().id;
   // This suite is about Revenue Share, so its affiliates are created on that model by default; the
-  // first-deposit tests switch an affiliate over explicitly with setAffiliateModel.
-  saveAffiliateConfig(db, { revshareMode: 'test', rateBps: 2000, model: 'revshare' }, { actor: admin, reason: 'ativar testes de Revenue Share' });
+  // first-deposit tests switch an affiliate over explicitly with setAffiliateModel. The NGR base is
+  // sports only by default (casino excluded); `casino: true` opts a test into counting casino losses.
+  saveAffiliateConfig(db, { revshareMode: 'test', rateBps: 2000, model: 'revshare', revshareCasino: casino }, { actor: admin, reason: 'ativar testes de Revenue Share' });
   let n = 0;
   const user = (name = null) => { n += 1; return Number(db.prepare(
     "INSERT INTO users (email,name,birthdate,password_hash,created_at) VALUES (?,?,'1990-01-01','x',?)"
@@ -79,7 +80,7 @@ test('modelo 1.º depósito: 10% quando ligado, nada quando desligado, e afiliad
 });
 
 test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credita carteiras', () => {
-  const s = setup();
+  const s = setup({ casino: true });
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');
@@ -114,6 +115,25 @@ test('simulação calcula GGR/NGR a 20%, exclui bónus, Free Spins e não credit
   assert.equal(s.db.prepare('SELECT balance_cents FROM users WHERE id = ?').get(affiliate).balance_cents, before);
   assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE type = \'affiliate_commission\'').get().n, 0);
   assert.equal(s.db.prepare("SELECT status FROM affiliate_revshare_periods WHERE period='2026-03' AND mode='test'").get().status, 'simulated');
+});
+
+test('por omissão a comissão é só do desporto — o casino não entra no NGR do afiliado', () => {
+  const s = setup(); // default: casino excluded
+  const affiliate = s.user('Afiliado');
+  const code = ensureProfile(s.db, affiliate).referral_code;
+  const referred = s.user('Convidado');
+  attributeForHistoricalRevshareTest(s.db, referred, code);
+  // Sports: €30 stake − €18 payout = €12 GGR. Casino: a big loss that must be ignored.
+  addBet(s.db, referred, { stake: 2000, payout: 0, status: 'lost' });
+  addBet(s.db, referred, { stake: 1000, payout: 1800, status: 'won' });
+  addCasinoMove(s.db, referred, 'casino-bet', -9000);
+  addCasinoMove(s.db, referred, 'casino-win', 500);
+  const report = simulateRevshare(s.db, { period: '2026-03', actor: s.admin });
+  const row = report.rows.find((x) => x.affiliateUserId === affiliate);
+  assert.equal(report.base, 'sports'); // casino is not part of the base
+  assert.equal(row.ggr, 1200); // sports only (€12), the €85 casino loss is ignored
+  assert.equal(row.ngr, 1200);
+  assert.equal(row.commission, 240); // 20% of €12
 });
 
 test('carryover negativo reduz a comissão do mês seguinte e a simulação é idempotente', () => {
@@ -204,7 +224,7 @@ test('API administrativa disponibiliza a simulação em modo de teste e permite 
 });
 
 test('Revenue Share usa o mês civil de Portugal e inclui rondas fechadas após a meia-noite local', () => {
-  const s = setup();
+  const s = setup({ casino: true });
   const affiliate = s.user('Afiliado');
   const code = ensureProfile(s.db, affiliate).referral_code;
   const referred = s.user('Convidado');

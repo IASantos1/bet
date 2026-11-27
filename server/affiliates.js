@@ -30,6 +30,7 @@ export const AFFILIATE_DEFAULTS = {
   model: 'first_deposit', // model given to new affiliates: first_deposit | revshare (the operator changes it per affiliate)
   revshareMode: 'off', // off | test | live; production starts safely disabled
   rateBps: 2000, // 20% of eligible NGR (Revenue Share)
+  revshareCasino: false, // Revenue Share NGR base: sports only by default; true also counts casino losses
   minDepositCents: 1000, // own confirmed deposit to qualify
   minBalanceCents: 1000, // eligible balance to keep earning
   autoPayout: false, // approved commissions wait for the operator's payout
