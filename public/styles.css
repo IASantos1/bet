@@ -2775,7 +2775,7 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
   .casino-promo-card::after { position: absolute; top: -35px; right: 22%; width: 110px; height: 110px; border: 1px solid #ffffff12; border-radius: 50%; content: ''; pointer-events: none; }
   .casino-promo-card.first-deposit { background: linear-gradient(115deg, #4c344d, #292d36 74%); }
   .casino-promo-card.weekly-scratch { background: linear-gradient(115deg, #3c4936, #292d36 74%); }
-  .casino-promo-card.lucky-wheel { background: linear-gradient(115deg, #4a3c2d, #292d36 74%); }
+  .casino-promo-card.lucky-wheel { background: linear-gradient(120deg, #a67c34, #4a505b 78%); }
   .casino-promo-icon { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid #ffffff24; border-radius: 12px; background: #ffffff12; font-size: 21px; }
   .casino-promo-copy { min-width: 0; }
   .casino-promo-copy small { display: block; margin-bottom: 4px; color: #d5c782; font-size: 9px; font-weight: 900; letter-spacing: .65px; }
