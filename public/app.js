@@ -1770,12 +1770,17 @@ function casinoHeroCarousel(games) {
       <div class="casino-hero-dots">${list.map((_, i) => `<button class="${i ? '' : 'on'}" data-action="casino-hero-dot" data-i="${i}" aria-label="Jogo em destaque ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}
   </section>`;
 }
-const casinoHeroIndex = (track) => Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+/** Distance between two slides (card width + gap): the carousel shows more than one card at once. */
+const casinoHeroStep = (track) => {
+  const [a, b] = track.children;
+  return a && b ? b.offsetLeft - a.offsetLeft : track.clientWidth;
+};
+const casinoHeroIndex = (track) => Math.round(track.scrollLeft / Math.max(1, casinoHeroStep(track)));
 function casinoHeroGo(i) {
   const track = $('#casinoHeroTrack');
   if (!track) return;
   const count = track.children.length;
-  track.scrollTo({ left: ((i % count) + count) % count * track.clientWidth, behavior: 'smooth' });
+  track.scrollTo({ left: (((i % count) + count) % count) * casinoHeroStep(track), behavior: 'smooth' });
 }
 document.addEventListener('scroll', (e) => {
   if (e.target?.id !== 'casinoHeroTrack') return;
