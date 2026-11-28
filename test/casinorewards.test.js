@@ -138,3 +138,19 @@ test('preview mode (testOnly): the scratch/wheel are blocked for players but wor
     db.close();
   }
 });
+
+test('preview mode: an administrator can try the scratch even without the weekly deposit', () => {
+  const { db, id } = setup({ welcome: false });
+  try {
+    saveCasinoRewardsConfig(db, { testOnly: true, wheel: { active: true, prizes: [
+      { type: 'freebet', name: 'Free Bet de €5', amountCents: 500, weight: 100 },
+    ] } });
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(id);
+    // No deposits at all, but as admin in preview the scratch is still playable.
+    assert.equal(casinoRewardSummary(db, id).scratch.eligible, true);
+    const result = tx(db, () => scratchWeekly(db, id));
+    assert.equal(result.type, 'free_spins');
+  } finally {
+    db.close();
+  }
+});
