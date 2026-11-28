@@ -4,7 +4,7 @@ import { openDb, nowIso, tx } from '../server/db.js';
 import { postTransaction } from '../server/wallet.js';
 import { savePromoConfig } from '../server/promotions.js';
 import {
-  casinoRewardSummary, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel,
+  casinoRewardSummary, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel, seedWheelRewards2026,
 } from '../server/casinorewards.js';
 
 function setup() {
@@ -58,6 +58,41 @@ test('wheel stays disabled until configured and enforces weights totalling 100',
     assert.equal(result.details.name, 'Free Bet de €5');
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM freebets WHERE user_id = ? AND status = 'active'").get(id).n, 1);
     assert.equal(casinoRewardSummary(db, id).wheel.used, true);
+  } finally {
+    db.close();
+  }
+});
+
+test('a free-spins prize must be a multiple of the spin value (€0,10), or it is refused', () => {
+  const { db } = setup();
+  try {
+    assert.throws(() => saveCasinoRewardsConfig(db, { wheel: { active: true, prizes: [
+      { type: 'free_spins', name: '€1,05 em rodadas', amountCents: 105, weight: 100 },
+    ] } }), /múltiplos do valor da rodada/);
+    // A multiple of €0,10 is accepted.
+    const ok = saveCasinoRewardsConfig(db, { wheel: { active: true, prizes: [
+      { type: 'free_spins', name: '20 Free Spins', amountCents: 200, weight: 100 },
+    ] } });
+    assert.equal(ok.wheel.active, true);
+  } finally {
+    db.close();
+  }
+});
+
+test('seed the wheel once: turns it on with a balanced table (weights 100), and never clobbers an admin config', () => {
+  const { db, id } = setup();
+  try {
+    assert.equal(seedWheelRewards2026(db), true);
+    const cfg = casinoRewardSummary(db, id).wheel;
+    assert.equal(cfg.configured, true); // active and weights total 100
+    assert.equal(seedWheelRewards2026(db), false); // runs once
+
+    // On a fresh db where the admin already set prizes, the seed leaves them untouched.
+    const db2 = setup().db;
+    saveCasinoRewardsConfig(db2, { wheel: { active: true, prizes: [{ type: 'freebet', name: 'Free Bet €5', amountCents: 500, weight: 100 }] } });
+    assert.equal(seedWheelRewards2026(db2), false);
+    assert.equal(casinoRewardSummary(db2, id).wheel.configured, true);
+    db2.close();
   } finally {
     db.close();
   }

@@ -59,9 +59,37 @@ export function saveCasinoRewardsConfig(db, input) {
   if (active && (!normalized.length || normalized.reduce((n, p) => n + p.weight, 0) !== 100)) {
     throw new HttpError(400, 'Para ativar a roleta, os pesos dos prémios têm de somar 100%.');
   }
+  // A free-spins prize is paid in whole spins, so its value must be a multiple of the spin value (€0,10/€0,20),
+  // or the player's spin would fail at claim time. Reject it here instead.
+  const spinCents = cents(promoConfig(db).casinoFs?.spinValue || 0.1);
+  for (const p of normalized) {
+    if (p.type === 'free_spins' && (spinCents <= 0 || p.amountCents % spinCents !== 0)) {
+      throw new HttpError(400, `Os prémios de Free Spins têm de ser múltiplos do valor da rodada (€${(spinCents / 100).toFixed(2)}).`);
+    }
+  }
   const next = { wheel: { active: active && normalized.length > 0, prizes: normalized } };
   setSetting(db, 'casino.weeklyRewards', next);
   return next;
+}
+
+/**
+ * Once: turns the weekly "Giro da sorte" wheel on with a balanced prize table (weights total 100), unless an
+ * admin has already configured prizes. Free-spins values are multiples of €0,10 so they always grant. The
+ * admin may change the table or switch it off afterwards.
+ */
+export function seedWheelRewards2026(db) {
+  if (getSetting(db, 'casino.wheelSeeded2026', null)) return false;
+  const current = getSetting(db, 'casino.weeklyRewards', null);
+  if (current?.wheel?.prizes?.length) { setSetting(db, 'casino.wheelSeeded2026', nowIso()); return false; }
+  saveCasinoRewardsConfig(db, { wheel: { active: true, prizes: [
+    { type: 'free_spins', name: '20 Free Spins', amountCents: 200, weight: 40 },
+    { type: 'free_spins', name: '50 Free Spins', amountCents: 500, weight: 30 },
+    { type: 'scratch', name: 'Raspadinha extra', weight: 20 },
+    { type: 'freebet', name: 'Free Bet €10', amountCents: 1000, weight: 8 },
+    { type: 'free_spins', name: '100 Free Spins', amountCents: 1000, weight: 2 },
+  ] } });
+  setSetting(db, 'casino.wheelSeeded2026', nowIso());
+  return true;
 }
 
 function currentWeek(now) {
