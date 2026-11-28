@@ -1826,6 +1826,9 @@ html.light {
   --strong: #111827;
 }
 html.light body { background: var(--page); color: var(--text); }
+/* The root (html) paints the notch/status-bar safe area and the over-scroll: keep it the header green in
+   the light theme so the top never shows white. The body's own background covers the page content. */
+html.light { background: #178a33; }
 /* all white: the cards stand off the page by a thin line and a soft shadow */
 html.light .match-card, html.light .comp-block, html.light .pick-card { box-shadow: 0 2px 10px rgba(17, 24, 39, .06); }
 html.light .topbar, html.light .mobile-nav { background: var(--nav); }
