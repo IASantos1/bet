@@ -115,6 +115,7 @@ export function createBigBang(db, {
   let catalog = { at: 0, games: [], byId: new Map(), providers: [] };
   let loading = null;
   let lastError = null;
+  let forceReload = false; // an explicit reload() (a setting changed) must rebuild now, not serve stale
   const players = new Set(); // tokens already created at BigBang (users/create is idempotent anyway)
 
   async function call(method, path, body) {
@@ -247,14 +248,15 @@ export function createBigBang(db, {
     if (!enabled) return { enabled: false, games: [], providers: [] };
     const ttl = catalog.games.length ? cacheMs : 2 * 60_000;
     if (Date.now() - catalog.at > ttl) {
-      loading ??= loadCatalog().finally(() => { loading = null; });
-      try {
-        await loading;
-        lastError = catalog.games.length ? null : 'O BigBang não devolveu jogos para esta chave.';
-      } catch (err) {
-        lastError = err.message;
-        catalog.at = Date.now() - ttl + 60_000; // try again in a minute
-      }
+      // Refresh in the background (handle both outcomes on the promise so there is no unhandled rejection).
+      loading ??= loadCatalog().then(
+        () => { lastError = catalog.games.length ? null : 'O BigBang não devolveu jogos para esta chave.'; },
+        (err) => { lastError = err.message; catalog.at = Date.now() - ttl + 60_000; }, // try again in a minute
+      ).finally(() => { loading = null; forceReload = false; });
+      // Cold start (nothing cached yet) or an explicit reload: wait for it. Otherwise serve the stale
+      // catalogue now — the page loads at once and the refresh lands in a later request instead of making
+      // this one hang (~every 30 min when the cache expires).
+      if (!catalog.games.length || forceReload) await loading;
     }
     const h = hidden();
     const list = h.size ? catalog.games.filter((g) => shown(g, h)) : catalog.games;
@@ -790,5 +792,5 @@ export function createBigBang(db, {
   /** A game's name from the loaded catalogue (no request), or null. */
   const gameNameSync = (id) => catalog.byId.get(Number(id))?.name || null;
 
-  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, palaceTwin, related, forYou, launch, inspectLaunch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
+  return { enabled, sandbox, ensurePlayer, reload: () => { catalog.at = 0; forceReload = true; }, games, gamesPage, lobby, callLog: () => callLog, game, anyGame, sportsbooks, searchAll, twin, palaceTwin, related, forYou, launch, inspectLaunch, walletUser, walletChange, diagnose, verify, gameNameSync, refundStuckRounds, stuckStats, hiddenList: () => getSetting(db, 'casino.hidden', HIDDEN_DEFAULT) || [] };
 }
