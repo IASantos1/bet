@@ -7,11 +7,13 @@ import {
   casinoRewardSummary, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel, seedWheelRewards2026,
 } from '../server/casinorewards.js';
 
-function setup() {
+function setup({ welcome = true } = {}) {
   const db = openDb(':memory:');
   savePromoConfig(db, { casinoFs: { active: true, games: [500], spinValue: 0.1, tiers: [[20, 100]] } });
   const id = Number(db.prepare(`INSERT INTO users (email, name, birthdate, password_hash, created_at)
     VALUES ('reward@example.com', 'Jogador', '1990-01-01', 'x', ?)`).run(nowIso()).lastInsertRowid);
+  // The welcome (first) deposit does not count towards the weekly scratch/wheel, so put it in by default.
+  if (welcome) deposit(db, id, 20);
   return { db, id };
 }
 function deposit(db, userId, euros) {
@@ -93,6 +95,45 @@ test('seed the wheel once: turns it on with a balanced table (weights 100), and 
     assert.equal(seedWheelRewards2026(db2), false);
     assert.equal(casinoRewardSummary(db2, id).wheel.configured, true);
     db2.close();
+  } finally {
+    db.close();
+  }
+});
+
+test('the welcome (first) deposit alone does not unlock the weekly scratch/wheel — a top-up is needed', () => {
+  const { db, id } = setup(); // welcome €20 already in
+  try {
+    // Only the welcome deposit so far: nothing qualifies.
+    assert.equal(casinoRewardSummary(db, id).weeklyDepositCents, 0);
+    assert.equal(casinoRewardSummary(db, id).scratch.eligible, false);
+    assert.throws(() => tx(db, () => scratchWeekly(db, id)), /Deposite pelo menos €10/);
+    // A further deposit does count.
+    deposit(db, id, 10);
+    assert.equal(casinoRewardSummary(db, id).weeklyDepositCents, 1000);
+    assert.equal(casinoRewardSummary(db, id).scratch.eligible, true);
+  } finally {
+    db.close();
+  }
+});
+
+test('preview mode (testOnly): the scratch/wheel are blocked for players but work for administrators', () => {
+  const { db, id } = setup();
+  try {
+    saveCasinoRewardsConfig(db, { testOnly: true, wheel: { active: true, prizes: [
+      { type: 'freebet', name: 'Free Bet de €5', amountCents: 500, weight: 100 },
+    ] } });
+    deposit(db, id, 15); // qualifies on amount
+
+    // A normal player (no admin role) is blocked.
+    assert.equal(casinoRewardSummary(db, id).wheel.eligible, false);
+    assert.throws(() => tx(db, () => spinWeeklyWheel(db, id)), /pré-lançamento/);
+    assert.throws(() => tx(db, () => scratchWeekly(db, id)), /pré-lançamento/);
+
+    // Make the user an administrator: now it works.
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(id);
+    assert.equal(casinoRewardSummary(db, id).wheel.eligible, true);
+    const result = tx(db, () => spinWeeklyWheel(db, id));
+    assert.equal(result.type, 'freebet');
   } finally {
     db.close();
   }

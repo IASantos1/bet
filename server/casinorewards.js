@@ -31,7 +31,8 @@ const roundResult = (prizes) => {
 
 export function casinoRewardsConfig(db) {
   const saved = getSetting(db, 'casino.weeklyRewards', {}) || {};
-  return { wheel: { ...DEFAULT_REWARDS.wheel, ...(saved.wheel || {}) } };
+  // testOnly: the weekly scratch and wheel are available only to administrators (preview before going live).
+  return { wheel: { ...DEFAULT_REWARDS.wheel, ...(saved.wheel || {}) }, testOnly: saved.testOnly === true };
 }
 
 export function saveCasinoRewardsConfig(db, input) {
@@ -67,7 +68,9 @@ export function saveCasinoRewardsConfig(db, input) {
       throw new HttpError(400, `Os prémios de Free Spins têm de ser múltiplos do valor da rodada (€${(spinCents / 100).toFixed(2)}).`);
     }
   }
-  const next = { wheel: { active: active && normalized.length > 0, prizes: normalized } };
+  const prev = getSetting(db, 'casino.weeklyRewards', {}) || {};
+  const testOnly = input?.testOnly !== undefined ? input.testOnly === true : prev.testOnly === true;
+  const next = { wheel: { active: active && normalized.length > 0, prizes: normalized }, testOnly };
   setSetting(db, 'casino.weeklyRewards', next);
   return next;
 }
@@ -92,6 +95,15 @@ export function seedWheelRewards2026(db) {
   return true;
 }
 
+/** Once: puts the weekly scratch and wheel in preview (administrators only) so they can be tried before launch. */
+export function rewardsAdminOnly2026(db) {
+  if (getSetting(db, 'casino.rewardsTestOnly2026', null)) return false;
+  const saved = getSetting(db, 'casino.weeklyRewards', {}) || {};
+  setSetting(db, 'casino.weeklyRewards', { ...saved, testOnly: true });
+  setSetting(db, 'casino.rewardsTestOnly2026', nowIso());
+  return true;
+}
+
 function currentWeek(now) {
   return weekOf(Date.parse(now));
 }
@@ -100,6 +112,19 @@ function weeklyDeposits(db, userId, week) {
   return db.prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS total FROM transactions
     WHERE user_id = ? AND type = 'deposit' AND amount_cents > 0 AND created_at >= ? AND created_at < ?`)
     .get(userId, week.start, week.end).total;
+}
+
+/**
+ * Deposits that count towards the weekly scratch/wheel thresholds: the player's very first (welcome) deposit
+ * is excluded, so the welcome offer alone never unlocks them — a top-up beyond it is needed. From the second
+ * week on the first deposit is in a past week, so every deposit of the week counts.
+ */
+function qualifyingWeeklyDeposits(db, userId, week) {
+  let total = weeklyDeposits(db, userId, week);
+  const first = db.prepare(`SELECT amount_cents, created_at FROM transactions
+    WHERE user_id = ? AND type = 'deposit' AND amount_cents > 0 ORDER BY created_at, id LIMIT 1`).get(userId);
+  if (first && first.created_at >= week.start && first.created_at < week.end) total -= first.amount_cents;
+  return Math.max(0, total);
 }
 
 function userEligibility(db, userId) {
@@ -186,7 +211,8 @@ function scratchPrize(db, userId, week, depositsCents, kind = 'scratch') {
 
 export function casinoRewardSummary(db, userId, now = nowIso()) {
   const week = currentWeek(now);
-  const deposited = weeklyDeposits(db, userId, week);
+  // The welcome deposit does not count towards the weekly scratch/wheel (see qualifyingWeeklyDeposits).
+  const deposited = qualifyingWeeklyDeposits(db, userId, week);
   const { user, reason } = userEligibility(db, userId);
   if (!user) throw new HttpError(404, 'Conta inexistente.');
   const hasDeposit = !firstDeposit(db, userId);
@@ -201,7 +227,9 @@ export function casinoRewardSummary(db, userId, now = nowIso()) {
   const wheelScratch = rewardRow(db, userId, 'wheel_scratch', week.key);
   const rewards = casinoRewardsConfig(db);
   const wheelConfigured = rewards.wheel.active && rewards.wheel.prizes.reduce((n, p) => n + p.weight, 0) === 100;
-  const wheelReason = reason || (!wheelConfigured ? 'prémios e probabilidades em configuração' : null);
+  // While in preview, the scratch and wheel are available only to administrators.
+  const testBlocked = rewards.testOnly && user.role !== 'admin' ? 'promoção em pré-lançamento (brevemente disponível)' : null;
+  const wheelReason = reason || testBlocked || (!wheelConfigured ? 'prémios e probabilidades em configuração' : null);
   return {
     week: week.key,
     weeklyDepositCents: deposited,
@@ -212,8 +240,8 @@ export function casinoRewardSummary(db, userId, now = nowIso()) {
       reason: hasDeposit ? 'primeiro depósito já realizado' : firstReason,
     },
     scratch: {
-      thresholdCents: 1000, used: !!scratchRow, eligible: deposited >= 1000 && !scratchRow && !reason && canIssueSpins && !spinsInProgress,
-      reason: scratchRow ? 'já utilizada esta semana' : deposited < 1000 ? 'depósito semanal mínimo de €10' : reason || (!canIssueSpins ? 'jogos elegíveis em configuração' : spinsInProgress ? 'termine primeiro as Free Spins ativas' : null),
+      thresholdCents: 1000, used: !!scratchRow, eligible: deposited >= 1000 && !scratchRow && !reason && !testBlocked && canIssueSpins && !spinsInProgress,
+      reason: scratchRow ? 'já utilizada esta semana' : testBlocked || (deposited < 1000 ? 'depósito semanal mínimo de €10' : reason || (!canIssueSpins ? 'jogos elegíveis em configuração' : spinsInProgress ? 'termine primeiro as Free Spins ativas' : null)),
       reward: exposeReward(scratchRow),
     },
     wheel: {
@@ -232,11 +260,12 @@ export function scratchWeekly(db, userId, { now = nowIso(), source = 'weekly' } 
   const { user, reason } = userEligibility(db, userId);
   if (!user) throw new HttpError(404, 'Conta inexistente.');
   if (reason) throw new HttpError(403, `Não elegível: ${reason}.`);
+  if (casinoRewardsConfig(db).testOnly && user.role !== 'admin') throw new HttpError(403, 'Promoção em pré-lançamento. Brevemente disponível.');
   const kind = source === 'wheel' ? 'wheel_scratch' : 'scratch';
   const existing = rewardRow(db, userId, kind, week.key);
   if (existing?.status === 'revealed') return exposeReward(existing);
   if (activeSpins(db, userId)) throw new HttpError(409, 'Termine primeiro as Free Spins ativas.');
-  const deposited = weeklyDeposits(db, userId, week);
+  const deposited = qualifyingWeeklyDeposits(db, userId, week);
   if (kind === 'wheel_scratch') {
     if (!existing || existing.status !== 'issued') throw new HttpError(409, 'Não há raspadinha da roleta disponível.');
   } else {
@@ -253,8 +282,9 @@ export function spinWeeklyWheel(db, userId, now = nowIso()) {
   const { user, reason } = userEligibility(db, userId);
   if (!user) throw new HttpError(404, 'Conta inexistente.');
   if (reason) throw new HttpError(403, `Não elegível: ${reason}.`);
+  if (casinoRewardsConfig(db).testOnly && user.role !== 'admin') throw new HttpError(403, 'Promoção em pré-lançamento. Brevemente disponível.');
   if (activeSpins(db, userId)) throw new HttpError(409, 'Termine primeiro as Free Spins ativas.');
-  const deposited = weeklyDeposits(db, userId, week);
+  const deposited = qualifyingWeeklyDeposits(db, userId, week);
   if (deposited < 1500) throw new HttpError(409, 'Deposite pelo menos €15 nesta semana para desbloquear o giro.');
   const config = casinoRewardsConfig(db).wheel;
   if (!config.active || !config.prizes.length || config.prizes.reduce((n, p) => n + p.weight, 0) !== 100) {

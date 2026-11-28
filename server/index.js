@@ -30,7 +30,7 @@ import { settleBetbyLegs } from './betting.js';
 import { gradePlayerMarket } from './playermarkets.js';
 import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026, restoreFirstBetProtection2026 } from './promotions.js';
 import { createBigBang } from './bigbang.js';
-import { seedWheelRewards2026 } from './casinorewards.js';
+import { seedWheelRewards2026, rewardsAdminOnly2026 } from './casinorewards.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
 import { createBackups } from './backups.js';
@@ -43,6 +43,7 @@ if (simplifyPromos2026(db)) console.log('[promoções] ativas: Primeira aposta p
 if (enableBoost2026(db)) console.log('[promoções] Boost de múltiplas reativado');
 if (restoreFirstBetProtection2026(db)) console.log('[promoções] 1.º depósito: Free Spins (€20 → 100) + 1.ª aposta protegida (€5, odd 3, até €10); só a free bet de depósito fica desligada');
 if (seedWheelRewards2026(db)) console.log('[promoções] Giro da sorte ativado com tabela de prémios por omissão (o admin pode alterar)');
+if (rewardsAdminOnly2026(db)) console.log('[promoções] Raspadinha e Giro da sorte em pré-lançamento: visíveis/jogáveis só para administradores');
 startLoopDelay();
 if (!config.dbPersistent) {
   console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `
