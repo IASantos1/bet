@@ -28,7 +28,7 @@ import { createBetby } from './betby.js';
 import { createBetbyBets } from './betbybets.js';
 import { settleBetbyLegs } from './betting.js';
 import { gradePlayerMarket } from './playermarkets.js';
-import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026, freeSpinsOnlyFirstDeposit2026 } from './promotions.js';
+import { expireDue, runCashback, seedFsGames, retireWelcome, simplifyPromos2026, enableBoost2026, restoreFirstBetProtection2026 } from './promotions.js';
 import { createBigBang } from './bigbang.js';
 import { createTelegram } from './telegram.js';
 import { startLoopDelay } from './loopdelay.js';
@@ -40,7 +40,7 @@ const db = openDb(config.dbPath);
 if (retireWelcome(db)) console.log('[promoções] bónus de boas-vindas de 100% desligado (no 1.º depósito: Free Bet de depósito)');
 if (simplifyPromos2026(db)) console.log('[promoções] ativas: Primeira aposta protegida (€5, odd 3), Free Spins (€20 → 100) e Boost de múltiplas; reload, cashback e free bet desligados');
 if (enableBoost2026(db)) console.log('[promoções] Boost de múltiplas reativado');
-if (freeSpinsOnlyFirstDeposit2026(db)) console.log('[promoções] 1.º depósito: só Free Spins (€20 → 100) — sem free bets; protegida da 1.ª aposta e free bet de depósito desligadas');
+if (restoreFirstBetProtection2026(db)) console.log('[promoções] 1.º depósito: Free Spins (€20 → 100) + 1.ª aposta protegida (€5, odd 3, até €10); só a free bet de depósito fica desligada');
 startLoopDelay();
 if (!config.dbPersistent) {
   console.warn(`ATENÇÃO: a base de dados (${config.dbPath}) está no disco do contentor e é apagada em cada deploy. `

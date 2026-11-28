@@ -429,15 +429,19 @@ test('enable boost: once, turns the multiples boost back on for a config that ha
   assert.equal(enableBoost2026(db), false); // runs once
 });
 
-test('free spins only: once, the 1st-deposit offer is just the €20→100 free spins — no free bets (protected bet and deposit free bet off, boost on)', async () => {
+test('restore first-bet protection: once, re-enables the protected first bet (€5, odd 3, up to €10) with the deposit free bet kept off', async () => {
   const db = setup();
-  const { freeSpinsOnlyFirstDeposit2026, promoConfig } = await import('../server/promotions.js');
-  savePromoConfig(db, { firstBet: { active: true }, depositFb: { active: true }, casinoFs: { active: true }, accaBoost: { active: true } });
-  assert.equal(freeSpinsOnlyFirstDeposit2026(db), true);
+  const { restoreFirstBetProtection2026, promoConfig } = await import('../server/promotions.js');
+  // A config where an earlier migration had switched the protection off.
+  savePromoConfig(db, { firstBet: { active: false }, depositFb: { active: true }, casinoFs: { active: true }, accaBoost: { active: true } });
+  assert.equal(restoreFirstBetProtection2026(db), true);
   const c = promoConfig(db);
-  assert.equal(c.firstBet.active, false); // the free-bet refund of a lost first bet is off
-  assert.equal(c.depositFb.active, false);
+  assert.equal(c.firstBet.active, true); // the protection is back on
+  assert.equal(c.firstBet.minStake, 5);
+  assert.equal(c.firstBet.minOdds, 3);
+  assert.equal(c.firstBet.maxRefund, 10);
+  assert.equal(c.depositFb.active, false); // the separate deposit free bet stays off
   assert.equal(c.casinoFs.active, true); // €20 → 100 free spins stays
   assert.equal(c.accaBoost.active, true); // the multiples boost is untouched
-  assert.equal(freeSpinsOnlyFirstDeposit2026(db), false); // runs once
+  assert.equal(restoreFirstBetProtection2026(db), false); // runs once
 });

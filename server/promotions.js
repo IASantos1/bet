@@ -377,20 +377,20 @@ export function simplifyPromos2026(db) {
 }
 
 /**
- * Once: the only first-deposit offer is the casino Free Spins (€20 → 100). No free bets at all, so the
- * protected first bet (which refunds a lost first bet as a free bet) and the deposit free bet are switched
- * off; Free Spins and the multiples boost stay on. The admin may turn any of them back on.
+ * Once: the first-deposit offers are the casino Free Spins (€20 → 100) and the protected first bet (a lost
+ * first bet of €5+ at odds 3+ is refunded as a free bet, up to €10); only the separate deposit free bet
+ * stays off. Corrects an earlier migration that had switched the protection off. The admin may change any.
  */
-export function freeSpinsOnlyFirstDeposit2026(db) {
-  if (getSetting(db, 'promo.freeSpinsOnly2026', null)) return false;
+export function restoreFirstBetProtection2026(db) {
+  if (getSetting(db, 'promo.firstBetRestored2026', null)) return false;
   const saved = getSetting(db, 'promo.config', {}) || {};
   setSetting(db, 'promo.config', {
     ...saved,
-    firstBet: { ...(saved.firstBet || {}), active: false },
+    firstBet: { ...(saved.firstBet || {}), active: true, minStake: 5, minOdds: 3, maxRefund: 10 },
     depositFb: { ...(saved.depositFb || {}), active: false },
     casinoFs: { ...(saved.casinoFs || {}), active: true },
   });
-  setSetting(db, 'promo.freeSpinsOnly2026', nowIso());
+  setSetting(db, 'promo.firstBetRestored2026', nowIso());
   return true;
 }
 
