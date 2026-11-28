@@ -7359,7 +7359,8 @@ function applyTheme() {
   const h = new Date().getHours();
   const light = h >= 7 && h < 21;
   document.documentElement.classList.toggle('light', light);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#ffffff' : '#1e2329');
+  // The top bar is the green gradient in both themes, so the phone's status bar matches it (its start colour), never white.
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#178a33');
 }
 
 async function init() {

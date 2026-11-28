@@ -4,8 +4,9 @@
   var h = new Date().getHours();
   var light = h >= 7 && h < 21;
   document.documentElement.classList.toggle('light', light);
+  // The top bar is green in both themes; keep the phone's status bar the same green, never white.
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', light ? '#ffffff' : '#1e2329');
+  if (meta) meta.setAttribute('content', '#178a33');
 })();
 
 // The intro shown when the site opens: brief, once per visit (tab), skipped with a tap or button.
