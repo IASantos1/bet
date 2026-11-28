@@ -324,6 +324,11 @@ function adminPromos(d) {
       <small class="muted">Exemplo: [{"type":"free_spins","name":"50 Free Spins","amountCents":500,"weight":50},{"type":"freebet","name":"Free Bet de €5","amountCents":500,"weight":30},{"type":"scratch","name":"Raspadinha","weight":20}]</small>
       <div class="form-actions"><button class="primary-btn">Guardar roleta</button></div>
     </form>
+    ${rewardsTestOnly ? `<div class="panel">
+      <h3>Testar o Giro / Raspadinha</h3>
+      <p class="muted">No modo pré-lançamento podes jogar sem depósito. Como só podes usar uma vez por semana, usa isto para <strong>repor o teste da tua conta</strong> (limpa o resultado desta semana e as Free Spins/Free Bets geradas pelos testes) e poderes girar outra vez.</p>
+      <div class="form-actions"><button class="ghost-btn" data-action="casino-reset-test">↻ Repor teste (a minha conta)</button></div>
+    </div>` : ''}
     <div class="panel"><h3>Auditoria dos prémios semanais</h3>${rewardAudit}</div>
     <div class="panel"><h3>Bónus</h3>${bonuses}</div>
     <div class="panel"><h3>Free bets</h3>${freebets}</div>
@@ -3248,6 +3253,15 @@ document.addEventListener('click', async (e) => {
     try {
       const r = await api(`/api/admin/bets/${id}/reopen`, { method: 'POST', body: { note } });
       toast(`Bilhete #${id}`, r.reversed ? `Reaberto · revertido ${money(r.reversed / 100)}` : 'Reaberto (em aberto).');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
+  } else if (action === 'casino-reset-test') {
+    if (!confirm('Repor o teste da Raspadinha e do Giro da sorte na tua conta?\n\nLimpa o resultado desta semana e as Free Spins/Free Bets geradas pelos testes, para poderes jogar outra vez.')) return;
+    actionEl.disabled = true;
+    try {
+      const r = await api('/api/admin/casino-rewards/reset-test', { method: 'POST', body: {} });
+      toast('Teste reposto', `Podes jogar de novo (removidas: ${r.spinsRemoved} Free Spins, ${r.freebetsCancelled} Free Bets, ${r.rewardsCleared} recompensas).`);
       loadTab();
     } catch (err) { toast('Erro', err.message, 'error'); }
     actionEl.disabled = false;

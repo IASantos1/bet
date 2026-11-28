@@ -38,7 +38,7 @@ import {
 import { screen as screenSanctions, decideHit, sanctionsView } from './sanctions.js';
 import { checkKycDeposit, riskConfig, saveRiskConfig, setRiskProfile, riskAlerts, riskOverview, exposure, logRefusal, PROFILES as RISK_PROFILES } from './risk.js';
 import { createPromo, updatePromo, setPromoStatus, grantPromo, grantDepositPromos, promoList, promoHistory, spinsAudit, walletBreakdown, fromRow as fromPromoRow } from './fspromos.js';
-import { casinoRewardSummary, casinoRewardsConfig, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel } from './casinorewards.js';
+import { casinoRewardSummary, casinoRewardsConfig, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel, resetWeeklyRewardTest } from './casinorewards.js';
 import { playerToken } from './bigbang.js';
 import { cashoutOffer, cashOut, offerView, precheck, pending as cashoutPending, cashoutConfig, saveCashoutConfig } from './cashout.js';
 import { currentLimits, setLimits, limitsView, checkDeposit } from './limits.js';
@@ -3141,6 +3141,8 @@ export function createApp(db, {
   }));
   admin.put('/promotions/config', (req, res) => res.json({ config: savePromoConfig(db, req.body || {}) }));
   admin.put('/casino-rewards/config', (req, res) => res.json({ casinoRewards: saveCasinoRewardsConfig(db, req.body || {}) }));
+  // Preview: clear the current admin's own scratch/wheel for this week so it can be tested again.
+  admin.post('/casino-rewards/reset-test', (req, res) => res.json(tx(db, () => resetWeeklyRewardTest(db, req.user.id))));
   admin.post('/bonuses/:id/cancel', (req, res) => {
     const reason = str(req.body?.reason, 200);
     if (reason.length < 3) throw new HttpError(400, 'Indique o motivo do cancelamento.');

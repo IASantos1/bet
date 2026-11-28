@@ -316,3 +316,20 @@ export function spinWeeklyWheel(db, userId, now = nowIso()) {
   log(db, userId, 'casinoWheel', `casino-wheel:${userId}:${week.key}`, 'granted', `${prize.type}:${prize.amountCents}; peso ${prize.weight}/100; sorteio ${roll}`);
   return exposeReward(rewardRow(db, userId, 'wheel', week.key));
 }
+
+/**
+ * Preview only: clears this week's scratch/wheel for one user and removes the free-spin batches and unused
+ * free bets those tests granted, so an administrator can play them again. Available only while testOnly is on,
+ * and meant for the admin's own account. The promo_ledger audit trail is left untouched.
+ */
+export function resetWeeklyRewardTest(db, userId, now = nowIso()) {
+  if (!casinoRewardsConfig(db).testOnly) throw new HttpError(409, 'A reposição de teste só existe no modo pré-lançamento.');
+  const week = currentWeek(now);
+  const refs = [`casino-scratch:${userId}:${week.key}`, `casino-wheel:${userId}:${week.key}`, `casino-wheel_scratch:${userId}:${week.key}`];
+  const ph = refs.map(() => '?').join(', ');
+  const spins = db.prepare(`DELETE FROM casino_spins WHERE user_id = ? AND ref IN (${ph})`).run(userId, ...refs).changes;
+  const freebets = db.prepare(`UPDATE freebets SET status = 'cancelled' WHERE user_id = ? AND ref IN (${ph}) AND status = 'active' AND bet_id IS NULL`).run(userId, ...refs).changes;
+  const rewards = db.prepare('DELETE FROM casino_weekly_rewards WHERE user_id = ? AND period = ?').run(userId, week.key).changes;
+  log(db, userId, 'casinoRewardReset', `reset:${userId}:${week.key}`, 'done', `spins ${spins}; free bets ${freebets}; recompensas ${rewards}`);
+  return { week: week.key, spinsRemoved: spins, freebetsCancelled: freebets, rewardsCleared: rewards };
+}

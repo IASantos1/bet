@@ -4,7 +4,7 @@ import { openDb, nowIso, tx } from '../server/db.js';
 import { postTransaction } from '../server/wallet.js';
 import { savePromoConfig } from '../server/promotions.js';
 import {
-  casinoRewardSummary, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel, seedWheelRewards2026,
+  casinoRewardSummary, saveCasinoRewardsConfig, scratchWeekly, spinWeeklyWheel, seedWheelRewards2026, resetWeeklyRewardTest,
 } from '../server/casinorewards.js';
 
 function setup({ welcome = true } = {}) {
@@ -150,6 +150,33 @@ test('preview mode: an administrator can try the scratch even without the weekly
     assert.equal(casinoRewardSummary(db, id).scratch.eligible, true);
     const result = tx(db, () => scratchWeekly(db, id));
     assert.equal(result.type, 'free_spins');
+  } finally {
+    db.close();
+  }
+});
+
+test('reset test (preview): clears this week and removes the test grants so it can be played again', () => {
+  const { db, id } = setup({ welcome: false });
+  try {
+    saveCasinoRewardsConfig(db, { testOnly: true, wheel: { active: true, prizes: [
+      { type: 'free_spins', name: '20 Free Spins', amountCents: 200, weight: 100 },
+    ] } });
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(id);
+
+    tx(db, () => spinWeeklyWheel(db, id));
+    assert.equal(casinoRewardSummary(db, id).wheel.used, true);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM casino_spins WHERE user_id = ?').get(id).n, 1);
+
+    const r = tx(db, () => resetWeeklyRewardTest(db, id));
+    assert.equal(r.rewardsCleared, 1);
+    assert.equal(r.spinsRemoved, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM casino_spins WHERE user_id = ?').get(id).n, 0);
+
+    // It can be spun again.
+    const s = casinoRewardSummary(db, id).wheel;
+    assert.equal(s.used, false);
+    assert.equal(s.eligible, true);
+    assert.equal(tx(db, () => spinWeeklyWheel(db, id)).type, 'free_spins');
   } finally {
     db.close();
   }
