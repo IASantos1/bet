@@ -376,6 +376,24 @@ export function simplifyPromos2026(db) {
   return true;
 }
 
+/**
+ * Once: the only first-deposit offer is the casino Free Spins (€20 → 100). No free bets at all, so the
+ * protected first bet (which refunds a lost first bet as a free bet) and the deposit free bet are switched
+ * off; Free Spins and the multiples boost stay on. The admin may turn any of them back on.
+ */
+export function freeSpinsOnlyFirstDeposit2026(db) {
+  if (getSetting(db, 'promo.freeSpinsOnly2026', null)) return false;
+  const saved = getSetting(db, 'promo.config', {}) || {};
+  setSetting(db, 'promo.config', {
+    ...saved,
+    firstBet: { ...(saved.firstBet || {}), active: false },
+    depositFb: { ...(saved.depositFb || {}), active: false },
+    casinoFs: { ...(saved.casinoFs || {}), active: true },
+  });
+  setSetting(db, 'promo.freeSpinsOnly2026', nowIso());
+  return true;
+}
+
 /** Once: turns the multiples boost back on for a config where the first simplify had switched it off. */
 export function enableBoost2026(db) {
   if (getSetting(db, 'promo.boostOn2026', null)) return false;

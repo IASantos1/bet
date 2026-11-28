@@ -428,3 +428,16 @@ test('enable boost: once, turns the multiples boost back on for a config that ha
   assert.equal(promoConfig(db).accaBoost.active, true);
   assert.equal(enableBoost2026(db), false); // runs once
 });
+
+test('free spins only: once, the 1st-deposit offer is just the €20→100 free spins — no free bets (protected bet and deposit free bet off, boost on)', async () => {
+  const db = setup();
+  const { freeSpinsOnlyFirstDeposit2026, promoConfig } = await import('../server/promotions.js');
+  savePromoConfig(db, { firstBet: { active: true }, depositFb: { active: true }, casinoFs: { active: true }, accaBoost: { active: true } });
+  assert.equal(freeSpinsOnlyFirstDeposit2026(db), true);
+  const c = promoConfig(db);
+  assert.equal(c.firstBet.active, false); // the free-bet refund of a lost first bet is off
+  assert.equal(c.depositFb.active, false);
+  assert.equal(c.casinoFs.active, true); // €20 → 100 free spins stays
+  assert.equal(c.accaBoost.active, true); // the multiples boost is untouched
+  assert.equal(freeSpinsOnlyFirstDeposit2026(db), false); // runs once
+});
