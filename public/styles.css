@@ -2758,17 +2758,39 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
 .casino-provider-tile.active { border-color: var(--casino-red); background: color-mix(in srgb,var(--casino-red) 12%,var(--panel)); color: var(--text); box-shadow: 0 0 0 1px color-mix(in srgb,var(--casino-red) 35%,transparent); }
 .casino-provider-tile .casino-provider-mark { width: 58px; height: 34px; }
 .casino-provider-tile > span:last-child { max-width: 100%; overflow: hidden; font-size: 10px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.casino-wheel-wrap { position: relative; width: min(76vw, 300px); aspect-ratio: 1; margin: 12px auto; }
-.casino-wheel-face { position: absolute; inset: 0; display: grid; place-items: center; border: 7px solid #e8c66c; border-radius: 50%; box-shadow: 0 10px 24px #0007, inset 0 0 0 3px #fff7; }
-.casino-wheel-face strong { display: grid; width: 76px; height: 76px; place-items: center; border: 4px solid #f2d785; border-radius: 50%; background: #242a33; color: #f2d785; font-size: 23px; font-weight: 900; box-shadow: 0 3px 12px #0008; }
-.casino-wheel-face.spinning { animation: casino-wheel-spin 3.5s cubic-bezier(.12,.72,.12,1) forwards; }
-.casino-wheel-pointer { position: absolute; z-index: 2; top: -4px; left: 50%; width: 0; height: 0; transform: translateX(-50%); border-right: 13px solid transparent; border-left: 13px solid transparent; border-top: 25px solid #ffe28a; filter: drop-shadow(0 2px 3px #0008); }
-.casino-wheel-center { position: absolute; z-index: 3; top: 50%; left: 50%; width: 82px; height: 82px; transform: translate(-50%,-50%); border: 4px solid #f2d785; border-radius: 50%; background: #282d34; color: #fff; font-size: 12px; font-weight: 900; box-shadow: 0 4px 12px #0008; }
-.casino-wheel-help { text-align: center; }
-.casino-wheel-outcome { padding: 10px; border-radius: 10px; background: var(--panel); text-align: center; animation: casino-wheel-reveal .4s ease 3.35s both; }
-.casino-wheel-outcome > strong { display: block; margin-bottom: 5px; color: #f2d785; font-size: 17px; }
-@keyframes casino-wheel-spin { to { transform: rotate(var(--wheel-turn)); } }
-@keyframes casino-wheel-reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+/* ---- Weekly rewards: scratch card, ratchet reel ("catraca") and the won-value reveal ---- */
+.scratch-wrap { display: grid; gap: 12px; justify-items: center; }
+.scratch-card { position: relative; width: min(86vw, 330px); height: 188px; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 28px #0006, inset 0 0 0 1px #0002; background: linear-gradient(135deg, #2a3140, #161b24); }
+.scratch-reveal { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 14px; }
+.scratch-prize { display: grid; gap: 6px; }
+.scratch-prize-name { font-size: 26px; font-weight: 900; color: #ffd964; text-shadow: 0 2px 10px #0008; }
+.scratch-prize-sub { font-size: 13px; font-weight: 700; color: #e8edf4; opacity: .85; }
+.scratch-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; transition: opacity .32s ease; }
+.scratch-canvas.cleared { opacity: 0; pointer-events: none; }
+.scratch-hint { margin: 0; font-size: 12.5px; font-weight: 700; color: var(--text-3); text-align: center; }
+
+.reel-wrap { display: grid; gap: 14px; justify-items: center; }
+.reel { position: relative; width: min(84vw, 320px); }
+.reel-window { height: 180px; overflow: hidden; border-radius: 14px; background: linear-gradient(180deg, #1a2029, #232b36 50%, #1a2029); box-shadow: inset 0 10px 18px #0007, inset 0 -10px 18px #0007, 0 10px 26px #0006; -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent); }
+.reel-strip { will-change: transform; }
+.reel-item { display: flex; align-items: center; justify-content: center; height: 60px; padding: 0 14px; font-size: 16px; font-weight: 800; color: #eef2f7; text-align: center; border-bottom: 1px solid #ffffff10; }
+.reel-item.reel-teaser { font-size: 26px; }
+.reel-band { position: absolute; z-index: 2; left: 6px; right: 6px; top: 60px; height: 60px; border: 2px solid #f2d785; border-radius: 10px; box-shadow: 0 0 0 9999px #0000, 0 0 16px #f2d78566; pointer-events: none; }
+.reel-pointer { position: absolute; z-index: 3; top: 78px; right: -6px; width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-right: 18px solid #ffd964; filter: drop-shadow(0 2px 3px #0008); }
+.reel.spinning .reel-band { animation: reel-pulse .35s ease-in-out infinite alternate; }
+.reel-reveal { min-height: 44px; width: 100%; text-align: center; }
+.reel-actions { display: grid; }
+.reel-go { min-width: 160px; font-size: 16px; font-weight: 900; letter-spacing: .04em; }
+@keyframes reel-pulse { from { box-shadow: 0 0 10px #f2d78544; } to { box-shadow: 0 0 22px #f2d785aa; } }
+
+.rw-win { display: grid; gap: 8px; justify-items: center; padding: 14px 10px; opacity: 0; transform: scale(.82); transition: opacity .35s ease, transform .45s cubic-bezier(.2,1.3,.4,1); }
+.rw-win.show { opacity: 1; transform: none; }
+.rw-win-badge { font-size: 34px; animation: rw-pop .5s cubic-bezier(.2,1.5,.4,1) both; }
+.rw-win-value { font-size: 32px; font-weight: 900; color: #ffd964; text-shadow: 0 2px 12px #0007; line-height: 1.05; }
+.rw-win-note { margin: 0; font-size: 13px; color: var(--text-3); max-width: 280px; }
+.rw-win-btn { margin-top: 6px; }
+.rw-win-rays { position: absolute; width: 1px; height: 1px; }
+@keyframes rw-pop { from { transform: scale(0) rotate(-12deg); } to { transform: scale(1) rotate(0); } }
 @media (max-width: 700px) {
   .casino-browse-tools { margin-bottom: 16px; }
   .casino-search-field { display: none; }
@@ -2791,6 +2813,7 @@ html.light .trk-mom { --ld-home: #3b4652; --ld-away: #22b14c; }
   .casino-provider-tile { flex-basis: 88px; min-height: 68px; border-radius: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .casino-wheel-face.spinning { animation-duration: .01ms; }
-  .casino-wheel-outcome { animation-delay: 0s; }
+  .reel-strip { transition-duration: .4s !important; }
+  .reel.spinning .reel-band { animation: none; }
+  .rw-win, .rw-win-badge { transition-duration: .15s; animation: none; }
 }

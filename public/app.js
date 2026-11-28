@@ -4560,42 +4560,182 @@ document.addEventListener('submit', async (e) => {
   }
 });
 
-function casinoRewardMessage(reward) {
-  if (reward.type === 'free_spins') {
-    const spins = reward.details?.spins || reward.details?.grant?.spins || '';
-    return `<strong>${spins} Free Spins</strong><p>Valor promocional: ${money((reward.amountCents || 0) / 100)}. As rodadas ficam sujeitas às regras do casino.</p>`;
-  }
-  if (reward.type === 'freebet') return `<strong>Ganhaste uma Free Bet de ${money((reward.amountCents || 0) / 100)}.</strong>`;
-  if (reward.type === 'scratch') return `<strong>Ganhaste uma raspadinha extra.</strong><p>Revela o prémio agora.</p><button class="primary-btn" data-action="casino-wheel-scratch">Raspar prémio</button>`;
-  return '<p>Prémio registado.</p>';
+// ---- Weekly rewards: real scratch card + ratchet reel ("catraca"), with a won-value animation ----
+function rewardHeadline(reward) {
+  if (!reward) return 'Prémio';
+  if (reward.type === 'free_spins') { const s = reward.details?.spins || reward.details?.grant?.spins; return s ? `${s} Free Spins` : 'Free Spins'; }
+  if (reward.type === 'freebet') return `Free Bet ${money((reward.amountCents || 0) / 100)}`;
+  if (reward.type === 'scratch') return reward.details?.name || 'Raspadinha extra';
+  return reward.details?.name || 'Prémio';
 }
-function casinoWheelMarkup(reward = null) {
-  const prizes = reward?.details?.prizes || [];
-  const colors = ['#7663bd', '#c75e7b', '#df9d42', '#568d73', '#4688aa', '#9a5d9f', '#b76e4e', '#5c78ae', '#a18c43', '#4b9b9a', '#9a5368', '#71844d'];
-  let edge = 0;
-  const stops = prizes.map((prize, index) => {
-    const start = edge;
-    edge += Number(prize.weight) || 0;
-    return `${colors[index % colors.length]} ${start}% ${edge}%`;
-  });
-  const background = stops.length ? `conic-gradient(${stops.join(',')})` : 'repeating-conic-gradient(#7663bd 0 45deg, #c75e7b 45deg 90deg, #df9d42 90deg 135deg, #568d73 135deg 180deg)';
-  const roll = Number(reward?.details?.roll);
-  const turn = Number.isInteger(roll) ? `${360 * 7 + ((360 - (roll + 0.5) * 3.6 + 360) % 360)}deg` : '0deg';
-  return `<div class="casino-wheel-wrap"><span class="casino-wheel-pointer" aria-hidden="true"></span>
-      <div class="casino-wheel-face${reward ? ' spinning' : ''}" style="--wheel-turn:${turn};background:${background}"><strong>${reward ? '62' : 'BÓNUS'}</strong></div>
-      ${reward ? '' : '<button class="casino-wheel-center" type="button" data-action="casino-wheel-spin-center">GIRAR</button>'}</div>
-    ${reward ? `<div class="casino-wheel-outcome"><strong>${esc(reward.details?.name || 'Prémio atribuído')}</strong>${casinoRewardMessage(reward)}</div>` : '<p class="muted casino-wheel-help">Toque no centro para sortear o prémio.</p>'}`;
+function rewardSub(reward) {
+  if (!reward) return '';
+  if (reward.type === 'free_spins') return `Valor promocional ${money((reward.amountCents || 0) / 100)}`;
+  if (reward.type === 'freebet') return 'Creditada na tua conta';
+  if (reward.type === 'scratch') return 'Raspa para revelar';
+  return '';
 }
-async function revealCasinoScratch(source = 'weekly') {
-  try {
-    const result = await api('/api/me/casino-rewards/scratch', { method: 'POST', body: { source } });
-    state.casinoRewards = result.summary;
-    state.user = result.user;
-    updateHeader();
-    loadFreeSpins();
-    render({ keepScroll: true });
-    openModal(source === 'wheel' ? 'Prémio da raspadinha' : 'Raspadinha semanal', `<div class="casino-reward-result">${casinoRewardMessage(result.reward)}</div>`);
-  } catch (err) { toast('Não foi possível raspar', err.message, 'error'); }
+function rewardNote(reward) {
+  if (!reward) return '';
+  if (reward.type === 'free_spins') return 'Rodadas grátis creditadas — sujeitas às regras do casino.';
+  if (reward.type === 'freebet') return 'Free Bet creditada na tua conta.';
+  if (reward.type === 'scratch') return 'Ganhaste uma raspadinha extra. Raspa para revelar o prémio.';
+  return 'Prémio registado.';
+}
+// Count-up of the won value; spins for Free Spins, euros for a Free Bet.
+function countUpWin(el, reward, ms = 1000) {
+  if (!el) return;
+  const spins = reward.type === 'free_spins' ? Number(reward.details?.spins || reward.details?.grant?.spins || 0) : 0;
+  const to = spins || (reward.type === 'freebet' ? (reward.amountCents || 0) : 0);
+  const fmt = spins ? (n) => `${Math.round(n)}` : (n) => money(n / 100);
+  if (!to) { el.textContent = rewardHeadline(reward); return; }
+  const unit = spins ? ' Free Spins' : '';
+  const t0 = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / ms);
+    el.textContent = fmt(to * (1 - Math.pow(1 - k, 3))) + unit;
+    if (k < 1) requestAnimationFrame(step); else el.textContent = fmt(to) + unit;
+  };
+  requestAnimationFrame(step);
+}
+function playWinReveal(box, reward, { scratchFollow = false } = {}) {
+  if (!box) return;
+  box.innerHTML = `<div class="rw-win">
+      <div class="rw-win-rays" aria-hidden="true"></div>
+      <div class="rw-win-badge" aria-hidden="true">🎉</div>
+      <div class="rw-win-value">${esc(rewardHeadline(reward))}</div>
+      <div class="rw-win-note">${esc(rewardNote(reward))}</div>
+      ${scratchFollow ? '<button class="primary-btn rw-win-btn" data-action="casino-wheel-scratch">Raspar prémio</button>' : ''}
+    </div>`;
+  const win = box.querySelector('.rw-win');
+  requestAnimationFrame(() => win && win.classList.add('show'));
+  if (!scratchFollow) countUpWin(box.querySelector('.rw-win-value'), reward);
+  try { navigator.vibrate?.(reward.type === 'scratch' ? 20 : [12, 40, 60]); } catch { /* ignore */ }
+}
+
+// --- Scratch card: a silver cover on a canvas the player rubs off with a finger ---
+function scratchCardMarkup(reward) {
+  return `<div class="scratch-wrap">
+      <div class="scratch-card">
+        <div class="scratch-reveal"><div class="scratch-prize"><span class="scratch-prize-name">${esc(rewardHeadline(reward))}</span><span class="scratch-prize-sub">${esc(rewardSub(reward))}</span></div></div>
+        <canvas class="scratch-canvas" aria-label="Raspadinha"></canvas>
+      </div>
+      <p class="scratch-hint">Raspa com o dedo para revelar o prémio</p>
+    </div>`;
+}
+function initScratchCanvas(canvas, onDone) {
+  const card = canvas.parentElement;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = canvas.width = Math.max(1, Math.round(card.offsetWidth * dpr));
+  const h = canvas.height = Math.max(1, Math.round(card.offsetHeight * dpr));
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, '#c3cad6'); g.addColorStop(0.5, '#949cab'); g.addColorStop(1, '#b4bcc9');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  ctx.font = `bold ${Math.round(20 * dpr)}px Inter, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('RASPE AQUI', w / 2, h / 2);
+  ctx.globalCompositeOperation = 'destination-out';
+  const r = Math.round(20 * dpr);
+  let drawing = false, done = false, last = 0;
+  const at = (e) => { const b = canvas.getBoundingClientRect(); return [(e.clientX - b.left) * (w / b.width), (e.clientY - b.top) * (h / b.height)]; };
+  const rub = (x, y) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+  const cleared = () => {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let gone = 0, n = 0;
+    for (let i = 3; i < d.length; i += 160) { n++; if (d[i] === 0) gone++; }
+    return n ? gone / n : 0;
+  };
+  const finish = () => { done = true; canvas.classList.add('cleared'); setTimeout(() => { canvas.remove(); onDone(); }, 320); };
+  const down = (e) => { if (done) return; drawing = true; const [x, y] = at(e); rub(x, y); try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ } e.preventDefault(); };
+  const move = (e) => { if (!drawing || done) return; const [x, y] = at(e); rub(x, y); if (performance.now() - last > 120) { last = performance.now(); if (cleared() > 0.5) finish(); } e.preventDefault(); };
+  const up = () => { if (!drawing || done) return; drawing = false; if (cleared() > 0.45) finish(); };
+  canvas.addEventListener('pointerdown', down);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+}
+async function openScratchGame(source = 'weekly') {
+  if (!state.user) { openAuth('login'); return; }
+  let result;
+  try { result = await api('/api/me/casino-rewards/scratch', { method: 'POST', body: { source } }); }
+  catch (err) { toast('Não foi possível raspar', err.message, 'error'); return; }
+  state.casinoRewards = result.summary;
+  state.user = result.user;
+  updateHeader();
+  loadFreeSpins();
+  render({ keepScroll: true });
+  const reward = result.reward;
+  openModal(source === 'wheel' ? 'Raspadinha do Giro' : 'Raspadinha da semana', scratchCardMarkup(reward));
+  const canvas = document.querySelector('#modal .scratch-canvas');
+  const box = document.querySelector('#modal .scratch-reveal');
+  if (canvas) initScratchCanvas(canvas, () => playWinReveal(box, reward));
+  else playWinReveal(box, reward);
+}
+
+// --- Ratchet reel ("catraca"): a vertical strip that spins and clicks onto the won prize ---
+const REEL_ITEM = 60; // px — must match .reel-item height in the CSS
+function reelMarkup() {
+  const teaser = ['🎰', '🎟️', '✦', '💰', '⭐', '🎲', '🍀', '🎁', '🔔'];
+  return `<div class="reel-wrap">
+      <div class="reel"><span class="reel-pointer" aria-hidden="true"></span>
+        <div class="reel-window"><div class="reel-strip">${teaser.map((t) => `<div class="reel-item reel-teaser">${t}</div>`).join('')}</div></div>
+        <span class="reel-band" aria-hidden="true"></span>
+      </div>
+      <div class="reel-reveal"><p class="muted">Carrega em GIRAR para rodar a catraca.</p></div>
+      <div class="reel-actions"><button class="primary-btn reel-go" data-action="casino-wheel-spin-center">GIRAR</button></div>
+    </div>`;
+}
+function openReelGame() {
+  if (!state.user) { openAuth('login'); return; }
+  openModal('Giro da sorte', reelMarkup());
+}
+function runReel(prizes, wonIndex, reward) {
+  const reel = document.querySelector('#modal .reel');
+  const strip = document.querySelector('#modal .reel-strip');
+  const box = document.querySelector('#modal .reel-reveal');
+  const list = prizes.length ? prizes : [{ name: reward.details?.name || 'Prémio' }];
+  if (!reel || !strip) { playWinReveal(box, reward, { scratchFollow: reward.type === 'scratch' }); return; }
+  const idx = Math.max(0, wonIndex);
+  const loops = 6;
+  const items = [];
+  for (let c = 0; c < loops; c++) for (const p of list) items.push(p);
+  for (let i = 0; i <= idx; i++) items.push(list[i]);
+  const target = items.length - 1; // the won prize is the last item pushed
+  strip.innerHTML = items.map((p) => `<div class="reel-item">${esc(p.name || 'Prémio')}</div>`).join('');
+  const center = REEL_ITEM; // 3-item window: centre is one item down
+  strip.style.transition = 'none';
+  strip.style.transform = 'translateY(0px)';
+  void strip.offsetHeight; // reflow so the transition runs from the top
+  strip.style.transition = 'transform 3.8s cubic-bezier(.11,.68,.15,1)';
+  strip.style.transform = `translateY(${-(target * REEL_ITEM - center)}px)`;
+  reel.classList.add('spinning');
+  try { navigator.vibrate?.([0, 30, 40, 30, 55, 30, 75, 40, 110]); } catch { /* ignore */ }
+  const done = () => {
+    strip.removeEventListener('transitionend', done);
+    reel.classList.remove('spinning');
+    reel.classList.add('landed');
+    playWinReveal(box, reward, { scratchFollow: reward.type === 'scratch' });
+  };
+  strip.addEventListener('transitionend', done);
+}
+async function spinReel(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  let result;
+  try { result = await api('/api/me/casino-rewards/wheel', { method: 'POST', body: {} }); }
+  catch (err) { toast('Não foi possível girar', err.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = 'GIRAR'; } return; }
+  state.casinoRewards = result.summary;
+  state.user = result.user;
+  updateHeader();
+  loadFreeSpins();
+  render({ keepScroll: true });
+  const actions = document.querySelector('#modal .reel-actions');
+  if (actions) actions.remove();
+  const reward = result.reward;
+  const prizes = reward.details?.prizes || [];
+  const wonIndex = prizes.findIndex((p) => p.name === reward.details?.name);
+  runReel(prizes, wonIndex, reward);
 }
 
 document.addEventListener('click', async (e) => {
@@ -4800,28 +4940,10 @@ document.addEventListener('click', async (e) => {
     state.pendingBonus = true;
     location.hash = '#/perfil/carteira';
   }
-  else if (action === 'casino-weekly-scratch') {
-    if (!state.user) { openAuth('login'); return; }
-    await revealCasinoScratch('weekly');
-  }
-  else if (action === 'casino-weekly-wheel') {
-    if (!state.user) { openAuth('login'); return; }
-    openModal('Giro da sorte', casinoWheelMarkup());
-  }
-  else if (action === 'casino-wheel-spin-center') {
-    actionEl.disabled = true;
-    actionEl.textContent = '…';
-    try {
-      const result = await api('/api/me/casino-rewards/wheel', { method: 'POST', body: {} });
-      state.casinoRewards = result.summary;
-      state.user = result.user;
-      updateHeader();
-      loadFreeSpins();
-      render({ keepScroll: true });
-      openModal('Giro da sorte', casinoWheelMarkup(result.reward));
-    } catch (err) { toast('Não foi possível girar', err.message, 'error'); }
-  }
-  else if (action === 'casino-wheel-scratch') await revealCasinoScratch('wheel');
+  else if (action === 'casino-weekly-scratch') { if (!state.user) { openAuth('login'); return; } await openScratchGame('weekly'); }
+  else if (action === 'casino-weekly-wheel') openReelGame();
+  else if (action === 'casino-wheel-spin-center') await spinReel(actionEl);
+  else if (action === 'casino-wheel-scratch') await openScratchGame('wheel');
   else if (action === 'push-yes') pushYes(actionEl.dataset.promos === '1');
   else if (action === 'install-guide') window.bet62InstallGuide?.();
   else if (action === 'push-install') { markAsked(PUSH_ASKED); closeModal(); window.bet62InstallGuide?.(); }
