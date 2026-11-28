@@ -254,6 +254,39 @@ export function settleBet(db, betId) {
 }
 
 /**
+ * Reopens a settled ticket (an admin undo of a settlement mistake): takes back the real money the
+ * settlement paid, and sets the ticket and every leg back to 'open' with no result, so it can be
+ * decided again. Refuses tickets that cannot be reversed safely here — a cash-out, or ones that used
+ * bonus money / a free bet / fed a bonus rollover (those would desync the bonus; reopen them with a
+ * manual balance adjustment). Must run inside a transaction (the caller wraps it).
+ */
+export function reopenBet(db, betId, { actor = null, note = null } = {}) {
+  const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(Number(betId));
+  if (!bet) throw new HttpError(404, 'Bilhete não encontrado.');
+  if (bet.status === 'open') throw new HttpError(409, 'Este bilhete já está em aberto.');
+  if (bet.status === 'cashout') throw new HttpError(409, 'Um bilhete com cash-out não pode ser reaberto aqui — faça um ajuste de saldo manual.');
+  const entangled = (bet.bonus_stake_cents || 0) > 0 || (bet.freebet_stake_cents || 0) > 0 || bet.bonus_id || bet.freebet_id;
+  const rollover = db.prepare('SELECT 1 FROM transactions WHERE ref LIKE ? LIMIT 1').get(`bet:${bet.id}:%`); // fed a bonus rollover
+  if (entangled || rollover) throw new HttpError(409, 'Este bilhete envolveu bónus, free bet ou rollover: reabra com um ajuste de saldo manual para não desacertar o bónus.');
+  // A lost, protected bet granted a protection free bet. If it is still unused it stays valid
+  // (the unique `firstbet:` ref means re-settling re-uses it, so the player keeps the protection);
+  // only refuse when it was already spent, since that money would be hard to unwind here.
+  const fb = db.prepare('SELECT id, status, bet_id FROM freebets WHERE ref = ?').get(`firstbet:${bet.id}`);
+  if (fb && (fb.status !== 'active' || fb.bet_id)) throw new HttpError(409, 'A free bet de proteção deste bilhete já foi usada: reabra com um ajuste de saldo manual.');
+  // Take back exactly the real money this settlement credited: a win payout (+ boost), or a void refund.
+  const credited = db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE ref IN (?, ?) AND amount_cents > 0').get(`bet:${bet.id}`, `boost:${bet.id}`).s;
+  if (credited > 0) {
+    try { postTransaction(db, bet.user_id, -credited, 'admin_debit', `Reabertura do bilhete #${bet.id} — pagamento revertido`, `reopen:${bet.id}:${Date.now()}`); }
+    catch { throw new HttpError(409, `Não é possível reverter €${(credited / 100).toFixed(2)}: o jogador já gastou esse valor. Credite o valor em falta antes de reabrir.`); }
+  }
+  db.prepare("UPDATE bets SET status = 'open', settled_at = NULL, payout_cents = 0, real_payout_cents = NULL, boost_cents = 0, manual_by = ?, manual_at = ?, manual_note = ? WHERE id = ?")
+    .run(actor, nowIso(), note, bet.id);
+  db.prepare("UPDATE bet_legs SET status = 'open' WHERE bet_id = ?").run(bet.id);
+  db.prepare("UPDATE betby_legs SET status = 'open' WHERE bet_id = ?").run(bet.id);
+  return { reversed: credited, status: 'open' };
+}
+
+/**
  * The multiple boost on a won bet: its % on the winnings (payout less stake), at most what was
  * promised when placed and what the selections still count (a void one drops out), capped at
  * maxBoost €. Paid in real money. Returns the amount.

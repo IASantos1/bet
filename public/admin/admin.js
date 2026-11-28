@@ -772,6 +772,9 @@ function betCard(b, { showUser = false, settle = false } = {}) {
       <button class="ghost-btn btn-sm" data-action="bet-settle-all" data-id="${b.id}" data-result="lost">Bilhete perdido</button>
       <button class="danger-btn btn-sm" data-action="bet-settle-all" data-id="${b.id}" data-result="void">Anular (devolver aposta)</button>
     </div>` : ''}
+    ${settle && ['won', 'lost', 'void'].includes(b.status) ? `<div class="form-actions bet-settle">
+      <button class="ghost-btn btn-sm" data-action="bet-reopen" data-id="${b.id}">↩ Reabrir (voltar a "em aberto")</button>
+    </div>` : ''}
   </div>`;
 }
 
@@ -3234,6 +3237,18 @@ document.addEventListener('click', async (e) => {
     const legs = Object.fromEntries([...card.querySelectorAll('.leg-pick')].map((s) => [s.dataset.leg, r]));
     const what = { won: 'GANHO (todas as seleções em aberto ganhas, o prémio é pago)', lost: 'PERDIDO', void: 'ANULADO (a aposta é devolvida)' }[r];
     await settleTicket(actionEl.dataset.id, legs, `Marcar o bilhete #${actionEl.dataset.id} como ${what}?`);
+  } else if (action === 'bet-reopen') {
+    const id = actionEl.dataset.id;
+    if (!confirm(`Reabrir o bilhete #${id}?\n\nVolta a "em aberto" (sem ganho/perdido) e o prémio pago é revertido. Serve para corrigir uma liquidação errada.`)) return;
+    const note = prompt('Motivo (opcional, fica registado):', '');
+    if (note === null) return;
+    actionEl.disabled = true;
+    try {
+      const r = await api(`/api/admin/bets/${id}/reopen`, { method: 'POST', body: { note } });
+      toast(`Bilhete #${id}`, r.reversed ? `Reaberto · revertido ${money(r.reversed / 100)}` : 'Reaberto (em aberto).');
+      loadTab();
+    } catch (err) { toast('Erro', err.message, 'error'); }
+    actionEl.disabled = false;
   } else if (action === 'rv-check') {
     actionEl.disabled = true;
     const r = await api('/api/admin/revolut/check', { method: 'POST', body: {} }).catch((err) => ({ ok: false, error: err.message }));

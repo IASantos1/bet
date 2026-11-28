@@ -29,7 +29,7 @@ import { ensurePushTables, unseenWins, markWinsSeen } from './push.js';
 import {
   HttpError, createRateLimiter, hashPassword, hashToken, newSessionToken, parseEuros, verifyPassword, isLegacyHash,
 } from './security.js';
-import { placeBets, resultCode, settleEvent, settleBet } from './betting.js';
+import { placeBets, resultCode, settleEvent, settleBet, reopenBet } from './betting.js';
 import {
   promoConfig, campaignOpen, savePromoConfig, publicCampaigns, playerPromos, depositOffer, onDeposit, cancelBonus, cancelUserPromos,
   activeDepositBonus, bonusView, freebetView, grantFreebet, freebetCents, bonusBalanceCents, CAMPAIGN_NAMES,
@@ -3275,6 +3275,12 @@ export function createApp(db, {
       return { status: after.status, paid: cents(paid), decided };
     });
     res.json(out);
+  });
+
+  /** Reopens a settled ticket (undo an admin mistake): reverses the payout and sets it back to open. */
+  admin.post('/bets/:id/reopen', (req, res) => {
+    const note = str(req.body?.note, 200) || null;
+    res.json(tx(db, () => reopenBet(db, Number(req.params.id), { actor: req.user.id, note })));
   });
 
   /**
